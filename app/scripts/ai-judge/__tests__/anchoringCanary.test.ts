@@ -85,8 +85,8 @@ describe('Anchoring Canary & Diagnostic Isolation', () => {
     const fidelity = evaluateDiagnosticFidelity({
       casePlan: cleanRawFamily.cases[0].plan,
       engineSummary: {
-        warnings: ['Questionable recovery spacing on day 5'],
-        violations: [],
+        qualityWarnings: ['Questionable recovery spacing on day 5'],
+        constraintViolations: [],
       },
       judgedCase: judgedHighCase,
     });

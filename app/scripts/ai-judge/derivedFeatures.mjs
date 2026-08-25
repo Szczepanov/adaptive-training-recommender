@@ -60,8 +60,8 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
       requiredEquipmentSet.add(eq);
     }
 
-    const isHard = systemic >= 0.6;
-    const isRecoveryOrRest = systemic <= 0.25 || category.toLowerCase().includes('recovery') || modality === 'Rest';
+    const isHard = category === 'Hard Endurance' || category === 'Race-Specific Endurance' || systemic >= 0.6;
+    const isRecoveryOrRest = category === 'Rest' || category === 'Mobility/Recovery';
 
     if (isHard) {
       hardSessionCount += 1;

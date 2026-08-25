@@ -66,7 +66,12 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
   const exclusiveOllama = parseCliFlag(argv, '--exclusive-ollama') || env.JUDGE_EXCLUSIVE_OLLAMA === '1' || env.JUDGE_FLUSH_OLLAMA === '1';
   const isBlind = parseCliFlag(argv, '--blind', '-b');
   const cliPacketVersion = parseCliArg(argv, 'packet-version');
-  const packetVersion = isBlind ? 'v2' : (cliPacketVersion || env.JUDGE_PACKET_VERSION || 'v1');
+  const rawPacketVersion = isBlind ? 'v2' : (cliPacketVersion || env.JUDGE_PACKET_VERSION || 'v1');
+  const packetVersion = rawPacketVersion === 'blind' ? 'v2' : rawPacketVersion;
+  const validPacketVersions = new Set(['v1', 'v2']);
+  if (!validPacketVersions.has(packetVersion)) {
+    throw new Error(`Unsupported packet version '${packetVersion}'. Valid packet versions: v1, v2 (or --blind / 'blind' as an alias for v2).`);
+  }
   const withDiagnosticsAudit = parseCliFlag(argv, '--with-diagnostics-audit', '--audit-diagnostics') || env.JUDGE_DIAGNOSTICS_AUDIT === '1';
 
   const deepseekKey = env.DEEPSEEK_API_KEY;

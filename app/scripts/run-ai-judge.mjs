@@ -72,6 +72,7 @@ function compatibleManifest(prev) {
     && prev.responseSchemaSha256 === runIdentity.responseSchemaSha256
     && prev.judgeModel === runIdentity.judgeModel
     && prev.judgeProvider === runIdentity.judgeProvider
+    && (prev.packetVersion ?? 'v1') === runIdentity.packetVersion
     && (prev.samples ?? 1) === runIdentity.samples;
 }
 
@@ -127,8 +128,10 @@ if (config.isFresh || !reuseCache) {
   writeFileSync(scoresPath, '', 'utf8');
   writeFileSync(samplesPath, '', 'utf8');
   writeFileSync(attemptsPath, '', 'utf8');
-  if (config.withDiagnosticsAudit) writeFileSync(diagnosticAuditPath, '', 'utf8');
 }
+// Diagnostic audit records are recomputed for every family on every invocation (cached or
+// fresh), so the audit file must always start clean for this run regardless of sample reuse.
+if (config.withDiagnosticsAudit) writeFileSync(diagnosticAuditPath, '', 'utf8');
 
 // Runtime preflight & cleanup
 await cleanupOllamaMemory(config, log);

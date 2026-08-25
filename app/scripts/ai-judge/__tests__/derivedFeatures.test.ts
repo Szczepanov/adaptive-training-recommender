@@ -24,7 +24,7 @@ describe('computeDerivedPlanFeatures', () => {
         session: {
           templateId: 'easy_recovery',
           title: 'Easy Spin',
-          category: 'Recovery',
+          category: 'Mobility/Recovery',
           modality: 'Cycling',
           durationMin: 30,
           systemicCost: 0.2,
@@ -65,7 +65,7 @@ describe('computeDerivedPlanFeatures', () => {
     expect(features.modalityDistribution).toEqual({ Cycling: 3 });
     expect(features.categoryDistribution).toEqual({
       'Threshold Intervals': 1,
-      Recovery: 1,
+      'Mobility/Recovery': 1,
       'Anaerobic / Surges': 1,
     });
     expect(features.requiredEquipmentUsed).toEqual(['bike', 'smart_trainer']);
