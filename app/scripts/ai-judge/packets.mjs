@@ -123,6 +123,7 @@ export function buildBlindFamilyPacket(rawFamily) {
         changedAxis: input.changedAxis,
         inputContext,
         plan14d,
+        derivedPlanFeatures: derivedFeatures,
         derivedFeatures,
       };
     }),

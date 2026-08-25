@@ -9,6 +9,13 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
 
   const modalityDistribution = {};
   const categoryDistribution = {};
+  const stimulusTotals = {
+    aerobicEndurance: 0,
+    thresholdPower: 0,
+    vo2MaxPower: 0,
+    repeatedSurges: 0,
+    fatigueResistance: 0,
+  };
   const requiredEquipmentSet = new Set();
   const restrictedViolations = [];
 
@@ -30,6 +37,13 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
     cumulativeSystemicCost += systemic;
     cumulativeCardiovascularCost += cardio;
     cumulativeNeuromuscularCost += neuro;
+
+    const stim = session.stimulusProfile ?? {};
+    stimulusTotals.aerobicEndurance += stim.aerobicEndurance ?? 0;
+    stimulusTotals.thresholdPower += stim.thresholdPower ?? 0;
+    stimulusTotals.vo2MaxPower += stim.vo2MaxPower ?? 0;
+    stimulusTotals.repeatedSurges += stim.repeatedSurges ?? 0;
+    stimulusTotals.fatigueResistance += stim.fatigueResistance ?? 0;
 
     // Modality & Category tracking
     const modality = session.modality || (systemic === 0 ? 'Rest' : 'Unknown');
@@ -95,6 +109,13 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
     consecutiveHardDaysMax,
     modalityDistribution,
     categoryDistribution,
+    stimulusTotals: {
+      aerobicEndurance: Math.round(stimulusTotals.aerobicEndurance * 100) / 100,
+      thresholdPower: Math.round(stimulusTotals.thresholdPower * 100) / 100,
+      vo2MaxPower: Math.round(stimulusTotals.vo2MaxPower * 100) / 100,
+      repeatedSurges: Math.round(stimulusTotals.repeatedSurges * 100) / 100,
+      fatigueResistance: Math.round(stimulusTotals.fatigueResistance * 100) / 100,
+    },
     requiredEquipmentUsed: [...requiredEquipmentSet].sort(),
     restrictedModalitiesViolated: restrictedViolations,
     daysFromLastHardSessionToEvent,
