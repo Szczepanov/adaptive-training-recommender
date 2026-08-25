@@ -1,5 +1,10 @@
 import { extractCleanJson } from '../validation.mjs';
-import { createNormalizedResult, resolveRequestTimeoutMs, withProgress } from './base.mjs';
+import {
+  createNormalizedResult,
+  describeStructuredOutputRequirements,
+  resolveRequestTimeoutMs,
+  withProgress,
+} from './base.mjs';
 
 // Gemini's structured-output schema is an OpenAPI 3.0 subset: it rejects `const`,
 // `additionalProperties`, and `minLength`. Strip those while keeping everything
@@ -31,7 +36,8 @@ export async function callGemini({
   seed = null,
 }) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${config.model}:generateContent?key=${config.apiKey}`;
-  const userPrompt = `${promptContent}\n\nStrict Output Schema:\n${schemaContent}\n\nIMPORTANT: Root JSON MUST include both "caseScores" and "familyAssessment". Return JSON only.\n\nAnalyze this family JSON:\n${packetJson}`;
+  const outputRequirements = describeStructuredOutputRequirements(schema);
+  const userPrompt = `${promptContent}\n\nStrict Output Schema:\n${schemaContent}\n\nIMPORTANT: ${outputRequirements}\n\nEvaluate this input JSON:\n${packetJson}`;
 
   const body = {
     contents: [{ parts: [{ text: userPrompt }] }],
