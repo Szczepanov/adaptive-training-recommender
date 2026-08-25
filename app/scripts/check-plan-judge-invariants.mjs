@@ -25,6 +25,8 @@ const EXPECTED_FAMILY_CASE_COUNTS = new Map([
   ['concurrent_strength_endurance', 4],
   ['injury_constraints', 4],
   ['planning_modes_overlays', 4],
+  ['temporal_acute_vs_persistent', 4],
+  ['conflicting_tissue_vs_wearable', 4],
 ]);
 const EXPECTED_CASE_COUNT = [...EXPECTED_FAMILY_CASE_COUNTS.values()].reduce((sum, count) => sum + count, 0);
 
@@ -139,14 +141,25 @@ const demandDistanceB = templateSequenceDistance(critB, granB);
 fail(demandDistanceA > 0, 'A-priority criterium and gran-fondo cases produce identical selected-template sequences.');
 fail(demandDistanceB > 0, 'B-priority criterium and gran-fondo cases produce identical selected-template sequences.');
 
-// Sequence distance alone is too weak: an unrelated recovery/strength shuffle could satisfy
-// it while the event-specific choice stayed generic. At 40 days out the compact criterium
-// template is eligible and is the intended deterministic proof that repeated-surge demand
-// reaches selection. The long gran-fondo control must not receive that specialist session.
 const critACompactCount = templateCount(critA, 'end_crit_surges_01');
 const granACompactCount = templateCount(granA, 'end_crit_surges_01');
 fail(critACompactCount > 0, 'A-priority criterium case never selects the compact criterium surge template.');
 fail(granACompactCount === 0, `A-priority gran-fondo case selected the compact criterium surge template ${granACompactCount} time(s).`);
+
+// Dynamic temporal invariants
+const acuteAdverse = required('judge_traj_acute_adverse_day1');
+const day1Cost = acuteAdverse.plan[0]?.session?.systemicCost ?? 1.0;
+fail(day1Cost <= 0.4 || ['Rest', 'Mobility/Recovery'].includes(acuteAdverse.plan[0]?.session?.category), 'Acute 1-day adverse recovery case did not scale back Day 1 load.');
+
+const persistentAdverse = required('judge_traj_persistent_adverse_3d');
+for (let d = 0; d < 3; d += 1) {
+  fail(persistentAdverse.plan[d]?.session?.category !== 'Hard Endurance' && persistentAdverse.plan[d]?.session?.category !== 'Race-Specific Endurance', `Persistent 3-day adverse case scheduled high-intensity endurance on day ${d + 1} (${persistentAdverse.plan[d]?.session?.templateId}).`);
+}
+fail(['Rest', 'Mobility/Recovery'].includes(persistentAdverse.plan[0]?.session?.category), 'Persistent 3-day adverse Day 1 must be Rest or Recovery.');
+
+const soreLegs = required('judge_conflict_sore_legs_great_hrv');
+const soreLegsDay1 = soreLegs.plan[0];
+fail(soreLegsDay1 && (!(soreLegsDay1.session.safetyTags ?? []).includes('avoid_heavy_lower_body') || (soreLegsDay1.session.costProfile?.lowerBody ?? 0) <= 0.6), 'Sore legs case scheduled heavy lower-body loading on day 1 despite muscle soreness.');
 
 if (failures.length > 0) {
   console.error('Plan-judge invariant failures:');

@@ -66,6 +66,16 @@ export const FAMILY_EDGES = {
     { from: 'judge_mode_event_directed', to: 'judge_mode_travel_overlay', axis: 'Event directed vs 3-day travel overlay', expectedDirection: 'specificity_shift', expectedMagnitude: 'large' },
     { from: 'judge_mode_event_directed', to: 'judge_mode_conservative_preference', axis: 'Event directed vs High conservative bias', expectedDirection: 'less_load', expectedMagnitude: 'moderate' },
   ],
+  temporal_acute_vs_persistent: [
+    { from: 'judge_traj_neutral', to: 'judge_traj_acute_adverse_day1', axis: 'Neutral baseline vs Acute 1-day fatigue', expectedDirection: 'timing_shift', expectedMagnitude: 'moderate' },
+    { from: 'judge_traj_acute_adverse_day1', to: 'judge_traj_persistent_adverse_3d', axis: 'Acute 1-day fatigue vs Persistent 3-day fatigue', expectedDirection: 'less_load', expectedMagnitude: 'large' },
+    { from: 'judge_traj_persistent_adverse_3d', to: 'judge_traj_improving_trend', axis: 'Persistent fatigue vs Improving readiness trend', expectedDirection: 'more_load', expectedMagnitude: 'moderate' },
+  ],
+  conflicting_tissue_vs_wearable: [
+    { from: 'judge_conflict_neutral', to: 'judge_conflict_sore_legs_great_hrv', axis: 'Neutral vs Sore legs with high wearable readiness', expectedDirection: 'specificity_shift', expectedMagnitude: 'moderate' },
+    { from: 'judge_conflict_neutral', to: 'judge_conflict_fresh_legs_terrible_hrv', axis: 'Neutral vs Fresh legs with systemic wearable collapse', expectedDirection: 'less_load', expectedMagnitude: 'large' },
+    { from: 'judge_conflict_fresh_legs_terrible_hrv', to: 'judge_conflict_high_stress_fresh_body', axis: 'Systemic wearable collapse vs High life stress with fresh body', expectedDirection: 'specificity_shift', expectedMagnitude: 'moderate' },
+  ],
 };
 
 export function getFamilyEdges(familyId) {

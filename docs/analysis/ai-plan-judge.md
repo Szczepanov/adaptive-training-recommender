@@ -38,26 +38,25 @@ Run commands from `app/`.
 npm run simulate:plan-judge
 ```
 
-The command currently performs four steps:
+The command runs the canonical single-pass corpus builder and invariant verification:
 
-1. `simulate-plan-judge.mjs` runs the real simulator and writes the initial family packets.
-2. `fix-plan-judge-corpus.mjs` applies harness-only compatibility corrections for planner-facing preferences, injury guardrails, valid evergreen intent, travel constraints, judge context, and scheduled-event ownership. It also rewrites the final judge prompt used by the scored run.
-3. `normalize-plan-judge-diagnostics.mjs` reproduces judge-facing anchor-placement wording without changing shared engine diagnostics.
-4. `check-plan-judge-invariants.mjs` verifies the fixed 11-family/60-case shape plus deterministic feasibility and event-demand assertions.
-
-The post-processing layer exists because the judge tooling was extracted after the original simulator already existed. It is deliberately visible rather than pretending there is one canonical builder. New corpus families should preferentially be implemented in one place; growing an additional chain of corrective post-passes should be avoided. Consolidating the builders is a separate harness refactor because changing the final packets or prompt can invalidate score comparability.
+1. `build-plan-judge-corpus.mjs` runs the simulator with Vite SSR and generates clean, strictly typed fixtures with valid preferences, scheduled event commitments, active injury guardrails, authored travel blocks, evergreen intent profiles, and dynamic multi-day temporal trajectories across 13 families and 68 cases.
+2. `check-plan-judge-invariants.mjs` verifies the 13-family / 68-case shape, deterministic safety feasibility, event-demand assertions, and dynamic multi-day recovery behavior.
 
 CI runs this deterministic command only. No provider credentials are required.
 
 ### Deterministic invariants
 
-Hard truths should be asserted before an LLM sees the corpus. The invariant gate currently verifies, among other things:
+Hard truths should be asserted before an LLM sees the corpus. The invariant gate verifies, among other things:
 
 - restricted Running never produces a Running recommendation
 - `avoid_heavy_lower_body` never selects a matching safety-tagged session
 - 45-minute weekday capacity is respected
 - the 45-minute criterium-capacity case receives the compact `end_crit_surges_01` race-specific template
 - travel equipment/environment/time constraints are respected
+- dynamic temporal acute adverse cases scale back Day 1 load without compromising later recovery
+- persistent multi-day adverse cases avoid high-intensity endurance across the entire adverse window
+- muscle soreness constraints avoid heavy lower-body sessions on Day 1 even when wearable signals report high recovery
 - evergreen mode propagates valid evergreen intent and carries no event
 - a scheduled event owns its event date; no independent workout is added on top of the fixed event commitment
 - criterium and gran-fondo A/B cases produce different selected-template sequences
