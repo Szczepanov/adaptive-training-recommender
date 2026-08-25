@@ -1,0 +1,84 @@
+name: Debug Garmin Sync (read-only)
+
+# One-off diagnostic workflow: reuses the same Workload Identity Federation trust
+# already configured for deploy-garmin-sync.yml to run STRICTLY READ-ONLY gcloud
+# commands against prod and dump the results to the job log. No deploys, no writes,
+# no secrets are echoed. Scoped to trigger only on pushes to this exact debug
+# branch so it can't fire anywhere else; delete this file once debugging is done.
+on:
+  push:
+    branches:
+      - claude/debug-garmin-sync-prod
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  GCP_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+  CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+  REGION: europe-central2
+
+jobs:
+  debug:
+    name: Read-only prod diagnostics
+    runs-on: ubuntu-latest
+    steps:
+      - name: Authenticate to GCP (Workload Identity Federation, no key)
+        uses: google-github-actions/auth@v3
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_DEPLOYER_SA_EMAIL }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+
+      - name: Recent operation_failure log lines (garmin-sync, push-pending-workouts, manual-sync)
+        run: |
+          echo "=== operation_failure entries, last 48h ==="
+          gcloud logging read \
+            'resource.type="cloud_run_job" AND resource.labels.job_name=~"garmin-(sync|push-pending-workouts|manual-sync)" AND textPayload=~"operation_failure"' \
+            --project="${GCP_PROJECT}" --freshness=48h --limit=50 --format='value(textPayload)' || true
+
+      - name: Recent Cloud Run Job execution outcomes
+        run: |
+          for job in garmin-sync garmin-push-pending-workouts garmin-manual-sync; do
+            echo "=== executions: ${job} ==="
+            gcloud run jobs executions list --job="${job}" --region="${REGION}" \
+              --project="${GCP_PROJECT}" --limit=10 \
+              --format='table(metadata.name,status.conditions[0].type,status.conditions[0].status,status.startTime,status.completionTime)' || true
+            echo
+          done
+
+      - name: Most recent failed execution's log lines (if any)
+        run: |
+          for job in garmin-sync garmin-push-pending-workouts garmin-manual-sync; do
+            echo "=== last failure detail: ${job} ==="
+            LAST_FAILED=$(gcloud run jobs executions list --job="${job}" --region="${REGION}" \
+              --project="${GCP_PROJECT}" --limit=10 \
+              --format='value(metadata.name)' \
+              --filter='status.conditions.type=Completed AND status.conditions.status=False' | head -1)
+            if [ -n "${LAST_FAILED}" ]; then
+              echo "execution: ${LAST_FAILED}"
+              gcloud logging read \
+                "resource.type=\"cloud_run_job\" AND resource.labels.job_name=\"${job}\" AND labels.\"run.googleapis.com/execution_name\"=\"${LAST_FAILED}\"" \
+                --project="${GCP_PROJECT}" --limit=100 --format='value(textPayload)' || true
+            else
+              echo "(no failed execution in last 10)"
+            fi
+            echo
+          done
+
+      - name: Garmin token object freshness
+        run: |
+          echo "=== token object metadata ==="
+          gcloud storage objects describe "gs://${GCP_PROJECT}-garmin-tokens/garmin/garmin_tokens.json" \
+            --format='yaml(name,updated,size)' || true
+
+      - name: Cloud Scheduler job states
+        run: |
+          for sched in garmin-sync-morning-poll garmin-push-pending-workouts-poll garmin-manual-sync-poll; do
+            echo "=== scheduler: ${sched} ==="
+            gcloud scheduler jobs describe "${sched}" --location="${REGION}" --project="${GCP_PROJECT}" \
+              --format='yaml(state,schedule,lastAttemptTime,status)' || true
+            echo
+          done
