@@ -1,22 +1,22 @@
 export const ORDINAL_RUBRIC = {
   4: {
-    label: 'Exemplary',
+    label: 'Excellent',
     description: 'Optimal physiological adaptation, seamless fatigue/recovery sequencing, perfect constraint adherence, highly tailored to event demand.',
   },
   3: {
-    label: 'Sound',
+    label: 'Good',
     description: 'Clinically safe, sensible training load and periodization; minor sub-optimal recovery spacing or non-critical preference compromises.',
   },
   2: {
-    label: 'Marginal',
+    label: 'Mixed / Meaningful flaws',
     description: 'Safe from acute overload, but questionable recovery timing, excessive fatigue accumulation, or noticeable capacity mismatch.',
   },
   1: {
-    label: 'Flawed',
+    label: 'Major flaws',
     description: 'Substantial sequencing defect, inappropriate acute load during high fatigue, or violation of athlete time/modality constraints.',
   },
   0: {
-    label: 'Unsafe',
+    label: 'Unsafe / Invalid',
     description: 'Critical physiological safety violation, extreme fatigue overload, or breach of hard medical/injury restrictions.',
   },
 };

@@ -8,13 +8,26 @@ export function generatePairwiseResponseSchema(scale = '0-4') {
       familyId: { type: 'string' },
       caseA: { type: 'string' },
       caseB: { type: 'string' },
-      observedDirection: {
+      expectedDirection: {
         type: 'string',
-        enum: ['less_load', 'more_load', 'same_load', 'shift_modality', 'shift_intensity', 'other'],
+        enum: ['less_load', 'same', 'more_load', 'specificity_shift', 'timing_shift', 'mixed'],
       },
-      reactionAppropriateness: {
+      expectedMagnitude: {
         type: 'string',
-        enum: ['appropriate', 'underreaction', 'overreaction', 'opposite_direction', 'inappropriate_shift'],
+        enum: ['none', 'small', 'moderate', 'large'],
+      },
+      actualResponseAssessment: {
+        type: 'string',
+        enum: ['underreact', 'appropriate', 'overreact'],
+      },
+      confidence: {
+        type: 'number',
+        minimum: 0,
+        maximum: 1,
+      },
+      evidence: {
+        type: 'array',
+        items: { type: 'string' },
       },
       preference: {
         type: 'string',
@@ -35,8 +48,11 @@ export function generatePairwiseResponseSchema(scale = '0-4') {
       'familyId',
       'caseA',
       'caseB',
-      'observedDirection',
-      'reactionAppropriateness',
+      'expectedDirection',
+      'expectedMagnitude',
+      'actualResponseAssessment',
+      'confidence',
+      'evidence',
       'preference',
       'sensitivityScore',
       'rationale',
@@ -52,6 +68,7 @@ export function formatPairwiseComparisonPacket({ familyId, edge, caseA, caseB, i
     familyId,
     comparisonAxis: edge.axis,
     expectedDirection: edge.expectedDirection,
+    expectedMagnitude: edge.expectedMagnitude,
     caseA: {
       caseId: first.caseId,
       label: first.label,
@@ -66,19 +83,24 @@ export function formatPairwiseComparisonPacket({ familyId, edge, caseA, caseB, i
       plan14d: second.plan14d,
       derivedPlanFeatures: second.derivedPlanFeatures ?? second.derivedFeatures,
     },
-    instruction: 'Compare Case A (baseline) against Case B (perturbed input). Did the training plan change in a directionally sound and physiologically appropriate manner for the specified changed axis? Penalize both overreaction and underreaction.',
+    instruction: 'Compare Case A (baseline) against Case B (perturbed input). Assess whether the actual plan change matches the expected direction and magnitude. Answer "same" when minor input changes are clinically not decision-relevant. Select actualResponseAssessment from: underreact | appropriate | overreact.',
   };
 }
 
 export function evaluateOrderSwapConsistency(forwardResult, reversedResult) {
   if (!forwardResult || !reversedResult) {
-    return { isSymmetric: false, positionBiasDetected: true, rationale: 'Missing evaluation result.' };
+    return {
+      isSymmetric: false,
+      positionUnstable: true,
+      positionBiasDetected: true,
+      rationale: 'Missing evaluation result.',
+    };
   }
 
   // Forward evaluated (A, B); Reversed evaluated (B, A)
   // Symmetrical preferences:
-  // Forward: A_better <==> Reversed: B_better (since original A is now in slot B)
-  // Forward: B_better <==> Reversed: A_better (since original B is now in slot A)
+  // Forward: A_better <==> Reversed: B_better
+  // Forward: B_better <==> Reversed: A_better
   // Forward: equal <==> Reversed: equal
   // Forward: both_flawed <==> Reversed: both_flawed
   let preferenceSymmetric = false;
@@ -90,30 +112,22 @@ export function evaluateOrderSwapConsistency(forwardResult, reversedResult) {
     preferenceSymmetric = true;
   }
 
-  // Symmetrical direction:
-  // Forward: less_load <==> Reversed: more_load
-  // Forward: more_load <==> Reversed: less_load
-  // Forward: same_load <==> Reversed: same_load
-  // Forward: shift_modality / shift_intensity <==> Reversed matches
-  let directionSymmetric = false;
-  if (forwardResult.observedDirection === 'less_load' && reversedResult.observedDirection === 'more_load') {
-    directionSymmetric = true;
-  } else if (forwardResult.observedDirection === 'more_load' && reversedResult.observedDirection === 'less_load') {
-    directionSymmetric = true;
-  } else if (forwardResult.observedDirection === reversedResult.observedDirection) {
-    directionSymmetric = true;
-  }
+  // Symmetrical assessment:
+  // Both runs should classify the response appropriateness equivalently
+  const assessmentSymmetric = forwardResult.actualResponseAssessment === reversedResult.actualResponseAssessment;
 
   const scoreDelta = Math.abs((forwardResult.sensitivityScore ?? 0) - (reversedResult.sensitivityScore ?? 0));
   const scoreConsistent = scoreDelta <= 1;
 
-  const isSymmetric = preferenceSymmetric && directionSymmetric && scoreConsistent;
+  const isSymmetric = preferenceSymmetric && assessmentSymmetric && scoreConsistent;
+  const positionUnstable = !isSymmetric;
 
   return {
     isSymmetric,
-    positionBiasDetected: !isSymmetric,
+    positionUnstable,
+    positionBiasDetected: positionUnstable,
     preferenceSymmetric,
-    directionSymmetric,
+    assessmentSymmetric,
     scoreDelta,
   };
 }
@@ -123,19 +137,70 @@ export function computePositionBiasIndex(pairwiseResults = []) {
     return {
       totalPairs: 0,
       symmetricPairs: 0,
+      biasedPairs: 0,
       positionBiasIndex: 0,
     };
   }
 
   const symmetricCount = pairwiseResults.filter((r) => r.isSymmetric).length;
-  const biasCount = pairwiseResults.length - symmetricCount;
-  const positionBiasIndex = Math.round((biasCount / pairwiseResults.length) * 1000) / 1000;
+  const biasedCount = pairwiseResults.length - symmetricCount;
+  const positionBiasIndex = Math.round((biasedCount / pairwiseResults.length) * 1000) / 1000;
 
   return {
     totalPairs: pairwiseResults.length,
     symmetricPairs: symmetricCount,
-    biasedPairs: biasCount,
+    biasedPairs: biasedCount,
     positionBiasIndex,
+  };
+}
+
+export function deriveFamilySensitivityFromEdges(pairwiseResults = []) {
+  if (!Array.isArray(pairwiseResults) || pairwiseResults.length === 0) {
+    return {
+      totalEdges: 0,
+      appropriateEdges: 0,
+      underreactCount: 0,
+      overreactCount: 0,
+      positionUnstableCount: 0,
+      appropriateRatio: 1.0,
+      derivedSensitivityScore4: 4,
+      derivedSensitivityScore10: 10.0,
+    };
+  }
+
+  let appropriateEdges = 0;
+  let underreactCount = 0;
+  let overreactCount = 0;
+  let positionUnstableCount = 0;
+
+  for (const row of pairwiseResults) {
+    const assessment = row.forward?.actualResponseAssessment;
+    if (assessment === 'appropriate') appropriateEdges += 1;
+    else if (assessment === 'underreact') underreactCount += 1;
+    else if (assessment === 'overreact') overreactCount += 1;
+
+    if (row.positionUnstable || row.swapConsistency?.positionUnstable) {
+      positionUnstableCount += 1;
+    }
+  }
+
+  const totalEdges = pairwiseResults.length;
+  const appropriateRatio = Math.round((appropriateEdges / totalEdges) * 1000) / 1000;
+  const unstablePenalty = (positionUnstableCount / totalEdges) * 0.5;
+
+  const rawScore4 = (appropriateRatio * 4) - unstablePenalty;
+  const derivedSensitivityScore4 = Math.max(0, Math.min(4, Math.round(rawScore4)));
+  const derivedSensitivityScore10 = Math.round(derivedSensitivityScore4 * 2.5 * 10) / 10;
+
+  return {
+    totalEdges,
+    appropriateEdges,
+    underreactCount,
+    overreactCount,
+    positionUnstableCount,
+    appropriateRatio,
+    derivedSensitivityScore4,
+    derivedSensitivityScore10,
   };
 }
 
@@ -204,24 +269,31 @@ export async function executeFamilyPairwiseEvaluations({
       swapConsistency = evaluateOrderSwapConsistency(forwardVal, reversedVal);
     }
 
+    const isSymmetric = swapConsistency ? swapConsistency.isSymmetric : true;
+    const positionUnstable = swapConsistency ? swapConsistency.positionUnstable : false;
+
     pairwiseResults.push({
       familyId,
       edge: `${edge.from}->${edge.to}`,
       axis: edge.axis,
       expectedDirection: edge.expectedDirection,
+      expectedMagnitude: edge.expectedMagnitude,
       forward: forwardVal,
       reversed: reversedVal,
       swapConsistency,
-      isSymmetric: swapConsistency ? swapConsistency.isSymmetric : true,
+      isSymmetric,
+      positionUnstable,
     });
   }
 
   const positionBias = computePositionBiasIndex(pairwiseResults);
+  const edgeSensitivitySummary = deriveFamilySensitivityFromEdges(pairwiseResults);
 
   return {
     familyId,
     sampleIndex,
     pairwiseResults,
     positionBias,
+    edgeSensitivitySummary,
   };
 }

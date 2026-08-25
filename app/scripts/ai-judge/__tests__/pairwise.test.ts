@@ -4,6 +4,7 @@ import {
   formatPairwiseComparisonPacket,
   evaluateOrderSwapConsistency,
   computePositionBiasIndex,
+  deriveFamilySensitivityFromEdges,
   executeFamilyPairwiseEvaluations,
 } from '../pairwise.mjs';
 
@@ -29,12 +30,16 @@ describe('pairwise module', () => {
     to: 'judge_obj_hrv_2sd',
     axis: 'HRV down 2 SD',
     expectedDirection: 'less_load',
+    expectedMagnitude: 'moderate',
   };
 
-  it('generates valid pairwise response schema for 0..4 scale', () => {
+  it('generates valid pairwise response schema with Task 4.3 fields for 0..4 scale', () => {
     const schema = generatePairwiseResponseSchema('0-4');
-    expect(schema.required).toContain('observedDirection');
-    expect(schema.required).toContain('reactionAppropriateness');
+    expect(schema.required).toContain('expectedDirection');
+    expect(schema.required).toContain('expectedMagnitude');
+    expect(schema.required).toContain('actualResponseAssessment');
+    expect(schema.required).toContain('confidence');
+    expect(schema.required).toContain('evidence');
     expect(schema.required).toContain('preference');
     expect(schema.properties.sensitivityScore.maximum).toBe(4);
   });
@@ -50,6 +55,8 @@ describe('pairwise module', () => {
 
     expect(forward.caseA.caseId).toBe('judge_obj_neutral');
     expect(forward.caseB.caseId).toBe('judge_obj_hrv_2sd');
+    expect(forward.expectedDirection).toBe('less_load');
+    expect(forward.expectedMagnitude).toBe('moderate');
 
     const reversed = formatPairwiseComparisonPacket({
       familyId: 'objective_recovery',
@@ -65,8 +72,11 @@ describe('pairwise module', () => {
 
   it('detects symmetric judgments between forward and reversed order evaluations', () => {
     const forwardResult = {
-      observedDirection: 'less_load',
-      reactionAppropriateness: 'appropriate',
+      expectedDirection: 'less_load',
+      expectedMagnitude: 'moderate',
+      actualResponseAssessment: 'appropriate',
+      confidence: 0.95,
+      evidence: ['Systemic load decreased from 0.7 to 0.2'],
       preference: 'A_better',
       sensitivityScore: 4,
       rationale: 'Case B appropriately reduced training load.',
@@ -74,8 +84,11 @@ describe('pairwise module', () => {
 
     // When reversed, original Case A is in slot B, so preference should be B_better
     const reversedSymmetricResult = {
-      observedDirection: 'more_load',
-      reactionAppropriateness: 'appropriate',
+      expectedDirection: 'less_load',
+      expectedMagnitude: 'moderate',
+      actualResponseAssessment: 'appropriate',
+      confidence: 0.95,
+      evidence: ['Systemic load decreased from 0.7 to 0.2'],
       preference: 'B_better',
       sensitivityScore: 4,
       rationale: 'Original Case A in slot B has better baseline structure.',
@@ -83,13 +96,17 @@ describe('pairwise module', () => {
 
     const evalResult = evaluateOrderSwapConsistency(forwardResult, reversedSymmetricResult);
     expect(evalResult.isSymmetric).toBe(true);
+    expect(evalResult.positionUnstable).toBe(false);
     expect(evalResult.positionBiasDetected).toBe(false);
   });
 
-  it('detects position bias when evaluator simply prefers slot A regardless of case swap', () => {
+  it('detects position bias and marks positionUnstable when evaluator prefers slot A regardless of case swap', () => {
     const forwardResult = {
-      observedDirection: 'less_load',
-      reactionAppropriateness: 'appropriate',
+      expectedDirection: 'less_load',
+      expectedMagnitude: 'moderate',
+      actualResponseAssessment: 'appropriate',
+      confidence: 0.9,
+      evidence: ['Plan changed'],
       preference: 'A_better',
       sensitivityScore: 4,
       rationale: 'Prefer slot A.',
@@ -97,8 +114,11 @@ describe('pairwise module', () => {
 
     // Position-biased evaluator keeps picking slot A even when cases are swapped
     const reversedBiasedResult = {
-      observedDirection: 'less_load',
-      reactionAppropriateness: 'appropriate',
+      expectedDirection: 'less_load',
+      expectedMagnitude: 'moderate',
+      actualResponseAssessment: 'appropriate',
+      confidence: 0.9,
+      evidence: ['Plan changed'],
       preference: 'A_better', // Flaw: should be B_better if symmetric
       sensitivityScore: 4,
       rationale: 'Still preferring slot A.',
@@ -106,6 +126,7 @@ describe('pairwise module', () => {
 
     const evalResult = evaluateOrderSwapConsistency(forwardResult, reversedBiasedResult);
     expect(evalResult.isSymmetric).toBe(false);
+    expect(evalResult.positionUnstable).toBe(true);
     expect(evalResult.positionBiasDetected).toBe(true);
   });
 
@@ -124,6 +145,25 @@ describe('pairwise module', () => {
     expect(bias.positionBiasIndex).toBe(0.25);
   });
 
+  it('derives mathematical family sensitivity summary from edge judgments (Task 4.5)', () => {
+    const edgeResults = [
+      { forward: { actualResponseAssessment: 'appropriate' }, positionUnstable: false },
+      { forward: { actualResponseAssessment: 'appropriate' }, positionUnstable: false },
+      { forward: { actualResponseAssessment: 'underreact' }, positionUnstable: false },
+      { forward: { actualResponseAssessment: 'appropriate' }, positionUnstable: true },
+    ];
+
+    const summary = deriveFamilySensitivityFromEdges(edgeResults);
+    expect(summary.totalEdges).toBe(4);
+    expect(summary.appropriateEdges).toBe(3);
+    expect(summary.underreactCount).toBe(1);
+    expect(summary.overreactCount).toBe(0);
+    expect(summary.positionUnstableCount).toBe(1);
+    expect(summary.appropriateRatio).toBe(0.75);
+    expect(summary.derivedSensitivityScore4).toBeGreaterThanOrEqual(2);
+    expect(summary.derivedSensitivityScore10).toBeGreaterThanOrEqual(5.0);
+  });
+
   it('executes family pairwise evaluations with mock provider', async () => {
     const mockCallProvider = async ({ packetJson }) => {
       const packet = JSON.parse(packetJson);
@@ -134,8 +174,11 @@ describe('pairwise module', () => {
           familyId: 'objective_recovery',
           caseA: packet.caseA.caseId,
           caseB: packet.caseB.caseId,
-          observedDirection: isReversed ? 'more_load' : 'less_load',
-          reactionAppropriateness: 'appropriate',
+          expectedDirection: 'less_load',
+          expectedMagnitude: 'moderate',
+          actualResponseAssessment: 'appropriate',
+          confidence: 0.9,
+          evidence: ['Reduced systemic load from 0.7 to 0.2'],
           preference: isReversed ? 'B_better' : 'A_better',
           sensitivityScore: 4,
           rationale: 'Appropriate load reduction.',
@@ -160,6 +203,8 @@ describe('pairwise module', () => {
 
     expect(outcome.pairwiseResults).toHaveLength(1);
     expect(outcome.pairwiseResults[0].isSymmetric).toBe(true);
+    expect(outcome.pairwiseResults[0].positionUnstable).toBe(false);
     expect(outcome.positionBias.positionBiasIndex).toBe(0);
+    expect(outcome.edgeSensitivitySummary.appropriateEdges).toBe(1);
   });
 });

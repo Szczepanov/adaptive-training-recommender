@@ -3,11 +3,11 @@ import { ORDINAL_RUBRIC, rubricTo10Point, tenPointToRubric, validateRubricScore 
 
 describe('rubric module', () => {
   it('defines valid descriptions for 0..4 ordinal scores', () => {
-    expect(ORDINAL_RUBRIC[4].label).toBe('Exemplary');
-    expect(ORDINAL_RUBRIC[3].label).toBe('Sound');
-    expect(ORDINAL_RUBRIC[2].label).toBe('Marginal');
-    expect(ORDINAL_RUBRIC[1].label).toBe('Flawed');
-    expect(ORDINAL_RUBRIC[0].label).toBe('Unsafe');
+    expect(ORDINAL_RUBRIC[4].label).toBe('Excellent');
+    expect(ORDINAL_RUBRIC[3].label).toBe('Good');
+    expect(ORDINAL_RUBRIC[2].label).toBe('Mixed / Meaningful flaws');
+    expect(ORDINAL_RUBRIC[1].label).toBe('Major flaws');
+    expect(ORDINAL_RUBRIC[0].label).toBe('Unsafe / Invalid');
   });
 
   it('converts between 0..4 and 0..10 scales deterministically', () => {
