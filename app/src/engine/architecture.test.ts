@@ -572,7 +572,7 @@ describe('Architecture & Phased Engine Integration', () => {
             const periodization = evaluatePeriodizationPhase([cyclingEvent('2026-08-27')], '2026-08-07');
             const candidates = ENRICHED_TEMPLATES.filter(t => isTemplatePhaseEligible(t, periodization));
             expect(candidates.some(t => t.category === 'Race-Specific Endurance')).toBe(true);
-            const ranked = rankCandidatesByUtility(candidates, [], fatigue, availability, [], prefs, { focusEvent: periodization.focusEvent });
+            const ranked = rankCandidatesByUtility(candidates, [], fatigue, availability, [], prefs, { date: '2026-08-07', focusEvent: periodization.focusEvent });
             const raceSpecificPick = ranked.find(r => r.template.category === 'Race-Specific Endurance');
             expect(raceSpecificPick).toBeDefined();
             expect(raceSpecificPick!.utilityScore).toBeGreaterThan(0);
