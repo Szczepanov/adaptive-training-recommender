@@ -204,6 +204,26 @@ describe('pairwise module', () => {
     expect(summary.overreactionCount).toBe(1);
     expect(summary.positionUnstableCount).toBe(1);
     expect(summary.appropriateRatio).toBe(0.5);
+    expect(summary.coverage).toBe('covered');
+  });
+
+  it('reports no edge coverage without synthesizing a perfect sensitivity score', () => {
+    expect(deriveFamilySensitivityFromEdges([])).toMatchObject({
+      totalEdges: 0,
+      coverage: 'uncovered',
+      appropriateRatio: null,
+      derivedSensitivityScore4: null,
+      derivedSensitivityScore10: null,
+    });
+  });
+
+  it('does not round away a position-instability penalty', () => {
+    const summary = deriveFamilySensitivityFromEdges([
+      { forward: { actualResponseAssessment: 'appropriate' }, positionUnstable: true },
+    ]);
+
+    expect(summary.derivedSensitivityScore4).toBe(3);
+    expect(summary.derivedSensitivityScore10).toBe(7.5);
   });
 
   it('retries invalid pairwise responses and stores validated forward/reversed evaluations', async () => {

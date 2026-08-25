@@ -94,6 +94,8 @@ Swap metrics and edge-derived family summaries are attached under each family en
 
 `artifacts/ai-plan-judge/latest/judge-stability.json`
 
+A family with no registered/evaluated edges is explicitly reported as `coverage: "uncovered"`; its edge-derived ratio and scores are `null`, not a perfect score. This keeps absent comparison coverage distinct from positive sensitivity evidence.
+
 Pointwise samples remain independently resumable. Pairwise rows are currently **rebuilt on every pairwise run**, including `--resume`. The pairwise file is truncated before rebuilding so resumed runs cannot append duplicate edge rows. This is deliberate until pairwise results receive their own provenance-aware cache.
 
 Run-manifest compatibility includes the base seed, seed strategy, pairwise flag, position-bias flag, and pairwise rubric scale. Changing any of those invalidates reuse of a supposedly identical run configuration.

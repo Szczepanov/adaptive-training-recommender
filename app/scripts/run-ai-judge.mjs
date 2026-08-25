@@ -70,7 +70,9 @@ const runIdentity = {
 };
 
 const cachedSamplesByFamily = new Map();
-let reuseCache = !config.isFresh && !config.isResume ? false : existsSync(manifestPath) && existsSync(samplesPath);
+// Only an explicit resume may reuse pointwise samples. A fresh run must never
+// read artifacts that it is about to replace.
+let reuseCache = !config.isFresh && config.isResume && existsSync(manifestPath) && existsSync(samplesPath);
 
 function compatibleManifest(prev) {
   if (!prev || typeof prev !== 'object') return false;

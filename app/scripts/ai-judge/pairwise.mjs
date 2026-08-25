@@ -267,9 +267,10 @@ export function deriveFamilySensitivityFromEdges(pairwiseResults = []) {
       underreactionCount: 0,
       overreactionCount: 0,
       positionUnstableCount: 0,
-      appropriateRatio: 1.0,
-      derivedSensitivityScore4: 4,
-      derivedSensitivityScore10: 10.0,
+      coverage: 'uncovered',
+      appropriateRatio: null,
+      derivedSensitivityScore4: null,
+      derivedSensitivityScore10: null,
     };
   }
 
@@ -294,7 +295,12 @@ export function deriveFamilySensitivityFromEdges(pairwiseResults = []) {
   const unstablePenalty = (positionUnstableCount / totalEdges) * 0.5;
 
   const rawScore4 = (appropriateRatio * 4) - unstablePenalty;
-  const derivedSensitivityScore4 = Math.max(0, Math.min(4, Math.round(rawScore4)));
+  // Once a swapped display changes a judgment, preserve that evidence in the
+  // ordinal score rather than allowing nearest-integer rounding to erase it.
+  const derivedSensitivityScore4 = Math.max(
+    0,
+    Math.min(4, positionUnstableCount > 0 ? Math.floor(rawScore4) : Math.round(rawScore4))
+  );
   const derivedSensitivityScore10 = Math.round(derivedSensitivityScore4 * 2.5 * 10) / 10;
 
   return {
@@ -303,6 +309,7 @@ export function deriveFamilySensitivityFromEdges(pairwiseResults = []) {
     underreactionCount,
     overreactionCount,
     positionUnstableCount,
+    coverage: 'covered',
     appropriateRatio,
     derivedSensitivityScore4,
     derivedSensitivityScore10,
