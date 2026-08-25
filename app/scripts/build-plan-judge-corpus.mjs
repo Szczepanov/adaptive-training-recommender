@@ -174,7 +174,6 @@ function variant(base, id, label, axis, options = {}) {
       ...(events !== undefined ? { events } : {}),
       ...(options.preferences !== undefined ? { preferences: clone(options.preferences) } : {}),
       ...(options.trainingIntentProfile !== undefined ? { trainingIntentProfile: clone(options.trainingIntentProfile) } : {}),
-      ...(options.authoredPlanBlocks !== undefined ? { authoredPlanBlocks: clone(options.authoredPlanBlocks) } : {}),
       ...(options.initialHistory !== undefined ? { initialHistory: clone(options.initialHistory) } : {}),
       ...(options.fixedActivities !== undefined ? { fixedActivities: clone(options.fixedActivities) } : {}),
       startDate: base.startDate,
@@ -186,9 +185,34 @@ function variant(base, id, label, axis, options = {}) {
   };
 }
 
+function rollingDailyVariant(base, id, label, axis, readinessForDay, options = {}) {
+  return {
+    ...variant(base, id, label, axis, options),
+    execution: {
+      mode: 'rolling_daily',
+      days: options.days ?? 14,
+      readinessForDay,
+    },
+  };
+}
+
+function readinessTrajectoryFor(definition) {
+  if (definition.execution?.mode !== 'rolling_daily') return null;
+  const { scenario, execution } = definition;
+  return Array.from({ length: execution.days }, (_, dayIndex) => {
+    const date = addDays(scenario.startDate, dayIndex);
+    return {
+      date,
+      readiness: clone(execution.readinessForDay(date, dayIndex)),
+    };
+  });
+}
+
 function judgeContext(input) {
   return {
+    simulationMode: input.simulationMode,
     readiness: input.readiness,
+    readinessTrajectory: input.readinessTrajectory,
     event: input.event ?? null,
     events: input.events ?? null,
     preferences: input.preferences ?? input.context?.preferences ?? null,
@@ -196,28 +220,36 @@ function judgeContext(input) {
     trainingSettings: input.context?.trainingSettings ?? null,
     initialHistory: input.initialHistory ?? [],
     fixedActivities: input.fixedActivities ?? [],
-    authoredPlanBlocks: input.authoredPlanBlocks ?? null,
     trainingIntentProfile: input.trainingIntentProfile ?? null,
   };
 }
 
 function serializeInput(definition) {
   const scenario = definition.scenario;
-  const readiness = scenario.readinessForDate?.(scenario.startDate, 0) ?? scenario.readinessForWeek(0);
+  const materializedTrajectory = readinessTrajectoryFor(definition);
+  const readiness = materializedTrajectory?.[0]?.readiness
+    ?? scenario.readinessForDate?.(scenario.startDate, 0)
+    ?? scenario.readinessForWeek(0);
+  const readinessTrajectory = materializedTrajectory?.map(({ date, readiness: dayReadiness }) => ({
+    date,
+    subjective: dayReadiness.subjective,
+    objective: dayReadiness.objective,
+  })) ?? null;
   const input = {
     caseId: scenario.id,
     label: scenario.label,
     changedAxis: definition.axis,
     startDate: scenario.startDate,
     weeks: scenario.weeks,
+    simulationMode: definition.execution?.mode ?? 'weekly_forecast',
     readiness,
+    readinessTrajectory,
     event: scenario.event ?? null,
     events: scenario.events ?? null,
     preferences: scenario.preferences ?? scenario.context.preferences,
     context: scenario.context,
     initialHistory: scenario.initialHistory ?? [],
     fixedActivities: scenario.fixedActivities ?? [],
-    authoredPlanBlocks: scenario.authoredPlanBlocks ?? null,
     trainingIntentProfile: scenario.trainingIntentProfile ?? null,
   };
   input.changedAxis = { ...definition.axis, judgeContext: judgeContext(input) };
@@ -269,6 +301,71 @@ function packetFromResult(definition, result, templatesById) {
       qualityWarnings: (result.qualityWarnings ?? []).map(normalizeWarning),
       anchorWeeks: result.anchorWeeks,
     },
+  };
+}
+
+async function runRollingDailyScenario(definition, rulesModule, analyzeModule) {
+  const { scenario, execution } = definition;
+  const events = [...(scenario.events ?? (scenario.event ? [scenario.event] : []))];
+  const fixedActivities = scenario.fixedActivities ?? [];
+  const accumulatedHistory = clone(scenario.initialHistory ?? []);
+  const historyProvider = {
+    reconstruct: async (_userId, throughDateExclusive, windowDays) => {
+      const windowStart = addDays(throughDateExclusive, -windowDays);
+      return accumulatedHistory.filter((exposure) => exposure.date >= windowStart && exposure.date < throughDateExclusive);
+    },
+  };
+
+  const decisionTraces = [];
+  const categoryDistribution = {};
+  const modalityDistribution = {};
+  const fatigueTierDayCounts = { train: 0, modify: 0, recover: 0 };
+  let restOrRecoveryDayCount = 0;
+  let previousMode;
+
+  for (let dayIndex = 0; dayIndex < execution.days; dayIndex += 1) {
+    const date = addDays(scenario.startDate, dayIndex);
+    const readiness = clone(execution.readinessForDay(date, dayIndex));
+    const recommendation = await rulesModule.evaluateTrainingWithIntent(
+      'sim-user',
+      readiness,
+      scenario.context,
+      events,
+      date,
+      previousMode,
+      historyProvider,
+      null,
+      fixedActivities,
+      [],
+      scenario.trainingIntentProfile ?? null,
+      scenario.preferences ?? null,
+      'max'
+    );
+    const trace = analyzeModule.traceFromRecommendation(Math.floor(dayIndex / 7), date, recommendation);
+    decisionTraces.push(trace);
+
+    const category = trace.selected.category;
+    const modality = trace.selected.modality;
+    categoryDistribution[category] = (categoryDistribution[category] ?? 0) + 1;
+    modalityDistribution[modality] = (modalityDistribution[modality] ?? 0) + 1;
+    fatigueTierDayCounts[trace.readinessTier] += 1;
+    if (category === 'Rest' || category === 'Mobility/Recovery') restOrRecoveryDayCount += 1;
+
+    const completedDay = analyzeModule.recommendationAsDay(date, recommendation, 'rolling_daily');
+    accumulatedHistory.push(analyzeModule.toCompletedExposure(completedDay));
+    previousMode = recommendation.mode;
+  }
+
+  return {
+    categoryDistribution,
+    modalityDistribution,
+    restOrRecoveryDayCount,
+    fatigueTierDayCounts,
+    objectiveResolution: [],
+    constraintViolations: [],
+    qualityWarnings: [],
+    anchorWeeks: [],
+    decisionTraces,
   };
 }
 
@@ -405,7 +502,7 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
     neutral('judge_injury_expired', 'Injury — expired review, no active engine restriction', { injuryConstraint: 'expired_review_inactive' }),
   ];
 
-  // 11. Planning modes and overlays
+  // 11. Planning modes and travel constraints
   const planningModesOverlays = [
     neutral('judge_mode_event_directed', 'Planning mode — event directed A-race', { planningMode: 'event_directed' }),
     variant(base, 'judge_mode_evergreen', 'Planning mode — evergreen fitness maintenance', { planningMode: 'evergreen' }, {
@@ -414,18 +511,7 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
       trainingIntentProfile: evergreenIntent(),
       preferences: userPreferences({ preferredRecoveryStyle: 'mixed' }),
     }),
-    neutral('judge_mode_travel_overlay', 'Planning mode — 3-day travel constraints + authored overlay', { planningMode: 'travel_overlay' }, {
-      authoredPlanBlocks: [{
-        id: 'travel-block-1',
-        userId: 'judge-user',
-        phase: 'travel',
-        startDate: base.startDate,
-        endDate: addDays(base.startDate, 2),
-        volumeScale: 0.5,
-        intensityScale: 0.7,
-        createdAt: '',
-        updatedAt: '',
-      }],
+    neutral('judge_mode_travel_overlay', 'Planning mode — 3-day travel capacity/equipment constraints', { planningMode: 'travel_constraints' }, {
       contextPatch: (c) => {
         c.constraints.maxTimeMinutes = 30;
         c.constraints.hasFreeWeights = false;
@@ -446,31 +532,25 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
     }),
   ];
 
-  // 12. Dynamic temporal trajectories: Acute vs Persistent
+  // 12. Explicit rolling-daily temporal trajectories
   const neutralReadiness = patchReadiness(base);
   const acuteAdverseDay1 = patchReadiness(base, { readiness: 3, fatigue: 8 }, badObjective);
   const persistentAdverse3d = patchReadiness(base, { readiness: 3, fatigue: 8, soreness: 7 }, badObjective);
+  const improvingDay1 = patchReadiness(base, { readiness: 5, fatigue: 6 }, { hrv_delta: -5, rhr_delta: 2 });
+  const freshReadiness = patchReadiness(base, goodSubjective, goodObjective);
 
   const temporalAcuteVsPersistent = [
-    neutral('judge_traj_neutral', 'Temporal trajectory — neutral baseline', { temporalTrajectory: 'neutral_14d' }),
-    variant(base, 'judge_traj_acute_adverse_day1', 'Temporal trajectory — acute 1-day adverse recovery', { temporalTrajectory: 'acute_day1_adverse' }, {
-      readinessForDate: (_date, dayIndex) => {
-        if (dayIndex === 0) return clone(acuteAdverseDay1);
-        return clone(neutralReadiness);
-      },
-    }),
-    variant(base, 'judge_traj_persistent_adverse_3d', 'Temporal trajectory — persistent 3-day adverse recovery', { temporalTrajectory: 'persistent_3d_adverse' }, {
-      readinessForDate: (_date, dayIndex) => {
-        if (dayIndex >= 0 && dayIndex <= 2) return clone(persistentAdverse3d);
-        return clone(neutralReadiness);
-      },
-    }),
-    variant(base, 'judge_traj_improving_trend', 'Temporal trajectory — improving recovery trend (Day 1 borderline to Day 3 fresh)', { temporalTrajectory: 'improving_trend' }, {
-      readinessForDate: (_date, dayIndex) => {
-        if (dayIndex === 0) return patchReadiness(base, { readiness: 5, fatigue: 6 }, { hrv_delta: -5, rhr_delta: 2 });
-        if (dayIndex === 1) return clone(neutralReadiness);
-        return patchReadiness(base, goodSubjective, goodObjective);
-      },
+    rollingDailyVariant(base, 'judge_traj_neutral', 'Temporal trajectory — neutral baseline', { temporalTrajectory: 'neutral_14d' }, () => clone(neutralReadiness)),
+    rollingDailyVariant(base, 'judge_traj_acute_adverse_day1', 'Temporal trajectory — acute 1-day adverse recovery', { temporalTrajectory: 'acute_day1_adverse' }, (_date, dayIndex) => (
+      dayIndex === 0 ? clone(acuteAdverseDay1) : clone(neutralReadiness)
+    )),
+    rollingDailyVariant(base, 'judge_traj_persistent_adverse_3d', 'Temporal trajectory — persistent 3-day adverse recovery', { temporalTrajectory: 'persistent_3d_adverse' }, (_date, dayIndex) => (
+      dayIndex <= 2 ? clone(persistentAdverse3d) : clone(neutralReadiness)
+    )),
+    rollingDailyVariant(base, 'judge_traj_improving_trend', 'Temporal trajectory — improving recovery trend (Day 1 borderline to Day 3 fresh)', { temporalTrajectory: 'improving_trend' }, (_date, dayIndex) => {
+      if (dayIndex === 0) return clone(improvingDay1);
+      if (dayIndex === 1) return clone(neutralReadiness);
+      return clone(freshReadiness);
     }),
   ];
 
@@ -503,8 +583,8 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
     { familyId: 'delivered_dose_variance', changedAxis: 'delivered-dose adherence and variance (3x17m threshold)', cases: deliveredDoseVariance },
     { familyId: 'concurrent_strength_endurance', changedAxis: 'concurrent strength-endurance interference', cases: concurrentStrength },
     { familyId: 'injury_constraints', changedAxis: 'structured injury guardrails and modality restrictions', cases: injuryConstraints },
-    { familyId: 'planning_modes_overlays', changedAxis: 'macro planning modes and travel constraints/overlays', cases: planningModesOverlays },
-    { familyId: 'temporal_acute_vs_persistent', changedAxis: 'dynamic temporal recovery trajectories (acute 1-day vs persistent 3-day vs improving trend)', cases: temporalAcuteVsPersistent },
+    { familyId: 'planning_modes_overlays', changedAxis: 'macro planning modes and travel capacity/equipment constraints', cases: planningModesOverlays },
+    { familyId: 'temporal_acute_vs_persistent', changedAxis: 'explicit rolling-daily recovery trajectories (acute 1-day vs persistent 3-day vs improving trend)', cases: temporalAcuteVsPersistent },
     { familyId: 'conflicting_tissue_vs_wearable', changedAxis: 'conflicting local tissue fatigue vs systemic wearable recovery signals', cases: conflictingTissueVsWearable },
   ];
 }
@@ -524,6 +604,7 @@ export async function buildPlanJudgeCorpus(options = {}) {
   try {
     const scenariosModule = await server.ssrLoadModule('/src/engine/simulation/scenarios.ts');
     const analyzeModule = await server.ssrLoadModule('/src/engine/simulation/analyze.ts');
+    const rulesModule = await server.ssrLoadModule('/src/engine/rules.ts');
     const templatesModule = await server.ssrLoadModule('/src/engine/templates.ts');
     const deliveredDoseModule = await server.ssrLoadModule('/src/engine/simulation/deliveredDoseScenarios.ts');
     const eventPresetsModule = await server.ssrLoadModule('/src/engine/eventPresets.ts');
@@ -541,13 +622,15 @@ export async function buildPlanJudgeCorpus(options = {}) {
     for (const family of families) {
       const cases = [];
       for (const caseDefinition of family.cases) {
-        const result = await runScenario(caseDefinition.scenario);
+        const result = caseDefinition.execution?.mode === 'rolling_daily'
+          ? await runRollingDailyScenario(caseDefinition, rulesModule, analyzeModule)
+          : await runScenario(caseDefinition.scenario);
         cases.push(packetFromResult(caseDefinition, result, templatesById));
       }
       familyPackets.push({
         familyId: family.familyId,
         changedAxis: family.changedAxis,
-        comparisonInstruction: 'Compare cases within this family. An unchanged plan is acceptable when the changed axis is not decision-relevant; hard safety, capacity constraints, and scheduled commitments must always be obeyed.',
+        comparisonInstruction: 'Compare cases within this family. An unchanged plan is acceptable when the changed axis is not decision-relevant; hard safety, capacity constraints, and scheduled commitments must always be obeyed. For simulationMode=rolling_daily, compare each plan day with the same-date readinessTrajectory observation.',
         cases,
       });
     }
@@ -565,7 +648,7 @@ export async function buildPlanJudgeCorpus(options = {}) {
     writeFileSync(resolve(outputDir, 'corpus.json'), `${JSON.stringify(corpus, null, 2)}\n`);
     writeFileSync(resolve(outputDir, 'families.jsonl'), `${familyPackets.map((family) => JSON.stringify(family)).join('\n')}\n`);
 
-    const prompt = `# AI plan judge instructions\n\nYou are an independent endurance-training plan evaluator. Engine rationale, fatigue tiers, rejection codes and utility are diagnostics, not ground truth. Evaluate the whole multi-day sequence. Scheduled events represented in fixedActivities own their event date and contribute reserved load; do not ask the planner to schedule another workout on top of them.\n\nScore each case 0-10 on safety_recovery_fit, goal_event_fit, sequencing, periodization_taper, preference_capacity_fit, robustness and overall, plus family sensitivity_quality.\n\nCalibration rules:\n- Sensitivity does not require every perturbation to change the plan. Mild isolated variation (including ~1 SD HRV/RHR movement) can legitimately leave a good plan unchanged.\n- Low motivation alone is not a physiological safety signal.\n- Easy training yesterday does not make quality work today unsafe; judge actual delivered load and residual fatigue.\n- Judge taper by workload/volume reduction with appropriate intensity/specificity, not rest-day count alone.\n- Preferences are soft unless encoded as constraints; safety restrictions and time/equipment availability are hard. Never propose violating a hard capacity/equipment restriction as the fix.\n- Criterium/surge events should emphasize repeated surges/VO2/sprint qualities, while long gran-fondo demands emphasize sustained aerobic durability/fatigue resistance.\n- More recovery is not automatically better; more training is not automatically better.\n- Prefer repeated family patterns over one-off threshold tuning.\n\nReturn exactly one JSON object matching judge-response-schema.json. All flags, suggestedChanges and familyAssessment list fields must be JSON arrays of strings.\n`;
+    const prompt = `# AI plan judge instructions\n\nYou are an independent endurance-training plan evaluator. Engine rationale, fatigue tiers, rejection codes and utility are diagnostics, not ground truth. Evaluate the whole multi-day sequence. Scheduled events represented in fixedActivities own their event date and contribute reserved load; do not ask the planner to schedule another workout on top of them. Cases with simulationMode=rolling_daily include an explicit readinessTrajectory; judge each plan day against the same-date measured readiness instead of extrapolating Day 1 state across the horizon.\n\nScore each case 0-10 on safety_recovery_fit, goal_event_fit, sequencing, periodization_taper, preference_capacity_fit, robustness and overall, plus family sensitivity_quality.\n\nCalibration rules:\n- Sensitivity does not require every perturbation to change the plan. Mild isolated variation (including ~1 SD HRV/RHR movement) can legitimately leave a good plan unchanged.\n- Low motivation alone is not a physiological safety signal.\n- Easy training yesterday does not make quality work today unsafe; judge actual delivered load and residual fatigue.\n- Judge taper by workload/volume reduction with appropriate intensity/specificity, not rest-day count alone.\n- Preferences are soft unless encoded as constraints; safety restrictions and time/equipment availability are hard. Never propose violating a hard capacity/equipment restriction as the fix.\n- Criterium/surge events should emphasize repeated surges/VO2/sprint qualities, while long gran-fondo demands emphasize sustained aerobic durability/fatigue resistance.\n- More recovery is not automatically better; more training is not automatically better.\n- Prefer repeated family patterns over one-off threshold tuning.\n\nReturn exactly one JSON object matching judge-response-schema.json. All flags, suggestedChanges and familyAssessment list fields must be JSON arrays of strings.\n`;
     writeFileSync(resolve(outputDir, 'judge-prompt.md'), prompt);
 
     const responseSchema = {
