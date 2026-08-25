@@ -36,6 +36,7 @@ export function generateSelfTestResponseSchema(suiteId, calibrationCases) {
   }
 
   const planIds = [...new Set(calibrationCases.flatMap((item) => (item.plans ?? []).map((plan) => plan.planId)))];
+  const evidenceReferenceItems = { type: 'string', pattern: '^/(inputContext|plans|comparison|focusPlanId)(/.*)?$' };
   const evidenceClaim = {
     type: 'object',
     additionalProperties: false,
@@ -44,7 +45,18 @@ export function generateSelfTestResponseSchema(suiteId, calibrationCases) {
       text: { type: 'string', minLength: 1 },
       evidenceReferences: {
         type: 'array',
-        items: { type: 'string', pattern: '^/(inputContext|plans|comparison|focusPlanId)(/.*)?$' },
+        items: evidenceReferenceItems,
+      },
+    },
+  };
+  const supportedObservationClaim = {
+    ...evidenceClaim,
+    properties: {
+      ...evidenceClaim.properties,
+      evidenceReferences: {
+        type: 'array',
+        minItems: 1,
+        items: evidenceReferenceItems,
       },
     },
   };
@@ -101,12 +113,12 @@ export function generateSelfTestResponseSchema(suiteId, calibrationCases) {
             evidenceReferences: {
               type: 'array',
               minItems: 1,
-              items: { type: 'string', pattern: '^/(inputContext|plans|comparison|focusPlanId)(/.*)?$' },
+              items: evidenceReferenceItems,
             },
             observations: {
               type: 'array',
               minItems: 1,
-              items: evidenceClaim,
+              items: supportedObservationClaim,
             },
             hypotheses: {
               type: 'array',
