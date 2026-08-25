@@ -83,6 +83,7 @@ const templateSequenceDistance = (left, right) => {
   return different / n;
 };
 const templateCount = (item, templateId) => (item.plan ?? []).filter((day) => day.session?.templateId === templateId).length;
+const trajectory = (item) => Array.isArray(item.input?.readinessTrajectory) ? item.input.readinessTrajectory : [];
 
 const runningRestricted = required('judge_injury_running_restricted');
 for (const day of runningRestricted.plan) {
@@ -107,7 +108,7 @@ if (compactRaceSpecific) {
 }
 
 const travel = required('judge_mode_travel_overlay');
-fail(Array.isArray(travel.input.authoredPlanBlocks) && travel.input.authoredPlanBlocks.length === 1, 'Travel case lost its authored plan block during scenario construction.');
+fail(travel.input.authoredPlanBlocks == null, 'Travel case advertises an authored plan overlay that the canonical simulation path does not execute.');
 for (const day of travel.plan.slice(0, 3)) {
   fail((day.session.requiredEquipment ?? []).length === 0, `${day.date}: travel case selected equipment-dependent ${day.session.templateId}`);
   fail(['indoor', 'either'].includes(day.session.environment), `${day.date}: travel case selected non-indoor ${day.session.templateId}`);
@@ -146,20 +147,48 @@ const granACompactCount = templateCount(granA, 'end_crit_surges_01');
 fail(critACompactCount > 0, 'A-priority criterium case never selects the compact criterium surge template.');
 fail(granACompactCount === 0, `A-priority gran-fondo case selected the compact criterium surge template ${granACompactCount} time(s).`);
 
-// Dynamic temporal invariants
+// Dynamic temporal invariants: these are explicit daily observations, not weekly anchors.
+const neutralTrajectory = required('judge_traj_neutral');
 const acuteAdverse = required('judge_traj_acute_adverse_day1');
+const persistentAdverse = required('judge_traj_persistent_adverse_3d');
+const improving = required('judge_traj_improving_trend');
+for (const item of [neutralTrajectory, acuteAdverse, persistentAdverse, improving]) {
+  fail(item.input.simulationMode === 'rolling_daily', `${item.input.caseId}: temporal case is not marked rolling_daily.`);
+  fail(trajectory(item).length === 14, `${item.input.caseId}: expected 14 daily readiness observations, got ${trajectory(item).length}.`);
+  fail((item.plan ?? []).length === 14, `${item.input.caseId}: expected 14 rolling daily decisions, got ${item.plan?.length ?? 0}.`);
+  fail(trajectory(item).every((day, index) => day.date === item.plan?.[index]?.date), `${item.input.caseId}: readiness trajectory dates do not align one-to-one with plan dates.`);
+}
+
+const acuteTrajectory = trajectory(acuteAdverse);
+fail(acuteTrajectory[0]?.subjective?.readiness === 3 && acuteTrajectory[0]?.objective?.hrv_delta === -17, 'Acute trajectory Day 1 is not the intended adverse observation.');
+fail(acuteTrajectory[1]?.subjective?.readiness === 6 && acuteTrajectory[1]?.objective?.hrv_delta === 0, 'Acute trajectory did not recover to neutral on Day 2.');
 const day1Cost = acuteAdverse.plan[0]?.session?.systemicCost ?? 1.0;
 fail(day1Cost <= 0.4 || ['Rest', 'Mobility/Recovery'].includes(acuteAdverse.plan[0]?.session?.category), 'Acute 1-day adverse recovery case did not scale back Day 1 load.');
 
-const persistentAdverse = required('judge_traj_persistent_adverse_3d');
+const persistentTrajectory = trajectory(persistentAdverse);
 for (let d = 0; d < 3; d += 1) {
+  fail(persistentTrajectory[d]?.subjective?.readiness === 3 && persistentTrajectory[d]?.objective?.hrv_delta === -17, `Persistent trajectory Day ${d + 1} is not adverse.`);
   fail(persistentAdverse.plan[d]?.session?.category !== 'Hard Endurance' && persistentAdverse.plan[d]?.session?.category !== 'Race-Specific Endurance', `Persistent 3-day adverse case scheduled high-intensity endurance on day ${d + 1} (${persistentAdverse.plan[d]?.session?.templateId}).`);
 }
+fail(persistentTrajectory[3]?.subjective?.readiness === 6 && persistentTrajectory[3]?.objective?.hrv_delta === 0, 'Persistent trajectory did not return to neutral on Day 4.');
 fail(['Rest', 'Mobility/Recovery'].includes(persistentAdverse.plan[0]?.session?.category), 'Persistent 3-day adverse Day 1 must be Rest or Recovery.');
+
+const improvingTrajectory = trajectory(improving);
+fail(improvingTrajectory[0]?.subjective?.readiness === 5 && improvingTrajectory[0]?.objective?.hrv_delta === -5, 'Improving trajectory Day 1 is not borderline.');
+fail(improvingTrajectory[1]?.subjective?.readiness === 6 && improvingTrajectory[1]?.objective?.hrv_delta === 0, 'Improving trajectory Day 2 is not neutral.');
+fail(improvingTrajectory[2]?.subjective?.readiness === 9 && improvingTrajectory[2]?.objective?.hrv_delta === 8, 'Improving trajectory Day 3 is not fresh.');
 
 const soreLegs = required('judge_conflict_sore_legs_great_hrv');
 const soreLegsDay1 = soreLegs.plan[0];
-fail(soreLegsDay1 && (!(soreLegsDay1.session.safetyTags ?? []).includes('avoid_heavy_lower_body') || (soreLegsDay1.session.costProfile?.lowerBody ?? 0) <= 0.6), 'Sore legs case scheduled heavy lower-body loading on day 1 despite muscle soreness.');
+fail(Boolean(soreLegsDay1)
+  && !(soreLegsDay1.session.safetyTags ?? []).includes('avoid_heavy_lower_body')
+  && (soreLegsDay1.session.costProfile?.lowerBody ?? 0) <= 0.6,
+'Sore legs case scheduled heavy lower-body loading on day 1 despite muscle soreness.');
+
+const systemicCollapse = required('judge_conflict_fresh_legs_terrible_hrv').plan[0];
+fail(Boolean(systemicCollapse)
+  && ((systemicCollapse.session.systemicCost ?? 1) <= 0.4 || ['Rest', 'Mobility/Recovery'].includes(systemicCollapse.session.category)),
+'Fresh legs with severe systemic wearable collapse did not scale back Day 1 systemic load.');
 
 if (failures.length > 0) {
   console.error('Plan-judge invariant failures:');
