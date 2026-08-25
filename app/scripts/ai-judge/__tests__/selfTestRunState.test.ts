@@ -9,19 +9,20 @@ import {
 } from '../selfTestRunState.mjs';
 
 function localConfig(overrides = {}) {
+  const { local: localOverrides = {}, cloud: cloudOverrides = {}, ...topLevelOverrides } = overrides;
   return {
     provider: 'local',
     thinkingEnabled: true,
+    ...topLevelOverrides,
     local: {
       endpoint: 'http://localhost:11434/api/chat',
       isOllama: true,
       numCtx: 32768,
       numPredict: 16384,
       timeoutMs: 600000,
-      ...(overrides.local ?? {}),
+      ...localOverrides,
     },
-    cloud: { timeoutMs: 180000 },
-    ...overrides,
+    cloud: { timeoutMs: 180000, ...cloudOverrides },
   };
 }
 
@@ -36,6 +37,8 @@ function manifest(overrides = {}) {
     runtimeSchemaSha256: 'runtime-schema',
     provider: 'local',
     model: 'model',
+    modelDigest: 'digest',
+    quantization: 'Q4_K_M',
     samples: 3,
     baseSeed: 42,
     seedStrategy: 'derived',
@@ -76,9 +79,13 @@ describe('AI judge self-test run state', () => {
 
   it('fails closed when any immutable run-provenance field changes', () => {
     const previous = manifest();
-    const current = manifest({ inferenceSha256: 'different-runtime' });
-    expect(selfTestManifestMismatches(previous, current)).toEqual(['inferenceSha256']);
-    expect(() => assertCompatibleSelfTestManifest(previous, current)).toThrow(/immutable provenance mismatch: inferenceSha256/);
+    const changedRuntime = manifest({ inferenceSha256: 'different-runtime' });
+    expect(selfTestManifestMismatches(previous, changedRuntime)).toEqual(['inferenceSha256']);
+    expect(() => assertCompatibleSelfTestManifest(previous, changedRuntime)).toThrow(/immutable provenance mismatch: inferenceSha256/);
+
+    const changedDigest = manifest({ modelDigest: 'new-digest' });
+    expect(selfTestManifestMismatches(previous, changedDigest)).toEqual(['modelDigest']);
+    expect(() => assertCompatibleSelfTestManifest(previous, changedDigest)).toThrow(/immutable provenance mismatch: modelDigest/);
     expect(() => assertCompatibleSelfTestManifest(previous, previous)).not.toThrow();
   });
 });
