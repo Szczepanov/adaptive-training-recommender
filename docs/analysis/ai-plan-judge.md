@@ -140,6 +140,89 @@ To move beyond opaque single-number family sensitivity grades and measure positi
   - Automatically runs $(A, B)$ and reversed $(B, A)$ pairs with derived seeds.
   - Records the **Position Bias Index** ($0.0 = \text{no detected slot preference}, 1.0 = \text{every pair exhibits slot preference}$) and the **Order Instability Index** ($0.0 = \text{fully swap-consistent}, 1.0 = \text{every pair changes on swap}$) in `artifacts/ai-plan-judge/latest/judge-stability.json`. The swap check measures these effects; it does not remove model bias.
 
+### Judge self-test / calibration controls
+
+The planner sensitivity corpus cannot establish whether the evaluator itself is reliable. A
+separate frozen suite under `app/scripts/fixtures/ai-judge-calibration/` contains 22 clear,
+high-information controls across hard constraints, correct non-reaction, deliberate
+overreaction/underreaction, event specificity, adversarial bias, temporal semantics, and
+root-cause discipline.
+
+Run the current local judge with three deterministic samples:
+
+```bash
+npm run judge:self-test
+```
+
+Resume a compatible partial run:
+
+```bash
+npm run judge:self-test:resume
+```
+
+For an explicitly selected alternative evaluator, use the provider-neutral wrapper and a
+distinct run label:
+
+```bash
+npm run judge:self-test:run -- --provider local --model <ollama-model> --samples 3 --run-label local-q6
+npm run judge:self-test:run -- --provider openai --model <reference-model> --samples 3 --run-label cloud-reference
+```
+
+The self-test writes to `artifacts/ai-plan-judge/self-test/<run-label>/`:
+
+- `self-test-manifest.json` binds fixture, expectation, case-set, prompt, runtime-schema,
+  provider/model, seed, sample, batch, and thinking provenance;
+- `self-test-attempts.jsonl` records every accepted/rejected attempt and inference telemetry;
+- `self-test-samples.jsonl` preserves accepted raw batch samples for resume/reproduction;
+- `self-test-summary.json` and `self-test-summary.md` contain frozen-expectation accuracy,
+  quadratic weighted kappa, order consistency, test/retest agreement, misleading-diagnostic
+  false positives, evidence validity/coverage, unsupported claims, and token/runtime evidence.
+
+The model sees factual packets only. Expected labels and fixture categories are separate, and
+`sourceDiagnostics` is structurally removed from blind primary packets. Every accepted
+observation cites a JSON Pointer that resolves against the exact packet supplied. Hypotheses
+must remain explicitly speculative; numeric parameter candidates fail controls that contain no
+repeated calibration evidence.
+
+These metrics are report-only. The initial observed distribution must be reviewed before any
+merge threshold is proposed.
+
+Optional cloud-cost comparison accepts explicit pricing metadata on a self-test run:
+
+```bash
+npm run judge:self-test:run -- --provider openai --model <reference-model> --samples 3 \
+  --run-label cloud-reference --input-cost-per-million <usd> --output-cost-per-million <usd>
+```
+
+When pricing is omitted, the reference audit reports cost as unavailable rather than guessing.
+
+### Periodic reference/jury audit
+
+Reference evaluation is opt-in and consumes completed self-test runs; it never calls additional
+models implicitly. After producing two or more runs against the same frozen contract:
+
+```bash
+npm run judge:reference-audit -- \
+  --run artifacts/ai-plan-judge/self-test/local-q4 \
+  --run artifacts/ai-plan-judge/self-test/local-q6 \
+  --run artifacts/ai-plan-judge/self-test/cloud-reference
+```
+
+The comparator fails closed when suite, fixture/expectation, prompt, response/runtime schema,
+case set, sample/seed policy, or batch contract differs. Provider, model, digest, quantization,
+and thinking mode are retained as the intended evaluator comparison axes. Output lands in
+`artifacts/ai-plan-judge/reference-audit/latest/` and compares frozen-control agreement,
+stability, order bias, misleading-diagnostic false positives, evidence discipline, token use,
+and runtime without producing a hidden composite rank or automatic winner.
+
+A model difference remains a comparability break for normal `judge:diff`. A favorable
+reference audit does not automatically switch the model, migrate the judge response contract,
+or update `docs/analysis/plan-judge-baseline.json`.
+
+The initial expected ranges/classes are repository-owned review inputs, not a claim that a
+human expert has already certified every case. Human/domain review remains required before
+turning any metric into a consequential gate.
+
 ### Native structured outputs & runtime schema
 
 For Ollama and OpenAI-compatible providers, the runner dynamically compiles a per-family JSON Schema containing:
