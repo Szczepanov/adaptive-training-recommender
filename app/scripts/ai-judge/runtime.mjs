@@ -1,3 +1,8 @@
+export function ollamaModelsEquivalent(left, right) {
+  const normalize = (model) => model?.endsWith(':latest') ? model.slice(0, -':latest'.length) : model;
+  return normalize(left) === normalize(right);
+}
+
 export async function preflightOllama(config, log) {
   if (config.provider !== 'local' || !config.local.isOllama) return null;
   try {
@@ -9,7 +14,9 @@ export async function preflightOllama(config, log) {
     if (tagsRes.ok) {
       const data = await tagsRes.json();
       const models = data.models ?? [];
-      const match = models.find((m) => m.name === config.model || m.model === config.model);
+      const match = models.find((m) =>
+        ollamaModelsEquivalent(m.name, config.model) || ollamaModelsEquivalent(m.model, config.model)
+      );
       if (match) {
         log(`✓ Found local Ollama model '${config.model}' (digest: ${match.digest?.slice(0, 12) ?? 'unknown'}, size: ${Math.round((match.size ?? 0) / 1024 / 1024)}MB)`);
         return {
@@ -40,7 +47,7 @@ export async function cleanupOllamaMemory(config, log) {
     for (const loaded of data.models ?? []) {
       const loadedModel = loaded.name || loaded.model;
       // Do not unload target model if it's already loaded!
-      if (!loadedModel || loadedModel === config.model) continue;
+      if (!loadedModel || ollamaModelsEquivalent(loadedModel, config.model)) continue;
       try {
         await fetch(`${origin}/api/generate`, {
           method: 'POST',

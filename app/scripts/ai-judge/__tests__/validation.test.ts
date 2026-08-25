@@ -98,6 +98,7 @@ describe('AI Judge Validation and Error Taxonomy', () => {
     expect(classifyError(new Error('502 Bad Gateway'))).toBe('provider_5xx');
     expect(classifyError(new Error('ETIMEDOUT connection timed out'))).toBe('timeout');
     expect(classifyError(new Error('SyntaxError: Unexpected token'))).toBe('structured_output_invalid');
+    expect(classifyError(new Error('400 JSON schema conversion failed'))).toBe('configuration_error');
     expect(classifyError(new Error('overall must be a finite number'))).toBe('semantic_validation_invalid');
   });
 

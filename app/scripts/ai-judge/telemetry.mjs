@@ -22,6 +22,8 @@ export function appendAttemptRecord(attemptsPath, record) {
   const cleanRecord = {
     familyId: record.familyId,
     sampleIndex: record.sampleIndex ?? 0,
+    ...(record.batchIndex != null ? { batchIndex: record.batchIndex } : {}),
+    ...(record.seed != null ? { seed: record.seed } : {}),
     attempt: record.attempt ?? 1,
     status: record.status, // 'accepted' | 'rejected'
     errorCategory: record.errorCategory ?? null,

@@ -182,14 +182,14 @@ export function classifyError(error) {
   if (/(?:econnreset|econnrefused|fetch failed|network error|socket hang up)/i.test(msg)) {
     return 'transient_network';
   }
+  if (/(?:400|bad request|unsupported|not supported|invalid model|model not found|json schema conversion failed)/i.test(msg)) {
+    return 'configuration_error';
+  }
   if (/(?:json|empty response|not a complete json|unexpected token)/i.test(msg)) {
     return 'structured_output_invalid';
   }
   if (/(?:must be a|required|unexpected caseid|missing case|cardinality|synthesized)/i.test(msg)) {
     return 'semantic_validation_invalid';
-  }
-  if (/(?:400|bad request|unsupported|not supported|invalid model|model not found)/i.test(msg)) {
-    return 'configuration_error';
   }
   return 'semantic_validation_invalid';
 }

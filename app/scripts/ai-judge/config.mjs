@@ -138,7 +138,9 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
   const localQuickModel = env.LOCAL_JUDGE_QUICK_MODEL || env.OLLAMA_QUICK_MODEL;
   const localStandardModel = env.LOCAL_JUDGE_MODEL || env.OLLAMA_MODEL;
   const defaultModels = {
-    local: (isQuick ? localQuickModel : null) || localStandardModel || 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M',
+    local: isQuick
+      ? localQuickModel || 'hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF'
+      : localStandardModel || 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M',
     deepseek: isQuick ? 'deepseek-v4-flash' : 'deepseek-v4-pro',
     gemini: isQuick ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash',
     openai: 'gpt-4o',
