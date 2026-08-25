@@ -114,11 +114,11 @@ self-test-summary.md
 
 For providers that report whether native structured output was enforced, the summary also records `schemaEnforcedResponses`, `schemaFallbackResponses`, and `schemaEnforcementRate`. JavaScript semantic validation still applies when a provider falls back from native schema enforcement.
 
-## Interpreting evidence validity
+## Interpreting accepted evidence references
 
-`evidenceReferenceValidity` describes accepted self-test evidence. Accepted responses have already passed JSON-Pointer validation against the exact packet supplied to the evaluator, so this metric is an invariant of accepted rows rather than a measure of how often the model initially emitted malformed references.
+Accepted responses have already passed JSON-Pointer validation against the exact packet supplied to the evaluator. The summary therefore reports the number of distinct accepted evidence references, rather than presenting this acceptance invariant as a measured validity rate.
 
-Use `self-test-attempts.jsonl` to understand retry/rejection behavior. Do not interpret 1.000 accepted-reference validity as proof that the model never produced an invalid reference on a rejected attempt.
+Use `self-test-attempts.jsonl` to understand retry/rejection behavior. An accepted-reference count is not a measure of how often the model initially emitted malformed references.
 
 ## Reference/jury audit
 
@@ -144,7 +144,7 @@ Provider/model differences are allowed because they are the purpose of a referen
 
 If multiple axes change, treat the comparison as confounded. For example, a standard 9B/thinking-on run versus a quick 4B/thinking-off run can characterize the two evaluator configurations, but it cannot attribute the difference to model size alone.
 
-The report includes native-schema enforcement rate and accepted inference duration when available, alongside calibration agreement, repeatability, bias, evidence discipline, tokens, and cost.
+The report includes native-schema enforcement rate, accepted evidence-reference counts, and accepted inference duration when available, alongside calibration agreement, repeatability, bias, evidence discipline, tokens, and cost.
 
 ## What the audit must not do
 

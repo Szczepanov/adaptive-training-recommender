@@ -136,7 +136,8 @@ describe('AI judge self-test calibration contract', () => {
     expect(metrics.rates.fullControlPassRate).toBe(1);
     expect(metrics.rates.absoluteRangeAccuracy).toBe(1);
     expect(metrics.quadraticWeightedKappa).toBe(1);
-    expect(metrics.rates.evidenceReferenceValidity).toBe(1);
+    expect(metrics.rates).not.toHaveProperty('evidenceReferenceValidity');
+    expect(metrics.counts.evidenceReferences).toBeGreaterThan(0);
     expect(metrics.counts.forbiddenClaimViolations).toBe(0);
     expect(metrics.counts.misleadingDiagnosticFalsePositives).toBe(0);
     expect(metrics.rates.orderConsistency).toBe(1);
@@ -159,6 +160,17 @@ describe('AI judge self-test calibration contract', () => {
     expect(metrics.counts.misleadingDiagnosticFalsePositives).toBe(1);
     expect(metrics.counts.forbiddenClaimViolations).toBeGreaterThanOrEqual(2);
     expect(metrics.counts.numericParameterCandidateViolations).toBe(1);
+  });
+
+  it('does not allow an ancestor pointer to satisfy a required evidence fact', () => {
+    const raw = makePerfectResult(fixtures);
+    const result = raw.results.find((item) => item.caseId === 'cal_hard_running_restriction');
+    result.evidenceReferences = ['/inputContext'];
+    result.observations = [{ text: 'The context is cited only at its root.', evidenceReferences: ['/inputContext'] }];
+    const validated = validateSelfTestResponse(raw, fixtures.suiteId, fixtures.cases);
+    const metrics = computeSelfTestMetrics([{ sampleIndex: 0, result: validated }], fixtures.cases, fixtures.expected);
+    expect(metrics.counts.requiredEvidencePasses).toBe(metrics.counts.predictions - 1);
+    expect(metrics.rates.requiredEvidenceCoverage).toBeLessThan(1);
   });
 
   it('aggregates repeated samples with median, MAD, and categorical agreement', () => {

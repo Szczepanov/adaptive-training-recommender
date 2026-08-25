@@ -411,8 +411,8 @@ export function computeSelfTestMetrics(sampleResponses, calibrationCases, expect
         ...result.numericParameterCandidates.flatMap((item) => item.evidenceReferences),
       ]);
       evidenceReferenceCount += allReferences.size;
+      // An ancestor reference is too coarse to show that the required fact was read.
       const referenceCovers = (actual, required) => actual === required
-        || required.startsWith(`${actual}/`)
         || actual.startsWith(`${required}/`);
       const requiredEvidencePass = (rule.mustReferenceAnyOf ?? []).every((group) => group.some((pointer) => [...allReferences].some((actual) => referenceCovers(actual, pointer))));
       requiredEvidencePasses += Number(requiredEvidencePass);
@@ -507,7 +507,6 @@ export function computeSelfTestMetrics(sampleResponses, calibrationCases, expect
       preferredPlanAccuracy: rate(preferencePasses, predictionCount),
       diagnosticAssessmentAccuracy: rate(diagnosticPasses, predictionCount),
       fullControlPassRate: rate(fullPasses, predictionCount),
-      evidenceReferenceValidity: rate(evidenceReferenceCount, evidenceReferenceCount),
       requiredEvidenceCoverage: rate(requiredEvidencePasses, predictionCount),
       misleadingDiagnosticFalsePositiveRate: rate(misleadingDiagnosticFalsePositives, misleadingDiagnosticControls),
       orderConsistency: rate(orderConsistentPairs, orderPairs),
@@ -545,7 +544,7 @@ export function renderSelfTestMarkdown(summary) {
     `| Order consistency | ${value(metrics.rates.orderConsistency)} | ${metrics.counts.orderConsistentPairs}/${metrics.counts.orderPairs} |`,
     `| Retest reaction agreement | ${value(metrics.rates.retestReactionAgreement)} | ${metrics.counts.retestReactionAgreements}/${metrics.counts.retestPairs} |`,
     `| Misleading-diagnostic false-positive rate | ${value(metrics.rates.misleadingDiagnosticFalsePositiveRate)} | ${metrics.counts.misleadingDiagnosticFalsePositives}/${metrics.counts.misleadingDiagnosticControls} |`,
-    `| Evidence-reference validity | ${value(metrics.rates.evidenceReferenceValidity)} | ${metrics.counts.evidenceReferences}/${metrics.counts.evidenceReferences} accepted references |`,
+    `| Accepted evidence references | ${metrics.counts.evidenceReferences} | raw count |`,
     `| Required evidence coverage | ${value(metrics.rates.requiredEvidenceCoverage)} | ${metrics.counts.requiredEvidencePasses}/${metrics.counts.predictions} |`,
     `| Forbidden unsupported claims | ${metrics.counts.forbiddenClaimViolations} | raw count |`,
     `| Forbidden numeric parameter candidates | ${metrics.counts.numericParameterCandidateViolations} | raw count |`,

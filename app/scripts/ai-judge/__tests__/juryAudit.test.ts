@@ -40,11 +40,10 @@ function summary(runLabel, model, overrides = {}) {
         retestAbsoluteAgreement: 0.8,
         retestReactionAgreement: 0.9,
         misleadingDiagnosticFalsePositiveRate: 0,
-        evidenceReferenceValidity: 1,
         requiredEvidenceCoverage: 1,
       },
       quadraticWeightedKappa: 0.82,
-      counts: { forbiddenClaimViolations: 0, numericParameterCandidateViolations: 0 },
+      counts: { evidenceReferences: 10, forbiddenClaimViolations: 0, numericParameterCandidateViolations: 0 },
     },
     telemetry: {
       promptTokens: 100,
