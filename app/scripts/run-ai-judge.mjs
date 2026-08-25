@@ -67,6 +67,7 @@ const runIdentity = {
   baseSeed: config.baseSeed,
   seedStrategy: config.seedStrategy,
   thinkingEnabled: config.thinkingEnabled,
+  concurrency: config.concurrency,
 };
 
 const cachedSamplesByFamily = new Map();
@@ -88,7 +89,8 @@ function compatibleManifest(prev) {
     && prev.samples === runIdentity.samples
     && prev.baseSeed === runIdentity.baseSeed
     && prev.seedStrategy === runIdentity.seedStrategy
-    && prev.thinkingEnabled === runIdentity.thinkingEnabled;
+    && prev.thinkingEnabled === runIdentity.thinkingEnabled
+    && prev.concurrency === runIdentity.concurrency;
 }
 
 let previousManifest = null;
@@ -116,7 +118,7 @@ if (reuseCache) {
         });
       }
     } else {
-      log('Existing judge cache ignored because corpus/prompt/schema/model/provider provenance does not match this run.');
+      log('Existing judge cache ignored because corpus/prompt/schema/model/provider/runtime provenance does not match this run.');
       reuseCache = false;
     }
   } catch (error) {
@@ -151,6 +153,7 @@ log(`📦 Packet version: ${config.packetVersion} ${config.packetVersion === 'v2
 if (config.isPairwise) log(`📏 Pairwise rubric scale: ${config.rubricScale}`);
 if (config.isPairwise) log(`⚖️ Pairwise sensitivity: enabled${config.checkPositionBias ? ' (with order-swap position bias check)' : ''}`);
 log(`🎲 Samples: ${config.samples} (seed: ${config.baseSeed}, strategy: ${config.seedStrategy})`);
+log(`⚙️ Family concurrency: ${config.concurrency}`);
 if (config.withDiagnosticsAudit) log(`🔬 Diagnostic audit pass: enabled (-> judge-diagnostic-audit.jsonl)`);
 if (config.provider === 'local') {
   log(`🔧 Endpoint: ${config.local.endpoint}`);
@@ -339,6 +342,17 @@ async function evaluateFamily(family, index) {
   return { index, aggregateResult, stability };
 }
 
+function persistOrderedScores() {
+  const currentEvaluatedRows = [];
+  for (let i = 0; i < familyRows.length; i += 1) {
+    if (evaluatedMap.has(i)) currentEvaluatedRows.push(evaluatedMap.get(i));
+  }
+  const scoresContent = currentEvaluatedRows.length > 0
+    ? `${currentEvaluatedRows.map((row) => JSON.stringify(row)).join('\n')}\n`
+    : '';
+  atomicWriteFile(scoresPath, scoresContent);
+}
+
 const pendingIndices = [];
 for (let i = 0; i < familyRows.length; i += 1) {
   if (!evaluatedMap.has(i)) {
@@ -351,8 +365,9 @@ if (pendingIndices.length > 0) {
   log(`Executing ${pendingIndices.length} families with concurrency = ${concurrencyLimit}...`);
 }
 
+let fatalFailure = null;
 async function worker() {
-  while (pendingIndices.length > 0) {
+  while (!fatalFailure && pendingIndices.length > 0) {
     const nextIdx = pendingIndices.shift();
     if (nextIdx === undefined) break;
     const family = familyRows[nextIdx];
@@ -360,26 +375,27 @@ async function worker() {
       const outcome = await evaluateFamily(family, nextIdx);
       evaluatedMap.set(nextIdx, outcome.aggregateResult);
       stabilityMap.set(nextIdx, outcome.stability);
-
-      // Write atomically sorted by original family index
-      const currentEvaluatedRows = [];
-      for (let i = 0; i < familyRows.length; i += 1) {
-        if (evaluatedMap.has(i)) {
-          currentEvaluatedRows.push(evaluatedMap.get(i));
-        }
-      }
-      const scoresContent = currentEvaluatedRows.map((r) => JSON.stringify(r)).join('\n') + '\n';
-      atomicWriteFile(scoresPath, scoresContent);
+      persistOrderedScores();
     } catch (error) {
+      if (!fatalFailure) fatalFailure = { familyId: family.familyId, error };
       console.error(`\n[${getTimestamp()}] ❌ Failed to judge family '${family.familyId}': ${error instanceof Error ? error.message : String(error)}`);
-      console.error(`Partial validated output is preserved at ${scoresPath}; rerun without --fresh to resume.`);
-      process.exit(1);
+      // Do not terminate the process here: other workers may already hold validated results.
+      // They are allowed to finish and persist before the run fails as a whole.
+      break;
     }
   }
 }
 
 const workers = Array.from({ length: Math.min(concurrencyLimit, pendingIndices.length || 1) }, () => worker());
 await Promise.all(workers);
+persistOrderedScores();
+
+if (fatalFailure) {
+  console.error(`Partial validated output is preserved at ${scoresPath}; rerun with --resume using the same concurrency and run identity.`);
+  throw fatalFailure.error instanceof Error
+    ? fatalFailure.error
+    : new Error(`AI judge failed in family '${fatalFailure.familyId}': ${String(fatalFailure.error)}`);
+}
 
 const evaluatedRows = [];
 const allStabilities = [];
@@ -414,6 +430,7 @@ const completedManifest = {
     requestedNumCtx: config.local.numCtx,
     requestedNumPredict: config.local.numPredict,
     thinkingEnabled: config.thinkingEnabled,
+    concurrency: config.concurrency,
     temperature: 0.1,
     maxContextUtilization,
   },
