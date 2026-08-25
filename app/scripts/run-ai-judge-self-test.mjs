@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 import { deriveSampleSeed } from './ai-judge/aggregate.mjs';
@@ -17,6 +17,12 @@ import {
   validateSelfTestResponse,
 } from './ai-judge/selfTest.mjs';
 import {
+  assertCompatibleSelfTestManifest,
+  buildSelfTestInferenceProfile,
+  hashSelfTestInferenceProfile,
+  sanitizeSelfTestRunLabel,
+} from './ai-judge/selfTestRunState.mjs';
+import {
   SELF_TEST_RESPONSE_SCHEMA,
   SELF_TEST_SUMMARY_SCHEMA,
   generateSelfTestResponseSchema,
@@ -32,13 +38,6 @@ function log(message) {
   console.log(`[${new Date().toLocaleTimeString('en-GB', { hour12: false })}] ${message}`);
 }
 
-function safeRunLabel(rawLabel, provider, model) {
-  const fallback = `${provider}-${model}`;
-  const label = String(rawLabel || fallback).toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '');
-  if (!label) throw new Error('Self-test run label resolves to an empty path component.');
-  return label.slice(0, 120);
-}
-
 function optionalNonNegativeNumber(rawValue, field) {
   if (rawValue == null || rawValue === '') return null;
   const value = Number(rawValue);
@@ -46,10 +45,18 @@ function optionalNonNegativeNumber(rawValue, field) {
   return value;
 }
 
+function rate(numerator, denominator) {
+  return denominator === 0 ? null : Math.round((numerator / denominator) * 10000) / 10000;
+}
+
 const argv = process.argv.slice(2);
 const config = resolveJudgeConfig(argv);
 const batchSize = positiveInt(parseCliArg(argv, 'batch-size') || process.env.JUDGE_SELF_TEST_BATCH_SIZE, 6);
-const runLabel = safeRunLabel(parseCliArg(argv, 'run-label') || process.env.JUDGE_SELF_TEST_RUN_LABEL, config.provider, config.model);
+const runLabel = sanitizeSelfTestRunLabel(
+  parseCliArg(argv, 'run-label') || process.env.JUDGE_SELF_TEST_RUN_LABEL,
+  config.provider,
+  config.model
+);
 const inputCostPerMillion = optionalNonNegativeNumber(
   parseCliArg(argv, 'input-cost-per-million') || process.env.JUDGE_INPUT_COST_PER_MILLION,
   'input-cost-per-million'
@@ -78,6 +85,8 @@ for (let index = 0; index < fixtures.cases.length; index += batchSize) {
   batches.push({ batchIndex: batches.length, cases, schema });
 }
 
+const preflight = await preflightOllama(config, log);
+const inference = buildSelfTestInferenceProfile(config);
 const runIdentity = {
   schema: 'adaptive-training-recommender/ai-judge-self-test-manifest@1',
   suiteId: fixtures.suiteId,
@@ -92,73 +101,73 @@ const runIdentity = {
   runtimeSchemaSha256: hash(batches.map((batch) => batch.schema)),
   provider: config.provider,
   model: config.model,
+  modelDigest: preflight?.digest ?? null,
+  quantization: preflight?.details?.quantization_level ?? null,
   samples: config.samples,
   baseSeed: config.baseSeed,
   seedStrategy: config.seedStrategy,
   thinkingEnabled: config.thinkingEnabled,
   batchSize,
   batchCount: batches.length,
+  inferenceSha256: hashSelfTestInferenceProfile(inference),
+  inference,
 };
-
-function compatibleManifest(previous) {
-  if (!previous || typeof previous !== 'object') return false;
-  return [
-    'suiteId',
-    'casesSha256',
-    'expectedSha256',
-    'caseSetSha256',
-    'promptSha256',
-    'responseSchema',
-    'runtimeSchemaSha256',
-    'provider',
-    'model',
-    'samples',
-    'baseSeed',
-    'seedStrategy',
-    'thinkingEnabled',
-    'batchSize',
-    'batchCount',
-  ].every((field) => previous[field] === runIdentity[field]);
-}
 
 let previousManifest = null;
 const cached = new Map();
-if (!config.isFresh && existsSync(manifestPath) && existsSync(samplesPath)) {
+const existingArtifacts = [manifestPath, attemptsPath, samplesPath, summaryPath, summaryMarkdownPath].some(existsSync);
+const manifestExists = existsSync(manifestPath);
+const samplesExist = existsSync(samplesPath);
+let resumedCompatibleRun = false;
+
+if (!config.isFresh && existingArtifacts) {
+  if (!manifestExists || !samplesExist) {
+    throw new Error(
+      `Cannot resume self-test run '${runLabel}': existing artifacts are incomplete. `
+      + 'Use --fresh to intentionally replace this run label, or choose a new --run-label.'
+    );
+  }
+
   try {
     previousManifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
-    if (compatibleManifest(previousManifest)) {
-      const rows = readFileSync(samplesPath, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-      for (const line of rows) {
-        const row = JSON.parse(line);
-        const batch = batches[row.batchIndex];
-        if (!batch || !Number.isInteger(row.sampleIndex)) throw new Error('Sample row references an unknown batch/sample.');
-        const result = validateSelfTestResponse(row.result, fixtures.suiteId, batch.cases);
-        const key = `${row.sampleIndex}:${row.batchIndex}`;
-        if (cached.has(key)) throw new Error(`Duplicate accepted self-test sample '${key}'.`);
-        cached.set(key, { ...row, result });
-      }
-      log(`Loaded ${cached.size} compatible accepted batch sample(s) for resume.`);
-    } else {
-      log('Existing self-test cache ignored because immutable run provenance does not match.');
+    assertCompatibleSelfTestManifest(previousManifest, runIdentity);
+    const rows = readFileSync(samplesPath, 'utf8').split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    for (const line of rows) {
+      const row = JSON.parse(line);
+      const batch = batches[row.batchIndex];
+      if (!batch || !Number.isInteger(row.sampleIndex)) throw new Error('Sample row references an unknown batch/sample.');
+      if (row.sampleIndex < 0 || row.sampleIndex >= config.samples) throw new Error('Sample row references an out-of-range sample index.');
+      const result = validateSelfTestResponse(row.result, fixtures.suiteId, batch.cases);
+      const key = `${row.sampleIndex}:${row.batchIndex}`;
+      if (cached.has(key)) throw new Error(`Duplicate accepted self-test sample '${key}'.`);
+      cached.set(key, { ...row, result });
     }
+    resumedCompatibleRun = true;
+    log(`Loaded ${cached.size} compatible accepted batch sample(s) for resume.`);
   } catch (error) {
     cached.clear();
-    log(`Existing self-test cache ignored because it is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    throw new Error(
+      `Cannot resume self-test run '${runLabel}': ${error instanceof Error ? error.message : String(error)}. `
+      + 'Use --fresh to intentionally replace this run label, or choose a new --run-label.'
+    );
   }
 }
 
-const startedAt = compatibleManifest(previousManifest) && previousManifest.startedAt
-  ? previousManifest.startedAt
-  : new Date().toISOString();
-atomicWriteJson(manifestPath, { ...runIdentity, runLabel, startedAt });
-if (config.isFresh || cached.size === 0) {
+if (config.isFresh || !existingArtifacts) {
   writeFileSync(attemptsPath, '', 'utf8');
   writeFileSync(samplesPath, '', 'utf8');
   cached.clear();
+  for (const staleSummaryPath of [summaryPath, summaryMarkdownPath]) {
+    if (existsSync(staleSummaryPath)) unlinkSync(staleSummaryPath);
+  }
 }
 
+const startedAt = resumedCompatibleRun && previousManifest?.startedAt
+  ? previousManifest.startedAt
+  : new Date().toISOString();
+atomicWriteJson(manifestPath, { ...runIdentity, runLabel, startedAt });
+
 await cleanupOllamaMemory(config, log);
-const preflight = await preflightOllama(config, log);
 log(`AI judge self-test: ${config.provider}/${config.model}`);
 log(`${fixtures.cases.length} controls in ${batches.length} batch(es), ${config.samples} sample(s), run label '${runLabel}'.`);
 log('No pass/fail gate is applied; results are calibration evidence only.');
@@ -195,6 +204,7 @@ async function evaluateBatchWithRetry(batch, sampleIndex, seed, retries = 3) {
         promptTokens: response.telemetry?.promptTokens ?? null,
         completionTokens: response.telemetry?.completionTokens ?? null,
         totalTokens: response.telemetry?.totalTokens ?? null,
+        contextLength: response.telemetry?.contextLength ?? null,
         schemaEnforced: response.telemetry?.schemaEnforced ?? null,
         doneReason: response.telemetry?.doneReason ?? null,
       });
@@ -269,11 +279,19 @@ for (let sampleIndex = 0; sampleIndex < config.samples; sampleIndex += 1) {
 const aggregateResults = aggregateSelfTestSamples(sampleResponses, fixtures.cases);
 const metrics = computeSelfTestMetrics(sampleResponses, fixtures.cases, fixtures.expected);
 const telemetryRows = [...cached.values()].map((row) => row.telemetry).filter(Boolean);
+const schemaKnownRows = telemetryRows.filter((item) => typeof item.schemaEnforced === 'boolean');
+const schemaEnforcedResponses = schemaKnownRows.filter((item) => item.schemaEnforced).length;
+const schemaFallbackResponses = schemaKnownRows.length - schemaEnforcedResponses;
+const acceptedInferenceMs = telemetryRows.reduce((sum, item) => sum + (item.totalDurationMs ?? 0), 0);
 const telemetry = {
   promptTokens: telemetryRows.reduce((sum, item) => sum + (item.promptTokens ?? 0), 0),
   completionTokens: telemetryRows.reduce((sum, item) => sum + (item.completionTokens ?? 0), 0),
   totalTokens: telemetryRows.reduce((sum, item) => sum + (item.totalTokens ?? ((item.promptTokens ?? 0) + (item.completionTokens ?? 0))), 0),
   wallClockMs: Date.now() - runStartedMs,
+  acceptedInferenceMs,
+  schemaEnforcedResponses,
+  schemaFallbackResponses,
+  schemaEnforcementRate: rate(schemaEnforcedResponses, schemaKnownRows.length),
   estimatedCostUsd: inputCostPerMillion == null
     ? null
     : Math.round((
@@ -295,13 +313,15 @@ const summary = {
     runtimeSchemaSha256: runIdentity.runtimeSchemaSha256,
     provider: config.provider,
     model: config.model,
-    modelDigest: preflight?.digest ?? null,
-    quantization: preflight?.details?.quantization_level ?? null,
+    modelDigest: runIdentity.modelDigest,
+    quantization: runIdentity.quantization,
     samples: config.samples,
     baseSeed: config.baseSeed,
     seedStrategy: config.seedStrategy,
     thinkingEnabled: config.thinkingEnabled,
     batchSize,
+    inferenceSha256: runIdentity.inferenceSha256,
+    inference,
     pricing: inputCostPerMillion == null ? null : { inputCostPerMillion, outputCostPerMillion },
   },
   startedAt,
