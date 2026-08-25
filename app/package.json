@@ -41,6 +41,8 @@
     "judge:reference-audit": "node scripts/audit-ai-judge-jury.mjs",
     "judge:local:quick": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --quick --fresh",
     "judge:local:quick:resume": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --quick --resume",
+    "judge:local:quick:parallel": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --quick --fresh --concurrency 2",
+    "judge:local:quick:parallel:resume": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --quick --resume --concurrency 2",
     "judge:diff": "node scripts/check-plan-judge-drift.mjs",
     "judge:diff:prev": "node scripts/check-plan-judge-drift.mjs --previous",
     "judge:update-baseline": "node scripts/update-plan-judge-baseline.mjs",

@@ -181,10 +181,15 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
   const localTimeoutMs = positiveInt(cliTimeoutMs || env.LOCAL_TIMEOUT_MS || env.JUDGE_TIMEOUT_MS, 600_000);
   const cloudTimeoutMs = positiveInt(cliTimeoutMs || env.REQUEST_TIMEOUT_MS || env.JUDGE_TIMEOUT_MS, 180_000);
 
+  // Concurrency / Parallel execution
+  const cliConcurrency = parseCliArg(argv, 'concurrency') || parseCliArg(argv, 'parallel');
+  const concurrency = positiveInt(cliConcurrency || env.JUDGE_CONCURRENCY, 1);
+
   return {
     provider,
     apiKey,
     model,
+    concurrency,
     samples,
     baseSeed,
     seedStrategy,

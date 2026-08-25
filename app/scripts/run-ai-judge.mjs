@@ -235,112 +235,160 @@ async function judgeFamilySampleWithRetry({
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-const evaluatedRows = [];
-const allStabilities = [];
+const evaluatedMap = new Map();
+const stabilityMap = new Map();
 let totalPromptTokens = 0;
 let totalCompletionTokens = 0;
 let maxContextUtilization = 0;
 
-for (let index = 0; index < familyRows.length; index += 1) {
-  const family = familyRows[index];
-  const expectedCaseIds = expectedByFamily.get(family.familyId);
-  // Pointwise scores remain on the established 0..10 contract for baseline comparability.
-  // --rubric-scale controls pairwise sensitivity scoring only.
-  const familySchema = generateFamilyResponseSchema(family.familyId, expectedCaseIds);
+// Populate already cached
+for (let i = 0; i < familyRows.length; i += 1) {
+  const fId = familyRows[i].familyId;
+  const familySamples = cachedSamplesByFamily.get(fId);
+  if (familySamples && familySamples.length >= config.samples) {
+    const expectedCaseIds = expectedByFamily.get(fId);
+    const { aggregateResult, stability } = aggregateFamilySamples(fId, familySamples, expectedCaseIds);
+    evaluatedMap.set(i, aggregateResult);
+    stabilityMap.set(i, stability);
+    log(`[${i + 1}/${familyRows.length}] ${fId}: ✓ cached`);
+  }
+}
 
+async function evaluateFamily(family, index) {
+  const expectedCaseIds = expectedByFamily.get(family.familyId);
+  const familySchema = generateFamilyResponseSchema(family.familyId, expectedCaseIds);
   const familySamples = cachedSamplesByFamily.get(family.familyId) || [];
   const startMs = Date.now();
 
-  process.stdout.write(
-    `[${getTimestamp()}] [${index + 1}/${familyRows.length}] ${family.familyId} (${family.cases.length} cases, ${config.samples} sample(s))... `
-  );
+  log(`[${index + 1}/${familyRows.length}] Starting ${family.familyId} (${family.cases.length} cases, ${config.samples} sample(s))...`);
 
-  try {
-    for (let sampleIndex = familySamples.length; sampleIndex < config.samples; sampleIndex += 1) {
-      const seed = deriveSampleSeed(config.baseSeed, family.familyId, sampleIndex, config.seedStrategy);
-      const sample = await judgeFamilySampleWithRetry({
-        family,
-        familySchema,
-        expectedCaseIds,
-        sampleIndex,
-        seed,
-      });
-      familySamples.push(sample);
+  for (let sampleIndex = familySamples.length; sampleIndex < config.samples; sampleIndex += 1) {
+    const seed = deriveSampleSeed(config.baseSeed, family.familyId, sampleIndex, config.seedStrategy);
+    const sample = await judgeFamilySampleWithRetry({
+      family,
+      familySchema,
+      expectedCaseIds,
+      sampleIndex,
+      seed,
+    });
+    familySamples.push(sample);
 
-      const sampleLine = JSON.stringify({
-        familyId: family.familyId,
-        sampleIndex,
-        seed,
-        result: sample.result,
-        telemetry: sample.telemetry,
-      });
-      writeFileSync(samplesPath, `${sampleLine}\n`, { flag: 'a', encoding: 'utf8' });
+    const sampleLine = JSON.stringify({
+      familyId: family.familyId,
+      sampleIndex,
+      seed,
+      result: sample.result,
+      telemetry: sample.telemetry,
+    });
+    writeFileSync(samplesPath, `${sampleLine}\n`, { flag: 'a', encoding: 'utf8' });
 
-      if (sample.telemetry?.promptTokens) {
-        totalPromptTokens += sample.telemetry.promptTokens;
-        const util = computeContextUtilization(sample.telemetry.promptTokens, sample.telemetry.contextLength);
-        if (util && util > maxContextUtilization) maxContextUtilization = util;
-      }
-      if (sample.telemetry?.completionTokens) {
-        totalCompletionTokens += sample.telemetry.completionTokens;
-      }
+    if (sample.telemetry?.promptTokens) {
+      totalPromptTokens += sample.telemetry.promptTokens;
+      const util = computeContextUtilization(sample.telemetry.promptTokens, sample.telemetry.contextLength);
+      if (util && util > maxContextUtilization) maxContextUtilization = util;
     }
-
-    const { aggregateResult, stability } = aggregateFamilySamples(family.familyId, familySamples, expectedCaseIds);
-    evaluatedRows.push(aggregateResult);
-
-    if (config.isPairwise) {
-      const blindFamily = formatFamilyForPacketVersion(family, 'v2');
-      const casesById = new Map(blindFamily.cases.map((c) => [c.caseId, c]));
-      const edges = getFamilyEdges(family.familyId);
-      const pairwiseSeed = deriveSampleSeed(
-        config.baseSeed,
-        `${family.familyId}:pairwise`,
-        0,
-        config.seedStrategy
-      );
-      const pairwiseOutcome = await executeFamilyPairwiseEvaluations({
-        familyId: family.familyId,
-        edges,
-        casesById,
-        config,
-        seed: pairwiseSeed,
-        sampleIndex: 0,
-        callProviderFn: callProvider,
-      });
-
-      for (const pResult of pairwiseOutcome.pairwiseResults) {
-        writeFileSync(pairwisePath, `${JSON.stringify(pResult)}\n`, { flag: 'a', encoding: 'utf8' });
-      }
-      stability.pairwise = pairwiseOutcome;
+    if (sample.telemetry?.completionTokens) {
+      totalCompletionTokens += sample.telemetry.completionTokens;
     }
+  }
 
-    allStabilities.push(stability);
+  const { aggregateResult, stability } = aggregateFamilySamples(family.familyId, familySamples, expectedCaseIds);
 
-    const scoresContent = evaluatedRows.map((r) => JSON.stringify(r)).join('\n') + '\n';
-    atomicWriteFile(scoresPath, scoresContent);
+  if (config.isPairwise) {
+    const blindFamily = formatFamilyForPacketVersion(family, 'v2');
+    const casesById = new Map(blindFamily.cases.map((c) => [c.caseId, c]));
+    const edges = getFamilyEdges(family.familyId);
+    const pairwiseSeed = deriveSampleSeed(
+      config.baseSeed,
+      `${family.familyId}:pairwise`,
+      0,
+      config.seedStrategy
+    );
+    const pairwiseOutcome = await executeFamilyPairwiseEvaluations({
+      familyId: family.familyId,
+      edges,
+      casesById,
+      config,
+      seed: pairwiseSeed,
+      sampleIndex: 0,
+      callProviderFn: callProvider,
+    });
 
-    if (config.withDiagnosticsAudit) {
-      const auditRecords = auditFamilyDiagnostics(family, aggregateResult);
-      appendDiagnosticAuditRecords(diagnosticAuditPath, auditRecords);
+    for (const pResult of pairwiseOutcome.pairwiseResults) {
+      writeFileSync(pairwisePath, `${JSON.stringify(pResult)}\n`, { flag: 'a', encoding: 'utf8' });
     }
+    stability.pairwise = pairwiseOutcome;
+  }
 
-    const elapsedSeconds = Math.round((Date.now() - startMs) / 1000);
-    const spreadInfo = config.samples > 1 ? ` (MAD: ±${stability.familySensitivityMad})` : '';
-    const biasInfo = stability.pairwise
-      ? ` | position bias: ${stability.pairwise.positionBias.positionBiasIndex} | order instability: ${stability.pairwise.positionBias.orderInstabilityIndex}`
-      : '';
-    console.log(`✓ ${elapsedSeconds}s | sensitivity ${aggregateResult.familyAssessment.sensitivity_quality}/10${spreadInfo}${biasInfo}`);
+  if (config.withDiagnosticsAudit) {
+    const auditRecords = auditFamilyDiagnostics(family, aggregateResult);
+    appendDiagnosticAuditRecords(diagnosticAuditPath, auditRecords);
+  }
 
-    if (config.isDebug) {
-      console.log(JSON.stringify(aggregateResult, null, 2));
-    }
-  } catch (error) {
-    console.error(`\n[${getTimestamp()}] ❌ Failed to judge family '${family.familyId}': ${error instanceof Error ? error.message : String(error)}`);
-    console.error(`Partial validated output is preserved at ${scoresPath}; rerun without --fresh to resume.`);
-    process.exit(1);
+  const elapsedSeconds = Math.round((Date.now() - startMs) / 1000);
+  const spreadInfo = config.samples > 1 ? ` (MAD: ±${stability.familySensitivityMad})` : '';
+  const biasInfo = stability.pairwise
+    ? ` | position bias: ${stability.pairwise.positionBias.positionBiasIndex} | order instability: ${stability.pairwise.positionBias.orderInstabilityIndex}`
+    : '';
+  log(`✓ [${index + 1}/${familyRows.length}] ${family.familyId}: ${elapsedSeconds}s | sensitivity ${aggregateResult.familyAssessment.sensitivity_quality}/10${spreadInfo}${biasInfo}`);
+
+  if (config.isDebug) {
+    console.log(JSON.stringify(aggregateResult, null, 2));
+  }
+
+  return { index, aggregateResult, stability };
+}
+
+const pendingIndices = [];
+for (let i = 0; i < familyRows.length; i += 1) {
+  if (!evaluatedMap.has(i)) {
+    pendingIndices.push(i);
   }
 }
+
+const concurrencyLimit = Math.max(1, config.concurrency);
+if (pendingIndices.length > 0) {
+  log(`Executing ${pendingIndices.length} families with concurrency = ${concurrencyLimit}...`);
+}
+
+async function worker() {
+  while (pendingIndices.length > 0) {
+    const nextIdx = pendingIndices.shift();
+    if (nextIdx === undefined) break;
+    const family = familyRows[nextIdx];
+    try {
+      const outcome = await evaluateFamily(family, nextIdx);
+      evaluatedMap.set(nextIdx, outcome.aggregateResult);
+      stabilityMap.set(nextIdx, outcome.stability);
+
+      // Write atomically sorted by original family index
+      const currentEvaluatedRows = [];
+      for (let i = 0; i < familyRows.length; i += 1) {
+        if (evaluatedMap.has(i)) {
+          currentEvaluatedRows.push(evaluatedMap.get(i));
+        }
+      }
+      const scoresContent = currentEvaluatedRows.map((r) => JSON.stringify(r)).join('\n') + '\n';
+      atomicWriteFile(scoresPath, scoresContent);
+    } catch (error) {
+      console.error(`\n[${getTimestamp()}] ❌ Failed to judge family '${family.familyId}': ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`Partial validated output is preserved at ${scoresPath}; rerun without --fresh to resume.`);
+      process.exit(1);
+    }
+  }
+}
+
+const workers = Array.from({ length: Math.min(concurrencyLimit, pendingIndices.length || 1) }, () => worker());
+await Promise.all(workers);
+
+const evaluatedRows = [];
+const allStabilities = [];
+for (let i = 0; i < familyRows.length; i += 1) {
+  if (evaluatedMap.has(i)) evaluatedRows.push(evaluatedMap.get(i));
+  if (stabilityMap.has(i)) allStabilities.push(stabilityMap.get(i));
+}
+
+atomicWriteFile(scoresPath, evaluatedRows.map((r) => JSON.stringify(r)).join('\n') + '\n');
 
 const overallStability = {
   schema: 'adaptive-training-recommender/ai-plan-judge-stability@1',
