@@ -11,10 +11,23 @@ describe('packets module', () => {
           caseId: 'judge_obj_neutral',
           label: 'Objective recovery — neutral',
           changedAxis: { state: 'neutral' },
+          simulationMode: 'rolling_daily',
           readiness: {
             objective: { hrv_delta: 0, rhr: 50, sleep_score: 85 },
             subjective: { readiness: 8, fatigue: 2 },
           },
+          readinessTrajectory: [
+            {
+              date: '2026-06-01',
+              objective: { hrv_delta: -17, rhr: 57, sleep_score: 50 },
+              subjective: { readiness: 3, fatigue: 8 },
+            },
+            {
+              date: '2026-06-02',
+              objective: { hrv_delta: 0, rhr: 50, sleep_score: 85 },
+              subjective: { readiness: 6, fatigue: 4 },
+            },
+          ],
           event: {
             title: 'Criterium Championship',
             date: '2026-06-14',
@@ -65,14 +78,17 @@ describe('packets module', () => {
     ],
   };
 
-  it('compactFamilyForJudge includes engineSummary for v1 baseline compatibility', () => {
+  it('compactFamilyForJudge includes engineSummary and temporal evidence for v1 compatibility', () => {
     const v1 = compactFamilyForJudge(sampleRawFamily);
     expect(v1.familyId).toBe('objective_recovery');
     expect(v1.cases[0].engineSummary.warnings).toEqual(['High anaerobic surge load in week 1']);
     expect(v1.cases[0].day1.tier).toBe('fresh');
+    expect(v1.cases[0].simulationMode).toBe('rolling_daily');
+    expect(v1.cases[0].readinessTrajectory[1].subjective.readiness).toBe(6);
+    expect(v1.cases[0].plan14d[0].date).toBe('2026-06-01');
   });
 
-  it('buildBlindFamilyPacket strips all engine warnings, violations, tier, and utility', () => {
+  it('buildBlindFamilyPacket strips engine diagnostics while preserving raw temporal evidence', () => {
     const v2 = buildBlindFamilyPacket(sampleRawFamily);
 
     expect(v2.packetSchema).toBe('adaptive-training-recommender/ai-plan-judge-packet@2');
@@ -84,6 +100,10 @@ describe('packets module', () => {
     // Verify raw athlete context is preserved
     expect(blindCase.inputContext.readiness.objective.hrv_delta).toBe(0);
     expect(blindCase.inputContext.readiness.subjective.readiness).toBe(8);
+    expect(blindCase.inputContext.simulationMode).toBe('rolling_daily');
+    expect(blindCase.inputContext.readinessTrajectory).toHaveLength(2);
+    expect(blindCase.inputContext.readinessTrajectory[0].objective.hrv_delta).toBe(-17);
+    expect(blindCase.inputContext.readinessTrajectory[1].subjective.readiness).toBe(6);
     expect(blindCase.inputContext.event.title).toBe('Criterium Championship');
     expect(blindCase.inputContext.constraints.maxTimeMinutes).toBe(60);
 
