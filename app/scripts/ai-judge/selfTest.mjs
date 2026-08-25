@@ -33,6 +33,17 @@ const RESULT_KEYS = [
   'rationale',
 ];
 
+const REQUIRED_CATEGORIES = [
+  'hard_control',
+  'correct_non_reaction',
+  'deliberate_overreaction',
+  'deliberate_underreaction',
+  'event_specificity',
+  'bias_adversarial',
+  'temporal_semantics',
+  'root_cause_discipline',
+];
+
 function hashJson(value) {
   return createHash('sha256').update(JSON.stringify(value)).digest('hex');
 }
@@ -142,7 +153,9 @@ export function validateSelfTestFixtures(cases, expected) {
     const caseId = nonEmptyString(item.caseId, 'case.caseId');
     if (caseIds.has(caseId)) throw new Error(`Duplicate calibration caseId '${caseId}'.`);
     caseIds.add(caseId);
-    categories.add(nonEmptyString(item.category, `${caseId}.category`));
+    const category = nonEmptyString(item.category, `${caseId}.category`);
+    if (!REQUIRED_CATEGORIES.includes(category)) throw new Error(`${caseId}.category '${category}' is unsupported.`);
+    categories.add(category);
     if (!['pointwise', 'pairwise'].includes(item.evaluationMode)) throw new Error(`${caseId}.evaluationMode must be pointwise or pairwise.`);
     if (!Array.isArray(item.plans) || item.plans.length === 0) throw new Error(`${caseId}.plans must be non-empty.`);
     const planIds = item.plans.map((plan) => nonEmptyString(plan?.planId, `${caseId}.plans.planId`));
@@ -151,6 +164,9 @@ export function validateSelfTestFixtures(cases, expected) {
     if (item.evaluationMode === 'pairwise') {
       if (!item.comparison || !planIds.includes(item.comparison.planAId) || !planIds.includes(item.comparison.planBId)) {
         throw new Error(`${caseId}.comparison must reference two plans in the case.`);
+      }
+      if (item.comparison.planAId === item.comparison.planBId) {
+        throw new Error(`${caseId}.comparison must reference two distinct plans.`);
       }
       nonEmptyString(item.presentationGroup, `${caseId}.presentationGroup`);
       if (!['AB', 'BA'].includes(item.presentationOrder)) throw new Error(`${caseId}.presentationOrder must be AB or BA.`);
@@ -165,6 +181,9 @@ export function validateSelfTestFixtures(cases, expected) {
     }
     if (!Number.isInteger(rule.ordinalTarget) || rule.ordinalTarget < 0 || rule.ordinalTarget > 4) {
       throw new Error(`${caseId}.ordinalTarget must be an integer in [0, 4].`);
+    }
+    if (rule.ordinalTarget < rule.absoluteClassRange[0] || rule.ordinalTarget > rule.absoluteClassRange[1]) {
+      throw new Error(`${caseId}.ordinalTarget must fall inside absoluteClassRange.`);
     }
     for (const [field, allowedValues] of [
       ['allowedReactionClasses', REACTION_CLASSES],
@@ -186,23 +205,13 @@ export function validateSelfTestFixtures(cases, expected) {
         }
       }
     }
-    if (!Array.isArray(rule.forbiddenClaims)) throw new Error(`${caseId}.forbiddenClaims must be an array.`);
+    stringArray(rule.forbiddenClaims, `${caseId}.forbiddenClaims`);
     if (typeof rule.numericThresholdProposalAllowed !== 'boolean') throw new Error(`${caseId}.numericThresholdProposalAllowed must be boolean.`);
   }
 
   const unexpectedExpectations = Object.keys(expected.cases).filter((caseId) => !caseIds.has(caseId));
   if (unexpectedExpectations.length) throw new Error(`Expectations contain unknown cases: ${unexpectedExpectations.join(', ')}.`);
-  const requiredCategories = [
-    'hard_control',
-    'correct_non_reaction',
-    'deliberate_overreaction',
-    'deliberate_underreaction',
-    'event_specificity',
-    'bias_adversarial',
-    'temporal_semantics',
-    'root_cause_discipline',
-  ];
-  const missingCategories = requiredCategories.filter((category) => !categories.has(category));
+  const missingCategories = REQUIRED_CATEGORIES.filter((category) => !categories.has(category));
   if (missingCategories.length) throw new Error(`Calibration suite is missing categories: ${missingCategories.join(', ')}.`);
   return { suiteId, cases, expected };
 }
@@ -258,8 +267,14 @@ export function validateSelfTestResponse(value, suiteId, calibrationCases) {
       }
       return pointers;
     };
-    const normalizeClaims = (claims, field, { hypothesis = false } = {}) => {
-      if (!Array.isArray(claims)) throw new Error(`${field} must be an array.`);
+    const normalizeClaims = (claims, field, {
+      hypothesis = false,
+      minItems = 0,
+      minEvidenceReferences = 0,
+    } = {}) => {
+      if (!Array.isArray(claims) || claims.length < minItems) {
+        throw new Error(`${field} must be an array with at least ${minItems} item(s).`);
+      }
       return claims.map((claim, index) => {
         if (!claim || typeof claim !== 'object' || Array.isArray(claim)) throw new Error(`${field}[${index}] must be an object.`);
         exactKeys(claim, hypothesis ? ['text', 'speculative', 'evidenceReferences'] : ['text', 'evidenceReferences'], `${field}[${index}]`);
@@ -267,7 +282,11 @@ export function validateSelfTestResponse(value, suiteId, calibrationCases) {
         return {
           text: nonEmptyString(claim.text, `${field}[${index}].text`),
           ...(hypothesis ? { speculative: true } : {}),
-          evidenceReferences: validateReferences(claim.evidenceReferences, `${field}[${index}].evidenceReferences`),
+          evidenceReferences: validateReferences(
+            claim.evidenceReferences,
+            `${field}[${index}].evidenceReferences`,
+            { minItems: minEvidenceReferences }
+          ),
         };
       });
     };
@@ -278,7 +297,7 @@ export function validateSelfTestResponse(value, suiteId, calibrationCases) {
       preferredPlanId: nonEmptyString(raw.preferredPlanId, `${caseId}.preferredPlanId`),
       diagnosticAssessment: raw.diagnosticAssessment,
       evidenceReferences: validateReferences(raw.evidenceReferences, `${caseId}.evidenceReferences`, { minItems: 1 }),
-      observations: normalizeClaims(raw.observations, `${caseId}.observations`),
+      observations: normalizeClaims(raw.observations, `${caseId}.observations`, { minItems: 1, minEvidenceReferences: 1 }),
       hypotheses: normalizeClaims(raw.hypotheses, `${caseId}.hypotheses`, { hypothesis: true }),
       numericParameterCandidates: normalizeClaims(raw.numericParameterCandidates, `${caseId}.numericParameterCandidates`),
       rationale: nonEmptyString(raw.rationale, `${caseId}.rationale`),
