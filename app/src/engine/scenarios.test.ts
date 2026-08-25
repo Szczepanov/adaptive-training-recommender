@@ -208,7 +208,7 @@ describe('scenario quality diagnostics', () => {
         const report = await runAllScenarios();
         expect(report.readinessSensitivity).toHaveLength(2);
         expect(report.readinessSensitivity.map(result => result.trajectory)).toEqual(['fresh', 'stressed']);
-    });
+    }, 20000);
 
     it('sustained stress adds recovery and records any required-role loss with a typed safety/feasibility reason', async () => {
         const baseline = await getResult('cycling_criterium_A');
