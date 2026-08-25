@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 
-import { SELF_TEST_SUMMARY_SCHEMA } from './selfTestSchema.mjs';
+import { REACTION_CLASSES, SELF_TEST_SUMMARY_SCHEMA } from './selfTestSchema.mjs';
 
 export const REFERENCE_AUDIT_SCHEMA = 'adaptive-training-recommender/ai-judge-reference-audit@1';
 
@@ -31,6 +31,33 @@ function readSummaryPath(inputPath) {
   return absolute;
 }
 
+function validateAggregateResults(path, summary) {
+  if (!Array.isArray(summary.aggregateResults) || summary.aggregateResults.length === 0) {
+    throw new Error(`${path} must contain non-empty aggregateResults.`);
+  }
+  const seen = new Set();
+  for (const [index, result] of summary.aggregateResults.entries()) {
+    if (!result || typeof result !== 'object' || Array.isArray(result)) {
+      throw new Error(`${path} aggregateResults[${index}] must be an object.`);
+    }
+    if (typeof result.caseId !== 'string' || !result.caseId.trim()) {
+      throw new Error(`${path} aggregateResults[${index}].caseId must be a non-empty string.`);
+    }
+    if (seen.has(result.caseId)) throw new Error(`${path} contains duplicate aggregate case '${result.caseId}'.`);
+    seen.add(result.caseId);
+    if (typeof result.absoluteClass !== 'number' || !Number.isFinite(result.absoluteClass)
+      || result.absoluteClass < 0 || result.absoluteClass > 4) {
+      throw new Error(`${path} aggregate case '${result.caseId}' has invalid absoluteClass.`);
+    }
+    if (!REACTION_CLASSES.includes(result.reactionClass)) {
+      throw new Error(`${path} aggregate case '${result.caseId}' has invalid reactionClass.`);
+    }
+    if (typeof result.preferredPlanId !== 'string' || !result.preferredPlanId.trim()) {
+      throw new Error(`${path} aggregate case '${result.caseId}' has invalid preferredPlanId.`);
+    }
+  }
+}
+
 export function loadSelfTestSummary(inputPath) {
   const path = readSummaryPath(inputPath);
   if (!existsSync(path)) throw new Error(`Self-test summary does not exist: ${path}`);
@@ -38,9 +65,12 @@ export function loadSelfTestSummary(inputPath) {
   if (!value || typeof value !== 'object' || Array.isArray(value) || value.schema !== SELF_TEST_SUMMARY_SCHEMA) {
     throw new Error(`${path} is not a ${SELF_TEST_SUMMARY_SCHEMA} artifact.`);
   }
-  if (!value.provenance || !value.metrics || !Array.isArray(value.aggregateResults)) {
-    throw new Error(`${path} is missing provenance, metrics, or aggregateResults.`);
+  if (!value.provenance || typeof value.provenance !== 'object' || Array.isArray(value.provenance)
+    || !value.metrics || typeof value.metrics !== 'object' || Array.isArray(value.metrics)) {
+    throw new Error(`${path} is missing provenance or metrics.`);
   }
+  if (typeof value.runLabel !== 'string' || !value.runLabel.trim()) throw new Error(`${path} is missing runLabel.`);
+  validateAggregateResults(path, value);
   return { path, value };
 }
 
@@ -68,6 +98,7 @@ function modelMetrics(summary) {
     modelDigest: summary.provenance.modelDigest ?? null,
     quantization: summary.provenance.quantization ?? null,
     thinkingEnabled: summary.provenance.thinkingEnabled,
+    inferenceSha256: summary.provenance.inferenceSha256 ?? null,
     absoluteRangeAccuracy: summary.metrics.rates.absoluteRangeAccuracy,
     reactionAccuracy: summary.metrics.rates.reactionAccuracy,
     fullControlPassRate: summary.metrics.rates.fullControlPassRate,
@@ -84,8 +115,22 @@ function modelMetrics(summary) {
     completionTokens: summary.telemetry?.completionTokens ?? null,
     totalTokens: summary.telemetry?.totalTokens ?? null,
     wallClockMs: summary.telemetry?.wallClockMs ?? null,
+    acceptedInferenceMs: summary.telemetry?.acceptedInferenceMs ?? null,
+    schemaEnforcementRate: summary.telemetry?.schemaEnforcementRate ?? null,
     estimatedCostUsd: summary.telemetry?.estimatedCostUsd ?? null,
   };
+}
+
+function changedEvaluatorAxes(left, right) {
+  const axes = [
+    ['provider', left.provenance.provider, right.provenance.provider],
+    ['model', left.provenance.model, right.provenance.model],
+    ['modelDigest', left.provenance.modelDigest ?? null, right.provenance.modelDigest ?? null],
+    ['quantization', left.provenance.quantization ?? null, right.provenance.quantization ?? null],
+    ['thinkingEnabled', left.provenance.thinkingEnabled, right.provenance.thinkingEnabled],
+    ['inferenceProfile', left.provenance.inferenceSha256 ?? null, right.provenance.inferenceSha256 ?? null],
+  ];
+  return axes.filter(([, leftValue, rightValue]) => leftValue !== rightValue).map(([name]) => name);
 }
 
 function compareAggregateResults(left, right) {
@@ -126,6 +171,7 @@ function compareAggregateResults(left, right) {
     leftRunLabel: left.runLabel,
     rightRunLabel: right.runLabel,
     cases,
+    changedEvaluatorAxes: changedEvaluatorAxes(left, right),
     absoluteClassAgreement: rate(absoluteClassAgreements, cases),
     reactionAgreement: rate(reactionAgreements, cases),
     preferredPlanAgreement: rate(preferredPlanAgreements, cases),
@@ -148,7 +194,7 @@ export function buildReferenceAudit(loadedRuns, generatedAt = new Date().toISOSt
     contract: Object.fromEntries(REFERENCE_CONTRACT_FIELDS.map((field) => [field, summaries[0].provenance[field]])),
     runs: loadedRuns.map((run) => ({ sourcePath: run.path, ...modelMetrics(run.value) })),
     pairwiseComparisons,
-    interpretation: 'No automatic winner or model switch is selected. Review expert-label agreement, stability, bias, evidence discipline, runtime, and cost together.',
+    interpretation: 'No automatic winner or model switch is selected. Review expert-label agreement, stability, bias, evidence discipline, structured-output enforcement, runtime, and cost together; comparisons that change multiple evaluator axes are intentionally visible and should be interpreted as confounded rather than causal.',
   };
 }
 
@@ -164,15 +210,15 @@ export function renderReferenceAuditMarkdown(audit) {
     '',
     '## Evaluator metrics',
     '',
-    '| Run | Provider/model | Thinking | Full pass | QWK | Order | Retest reaction | Diagnostic FP | Evidence valid | Evidence required | Unsupported / numeric claims | Tokens | Runtime ms | Cost USD |',
-    '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
-    ...audit.runs.map((run) => `| ${run.runLabel} | ${run.provider}/${run.model} | ${run.thinkingEnabled ? 'on' : 'off'} | ${format(run.fullControlPassRate)} | ${format(run.quadraticWeightedKappa)} | ${format(run.orderConsistency)} | ${format(run.retestReactionAgreement)} | ${format(run.misleadingDiagnosticFalsePositiveRate)} | ${format(run.evidenceReferenceValidity)} | ${format(run.requiredEvidenceCoverage)} | ${run.forbiddenClaimViolations} / ${run.numericParameterCandidateViolations} | ${format(run.totalTokens)} | ${format(run.wallClockMs)} | ${format(run.estimatedCostUsd)} |`),
+    '| Run | Provider/model | Thinking | Full pass | QWK | Order | Retest reaction | Diagnostic FP | Evidence valid | Evidence required | Native schema | Unsupported / numeric claims | Tokens | Accepted inference ms | Cost USD |',
+    '|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
+    ...audit.runs.map((run) => `| ${run.runLabel} | ${run.provider}/${run.model} | ${run.thinkingEnabled ? 'on' : 'off'} | ${format(run.fullControlPassRate)} | ${format(run.quadraticWeightedKappa)} | ${format(run.orderConsistency)} | ${format(run.retestReactionAgreement)} | ${format(run.misleadingDiagnosticFalsePositiveRate)} | ${format(run.evidenceReferenceValidity)} | ${format(run.requiredEvidenceCoverage)} | ${format(run.schemaEnforcementRate)} | ${run.forbiddenClaimViolations} / ${run.numericParameterCandidateViolations} | ${format(run.totalTokens)} | ${format(run.acceptedInferenceMs ?? run.wallClockMs)} | ${format(run.estimatedCostUsd)} |`),
     '',
     '## Cross-evaluator agreement',
     '',
-    '| Runs | Absolute class | Reaction | Preferred plan | Disagreements |',
-    '|---|---:|---:|---:|---:|',
-    ...audit.pairwiseComparisons.map((comparison) => `| ${comparison.leftRunLabel} ↔ ${comparison.rightRunLabel} | ${format(comparison.absoluteClassAgreement)} | ${format(comparison.reactionAgreement)} | ${format(comparison.preferredPlanAgreement)} | ${comparison.disagreements.length} |`),
+    '| Runs | Changed evaluator axes | Absolute class | Reaction | Preferred plan | Disagreements |',
+    '|---|---|---:|---:|---:|---:|',
+    ...audit.pairwiseComparisons.map((comparison) => `| ${comparison.leftRunLabel} ↔ ${comparison.rightRunLabel} | ${comparison.changedEvaluatorAxes.join(', ') || 'none'} | ${format(comparison.absoluteClassAgreement)} | ${format(comparison.reactionAgreement)} | ${format(comparison.preferredPlanAgreement)} | ${comparison.disagreements.length} |`),
     '',
     '## Interpretation boundary',
     '',
