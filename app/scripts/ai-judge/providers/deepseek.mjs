@@ -1,9 +1,14 @@
 import { extractCleanJson } from '../validation.mjs';
-import { createNormalizedResult, resolveRequestTimeoutMs, withProgress } from './base.mjs';
+import {
+  createNormalizedResult,
+  describeStructuredOutputRequirements,
+  resolveRequestTimeoutMs,
+  withProgress,
+} from './base.mjs';
 
 export async function callDeepSeek({
   packetJson,
-  schema: _schema,
+  schema,
   promptContent,
   schemaContent,
   config,
@@ -12,8 +17,9 @@ export async function callDeepSeek({
   seed = null,
 }) {
   const endpoint = config.cloud.deepseekBaseUrl;
-  const systemContent = `${promptContent}\n\nStrict JSON Output Schema:\n${schemaContent}\nIMPORTANT: return ONLY valid JSON matching the schema. Root JSON MUST include both "caseScores" and "familyAssessment".`;
-  const userContent = `Analyze this family JSON and return the exact evaluation JSON object:\n${packetJson}`;
+  const outputRequirements = describeStructuredOutputRequirements(schema);
+  const systemContent = `${promptContent}\n\nStrict JSON Output Schema:\n${schemaContent}\nIMPORTANT: ${outputRequirements}`;
+  const userContent = `Evaluate this input JSON and return the exact evaluation JSON object:\n${packetJson}`;
 
   const body = {
     model: config.model,

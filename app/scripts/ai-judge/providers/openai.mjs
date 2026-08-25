@@ -1,5 +1,10 @@
 import { extractCleanJson } from '../validation.mjs';
-import { createNormalizedResult, resolveRequestTimeoutMs, withProgress } from './base.mjs';
+import {
+  createNormalizedResult,
+  describeStructuredOutputRequirements,
+  resolveRequestTimeoutMs,
+  withProgress,
+} from './base.mjs';
 
 export async function callOpenAI({
   packetJson,
@@ -14,9 +19,10 @@ export async function callOpenAI({
   const isLocalOpenAI = config.provider === 'local';
   const endpoint = isLocalOpenAI ? config.local.endpoint : config.cloud.openaiBaseUrl;
   const apiKey = isLocalOpenAI ? 'local' : config.apiKey;
+  const outputRequirements = describeStructuredOutputRequirements(schema);
 
-  const systemContent = `${promptContent}\n\nStrict JSON Schema:\n${schemaContent}\nIMPORTANT: Root JSON MUST include both "caseScores" and "familyAssessment". Return JSON only.`;
-  const userContent = `Analyze this family JSON:\n${packetJson}`;
+  const systemContent = `${promptContent}\n\nStrict JSON Schema:\n${schemaContent}\nIMPORTANT: ${outputRequirements}`;
+  const userContent = `Evaluate this input JSON and return the exact schema-conformant result:\n${packetJson}`;
 
   const body = {
     model: config.model,
@@ -51,7 +57,6 @@ export async function callOpenAI({
       signal: AbortSignal.timeout(timeoutMs),
     });
 
-    // Fallback if provider doesn't support json_schema
     let schemaEnforced = true;
     if (!response.ok && response.status === 400) {
       const strictError = await response.text();

@@ -12,6 +12,8 @@ import { preflightOllama, cleanupOllamaMemory } from './ai-judge/runtime.mjs';
 import { callProvider } from './ai-judge/providers/index.mjs';
 import { aggregateFamilySamples, deriveSampleSeed } from './ai-judge/aggregate.mjs';
 import { auditFamilyDiagnostics, appendDiagnosticAuditRecords } from './ai-judge/diagnosticsAudit.mjs';
+import { getFamilyEdges } from './ai-judge/edges.mjs';
+import { executeFamilyPairwiseEvaluations } from './ai-judge/pairwise.mjs';
 
 function getTimestamp() {
   return new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -35,9 +37,9 @@ const samplesPath = resolve(outputDir, 'judge-samples.jsonl');
 const attemptsPath = resolve(outputDir, 'judge-attempts.jsonl');
 const stabilityPath = resolve(outputDir, 'judge-stability.json');
 const diagnosticAuditPath = resolve(outputDir, 'judge-diagnostic-audit.jsonl');
+const pairwisePath = resolve(outputDir, 'judge-pairwise.jsonl');
 const manifestPath = resolve(outputDir, 'judge-run-manifest.json');
 
-// Ensure artifacts exist or generate deterministic corpus
 if ([familiesPath, promptPath, schemaPath].some((p) => !existsSync(p))) {
   log('Judge artifacts are incomplete; generating the deterministic corpus first...');
   execSync('npm run simulate:plan-judge', { stdio: 'inherit' });
@@ -58,48 +60,54 @@ const runIdentity = {
   judgeModel: config.model,
   judgeProvider: config.provider,
   packetVersion: config.packetVersion,
+  isPairwise: config.isPairwise,
+  checkPositionBias: config.checkPositionBias,
+  rubricScale: config.rubricScale,
   samples: config.samples,
   baseSeed: config.baseSeed,
   seedStrategy: config.seedStrategy,
   thinkingEnabled: config.thinkingEnabled,
 };
 
+const cachedSamplesByFamily = new Map();
+// Only an explicit resume may reuse pointwise samples. A fresh run must never
+// read artifacts that it is about to replace.
+let reuseCache = !config.isFresh && config.isResume && existsSync(manifestPath) && existsSync(samplesPath);
+
 function compatibleManifest(prev) {
-  return prev
-    && prev.schema === runIdentity.schema
-    && prev.familiesSha256 === runIdentity.familiesSha256
+  if (!prev || typeof prev !== 'object') return false;
+  return prev.familiesSha256 === runIdentity.familiesSha256
     && prev.promptSha256 === runIdentity.promptSha256
     && prev.responseSchemaSha256 === runIdentity.responseSchemaSha256
     && prev.judgeModel === runIdentity.judgeModel
     && prev.judgeProvider === runIdentity.judgeProvider
-    && (prev.packetVersion ?? 'v1') === runIdentity.packetVersion
-    && (prev.samples ?? 1) === runIdentity.samples;
+    && prev.packetVersion === runIdentity.packetVersion
+    && prev.isPairwise === runIdentity.isPairwise
+    && prev.checkPositionBias === runIdentity.checkPositionBias
+    && prev.rubricScale === runIdentity.rubricScale
+    && prev.samples === runIdentity.samples
+    && prev.baseSeed === runIdentity.baseSeed
+    && prev.seedStrategy === runIdentity.seedStrategy
+    && prev.thinkingEnabled === runIdentity.thinkingEnabled;
 }
 
-// Load existing samples if resuming
-const cachedSamplesByFamily = new Map(); // familyId -> Array of validated sample objects
 let previousManifest = null;
-
-let reuseCache = false;
-
-if (!config.isFresh && existsSync(samplesPath) && existsSync(manifestPath)) {
+if (reuseCache) {
   try {
     previousManifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     if (compatibleManifest(previousManifest)) {
-      reuseCache = true;
-      const sampleLines = readFileSync(samplesPath, 'utf8')
+      const rawSamples = readFileSync(samplesPath, 'utf8')
         .split(/\r?\n/)
         .map((l) => l.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .map((l) => JSON.parse(l));
 
-      for (const line of sampleLines) {
-        const item = JSON.parse(line);
-        const expectedCaseIds = expectedByFamily.get(item.familyId);
-        if (!expectedCaseIds) continue;
-        const validated = validateAndNormalizeJudgeRow(item.result, item.familyId, expectedCaseIds);
+      for (const item of rawSamples) {
         if (!cachedSamplesByFamily.has(item.familyId)) {
           cachedSamplesByFamily.set(item.familyId, []);
         }
+        const expectedCaseIds = expectedByFamily.get(item.familyId);
+        const validated = validateAndNormalizeJudgeRow(item.result, item.familyId, expectedCaseIds);
         cachedSamplesByFamily.get(item.familyId).push({
           sampleIndex: item.sampleIndex,
           seed: item.seed,
@@ -109,6 +117,7 @@ if (!config.isFresh && existsSync(samplesPath) && existsSync(manifestPath)) {
       }
     } else {
       log('Existing judge cache ignored because corpus/prompt/schema/model/provider provenance does not match this run.');
+      reuseCache = false;
     }
   } catch (error) {
     log(`Existing judge cache ignored because it is invalid: ${error instanceof Error ? error.message : String(error)}`);
@@ -117,7 +126,6 @@ if (!config.isFresh && existsSync(samplesPath) && existsSync(manifestPath)) {
   }
 }
 
-// Initialize artifacts
 const startedAt = compatibleManifest(previousManifest) && previousManifest.startedAt
   ? previousManifest.startedAt
   : new Date().toISOString();
@@ -128,25 +136,27 @@ if (config.isFresh || !reuseCache) {
   writeFileSync(scoresPath, '', 'utf8');
   writeFileSync(samplesPath, '', 'utf8');
   writeFileSync(attemptsPath, '', 'utf8');
+  if (config.withDiagnosticsAudit) writeFileSync(diagnosticAuditPath, '', 'utf8');
 }
-// Diagnostic audit records are recomputed for every family on every invocation (cached or
-// fresh), so the audit file must always start clean for this run regardless of sample reuse.
-if (config.withDiagnosticsAudit) writeFileSync(diagnosticAuditPath, '', 'utf8');
+// Pairwise rows are not currently cached independently. Rebuild them on every pairwise run
+// so --resume can reuse validated pointwise samples without appending duplicate pairwise rows.
+if (config.isPairwise) writeFileSync(pairwisePath, '', 'utf8');
 
-// Runtime preflight & cleanup
 await cleanupOllamaMemory(config, log);
 const preflight = await preflightOllama(config, log);
 
 log(`=== AI Plan Judge: ${config.provider.toUpperCase()} / ${config.model} ===`);
 log(`🧠 Thinking mode: ${config.thinkingEnabled ? 'enabled' : 'disabled'}`);
 log(`📦 Packet version: ${config.packetVersion} ${config.packetVersion === 'v2' ? '(blind view + derived features)' : '(legacy v1)'}`);
+if (config.isPairwise) log(`📏 Pairwise rubric scale: ${config.rubricScale}`);
+if (config.isPairwise) log(`⚖️ Pairwise sensitivity: enabled${config.checkPositionBias ? ' (with order-swap position bias check)' : ''}`);
 log(`🎲 Samples: ${config.samples} (seed: ${config.baseSeed}, strategy: ${config.seedStrategy})`);
 if (config.withDiagnosticsAudit) log(`🔬 Diagnostic audit pass: enabled (-> judge-diagnostic-audit.jsonl)`);
 if (config.provider === 'local') {
   log(`🔧 Endpoint: ${config.local.endpoint}`);
   log(`🔧 num_ctx: ${config.local.numCtx} | num_predict: ${config.local.numPredict}`);
 }
-log(`🔒 Evidence mode: strict — missing scores/cases/assessment fields are rejected, never synthesized.`);
+log('🔒 Evidence mode: strict — missing scores/cases/assessment fields are rejected, never synthesized.');
 log(`♻️ Cache: ${config.isFresh ? 'disabled (--fresh)' : `${cachedSamplesByFamily.size} compatible family cache records available`}`);
 log(`Evaluating ${familyRows.length} sensitivity families...\n`);
 
@@ -234,6 +244,8 @@ let maxContextUtilization = 0;
 for (let index = 0; index < familyRows.length; index += 1) {
   const family = familyRows[index];
   const expectedCaseIds = expectedByFamily.get(family.familyId);
+  // Pointwise scores remain on the established 0..10 contract for baseline comparability.
+  // --rubric-scale controls pairwise sensitivity scoring only.
   const familySchema = generateFamilyResponseSchema(family.familyId, expectedCaseIds);
 
   const familySamples = cachedSamplesByFamily.get(family.familyId) || [];
@@ -255,7 +267,6 @@ for (let index = 0; index < familyRows.length; index += 1) {
       });
       familySamples.push(sample);
 
-      // Append raw sample to samples artifact
       const sampleLine = JSON.stringify({
         familyId: family.familyId,
         sampleIndex,
@@ -275,12 +286,37 @@ for (let index = 0; index < familyRows.length; index += 1) {
       }
     }
 
-    // Aggregate samples
     const { aggregateResult, stability } = aggregateFamilySamples(family.familyId, familySamples, expectedCaseIds);
     evaluatedRows.push(aggregateResult);
+
+    if (config.isPairwise) {
+      const blindFamily = formatFamilyForPacketVersion(family, 'v2');
+      const casesById = new Map(blindFamily.cases.map((c) => [c.caseId, c]));
+      const edges = getFamilyEdges(family.familyId);
+      const pairwiseSeed = deriveSampleSeed(
+        config.baseSeed,
+        `${family.familyId}:pairwise`,
+        0,
+        config.seedStrategy
+      );
+      const pairwiseOutcome = await executeFamilyPairwiseEvaluations({
+        familyId: family.familyId,
+        edges,
+        casesById,
+        config,
+        seed: pairwiseSeed,
+        sampleIndex: 0,
+        callProviderFn: callProvider,
+      });
+
+      for (const pResult of pairwiseOutcome.pairwiseResults) {
+        writeFileSync(pairwisePath, `${JSON.stringify(pResult)}\n`, { flag: 'a', encoding: 'utf8' });
+      }
+      stability.pairwise = pairwiseOutcome;
+    }
+
     allStabilities.push(stability);
 
-    // Update judge-scores.jsonl
     const scoresContent = evaluatedRows.map((r) => JSON.stringify(r)).join('\n') + '\n';
     atomicWriteFile(scoresPath, scoresContent);
 
@@ -291,7 +327,10 @@ for (let index = 0; index < familyRows.length; index += 1) {
 
     const elapsedSeconds = Math.round((Date.now() - startMs) / 1000);
     const spreadInfo = config.samples > 1 ? ` (MAD: ±${stability.familySensitivityMad})` : '';
-    console.log(`✓ ${elapsedSeconds}s | sensitivity ${aggregateResult.familyAssessment.sensitivity_quality}/10${spreadInfo}`);
+    const biasInfo = stability.pairwise
+      ? ` | position bias: ${stability.pairwise.positionBias.positionBiasIndex} | order instability: ${stability.pairwise.positionBias.orderInstabilityIndex}`
+      : '';
+    console.log(`✓ ${elapsedSeconds}s | sensitivity ${aggregateResult.familyAssessment.sensitivity_quality}/10${spreadInfo}${biasInfo}`);
 
     if (config.isDebug) {
       console.log(JSON.stringify(aggregateResult, null, 2));
@@ -303,7 +342,6 @@ for (let index = 0; index < familyRows.length; index += 1) {
   }
 }
 
-// Write stability summary artifact
 const overallStability = {
   schema: 'adaptive-training-recommender/ai-plan-judge-stability@1',
   samples: config.samples,
@@ -315,7 +353,6 @@ const overallStability = {
 };
 atomicWriteJson(stabilityPath, overallStability);
 
-// Update completed manifest
 const completedManifest = {
   ...runIdentity,
   startedAt,

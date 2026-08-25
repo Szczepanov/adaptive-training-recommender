@@ -7,6 +7,14 @@ export function resolveRequestTimeoutMs(config) {
   return config.provider === 'local' ? DEFAULT_LOCAL_TIMEOUT_MS : DEFAULT_CLOUD_TIMEOUT_MS;
 }
 
+export function describeStructuredOutputRequirements(schema) {
+  const required = Array.isArray(schema?.required) ? schema.required : [];
+  const rootRequirement = required.length > 0
+    ? `Root JSON MUST include all required fields: ${required.map((field) => `"${field}"`).join(', ')}.`
+    : 'Root JSON must match the supplied schema exactly.';
+  return `Return ONLY valid JSON matching the supplied schema. ${rootRequirement} Do not add prose outside the JSON object.`;
+}
+
 export async function withProgress(request) {
   const timer = setInterval(() => process.stdout.write('.'), 5000);
   try {

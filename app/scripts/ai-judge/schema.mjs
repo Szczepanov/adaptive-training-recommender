@@ -28,6 +28,8 @@ export function generateFamilyResponseSchema(familyId, expectedCaseIds) {
     throw new Error('generateFamilyResponseSchema requires a non-empty array of expectedCaseIds');
   }
 
+  const scoreSchema = { type: 'number', minimum: 0, maximum: 10 };
+
   return {
     type: 'object',
     additionalProperties: false,
@@ -59,10 +61,7 @@ export function generateFamilyResponseSchema(familyId, expectedCaseIds) {
               additionalProperties: false,
               required: REQUIRED_SCORES,
               properties: Object.fromEntries(
-                REQUIRED_SCORES.map((key) => [
-                  key,
-                  { type: 'number', minimum: 0, maximum: 10 },
-                ])
+                REQUIRED_SCORES.map((key) => [key, scoreSchema])
               ),
             },
             confidence: {
@@ -127,3 +126,5 @@ export function generateFamilyResponseSchema(familyId, expectedCaseIds) {
     },
   };
 }
+
+export { generatePairwiseResponseSchema } from './pairwise.mjs';
