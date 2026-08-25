@@ -1,3 +1,4 @@
+import { Agent } from 'undici';
 import { extractCleanJson } from '../validation.mjs';
 import {
   createNormalizedResult,
@@ -5,6 +6,11 @@ import {
   resolveRequestTimeoutMs,
   withProgress,
 } from './base.mjs';
+
+const localDispatcher = new Agent({
+  headersTimeout: 0,
+  bodyTimeout: 0,
+});
 
 export async function callOllama({
   packetJson,
@@ -28,7 +34,8 @@ export async function callOllama({
       num_ctx: config.local.numCtx,
       num_predict: config.local.numPredict,
       temperature: 0.1,
-      ...(seed != null ? { seed } : {}),
+      repeat_penalty: 1.1,
+      ...(seed != null ? { seed: seed + (attempt - 1) * 7919 } : {}),
     },
     ...(config.thinkingEnabled ? { think: true } : { think: false }),
   };
@@ -42,6 +49,7 @@ export async function callOllama({
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local' },
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(resolveRequestTimeoutMs(config)),
+      dispatcher: localDispatcher,
     });
 
     const completedAt = new Date().toISOString();
