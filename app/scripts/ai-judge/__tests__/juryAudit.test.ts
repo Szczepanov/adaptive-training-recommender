@@ -28,6 +28,7 @@ function summary(runLabel, model, overrides = {}) {
       seedStrategy: 'derived',
       thinkingEnabled: true,
       batchSize: 6,
+      inferenceSha256: 'same-inference-profile',
       ...overrides,
     },
     metrics: {
@@ -45,7 +46,15 @@ function summary(runLabel, model, overrides = {}) {
       quadraticWeightedKappa: 0.82,
       counts: { forbiddenClaimViolations: 0, numericParameterCandidateViolations: 0 },
     },
-    telemetry: { promptTokens: 100, completionTokens: 50, totalTokens: 150, wallClockMs: 1000, estimatedCostUsd: 0.01 },
+    telemetry: {
+      promptTokens: 100,
+      completionTokens: 50,
+      totalTokens: 150,
+      wallClockMs: 1000,
+      acceptedInferenceMs: 900,
+      schemaEnforcementRate: 1,
+      estimatedCostUsd: 0.01,
+    },
     aggregateResults: [
       { caseId: 'case-a', absoluteClass: 3, reactionClass: 'appropriate', preferredPlanId: 'none' },
       { caseId: 'case-b', absoluteClass: 1, reactionClass: 'underreaction', preferredPlanId: 'none' },
@@ -62,9 +71,10 @@ describe('AI judge reference/jury audit', () => {
     const audit = buildReferenceAudit(loaded, '2026-08-25T00:00:00.000Z');
     expect(audit.runs).toHaveLength(2);
     expect(audit.pairwiseComparisons[0].reactionAgreement).toBe(1);
+    expect(audit.pairwiseComparisons[0].changedEvaluatorAxes).toEqual(['model', 'modelDigest']);
     expect(audit).not.toHaveProperty('winner');
     expect(audit.interpretation).toMatch(/No automatic winner/);
-    expect(audit.runs[0].estimatedCostUsd).toBe(0.01);
+    expect(audit.runs[0]).toMatchObject({ estimatedCostUsd: 0.01, schemaEnforcementRate: 1, acceptedInferenceMs: 900 });
   });
 
   it('fails closed with the exact incompatible contract field', () => {
@@ -73,6 +83,27 @@ describe('AI judge reference/jury audit', () => {
       { path: 'q6.json', value: summary('q6', 'model-q6', { promptSha256: 'changed-prompt' }) },
     ];
     expect(() => assertCompatibleReferenceRuns(loaded)).toThrow(/contract mismatch for 'promptSha256'/);
+  });
+
+  it('makes multi-axis evaluator comparisons explicit', () => {
+    const loaded = [
+      { path: 'q4.json', value: summary('q4', 'model-q4') },
+      {
+        path: 'quick.json',
+        value: summary('quick', 'model-quick', {
+          thinkingEnabled: false,
+          inferenceSha256: 'different-inference-profile',
+        }),
+      },
+    ];
+    const audit = buildReferenceAudit(loaded);
+    expect(audit.pairwiseComparisons[0].changedEvaluatorAxes).toEqual([
+      'model',
+      'modelDigest',
+      'thinkingEnabled',
+      'inferenceProfile',
+    ]);
+    expect(audit.interpretation).toMatch(/confounded/);
   });
 
   it('surfaces cross-evaluator disagreement and renders provenance', () => {
@@ -88,6 +119,8 @@ describe('AI judge reference/jury audit', () => {
     const markdown = renderReferenceAuditMarkdown(audit);
     expect(markdown).toContain('model-q4');
     expect(markdown).toContain('model-reference');
+    expect(markdown).toContain('Changed evaluator axes');
+    expect(markdown).toContain('Native schema');
     expect(markdown).toContain('comparability break');
   });
 });
