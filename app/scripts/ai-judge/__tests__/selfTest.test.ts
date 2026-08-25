@@ -7,6 +7,7 @@ import {
   loadSelfTestFixtures,
   quadraticWeightedKappa,
   resolveJsonPointer,
+  validateSelfTestFixtures,
   validateSelfTestResponse,
 } from '../selfTest.mjs';
 import { SELF_TEST_RESPONSE_SCHEMA, generateSelfTestResponseSchema } from '../selfTestSchema.mjs';
@@ -54,6 +55,21 @@ describe('AI judge self-test calibration contract', () => {
     ]));
   });
 
+  it('rejects unsupported fixture categories, inconsistent ordinal targets, and degenerate pairwise comparisons', () => {
+    const badCategoryCases = structuredClone(fixtures.cases);
+    badCategoryCases[0].category = 'unknown_category';
+    expect(() => validateSelfTestFixtures(badCategoryCases, structuredClone(fixtures.expected))).toThrow(/category 'unknown_category' is unsupported/);
+
+    const badTargetExpected = structuredClone(fixtures.expected);
+    badTargetExpected.cases[fixtures.cases[0].caseId].ordinalTarget = 1;
+    expect(() => validateSelfTestFixtures(structuredClone(fixtures.cases), badTargetExpected)).toThrow(/ordinalTarget must fall inside absoluteClassRange/);
+
+    const badPairCases = structuredClone(fixtures.cases);
+    const pair = badPairCases.find((item) => item.evaluationMode === 'pairwise');
+    pair.comparison.planBId = pair.comparison.planAId;
+    expect(() => validateSelfTestFixtures(badPairCases, structuredClone(fixtures.expected))).toThrow(/comparison must reference two distinct plans/);
+  });
+
   it('builds blind primary packets without expectations, categories, or source diagnostics', () => {
     const fixture = fixtures.cases.find((item) => item.caseId === 'cal_bias_false_diagnostic');
     const packet = buildSelfTestPacket(fixture);
@@ -70,7 +86,7 @@ describe('AI judge self-test calibration contract', () => {
     expect(reverse.plans.map((plan) => plan.planId)).toEqual(['verbose_plan', 'concise_plan']);
   });
 
-  it('generates an exact per-batch schema with anchored classes and case IDs', () => {
+  it('generates an exact per-batch schema with anchored classes and evidence-backed observations', () => {
     const cases = fixtures.cases.slice(0, 3);
     const schema = generateSelfTestResponseSchema(fixtures.suiteId, cases);
     expect(schema.properties.results.minItems).toBe(3);
@@ -78,6 +94,8 @@ describe('AI judge self-test calibration contract', () => {
     expect(schema.properties.results.items.properties.caseId.enum).toEqual(cases.map((item) => item.caseId));
     expect(schema.properties.results.items.properties.absoluteClass).toMatchObject({ type: 'integer', minimum: 0, maximum: 4 });
     expect(schema.properties.results.items.properties.evidenceReferences.items.pattern).toContain('inputContext|plans|comparison|focusPlanId');
+    expect(schema.properties.results.items.properties.observations).toMatchObject({ minItems: 1 });
+    expect(schema.properties.results.items.properties.observations.items.properties.evidenceReferences.minItems).toBe(1);
     expect(schema.additionalProperties).toBe(false);
   });
 
@@ -89,7 +107,7 @@ describe('AI judge self-test calibration contract', () => {
     expect(resolveJsonPointer(buildSelfTestPacket(cases[0]), validated.results[0].evidenceReferences[0])).toBeDefined();
   });
 
-  it('rejects duplicate cases, unresolved pointers, and non-speculative hypotheses', () => {
+  it('rejects duplicate cases, unresolved pointers, empty/uncited observations, and non-speculative hypotheses', () => {
     const cases = fixtures.cases.slice(0, 2);
     const duplicate = makePerfectResult(fixtures, cases);
     duplicate.results[1].caseId = duplicate.results[0].caseId;
@@ -98,6 +116,14 @@ describe('AI judge self-test calibration contract', () => {
     const badPointer = makePerfectResult(fixtures, cases);
     badPointer.results[0].evidenceReferences = ['/not/in/the/packet'];
     expect(() => validateSelfTestResponse(badPointer, fixtures.suiteId, cases)).toThrow(/unresolved JSON Pointer/);
+
+    const emptyObservations = makePerfectResult(fixtures, cases);
+    emptyObservations.results[0].observations = [];
+    expect(() => validateSelfTestResponse(emptyObservations, fixtures.suiteId, cases)).toThrow(/observations must be an array with at least 1 item/);
+
+    const uncitedObservation = makePerfectResult(fixtures, cases);
+    uncitedObservation.results[0].observations[0].evidenceReferences = [];
+    expect(() => validateSelfTestResponse(uncitedObservation, fixtures.suiteId, cases)).toThrow(/evidenceReferences must be an array with at least 1 item/);
 
     const badHypothesis = makePerfectResult(fixtures, cases);
     badHypothesis.results[0].hypotheses = [{ text: 'Certain internal cause.', speculative: false, evidenceReferences: [] }];
