@@ -14,6 +14,8 @@ describe('edges module', () => {
     'concurrent_strength_endurance',
     'injury_constraints',
     'planning_modes_overlays',
+    'temporal_acute_vs_persistent',
+    'conflicting_tissue_vs_wearable',
   ];
 
   const expectedEdgeIdsByFamily = {
@@ -28,6 +30,8 @@ describe('edges module', () => {
     concurrent_strength_endurance: ['judge_concurrent_none->judge_concurrent_heavy_lower', 'judge_concurrent_none->judge_concurrent_heavy_upper', 'judge_concurrent_none->judge_concurrent_power_maintenance'],
     injury_constraints: ['judge_injury_none->judge_injury_running_restricted', 'judge_injury_none->judge_injury_lower_body_restricted', 'judge_injury_lower_body_restricted->judge_injury_expired'],
     planning_modes_overlays: ['judge_mode_event_directed->judge_mode_evergreen', 'judge_mode_event_directed->judge_mode_travel_overlay', 'judge_mode_event_directed->judge_mode_conservative_preference'],
+    temporal_acute_vs_persistent: ['judge_traj_neutral->judge_traj_acute_adverse_day1', 'judge_traj_acute_adverse_day1->judge_traj_persistent_adverse_3d', 'judge_traj_persistent_adverse_3d->judge_traj_improving_trend'],
+    conflicting_tissue_vs_wearable: ['judge_conflict_neutral->judge_conflict_sore_legs_great_hrv', 'judge_conflict_neutral->judge_conflict_fresh_legs_terrible_hrv', 'judge_conflict_fresh_legs_terrible_hrv->judge_conflict_high_stress_fresh_body'],
   };
 
   it('matches the complete corpus-facing family-edge contract', () => {
@@ -50,7 +54,7 @@ describe('edges module', () => {
       }
     }
 
-    expect(Object.values(expectedEdgeIdsByFamily).flat()).toHaveLength(45);
+    expect(Object.values(expectedEdgeIdsByFamily).flat()).toHaveLength(51);
   });
 
   it('returns empty array for unknown family', () => {

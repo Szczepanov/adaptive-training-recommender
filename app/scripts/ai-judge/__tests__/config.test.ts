@@ -141,4 +141,15 @@ describe('AI Judge Config', () => {
     });
     expect(standardRun.model).toBe('standard-model');
   });
+
+  it('parses concurrency and parallel options with defaults', () => {
+    const defaultCfg = resolveJudgeConfig(['--provider', 'local'], {});
+    expect(defaultCfg.concurrency).toBe(1);
+
+    const cliCfg = resolveJudgeConfig(['--provider', 'local', '--concurrency', '2'], {});
+    expect(cliCfg.concurrency).toBe(2);
+
+    const parallelCfg = resolveJudgeConfig(['--provider', 'local', '--parallel', '3'], {});
+    expect(parallelCfg.concurrency).toBe(3);
+  });
 });

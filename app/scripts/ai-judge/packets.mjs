@@ -2,6 +2,15 @@ import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { computeDerivedPlanFeatures } from './derivedFeatures.mjs';
 
+function compactReadinessTrajectory(input) {
+  if (!Array.isArray(input?.readinessTrajectory)) return null;
+  return input.readinessTrajectory.map((day) => ({
+    date: day.date,
+    subjective: day.subjective ?? null,
+    objective: day.objective ?? null,
+  }));
+}
+
 export function compactFamilyForJudge(rawFamily) {
   if (!rawFamily || typeof rawFamily !== 'object') {
     throw new Error('compactFamilyForJudge requires an object rawFamily');
@@ -14,6 +23,8 @@ export function compactFamilyForJudge(rawFamily) {
       caseId: item.input?.caseId,
       label: item.input?.label,
       changedAxis: item.input?.changedAxis,
+      simulationMode: item.input?.simulationMode ?? 'weekly_forecast',
+      readinessTrajectory: compactReadinessTrajectory(item.input),
       day1: {
         tier: item.plan?.[0]?.readinessTier,
         mode: item.plan?.[0]?.mode,
@@ -25,6 +36,7 @@ export function compactFamilyForJudge(rawFamily) {
       },
       plan14d: (item.plan ?? []).map((day, index) => ({
         day: index + 1,
+        date: day?.date,
         mode: day?.mode,
         session: day?.session?.title,
         category: day?.session?.category,
@@ -56,10 +68,12 @@ export function buildBlindFamilyPacket(rawFamily) {
       const context = input.context ?? {};
 
       const inputContext = {
+        simulationMode: input.simulationMode ?? 'weekly_forecast',
         readiness: input.readiness ? {
           objective: input.readiness.objective ?? null,
           subjective: input.readiness.subjective ?? null,
         } : null,
+        readinessTrajectory: compactReadinessTrajectory(input),
         event: input.event ? {
           title: input.event.title,
           date: input.event.date,
@@ -88,7 +102,6 @@ export function buildBlindFamilyPacket(rawFamily) {
           durationMin: f.durationMin,
           fixed: f.fixed,
         })),
-        authoredPlanBlocks: input.authoredPlanBlocks ?? null,
         trainingIntentProfile: input.trainingIntentProfile ?? null,
       };
 

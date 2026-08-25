@@ -9,7 +9,7 @@ The committed baseline is evidence for comparison. It is not a production decisi
 
 ## Scope and baseline boundary
 
-PR #216 established the true **pre-change** judge baseline on `main` at merge commit `967a37238ebf5b8fb847a0ec6bba8d20e42d53c1`. That baseline intentionally captured the planner before the engine-behavior changes in this PR.
+PR #216 established the true **pre-change** judge baseline on `main` at merge commit `967a37238ebf5b8fb847a0ec6bba8d20e42d53c1`. That baseline intentionally captured the planner before the evaluation-contract changes introduced by Phase 7.
 
 The committed baseline currently records:
 
@@ -20,11 +20,11 @@ The committed baseline currently records:
 - response-schema SHA-256 `ab96127b7dee8fb1bc664897fcfe7d0ff563ba7d7cabf4dd433e1d0b7ed2d21a`
 - local judge model `hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M`
 
-`familiesSha256` fingerprints the actual generated family packets. It is therefore **expected to change when planner behavior changes**. It is useful for proving exactly what a judge saw, but it is not a requirement for before/after score comparability.
+`familiesSha256` fingerprints the actual generated family packets. It is therefore **expected to change when planner behavior or corpus construction changes**. It is useful for proving exactly what a judge saw, but it is not a requirement for before/after score comparability.
 
-`npm run judge:diff` intentionally uses a narrower comparability contract: prompt, response schema, judge model, family/case set, and score dimensions must remain compatible. The generated corpus commit and family-packet hash are reported as provenance so reviewers can verify that the engine changed while the judging contract stayed stable.
+`npm run judge:diff` intentionally uses a narrower comparability contract: prompt, response schema, judge model, family/case set, and score dimensions must remain compatible. The generated corpus commit and family-packet hash are reported as provenance so reviewers can verify what changed.
 
-**Do not refresh the committed baseline before reviewing a candidate engine change.** Doing so would replace the pre-change reference with the candidate itself and erase the comparison the baseline exists to provide.
+**Do not refresh the committed baseline before reviewing a candidate change.** Doing so would replace the pre-change reference with the candidate itself and erase the comparison the baseline exists to provide.
 
 `corpusSha256` is also not a stable semantic fingerprint because `corpus.json` contains capture metadata such as commit/timestamp. Use `familiesSha256` when you need to identify the exact judge packets and the baseline summary when you need to identify the accepted reference scores.
 
@@ -38,32 +38,37 @@ Run commands from `app/`.
 npm run simulate:plan-judge
 ```
 
-The command currently performs four steps:
+The command runs the canonical single-pass corpus builder and invariant verification:
 
-1. `simulate-plan-judge.mjs` runs the real simulator and writes the initial family packets.
-2. `fix-plan-judge-corpus.mjs` applies harness-only compatibility corrections for planner-facing preferences, injury guardrails, valid evergreen intent, travel constraints, judge context, and scheduled-event ownership. It also rewrites the final judge prompt used by the scored run.
-3. `normalize-plan-judge-diagnostics.mjs` reproduces judge-facing anchor-placement wording without changing shared engine diagnostics.
-4. `check-plan-judge-invariants.mjs` verifies the fixed 11-family/60-case shape plus deterministic feasibility and event-demand assertions.
-
-The post-processing layer exists because the judge tooling was extracted after the original simulator already existed. It is deliberately visible rather than pretending there is one canonical builder. New corpus families should preferentially be implemented in one place; growing an additional chain of corrective post-passes should be avoided. Consolidating the builders is a separate harness refactor because changing the final packets or prompt can invalidate score comparability.
+1. `build-plan-judge-corpus.mjs` loads the real engine through Vite SSR and generates 13 families / 68 cases from one canonical definition path. It applies valid preferences, scheduled event commitments, active injury guardrails, evergreen intent, capacity/equipment constraints, delivered-dose history, and explicit rolling-daily temporal recovery trajectories.
+2. `check-plan-judge-invariants.mjs` verifies corpus shape plus deterministic safety, feasibility, event-demand, temporal-evidence, and conflicting-signal assertions.
 
 CI runs this deterministic command only. No provider credentials are required.
 
 ### Deterministic invariants
 
-Hard truths should be asserted before an LLM sees the corpus. The invariant gate currently verifies, among other things:
+Hard truths should be asserted before an LLM sees the corpus. The invariant gate verifies, among other things:
 
 - restricted Running never produces a Running recommendation
 - `avoid_heavy_lower_body` never selects a matching safety-tagged session
 - 45-minute weekday capacity is respected
 - the 45-minute criterium-capacity case receives the compact `end_crit_surges_01` race-specific template
 - travel equipment/environment/time constraints are respected
+- every temporal case contains exactly 14 daily readiness observations aligned one-to-one with 14 plan decisions
+- the acute temporal case is adverse only on Day 1 and returns to neutral on Day 2
+- the persistent temporal case remains adverse on Days 1-3 and returns to neutral on Day 4
+- the improving temporal case progresses from borderline Day 1 to neutral Day 2 to fresh Day 3
+- persistent adverse days avoid high-intensity endurance, and acute severe recovery scales back Day 1 load
+- sore legs plus recent heavy lower-body work do not produce a heavy lower-body Day-1 session even when wearables look excellent
+- severe systemic wearable collapse scales back Day-1 systemic load even when local soreness is low
 - evergreen mode propagates valid evergreen intent and carries no event
 - a scheduled event owns its event date; no independent workout is added on top of the fixed event commitment
 - criterium and gran-fondo A/B cases produce different selected-template sequences
 - the A-priority criterium case actually selects `end_crit_surges_01`, while the A-priority gran-fondo control does not
 
 The final two checks matter because generic sequence distance is too weak on its own: an unrelated recovery or strength shuffle could make two plans technically different without proving event-demand specificity reached workout selection.
+
+The travel case intentionally tests **executed** capacity, equipment, and environment constraints only. Do not attach an `authoredPlanBlocks` object to a judge fixture unless the simulation path actually passes that block through the engine. Showing the judge a policy input that the planner never consumed would be false evidence.
 
 ### 2. Run the model judge
 
@@ -107,7 +112,25 @@ npm run judge:resume
 npm run judge:quick:resume
 ```
 
-The fresh npm wrappers (`npm run judge:local`, `npm run judge:local:stability`, `npm run judge:local:quick`, `npm run judge:run`, `npm run judge:quick`) regenerate the deterministic corpus and pass `--fresh`. The resume commands or directly running `node scripts/run-ai-judge.mjs` with `--resume` (or without `--fresh`) can reuse already validated family sample responses **only when** the run manifest still matches the exact families, prompt, response schema, model, provider, and sample configuration.
+The fresh npm wrappers (`npm run judge:local`, `npm run judge:local:stability`, `npm run judge:local:quick`, `npm run judge:run`, `npm run judge:quick`) regenerate the deterministic corpus and pass `--fresh`. The resume commands or directly running `node scripts/run-ai-judge.mjs` with `--resume` can reuse already validated family sample responses **only when** the run manifest still matches the exact families, prompt, response schema, model, provider, packet/rubric settings, samples/seeds, thinking mode, and family concurrency.
+
+### Parallel family evaluation (`--concurrency N`)
+
+Pointwise samples inside one family remain sequential so sample aggregation stays simple, but independent families may be evaluated concurrently:
+
+```bash
+node scripts/run-ai-judge.mjs --provider local --fresh --concurrency 2
+# alias
+node scripts/run-ai-judge.mjs --provider local --fresh --parallel 2
+```
+
+`JUDGE_CONCURRENCY` provides the environment equivalent. The default is `1`.
+
+Concurrency is part of `judge-run-manifest.json` and therefore part of the resume identity. A run produced with `--concurrency 1` is not silently resumed as a `--concurrency 4` run. Score output is rewritten in canonical corpus-family order even when completion order differs. Sample/attempt JSONL rows may reflect actual completion order.
+
+If one family exhausts retries, workers already in flight are allowed to finish and persist their validated samples/results before the run fails. No new families are dequeued after the first fatal family failure. This preserves useful resume evidence without pretending the run completed successfully.
+
+For a local GPU/CPU model, increase concurrency only when the serving stack and available memory can sustain simultaneous requests. More family workers can reduce wall-clock time but can also lower throughput or cause OOM/queue contention.
 
 ### Multi-sample repeatability & stability (`--samples N`)
 
@@ -125,6 +148,7 @@ To prevent the AI judge from anchoring on the engine's internal diagnostic warni
 - `npm run judge:local:blind` or `--packet-version v2` / `--blind`:
   - Strips all internal planner opinions/diagnostics from the primary prompt packet.
   - Presents clean athlete inputs (`readiness`, `events`, `preferences`, `constraints`, `recentTraining`, `fixedActivities`).
+  - Preserves `simulationMode` and, for rolling temporal cases, the exact `readinessTrajectory` used by the engine. This is factual input evidence, not an engine opinion.
   - Computes deterministic descriptive plan features in pure JavaScript (`totalPlannedDurationMin`, `cumulativeSystemicCost`, `hardSessionCount`, `consecutiveHardDaysMax`, `modalityDistribution`, `daysFromLastHardSessionToEvent`).
 - Optional secondary diagnostic audit pass (`npm run judge:local:audit` or `--with-diagnostics-audit`):
   - Cross-checks whether engine diagnostic warnings accurately reflect the plan or represent potential false alarms / masked defects.
@@ -137,7 +161,7 @@ To move beyond opaque single-number family sensitivity grades and measure positi
   - `4 = Exemplary`, `3 = Sound`, `2 = Marginal`, `1 = Flawed`, `0 = Unsafe`.
   - Configurable via `--rubric-scale <0-4|0-10>` with two-way conversion for baseline comparability.
 - **Explicit Comparison Graph (`edges.mjs`)**:
-  - Defines canonical pairwise evaluation edges for all 11 sensitivity families (e.g. `neutral -> hrv_2sd`, `load_none -> hard_yesterday`).
+  - Defines canonical pairwise evaluation edges for all 13 sensitivity families, including the rolling temporal and conflicting-signal families.
 - **Pairwise Sensitivity Evaluator (`pairwise.mjs`)**:
   - Evaluates observed plan differences, reaction direction (`less_load | more_load | same | shift`), and reaction appropriateness (`underreaction | appropriate | overreaction`).
   - Persists pairwise rows to `artifacts/ai-plan-judge/latest/judge-pairwise.jsonl`.
@@ -292,26 +316,42 @@ The run writes `artifacts/ai-plan-judge/latest/judge-run-manifest.json`, which b
 - `familiesSha256`
 - prompt SHA-256
 - response-schema SHA-256
-- resolved judge model
-- judge provider
+- resolved judge model and provider
+- packet/pairwise/rubric configuration
+- sample/seed/thinking configuration
+- family concurrency
 
-This prevents a stale family score file from being silently reused after the corpus or judging contract changes.
+This prevents a stale or differently scheduled family score file from being silently reused after the corpus, judging contract, or runtime identity changes.
 
 ## Temporal semantics of the corpus
 
-The multi-day output needs to be interpreted according to how the simulator advances time.
+Phase 7 has **two intentionally different simulation modes**, and the packet names which one produced each case.
 
-For each simulated week, the scenario provides a readiness snapshot at the **weekly anchor date**. That snapshot is used for the current-day recommendation and seeds the next-day branch. The remaining forecast days are then produced by the week-ahead planner using projected fatigue, accumulated completed exposures, constraints, objectives, and event context. After the simulated week is added to history, the scenario advances seven days and asks for readiness again.
+### `weekly_forecast`
 
-Therefore a case that returns the same adverse snapshot on every scenario callback represents **repeated adverse weekly anchor observations**, not a literal claim that identical HRV, sleep, soreness, and subjective scores persisted unchanged every day for 14 days.
+Most families retain the established simulation semantics. For each chained week, the scenario provides a readiness snapshot at the **weekly anchor date**. That snapshot drives the current-day recommendation and next-day branch; the remaining days are produced by the week-ahead planner from projected fatigue, accumulated exposures, constraints, objectives, and event context. After the simulated week is added to history, the scenario advances seven days and samples readiness again.
 
-This matters when interpreting judge rationales. Statements such as “the athlete was severely fatigued for the entire 14-day plan” overstate what the packet establishes. Acute-versus-persistent daily recovery trajectories are valuable future corpus coverage, but adding them changes the evidence contract and should be reviewed/re-baselined explicitly rather than smuggled into an engine-calibration PR.
+Do not reinterpret a weekly-forecast case as if the same wearable/check-in snapshot had been measured every calendar day.
+
+### `rolling_daily`
+
+The `temporal_acute_vs_persistent` family deliberately uses a different evidence contract. For 14 consecutive dates the harness:
+
+1. injects that date's deterministic measured readiness into the real `evaluateTrainingWithIntent` path;
+2. records the selected effective prescription for that date;
+3. converts the prescribed session into completed history so the next date sees accumulated delivered load;
+4. carries the prior recommendation mode forward so recovery-buffer behavior is represented;
+5. advances exactly one calendar day and repeats.
+
+The resulting `input.readinessTrajectory` contains the exact 14 date-stamped observations used by the engine. Blind packet v2 preserves those factual inputs while still removing engine diagnostics. `plan14d[n]` and `readinessTrajectory[n]` are required by invariants to refer to the same date.
+
+This is what makes “acute Day 1”, “persistent Days 1-3”, and “improving by Day 3” literal temporal claims rather than labels placed on weekly-anchor snapshots.
 
 ### Effective prescribed dose in simulation
 
 When production returns an automatic `activeDose` (for example an easier variant on a `modify` day), the simulator materializes that effective prescription before it writes the day trace, accumulated history, or judge packet. Duration, cost and stimulus therefore represent the prescribed reduced dose rather than the catalog template's nominal full dose. Template identity remains stable so workout/coverage identity is not lost.
 
-This is an evidence-integrity rule: a judge must not see `mode: modify` paired with full-dose load, and the following simulated week must not inherit fatigue/objective credit as though the dose reduction never happened.
+This is an evidence-integrity rule: a judge must not see `mode: modify` paired with full-dose load, and the following simulated decision must not inherit fatigue/objective credit as though the dose reduction never happened.
 
 ## Analyze and compare
 
@@ -327,7 +367,9 @@ Compare the current candidate summary with the committed pre-change baseline:
 npm run judge:diff
 ```
 
-The diff checker refuses to treat runs as comparable when the prompt, response schema, family/case set, score dimensions, or judge model changed. For exploratory model-to-model comparisons only, explicitly opt in:
+The diff checker refuses to treat runs as comparable when the prompt, response schema, family/case set, score dimensions, or judge model changed. Phase 7 intentionally changes the family/case set and prompt, so the 11-family/60-case Phase-6 baseline is provenance, not a directly comparable score baseline for the new 13-family/68-case contract.
+
+For exploratory model-to-model comparisons only, explicitly opt in:
 
 ```bash
 npm run judge:diff -- --allow-model-change
@@ -351,7 +393,7 @@ npm run judge:diff:prev
 
 ### Judge uncertainty before gating
 
-Do not turn a one-off decimal movement into a merge gate. Before using `--fail-on-regression` as a consequential policy gate, characterize same-model repeatability on the frozen baseline (multiple fresh runs with the same prompt/schema/model), then interpret family-level movement relative to that observed run-to-run variation. A change smaller than ordinary judge variation should be reported as inconclusive rather than as a physiological or algorithmic regression.
+Do not turn a one-off decimal movement into a merge gate. Before using `--fail-on-regression` as a consequential policy gate, characterize same-model repeatability on a frozen compatible contract (multiple fresh runs with the same prompt/schema/model), then interpret family-level movement relative to that observed run-to-run variation. A change smaller than ordinary judge variation should be reported as inconclusive rather than as a physiological or algorithmic regression.
 
 For high-impact behavior changes, prefer repeated same-model scoring plus the blinded A/B helper and direct plan inspection. This uncertainty procedure is evaluation policy only; it must not be converted into production recovery thresholds.
 
@@ -369,22 +411,22 @@ These references support behavioral principles and test design. They should not 
 
 ## Promote a reviewed baseline
 
-A new baseline should be exceptional and review-driven. For an engine behavior PR, the normal order is:
+A new baseline should be exceptional and review-driven. For a change that intentionally migrates the evaluation contract, first regenerate and review the deterministic corpus, packet contents, invariants, and a fresh same-model judge run. Only then decide whether a new baseline should be promoted.
 
 ```bash
 npm run judge:local
 npm run judge:diff
 ```
 
-Use the same judge model as the committed baseline for a score comparison intended to measure engine drift. Review deterministic invariants, plan diffs, family-level score changes, and the raw judge rationales before deciding whether the candidate should become the new reference.
+`judge:diff` is expected to report the Phase-6 baseline as non-comparable while the family/case/prompt contract differs. That is a safety feature, not something to bypass by rewriting the old baseline early.
 
-Only **after** the candidate behavior has been accepted as the new reference should the baseline be promoted:
+Only **after** the Phase-7 contract and candidate behavior have been accepted as the new reference should the baseline be promoted:
 
 ```bash
 npm run judge:update-baseline -- --reviewed
 ```
 
-Prefer an explicit follow-up or clearly isolated baseline-promotion commit so reviewers can still see the pre-change comparison during the behavior review.
+Prefer an explicit follow-up or clearly isolated baseline-promotion commit so reviewers can still see the pre-change reference during review.
 
 Baseline promotion refuses to write when:
 
@@ -394,7 +436,7 @@ Baseline promotion refuses to write when:
 - corpus/families/prompt/schema/scores hashes do not match the current artifacts
 - the corpus was not generated from the current Git `HEAD`
 
-This prevents accidentally committing an old summary after code changed. It does **not** mean a behavior PR should overwrite the old reference before comparison.
+This prevents accidentally committing an old summary after code changed.
 
 ## Blind A/B policy comparison
 
@@ -410,13 +452,15 @@ This produces:
 
 Review `report.md` before opening the unblinding key. Alpha/Beta assignment is derived from a random seed by default. Set `BLIND_AB_SEED` to reproduce the same assignment.
 
-## Behavior-PR review boundary
+## Phase 7 review boundary
 
-This PR is the candidate engine behavior measured against the pre-change baseline established by #216. It is valid for its generated family-packet hash to change; that is the expected consequence of changed recommendations. What must stay stable for a scored before/after comparison is the judging contract described above.
+Phase 7 intentionally changes the evaluation contract rather than pretending to be a score-compatible engine-only change. The reviewable contract changes are:
 
-Two follow-ups should remain separate because they intentionally change the evaluation contract rather than merely engine behavior:
+1. one canonical corpus builder replaces the former simulator + compatibility-fix + diagnostic-normalization chain;
+2. corpus schema advances to `adaptive-training-recommender/ai-plan-judge-corpus@3` with 13 families / 68 cases;
+3. `temporal_acute_vs_persistent` uses explicit `rolling_daily` measured-readiness trajectories, while other families retain `weekly_forecast` semantics;
+4. conflicting local-tissue/systemic-wearable cases become first-class deterministic and pairwise coverage;
+5. the pairwise comparison graph covers all 13 families;
+6. family-level judge concurrency is configurable and part of run provenance/resume compatibility.
 
-1. add acute-versus-persistent daily recovery trajectories so recovery sensitivity can be judged with explicit temporal semantics
-2. consolidate the initial corpus builder and compatibility post-pass into one canonical builder, followed by an explicit baseline migration if the resulting packets or prompt change
-
-Until those are done, reviewers should interpret this corpus as synthetic policy-regression evidence, not clinical calibration or proof of real-world usefulness.
+Reviewers should treat this corpus as synthetic policy-regression evidence, not clinical calibration or proof of real-world usefulness. A new score baseline should be created only after the new contract itself is accepted.
