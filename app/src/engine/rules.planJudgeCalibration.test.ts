@@ -4,6 +4,11 @@ import { evaluateRecoveryConstraints, rankCandidates } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { DailyReadiness, EngineObjectiveInput, FatigueState, SubjectiveInput, UserContext, UserEvent, UserPreferences } from './models';
 import type { ResolvedAvailability } from './schedule';
+import type { TrainingHistoryProvider } from './trainingHistory';
+
+// Deterministic stand-in for the real Firestore-backed provider: these tests exercise
+// calibration policy in isolation and must not depend on network/Firestore reachability.
+const emptyHistoryProvider: TrainingHistoryProvider = { reconstruct: async () => [] };
 
 const DEFAULT_FATIGUE: FatigueState = {
     lastUpdatedDate: '2026-03-01',
@@ -180,6 +185,8 @@ describe('plan-judge calibration policy guards', () => {
             context(),
             [],
             '2026-08-24',
+            undefined,
+            emptyHistoryProvider,
         );
 
         expect(result.mode).toBe('modify');
