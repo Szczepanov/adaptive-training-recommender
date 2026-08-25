@@ -114,6 +114,17 @@ Single 9B Q4 model invocations have non-zero run-to-run dispersion. The harness 
 - Metrics are persisted to `artifacts/ai-plan-judge/latest/judge-stability.json`
 - An aggregate `judge-scores.jsonl` is exported matching the standard schema for backward compatibility.
 
+### Blind primary scoring packet (`--blind` / `judge-packet@2`) & diagnostic split
+
+To prevent the AI judge from anchoring on the engine's internal diagnostic warnings (e.g. `qualityWarnings`, `violations`, `utility`, `rejectionCounts`), the runner supports blind primary evaluation:
+- `npm run judge:local:blind` or `--packet-version v2` / `--blind`:
+  - Strips all internal planner opinions/diagnostics from the primary prompt packet.
+  - Presents clean athlete inputs (`readiness`, `events`, `preferences`, `constraints`, `recentTraining`, `fixedActivities`).
+  - Computes deterministic descriptive plan features in pure JavaScript (`totalPlannedDurationMin`, `cumulativeSystemicCost`, `hardSessionCount`, `consecutiveHardDaysMax`, `modalityDistribution`, `daysFromLastHardSessionToEvent`).
+- Optional secondary diagnostic audit pass (`npm run judge:local:audit` or `--with-diagnostics-audit`):
+  - Cross-checks whether engine diagnostic warnings accurately reflect the plan or represent potential false alarms / masked defects.
+  - Persists audit telemetry to `artifacts/ai-plan-judge/latest/judge-diagnostic-audit.jsonl` without modifying primary score artifacts.
+
 ### Native structured outputs & runtime schema
 
 For Ollama and OpenAI-compatible providers, the runner dynamically compiles a per-family JSON Schema containing:
