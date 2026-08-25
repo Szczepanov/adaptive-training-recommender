@@ -20,13 +20,18 @@ export function hashJson(obj) {
   return hashString(JSON.stringify(obj));
 }
 
-export function generateFamilyResponseSchema(familyId, expectedCaseIds) {
+export function generateFamilyResponseSchema(familyId, expectedCaseIds, rubricScale = '0-10') {
   if (!familyId || typeof familyId !== 'string') {
     throw new Error('generateFamilyResponseSchema requires a valid string familyId');
   }
   if (!Array.isArray(expectedCaseIds) || expectedCaseIds.length === 0) {
     throw new Error('generateFamilyResponseSchema requires a non-empty array of expectedCaseIds');
   }
+
+  const isOrdinal4 = rubricScale === '0-4';
+  const scoreSchema = isOrdinal4
+    ? { type: 'integer', minimum: 0, maximum: 4 }
+    : { type: 'number', minimum: 0, maximum: 10 };
 
   return {
     type: 'object',
@@ -59,10 +64,7 @@ export function generateFamilyResponseSchema(familyId, expectedCaseIds) {
               additionalProperties: false,
               required: REQUIRED_SCORES,
               properties: Object.fromEntries(
-                REQUIRED_SCORES.map((key) => [
-                  key,
-                  { type: 'number', minimum: 0, maximum: 10 },
-                ])
+                REQUIRED_SCORES.map((key) => [key, scoreSchema])
               ),
             },
             confidence: {
@@ -127,3 +129,5 @@ export function generateFamilyResponseSchema(familyId, expectedCaseIds) {
     },
   };
 }
+
+export { generatePairwiseResponseSchema } from './pairwise.mjs';

@@ -125,6 +125,21 @@ To prevent the AI judge from anchoring on the engine's internal diagnostic warni
   - Cross-checks whether engine diagnostic warnings accurately reflect the plan or represent potential false alarms / masked defects.
   - Persists audit telemetry to `artifacts/ai-plan-judge/latest/judge-diagnostic-audit.jsonl` without modifying primary score artifacts.
 
+### Hybrid Pointwise & Pairwise Sensitivity Evaluation (`--pairwise`)
+
+To move beyond opaque single-number family sensitivity grades and eliminate position bias:
+- **Anchored Discrete Ordinal Rubric ($0..4$)**:
+  - `4 = Exemplary`, `3 = Sound`, `2 = Marginal`, `1 = Flawed`, `0 = Unsafe`.
+  - Configurable via `--rubric-scale <0-4|0-10>` with two-way conversion for baseline comparability.
+- **Explicit Comparison Graph (`edges.mjs`)**:
+  - Defines canonical pairwise evaluation edges for all 11 sensitivity families (e.g. `neutral -> hrv_2sd`, `load_none -> hard_yesterday`).
+- **Pairwise Sensitivity Evaluator (`pairwise.mjs`)**:
+  - Evaluates observed plan differences, reaction direction (`less_load | more_load | same | shift`), and reaction appropriateness (`underreaction | appropriate | overreaction`).
+  - Persists pairwise rows to `artifacts/ai-plan-judge/latest/judge-pairwise.jsonl`.
+- **Order-Swap Position Bias Detection (`--check-position-bias`)**:
+  - Automatically runs $(A, B)$ and reversed $(B, A)$ pairs with derived seeds.
+  - Computes the **Position Bias Index** ($0.0 = \text{perfect symmetry}, 1.0 = \text{total bias}$) recorded in `artifacts/ai-plan-judge/latest/judge-stability.json`.
+
 ### Native structured outputs & runtime schema
 
 For Ollama and OpenAI-compatible providers, the runner dynamically compiles a per-family JSON Schema containing:

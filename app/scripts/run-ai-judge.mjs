@@ -12,6 +12,13 @@ import { preflightOllama, cleanupOllamaMemory } from './ai-judge/runtime.mjs';
 import { callProvider } from './ai-judge/providers/index.mjs';
 import { aggregateFamilySamples, deriveSampleSeed } from './ai-judge/aggregate.mjs';
 import { auditFamilyDiagnostics, appendDiagnosticAuditRecords } from './ai-judge/diagnosticsAudit.mjs';
+import { getFamilyEdges } from './ai-judge/edges.mjs';
+import {
+  formatPairwiseComparisonPacket,
+  generatePairwiseResponseSchema,
+  evaluateOrderSwapConsistency,
+  computePositionBiasIndex,
+} from './ai-judge/pairwise.mjs';
 
 function getTimestamp() {
   return new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -35,6 +42,7 @@ const samplesPath = resolve(outputDir, 'judge-samples.jsonl');
 const attemptsPath = resolve(outputDir, 'judge-attempts.jsonl');
 const stabilityPath = resolve(outputDir, 'judge-stability.json');
 const diagnosticAuditPath = resolve(outputDir, 'judge-diagnostic-audit.jsonl');
+const pairwisePath = resolve(outputDir, 'judge-pairwise.jsonl');
 const manifestPath = resolve(outputDir, 'judge-run-manifest.json');
 
 // Ensure artifacts exist or generate deterministic corpus
@@ -58,48 +66,50 @@ const runIdentity = {
   judgeModel: config.model,
   judgeProvider: config.provider,
   packetVersion: config.packetVersion,
+  isPairwise: config.isPairwise,
+  checkPositionBias: config.checkPositionBias,
+  rubricScale: config.rubricScale,
   samples: config.samples,
   baseSeed: config.baseSeed,
   seedStrategy: config.seedStrategy,
   thinkingEnabled: config.thinkingEnabled,
 };
 
+// Check cache compatibility
+const cachedSamplesByFamily = new Map();
+let reuseCache = !config.isFresh && !config.isResume ? false : existsSync(manifestPath) && existsSync(samplesPath);
+
 function compatibleManifest(prev) {
-  return prev
-    && prev.schema === runIdentity.schema
-    && prev.familiesSha256 === runIdentity.familiesSha256
+  if (!prev || typeof prev !== 'object') return false;
+  return prev.familiesSha256 === runIdentity.familiesSha256
     && prev.promptSha256 === runIdentity.promptSha256
     && prev.responseSchemaSha256 === runIdentity.responseSchemaSha256
     && prev.judgeModel === runIdentity.judgeModel
     && prev.judgeProvider === runIdentity.judgeProvider
-    && (prev.packetVersion ?? 'v1') === runIdentity.packetVersion
-    && (prev.samples ?? 1) === runIdentity.samples;
+    && prev.packetVersion === runIdentity.packetVersion
+    && prev.isPairwise === runIdentity.isPairwise
+    && prev.rubricScale === runIdentity.rubricScale
+    && prev.samples === runIdentity.samples
+    && prev.thinkingEnabled === runIdentity.thinkingEnabled;
 }
 
-// Load existing samples if resuming
-const cachedSamplesByFamily = new Map(); // familyId -> Array of validated sample objects
 let previousManifest = null;
-
-let reuseCache = false;
-
-if (!config.isFresh && existsSync(samplesPath) && existsSync(manifestPath)) {
+if (reuseCache) {
   try {
     previousManifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     if (compatibleManifest(previousManifest)) {
-      reuseCache = true;
-      const sampleLines = readFileSync(samplesPath, 'utf8')
+      const rawSamples = readFileSync(samplesPath, 'utf8')
         .split(/\r?\n/)
         .map((l) => l.trim())
-        .filter(Boolean);
+        .filter(Boolean)
+        .map((l) => JSON.parse(l));
 
-      for (const line of sampleLines) {
-        const item = JSON.parse(line);
-        const expectedCaseIds = expectedByFamily.get(item.familyId);
-        if (!expectedCaseIds) continue;
-        const validated = validateAndNormalizeJudgeRow(item.result, item.familyId, expectedCaseIds);
+      for (const item of rawSamples) {
         if (!cachedSamplesByFamily.has(item.familyId)) {
           cachedSamplesByFamily.set(item.familyId, []);
         }
+        const expectedCaseIds = expectedByFamily.get(item.familyId);
+        const validated = validateAndNormalizeJudgeRow(item.result, item.familyId, expectedCaseIds);
         cachedSamplesByFamily.get(item.familyId).push({
           sampleIndex: item.sampleIndex,
           seed: item.seed,
@@ -109,6 +119,7 @@ if (!config.isFresh && existsSync(samplesPath) && existsSync(manifestPath)) {
       }
     } else {
       log('Existing judge cache ignored because corpus/prompt/schema/model/provider provenance does not match this run.');
+      reuseCache = false;
     }
   } catch (error) {
     log(`Existing judge cache ignored because it is invalid: ${error instanceof Error ? error.message : String(error)}`);
@@ -128,10 +139,9 @@ if (config.isFresh || !reuseCache) {
   writeFileSync(scoresPath, '', 'utf8');
   writeFileSync(samplesPath, '', 'utf8');
   writeFileSync(attemptsPath, '', 'utf8');
+  if (config.withDiagnosticsAudit) writeFileSync(diagnosticAuditPath, '', 'utf8');
+  if (config.isPairwise) writeFileSync(pairwisePath, '', 'utf8');
 }
-// Diagnostic audit records are recomputed for every family on every invocation (cached or
-// fresh), so the audit file must always start clean for this run regardless of sample reuse.
-if (config.withDiagnosticsAudit) writeFileSync(diagnosticAuditPath, '', 'utf8');
 
 // Runtime preflight & cleanup
 await cleanupOllamaMemory(config, log);
@@ -140,6 +150,8 @@ const preflight = await preflightOllama(config, log);
 log(`=== AI Plan Judge: ${config.provider.toUpperCase()} / ${config.model} ===`);
 log(`🧠 Thinking mode: ${config.thinkingEnabled ? 'enabled' : 'disabled'}`);
 log(`📦 Packet version: ${config.packetVersion} ${config.packetVersion === 'v2' ? '(blind view + derived features)' : '(legacy v1)'}`);
+log(`📏 Rubric scale: ${config.rubricScale}`);
+if (config.isPairwise) log(`⚖️ Pairwise sensitivity: enabled${config.checkPositionBias ? ' (with order-swap position bias check)' : ''}`);
 log(`🎲 Samples: ${config.samples} (seed: ${config.baseSeed}, strategy: ${config.seedStrategy})`);
 if (config.withDiagnosticsAudit) log(`🔬 Diagnostic audit pass: enabled (-> judge-diagnostic-audit.jsonl)`);
 if (config.provider === 'local') {
@@ -234,7 +246,7 @@ let maxContextUtilization = 0;
 for (let index = 0; index < familyRows.length; index += 1) {
   const family = familyRows[index];
   const expectedCaseIds = expectedByFamily.get(family.familyId);
-  const familySchema = generateFamilyResponseSchema(family.familyId, expectedCaseIds);
+  const familySchema = generateFamilyResponseSchema(family.familyId, expectedCaseIds, config.rubricScale);
 
   const familySamples = cachedSamplesByFamily.get(family.familyId) || [];
   const startMs = Date.now();
@@ -278,6 +290,28 @@ for (let index = 0; index < familyRows.length; index += 1) {
     // Aggregate samples
     const { aggregateResult, stability } = aggregateFamilySamples(family.familyId, familySamples, expectedCaseIds);
     evaluatedRows.push(aggregateResult);
+
+    // If pairwise sensitivity is enabled, evaluate directed edges
+    if (config.isPairwise) {
+      const blindFamily = formatFamilyForPacketVersion(family, 'v2');
+      const casesById = new Map(blindFamily.cases.map((c) => [c.caseId, c]));
+      const edges = getFamilyEdges(family.familyId);
+      const pairwiseOutcome = await executeFamilyPairwiseEvaluations({
+        familyId: family.familyId,
+        edges,
+        casesById,
+        config,
+        seed: config.baseSeed,
+        sampleIndex: 0,
+        callProviderFn: callProvider,
+      });
+
+      for (const pResult of pairwiseOutcome.pairwiseResults) {
+        writeFileSync(pairwisePath, `${JSON.stringify(pResult)}\n`, { flag: 'a', encoding: 'utf8' });
+      }
+      stability.pairwise = pairwiseOutcome;
+    }
+
     allStabilities.push(stability);
 
     // Update judge-scores.jsonl
@@ -291,7 +325,8 @@ for (let index = 0; index < familyRows.length; index += 1) {
 
     const elapsedSeconds = Math.round((Date.now() - startMs) / 1000);
     const spreadInfo = config.samples > 1 ? ` (MAD: ±${stability.familySensitivityMad})` : '';
-    console.log(`✓ ${elapsedSeconds}s | sensitivity ${aggregateResult.familyAssessment.sensitivity_quality}/10${spreadInfo}`);
+    const biasInfo = stability.pairwise ? ` | position bias: ${stability.pairwise.positionBias.positionBiasIndex}` : '';
+    console.log(`✓ ${elapsedSeconds}s | sensitivity ${aggregateResult.familyAssessment.sensitivity_quality}/10${spreadInfo}${biasInfo}`);
 
     if (config.isDebug) {
       console.log(JSON.stringify(aggregateResult, null, 2));

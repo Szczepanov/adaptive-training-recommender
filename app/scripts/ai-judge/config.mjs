@@ -73,6 +73,14 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
     throw new Error(`Unsupported packet version '${packetVersion}'. Valid packet versions: v1, v2 (or --blind / 'blind' as an alias for v2).`);
   }
   const withDiagnosticsAudit = parseCliFlag(argv, '--with-diagnostics-audit', '--audit-diagnostics') || env.JUDGE_DIAGNOSTICS_AUDIT === '1';
+  const isPairwise = parseCliFlag(argv, '--pairwise') || env.JUDGE_PAIRWISE === '1';
+  const checkPositionBias = parseCliFlag(argv, '--check-position-bias', '--position-bias') || env.JUDGE_CHECK_POSITION_BIAS === '1';
+  const cliRubricScale = parseCliArg(argv, 'rubric-scale');
+  const rubricScale = cliRubricScale || env.JUDGE_RUBRIC_SCALE || (isPairwise ? '0-4' : '0-10');
+  const validRubricScales = new Set(['0-4', '0-10']);
+  if (!validRubricScales.has(rubricScale)) {
+    throw new Error(`Unsupported rubric scale '${rubricScale}'. Valid scales: 0-4, 0-10.`);
+  }
 
   const deepseekKey = env.DEEPSEEK_API_KEY;
   const geminiKey = env.GEMINI_API_KEY || env.GOOGLE_API_KEY;
@@ -187,6 +195,9 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
     exclusiveOllama,
     packetVersion,
     withDiagnosticsAudit,
+    isPairwise,
+    checkPositionBias,
+    rubricScale,
     local: {
       endpoint: localEndpoint,
       isOllama: localIsOllama,
