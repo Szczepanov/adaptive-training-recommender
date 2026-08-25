@@ -33,6 +33,8 @@
     "judge:local:audit": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --blind --with-diagnostics-audit --resume",
     "judge:self-test": "node scripts/run-ai-judge-self-test.mjs --provider local --fresh --samples 3",
     "judge:self-test:resume": "node scripts/run-ai-judge-self-test.mjs --provider local --resume --samples 3",
+    "judge:self-test:quick": "node scripts/run-ai-judge-self-test.mjs --provider local --quick --fresh --samples 1 --batch-size 2 --run-label local-qwen-4b-quick",
+    "judge:self-test:quick:resume": "node scripts/run-ai-judge-self-test.mjs --provider local --quick --resume --samples 1 --batch-size 2 --run-label local-qwen-4b-quick",
     "judge:self-test:run": "node scripts/run-ai-judge-self-test.mjs --fresh",
     "judge:self-test:run:resume": "node scripts/run-ai-judge-self-test.mjs --resume",
     "judge:reference-audit": "node scripts/audit-ai-judge-jury.mjs",

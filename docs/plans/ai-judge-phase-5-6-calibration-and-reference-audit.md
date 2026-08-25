@@ -5,8 +5,9 @@
 **Unlocks:** an evidence-based judge/model retention decision and, separately, a reviewed judge-contract baseline migration
 
 **Implementation state:** all planned code, fixtures, tests, commands, and operating docs are
-complete on `codex/ai-judge-phase5-6`; merge/PR review is still pending. A real reference-model
-comparison remains an optional operational follow-up after a suitably small model is installed.
+complete on `codex/ai-judge-phase5-6`; merge/PR review is still pending. The installed 4B
+model now provides a quick local smoke path. A provenance-compatible multi-model reference
+comparison remains an optional operational follow-up.
 
 ## Goal
 
@@ -228,7 +229,7 @@ fail with the exact mismatched field, and Markdown contains enough provenance fo
 
 Document:
 
-1. how to run the current Q4 self-test;
+1. how to run the current 9B Q4 self-test and the non-gating 4B quick smoke test;
 2. how to save/run an optional Q5/Q6 or cloud reference under a distinct label;
 3. how to compare completed runs;
 4. which metrics require expert review;
@@ -275,18 +276,23 @@ Document:
 
 ## Verification evidence
 
-- `npm run check`: 224 test files passed, 6 skipped; 2,219 tests passed, 124 skipped;
+- `npm run check`: 225 test files passed, 6 skipped; 2,222 tests passed, 124 skipped;
   TypeScript, ESLint, and the 176-exercise/38-workout catalog validation passed.
 - `npm run build:bundle`: production Vite/PWA bundle completed.
-- AI-judge target suite: 14 files / 77 tests passed after the Phase 4 `main` sync.
+- AI-judge target suite: 15 files / 82 tests passed after the Phase 4 `main` sync.
 - Real Ollama structured-output smoke: the current Q4 model completed all 22 controls under
   the synced contract with one sample and no accepted malformed evidence. The report-only run
   produced 15/22 absolute-range matches, 20/22 reaction matches, 11/22 full-control matches,
   2/2 order-consistent pairs, zero misleading-diagnostic false positives, and zero forbidden
   unsupported/numeric-threshold claims. This is development smoke evidence, not a gate.
 - The attempted large reference model was stopped and unloaded at the user's request. The
-  optional live jury comparison will wait for a smaller installed model; comparator behavior is
-  covered by deterministic tests meanwhile.
+  optional live jury comparison will not use it; comparator behavior is covered by deterministic
+  tests meanwhile.
+- Real 4B quick smoke: `hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF` completed all 22 controls
+  in 11 two-control batches with one sample, thinking disabled, and 110/110 accepted evidence
+  references. It produced 13/22 absolute-range matches, 15/22 reaction matches, 9/22 full-control
+  matches, and 2/2 order-consistent pairs. This characterizes a fast development evaluator only;
+  standard/stability runs retain the 9B Q4 model.
 
 ## Risks and rollback
 

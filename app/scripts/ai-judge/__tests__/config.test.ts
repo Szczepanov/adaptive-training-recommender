@@ -118,7 +118,7 @@ describe('AI Judge Config', () => {
     expect(config.isFresh).toBe(true);
   });
 
-  it('uses LOCAL_JUDGE_QUICK_MODEL/OLLAMA_QUICK_MODEL for local --quick runs, falling back to the standard local model', () => {
+  it('uses the 4B local default for --quick runs while preserving explicit quick and standard overrides', () => {
     const withQuickModel = resolveJudgeConfig(['--provider', 'local', '--quick'], {
       LOCAL_JUDGE_MODEL: 'standard-model',
       LOCAL_JUDGE_QUICK_MODEL: 'quick-model',
@@ -128,7 +128,12 @@ describe('AI Judge Config', () => {
     const withoutQuickModel = resolveJudgeConfig(['--provider', 'local', '--quick'], {
       LOCAL_JUDGE_MODEL: 'standard-model',
     });
-    expect(withoutQuickModel.model).toBe('standard-model');
+    expect(withoutQuickModel.model).toBe('hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF');
+
+    const withOllamaQuickModel = resolveJudgeConfig(['--provider', 'local', '--quick'], {
+      OLLAMA_QUICK_MODEL: 'ollama-quick-model',
+    });
+    expect(withOllamaQuickModel.model).toBe('ollama-quick-model');
 
     const standardRun = resolveJudgeConfig(['--provider', 'local'], {
       LOCAL_JUDGE_MODEL: 'standard-model',

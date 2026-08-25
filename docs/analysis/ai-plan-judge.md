@@ -76,9 +76,14 @@ npm run judge:local
 # Multi-sample stability measurement (5 samples, fresh)
 npm run judge:local:stability
 
-# Quick local evaluation
+# Quick local evaluation (4B, one sample, thinking off)
 npm run judge:local:quick
 ```
+
+Local `--quick` runs default to `hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF`.
+Standard and stability runs retain the 9B Q4 model. Override the quick checkpoint with
+`LOCAL_JUDGE_QUICK_MODEL` (or `OLLAMA_QUICK_MODEL`); `--model` and `JUDGE_MODEL` remain
+the highest-priority explicit overrides.
 
 Cloud provider selected from environment credentials:
 
@@ -154,10 +159,18 @@ Run the current local judge with three deterministic samples:
 npm run judge:self-test
 ```
 
+For a fast one-sample smoke test with the 4B local quick model, thinking disabled, and
+smaller two-control batches for better structured-output reliability:
+
+```bash
+npm run judge:self-test:quick
+```
+
 Resume a compatible partial run:
 
 ```bash
 npm run judge:self-test:resume
+npm run judge:self-test:quick:resume
 ```
 
 For an explicitly selected alternative evaluator, use the provider-neutral wrapper and a

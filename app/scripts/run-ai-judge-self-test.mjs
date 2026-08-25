@@ -167,7 +167,7 @@ async function evaluateBatchWithRetry(batch, sampleIndex, seed, retries = 3) {
   const packet = {
     packetSchema: 'adaptive-training-recommender/ai-judge-self-test-batch@1',
     suiteId: fixtures.suiteId,
-    evidenceReferenceRule: 'For each result, JSON Pointers are relative to that individual case object. Start with /inputContext, /plans, /comparison, or /focusPlanId; never use /cases/N.',
+    evidenceReferenceRule: 'For each result, JSON Pointers are relative to that individual case object. Start with /inputContext, /plans, /comparison, or /focusPlanId; never use /cases/N. plans is an array: use a numeric index such as /plans/0/facts, never a planId in place of the index.',
     cases: batch.cases.map(buildSelfTestPacket),
   };
   let lastError;
