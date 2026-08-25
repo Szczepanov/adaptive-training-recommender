@@ -21,22 +21,23 @@ export const ORDINAL_RUBRIC = {
   },
 };
 
-export function rubricTo10Point(score4) {
-  if (typeof score4 !== 'number' || Number.isNaN(score4)) return null;
-  const clamped = Math.max(0, Math.min(4, score4));
-  return Math.round(clamped * 2.5 * 10) / 10;
-}
-
-export function tenPointToRubric(score10) {
-  if (typeof score10 !== 'number' || Number.isNaN(score10)) return null;
-  const clamped = Math.max(0, Math.min(10, score10));
-  return Math.round(clamped / 2.5);
-}
-
 export function validateRubricScore(score, scale = '0-4') {
-  if (typeof score !== 'number' || Number.isNaN(score)) return false;
+  if (typeof score !== 'number' || !Number.isFinite(score)) return false;
   if (scale === '0-4') {
     return Number.isInteger(score) && score >= 0 && score <= 4;
   }
-  return score >= 0 && score <= 10;
+  if (scale === '0-10') {
+    return score >= 0 && score <= 10;
+  }
+  return false;
+}
+
+export function rubricTo10Point(score4) {
+  if (!validateRubricScore(score4, '0-4')) return null;
+  return score4 * 2.5;
+}
+
+export function tenPointToRubric(score10) {
+  if (!validateRubricScore(score10, '0-10')) return null;
+  return Math.round(score10 / 2.5);
 }

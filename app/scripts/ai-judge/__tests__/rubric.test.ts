@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ORDINAL_RUBRIC, rubricTo10Point, tenPointToRubric, validateRubricScore } from '../rubric.mjs';
 
 describe('rubric module', () => {
-  it('defines valid descriptions for 0..4 ordinal scores', () => {
+  it('defines the anchored 0..4 ordinal labels', () => {
     expect(ORDINAL_RUBRIC[4].label).toBe('Exemplary');
     expect(ORDINAL_RUBRIC[3].label).toBe('Sound');
     expect(ORDINAL_RUBRIC[2].label).toBe('Marginal');
@@ -24,12 +24,20 @@ describe('rubric module', () => {
     expect(tenPointToRubric(0)).toBe(0);
   });
 
+  it('rejects invalid values instead of silently clamping them during conversion', () => {
+    expect(rubricTo10Point(3.5)).toBeNull();
+    expect(rubricTo10Point(5)).toBeNull();
+    expect(tenPointToRubric(-1)).toBeNull();
+    expect(tenPointToRubric(11)).toBeNull();
+  });
+
   it('validates scores according to configured scale', () => {
     expect(validateRubricScore(4, '0-4')).toBe(true);
     expect(validateRubricScore(5, '0-4')).toBe(false);
-    expect(validateRubricScore(3.5, '0-4')).toBe(false); // Integer only for 0-4
+    expect(validateRubricScore(3.5, '0-4')).toBe(false);
 
     expect(validateRubricScore(8.5, '0-10')).toBe(true);
     expect(validateRubricScore(11, '0-10')).toBe(false);
+    expect(validateRubricScore(2, 'unknown')).toBe(false);
   });
 });

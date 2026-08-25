@@ -1,5 +1,10 @@
 import { extractCleanJson } from '../validation.mjs';
-import { createNormalizedResult, resolveRequestTimeoutMs, withProgress } from './base.mjs';
+import {
+  createNormalizedResult,
+  describeStructuredOutputRequirements,
+  resolveRequestTimeoutMs,
+  withProgress,
+} from './base.mjs';
 
 export async function callOllama({
   packetJson,
@@ -11,12 +16,13 @@ export async function callOllama({
   sampleIndex = 0,
   seed = null,
 }) {
-  const userPrompt = `${promptContent}\n\nStrict Output JSON Schema:\n${schemaContent}\n\nInput Sensitivity Family Data:\n\`\`\`json\n${packetJson}\n\`\`\`\n\nIMPORTANT:\n- Root JSON MUST include BOTH "caseScores" and "familyAssessment".\n- Every required score, confidence, rationale, and list field must be present.\n- Output ONLY valid JSON; incomplete or guessed fields will be rejected and retried.`;
+  const outputRequirements = describeStructuredOutputRequirements(schema);
+  const userPrompt = `${promptContent}\n\nStrict Output JSON Schema:\n${schemaContent}\n\nInput Evaluation Data:\n\`\`\`json\n${packetJson}\n\`\`\`\n\nIMPORTANT:\n- ${outputRequirements}\n- Every required score, confidence, rationale, and list field defined by the schema must be present.\n- Incomplete or guessed fields will be rejected and retried.`;
 
   const body = {
     model: config.model,
     messages: [{ role: 'user', content: userPrompt }],
-    format: schema, // Pass real dynamic JSON Schema object to Ollama
+    format: schema,
     stream: false,
     options: {
       num_ctx: config.local.numCtx,

@@ -13,12 +13,7 @@ import { callProvider } from './ai-judge/providers/index.mjs';
 import { aggregateFamilySamples, deriveSampleSeed } from './ai-judge/aggregate.mjs';
 import { auditFamilyDiagnostics, appendDiagnosticAuditRecords } from './ai-judge/diagnosticsAudit.mjs';
 import { getFamilyEdges } from './ai-judge/edges.mjs';
-import {
-  formatPairwiseComparisonPacket,
-  generatePairwiseResponseSchema,
-  evaluateOrderSwapConsistency,
-  computePositionBiasIndex,
-} from './ai-judge/pairwise.mjs';
+import { executeFamilyPairwiseEvaluations } from './ai-judge/pairwise.mjs';
 
 function getTimestamp() {
   return new Date().toLocaleTimeString('en-GB', { hour12: false });
@@ -45,7 +40,6 @@ const diagnosticAuditPath = resolve(outputDir, 'judge-diagnostic-audit.jsonl');
 const pairwisePath = resolve(outputDir, 'judge-pairwise.jsonl');
 const manifestPath = resolve(outputDir, 'judge-run-manifest.json');
 
-// Ensure artifacts exist or generate deterministic corpus
 if ([familiesPath, promptPath, schemaPath].some((p) => !existsSync(p))) {
   log('Judge artifacts are incomplete; generating the deterministic corpus first...');
   execSync('npm run simulate:plan-judge', { stdio: 'inherit' });
@@ -75,7 +69,6 @@ const runIdentity = {
   thinkingEnabled: config.thinkingEnabled,
 };
 
-// Check cache compatibility
 const cachedSamplesByFamily = new Map();
 let reuseCache = !config.isFresh && !config.isResume ? false : existsSync(manifestPath) && existsSync(samplesPath);
 
@@ -88,8 +81,11 @@ function compatibleManifest(prev) {
     && prev.judgeProvider === runIdentity.judgeProvider
     && prev.packetVersion === runIdentity.packetVersion
     && prev.isPairwise === runIdentity.isPairwise
+    && prev.checkPositionBias === runIdentity.checkPositionBias
     && prev.rubricScale === runIdentity.rubricScale
     && prev.samples === runIdentity.samples
+    && prev.baseSeed === runIdentity.baseSeed
+    && prev.seedStrategy === runIdentity.seedStrategy
     && prev.thinkingEnabled === runIdentity.thinkingEnabled;
 }
 
@@ -128,7 +124,6 @@ if (reuseCache) {
   }
 }
 
-// Initialize artifacts
 const startedAt = compatibleManifest(previousManifest) && previousManifest.startedAt
   ? previousManifest.startedAt
   : new Date().toISOString();
@@ -140,17 +135,18 @@ if (config.isFresh || !reuseCache) {
   writeFileSync(samplesPath, '', 'utf8');
   writeFileSync(attemptsPath, '', 'utf8');
   if (config.withDiagnosticsAudit) writeFileSync(diagnosticAuditPath, '', 'utf8');
-  if (config.isPairwise) writeFileSync(pairwisePath, '', 'utf8');
 }
+// Pairwise rows are not currently cached independently. Rebuild them on every pairwise run
+// so --resume can reuse validated pointwise samples without appending duplicate pairwise rows.
+if (config.isPairwise) writeFileSync(pairwisePath, '', 'utf8');
 
-// Runtime preflight & cleanup
 await cleanupOllamaMemory(config, log);
 const preflight = await preflightOllama(config, log);
 
 log(`=== AI Plan Judge: ${config.provider.toUpperCase()} / ${config.model} ===`);
 log(`🧠 Thinking mode: ${config.thinkingEnabled ? 'enabled' : 'disabled'}`);
 log(`📦 Packet version: ${config.packetVersion} ${config.packetVersion === 'v2' ? '(blind view + derived features)' : '(legacy v1)'}`);
-log(`📏 Rubric scale: ${config.rubricScale}`);
+if (config.isPairwise) log(`📏 Pairwise rubric scale: ${config.rubricScale}`);
 if (config.isPairwise) log(`⚖️ Pairwise sensitivity: enabled${config.checkPositionBias ? ' (with order-swap position bias check)' : ''}`);
 log(`🎲 Samples: ${config.samples} (seed: ${config.baseSeed}, strategy: ${config.seedStrategy})`);
 if (config.withDiagnosticsAudit) log(`🔬 Diagnostic audit pass: enabled (-> judge-diagnostic-audit.jsonl)`);
@@ -158,7 +154,7 @@ if (config.provider === 'local') {
   log(`🔧 Endpoint: ${config.local.endpoint}`);
   log(`🔧 num_ctx: ${config.local.numCtx} | num_predict: ${config.local.numPredict}`);
 }
-log(`🔒 Evidence mode: strict — missing scores/cases/assessment fields are rejected, never synthesized.`);
+log('🔒 Evidence mode: strict — missing scores/cases/assessment fields are rejected, never synthesized.');
 log(`♻️ Cache: ${config.isFresh ? 'disabled (--fresh)' : `${cachedSamplesByFamily.size} compatible family cache records available`}`);
 log(`Evaluating ${familyRows.length} sensitivity families...\n`);
 
@@ -246,7 +242,9 @@ let maxContextUtilization = 0;
 for (let index = 0; index < familyRows.length; index += 1) {
   const family = familyRows[index];
   const expectedCaseIds = expectedByFamily.get(family.familyId);
-  const familySchema = generateFamilyResponseSchema(family.familyId, expectedCaseIds, config.rubricScale);
+  // Pointwise scores remain on the established 0..10 contract for baseline comparability.
+  // --rubric-scale controls pairwise sensitivity scoring only.
+  const familySchema = generateFamilyResponseSchema(family.familyId, expectedCaseIds);
 
   const familySamples = cachedSamplesByFamily.get(family.familyId) || [];
   const startMs = Date.now();
@@ -267,7 +265,6 @@ for (let index = 0; index < familyRows.length; index += 1) {
       });
       familySamples.push(sample);
 
-      // Append raw sample to samples artifact
       const sampleLine = JSON.stringify({
         familyId: family.familyId,
         sampleIndex,
@@ -287,21 +284,25 @@ for (let index = 0; index < familyRows.length; index += 1) {
       }
     }
 
-    // Aggregate samples
     const { aggregateResult, stability } = aggregateFamilySamples(family.familyId, familySamples, expectedCaseIds);
     evaluatedRows.push(aggregateResult);
 
-    // If pairwise sensitivity is enabled, evaluate directed edges
     if (config.isPairwise) {
       const blindFamily = formatFamilyForPacketVersion(family, 'v2');
       const casesById = new Map(blindFamily.cases.map((c) => [c.caseId, c]));
       const edges = getFamilyEdges(family.familyId);
+      const pairwiseSeed = deriveSampleSeed(
+        config.baseSeed,
+        `${family.familyId}:pairwise`,
+        0,
+        config.seedStrategy
+      );
       const pairwiseOutcome = await executeFamilyPairwiseEvaluations({
         familyId: family.familyId,
         edges,
         casesById,
         config,
-        seed: config.baseSeed,
+        seed: pairwiseSeed,
         sampleIndex: 0,
         callProviderFn: callProvider,
       });
@@ -314,7 +315,6 @@ for (let index = 0; index < familyRows.length; index += 1) {
 
     allStabilities.push(stability);
 
-    // Update judge-scores.jsonl
     const scoresContent = evaluatedRows.map((r) => JSON.stringify(r)).join('\n') + '\n';
     atomicWriteFile(scoresPath, scoresContent);
 
@@ -325,7 +325,9 @@ for (let index = 0; index < familyRows.length; index += 1) {
 
     const elapsedSeconds = Math.round((Date.now() - startMs) / 1000);
     const spreadInfo = config.samples > 1 ? ` (MAD: ±${stability.familySensitivityMad})` : '';
-    const biasInfo = stability.pairwise ? ` | position bias: ${stability.pairwise.positionBias.positionBiasIndex}` : '';
+    const biasInfo = stability.pairwise
+      ? ` | position bias: ${stability.pairwise.positionBias.positionBiasIndex} | order instability: ${stability.pairwise.positionBias.orderInstabilityIndex}`
+      : '';
     console.log(`✓ ${elapsedSeconds}s | sensitivity ${aggregateResult.familyAssessment.sensitivity_quality}/10${spreadInfo}${biasInfo}`);
 
     if (config.isDebug) {
@@ -338,7 +340,6 @@ for (let index = 0; index < familyRows.length; index += 1) {
   }
 }
 
-// Write stability summary artifact
 const overallStability = {
   schema: 'adaptive-training-recommender/ai-plan-judge-stability@1',
   samples: config.samples,
@@ -350,7 +351,6 @@ const overallStability = {
 };
 atomicWriteJson(stabilityPath, overallStability);
 
-// Update completed manifest
 const completedManifest = {
   ...runIdentity,
   startedAt,
