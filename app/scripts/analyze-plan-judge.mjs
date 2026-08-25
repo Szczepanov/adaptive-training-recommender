@@ -195,6 +195,16 @@ const provenance = {
   analyzedAt: new Date().toISOString(),
 };
 
+const stabilityPath = resolve(outputDir, 'judge-stability.json');
+let stabilityData = null;
+if (existsSync(stabilityPath)) {
+  try {
+    stabilityData = JSON.parse(readFileSync(stabilityPath, 'utf8'));
+  } catch {
+    // Best-effort stability reading only.
+  }
+}
+
 const summary = {
   schema: 'adaptive-training-recommender/ai-plan-judge-summary@3',
   source: portablePath(inputPath),
@@ -212,6 +222,7 @@ const summary = {
   caseSuggestedChangeCounts,
   familyHypotheses,
   repeatedHypotheses: familyHypotheses.filter((item) => item.count >= 2),
+  ...(stabilityData ? { judgeStability: stabilityData } : {}),
 };
 
 const summaryMdPath = resolve(outputDir, 'judge-summary.md');
@@ -243,8 +254,22 @@ const lines = [
   ...(summary.repeatedCaseSuggestedChanges.length ? summary.repeatedCaseSuggestedChanges.map((item) => `- ${item.count}× ${item.suggestion}`) : ['- none']), '',
   '## Repeated family-level hypotheses', '',
   ...(summary.repeatedHypotheses.length ? summary.repeatedHypotheses.map((item) => `- ${item.count}× ${item.hypothesis}`) : ['- none']), '',
-  'Treat repeated case-level patterns as stronger evidence than one-off family hypotheses. Mild perturbations are not required to change a plan unless they are decision-relevant.',
 ];
+
+if (stabilityData && stabilityData.samples > 1) {
+  lines.push(
+    '## Measurement stability & judge dispersion', '',
+    `- Independent samples evaluated: ${stabilityData.samples}`,
+    `- Max prompt context utilization: ${(stabilityData.maxContextUtilization * 100).toFixed(1)}%`,
+    '- Family sensitivity dispersion (MAD):',
+    ...stabilityData.families
+      .filter((f) => f.familySensitivityMad > 0)
+      .map((f) => `  - ${f.familyId}: ±${f.familySensitivityMad} (spread: ${f.familySensitivitySpread})`),
+    ''
+  );
+}
+
+lines.push('Treat repeated case-level patterns as stronger evidence than one-off family hypotheses. Mild perturbations are not required to change a plan unless they are decision-relevant.');
 writeFileSync(summaryMdPath, `${lines.join('\n')}\n`);
 
 const timestamp = new Date().toLocaleTimeString('en-GB', { hour12: false });

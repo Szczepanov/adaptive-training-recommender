@@ -70,8 +70,11 @@ The final two checks matter because generic sequence distance is too weak on its
 Local model:
 
 ```bash
-# Standard local evaluation
+# Standard local evaluation (1 sample, fresh)
 npm run judge:local
+
+# Multi-sample stability measurement (5 samples, fresh)
+npm run judge:local:stability
 
 # Quick local evaluation
 npm run judge:local:quick
@@ -99,7 +102,34 @@ npm run judge:resume
 npm run judge:quick:resume
 ```
 
-The fresh npm wrappers (`npm run judge:local`, `npm run judge:local:quick`, `npm run judge:run`, `npm run judge:quick`) regenerate the deterministic corpus and pass `--fresh`. The resume commands (`npm run judge:local:resume`, `npm run judge:local:quick:resume`, `npm run judge:resume`, `npm run judge:quick:resume`) or directly running `node scripts/run-ai-judge.mjs` with `--resume` (or without `--fresh`) can reuse already validated family responses **only when** the run manifest still matches the exact families, prompt, response schema, model, and provider.
+The fresh npm wrappers (`npm run judge:local`, `npm run judge:local:stability`, `npm run judge:local:quick`, `npm run judge:run`, `npm run judge:quick`) regenerate the deterministic corpus and pass `--fresh`. The resume commands or directly running `node scripts/run-ai-judge.mjs` with `--resume` (or without `--fresh`) can reuse already validated family sample responses **only when** the run manifest still matches the exact families, prompt, response schema, model, provider, and sample configuration.
+
+### Multi-sample repeatability & stability (`--samples N`)
+
+Single 9B Q4 model invocations have non-zero run-to-run dispersion. The harness supports deterministic multi-sample evaluation:
+- Use `--samples N` (e.g. `--samples 5` or `npm run judge:local:stability`)
+- Seeds for each sample are derived deterministically: `hash(baseSeed + ":" + familyId + ":" + sampleIndex)`
+- Raw validated samples are saved to `artifacts/ai-plan-judge/latest/judge-samples.jsonl`
+- Robust aggregation is computed across samples: **Median** scores, **MAD** (Median Absolute Deviation), min/max, and categorical agreement
+- Metrics are persisted to `artifacts/ai-plan-judge/latest/judge-stability.json`
+- An aggregate `judge-scores.jsonl` is exported matching the standard schema for backward compatibility.
+
+### Native structured outputs & runtime schema
+
+For Ollama and OpenAI-compatible providers, the runner dynamically compiles a per-family JSON Schema containing:
+- `const` family ID and schema string
+- `enum` matching exactly the expected case IDs for that family
+- Numeric intervals $[0, 10]$ for all 7 required score dimensions
+- Interval $[0, 1]$ for confidence
+- `additionalProperties: false`
+
+This is sent in the provider request (`format: schema` in Ollama, `response_format: { type: "json_schema" }` in OpenAI). Strict post-validation in JavaScript verifies cardinality, non-empty rationales, and absence of synthetic fallback phrases.
+
+### Thinking mode & inference telemetry
+
+- Configure reasoning mode via `--thinking on|off` or `JUDGE_THINKING=on|off`.
+- Attempt telemetry is logged to `artifacts/ai-plan-judge/latest/judge-attempts.jsonl`, tracking prompt/completion tokens, duration, and context utilization (`promptTokens / contextLength`).
+- If context utilization enters the high-water zone ($> 75\%$), a warning is emitted; truncation errors (`doneReason: 'length'`) fail fast and are never accepted as valid evidence.
 
 ### Model selection via CLI
 
@@ -107,10 +137,10 @@ Override the judge model directly on the command line without modifying environm
 
 ```bash
 # Evaluate with a custom local Ollama model
-node scripts/run-ai-judge.mjs --local --fresh --model qwen2.5-coder:14b
+node scripts/run-ai-judge.mjs --provider local --fresh --model qwen2.5-coder:14b
 
 # Evaluate with a specific cloud model
-node scripts/run-ai-judge.mjs --fresh --model gpt-4o-mini
+node scripts/run-ai-judge.mjs --provider openai --fresh --model gpt-4o-mini
 ```
 
 ### Network & inference timeout

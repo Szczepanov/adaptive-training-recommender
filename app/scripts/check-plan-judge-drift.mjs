@@ -190,6 +190,9 @@ let regressionCount = 0;
 let improvementCount = 0;
 let notableCount = 0;
 
+const stability = current.judgeStability;
+const familyStabilityMap = new Map((stability?.families ?? []).map((f) => [f.familyId, f]));
+
 const dimensionDeltas = {};
 console.log('--- Dimension Score Comparison ---');
 for (const key of Object.keys(baseline.scoreAverages)) {
@@ -221,20 +224,33 @@ for (const currentFamily of [...current.familySensitivity].sort((a, b) => a.fami
   const baseValue = numeric(baselineFamily.sensitivityQuality, `baseline.${currentFamily.familyId}.sensitivityQuality`, fatal);
   const currentValue = numeric(currentFamily.sensitivityQuality, `current.${currentFamily.familyId}.sensitivityQuality`, fatal);
   const delta = currentValue - baseValue;
+  const famStab = familyStabilityMap.get(currentFamily.familyId);
+  const noiseMad = famStab?.familySensitivityMad ?? 0;
+
   let flag = '';
   let status = 'unchanged';
   if (delta < -0.2) {
-    flag = ' [REGRESSION]';
-    status = 'regression';
-    regressionCount += 1;
-    notableCount += 1;
+    if (noiseMad > 0 && Math.abs(delta) <= noiseMad) {
+      flag = ` [INCONCLUSIVE (within noise ±${noiseMad})]`;
+      status = 'inconclusive';
+    } else {
+      flag = ' [REGRESSION]';
+      status = 'regression';
+      regressionCount += 1;
+      notableCount += 1;
+    }
   } else if (delta > 0.2) {
-    flag = ' [IMPROVEMENT]';
-    status = 'improvement';
-    improvementCount += 1;
-    notableCount += 1;
+    if (noiseMad > 0 && Math.abs(delta) <= noiseMad) {
+      flag = ` [INCONCLUSIVE (within noise ±${noiseMad})]`;
+      status = 'inconclusive';
+    } else {
+      flag = ' [IMPROVEMENT]';
+      status = 'improvement';
+      improvementCount += 1;
+      notableCount += 1;
+    }
   }
-  familyDeltas[currentFamily.familyId] = { baseline: round2(baseValue), current: round2(currentValue), delta: round2(delta), status };
+  familyDeltas[currentFamily.familyId] = { baseline: round2(baseValue), current: round2(currentValue), delta: round2(delta), status, ...(famStab ? { mad: famStab.familySensitivityMad } : {}) };
   console.log(`  ${currentFamily.familyId.padEnd(30)}: ${baseValue.toFixed(1)}/10 -> ${currentValue.toFixed(1)}/10 (delta: ${delta >= 0 ? '+' : ''}${round2(delta).toFixed(2)})${flag}`);
 }
 
