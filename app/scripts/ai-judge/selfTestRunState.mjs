@@ -10,6 +10,8 @@ export const SELF_TEST_IMMUTABLE_MANIFEST_FIELDS = [
   'runtimeSchemaSha256',
   'provider',
   'model',
+  'modelDigest',
+  'quantization',
   'samples',
   'baseSeed',
   'seedStrategy',
