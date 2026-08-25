@@ -58,8 +58,10 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
 
   const isLocalFlag = parseCliFlag(argv, '--local');
   const isQuick = parseCliFlag(argv, '--quick', '--flash');
-  const isFresh = parseCliFlag(argv, '--fresh', '--force');
   const isResume = parseCliFlag(argv, '--resume');
+  // --resume always wins over --fresh/--force so an explicit request to resume a run
+  // can never be silently discarded by an also-passed --fresh flag.
+  const isFresh = parseCliFlag(argv, '--fresh', '--force') && !isResume;
   const isDebug = parseCliFlag(argv, '--debug') || env.DEBUG === 'true' || env.DEBUG === '1';
   const exclusiveOllama = parseCliFlag(argv, '--exclusive-ollama') || env.JUDGE_EXCLUSIVE_OLLAMA === '1' || env.JUDGE_FLUSH_OLLAMA === '1';
 
@@ -87,7 +89,9 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
     if (available.length === 1) {
       provider = available[0];
     } else if (available.length === 0) {
-      provider = 'local'; // default to local if nothing specified
+      throw new Error(
+        'No supported judge provider is configured. Set DEEPSEEK_API_KEY, GEMINI_API_KEY/GOOGLE_API_KEY, OPENAI_API_KEY, or run with --local (or set LOCAL_LLM_URL/OLLAMA_BASE_URL).'
+      );
     } else {
       throw new Error(
         `Ambiguous judge provider: multiple credentials found (${available.join(', ')}). Specify --provider <local|deepseek|gemini|openai> or set JUDGE_PROVIDER.`
@@ -114,8 +118,10 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
   }
 
   // Model resolution
+  const localQuickModel = env.LOCAL_JUDGE_QUICK_MODEL || env.OLLAMA_QUICK_MODEL;
+  const localStandardModel = env.LOCAL_JUDGE_MODEL || env.OLLAMA_MODEL;
   const defaultModels = {
-    local: env.LOCAL_JUDGE_MODEL || env.OLLAMA_MODEL || 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M',
+    local: (isQuick ? localQuickModel : null) || localStandardModel || 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M',
     deepseek: isQuick ? 'deepseek-v4-flash' : 'deepseek-v4-pro',
     gemini: isQuick ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash',
     openai: 'gpt-4o',

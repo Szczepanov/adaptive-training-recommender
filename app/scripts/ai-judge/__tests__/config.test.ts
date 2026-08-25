@@ -102,4 +102,38 @@ describe('AI Judge Config', () => {
     });
     expect(config.local.isOllama).toBe(true);
   });
+
+  it('fails fast when no provider can be resolved at all (no keys, no --local, no local URL)', () => {
+    expect(() => resolveJudgeConfig([], {})).toThrow(/No supported judge provider is configured/);
+  });
+
+  it('lets --resume win over --fresh/--force so a cache is never silently wiped', () => {
+    const config = resolveJudgeConfig(['--provider', 'local', '--fresh', '--resume'], {});
+    expect(config.isFresh).toBe(false);
+    expect(config.isResume).toBe(true);
+  });
+
+  it('still applies --fresh when --resume is not also passed', () => {
+    const config = resolveJudgeConfig(['--provider', 'local', '--fresh'], {});
+    expect(config.isFresh).toBe(true);
+  });
+
+  it('uses LOCAL_JUDGE_QUICK_MODEL/OLLAMA_QUICK_MODEL for local --quick runs, falling back to the standard local model', () => {
+    const withQuickModel = resolveJudgeConfig(['--provider', 'local', '--quick'], {
+      LOCAL_JUDGE_MODEL: 'standard-model',
+      LOCAL_JUDGE_QUICK_MODEL: 'quick-model',
+    });
+    expect(withQuickModel.model).toBe('quick-model');
+
+    const withoutQuickModel = resolveJudgeConfig(['--provider', 'local', '--quick'], {
+      LOCAL_JUDGE_MODEL: 'standard-model',
+    });
+    expect(withoutQuickModel.model).toBe('standard-model');
+
+    const standardRun = resolveJudgeConfig(['--provider', 'local'], {
+      LOCAL_JUDGE_MODEL: 'standard-model',
+      LOCAL_JUDGE_QUICK_MODEL: 'quick-model',
+    });
+    expect(standardRun.model).toBe('standard-model');
+  });
 });
