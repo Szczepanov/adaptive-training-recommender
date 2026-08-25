@@ -1,5 +1,5 @@
 import { extractCleanJson } from '../validation.mjs';
-import { createNormalizedResult, withProgress } from './base.mjs';
+import { createNormalizedResult, resolveRequestTimeoutMs, withProgress } from './base.mjs';
 
 export async function callDeepSeek({
   packetJson,
@@ -38,6 +38,7 @@ export async function callDeepSeek({
         Authorization: `Bearer ${config.apiKey}`,
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(resolveRequestTimeoutMs(config)),
     });
 
     const completedAt = new Date().toISOString();

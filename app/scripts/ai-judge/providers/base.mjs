@@ -1,3 +1,12 @@
+const DEFAULT_LOCAL_TIMEOUT_MS = 600_000;
+const DEFAULT_CLOUD_TIMEOUT_MS = 180_000;
+
+export function resolveRequestTimeoutMs(config) {
+  const timeoutMs = config.provider === 'local' ? config.local?.timeoutMs : config.cloud?.timeoutMs;
+  if (Number.isFinite(timeoutMs) && timeoutMs > 0) return timeoutMs;
+  return config.provider === 'local' ? DEFAULT_LOCAL_TIMEOUT_MS : DEFAULT_CLOUD_TIMEOUT_MS;
+}
+
 export async function withProgress(request) {
   const timer = setInterval(() => process.stdout.write('.'), 5000);
   try {
@@ -23,6 +32,7 @@ export function createNormalizedResult({
   evalDurationMs = null,
   loadDurationMs = null,
   thinkingEnabled = false,
+  schemaEnforced = true,
   seed = null,
   attempt = 1,
   sampleIndex = 0,
@@ -44,6 +54,7 @@ export function createNormalizedResult({
       evalDurationMs,
       loadDurationMs,
       thinkingEnabled,
+      schemaEnforced,
       seed,
       attempt,
       sampleIndex,

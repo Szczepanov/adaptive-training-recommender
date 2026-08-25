@@ -76,10 +76,13 @@ function compatibleManifest(prev) {
 const cachedSamplesByFamily = new Map(); // familyId -> Array of validated sample objects
 let previousManifest = null;
 
+let reuseCache = false;
+
 if (!config.isFresh && existsSync(samplesPath) && existsSync(manifestPath)) {
   try {
     previousManifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     if (compatibleManifest(previousManifest)) {
+      reuseCache = true;
       const sampleLines = readFileSync(samplesPath, 'utf8')
         .split(/\r?\n/)
         .map((l) => l.trim())
@@ -106,6 +109,7 @@ if (!config.isFresh && existsSync(samplesPath) && existsSync(manifestPath)) {
   } catch (error) {
     log(`Existing judge cache ignored because it is invalid: ${error instanceof Error ? error.message : String(error)}`);
     cachedSamplesByFamily.clear();
+    reuseCache = false;
   }
 }
 
@@ -116,7 +120,7 @@ const startedAt = compatibleManifest(previousManifest) && previousManifest.start
 
 atomicWriteJson(manifestPath, { ...runIdentity, startedAt });
 
-if (config.isFresh) {
+if (config.isFresh || !reuseCache) {
   writeFileSync(scoresPath, '', 'utf8');
   writeFileSync(samplesPath, '', 'utf8');
   writeFileSync(attemptsPath, '', 'utf8');
@@ -174,6 +178,7 @@ async function judgeFamilySampleWithRetry({
         totalTokens: response.telemetry?.totalTokens,
         contextLength: response.telemetry?.contextLength,
         doneReason: response.telemetry?.doneReason,
+        schemaEnforced: response.telemetry?.schemaEnforced,
         elapsedMs: response.telemetry?.totalDurationMs,
       });
 

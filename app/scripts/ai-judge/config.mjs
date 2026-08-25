@@ -117,7 +117,7 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
   const defaultModels = {
     local: env.LOCAL_JUDGE_MODEL || env.OLLAMA_MODEL || 'hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M',
     deepseek: isQuick ? 'deepseek-v4-flash' : 'deepseek-v4-pro',
-    gemini: isQuick ? 'gemini-2.5-flash' : 'gemini-2.5-flash',
+    gemini: isQuick ? 'gemini-2.5-flash-lite' : 'gemini-2.5-flash',
     openai: 'gpt-4o',
   };
 
@@ -145,8 +145,16 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
   const cliNumPredict = parseCliArg(argv, 'num-predict') || parseCliArg(argv, 'predict');
   const localNumCtx = positiveInt(cliNumCtx || env.NUM_CTX || env.OLLAMA_NUM_CTX, 32768);
   const localNumPredict = positiveInt(cliNumPredict || env.NUM_PREDICT || env.OLLAMA_NUM_PREDICT, 16384);
-  const localIsOllama = Boolean(env.OLLAMA_BASE_URL) || !rawLocalUrl || rawLocalUrl.includes('11434') || rawLocalUrl.includes('/api/chat');
+  const localIsOllama = !rawLocalUrl
+    || rawLocalUrl === env.OLLAMA_BASE_URL
+    || rawLocalUrl.includes('11434')
+    || rawLocalUrl.includes('/api/chat');
   const localEndpoint = normalizeLocalEndpoint(rawLocalUrl, localIsOllama);
+
+  // Network & inference timeouts (docs/analysis/ai-plan-judge.md § Network & inference timeout)
+  const cliTimeoutMs = parseCliArg(argv, 'timeout-ms') || parseCliArg(argv, 'timeout');
+  const localTimeoutMs = positiveInt(cliTimeoutMs || env.LOCAL_TIMEOUT_MS || env.JUDGE_TIMEOUT_MS, 600_000);
+  const cloudTimeoutMs = positiveInt(cliTimeoutMs || env.REQUEST_TIMEOUT_MS || env.JUDGE_TIMEOUT_MS, 180_000);
 
   return {
     provider,
@@ -167,8 +175,10 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
       isOllama: localIsOllama,
       numCtx: localNumCtx,
       numPredict: localNumPredict,
+      timeoutMs: localTimeoutMs,
     },
     cloud: {
+      timeoutMs: cloudTimeoutMs,
       deepseekBaseUrl: env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/chat/completions',
       openaiBaseUrl: env.OPENAI_BASE_URL || 'https://api.openai.com/v1/chat/completions',
     },

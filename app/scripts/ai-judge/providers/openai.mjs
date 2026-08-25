@@ -1,5 +1,5 @@
 import { extractCleanJson } from '../validation.mjs';
-import { createNormalizedResult, withProgress } from './base.mjs';
+import { createNormalizedResult, resolveRequestTimeoutMs, withProgress } from './base.mjs';
 
 export async function callOpenAI({
   packetJson,
@@ -40,6 +40,7 @@ export async function callOpenAI({
   const startMs = Date.now();
 
   return withProgress(async () => {
+    const timeoutMs = resolveRequestTimeoutMs(config);
     let response = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -47,10 +48,15 @@ export async function callOpenAI({
         Authorization: `Bearer ${apiKey}`,
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(timeoutMs),
     });
 
     // Fallback if provider doesn't support json_schema
+    let schemaEnforced = true;
     if (!response.ok && response.status === 400) {
+      const strictError = await response.text();
+      process.stdout.write(`\n⚠️ strict json_schema rejected by ${endpoint} (400): ${strictError.slice(0, 400)}\n`);
+      schemaEnforced = false;
       const fallbackBody = {
         ...body,
         response_format: { type: 'json_object' },
@@ -62,6 +68,7 @@ export async function callOpenAI({
           Authorization: `Bearer ${apiKey}`,
         },
         body: JSON.stringify(fallbackBody),
+        signal: AbortSignal.timeout(timeoutMs),
       });
     }
 
@@ -99,6 +106,7 @@ export async function callOpenAI({
       doneReason,
       totalDurationMs: elapsedMs,
       thinkingEnabled: config.thinkingEnabled,
+      schemaEnforced,
       seed,
       attempt,
       sampleIndex,

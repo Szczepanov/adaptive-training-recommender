@@ -127,5 +127,9 @@ describe('AI Judge Multi-Sample Aggregation', () => {
     expect(stability.familySensitivityMedian).toBe(7.5);
     expect(stability.familySensitivityMad).toBe(0.5); // [7, 7.5, 8] -> med 7.5, devs [0.5, 0, 0.5] -> med 0.5
     expect(stability.cases.case_1.maxSpread).toBe(1.0); // 8 - 7
+
+    // Hypothesis A appears in all 3 samples (majority), Hypothesis B in only 1 (single-sample noise).
+    expect(aggregateResult.familyAssessment.algorithmAdjustmentHypotheses).toContain('Hypothesis A');
+    expect(aggregateResult.familyAssessment.algorithmAdjustmentHypotheses).not.toContain('Hypothesis B');
   });
 });

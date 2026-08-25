@@ -61,4 +61,45 @@ describe('AI Judge Config', () => {
     expect(config.local.numCtx).toBe(32768);
     expect(config.local.numPredict).toBe(16384);
   });
+
+  it('defaults request timeouts to the documented local/cloud values', () => {
+    const config = resolveJudgeConfig(['--provider', 'local'], {});
+    expect(config.local.timeoutMs).toBe(600_000);
+    expect(config.cloud.timeoutMs).toBe(180_000);
+  });
+
+  it('honors JUDGE_TIMEOUT_MS and provider-specific timeout overrides', () => {
+    const local = resolveJudgeConfig(['--provider', 'local'], { LOCAL_TIMEOUT_MS: '12345' });
+    expect(local.local.timeoutMs).toBe(12345);
+
+    const cloud = resolveJudgeConfig(['--provider', 'deepseek'], {
+      DEEPSEEK_API_KEY: 'test-deepseek',
+      REQUEST_TIMEOUT_MS: '54321',
+    });
+    expect(cloud.cloud.timeoutMs).toBe(54321);
+  });
+
+  it('resolves distinct Gemini default models for quick and standard modes', () => {
+    const quick = resolveJudgeConfig(['--provider', 'gemini', '--quick'], { GEMINI_API_KEY: 'test-gemini' });
+    const standard = resolveJudgeConfig(['--provider', 'gemini'], { GEMINI_API_KEY: 'test-gemini' });
+    expect(quick.model).not.toBe(standard.model);
+  });
+
+  it('derives localIsOllama from the URL actually selected, not merely OLLAMA_BASE_URL presence', () => {
+    // LOCAL_LLM_URL takes precedence and points at an OpenAI-compatible server;
+    // OLLAMA_BASE_URL being set elsewhere must not force the Ollama adapter.
+    const config = resolveJudgeConfig(['--provider', 'local'], {
+      LOCAL_LLM_URL: 'http://localhost:8080/v1/chat/completions',
+      OLLAMA_BASE_URL: 'http://localhost:11434',
+    });
+    expect(config.local.isOllama).toBe(false);
+    expect(config.local.endpoint).toBe('http://localhost:8080/v1/chat/completions');
+  });
+
+  it('still selects the Ollama adapter when OLLAMA_BASE_URL is the URL actually in use', () => {
+    const config = resolveJudgeConfig(['--provider', 'local'], {
+      OLLAMA_BASE_URL: 'http://localhost:11434',
+    });
+    expect(config.local.isOllama).toBe(true);
+  });
 });

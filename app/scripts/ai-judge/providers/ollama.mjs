@@ -1,5 +1,5 @@
 import { extractCleanJson } from '../validation.mjs';
-import { createNormalizedResult, withProgress } from './base.mjs';
+import { createNormalizedResult, resolveRequestTimeoutMs, withProgress } from './base.mjs';
 
 export async function callOllama({
   packetJson,
@@ -35,6 +35,7 @@ export async function callOllama({
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: 'Bearer local' },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(resolveRequestTimeoutMs(config)),
     });
 
     const completedAt = new Date().toISOString();

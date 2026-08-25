@@ -123,7 +123,7 @@ For Ollama and OpenAI-compatible providers, the runner dynamically compiles a pe
 - Interval $[0, 1]$ for confidence
 - `additionalProperties: false`
 
-This is sent in the provider request (`format: schema` in Ollama, `response_format: { type: "json_schema" }` in OpenAI). Strict post-validation in JavaScript verifies cardinality, non-empty rationales, and absence of synthetic fallback phrases.
+This is sent in the provider request (`format: schema` in Ollama, `response_format: { type: "json_schema" }` in OpenAI). If an OpenAI-compatible endpoint rejects the strict `json_schema` request with HTTP 400 (unsupported keyword or strict mode unavailable), the runner retries once with `response_format: { type: "json_object" }`, which drops native schema enforcement for that call. Strict post-validation in JavaScript always applies regardless of enforcement mode, and verifies cardinality, non-empty rationales, and absence of synthetic fallback phrases.
 
 ### Thinking mode & inference telemetry
 

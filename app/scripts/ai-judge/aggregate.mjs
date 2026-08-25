@@ -174,7 +174,7 @@ export function aggregateFamilySamples(familyId, sampleRecords, expectedCaseIds)
     }
   });
 
-  // Collect hypotheses that appear across multiple samples
+  // Collect hypotheses that appear in at least ceil(N/2) samples (same majority rule as case-level flags)
   const hypCounts = new Map();
   for (const a of assessments) {
     for (const h of a.algorithmAdjustmentHypotheses ?? []) {
@@ -182,6 +182,7 @@ export function aggregateFamilySamples(familyId, sampleRecords, expectedCaseIds)
     }
   }
   const modalHypotheses = [...hypCounts.entries()]
+    .filter(([, count]) => count >= Math.ceil(sampleCount / 2))
     .sort((a, b) => b[1] - a[1])
     .map(([h]) => h);
 

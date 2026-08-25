@@ -256,14 +256,15 @@ const lines = [
   ...(summary.repeatedHypotheses.length ? summary.repeatedHypotheses.map((item) => `- ${item.count}× ${item.hypothesis}`) : ['- none']), '',
 ];
 
-if (stabilityData && stabilityData.samples > 1) {
+if (stabilityData && stabilityData.samples > 1 && Array.isArray(stabilityData.families)) {
+  const maxUtil = Number.isFinite(stabilityData.maxContextUtilization) ? stabilityData.maxContextUtilization : 0;
   lines.push(
     '## Measurement stability & judge dispersion', '',
     `- Independent samples evaluated: ${stabilityData.samples}`,
-    `- Max prompt context utilization: ${(stabilityData.maxContextUtilization * 100).toFixed(1)}%`,
+    `- Max prompt context utilization: ${(maxUtil * 100).toFixed(1)}%`,
     '- Family sensitivity dispersion (MAD):',
     ...stabilityData.families
-      .filter((f) => f.familySensitivityMad > 0)
+      .filter((f) => Number(f?.familySensitivityMad) > 0)
       .map((f) => `  - ${f.familyId}: ±${f.familySensitivityMad} (spread: ${f.familySensitivitySpread})`),
     ''
   );

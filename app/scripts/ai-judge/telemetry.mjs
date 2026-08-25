@@ -32,6 +32,7 @@ export function appendAttemptRecord(attemptsPath, record) {
     contextLength: record.contextLength ?? null,
     promptContextUtilization: computeContextUtilization(record.promptTokens, record.contextLength),
     doneReason: record.doneReason ?? null,
+    schemaEnforced: record.schemaEnforced ?? null,
     elapsedMs: record.elapsedMs ?? 0,
     timestamp: record.timestamp ?? new Date().toISOString(),
   };
