@@ -127,7 +127,7 @@ To prevent the AI judge from anchoring on the engine's internal diagnostic warni
 
 ### Hybrid Pointwise & Pairwise Sensitivity Evaluation (`--pairwise`)
 
-To move beyond opaque single-number family sensitivity grades and eliminate position bias:
+To move beyond opaque single-number family sensitivity grades and measure position bias:
 - **Anchored Discrete Ordinal Rubric ($0..4$)**:
   - `4 = Exemplary`, `3 = Sound`, `2 = Marginal`, `1 = Flawed`, `0 = Unsafe`.
   - Configurable via `--rubric-scale <0-4|0-10>` with two-way conversion for baseline comparability.
@@ -138,7 +138,7 @@ To move beyond opaque single-number family sensitivity grades and eliminate posi
   - Persists pairwise rows to `artifacts/ai-plan-judge/latest/judge-pairwise.jsonl`.
 - **Order-Swap Position Bias Detection (`--check-position-bias`)**:
   - Automatically runs $(A, B)$ and reversed $(B, A)$ pairs with derived seeds.
-  - Computes the **Position Bias Index** ($0.0 = \text{perfect symmetry}, 1.0 = \text{total bias}$) recorded in `artifacts/ai-plan-judge/latest/judge-stability.json`.
+  - Records the **Position Bias Index** ($0.0 = \text{no detected slot preference}, 1.0 = \text{every pair exhibits slot preference}$) and the **Order Instability Index** ($0.0 = \text{fully swap-consistent}, 1.0 = \text{every pair changes on swap}$) in `artifacts/ai-plan-judge/latest/judge-stability.json`. The swap check measures these effects; it does not remove model bias.
 
 ### Native structured outputs & runtime schema
 
