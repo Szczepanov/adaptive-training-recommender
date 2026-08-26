@@ -15,6 +15,7 @@ export interface CompletedExposure {
     /** Exact identity is optional and fails closed for coverage when unavailable. */
     templateId?: string;
     workoutId?: string;
+    recoveryHours?: number;
     stimulusProfile?: WorkoutStimulusProfile;
     stimulusConfidence?: 'exact' | 'inferred' | 'unknown';
     modality?: SessionTemplate['modality'];
@@ -42,13 +43,16 @@ export function exposureFromRecommendation(date: string, rec: DailyRecommendatio
         training_effect: 0,
         intensity_tag: '',
     };
-    const exactWorkoutId = rec.adherence.followed ? workoutForTemplate(template.id)?.id : undefined;
+    const matchingWorkout = rec.adherence.followed ? workoutForTemplate(template.id) : undefined;
+    const exactWorkoutId = matchingWorkout?.id;
+    const recoveryHours = matchingWorkout?.loadProfile.recoveryHours;
     return {
         occurrenceKey: `recommendation:${date}`,
         date,
         costProfile: template.costProfile ?? ZERO_COST,
         trainingRecordLike,
         stimulusConfidence: rec.adherence.followed ? 'exact' : 'unknown',
+        ...(recoveryHours !== undefined ? { recoveryHours } : {}),
         ...(rec.adherence.followed && template.stimulusProfile
             ? {
                 stimulusProfile: template.stimulusProfile,
