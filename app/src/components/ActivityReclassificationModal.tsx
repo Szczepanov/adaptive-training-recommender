@@ -1,4 +1,4 @@
-import { useState, memo } from 'react';
+import { useEffect, useState, memo } from 'react';
 import type { ActivityOverride, NormalizedGarminActivity, SessionTemplate, WorkoutStimulusProfile } from '../engine/models';
 import { activityOverrideService } from '../services/activityOverrideService';
 import './ActivityReclassificationModal.css';
@@ -32,6 +32,22 @@ const STIMULUS_OPTIONS: Array<{ key: keyof WorkoutStimulusProfile; label: string
     { key: 'fatigueResistance', label: 'Fatigue Resistance / Long Duration' },
 ];
 
+function inferredModality(activity: NormalizedGarminActivity): SessionTemplate['modality'] {
+    const type = activity.type.toLowerCase();
+    if (type.includes('cycl') || type.includes('bike')) return 'Cycling';
+    if (type.includes('run') || type.includes('walk')) return 'Running';
+    if (type.includes('mobility') || type.includes('yoga')) return 'Mobility';
+    if (type.includes('field') || type.includes('soccer') || type.includes('football')) return 'Field';
+    if (type.includes('strength') || type.includes('weight')) return 'Strength';
+    return 'Cross Training';
+}
+
+function inferredIntensity(activity: NormalizedGarminActivity): 'easy' | 'moderate' | 'hard' {
+    if (activity.intensityTag === 'hard') return 'hard';
+    if (activity.intensityTag === 'easy') return 'easy';
+    return 'moderate';
+}
+
 export const ActivityReclassificationModal = memo(function ActivityReclassificationModal({
     userId,
     activities,
@@ -40,7 +56,7 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
     onClose,
     onSaved,
 }: ActivityReclassificationModalProps) {
-    const [selectedActivityId, setSelectedActivityId] = useState<string>(activities[0]?.activityId ?? '');
+    const [selectedActivityId, setSelectedActivityId] = useState<string>('');
     const [modality, setModality] = useState<SessionTemplate['modality']>('Running');
     const [intensity, setIntensity] = useState<'easy' | 'moderate' | 'hard'>('moderate');
     const [rpe, setRpe] = useState<number>(6);
@@ -49,28 +65,47 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
+    const hydrateEditor = (activityId: string) => {
+        const activity = activities.find(a => a.activityId === activityId);
+        if (!activity) return;
+
+        const override = existingOverrides[activityId];
+        setSelectedActivityId(activityId);
+        setError(null);
+        if (override) {
+            setModality(override.overriddenModality === 'Unknown' ? inferredModality(activity) : override.overriddenModality);
+            setIntensity(override.overriddenIntensity === 'unknown' ? inferredIntensity(activity) : override.overriddenIntensity);
+            setRpe(override.rpe ?? 6);
+            setStimulusFocus(override.stimulusFocus ?? '');
+            setNotes(override.notes ?? '');
+            return;
+        }
+
+        setModality(inferredModality(activity));
+        setIntensity(inferredIntensity(activity));
+        setRpe(6);
+        setStimulusFocus('');
+        setNotes('');
+    };
+
+    useEffect(() => {
+        if (!isOpen) return;
+        const selectedStillExists = activities.some(activity => activity.activityId === selectedActivityId);
+        const activityId = selectedStillExists ? selectedActivityId : activities[0]?.activityId;
+        if (activityId) hydrateEditor(activityId);
+    // Rehydrate when the modal opens or refreshed override/activity data arrives. The
+    // selected id is intentionally not a dependency: hydrateEditor sets it and adding it
+    // would make normal form edits vulnerable to a rehydration loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, activities, existingOverrides]);
+
     if (!isOpen) return null;
 
     const selectedActivity = activities.find(a => a.activityId === selectedActivityId) ?? activities[0];
     const currentOverride = selectedActivity ? existingOverrides[selectedActivity.activityId] : undefined;
 
     const handleSelectActivity = (id: string) => {
-        setSelectedActivityId(id);
-        const act = activities.find(a => a.activityId === id);
-        const override = existingOverrides[id];
-        if (override) {
-            setModality(override.overriddenModality as SessionTemplate['modality']);
-            setIntensity(override.overriddenIntensity === 'unknown' ? 'moderate' : override.overriddenIntensity);
-            setRpe(override.rpe ?? 6);
-            setStimulusFocus(override.stimulusFocus ?? '');
-            setNotes(override.notes ?? '');
-        } else if (act) {
-            setModality(act.type.toLowerCase().includes('cycl') ? 'Cycling' : act.type.toLowerCase().includes('run') ? 'Running' : 'Strength');
-            setIntensity(act.intensityTag === 'hard' ? 'hard' : act.intensityTag === 'easy' ? 'easy' : 'moderate');
-            setRpe(6);
-            setStimulusFocus('');
-            setNotes('');
-        }
+        hydrateEditor(id);
     };
 
     const handleSave = async (e: React.FormEvent) => {
@@ -89,7 +124,7 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                 overriddenModality: modality,
                 overriddenIntensity: intensity,
                 rpe,
-                stimulusFocus: stimulusFocus ? stimulusFocus : null,
+                stimulusFocus: stimulusFocus || null,
                 notes: notes.trim() || null,
                 createdAt: currentOverride?.createdAt ?? new Date().toISOString(),
                 updatedAt: new Date().toISOString(),
@@ -112,8 +147,13 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
     const handleRemoveOverride = async () => {
         if (!selectedActivity || !currentOverride) return;
         setSaving(true);
+        setError(null);
         try {
-            await activityOverrideService.deleteOverride(userId, selectedActivity.activityId);
+            const success = await activityOverrideService.deleteOverride(userId, selectedActivity.activityId);
+            if (!success) {
+                setError('Failed to remove reclassification. Please try again.');
+                return;
+            }
             onSaved();
             onClose();
         } catch (err) {
@@ -139,14 +179,14 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                 </header>
 
                 <form onSubmit={handleSave} className="reclassify-form">
-                    {/* Activity Selector */}
                     <div className="form-group">
                         <label htmlFor="activity-select">Select Synced Activity:</label>
                         <select
                             id="activity-select"
                             className="input-select"
-                            value={selectedActivityId}
+                            value={selectedActivity?.activityId ?? ''}
                             onChange={(e) => handleSelectActivity(e.target.value)}
+                            disabled={activities.length === 0}
                         >
                             {activities.map(act => (
                                 <option key={act.activityId} value={act.activityId}>
@@ -157,16 +197,17 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                         </select>
                     </div>
 
-                    {selectedActivity && (
+                    {selectedActivity ? (
                         <div className="original-activity-summary">
                             <span className="summary-label">Garmin Detected:</span>
                             <span className="summary-details">
                                 <strong>{selectedActivity.type}</strong> · {selectedActivity.durationMin ?? '--'} min · TE Aerobic: {selectedActivity.trainingEffectAerobic ?? '--'} · TE Anaerobic: {selectedActivity.trainingEffectAnaerobic ?? '--'}
                             </span>
                         </div>
+                    ) : (
+                        <p className="form-error-msg">No synced activity is available to correct.</p>
                     )}
 
-                    {/* Modality Override */}
                     <div className="form-group">
                         <label htmlFor="modality-select">Actual Sport / Modality:</label>
                         <select
@@ -181,52 +222,29 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                         </select>
                     </div>
 
-                    {/* Intensity Override */}
                     <div className="form-group">
                         <label>Actual Effort / Intensity:</label>
                         <div className="radio-button-group">
-                            <button
-                                type="button"
-                                className={`group-choice-btn ${intensity === 'easy' ? 'active' : ''}`}
-                                onClick={() => setIntensity('easy')}
-                            >
+                            <button type="button" className={`group-choice-btn ${intensity === 'easy' ? 'active' : ''}`} onClick={() => setIntensity('easy')}>
                                 🟢 Easy / Recovery
                             </button>
-                            <button
-                                type="button"
-                                className={`group-choice-btn ${intensity === 'moderate' ? 'active' : ''}`}
-                                onClick={() => setIntensity('moderate')}
-                            >
+                            <button type="button" className={`group-choice-btn ${intensity === 'moderate' ? 'active' : ''}`} onClick={() => setIntensity('moderate')}>
                                 🔵 Moderate / Steady
                             </button>
-                            <button
-                                type="button"
-                                className={`group-choice-btn ${intensity === 'hard' ? 'active' : ''}`}
-                                onClick={() => setIntensity('hard')}
-                            >
+                            <button type="button" className={`group-choice-btn ${intensity === 'hard' ? 'active' : ''}`} onClick={() => setIntensity('hard')}>
                                 🔴 Hard / Interval
                             </button>
                         </div>
                     </div>
 
-                    {/* RPE Slider */}
                     <div className="form-group">
                         <div className="slider-label-row">
                             <label htmlFor="rpe-slider">Perceived Exertion (RPE):</label>
                             <span className="rpe-value-badge">{rpe}/10</span>
                         </div>
-                        <input
-                            id="rpe-slider"
-                            type="range"
-                            min="1"
-                            max="10"
-                            value={rpe}
-                            onChange={(e) => setRpe(Number(e.target.value))}
-                            className="range-input"
-                        />
+                        <input id="rpe-slider" type="range" min="1" max="10" value={rpe} onChange={(e) => setRpe(Number(e.target.value))} className="range-input" />
                     </div>
 
-                    {/* Stimulus Focus */}
                     <div className="form-group">
                         <label htmlFor="stimulus-select">Primary Adaptation Focus (Optional):</label>
                         <select
@@ -242,7 +260,6 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                         </select>
                     </div>
 
-                    {/* Notes */}
                     <div className="form-group">
                         <label htmlFor="notes-input">Correction Notes (Optional):</label>
                         <input
@@ -255,16 +272,11 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                         />
                     </div>
 
-                    {error && <p className="form-error-msg">{error}</p>}
+                    {error && <p className="form-error-msg" role="alert">{error}</p>}
 
                     <div className="modal-actions-row">
                         {currentOverride && (
-                            <button
-                                type="button"
-                                className="btn-secondary btn-danger-outline"
-                                onClick={handleRemoveOverride}
-                                disabled={saving}
-                            >
+                            <button type="button" className="btn-secondary btn-danger-outline" onClick={handleRemoveOverride} disabled={saving}>
                                 Reset to Garmin Default
                             </button>
                         )}
@@ -272,7 +284,7 @@ export const ActivityReclassificationModal = memo(function ActivityReclassificat
                             <button type="button" className="btn-secondary" onClick={onClose} disabled={saving}>
                                 Cancel
                             </button>
-                            <button type="submit" className="btn-primary" disabled={saving}>
+                            <button type="submit" className="btn-primary" disabled={saving || !selectedActivity}>
                                 {saving ? 'Saving...' : 'Save Correction ✓'}
                             </button>
                         </div>
