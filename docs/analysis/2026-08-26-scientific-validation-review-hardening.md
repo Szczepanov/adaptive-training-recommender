@@ -1,7 +1,7 @@
 # Scientific Validation PR Review Hardening
 
-**Date:** 2026-08-26  
-**PR:** #228  
+**Date:** 2026-08-26
+**PR:** #228
 **Scope:** review corrections for the initial `SV1`–`SV3` implementation. These changes remain evidence-sidecar work and do not mutate production recommendation policy.
 
 ## Review findings
