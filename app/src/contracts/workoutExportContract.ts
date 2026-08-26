@@ -54,12 +54,16 @@ export function validateCanonicalWorkoutExportContract(payload: unknown): Workou
             // step needs a real durationSeconds to avoid silently syncing as a
             // fixed 5-minute block, and every strength step needs either
             // repetitions or durationSeconds.
+            const isStrength = typeof w.modality === 'string' && w.modality.toLowerCase() === 'strength';
             const hasDuration = typeof step?.durationSeconds === 'number' && step.durationSeconds > 0;
             const hasRepetitions = typeof step?.repetitions === 'number' && step.repetitions > 0;
-            if (!hasDuration && !hasRepetitions) {
+            if ((!isStrength && !hasDuration) || (isStrength && !hasDuration && !hasRepetitions)) {
                 errors.push(where + ' must specify durationSeconds or repetitions (workout_export.py otherwise fabricates a 300s default)');
             }
-            if (step?.targets !== undefined && !Array.isArray(step.targets)) {
+            if (
+                step?.targets !== undefined
+                && (!Array.isArray(step.targets) || !step.targets.every((target: unknown) => typeof target === 'string'))
+            ) {
                 errors.push(where + '.targets must be a string array, not ' + typeof step.targets);
             }
         }
@@ -126,6 +130,10 @@ export function validateCatalogWorkoutStructure(workout: unknown): WorkoutExport
             } else {
                 for (let sIdx = 0; sIdx < block.steps.length; sIdx++) {
                     const step = block.steps[sIdx];
+                    if (!step || typeof step !== 'object' || Array.isArray(step)) {
+                        errors.push('block[' + bIdx + '].step[' + sIdx + '] must be a non-null object');
+                        continue;
+                    }
                     if (!step.id || typeof step.id !== 'string') {
                         errors.push('block[' + bIdx + '].step[' + sIdx + '] must have a valid string id');
                     }

@@ -136,4 +136,26 @@ describe('EnginePersistenceContract', () => {
             expect(parseResult.data.templateId).toBe(rec.template.id);
         }
     });
+
+    it('rejects a schemaVersion the real parser would also reject as unsupported-schema-version', () => {
+        const persistedDoc = {
+            userId: 'user-1',
+            date: '2026-08-26',
+            templateId: 't-1',
+            templateTitle: 'Template',
+            category: 'run',
+            modality: 'Running',
+            mode: 'train',
+            rationale: 'rationale',
+            revision: 1,
+            schemaVersion: 4,
+        };
+
+        const contractResult = validatePersistedRecommendationContract(persistedDoc);
+        expect(contractResult.valid).toBe(false);
+        expect(contractResult.errors).toContain('schemaVersion must be 1, 2, or 3 when present, got 4');
+
+        const parseResult = parseDailyRecommendation(persistedDoc, 'users/user-1/daily_recommendations/2026-08-26');
+        expect(parseResult.status).toBe('INVALID');
+    });
 });

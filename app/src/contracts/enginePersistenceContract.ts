@@ -75,6 +75,12 @@ export function validatePersistedRecommendationContract(rec: unknown): EnginePer
     }
 
     const r = rec as Record<string, any>;
+    // parseDailyRecommendation (persistence/parsers/trainingHistory.ts) rejects a
+    // defined schemaVersion that isn't 1, 2, or 3 as 'unsupported-schema-version' --
+    // keep this contract in lockstep so a bad version fails here, not only at parse time.
+    if (r.schemaVersion !== undefined && ![1, 2, 3].includes(r.schemaVersion)) {
+        errors.push('schemaVersion must be 1, 2, or 3 when present, got ' + r.schemaVersion);
+    }
     if (typeof r.userId !== 'string' || !r.userId.trim()) errors.push('userId is required');
     if (typeof r.date !== 'string' || !/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(r.date)) errors.push('date is required (YYYY-MM-DD)');
     if (typeof r.templateId !== 'string' || !r.templateId.trim()) errors.push('templateId is required');

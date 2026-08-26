@@ -56,6 +56,72 @@ describe('WorkoutExportContract', () => {
         expect(result.errors.some((e) => e.includes('durationSeconds or repetitions'))).toBe(true);
     });
 
+    it('rejects a non-strength step that has repetitions but no durationSeconds (would silently hit the 300s fallback)', () => {
+        const broken = {
+            ...workoutPayload,
+            modality: 'cycling',
+            blocks: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    role: 'main',
+                    steps: [{ id: 's1', name: 'Reps only, no duration', repetitions: 10 }],
+                },
+            ],
+        };
+        const result = validateCanonicalWorkoutExportContract(broken);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.includes('durationSeconds or repetitions'))).toBe(true);
+    });
+
+    it('accepts a strength step with repetitions and no durationSeconds', () => {
+        const strengthWorkout = {
+            ...workoutPayload,
+            modality: 'strength',
+            blocks: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    role: 'main',
+                    steps: [{ id: 's1', name: 'Back Squat', repetitions: 5, sets: 3 }],
+                },
+            ],
+        };
+        const result = validateCanonicalWorkoutExportContract(strengthWorkout);
+        expect(result.valid).toBe(true);
+        expect(result.errors).toEqual([]);
+    });
+
+    it('rejects targets containing non-string elements (e.g. a leftover target object)', () => {
+        const broken = {
+            ...workoutPayload,
+            blocks: [
+                {
+                    id: 'main',
+                    name: 'Main',
+                    role: 'main',
+                    steps: [{ id: 's1', name: 'Step', durationSeconds: 300, targets: [{ watts: 300 }] }],
+                },
+            ],
+        };
+        const result = validateCanonicalWorkoutExportContract(broken);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.includes('targets must be a string array'))).toBe(true);
+    });
+
+    it('reports an error instead of throwing when a catalog block contains a malformed (null) step', () => {
+        const malformedCatalogWorkout = {
+            id: 'w-1',
+            name: 'Broken Workout',
+            modality: 'Running',
+            blocks: [{ steps: [null] }],
+        };
+        expect(() => validateCatalogWorkoutStructure(malformedCatalogWorkout)).not.toThrow();
+        const result = validateCatalogWorkoutStructure(malformedCatalogWorkout);
+        expect(result.valid).toBe(false);
+        expect(result.errors.some((e) => e.includes('must be a non-null object'))).toBe(true);
+    });
+
     it('rejects the legacy durationSec/target-object shape (the field names workout_export.py does NOT read)', () => {
         const legacyShape = {
             schemaVersion: 'canonical_workout_v1',
