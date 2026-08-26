@@ -112,26 +112,29 @@ describe('preferred-day bundle placement', () => {
         ]);
     });
 
-    it('keeps a bundle anchored when one companion is fixed, surfacing the real collision', () => {
-        const placed = resolvePlacement(
-            plan([
-                session('race', {
-                    priority: 'key',
-                    placement: {
-                        week: 1,
-                        preferredDay: 'monday',
-                        flexibility: 'fixed',
-                        ifMissed: 'drop',
-                    },
-                }),
-                session('warmup'),
-            ]),
-            null,
-            { fixedActivities: [fixedActivity(MONDAY)] },
-        );
+    it('preserves fixed-session precedence while moving preferred companions together', () => {
+        const placed = resolvePlacement(plan([
+            session('race', {
+                priority: 'key',
+                placement: {
+                    week: 1,
+                    preferredDay: 'monday',
+                    flexibility: 'fixed',
+                    ifMissed: 'drop',
+                },
+            }),
+            session('ride'),
+            session('strength'),
+        ]), null);
 
-        expect(placed.every(item => item.date === MONDAY)).toBe(true);
-        expect(placed.every(item => item.moved === false)).toBe(true);
+        expect(placed.find(item => item.session.id === 'race')).toMatchObject({
+            date: MONDAY,
+            moved: false,
+        });
+        expect(placed.filter(item => item.session.id !== 'race').map(item => `${item.date}:${item.moved}`)).toEqual([
+            '2026-08-18:true',
+            '2026-08-18:true',
+        ]);
     });
 
     it('does not let an unrelated overlay silently stack a movable preferred bundle', () => {
