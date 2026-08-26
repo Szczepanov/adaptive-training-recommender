@@ -77,6 +77,10 @@ export function resolvePlacement(
     );
     const occupiedByDate = new Map<string, Set<string>>();
     const placed: PlacedSession[] = [];
+    const authoredOrder = new Map(plan.sessions.map((session, index) => [session.id, index]));
+    const stableWithinWeek = (left: ExternalPlanSession, right: ExternalPlanSession): number =>
+        left.placement.week - right.placement.week
+        || (authoredOrder.get(left.id) ?? 0) - (authoredOrder.get(right.id) ?? 0);
 
     const addOccupancy = (date: string, sessionId: string): void => {
         if (!date) return;
@@ -112,7 +116,7 @@ export function resolvePlacement(
     // `preferred` silently equivalent to `fixed`.
     const fixedSessions = plan.sessions
         .filter(session => !assigned.has(session.id) && session.placement.flexibility === 'fixed')
-        .sort((left, right) => impliedDate(plan, left).localeCompare(impliedDate(plan, right)) || left.id.localeCompare(right.id));
+        .sort(stableWithinWeek);
     for (const session of fixedSessions) {
         const date = impliedDate(plan, session);
         placed.push({ session, date, status: 'planned', moved: false });
@@ -128,13 +132,11 @@ export function resolvePlacement(
         bundles.set(key, bundle);
     }
 
-    const orderedBundles = [...bundles.entries()].sort(([, left], [, right]) => {
-        const leftSession = left[0];
-        const rightSession = right[0];
-        return leftSession.placement.week - rightSession.placement.week
-            || WEEKDAY_OFFSET[leftSession.placement.preferredDay!] - WEEKDAY_OFFSET[rightSession.placement.preferredDay!]
-            || leftSession.id.localeCompare(rightSession.id);
-    });
+    // Match the pre-bundle resolver's stable sort: week first, authored order within a
+    // week. Supporting double days must not become a reason to re-order unrelated work.
+    const orderedBundles = [...bundles.entries()].sort(([, left], [, right]) =>
+        stableWithinWeek(left[0], right[0]),
+    );
 
     for (const [bundleKey, bundle] of orderedBundles) {
         const wanted = impliedDate(plan, bundle[0]);
@@ -174,7 +176,7 @@ export function resolvePlacement(
         .filter(session => !assigned.has(session.id)
             && session.placement.flexibility !== 'fixed'
             && !preferredBundleKey(session))
-        .sort((left, right) => left.placement.week - right.placement.week || left.id.localeCompare(right.id));
+        .sort(stableWithinWeek);
 
     for (const session of floatingSessions) {
         const wanted = impliedDate(plan, session);
