@@ -10,6 +10,7 @@ import {
   type UserGoal,
   type UserPreferences,
 } from '../engine/models';
+import { evaluateDataConfidence } from '../engine/dataConfidence';
 
 import type { StrengthSession } from '../engine/models';
 
@@ -181,6 +182,24 @@ function buildFixture(
   const fixtureGoals = overrides.goals ?? [eventGoal];
   const fixtureActivities = overrides.activities ?? [];
 
+  const input: DailyDecisionInput = {
+    userId: VISUAL_USER_ID,
+    date: VISUAL_DATE,
+    recoverySnapshot: fixtureRecovery,
+    subjectiveCheckin: fixtureCheckin,
+    activeGoals: fixtureGoals,
+    trainingSettings: fixtureSettings,
+    preferences: fixturePreferences,
+    trainingIntentProfile,
+    dataQuality: {
+      hasRecoverySnapshot: fixtureRecovery !== null,
+      hasSubjectiveCheckin: fixtureCheckin !== null,
+      subjectiveCheckinComplete: fixtureCheckin?.dataQuality.isComplete ?? false,
+      profileReady: fixturePreferences !== null,
+    },
+  };
+  input.dataConfidence = evaluateDataConfidence(input, TIMESTAMP);
+
   return {
     settings: fixtureSettings,
     preferences: fixturePreferences,
@@ -190,22 +209,7 @@ function buildFixture(
     activities: fixtureActivities,
     ...(overrides.externalPlan ? { externalPlan: overrides.externalPlan } : {}),
     ...(overrides.strengthSession ? { strengthSession: overrides.strengthSession } : {}),
-    input: {
-      userId: VISUAL_USER_ID,
-      date: VISUAL_DATE,
-      recoverySnapshot: fixtureRecovery,
-      subjectiveCheckin: fixtureCheckin,
-      activeGoals: fixtureGoals,
-      trainingSettings: fixtureSettings,
-      preferences: fixturePreferences,
-      trainingIntentProfile,
-      dataQuality: {
-        hasRecoverySnapshot: fixtureRecovery !== null,
-        hasSubjectiveCheckin: fixtureCheckin !== null,
-        subjectiveCheckinComplete: fixtureCheckin?.dataQuality.isComplete ?? false,
-        profileReady: fixturePreferences !== null,
-      },
-    },
+    input,
   };
 }
 

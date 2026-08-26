@@ -3,6 +3,7 @@ import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import { summarizeDataState } from './dataState';
 import { isSupportedTrainingSettingsSchemaVersion } from './trainingSettingsSchema';
 import { computeSubjectiveBaseline, REFERENCE_SUBJECTIVE_BASELINE_POLICY, type SubjectiveBaseline } from './subjectiveBaseline';
+import { evaluateDataConfidence } from './dataConfidence';
 import { checkinService } from '../services/checkinService';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
@@ -122,7 +123,7 @@ export class DecisionComposer {
                 profileReady: preferences !== null
             };
 
-            return {
+            const baseInput: DailyDecisionInput = {
                 userId,
                 date: targetDate,
                 recoverySnapshot,
@@ -133,6 +134,16 @@ export class DecisionComposer {
                 trainingIntentProfile,
                 sourceStates,
                 dataQuality,
+            };
+
+            // Keep wall-clock evaluation at the composition boundary. The pure evaluator
+            // accepts this timestamp explicitly so tests and historical inspection remain
+            // deterministic.
+            const dataConfidence = evaluateDataConfidence(baseInput, new Date().toISOString());
+
+            return {
+                ...baseInput,
+                dataConfidence,
                 subjectiveBaseline,
                 subjectiveHistoryState,
                 subjectiveHistoryIssues,
