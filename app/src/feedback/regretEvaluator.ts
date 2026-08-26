@@ -16,11 +16,15 @@ export interface RegretEvaluationInput {
     initialSoreness?: number | null;
 }
 
-function isFresh(point: RecoveryTrajectory['hours24']): boolean {
-    return (point.hrvDeltaPct ?? 0) >= 0
-        && (point.rhrDeltaBpm ?? 0) <= 0
-        && (point.sorenessScore ?? 1) <= 2
-        && (point.readinessScore ?? 100) >= 70;
+function hasCompleteFreshnessEvidence(point: RecoveryTrajectory['hours24']): boolean {
+    return point.hrvDeltaPct !== null
+        && point.rhrDeltaBpm !== null
+        && point.sorenessScore !== null
+        && point.readinessScore !== null
+        && point.hrvDeltaPct >= 0
+        && point.rhrDeltaBpm <= 0
+        && point.sorenessScore <= 2
+        && point.readinessScore >= 70;
 }
 
 export function evaluateCounterfactualRegret(input: RegretEvaluationInput): CounterfactualRegret {
@@ -45,6 +49,17 @@ export function evaluateCounterfactualRegret(input: RegretEvaluationInput): Coun
     }
 
     const { hours24, hours48, autonomicReboundState } = recoveryTrajectory;
+
+    if (autonomicReboundState === 'insufficient_data') {
+        return {
+            date,
+            regretClass: 'inconclusive',
+            athleteDeclaredRegret,
+            confidence: 'low',
+            rationales: ['Recovery trajectory is explicitly marked insufficient for outcome classification.'],
+            counterfactualAlternative: null,
+        };
+    }
 
     // Safety signal: require worsening relative to the pre-session state rather than
     // inferring "injury exacerbation" from a high absolute soreness score alone.
@@ -108,7 +123,8 @@ export function evaluateCounterfactualRegret(input: RegretEvaluationInput): Coun
     // Rest creates the fresh state observed afterward, so freshness alone cannot prove
     // that the skipped workout was unnecessary. Require the athlete's own regret plus
     // sustained freshness before labeling a possible forfeiture.
-    const sustainedFreshness = isFresh(hours24) && isFresh(hours48);
+    const sustainedFreshness = hasCompleteFreshnessEvidence(hours24)
+        && hasCompleteFreshnessEvidence(hours48);
     if (action === 'rejected_rest'
         && prescribedMode === 'proceed'
         && athleteDeclaredRegret === 'should_have_trained_harder'

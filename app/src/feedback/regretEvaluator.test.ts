@@ -14,6 +14,27 @@ describe('regretEvaluator', () => {
         expect(result.regretClass).toBe('inconclusive');
     });
 
+    it('keeps explicitly insufficient recovery telemetry inconclusive', () => {
+        const trajectory: RecoveryTrajectory = {
+            date: '2026-08-26',
+            hours24: { hrvDeltaPct: null, rhrDeltaBpm: null, sorenessScore: null, readinessScore: null },
+            hours48: { hrvDeltaPct: null, rhrDeltaBpm: null, sorenessScore: null, readinessScore: null },
+            hours72: { hrvDeltaPct: null, rhrDeltaBpm: null, sorenessScore: null, readinessScore: null },
+            autonomicReboundState: 'insufficient_data',
+        };
+
+        const result = evaluateCounterfactualRegret({
+            date: '2026-08-26',
+            action: 'accepted',
+            prescribedMode: 'proceed',
+            athleteDeclaredRegret: 'none',
+            recoveryTrajectory: trajectory,
+        });
+
+        expect(result.regretClass).toBe('inconclusive');
+        expect(result.confidence).toBe('low');
+    });
+
     it('flags overreaching only when a higher-than-recommended decision is followed by corroborated suppression', () => {
         const trajectory: RecoveryTrajectory = {
             date: '2026-08-26',
@@ -120,6 +141,26 @@ describe('regretEvaluator', () => {
 
         expect(result.regretClass).toBe('unnecessary_forfeiture');
         expect(result.rationales.join(' ')).toContain('does not prove');
+    });
+
+    it('does not infer sustained freshness from null recovery fields', () => {
+        const trajectory: RecoveryTrajectory = {
+            date: '2026-08-26',
+            hours24: { hrvDeltaPct: null, rhrDeltaBpm: null, sorenessScore: 1, readinessScore: 90 },
+            hours48: { hrvDeltaPct: null, rhrDeltaBpm: null, sorenessScore: 1, readinessScore: 90 },
+            hours72: { hrvDeltaPct: null, rhrDeltaBpm: null, sorenessScore: 1, readinessScore: 90 },
+            autonomicReboundState: 'expected',
+        };
+
+        const result = evaluateCounterfactualRegret({
+            date: '2026-08-26',
+            action: 'rejected_rest',
+            prescribedMode: 'proceed',
+            athleteDeclaredRegret: 'should_have_trained_harder',
+            recoveryTrajectory: trajectory,
+        });
+
+        expect(result.regretClass).toBe('inconclusive');
     });
 
     it('keeps a rested-and-fresh observation inconclusive without athlete-declared regret', () => {
