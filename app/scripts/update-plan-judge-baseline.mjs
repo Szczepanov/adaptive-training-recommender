@@ -92,8 +92,31 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-writeFileSync(baselinePath, `${JSON.stringify(summary, null, 2)}\n`);
+const baselineStabilityPath = resolve('../docs/analysis/plan-judge-stability.json');
+const artifactStabilityPath = resolve(outputDir, 'judge-stability.json');
+
+const cleanSummary = { ...summary };
+let stabilityData = cleanSummary.judgeStability ?? null;
+if (!stabilityData && existsSync(artifactStabilityPath)) {
+  try {
+    stabilityData = JSON.parse(readFileSync(artifactStabilityPath, 'utf8'));
+  } catch {
+    // optional stability reading
+  }
+}
+
+if (stabilityData) {
+  writeFileSync(baselineStabilityPath, `${JSON.stringify(stabilityData, null, 2)}\n`);
+  cleanSummary.stabilitySource = 'docs/analysis/plan-judge-stability.json';
+  delete cleanSummary.judgeStability;
+  console.log(`Reviewed plan judge stability updated at ${baselineStabilityPath}.`);
+}
+
+writeFileSync(baselinePath, `${JSON.stringify(cleanSummary, null, 2)}\n`);
 console.log(`Reviewed plan judge baseline updated at ${baselinePath}.`);
 console.log(`Corpus commit: ${provenance.corpusCommit}`);
 console.log(`Families SHA-256: ${provenance.familiesSha256}`);
 console.log(`Judge: ${provenance.judgeProvider}/${provenance.judgeModel}`);
+if (provenance.judgeSettings) {
+  console.log(`Settings: ${JSON.stringify(provenance.judgeSettings)}`);
+}

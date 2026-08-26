@@ -27,6 +27,8 @@
     "judge:local": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --fresh --samples 1",
     "judge:local:resume": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --resume",
     "judge:local:stability": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --fresh --samples 5",
+    "judge:e2e": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --samples 5 --fresh && node scripts/check-plan-judge-drift.mjs",
+    "judge:e2e:resume": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --samples 5 --resume && node scripts/check-plan-judge-drift.mjs",
     "judge:local:blind": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --blind --fresh --samples 1",
     "judge:local:blind:resume": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --blind --resume",
     "judge:local:pairwise": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --provider local --blind --pairwise --check-position-bias --fresh --samples 1",

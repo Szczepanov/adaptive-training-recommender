@@ -193,6 +193,20 @@ const provenance = {
   judgeModel: process.env.JUDGE_MODEL ?? manifest?.judgeModel ?? process.env.LOCAL_JUDGE_MODEL ?? process.env.OLLAMA_MODEL ?? 'unknown',
   judgeProvider: process.env.JUDGE_PROVIDER ?? manifest?.judgeProvider ?? 'unknown',
   analyzedAt: new Date().toISOString(),
+  ...(manifest ? {
+    judgeSettings: {
+      provider: manifest.judgeProvider,
+      model: manifest.judgeModel,
+      samples: manifest.samples,
+      packetVersion: manifest.packetVersion,
+      thinkingEnabled: manifest.thinkingEnabled,
+      baseSeed: manifest.baseSeed,
+      seedStrategy: manifest.seedStrategy,
+      rubricScale: manifest.rubricScale,
+      isPairwise: manifest.isPairwise,
+      concurrency: manifest.concurrency,
+    }
+  } : {}),
 };
 
 const stabilityPath = resolve(outputDir, 'judge-stability.json');
@@ -209,6 +223,7 @@ const summary = {
   schema: 'adaptive-training-recommender/ai-plan-judge-summary@3',
   source: portablePath(inputPath),
   provenance,
+  ...(provenance.judgeSettings ? { judgeSettings: provenance.judgeSettings } : {}),
   familyCount: families.length,
   caseCount: cases.length,
   scoreAverages,
