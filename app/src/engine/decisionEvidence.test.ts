@@ -141,7 +141,7 @@ function sampleRecommendation(overrides: Partial<Recommendation> = {}): Recommen
             safetyTags: [],
         },
         mode: 'train',
-        rationale: 'Autonomic recovery is elevated, permitting threshold loading today.',
+        rationale: 'Recovery inputs permit threshold loading today.',
         envelopes: {
             safety: {
                 clinicalFlagActive: false,
@@ -156,6 +156,21 @@ function sampleRecommendation(overrides: Partial<Recommendation> = {}): Recommen
     };
 }
 
+function sampleInput(overrides: Partial<DailyDecisionInput> = {}): DailyDecisionInput {
+    return {
+        userId: 'athlete-1',
+        date: '2026-08-26',
+        recoverySnapshot: sampleSnapshot(),
+        subjectiveCheckin: sampleCheckin(),
+        activeGoals: [],
+        trainingSettings: sampleTrainingSettings(),
+        preferences: null,
+        trainingIntentProfile: null,
+        dataQuality: { hasRecoverySnapshot: true, hasSubjectiveCheckin: true, subjectiveCheckinComplete: true, profileReady: true },
+        ...overrides,
+    };
+}
+
 describe('decisionEvidence engine module', () => {
     it('computes day-over-day physiological deltas accurately', () => {
         const today = sampleSnapshot({ sleepScore: 85, hrvOvernightAvg: 60, restingHr: 46 });
@@ -165,10 +180,16 @@ describe('decisionEvidence engine module', () => {
         expect(deltas.hasYesterdayData).toBe(true);
         expect(deltas.sleepScoreDelta).toBe(10);
         expect(deltas.hrvDeltaYesterday).toBe(8);
-        expect(deltas.hrvDeltaBaseline).toBe(8); // 60 - 52 (hrv28dAvg)
+        expect(deltas.hrvDeltaBaseline).toBe(8);
         expect(deltas.restingHrDelta).toBe(-3);
-        expect(deltas.summaryText).toContain('HRV recovered (+8 ms)');
+        expect(deltas.summaryText).toContain('HRV increased (+8 ms)');
         expect(deltas.summaryText).toContain('sleep score improved (+10 pts)');
+    });
+
+    it('does not claim day-over-day stability without a prior-day snapshot', () => {
+        const deltas = computeDayOverDayDeltas(sampleSnapshot(), null, 'train', null);
+        expect(deltas.hasYesterdayData).toBe(false);
+        expect(deltas.summaryText).toContain('No comparable prior-day snapshot');
     });
 
     it('ranks top decision evidence factors with impact badges', () => {
@@ -176,22 +197,21 @@ describe('decisionEvidence engine module', () => {
         const yesterday = sampleSnapshot({ hrvOvernightAvg: 50 });
         const rec = sampleRecommendation();
         const deltas = computeDayOverDayDeltas(today, yesterday, 'train', null);
-        const input: DailyDecisionInput = {
-            userId: 'athlete-1',
-            date: '2026-08-26',
-            recoverySnapshot: today,
-            subjectiveCheckin: sampleCheckin(),
-            activeGoals: [],
-            trainingSettings: sampleTrainingSettings(),
-            preferences: null,
-            trainingIntentProfile: null,
-            dataQuality: { hasRecoverySnapshot: true, hasSubjectiveCheckin: true, subjectiveCheckinComplete: true, profileReady: true },
-        };
 
-        const evidence = computeRankedEvidence(rec, input, deltas);
+        const evidence = computeRankedEvidence(rec, sampleInput({ recoverySnapshot: today }), deltas);
         expect(evidence.length).toBeGreaterThanOrEqual(2);
         expect(evidence[0].category).toBe('recovery');
         expect(evidence[0].impact).toBe('positive');
+        expect(evidence[0].description).not.toContain('parasympathetic');
+    });
+
+    it('treats soreness as context unless the engine safety envelope restricts tissue loading', () => {
+        const rec = sampleRecommendation();
+        const deltas = computeDayOverDayDeltas(sampleSnapshot(), sampleSnapshot(), 'train', null);
+        const evidence = computeRankedEvidence(rec, sampleInput({ subjectiveCheckin: sampleCheckin({ soreness: 4 }) }), deltas);
+        const soreness = evidence.find(item => item.id === 'soreness-context');
+        expect(soreness?.weightBadge).toBe('Supporting');
+        expect(soreness?.impact).toBe('cautious');
     });
 
     it('distinguishes hard safety gates from soft optimizations', () => {
@@ -214,34 +234,63 @@ describe('decisionEvidence engine module', () => {
         expect(boundaries.harderAdjustmentAllowed).toBe(false);
         const clinicalGate = boundaries.hardGates.find(g => g.id === 'clinical-pain');
         expect(clinicalGate?.active).toBe(true);
+        expect(clinicalGate?.severity).toBe('blocking');
     });
 
-    it('provides concrete invalidation triggers and honest confidence ratings', () => {
-        const rec = sampleRecommendation();
-        const triggers = computeInvalidationTriggers(rec);
+    it('locks harder adjustment for restricted modalities even without a clinical flag', () => {
+        const rec = sampleRecommendation({
+            envelopes: {
+                safety: { clinicalFlagActive: false, restrictedModalities: ['Running'] },
+                plan: { maxAllowableTier: 'Hard', taperActive: false },
+            },
+        });
+        const boundaries = computeDecisionBoundaries(rec, sampleInput());
+        expect(boundaries.harderAdjustmentAllowed).toBe(false);
+        expect(boundaries.hardGates.find(g => g.id === 'clinical-pain')?.severity).toBe('caution');
+    });
+
+    it('locks harder adjustment when the check-in reports illness symptoms', () => {
+        const input = sampleInput({ subjectiveCheckin: sampleCheckin({ illnessSymptoms: true }) });
+        const boundaries = computeDecisionBoundaries(sampleRecommendation(), input);
+        expect(boundaries.harderAdjustmentAllowed).toBe(false);
+        expect(boundaries.hardGates.find(g => g.id === 'illness-anomaly')?.active).toBe(true);
+    });
+
+    it('locks harder adjustment under a rest or mobility plan ceiling', () => {
+        const rec = sampleRecommendation({
+            envelopes: {
+                safety: { clinicalFlagActive: false, restrictedModalities: [] },
+                plan: { maxAllowableTier: 'Mobility', taperActive: false },
+            },
+        });
+        expect(computeDecisionBoundaries(rec, sampleInput()).harderAdjustmentAllowed).toBe(false);
+    });
+
+    it('provides invalidation triggers that target real one-tap alternative ids', () => {
+        const triggers = computeInvalidationTriggers(sampleRecommendation());
         expect(triggers.length).toBe(4);
-        expect(triggers.some(t => t.id === 'pain-spike')).toBe(true);
-        expect(triggers.some(t => t.id === 'time-reduction')).toBe(true);
+        expect(triggers.find(t => t.id === 'pain-spike')?.alternativeActionId).toBe('mobility');
+        expect(triggers.find(t => t.id === 'time-reduction')?.alternativeActionId).toBe('time-20');
+        expect(triggers.find(t => t.id === 'venue-shift')?.alternativeActionId).toBe('home-bodyweight');
+        expect(triggers.find(t => t.id === 'illness-symptom')?.alternativeActionId).toBeUndefined();
+    });
 
-        const confidence = computeDataConfidence(null);
-        expect(confidence.tier).toBe('low');
+    it('does not label an incomplete subjective check-in as high confidence', () => {
+        const input = sampleInput({
+            subjectiveCheckin: sampleCheckin({ dataQuality: { isComplete: false, missingFields: ['fatigue'] } }),
+            dataQuality: { hasRecoverySnapshot: true, hasSubjectiveCheckin: true, subjectiveCheckinComplete: false, profileReady: true },
+        });
+        expect(computeDataConfidence(input).tier).toBe('moderate');
+    });
 
-        const input: DailyDecisionInput = {
-            userId: 'athlete-1',
-            date: '2026-08-26',
-            recoverySnapshot: sampleSnapshot(),
-            subjectiveCheckin: sampleCheckin(),
-            activeGoals: [],
-            trainingSettings: sampleTrainingSettings(),
-            preferences: null,
-            trainingIntentProfile: null,
-            dataQuality: { hasRecoverySnapshot: true, hasSubjectiveCheckin: true, subjectiveCheckinComplete: true, profileReady: true },
-        };
+    it('provides honest confidence ratings for complete inputs', () => {
+        expect(computeDataConfidence(null).tier).toBe('low');
 
+        const input = sampleInput();
         const assembled = assembleMorningDecisionEvidence(
             input.recoverySnapshot,
             sampleSnapshot({ hrvOvernightAvg: 50 }),
-            rec,
+            sampleRecommendation(),
             null,
             input,
         );
