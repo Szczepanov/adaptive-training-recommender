@@ -26,13 +26,11 @@ export function planEndDate(header: Pick<ExternalPlanHeader, 'startDate' | 'week
     return addDaysToLocalDateString(header.startDate, header.weekCount * 7 - 1);
 }
 
-const PRIORITY_RANK: Record<string, number> = {
-    key: 3,
-    supporting: 2,
-    optional: 1,
-};
+const PRIORITY_RANK = { key: 3, supporting: 2, optional: 1 } as const;
 
-/** All sessions still to be done on a date (`completed`, `dropped`, `superseded` are excluded). */
+/** All sessions still to be done on a date. Completed/dropped/superseded sessions no
+ * longer participate in today's decision. This is a placement/query API; it does not by
+ * itself turn the singular external-session adjudicator into a multi-session executor. */
 export function placedSessionsForDate(active: ActiveExternalPlan, date: string): PlacedSession[] {
     return active.placed.filter(item =>
         item.date === date && (item.status === 'planned' || item.status === 'moved'),
@@ -40,26 +38,28 @@ export function placedSessionsForDate(active: ActiveExternalPlan, date: string):
 }
 
 /**
- * Primary session still to be done on a date. If multiple sessions exist on the same day
- * (e.g. double training days), returns the highest-priority session (key > supporting > optional).
+ * Primary session for today's singular external adjudication path. On an intentional
+ * double/triple day choose the plan author's strongest priority, then session id for a
+ * deterministic tie-break rather than depending on array/input order.
  */
 export function placedSessionForDate(active: ActiveExternalPlan, date: string): PlacedSession | null {
     const sessions = placedSessionsForDate(active, date);
     if (sessions.length === 0) return null;
     if (sessions.length === 1) return sessions[0];
-    return [...sessions].sort((left, right) => {
-        const leftRank = PRIORITY_RANK[left.session.priority] ?? 0;
-        const rightRank = PRIORITY_RANK[right.session.priority] ?? 0;
-        return rightRank - leftRank;
-    })[0];
+    return [...sessions].sort((left, right) =>
+        PRIORITY_RANK[right.session.priority] - PRIORITY_RANK[left.session.priority]
+        || left.session.id.localeCompare(right.session.id),
+    )[0];
 }
 
 /**
- * Builds the adjudication inputs for all sessions on a day.
+ * Read-only plural projection of every placed session on a date. This is useful to callers
+ * that need to inspect/render the full authored day. The live recommendation engine still
+ * accepts one `ExternalPlanContext`; callers must not interpret this helper as evidence
+ * that secondary same-day sessions have been independently adjudicated or made executable.
  */
 export function externalPlanContextsForDate(active: ActiveExternalPlan, date: string): ExternalPlanContext[] {
-    const placedList = placedSessionsForDate(active, date);
-    return placedList.map(placed => ({
+    return placedSessionsForDate(active, date).map(placed => ({
         planId: active.plan.planId,
         revision: active.plan.revision,
         session: placed.session,
