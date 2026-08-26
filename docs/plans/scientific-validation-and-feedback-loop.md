@@ -113,14 +113,14 @@ SV6: Multi-Block Prospective Calibration Synthesis
 - [x] Implement unit tests in `regretEvaluator.test.ts` and utility-schema coverage in `feedbackValidation.test.ts`.
 
 ### `SV4`: Outcome & Shadow Integration
-- [ ] Update `app/src/outcomes/blockOutcome.ts` to include feedback loop metrics in `BlockOutcomeReport`.
-- [ ] Update `app/src/engine/shadowLog.ts` to include athlete decision and regret telemetry in shadow log rows.
-- [ ] Verify test suite compatibility across `blockOutcome.test.ts` and `shadowLog.test.ts`.
+- [x] Update `app/src/outcomes/blockOutcome.ts` to include feedback loop metrics in `BlockOutcomeReport`, via a new pure `app/src/outcomes/feedbackLoopEvidence.ts` read model (`deriveFeedbackLoopEvidence`) that aggregates `ClosedLoopFeedbackRecord[]` into decision-action counts, an operational regret-label rate (excluding `inconclusive`), and utility/dose-compliance averages. Additive only — evidence never participates in `verdict`.
+- [x] Update `app/src/engine/shadowLog.ts` to include athlete decision and regret telemetry (`athleteDecisionAction`, `regretClass`, `regretConfidence`, `athleteDeclaredRegret`, `utilityScore`, `coachingHelpfulness`) in shadow log rows, sourced from an optional `feedbackRecord` on `ShadowLogDayInput`.
+- [x] Verify test suite compatibility across `blockOutcome.test.ts` and `shadowLog.test.ts`; added `feedbackLoopEvidence.test.ts`.
 
 ### `SV5`: Verification & Invariant Assurance
-- [ ] Run full unit test suite (`npm test`) on the final review head.
-- [ ] Run scenario simulation suite (`npm run simulate:scenarios`) on the final review head.
-- [ ] Run baseline diff (`npm run simulate:diff`) ensuring zero unintended drift in live decision policy.
+- [x] Run full unit test suite (`npm test`) on the final review head — 2312 passed, 124 skipped.
+- [x] Run scenario simulation suite (`npm run simulate:scenarios`) on the final review head — 32 scenarios simulated.
+- [x] Run baseline diff (`npm run simulate:diff`) ensuring zero unintended drift in live decision policy — no semantic differences found.
 
 ### `SV6`: Multi-Block Prospective Calibration Synthesis
 - [ ] Accumulate sufficient real-athlete history across multiple blocks before estimating signal marginal value or policy changes.

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CompetitionOutcome } from '../observations/models';
 import type { ProgressResult, ProgressStatus } from '../observations/progress';
+import type { ClosedLoopFeedbackRecord } from '../feedback/feedbackModels';
 import type { BlockProcessEvidence } from './blockProcessEvidence';
 import { BLOCK_VERDICT_POLICY_VERSION, deriveBlockOutcome } from './blockOutcome';
 import type { OutcomeEvaluationSnapshot } from './evaluationSpec';
@@ -107,6 +108,34 @@ function derive(
     });
 }
 
+function feedbackRecord(overrides: Partial<ClosedLoopFeedbackRecord> = {}): ClosedLoopFeedbackRecord {
+    return {
+        date: '2026-08-05',
+        recommendationRef: { recommendationId: 'rec-1', revision: 1 },
+        decision: {
+            date: '2026-08-05',
+            recommendationRef: { recommendationId: 'rec-1', revision: 1 },
+            action: 'scaled_down',
+            reasons: ['feeling_fatigued'],
+            note: null,
+            decidedAt: '2026-08-05T07:00:00Z',
+        },
+        doseReconciliation: {
+            date: '2026-08-05', plannedDurationMin: 60, actualDurationMin: 45, plannedWorkKj: null, actualWorkKj: null,
+            durationDeltaPct: -25, workDeltaPct: null, completedZoneDistribution: null, holdCompliancePct: null, stepOmissionsCount: 0,
+        },
+        recoveryTrajectory: null,
+        regret: {
+            date: '2026-08-05', regretClass: 'overreaching_crash', athleteDeclaredRegret: 'should_have_rested',
+            confidence: 'high', rationales: ['corroborated suppression'], counterfactualAlternative: 'lower dose',
+        },
+        utility: { utilityScore: 3, clarityScore: 4, coachingHelpfulness: 'neutral', feedbackNote: null },
+        createdAt: '2026-08-05T07:01:00Z',
+        updatedAt: '2026-08-05T07:02:00Z',
+        ...overrides,
+    };
+}
+
 describe('deriveBlockOutcome', () => {
     it('is on-track only with meaningful primary progress and adequate process/response evidence', () => {
         const report = derive([
@@ -117,6 +146,41 @@ describe('deriveBlockOutcome', () => {
         expect(report.blockVerdictPolicyVersion).toBe(BLOCK_VERDICT_POLICY_VERSION);
         expect(report.reasons).toContain('meaningful_primary_improvement');
         expect(report).not.toHaveProperty('score');
+    });
+
+    it('defaults to an explicit empty feedback-loop evidence summary when no records are supplied', () => {
+        const report = derive([progress('cycling_tt_20m_mean_power_w', 'meaningful_improvement')]);
+        expect(report.feedbackLoopEvidence.recordCount).toBe(0);
+        expect(report.feedbackLoopEvidence.regretRatePct).toBeNull();
+        expect(report.sourceIds.feedbackRecordIds).toEqual([]);
+    });
+
+    it('summarizes supplied feedback records as additive evidence without changing the verdict', () => {
+        const withoutFeedback = deriveBlockOutcome({
+            evaluation: evaluation(),
+            metricProgress: [progress('cycling_tt_20m_mean_power_w', 'meaningful_improvement')],
+            process: process(),
+            ecologicalOutcomes: [],
+            policySegments: [{
+                startDate: '2026-08-01', endDate: '2026-08-21', policyVersion: 'policy-v1', planningMode: 'unknown',
+            }],
+        });
+        const withFeedback = deriveBlockOutcome({
+            evaluation: evaluation(),
+            metricProgress: [progress('cycling_tt_20m_mean_power_w', 'meaningful_improvement')],
+            process: process(),
+            ecologicalOutcomes: [],
+            policySegments: [{
+                startDate: '2026-08-01', endDate: '2026-08-21', policyVersion: 'policy-v1', planningMode: 'unknown',
+            }],
+            feedbackRecords: [feedbackRecord()],
+        });
+
+        // Even a severe regret label must not silently move the versioned block verdict.
+        expect(withFeedback.verdict).toBe(withoutFeedback.verdict);
+        expect(withFeedback.feedbackLoopEvidence.recordCount).toBe(1);
+        expect(withFeedback.feedbackLoopEvidence.regretClassCounts.overreaching_crash).toBe(1);
+        expect(withFeedback.sourceIds.feedbackRecordIds).toEqual(['2026-08-05@r1']);
     });
 
     it('withholds the verdict when process adequacy is below the versioned threshold', () => {

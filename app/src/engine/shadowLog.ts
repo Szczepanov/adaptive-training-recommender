@@ -5,6 +5,14 @@ import type {
     DecisionJournalEntry,
     ShadowVerdict,
 } from './models';
+import type {
+    AthleteDecisionAction,
+    AthleteDeclaredRegret,
+    ClosedLoopFeedbackRecord,
+    CoachingHelpfulness,
+    CounterfactualRegretClass,
+    ModificationReason,
+} from '../feedback/feedbackModels';
 import { classifyAgreement, resolveEngineShadowVerdict, type AgreementClass } from './shadowAgreement';
 
 type PersistedRecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
@@ -54,6 +62,16 @@ export interface ShadowLogRow {
     } | null;
     policyVersion: string | null;
     externalPlanContentHash: string | null;
+    /** SV4: closed-loop athlete-decision/regret/utility telemetry, when a validated feedback
+     * record exists for the day. Null fields mean the athlete has not yet reported that
+     * evidence -- not that it was favorable. */
+    athleteDecisionAction: AthleteDecisionAction | null;
+    athleteDecisionReasons: readonly ModificationReason[] | null;
+    regretClass: CounterfactualRegretClass | null;
+    regretConfidence: 'low' | 'medium' | 'high' | null;
+    athleteDeclaredRegret: AthleteDeclaredRegret | null;
+    utilityScore: number | null;
+    coachingHelpfulness: CoachingHelpfulness | null;
 }
 
 export interface ShadowLogDayInput {
@@ -62,6 +80,8 @@ export interface ShadowLogDayInput {
     journalEntry: DecisionJournalEntry | null;
     checkin: DailySubjectiveCheckin | null;
     recoverySnapshot: DailyRecoverySnapshot | null;
+    /** Optional: omitted for callers that have not wired a closed-loop feedback reader yet. */
+    feedbackRecord?: ClosedLoopFeedbackRecord | null;
 }
 
 /** Legacy fallback for recommendations written before the exact Phase 9.0 verdict field
@@ -83,7 +103,8 @@ function persistedEngineVerdict(recommendation: DailyRecommendation): ShadowVerd
  * finding (the day the athlete skipped the check-in), not something to silently drop. */
 export function buildShadowLogRow(input: ShadowLogDayInput): ShadowLogRow | null {
     const { date, recommendation, journalEntry, checkin, recoverySnapshot } = input;
-    if (!recommendation && !journalEntry && !checkin) return null;
+    const feedbackRecord = input.feedbackRecord ?? null;
+    if (!recommendation && !journalEntry && !checkin && !feedbackRecord) return null;
 
     const engineVerdict = recommendation ? persistedEngineVerdict(recommendation) : null;
     const externalVerdict = journalEntry?.externalVerdict ?? null;
@@ -122,6 +143,13 @@ export function buildShadowLogRow(input: ShadowLogDayInput): ShadowLogRow | null
         } : null,
         policyVersion: recommendation?.recommendationAudit?.policyVersion ?? null,
         externalPlanContentHash: recommendation?.recommendationAudit?.externalPlan?.contentHash ?? null,
+        athleteDecisionAction: feedbackRecord?.decision.action ?? null,
+        athleteDecisionReasons: feedbackRecord?.decision.reasons ?? null,
+        regretClass: feedbackRecord?.regret?.regretClass ?? null,
+        regretConfidence: feedbackRecord?.regret?.confidence ?? null,
+        athleteDeclaredRegret: feedbackRecord?.regret?.athleteDeclaredRegret ?? null,
+        utilityScore: feedbackRecord?.utility?.utilityScore ?? null,
+        coachingHelpfulness: feedbackRecord?.utility?.coachingHelpfulness ?? null,
     };
 }
 
@@ -163,6 +191,13 @@ const CSV_COLUMNS: Array<{ header: string; read: (row: ShadowLogRow) => string |
     { header: 'respirationVs28d', read: r => r.objective?.respirationVs28d ?? null },
     { header: 'policyVersion', read: r => r.policyVersion },
     { header: 'externalPlanContentHash', read: r => r.externalPlanContentHash },
+    { header: 'athleteDecisionAction', read: r => r.athleteDecisionAction },
+    { header: 'athleteDecisionReasons', read: r => r.athleteDecisionReasons?.join(';') ?? null },
+    { header: 'regretClass', read: r => r.regretClass },
+    { header: 'regretConfidence', read: r => r.regretConfidence },
+    { header: 'athleteDeclaredRegret', read: r => r.athleteDeclaredRegret },
+    { header: 'utilityScore', read: r => r.utilityScore },
+    { header: 'coachingHelpfulness', read: r => r.coachingHelpfulness },
 ];
 
 function csvCell(value: string | number | boolean | null): string {
