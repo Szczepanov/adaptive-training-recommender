@@ -1472,11 +1472,13 @@ class GarminProviderAdapter:
         # Not actually date-scoped (a profile setting, not per-day telemetry) but fetched
         # on the same daily cadence as the other enrichment endpoints for simplicity --
         # see GarminClientWrapper.get_heart_rate_zones.
-        heart_rate_zones = self._fetch_enrichment(
-            "heart_rate_zones", lambda: self.client.get_heart_rate_zones()
-        )
-        if isinstance(heart_rate_zones, list):
-            self._heart_rate_zones_cache = heart_rate_zones
+        heart_rate_zones = self._heart_rate_zones_cache
+        if heart_rate_zones is None:
+            heart_rate_zones = self._fetch_enrichment(
+                "heart_rate_zones", lambda: self.client.get_heart_rate_zones()
+            )
+            if isinstance(heart_rate_zones, list):
+                self._heart_rate_zones_cache = heart_rate_zones
 
         body_comp_today = self._fetch_enrichment(
             "body_composition", lambda: self.client.get_daily_weigh_ins(target_date_iso)
