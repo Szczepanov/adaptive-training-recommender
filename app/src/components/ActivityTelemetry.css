@@ -35,6 +35,31 @@
   margin: 0.35rem 0 0;
 }
 
+.activity-header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.btn-reclassify-activity {
+  background: var(--bg-surface-elevated, #27272a);
+  border: 1px solid var(--border-subtle, #3f3f46);
+  color: var(--text-main, #f4f4f5);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-reclassify-activity:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--primary, #38bdf8);
+  color: #38bdf8;
+}
+
 .activity-power-summary {
   display: flex;
   gap: 0.8rem;

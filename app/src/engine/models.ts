@@ -1505,6 +1505,21 @@ export interface NormalizedGarminActivity {
     syncedAt?: string;
 }
 
+export interface ActivityOverride {
+    activityId: string;
+    userId: string;
+    date: string;
+    originalType: string;
+    originalIntensityTag: string;
+    overriddenModality: SessionTemplate['modality'] | 'Unknown';
+    overriddenIntensity: CompletedTrainingIntensity;
+    rpe?: number | null;
+    stimulusFocus?: keyof WorkoutStimulusProfile | null;
+    notes?: string | null;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export type CompletedTrainingSource = 'garmin' | 'adherence' | 'manual';
 export type CompletedTrainingIntensity = 'easy' | 'moderate' | 'hard' | 'unknown';
 export type CompletedTrainingConfidence = 'high' | 'medium' | 'low';

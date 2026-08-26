@@ -597,6 +597,24 @@ comparison data and reasoning. Greedy (`generateWeekAheadPlan`) remains the live
 
 ---
 
+## Morning Decision Evidence & Progressive Disclosure (`decisionEvidence.ts`, `MorningDecisionCard.tsx`)
+
+The dashboard presents morning recommendations through progressive disclosure answering three core questions immediately:
+1. **What should I do today?** Dominant Hero Decision Card with immediate session clarity (title, modality, target duration, 1-line rationale, execution mode badge), immediate primary session launch CTA, and a 1-tap **Easier / Harder** stepper.
+2. **Why?** Pure synthesis (`decisionEvidence.ts:assembleMorningDecisionEvidence`) evaluating:
+   - **Ranked Evidence Factors**: Weighted drivers across autonomic recovery, tissue safety, periodization demand, and chronic baseline deficit with impact indicators.
+   - **Day-over-Day Deltas**: Overnight physiological delta comparisons against yesterday and 28-day chronic baselines (HRV overnight, resting heart rate, sleep score, wake body battery).
+3. **What should make me change that decision?**
+   - **Hard Gates vs Soft Optimization Boundaries**: Clear separation between hard safety guardrails (clinical pain flags, acute illness anomalies, systemic load ceilings) which strictly lock "Harder" adjustments, and soft optimization factors (sport preferences, role reservations).
+   - **Decision Invalidation Triggers**: Explicit boundary triggers (e.g. warmup pain exceeding 3/10, available time dropping under 30 minutes, equipment/venue shifts).
+   - **1-Tap Situational Alternatives**: Instant pivots for time crunches (20m, 30m, 45m), zero-equipment home bodyweight flows, joint mobility sessions, and active recovery walks.
+   - **Honest Data Confidence**: Tiered confidence ratings (`High`, `Moderate`, `Low`) based on biometric and subjective data availability, avoiding false precision when inputs are missing.
+
+### Activity Reclassification Overrides (`activityOverrideService.ts`, `completedTraining.ts`)
+Athletes can correct Garmin misclassifications (sport modality, intensity tag, 1–10 RPE, stimulus focus) directly from Activity Telemetry. Overrides are persisted in Firestore under `users/{userId}/activity_overrides/{activityId}` and integrated into `completedTraining.ts:candidateEventFromGarmin` to adjust downstream load, fatigue, and recovery credit.
+
+---
+
 ## Verification & audit tooling
 
 ### Coverage visibility (`test:coverage` / `pytest --cov`)

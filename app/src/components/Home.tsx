@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef, memo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { decisionComposer } from '../engine/composer';
 import { evaluateTrainingWithIntent, evaluateNextDayPlanWithIntent, adjustSessionRecommendation, evaluateReadinessAndSafetyEnvelope } from '../engine/rules';
 import { mapSnapshotToEngineInput, mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapGoalsToUserEvents } from '../engine/adapters';
@@ -23,8 +23,13 @@ import { planBlockService } from '../services/planBlockService';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
-import { getPrescriptionLegend, resolveWorkoutPrescription } from '../workouts';
-import type { WorkoutPrescription } from '../workouts';
+import { resolveWorkoutPrescription } from '../workouts';
+
+function formatEventTiming(daysToEvent: number | null): string {
+  if (daysToEvent === 0) return 'Today';
+  if (daysToEvent === null) return '';
+  return daysToEvent > 0 ? `In ${daysToEvent} days` : `${Math.abs(daysToEvent)} days ago`;
+}
 import {
   activeExternalPlanService,
   externalPlanContextForDate,
@@ -35,14 +40,21 @@ import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
 import { relevantFollowupRegions } from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import { ExternalVerdictBanner } from './ExternalVerdictBanner';
-import { WorkoutExportMenu } from './WorkoutExportMenu';
 import { AdherencePrompt, type AdherenceAnswer } from './AdherencePrompt';
 import { DecisionJournalCard } from './DecisionJournalCard';
 import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
 import { LaterDayFollowupCard, type LaterDayFollowupTarget } from './session/LaterDayFollowupCard';
 import { GarminSyncNowButton } from './GarminSyncNowButton';
+import { MorningDecisionCard } from './MorningDecisionCard';
+import { ActivityReclassificationModal } from './ActivityReclassificationModal';
+import { assembleMorningDecisionEvidence } from '../engine/decisionEvidence';
+import { recoverySnapshotService } from '../services/recoverySnapshotService';
+import { activityOverrideService } from '../services/activityOverrideService';
+import { activityService } from '../services/activityService';
+import { usabilityMetrics } from '../utils/usabilityMetrics';
+import { TEMPLATES } from '../engine/templates';
+import type { ActivityOverride, DailyRecoverySnapshot, NormalizedGarminActivity } from '../engine/models';
 import type { ErrorRepairAction } from './errorRepairAction';
 import { useAutoGarminSync } from '../hooks/useAutoGarminSync';
 import {
@@ -62,28 +74,6 @@ interface HomeProps {
   onStartSession?: (binding: SessionReferenceBinding) => void | Promise<void>;
 }
 
-const MODE_LABELS: Record<Recommendation['mode'], string> = {
-  train: 'Normal load',
-  modify: 'Reduced load',
-  recover: 'Recovery day',
-};
-
-function formatEventTiming(daysToEvent: number | null): string {
-  if (daysToEvent === 0) return 'Today';
-  if (daysToEvent === null) return '';
-  return daysToEvent > 0 ? `In ${daysToEvent} days` : `${Math.abs(daysToEvent)} days ago`;
-}
-
-
-/**
- * Fire-and-forget self-check (M3.2): confirms a just-saved decision's session bindings
- * actually replay against their stored bytes. Skips a day with no bindings at all, so an
- * ordinary catalog/no-session day doesn't pay two extra Firestore reads on every save.
- * Non-fatal by design, matching saveRecommendation's own "shouldn't block the dashboard"
- * idiom -- reports via console.warn only, same as every other integrity check in this
- * codebase (see shadowLogService). Lazily imported so replay.ts stays free of a live
- * Firestore dependency for every other caller (see its own module comment).
- */
 function verifySessionBindingReplay(userId: string, saved: DailyRecommendation | null): void {
   if (!saved || (!saved.primarySession && !saved.additionalSessions)) return;
   import('../engine/replay')
@@ -96,86 +86,6 @@ function verifySessionBindingReplay(userId: string, saved: DailyRecommendation |
     .catch(err => console.warn(`Failed to verify session-binding replay for ${saved.date}:`, err));
 }
 
-const DetailedTodayPlan = memo(function DetailedTodayPlan({
-  prescription,
-  userId,
-  date,
-  title,
-  modality,
-}: {
-  prescription: WorkoutPrescription;
-  userId: string;
-  date: string;
-  title: string;
-  modality: string;
-}) {
-  return (
-    <section className="detailed-plan" aria-label={`Workout details for ${title}`}>
-      <div className="detailed-plan-header">
-        <div>
-          <h5>Today&apos;s Plan</h5>
-          <span>{prescription.targetDurationMin} min target</span>
-        </div>
-        <WorkoutExportMenu
-          userId={userId}
-          date={date}
-          title={title}
-          modality={modality}
-          prescription={prescription}
-        />
-      </div>
-      {prescription.displayBlocks.map((block) => (
-        <section className={`plan-block plan-block-${block.role}`} key={block.id}>
-          <h6 className="plan-block-role">{block.name}</h6>
-          {block.steps.map((step) => (
-            <article className="plan-step" key={step.id}>
-              <div className="plan-step-heading">
-                <strong>{step.name}</strong>
-                {step.optional && <span className="optional-step">Optional</span>}
-              </div>
-              <p className="plan-dose">{step.dose}{step.rest ? ` · ${step.rest}` : ''}</p>
-
-              {step.structuredTargets && step.structuredTargets.length > 0 ? (
-                <ul className="step-target-list">
-                  {step.structuredTargets.map((t, idx) => (
-                    <li key={idx} className={`target-item role-${t.role}`}>
-                      <span className={`target-role-badge role-${t.role}`}>{t.label}</span>
-                      <span className="target-value">{t.valueText}</span>
-                    </li>
-                  ))}
-                </ul>
-              ) : step.targets && step.targets.length > 0 ? (
-                <ul className="plan-targets">
-                  {step.targets.map((target, idx) => (
-                    <li key={idx}>{target}</li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {step.cues && step.cues.length > 0 && (
-                <div className="step-cues-list">
-                  {step.cues.map((cue, idx) => (
-                    <p key={idx} className="step-cue">💡 {cue}</p>
-                  ))}
-                </div>
-              )}
-
-              {step.stopConditions && step.stopConditions.length > 0 && (
-                <div className="step-stop-conditions">
-                  {step.stopConditions.map((cond, idx) => (
-                    <p key={idx} className="step-stop-condition">⚠️ <strong>Stop if:</strong> {cond}</p>
-                  ))}
-                </div>
-              )}
-            </article>
-          ))}
-        </section>
-      ))}
-      <p className="plan-legend">{getPrescriptionLegend()}</p>
-    </section>
-  );
-});
-
 export function Home({ userId, onNavigate, onViewData, onStartSession }: HomeProps) {
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
   const [recommendation, setRecommendation] = useState<Recommendation | null>(null);
@@ -184,10 +94,15 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [errorRepairTargets, setErrorRepairTargets] = useState<ErrorRepairAction[]>([]);
-  const [showWorkoutDetails, setShowWorkoutDetails] = useState(false);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
   const [, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
   const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
+  const [yesterdaySnapshot, setYesterdaySnapshot] = useState<DailyRecoverySnapshot | null>(null);
+  const [yesterdayRecommendation, setYesterdayRecommendation] = useState<DailyRecommendation | null>(null);
+  const [activeAlternativeId, setActiveAlternativeId] = useState<string | null>(null);
+  const [activityOverrides, setActivityOverrides] = useState<Record<string, ActivityOverride>>({});
+  const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
+  const [recentActivities, setRecentActivities] = useState<NormalizedGarminActivity[]>([]);
   const [, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
   const [hasPendingSessionResponse, setHasPendingSessionResponse] = useState(false);
   const pendingAdherenceRef = useRef(pendingAdherence);
@@ -390,11 +305,19 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       }
 
       const yesterday = getPreviousLocalDateString(input.date);
-      const [yesterdayRec, todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks] = await Promise.all([
+      const [
+        yesterdayRec,
+        yesterdaySnapState,
+        todayAndTomorrowFixedActivities,
+        todayAndTomorrowPlanBlocks,
+        loadedOverrides,
+        activitiesState,
+      ] = await Promise.all([
         recommendationService.getRecommendation(userId, yesterday).catch(err => {
           console.warn('Failed to load yesterday\'s recommendation:', err);
           return null;
         }),
+        recoverySnapshotService.getRecoverySnapshotState(userId, yesterday).catch(() => ({ status: 'MISSING' as const })),
         fixedActivityService
           .getActivitiesInRange(userId, input.date, addDaysToLocalDateString(input.date, 1))
           .catch(err => {
@@ -411,10 +334,19 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           .catch(err => {
             console.warn('Failed to load authored plan blocks for today/tomorrow:', err);
             return [];
-          })
+          }),
+        activityOverrideService.getAllOverrides(userId).catch(() => ({})),
+        activityService.getActivitiesInRange(userId, addDaysToLocalDateString(input.date, -6), addDaysToLocalDateString(input.date, 1)).catch(() => ({ status: 'MISSING' as const })),
       ]);
 
       if (!isCurrent()) return;
+
+      setYesterdayRecommendation(yesterdayRec);
+      setYesterdaySnapshot(yesterdaySnapState.status === 'AVAILABLE' ? yesterdaySnapState.data : null);
+      setActivityOverrides(loadedOverrides);
+      if (activitiesState.status === 'AVAILABLE') {
+        setRecentActivities(activitiesState.data);
+      }
 
       setPendingAdherence(
         yesterdayRec && yesterdayRec.adherence.respondedAt === null
@@ -696,17 +628,95 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     return { subjective, objective, context };
   }, [decisionInput]);
 
-  const computeAdjustedRecommendation = useCallback((direction: 'easier' | 'harder' | null): Recommendation | null => {
+  const computeAdjustedRecommendation = useCallback((
+    direction: 'easier' | 'harder' | null,
+    alternativeId: string | null = null,
+  ): Recommendation | null => {
     if (!recommendation) return null;
     if (!canGenerateNormalPlan) return recommendation;
-    if (!direction || !engineInputs || !decisionInput) return recommendation;
+    if (!engineInputs || !decisionInput) return recommendation;
+
+    let base = recommendation;
+
+    // Apply situational alternative if active
+    if (alternativeId) {
+      if (alternativeId === 'mobility') {
+        const mobTemplate = TEMPLATES.find(t => t.id === 'mob_01') ?? TEMPLATES.find(t => t.modality === 'Mobility') ?? base.template;
+        base = {
+          ...base,
+          template: mobTemplate,
+          mode: 'modify',
+          rationale: '1-tap alternative applied: Joint Mobility & Recovery flow.',
+          prescription: undefined,
+          primarySession: undefined,
+        };
+      } else if (alternativeId === 'recovery-walk') {
+        const recTemplate = TEMPLATES.find(t => t.id === 'mob_01') ?? base.template;
+        base = {
+          ...base,
+          template: {
+            ...recTemplate,
+            title: 'Active Recovery Walk',
+            category: 'Mobility/Recovery',
+            modality: 'Mobility',
+            description: 'Low-intensity Zone 1 walk to flush muscle tissue without autonomic stress.',
+          },
+          mode: 'recover',
+          rationale: '1-tap alternative applied: 30 min conversational recovery walk.',
+          prescription: undefined,
+          primarySession: undefined,
+        };
+      } else if (alternativeId === 'home-bodyweight') {
+        const bwTemplate = TEMPLATES.find(t => t.id === 'mob_travel_flow_01') ?? TEMPLATES.find(t => t.id === 'mob_01') ?? base.template;
+        base = {
+          ...base,
+          template: bwTemplate,
+          rationale: '1-tap alternative applied: Zero-equipment home training session.',
+          prescription: undefined,
+          primarySession: undefined,
+        };
+      } else if (alternativeId.startsWith('time-')) {
+        const targetMinutes = parseInt(alternativeId.replace('time-', ''), 10);
+        if (!Number.isNaN(targetMinutes)) {
+          const ratio = Math.max(0.3, Math.min(1.0, targetMinutes / (base.template.durationMin || 45)));
+          base = {
+            ...base,
+            template: {
+              ...base.template,
+              durationMin: targetMinutes,
+              durationMax: targetMinutes + 5,
+            },
+            executionDose: {
+              volume: ratio,
+              intensity: base.executionDose?.intensity ?? 1.0,
+            },
+            rationale: `${base.rationale} (Time-crunch adjusted to ${targetMinutes} min).`,
+          };
+        }
+      }
+    }
+
+    if (!direction) {
+      const resolvedPrescription = resolveWorkoutPrescription(
+        base,
+        userId,
+        decisionInput.date,
+        decisionInput.preferences?.performanceProfile,
+        base.executionDose,
+        decisionInput.trainingSettings,
+      ) ?? undefined;
+      return {
+        ...base,
+        prescription: resolvedPrescription ?? base.prescription,
+      };
+    }
 
     const { subjective, objective, context } = engineInputs;
-    const adjusted = adjustSessionRecommendation(recommendation, direction, { subjective, objective }, context, decisionInput.date);
-    if (!adjusted) return recommendation;
-    const plannedDose = adjusted.plannedDose ?? recommendation.plannedDose;
+    const adjusted = adjustSessionRecommendation(base, direction, { subjective, objective }, context, decisionInput.date);
+    if (!adjusted) return base;
+    const plannedDose = adjusted.plannedDose ?? base.plannedDose;
     const executionDose = plannedDose === undefined || !adjusted.envelopes
-      ? recommendation.executionDose
+      ? base.executionDose
       : resolveExecutionDose(plannedDose, adjusted.envelopes.plan, direction);
     const adjustedWithExecution = { ...adjusted, plannedDose, executionDose };
     return {
@@ -719,19 +729,66 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     if (!canGenerateNormalPlan) return;
     setAdjustmentDirection(direction);
     if (!recommendation || !decisionInput) return;
-    const adjusted = direction ? computeAdjustedRecommendation(direction) : null;
+    const adjusted = direction ? computeAdjustedRecommendation(direction, activeAlternativeId) : null;
     recommendationService.saveRecommendation(userId, decisionInput.date, {
       ...recommendation,
       adjustment: direction ? adjusted?.adjustment : undefined,
     })
       .then(saved => verifySessionBindingReplay(userId, saved))
       .catch(err => console.warn('Failed to persist adjusted recommendation:', err));
-  }, [recommendation, canGenerateNormalPlan, decisionInput, computeAdjustedRecommendation, userId]);
+  }, [recommendation, canGenerateNormalPlan, decisionInput, computeAdjustedRecommendation, activeAlternativeId, userId]);
+
+  const handleSelectTimeCrunch = useCallback((minutes: number) => {
+    const nextId = activeAlternativeId === `time-${minutes}` ? null : `time-${minutes}`;
+    setActiveAlternativeId(nextId);
+    if (decisionInput) {
+      usabilityMetrics.recordAlternativeChosen(userId, decisionInput.date, `time_crunch_${minutes}`);
+    }
+  }, [activeAlternativeId, decisionInput, userId]);
+
+  const handleSelectHomeAlternative = useCallback(() => {
+    const nextId = activeAlternativeId === 'home-bodyweight' ? null : 'home-bodyweight';
+    setActiveAlternativeId(nextId);
+    if (decisionInput) {
+      usabilityMetrics.recordAlternativeChosen(userId, decisionInput.date, 'home_bodyweight');
+    }
+  }, [activeAlternativeId, decisionInput, userId]);
+
+  const handleSelectMobilityAlternative = useCallback(() => {
+    const nextId = activeAlternativeId === 'mobility' ? null : 'mobility';
+    setActiveAlternativeId(nextId);
+    if (decisionInput) {
+      usabilityMetrics.recordAlternativeChosen(userId, decisionInput.date, 'joint_mobility');
+    }
+  }, [activeAlternativeId, decisionInput, userId]);
+
+  const handleSelectActiveRecoveryWalk = useCallback(() => {
+    const nextId = activeAlternativeId === 'recovery-walk' ? null : 'recovery-walk';
+    setActiveAlternativeId(nextId);
+    if (decisionInput) {
+      usabilityMetrics.recordAlternativeChosen(userId, decisionInput.date, 'recovery_walk');
+    }
+  }, [activeAlternativeId, decisionInput, userId]);
+
+  const handleResetAlternative = useCallback(() => {
+    setActiveAlternativeId(null);
+    setAdjustmentDirection(null);
+  }, []);
 
   const activeRec = useMemo(
-    () => computeAdjustedRecommendation(adjustmentDirection),
-    [computeAdjustedRecommendation, adjustmentDirection]
+    () => computeAdjustedRecommendation(adjustmentDirection, activeAlternativeId),
+    [computeAdjustedRecommendation, adjustmentDirection, activeAlternativeId]
   );
+
+  const morningEvidence = useMemo(() => {
+    return assembleMorningDecisionEvidence(
+      decisionInput?.recoverySnapshot ?? null,
+      yesterdaySnapshot,
+      activeRec,
+      yesterdayRecommendation,
+      decisionInput,
+    );
+  }, [decisionInput, yesterdaySnapshot, activeRec, yesterdayRecommendation]);
 
   const todaysEngineVerdict = activeRec && canGenerateNormalPlan
     ? resolveEngineShadowVerdict(activeRec.mode, activeRec.externalVerdict?.decision)
@@ -936,220 +993,27 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
 
       <div className="home-dashboard-layout">
         <div className="home-main-col">
-          {/* State Summary Banner */}
-          <div className="dashboard-card today-status-summary-card">
-            <div className="today-status-header">
-              <div className="today-status-hero-text">
-                <span className="today-status-tag">Today&apos;s Readiness</span>
-                <h3 className="today-status-headline">
-                  {activeRec?.mode === 'recover'
-                    ? 'Recovery Day'
-                    : activeRec?.mode === 'modify'
-                    ? 'Train, but reduce load'
-                    : 'Ready to train'}
-                </h3>
-              </div>
-              <div className="today-status-header-actions">
-                {activeRec && (
-                  <span className={`status-badge mode-${activeRec.mode}`}>
-                    {MODE_LABELS[activeRec.mode]}
-                  </span>
-                )}
-                <GarminSyncNowButton userId={userId} onSynced={loadDashboardData} />
-              </div>
-            </div>
-
-            {/* Direct Biomarker Chips */}
-            <div className="today-biomarkers-strip">
-              <div className="biomarker-chip">
-                <span className="biomarker-label">Readiness</span>
-                <span className="biomarker-value">
-                  {subjectiveReadiness !== null ? `${subjectiveReadiness}/10` : '--'}
-                </span>
-              </div>
-              {decisionInput?.recoverySnapshot && (
-                <>
-                  <div className="biomarker-chip">
-                    <span className="biomarker-label">Sleep</span>
-                    <span className="biomarker-value">
-                      {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'}
-                    </span>
-                  </div>
-                  <div className="biomarker-chip">
-                    <span className="biomarker-label">HRV</span>
-                    <span className="biomarker-value">
-                      {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ? `${decisionInput.recoverySnapshot.raw.hrvOvernightAvg} ms` : '--'}
-                    </span>
-                  </div>
-                  <div className="biomarker-chip">
-                    <span className="biomarker-label">Battery</span>
-                    <span className="biomarker-value">
-                      {decisionInput.recoverySnapshot.raw.bodyBatteryWake ? `${decisionInput.recoverySnapshot.raw.bodyBatteryWake}` : '--'}
-                    </span>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {activeRec && (activeRec.mode === 'modify' || activeRec.mode === 'recover') && (
-              <div className="mode-rationale-callout">
-                <strong>{activeRec.mode === 'recover' ? 'Recovery reason:' : 'Reduced load reason:'}</strong> {activeRec.rationale}
-              </div>
-            )}
-          </div>
-
-          {/* Today's Recommendation Card */}
-          <div className="dashboard-card recommendation-card">
-            <div className="card-header">
-              <h3>Today&apos;s Training</h3>
-              {activeRec && (
-                <span className={`status-badge mode-${activeRec.mode}`}>
-                  {MODE_LABELS[activeRec.mode]}
-                </span>
-              )}
-            </div>
-
-            {activeRec ? (
-              <div className="recommendation-content">
-                {activeRec.externalPrescription && activeRec.externalVerdict && (
-                  <ExternalVerdictBanner
-                    prescription={activeRec.externalPrescription}
-                    verdict={activeRec.externalVerdict}
-                  />
-                )}
-
-                <h4 className="recommendation-title">
-                  {activeRec.template.title}
-                  {activeRec.activeDose && (
-                    <span className="dose-badge">{activeRec.activeDose.label}</span>
-                  )}
-                </h4>
-
-                <p className="recommendation-meta">
-                  {activeRec.template.category} · {activeRec.activeDose ? `${activeRec.activeDose.durationMin}-${activeRec.activeDose.durationMax}` : `${activeRec.template.durationMin}-${activeRec.template.durationMax}`} min · {activeRec.template.modality}
-                </p>
-
-                <p className="recommendation-description">
-                  {activeRec.activeDose ? activeRec.activeDose.prescriptionSummary : activeRec.template.description}
-                </p>
-
-                {/* Primary Dominant Start Workout Action */}
-                {activeRec.primarySession && onStartSession && (
-                  <div className="primary-action-cta-wrap">
-                    <button
-                      type="button"
-                      className="btn-primary start-workout-dominant-cta"
-                      onClick={() => { void onStartSession(activeRec.primarySession!); }}
-                    >
-                      {activeRec.template.modality === 'Strength' ? '🏋️' : '▶️'} Start Session →
-                    </button>
-                  </div>
-                )}
-
-                {/* Secondary Actions Row */}
-                {activeRec.prescription && (
-                  <div className="recommendation-secondary-actions">
-                    <button
-                      type="button"
-                      className="btn-secondary toggle-workout-btn view-workout-btn"
-                      onClick={() => setShowWorkoutDetails((isOpen) => !isOpen)}
-                      aria-expanded={showWorkoutDetails}
-                    >
-                      {showWorkoutDetails ? 'Hide workout' : 'View workout'}
-                    </button>
-                    <WorkoutExportMenu
-                      userId={userId}
-                      date={decisionInput?.date ?? ''}
-                      title={activeRec.template.title}
-                      modality={activeRec.template.modality}
-                      prescription={activeRec.prescription}
-                    />
-                  </div>
-                )}
-
-                {showWorkoutDetails && activeRec.prescription && (
-                  <DetailedTodayPlan
-                    prescription={activeRec.prescription}
-                    userId={userId}
-                    date={decisionInput?.date ?? ''}
-                    title={activeRec.template.title}
-                    modality={activeRec.template.modality}
-                  />
-                )}
-
-                {/* Collapsible Rationale */}
-                <details className="recommendation-why-disclosure">
-                  <summary>Why this today? ›</summary>
-                  <div className="why-content">
-                    <p>{activeRec.rationale}</p>
-                  </div>
-                </details>
-
-                {!canGenerateNormalPlan && (
-                  <MinimumSafetyCheckin
-                    userId={userId}
-                    existingCheckin={decisionInput?.subjectiveCheckin ?? null}
-                    onCompleted={loadDashboardData}
-                  />
-                )}
-
-                {/* Load Adjustment Section */}
-                {canGenerateNormalPlan && (
-                  <details className="adjustment-disclosure">
-                    <summary>Adjust session load ›</summary>
-                    <div className="adjustment-control-section">
-                      <span className="adjustment-label">Select load variation:</span>
-                      <div className="adjustment-button-group">
-                        <button
-                          type="button"
-                          className={`adjustment-btn ${adjustmentDirection === 'easier' ? 'active' : ''}`}
-                          onClick={() => handleAdjustSession(adjustmentDirection === 'easier' ? null : 'easier')}
-                        >
-                          Easier
-                        </button>
-                        <button
-                          type="button"
-                          className={`adjustment-btn ${adjustmentDirection === null ? 'active' : ''}`}
-                          onClick={() => handleAdjustSession(null)}
-                        >
-                          As Recommended
-                        </button>
-                        <button
-                          type="button"
-                          className={`adjustment-btn ${adjustmentDirection === 'harder' ? 'active' : ''}`}
-                          disabled={recommendation?.envelopes?.safety.clinicalFlagActive}
-                          title={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option disabled due to active pain/injury flag.' : 'Increase session load'}
-                          onClick={() => handleAdjustSession(adjustmentDirection === 'harder' ? null : 'harder')}
-                        >
-                          Harder
-                        </button>
-                      </div>
-
-                      {recommendation?.envelopes?.safety.clinicalFlagActive && (
-                        <p className="adjustment-notice safety-notice">
-                          ⚠️ Harder option is unavailable today because an active pain/injury flag restricts physical loading.
-                        </p>
-                      )}
-
-                      {activeRec.adjustment && (
-                        <div className="adjustment-summary-box">
-                          <p>
-                            <strong>Session Adjusted ({activeRec.adjustment.direction}):</strong> {activeRec.adjustment.rationale}
-                          </p>
-                          <button
-                            type="button"
-                            className="reset-adjustment-btn"
-                            onClick={() => handleAdjustSession(null)}
-                          >
-                            ↺ Reset to As Recommended
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  </details>
-                )}
-              </div>
-            ) : (
+          {/* Hero Morning Decision Card with Progressive Disclosure */}
+          {activeRec ? (
+            <MorningDecisionCard
+              userId={userId}
+              date={decisionInput?.date ?? ''}
+              recommendation={activeRec}
+              evidence={morningEvidence}
+              adjustmentDirection={adjustmentDirection}
+              activeAlternativeId={activeAlternativeId}
+              isGateLocked={recommendation?.envelopes?.safety.clinicalFlagActive ?? false}
+              gateLockedReason={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option is disabled because an active pain or injury flag restricts physical loading.' : undefined}
+              onAdjustLoad={handleAdjustSession}
+              onSelectTimeCrunch={handleSelectTimeCrunch}
+              onSelectHomeAlternative={handleSelectHomeAlternative}
+              onSelectMobilityAlternative={handleSelectMobilityAlternative}
+              onSelectActiveRecoveryWalk={handleSelectActiveRecoveryWalk}
+              onResetAlternative={handleResetAlternative}
+              onStartSession={onStartSession}
+            />
+          ) : (
+            <div className="dashboard-card empty-recommendation-card">
               <p className="card-empty">
                 {!decisionInput?.dataQuality.hasRecoverySnapshot
                   ? "No Garmin recovery data synced today yet — that's required to generate a recommendation."
@@ -1157,8 +1021,27 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                   ? "Today's check-in is only partially filled in — finish it to get a recommendation."
                   : 'Unable to compute a recommendation yet.'}
               </p>
-            )}
-          </div>
+            </div>
+          )}
+
+          {!canGenerateNormalPlan && (
+            <MinimumSafetyCheckin
+              userId={userId}
+              existingCheckin={decisionInput?.subjectiveCheckin ?? null}
+              onCompleted={loadDashboardData}
+            />
+          )}
+
+          {activityOverrides && reclassifyModalOpen && recentActivities.length > 0 && (
+            <ActivityReclassificationModal
+              userId={userId}
+              activities={recentActivities}
+              existingOverrides={activityOverrides}
+              isOpen={reclassifyModalOpen}
+              onClose={() => setReclassifyModalOpen(false)}
+              onSaved={loadDashboardData}
+            />
+          )}
 
           <div className="home-week-strip-section">
             <div className="section-header-row">

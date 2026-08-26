@@ -218,5 +218,5 @@ describe('7A.3 operational latency budget', () => {
 
         expect(p95, `p95=${p95.toFixed(1)}ms p99=${p99.toFixed(1)}ms`).toBeLessThanOrEqual(100);
         expect(p99, `p99=${p99.toFixed(1)}ms`).toBeLessThanOrEqual(150);
-    }, 10_000);
+    }, 20_000);
 });

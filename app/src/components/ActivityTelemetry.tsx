@@ -4,6 +4,7 @@ import './ActivityTelemetry.css';
 
 interface ActivityTelemetryProps {
   state: DataState<NormalizedGarminActivity[]> | null;
+  onReclassify?: (activityId: string) => void;
 }
 
 function formatDuration(seconds: number): string {
@@ -54,7 +55,7 @@ function ZoneBars({ title, unit, zones }: { title: string; unit: string; zones: 
   );
 }
 
-export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
+export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProps) {
   if (state === null) return <p className="activity-telemetry-state">Loading recent activities…</p>;
   if (state.status === 'INVALID') return <p className="activity-telemetry-state error">Stored activity data is malformed and needs repair.</p>;
   if (state.status === 'UNAVAILABLE') return <p className="activity-telemetry-state error">Activity telemetry is temporarily unavailable. Retry the dashboard refresh.</p>;
@@ -100,13 +101,25 @@ export function ActivityTelemetry({ state }: ActivityTelemetryProps) {
                   </p>
                 )}
               </div>
-              {activity.normalizedPower !== undefined && (
-                <div className="activity-power-summary" aria-label="Power summary">
-                  <span><strong>{Math.round(activity.normalizedPower)}</strong> W NP</span>
-                  {activity.intensityFactor !== undefined && <span><strong>{activity.intensityFactor.toFixed(2)}</strong> IF</span>}
-                  {activity.variabilityIndex !== undefined && <span><strong>{activity.variabilityIndex.toFixed(2)}</strong> VI</span>}
-                </div>
-              )}
+              <div className="activity-header-right">
+                {activity.normalizedPower !== undefined && (
+                  <div className="activity-power-summary" aria-label="Power summary">
+                    <span><strong>{Math.round(activity.normalizedPower)}</strong> W NP</span>
+                    {activity.intensityFactor !== undefined && <span><strong>{activity.intensityFactor.toFixed(2)}</strong> IF</span>}
+                    {activity.variabilityIndex !== undefined && <span><strong>{activity.variabilityIndex.toFixed(2)}</strong> VI</span>}
+                  </div>
+                )}
+                {onReclassify && (
+                  <button
+                    type="button"
+                    className="btn-reclassify-activity"
+                    onClick={() => onReclassify(activity.activityId)}
+                    aria-label={`Correct or reclassify ${activity.type} from ${activity.date}`}
+                  >
+                    ✏️ Correct
+                  </button>
+                )}
+              </div>
             </header>
 
             {!hasDetail && <p className="activity-telemetry-empty">No zone, lap, or running-dynamics telemetry is available for this activity.</p>}
