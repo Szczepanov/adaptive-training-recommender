@@ -564,6 +564,35 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    function hasValidActivityOverride(userId, activityId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.activityId == activityId
+        && isValidActivityDate(data.date)
+        && data.keys().hasOnly(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'rpe', 'stimulusFocus', 'notes', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'createdAt', 'updatedAt'])
+        && data.originalType is string && data.originalType.size() > 0 && data.originalType.size() <= 128
+        && data.originalIntensityTag is string && data.originalIntensityTag.size() <= 64
+        && data.overriddenModality in ['Running', 'Cycling', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Unknown']
+        && data.overriddenIntensity in ['easy', 'moderate', 'hard', 'unknown']
+        && (!('rpe' in data) || data.rpe == null || (data.rpe is number && data.rpe >= 1 && data.rpe <= 10))
+        && (!('stimulusFocus' in data) || data.stimulusFocus == null || data.stimulusFocus in ['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
+        && (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 2000))
+        && data.createdAt is string && data.createdAt.size() > 0
+        && data.updatedAt is string && data.updatedAt.size() > 0;
+    }
+
+    match /users/{userId}/activity_overrides/{activityId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidActivityOverride(userId, activityId);
+      allow update: if hasValidActivityOverride(userId, activityId)
+        && keepsOwnership(userId)
+        && request.resource.data.activityId == resource.data.activityId
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
     match /users/{userId}/gear/{gearId} {
       allow read: if isOwner(userId);
       allow write: if false;

@@ -18,6 +18,7 @@ import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
 import { runConfiguredHealthAnomalyShadow } from './services/healthAnomalyRuntime';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
+import { OnboardingWizard } from './components/OnboardingWizard';
 
 const DailyCheckin = lazy(() => import('./components/DailyCheckin').then(m => ({ default: m.DailyCheckin })));
 const Goals = lazy(() => import('./components/Goals').then(m => ({ default: m.Goals })));
@@ -53,6 +54,14 @@ function App() {
   const [activeStructuredIntent, setActiveStructuredIntent] = useState<SessionIntent | null>(null);
   const [sessionAuthoringMode, setSessionAuthoringMode] = useState<'import' | 'manual' | null>(null);
   const [sessionLaunch, setSessionLaunch] = useState<PreparedSessionLaunch | null>(null);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem('adaptive_training_onboarding_done') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   const loadDecisionInput = useCallback(async () => {
     if (!userId) return;
@@ -260,7 +269,7 @@ function App() {
               const sessionId = legacyStrengthSessionId;
               void strengthSessionService.transitionState(userId!, sessionId, 'abandoned')
                 .then(() => setLegacyStrengthSessionId(current => current === sessionId ? null : current))
-                .catch(error => console.error('Failed to close legacy Strength session:', error));
+                .catch((error: unknown) => console.error('Failed to close legacy Strength session:', error));
             }}
           >
             Close legacy session
@@ -279,6 +288,21 @@ function App() {
 
       <main className="app-content">
         <Suspense fallback={<div className="loading-state">Loading...</div>}>
+          {userId && !onboardingDismissed && decisionInput && decisionInput.activeGoals.length === 0 && (
+            <OnboardingWizard
+              userId={userId}
+              onCompleted={() => {
+                setOnboardingDismissed(true);
+                try {
+                  window.localStorage.setItem('adaptive_training_onboarding_done', 'true');
+                } catch {
+                  // Ignore localStorage unavailable errors
+                }
+                void loadDecisionInput();
+              }}
+            />
+          )}
+
           {screen === 'home' && (
             <Home
               key={dailyViewDate}

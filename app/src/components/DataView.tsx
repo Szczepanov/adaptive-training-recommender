@@ -1,12 +1,14 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { DataState } from '../engine/dataState';
-import type { DailyDecisionInput, NormalizedGarminActivity } from '../engine/models';
+import type { DailyDecisionInput, NormalizedGarminActivity, ActivityOverride } from '../engine/models';
 import { activityService } from '../services/activityService';
+import { activityOverrideService } from '../services/activityOverrideService';
 import { recommendationService } from '../services/recommendationService';
 import { contextBriefService, type ContextBriefResult } from '../services/contextBriefService';
 import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { ActivityTelemetry } from './ActivityTelemetry';
+import { ActivityReclassificationModal } from './ActivityReclassificationModal';
 import './DataView.css';
 
 interface DataViewProps {
@@ -92,6 +94,16 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
     asOfDate: string;
     state: DataState<NormalizedGarminActivity[]>;
   } | null>(null);
+  const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
+  const [activityOverrides, setActivityOverrides] = useState<Record<string, ActivityOverride>>({});
+
+  const loadOverrides = useCallback(() => {
+    activityOverrideService.getAllOverrides(userId).then(setActivityOverrides);
+  }, [userId]);
+
+  useEffect(() => {
+    loadOverrides();
+  }, [loadOverrides]);
 
   useEffect(() => {
     if (activeTab !== 'adherence' || adherenceStats) return;
@@ -946,10 +958,33 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
         {activeTab === 'recovery' && renderRecoveryData()}
         {activeTab === 'activities' && (
           <div className="data-section">
-            <h3>Recent activity telemetry</h3>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+              <h3 style={{ margin: 0 }}>Recent activity telemetry</h3>
+              {activityWindow?.state.status === 'AVAILABLE' && activityWindow.state.data.length > 0 && (
+                <button
+                  type="button"
+                  className="quick-action-btn secondary"
+                  style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                  onClick={() => setReclassifyModalOpen(true)}
+                >
+                  ✏️ Correct / Reclassify Activity
+                </button>
+              )}
+            </div>
             <ActivityTelemetry
               state={activityWindow && activityWindow.userId === userId && activityWindow.asOfDate === briefDate ? activityWindow.state : null}
+              onReclassify={() => setReclassifyModalOpen(true)}
             />
+            {activityWindow?.state.status === 'AVAILABLE' && reclassifyModalOpen && (
+              <ActivityReclassificationModal
+                userId={userId}
+                activities={activityWindow.state.data}
+                existingOverrides={activityOverrides}
+                isOpen={reclassifyModalOpen}
+                onClose={() => setReclassifyModalOpen(false)}
+                onSaved={loadOverrides}
+              />
+            )}
           </div>
         )}
         {activeTab === 'checkin' && renderCheckinData()}

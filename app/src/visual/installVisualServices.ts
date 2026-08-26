@@ -6,6 +6,7 @@ import { preferencesService } from '../services/preferencesService';
 import { planBlockService } from '../services/planBlockService';
 import { recommendationService } from '../services/recommendationService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
+import { activityOverrideService } from '../services/activityOverrideService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import { strengthSessionService } from '../services/strengthSessionService';
@@ -43,6 +44,15 @@ export function installVisualServices(fixture: VisualFixture): void {
   }) as Awaited<ReturnType<typeof checkinService.upsertTodayCheckin>>;
 
   recoverySnapshotService.getRecoverySnapshotByDate = async () => fixture.recovery;
+  recoverySnapshotService.getRecoverySnapshotState = async () => (
+    fixture.recovery
+      ? { status: 'AVAILABLE', data: fixture.recovery, revision: null }
+      : { status: 'MISSING' }
+  );
+  activityOverrideService.getAllOverrides = async () => ({});
+  activityOverrideService.getOverride = async () => null;
+  activityOverrideService.saveOverride = async () => true;
+  activityOverrideService.deleteOverride = async () => true;
   activityService.getActivitiesInRange = async () => ({
     status: 'AVAILABLE', data: fixture.activities, revision: null,
   });
