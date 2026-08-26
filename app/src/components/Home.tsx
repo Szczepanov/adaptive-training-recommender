@@ -43,6 +43,7 @@ import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
 import { LaterDayFollowupCard, type LaterDayFollowupTarget } from './session/LaterDayFollowupCard';
 import { GarminSyncNowButton } from './GarminSyncNowButton';
+import { DataConfidenceIndicator } from './DataConfidenceIndicator';
 import type { ErrorRepairAction } from './errorRepairAction';
 import { useAutoGarminSync } from '../hooks/useAutoGarminSync';
 import {
@@ -950,6 +951,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                 </h3>
               </div>
               <div className="today-status-header-actions">
+                <DataConfidenceIndicator confidence={decisionInput?.dataConfidence} onRefresh={loadDashboardData} />
                 {activeRec && (
                   <span className={`status-badge mode-${activeRec.mode}`}>
                     {MODE_LABELS[activeRec.mode]}

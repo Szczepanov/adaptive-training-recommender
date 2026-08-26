@@ -2,6 +2,7 @@ import type { AthletePerformanceProfile, WorkoutPrescription } from '../workouts
 import type { SessionReferenceBinding } from '../sessions/models';
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import type { SubjectiveBaseline } from './subjectiveBaseline';
+import type { DataConfidenceScore } from './dataConfidence';
 
 // --- Engine Input Models ---
 export interface SubjectiveInput {
@@ -1335,6 +1336,8 @@ export interface DailyDecisionInput {
         subjectiveCheckinComplete: boolean;
         profileReady: boolean; // True if preferences exist
     };
+    /** Composition-time dashboard diagnostic. It is not an engine decision input. */
+    dataConfidence?: DataConfidenceScore;
 }
 
 /**
