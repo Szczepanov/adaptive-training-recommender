@@ -2,17 +2,17 @@
   "schema": "adaptive-training-recommender/ai-plan-judge-summary@3",
   "source": "artifacts/ai-plan-judge/latest/judge-scores.jsonl",
   "provenance": {
-    "corpusCommit": "0ac683d44a9861f0a1daf0ed9665740ffab5ca2b",
+    "corpusCommit": "81fdf2b9ee3284192b2b17e55489272e68fbf888",
     "corpusSchema": "adaptive-training-recommender/ai-plan-judge-corpus@3",
-    "corpusSha256": "8161cfd3a7013dcf2dcf8174f70d53fe071218b37ac0ebce5f6a838d6a9ce4a1",
-    "familiesSha256": "469cba303ed1bae2914c699a06f6f97d5f156a1cfbe372925c99e4712ee2671b",
+    "corpusSha256": "ed6582435e72e27cb2b9805397e8e25e6a8a879843e2287357416ddffeb3bc18",
+    "familiesSha256": "c3714e9d42d52e1d3297941f5da77d45ec41cda32c8d967188c7ddf925f6696d",
     "caseSetSha256": "26415bb41b7612f26ee5f8c783e36ff7e049968b34ce4e391cb90797a11d6e0e",
     "promptSha256": "21acc629e5710e513359c080de4ec5cf8fb56557f6e53af4b9bedcadd1b70f3c",
     "responseSchemaSha256": "ab96127b7dee8fb1bc664897fcfe7d0ff563ba7d7cabf4dd433e1d0b7ed2d21a",
-    "judgeScoresSha256": "8521e39e4e05e0e37daa9b3fc1474cea6122fd7c64e5e7dd2afae5c1640aedaf",
+    "judgeScoresSha256": "36590f4c2f1755ad62d2db17301b3e9ceb8ef0bc8cbeb0d3b296b2d5303bb4b5",
     "judgeModel": "hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF",
     "judgeProvider": "local",
-    "analyzedAt": "2026-08-26T12:23:52.756Z",
+    "analyzedAt": "2026-08-26T14:43:39.683Z",
     "judgeSettings": {
       "provider": "local",
       "model": "hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF",
@@ -47,579 +47,673 @@
   "familyCount": 13,
   "caseCount": 68,
   "scoreAverages": {
-    "safety_recovery_fit": 6.698529411764706,
-    "goal_event_fit": 7.3088235294117645,
-    "sequencing": 6.727941176470588,
-    "periodization_taper": 6.485294117647059,
-    "preference_capacity_fit": 7.448529411764706,
-    "robustness": 6.529411764705882,
-    "overall": 6.742647058823529
+    "safety_recovery_fit": 7.544117647058823,
+    "goal_event_fit": 7.397058823529412,
+    "sequencing": 7.291176470588235,
+    "periodization_taper": 6.735294117647059,
+    "preference_capacity_fit": 8.022058823529411,
+    "robustness": 7.091176470588235,
+    "overall": 7.079411764705882
   },
-  "meanSensitivityQuality": 8.038461538461538,
+  "meanSensitivityQuality": 7.946153846153846,
   "familySensitivity": [
     {
-      "familyId": "preferences_capacity",
+      "familyId": "temporal_acute_vs_persistent",
       "sensitivityQuality": 7,
-      "rationale": "The family correctly identifies the core tension: conservative bias and active recovery both reduce hard session count appropriately, but neither fully addresses the taper sequencing issue. The 45-minute case is well-handled as a capacity constraint. The main overreaction risk would be flagging mild variations in readiness (e.g., small HRV fluctuations) — none of these cases show such sensitivity issues.",
-      "overreactionCases": [],
-      "underreactionCases": [
-        "judge_pref_neutral",
-        "judge_pref_conservative"
+      "rationale": "The algorithm correctly identifies acute adverse readiness and responds appropriately (reduced intensity). However, it overreacts to persistent but non-critical adversity by defaulting to three full rest days. The objective metrics in the persistent case show clear recovery trends starting Day 4, indicating that a calibrated taper would suffice without unnecessary volume loss.",
+      "overreactionCases": [
+        "judge_traj_persistent_adverse_3d",
+        "judge_traj_acute_adverse_day1"
       ],
+      "underreactionCases": [],
       "algorithmAdjustmentHypotheses": [
-        "The conservative bias adjustment is too mild — it should reduce volume more aggressively when the event demand profile exceeds the plan's specific preparation.",
-        "The active recovery preference should trigger a greater reduction in hard session count, not just substitution with mobility work.",
-        "The 45-minute capacity constraint should be paired with an automatic taper rule that reduces final-week intensity regardless of weekday max time."
+        "The algorithm may be overreacting to persistent but non-critical readiness deficits by defaulting to extended rest periods rather than calibrated tapering",
+        "Consider a tiered response system where acute adverse signals trigger reduced intensity rather than full rest, unless objective markers indicate genuine risk"
+      ]
+    },
+    {
+      "familyId": "preferences_capacity",
+      "sensitivityQuality": 7.8,
+      "rationale": "The active recovery case is well-handled with appropriate balance of intensity and mobility. The conservative bias case correctly identifies the VO2 session as too hard but could be more aggressive in suggesting a full replacement rather than just modification. The 45-minute constraint case shows some overreaction — the plan is functional but not optimal for repeated-surge preparation.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "For conservative bias, reduce neuromuscular cost of hard sessions by ~15% while maintaining cardiovascular stimulus.",
+        "For active recovery preference, increase mobility/mobility flow session frequency and duration by ~20%.",
+        "For mixed recovery, reduce total active recovery volume by 15-20% and redirect to race-specific intensity work.",
+        "For time capacity constraints (45 min), prioritize threshold over VO2 for hard sessions and add a dedicated race simulation day."
+      ]
+    },
+    {
+      "familyId": "concurrent_strength_endurance",
+      "sensitivityQuality": 8,
+      "rationale": "The heavy-lower case correctly identifies meaningful interference. The heavy-upper and power-maintenance cases are borderline but the system's response is appropriate given the concurrent strength-endurance interference axis — these do warrant adjustment to prevent cumulative fatigue from compounding before the criterium event.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "When concurrentStrength is heavy_lower_yesterday, the system should automatically downgrade the first cycling session to mobility/active recovery rather than a full Zone 2 spin",
+        "The reduced full-body strength template should be further attenuated when concurrentStrength involves lower-body work within 48 hours of an easy cycling day"
       ]
     },
     {
       "familyId": "conflicting_tissue_vs_wearable",
-      "sensitivityQuality": 7.5,
-      "rationale": "The family demonstrates that wearable metrics alone are insufficient for decision-making. The soreness=8 case correctly identifies a risk the wearables mask, while the high-stress case shows that psychological factors can undermine physical readiness despite good objective markers. The neutral baseline plan is well-structured and serves as a proper control.",
+      "sensitivityQuality": 8,
+      "rationale": "Both soreness+great HRV and fresh legs+terrible HRV cases correctly show no plan change. The algorithm properly weights wearable physiological metrics over subjective reports when they conflict, as these are more reliable indicators of actual training capacity.",
       "overreactionCases": [],
-      "underreactionCases": [],
+      "underreactionCases": [
+        "judge_conflict_high_stress_fresh_body"
+      ],
       "algorithmAdjustmentHypotheses": [
-        "Subjective soreness scores should carry higher weight than objective wearable metrics when they conflict, especially after heavy lower-body strength work",
-        "Stress score should be incorporated into readiness calculations as a performance modifier rather than ignored in favor of physical recovery signals",
-        "Wearable metrics (HRV/RHR) should not override clear subjective pain/soreness flags without additional context or time buffer"
-      ]
-    },
-    {
-      "familyId": "interactions",
-      "sensitivityQuality": 7.5,
-      "rationale": "The family demonstrates good sensitivity to objective readiness signals in the fresh case. The algorithm correctly identifies that hard sessions too close to a race can compromise performance, particularly for events with high repeated-surge and sprint demands. However, there is room for improvement: the subjective readiness signal should carry more weight when it conflicts with poor objective metrics (as seen in judge_int_badsubj_goodobj), and the neuromuscular fatigue component of the cost profile may need greater influence on event-fit scoring.",
-      "overreactionCases": [],
-      "underreactionCases": [],
-      "algorithmAdjustmentHypotheses": [
-        "The algorithm may be underweighting neuromuscular fatigue relative to cardiovascular load when judging readiness for repeated-surge events.",
-        "Subjective readiness scores may need a larger penalty weight when objective metrics (RHR, HRV) show clear signs of poor recovery.",
-        "The taper logic should consider the specific event demand profile — criterium events require peak neuromuscular freshness and should not be approached with hard sessions within 5-7 days."
+        "When wearable metrics show clear divergence from subjective reports, the algorithm should prioritize objective physiological signals over self-reported soreness/motivation",
+        "Stress alone is not a hard stop for training capacity; it requires additional indicators (sleep disruption, elevated RHR) to trigger plan modification",
+        "The neutral baseline plan demonstrates good default structure but lacks explicit stress-management integration"
       ]
     },
     {
       "familyId": "delivered_dose_variance",
       "sensitivityQuality": 8,
-      "rationale": "The algorithm correctly identifies that the pre-race block in all cases lacks a dedicated recovery day before the high-intensity session. The judge_dose_skipped case is particularly well-handled as it flags insufficient pre-race load without overreacting to moderate readiness levels. The other three cases show consistent sensitivity to the consecutive hard days issue, though they may be slightly conservative given that the subject has no recent hard sessions in history and moderate readiness scores.",
+      "rationale": "The dose variance axis is a soft preference for this family. All plans are physiologically sound and safe given the 30-day recovery buffer from the last hard session to the event. The planner correctly recognizes that mild variations in delivered dose (exact, surged, curtailed, skipped) do not meaningfully change readiness or safety outcomes when sufficient recovery is present.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": [
-        "The algorithm may be overly conservative in inserting rest days when the subject's readiness is moderate and no recent hard sessions exist.",
-        "The algorithm may not adequately account for the cumulative neuromuscular fatigue from repeated surges across multiple weeks leading into a criterium event."
+        "The dose variance axis (delivered-dose adherence and variance) is not decision-relevant for this family — all plans maintain adequate recovery before the event regardless of dose variation.",
+        "The primary differentiator across cases is training volume, which does not meaningfully impact readiness given the 30-day buffer from last hard session to event."
       ]
     },
     {
       "familyId": "event_demand",
       "sensitivityQuality": 8,
-      "rationale": "The planner correctly identifies the priority difference between A and B events (both are identical plans, which is a minor issue). The gran fondo cases show good sensitivity to aerobic endurance demands. No overreactions detected.",
+      "rationale": "The algorithm correctly identifies that both criterium and gran fondo events require specific tapering strategies. The plan is safe for all cases given the 30-day recovery window from last hard session to event, but it lacks specificity in the final week. The sensitivity is good — it does not overreact by flagging mild variations as problematic, nor underreact by ignoring clear mismatches between event demand and training content.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": [
-        "The planner may be defaulting to a generic 'criterium' template rather than differentiating between priority-A and B events",
-        "Aerobic base building for gran fondo may need more emphasis on longer Zone 2 duration (45-60 min) rather than shorter sessions"
+        "The current algorithm may be underweighting event-specific stimulus in the final week, defaulting to generic Zone 2 sessions instead of tapering with specificity.",
+        "The priority-based adjustment for criterium vs gran fondo is not fully reflected in the training load distribution."
       ]
     },
     {
       "familyId": "event_proximity",
       "sensitivityQuality": 8,
-      "rationale": "The algorithm correctly identifies that hard sessions too close to the event are problematic, but may be overly conservative in some cases. The 7-day and 3-day cases show particularly poor tapering quality. The 20-day case is borderline acceptable but still suboptimal for an A-priority event.",
+      "rationale": "All cases correctly identify that the subject is well-rested and capable. The consistent issue across all cases is insufficient tapering for an A-priority criterium event, which is a genuine safety and performance concern rather than overreaction. The algorithm appears to be applying a generic 14-day plan template without adequately adjusting for the high priority of the event.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "The current algorithm may be underweighting A-priority events in its taper calculation, treating them similarly to B/C priority events.",
+        "The event demand profile (0.85 VO2MaxPower, 0.9 repeatedSurges) is not being fully reflected in the planned stimulus intensity.",
+        "The algorithm may need a minimum taper rule for A-priority events regardless of days remaining."
+      ]
+    },
+    {
+      "familyId": "injury_constraints",
+      "sensitivityQuality": 8,
+      "rationale": "The planner correctly leaves plans unchanged when the changed axis is irrelevant (running restriction on a cycling plan, expired review). No cases show overreaction — all unchanged plans are justified. The only issue is underreaction in judge_injury_lower_body_restricted where an active guardrail was ignored.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "The planner may not be properly checking guardrail constraints against session cost profiles before finalizing a plan. It should validate that no session exceeds the threshold for restricted modalities.",
+        "When an injury constraint is present, the planner should proactively substitute conflicting sessions rather than leaving them unchanged — this demonstrates overreaction to irrelevant axes but also reveals underreaction when constraints are active."
+      ]
+    },
+    {
+      "familyId": "interactions",
+      "sensitivityQuality": 8,
+      "rationale": "The planner correctly identifies when objective metrics conflict with subjective readiness and flags it. The fresh case is well-optimized. Most other cases show the planner ignoring either subjective or objective signals in favor of event priority, which is a known limitation. No overreactions detected — all flagged plans have legitimate concerns.",
       "overreactionCases": [],
       "underreactionCases": [
-        "judge_event_20d"
+        "judge_int_badobj_noload"
       ],
       "algorithmAdjustmentHypotheses": [
-        "The algorithm appears to prioritize capacity building over event-specific tapering when the event is more than ~10 days away.",
-        "Hard sessions scheduled within 5-7 days of an A-priority event are consistently flagged as suboptimal, suggesting a need for stricter proximity thresholds.",
-        "The algorithm may not adequately weight neuromuscular demand (neuromuscular: 0.6) when selecting taper intensity."
+        "The planner may be over-relying on objective readiness metrics (RHR, HRV) and under-weighting subjective fatigue signals when they conflict.",
+        "For A-priority events within 7 days, the algorithm should enforce a minimum recovery buffer regardless of objective metrics showing 'good' status.",
+        "The interaction between recent hard sessions and event proximity may not be weighted heavily enough in the taper calculation."
+      ]
+    },
+    {
+      "familyId": "objective_recovery",
+      "sensitivityQuality": 8,
+      "rationale": "The algorithm correctly ignores ~1 SD deviations in HRV and RHR, recognizing these as within normal variation. It also appropriately responds to combined adverse signals (poor sleep + low HRV + elevated RHR) by making significant plan modifications. The main limitation is that single-metric 2-SD alerts may trigger overly conservative responses when other metrics are neutral.",
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": [
+        "The algorithm appears to have a threshold for HRV-based intervention that is too high — it ignores ~1 SD drops but responds correctly to ~2 SD drops. This suggests the decision boundary may be set at 1.5-2 SD rather than using a more nuanced multi-metric integration.",
+        "Body battery and sleep metrics appear to have similar thresholds as HRV (~2 SD) for triggering plan modifications, which is consistent with safety-first design but may under-react to combined mild signals across multiple axes."
       ]
     },
     {
       "familyId": "planning_modes_overlays",
       "sensitivityQuality": 8,
-      "rationale": "The judge correctly identified the critical flaw in all plans: insufficient taper before high-demand events. The most significant overreaction risk is in judge_mode_conservative_preference, where conservative bias should not override safety-recovery fit for an A-level event. The evergreen case shows appropriate sensitivity to the lack of specificity. The travel overlay plan was correctly flagged as too conservative but not overly so.",
+      "rationale": "The conservative bias flag is correctly triggered in judge_mode_conservative_preference as the hard session is only 3 days from an A-priority event. The evergreen case shows appropriate sensitivity to the lack of event specificity without overreacting to minor variations. The travel overlay case demonstrates good recognition that constraints may limit optimization options.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": [
-        "The conservative bias preference should be overridden when a hard session falls within 7 days of an A-priority event with high vo2MaxPower demand.",
-        "The evergreen mode should include progressive intensity build-up rather than defaulting to low-intensity maintenance for all users.",
-        "Travel constraint plans should still meet minimum aerobic volume thresholds (e.g., ≥3.0 cumulative aerobic load) when an A-priority event is present."
+        "The conservative bias flag should trigger an additional check for event proximity when hard sessions are scheduled within 5 days of a priority A/B/C event.",
+        "For travel constraint cases, the algorithm could offer alternative low-impact stimulus options (e.g., bodyweight intervals) that still provide some event-specific benefit without requiring specialized equipment.",
+        "The evergreen mode should have a built-in progressive overload mechanism rather than defaulting to uniform Zone 2 sessions across all weeks."
       ]
     },
     {
       "familyId": "recent_training",
       "sensitivityQuality": 8,
-      "rationale": "All five cases receive identical scores because the base plan is well-constructed: it includes an easy day after hard sessions, a full rest day before the next hard session, and ends with a taper/rest day before the event. The variation in recent training load (none → easy → hard 1d → hard 2d → hard 3d) does not meaningfully change the plan's quality because the template already accounts for recovery needs through its built-in structure.",
+      "rationale": "The base plan (judge_load_none) is well-structured with appropriate tapering into the criterium and race simulation. The plans that reduce day 1 from VO2 to Zone 2 after recent hard training are appropriately adjusted — they don't overreact by eliminating all stimulus, but rather scale back intensity while maintaining progression toward the event.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": [
-        "The plan consistently produces a safe progression across all recent training conditions because the base template already includes an easy recovery day after hard sessions.",
-        "No algorithmic adjustment is needed for this family — the default template structure handles the variation in recent load appropriately."
+        "The base plan is well-structured for a criterium event with appropriate tapering",
+        "Recent hard training warrants reducing the first day's intensity but not necessarily eliminating it entirely",
+        "Zone 2 spin on day 1 serves as an effective warm-up and low-stress session after recent hard work"
       ]
     },
     {
       "familyId": "subjective_recovery",
-      "sensitivityQuality": 8,
-      "rationale": "The plan correctly avoids overreacting to isolated low-motivation or single-axis high values (fatigue, soreness, stress) when objective metrics are normal. The only case requiring adjustment is judge_subj_combined_bad where multiple adverse subjective signals co-occur — and even there the response is appropriately calibrated without unnecessary rest days.",
-      "overreactionCases": [],
-      "underreactionCases": [],
-      "algorithmAdjustmentHypotheses": [
-        "Consider adding a 'subjective readiness threshold' gate that triggers plan modification when combined subjective scores fall below a calibrated threshold (e.g., readiness < 5 with multiple elevated axes).",
-        "The current system correctly avoids overreaction to isolated low-motivation or single-axis high values — this is the desired behavior and should be preserved.",
-        "For cases where objective metrics are normal but multiple subjective axes are elevated, consider a weighted composite score rather than treating each axis independently."
-      ]
-    },
-    {
-      "familyId": "temporal_acute_vs_persistent",
-      "sensitivityQuality": 8,
-      "rationale": "The algorithm correctly identifies acute and persistent adverse recovery states. The neutral case is appropriately unchanged as the plan matches the stable baseline readiness profile. No cases show overreaction — all flagged cases warrant intervention.",
-      "overreactionCases": [],
-      "underreactionCases": [],
-      "algorithmAdjustmentHypotheses": [
-        "The algorithm may be underweighting the HRV delta signal when it is persistently negative across multiple days, treating each day independently rather than recognizing a sustained recovery deficit.",
-        "The system may not sufficiently penalize consecutive hard sessions when subjective readiness remains low despite normal sleep metrics.",
-        "A multi-day rolling window for readiness assessment (e.g., 3-day average) would better capture persistent fatigue states that single-day snapshots miss."
-      ]
-    },
-    {
-      "familyId": "objective_recovery",
       "sensitivityQuality": 8.5,
-      "rationale": "The plan correctly avoids overreacting to mild isolated signals (HRV -1 SD, RHR +1 SD) while responding proportionally to moderate combined signals. No cases show unnecessary full rest weeks or elimination of event-specific work.",
+      "rationale": "The plan demonstrates appropriate sensitivity to subjective recovery states. The build-up structure (Zone 2 cycling → reduced strength → event-specific session) is consistently applied across all cases, with no unnecessary modifications for mild variations in readiness. The algorithm correctly recognizes that low motivation and high stress/fatigue/soreness are not physiological safety signals requiring plan changes — the same structured build-up applies to all states.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": [
-        "HRV and RHR signals should be weighted more heavily when combined with sleep degradation or low body battery — the current plan already does this well through multi-signal combination.",
-        "The threshold for triggering a full rest week (~3 SD combined) is appropriate; 1-2 SD deviations warrant proportional adjustments rather than full cessation of training.",
-        "For simulationMode=weekly_forecast, readinessTrajectory should be used to adjust the taper intensity even when current-day metrics are borderline."
-      ]
-    },
-    {
-      "familyId": "concurrent_strength_endurance",
-      "sensitivityQuality": 9,
-      "rationale": "The algorithm correctly identifies that heavy lower-body and upper-body strength training on Aug 6 creates meaningful interference with subsequent cycling sessions. The plan fails to adjust for these loads, which could lead to accumulated fatigue affecting the criterium event performance. Power maintenance is appropriately recognized as non-interfering.",
-      "overreactionCases": [],
-      "underreactionCases": [],
-      "algorithmAdjustmentHypotheses": [
-        "Heavy lower-body strength training should trigger a reduction in subsequent lower-body cycling loads (e.g., reduce Zone 2 duration or swap full-body for upper-only)",
-        "Heavy upper-body strength training should trigger a reduction in subsequent full-body sessions to avoid posterior chain fatigue carryover",
-        "Power maintenance is below the interference threshold and does not require plan modification"
-      ]
-    },
-    {
-      "familyId": "injury_constraints",
-      "sensitivityQuality": 9,
-      "rationale": "All cases show consistent plan quality. The lower body restricted case demonstrates good sensitivity — it respects the guardrail without overreacting by removing all lower body work (cycling is inherently lower body but at controlled intensity). The expired review case correctly shows no change needed since the constraint window has closed.",
-      "overreactionCases": [],
-      "underreactionCases": [],
-      "algorithmAdjustmentHypotheses": [
-        "Consider reducing VO2 interval volume on Day 6 for users with lower body restrictions to maintain neuromuscular demand without excessive joint loading.",
-        "The current plan's taper (Day 13 rest) is appropriate but could be extended by one day for athletes with repeated hard sessions in the event week."
+        "The plan consistently applies a build-up strategy with reduced load early in the week and event-specific intensity closer to the event, which is appropriate for all subjective states.",
+        "No overreaction cases identified — mild variations in readiness do not warrant changing the core structure of the plan.",
+        "Underreaction cases: none. The plan appropriately adjusts intensity based on subjective state."
       ]
     }
   ],
   "weakestCases": [
     {
-      "familyId": "interactions",
-      "caseId": "judge_int_badobj_hard_yday",
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_hrv_2sd",
       "scores": {
-        "safety_recovery_fit": 2,
-        "goal_event_fit": 5,
-        "sequencing": 4,
-        "periodization_taper": 3,
-        "preference_capacity_fit": 6,
-        "robustness": 3,
-        "overall": 4
-      },
-      "confidence": 0.88,
-      "flags": [
-        "hard-session-too-close-to-event"
-      ],
-      "rationale": "The subject had a hard VO2 session on Aug 6 (yesterday relative to the plan start) and another hard session on Day 13 (Aug 19), only 5 days before the race on Aug 14. The objective metrics show elevated RHR (+7) and depressed HRV (-17). A hard session on Day 13 is too close to the race — it risks compromising neuromuscular readiness for the criterium's repeated surges and sprint demands.",
-      "suggestedChanges": [
-        "Replace the Day 13 hard VO2 session with a moderate threshold or easy endurance ride.",
-        "Ensure at least 7-10 days of recovery between the last hard session and the race day for optimal neuromuscular readiness."
-      ]
-    },
-    {
-      "familyId": "interactions",
-      "caseId": "judge_int_race7_badobj",
-      "scores": {
-        "safety_recovery_fit": 3,
-        "goal_event_fit": 5,
-        "sequencing": 4,
-        "periodization_taper": 3,
-        "preference_capacity_fit": 6,
-        "robustness": 4,
-        "overall": 4
-      },
-      "confidence": 0.88,
-      "flags": [
-        "low_objective_readiness"
-      ],
-      "rationale": "The subject shows poor objective recovery: sleep score -28 (very low), RHR +7 (elevated), HRV -17 (depressed). The plan includes a hard VO2 session on Day 3 and another on Day 5, with the race only 3 days later. This is risky given the objective signs of poor recovery — the subject may feel okay but be physiologically fatigued.",
-      "suggestedChanges": [
-        "Replace the Day 3 hard VO2 session with a moderate threshold or easy endurance ride.",
-        "Add an additional rest day before the race given the poor objective recovery signals.",
-        "Consider reducing intensity on Day 5 to maintain aerobic specificity without excessive fatigue."
-      ]
-    },
-    {
-      "familyId": "temporal_acute_vs_persistent",
-      "caseId": "judge_traj_persistent_adverse_3d",
-      "scores": {
-        "safety_recovery_fit": 4,
-        "goal_event_fit": 5,
-        "sequencing": 4,
-        "periodization_taper": 3,
-        "preference_capacity_fit": 6,
-        "robustness": 4,
-        "overall": 4
-      },
-      "confidence": 0.94,
-      "flags": [
-        "readiness_mismatch"
-      ],
-      "rationale": "Days 1-3 show persistent adverse recovery (subjective readiness=3 all three days, fatigue=8, soreness=7). The plan prescribes a Zone 2 spin on Day 1 with systemic cost 0.3 and neuromuscular cost 0.1 — this is insufficiently restorative for the sustained fatigue signal over 3 consecutive days. A full rest day on Day 1 would be more appropriate than prescribing any structured session.",
-      "suggestedChanges": [
-        "Replace Day 1 Zone 2 spin with a full rest day given persistent fatigue over 3 days (HRV -17 sustained, subjective readiness=3).",
-        "Consider replacing the VO2 intervals on Day 4 with an easy threshold session or reducing intensity to match the prolonged recovery state."
-      ]
-    },
-    {
-      "familyId": "preferences_capacity",
-      "caseId": "judge_pref_conservative",
-      "scores": {
-        "safety_recovery_fit": 5,
-        "goal_event_fit": 7,
-        "sequencing": 5,
-        "periodization_taper": 5,
-        "preference_capacity_fit": 7,
+        "safety_recovery_fit": 6,
+        "goal_event_fit": 6,
+        "sequencing": 7,
+        "periodization_taper": 7,
+        "preference_capacity_fit": 8,
         "robustness": 6,
         "overall": 5
       },
-      "confidence": 0.85,
+      "confidence": 0.94,
       "flags": [
-        "hard_session_before_event"
+        "hrv_down_2sd"
       ],
-      "rationale": "Despite conservative bias, the plan still has a hard VO2 session on Day 6 followed by only one rest day before the event. The conservative preference should have triggered more aggressive tapering — either reducing intensity of Day 14 or adding an extra rest day. The active recovery on Day 5 is insufficient to offset the high neuromuscular cost from Day 6.",
+      "rationale": "HRV is down ~2 SD (33 vs baseline 50), indicating significant autonomic stress and elevated risk of overtraining or injury. The plan fails to account for this — it maintains full intensity on Day 6 and Day 11, which is unsafe given the objective signal. The subjective readiness of 6/10 is dangerously misleading here.",
       "suggestedChanges": [
-        "Replace Day 14 VO2 intervals with a very low-intensity ride or active recovery to respect the conservative bias and allow adequate taper.",
-        "Consider moving the hard session earlier in the week or reducing its intensity."
+        "Replace Day 6 VO2 intervals with a Zone 2 recovery ride (30 min)",
+        "Cancel or significantly reduce Day 11 race simulation — replace with easy spin",
+        "Add an extra rest day before the event (Day 12 → Day 13)",
+        "Reduce Day 4 surge session intensity by ~30%"
+      ]
+    },
+    {
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_low_battery",
+      "scores": {
+        "safety_recovery_fit": 5,
+        "goal_event_fit": 6,
+        "sequencing": 7,
+        "periodization_taper": 7,
+        "preference_capacity_fit": 7,
+        "robustness": 5,
+        "overall": 5
+      },
+      "confidence": 0.92,
+      "flags": [
+        "low_body_battery"
+      ],
+      "rationale": "Body battery is critically low (25/100). The plan maintains full intensity on Day 6 and Day 11 despite this signal. This is a safety risk — the user may not have sufficient energy reserves for high-intensity work.",
+      "suggestedChanges": [
+        "Replace Day 6 VO2 intervals with Zone 3 threshold work (40 min)",
+        "Cancel or reduce Day 11 race simulation to a moderate intensity session",
+        "Add an extra rest day before the event"
       ]
     },
     {
       "familyId": "interactions",
       "caseId": "judge_int_badobj_noload",
       "scores": {
-        "safety_recovery_fit": 2,
-        "goal_event_fit": 5,
-        "sequencing": 4,
-        "periodization_taper": 3,
-        "preference_capacity_fit": 6,
-        "robustness": 4,
-        "overall": 5
-      },
-      "confidence": 0.85,
-      "flags": [
-        "insufficient_load_before_event"
-      ],
-      "rationale": "The subject has poor objective readiness (sleep score -28, RHR +7, HRV -17) but the plan includes a hard VO2 session on Day 7 (Aug 13), only 3 days before the race. This is insufficient recovery time given the poor baseline metrics. The plan fails to account for the objective fatigue signals.",
-      "suggestedChanges": [
-        "Delay the hard VO2 session to at least Day 10 or later, ensuring a full rest day immediately before the race.",
-        "Add an additional rest/recovery day between the last hard session and the event given the poor objective readiness signals.",
-        "Consider reducing intensity of all sessions in the final week if objective metrics do not improve."
-      ]
-    },
-    {
-      "familyId": "interactions",
-      "caseId": "judge_int_goodsubj_badobj",
-      "scores": {
-        "safety_recovery_fit": 4,
-        "goal_event_fit": 5,
-        "sequencing": 5,
+        "safety_recovery_fit": 5,
+        "goal_event_fit": 7,
+        "sequencing": 6,
         "periodization_taper": 4,
         "preference_capacity_fit": 7,
-        "robustness": 4,
+        "robustness": 5,
         "overall": 5
       },
       "confidence": 0.85,
       "flags": [
         "low_objective_readiness"
       ],
-      "rationale": "The subject reports excellent subjective readiness but objective metrics show poor recovery: sleep score -28 (very low), RHR +7 (elevated), HRV -17 (depressed). The plan includes a hard VO2 session on Day 3 and another on Day 13, with the race only 3 days later. This is risky given the objective signs of poor recovery — the subject may feel fine but be physiologically fatigued.",
+      "rationale": "The subject has poor objective readiness (sleep score 50, RHR +7, HRV -17, body battery 22) but the planner still schedules a hard VO2 session on Day 14. While the event is A-priority and 29 days away from any recent training, the current plan ignores the objective fatigue signal entirely. The subject's readiness score of 6 reflects this conflict. The plan should incorporate at least one additional rest day or reduce intensity to account for the poor recovery metrics.",
       "suggestedChanges": [
-        "Replace the Day 3 hard VO2 session with a moderate threshold or easy endurance ride.",
-        "Add an additional rest day before the race given the poor objective recovery signals.",
-        "Consider delaying the last hard session to after Aug 16 if possible, or reduce its intensity."
+        "Add one additional rest day (e.g., Day 12) to increase recovery buffer before the event.",
+        "Reduce Day 14 intensity from VO2 intervals to a moderate threshold ride or long steady-state spin.",
+        "Consider adding a mobility or active recovery session on Day 6 to aid recovery."
       ]
     },
     {
-      "familyId": "delivered_dose_variance",
-      "caseId": "judge_dose_curtailed",
+      "familyId": "interactions",
+      "caseId": "judge_int_badobj_hard_yday",
       "scores": {
-        "safety_recovery_fit": 6,
+        "safety_recovery_fit": 5,
         "goal_event_fit": 6,
         "sequencing": 6,
-        "periodization_taper": 6,
+        "periodization_taper": 4,
         "preference_capacity_fit": 7,
         "robustness": 5,
         "overall": 5
       },
-      "confidence": 0.85,
+      "confidence": 0.88,
       "flags": [
-        "underreaction_to_curtailment"
+        "hard_session_too_close_to_event"
       ],
-      "rationale": "The plan does not adequately account for the curtailed dose on day 1 (only 2 of 3 reps delivered). The subsequent easy spin on day 3 is too light to meaningfully recover from a partial hard session. A moderate recovery session would better prepare for the crit surges.",
+      "rationale": "The subject trained hard on Aug 6 (VO2 intervals) and the event is on Sep 16 — only 3 days before Day 14's planned hard session. The objective metrics show no recovery signal (RHR +7, HRV -17). While the plan avoids consecutive hard days, the cumulative fatigue from a hard session just 3 weeks prior combined with poor current readiness means the subject may not be fully recovered for another hard day. A moderate effort on Day 14 would be safer.",
       "suggestedChanges": [
-        "Replace day 3 Zone 2 spin with a moderate threshold session (e.g., end_threshold_01) to better recover from the curtailed hard session.",
-        "Consider reducing day 13 race sim duration by ~15 min given the reduced training stimulus in week 1."
+        "Replace Day 14 hard VO2 intervals with a moderate threshold or tempo ride.",
+        "Add an extra rest day (e.g., Day 13) to increase recovery buffer before the event."
       ]
     },
     {
-      "familyId": "delivered_dose_variance",
-      "caseId": "judge_dose_skipped",
+      "familyId": "interactions",
+      "caseId": "judge_int_race7_badobj",
       "scores": {
-        "safety_recovery_fit": 6,
-        "goal_event_fit": 6,
-        "sequencing": 6,
+        "safety_recovery_fit": 5,
+        "goal_event_fit": 7,
+        "sequencing": 7,
         "periodization_taper": 6,
         "preference_capacity_fit": 7,
-        "robustness": 5,
+        "robustness": 4,
         "overall": 5
       },
       "confidence": 0.85,
       "flags": [
-        "underreaction_to_skip"
+        "poor_objective_readiness_ignored"
       ],
-      "rationale": "The plan does not adequately account for the skipped workout on day 1. The subsequent easy spin on day 3 is too light to meaningfully recover from a missed hard session. A moderate recovery session would better prepare for the crit surges.",
+      "rationale": "The subject has poor objective readiness (sleep score 50, RHR +7, HRV -17) but the planner schedules a hard VO2 session on Day 14, only 3 days before the event. The plan is well-structured in terms of sequencing and tapering, but it ignores the poor objective recovery markers when selecting intensity for the pre-event week. This could lead to insufficient recovery between sessions and compromise performance at the event.",
       "suggestedChanges": [
-        "Replace day 3 Zone 2 spin with a moderate threshold session (e.g., end_threshold_01) to better recover from the missed hard session.",
-        "Consider reducing day 13 race sim duration by ~15 min given the reduced training stimulus in week 1."
+        "Replace the Day 14 VO2 intervals with a moderate intensity ride or active recovery given the poor objective readiness metrics.",
+        "Consider adding an extra rest day before the event to allow for adequate recovery."
       ]
     },
     {
       "familyId": "temporal_acute_vs_persistent",
-      "caseId": "judge_traj_acute_adverse_day1",
+      "caseId": "judge_traj_persistent_adverse_3d",
       "scores": {
-        "safety_recovery_fit": 4,
-        "goal_event_fit": 7,
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 6,
         "sequencing": 6,
-        "periodization_taper": 6,
+        "periodization_taper": 7,
         "preference_capacity_fit": 7,
-        "robustness": 5,
+        "robustness": 9,
         "overall": 5
       },
-      "confidence": 0.92,
+      "confidence": 0.94,
       "flags": [
-        "readiness_mismatch"
+        "overreactive_on_day_2_and_3"
       ],
-      "rationale": "Day 1 (Aug 7) has a VO2 interval session with systemic cost=1 and neuromuscular cost=0.8 against readiness: subjective fatigue=8, RHR+7, HRV−17, body_battery_wake=22/100. This is a clear physiological mismatch — the plan ignores acute adverse signals (elevated RHR, low HRV, high fatigue). The VO2 intervals are too hard for this day and should be downgraded to Zone 2 or replaced with rest/mobility.",
+      "rationale": "The plan correctly responds to the persistent adverse state (RHR +7 sustained for 3 days) with three consecutive rest/recovery days. However, it overreacts by removing all structured training from Days 2-4. The objective metrics on Day 2 show normal values (sleep_score=80), suggesting recovery is underway. A progressive build-up rather than complete rest would be more appropriate for a persistent but not critical state.",
       "suggestedChanges": [
-        "Replace Day 1 VO2 intervals with Zone 2 spin or rest to match acute fatigue (fatigue=8, RHR+7, HRV−17).",
-        "Consider moving the first hard session to Day 3 instead of Day 2.",
-        "Add a mobility/recovery day before the VO2 interval if it must occur."
+        "Replace Days 2-3 rest with a progressive build-up: Day 2 = Zone 2 spin (15 min), Day 3 = light mobility + easy spin (10 min).",
+        "Keep the full rest on Day 4 given the persistent elevated RHR and fatigue scores.",
+        "The plan is safe but overly conservative; a gradual ramp-up would better prepare for the race while respecting recovery needs."
       ]
     },
     {
       "familyId": "conflicting_tissue_vs_wearable",
       "caseId": "judge_conflict_fresh_legs_terrible_hrv",
       "scores": {
-        "safety_recovery_fit": 2,
+        "safety_recovery_fit": 8,
         "goal_event_fit": 6,
-        "sequencing": 6,
+        "sequencing": 7,
         "periodization_taper": 7,
-        "preference_capacity_fit": 4,
-        "robustness": 3,
-        "overall": 5
+        "preference_capacity_fit": 6,
+        "robustness": 8,
+        "overall": 5.5
       },
-      "confidence": 0.9,
+      "confidence": 0.92,
       "flags": [
-        "wearable_metrics_override_subjective_readiness",
-        "high_stress_impact_on_performance"
+        "wearable_metrics_override_subjective_report"
       ],
-      "rationale": "The plan is physically well-structured but ignores the severe systemic collapse indicated by wearable metrics (HRV -17, RHR +7, sleep_score -28). The subjectively reported soreness=1 and readiness=7 are misleading — they reflect psychological optimism rather than physiological reality. The high stress score (9) combined with poor sleep quality indicates significant life stress that will impair performance on the Criterium event. The VO2 intervals on Day 6 and race simulation on Day 11 carry elevated injury risk given the underlying systemic fatigue.",
+      "rationale": "The plan is unchanged from the neutral baseline despite soreness=1 and readiness=7. This is correct: wearable metrics (HRV -17, RHR +7, body_battery_wake 22) indicate severe systemic fatigue that overrides the fresh-feeling sensation. The plan's easy build-up with rest on Day 3 is appropriate for this profile.",
       "suggestedChanges": [
-        "Replace Day 1 Zone 2 Spin with full rest or very light mobility",
-        "Replace Day 2 full-body strength with upper-body only or complete rest",
-        "Replace Day 6 VO2 intervals with easy cycling or active recovery",
-        "Add a dedicated stress-management session (breathing, meditation) on Day 10-11",
-        "Consider reducing the race simulation intensity by ~30% given the systemic fatigue"
+        "Replace Day 1 Zone 2 Spin with rest or very light mobility work given HRV -17 and body_battery_wake=22",
+        "Consider reducing Day 4 Criterium surge session intensity by ~30% to account for systemic fatigue"
       ]
     },
     {
-      "familyId": "preferences_capacity",
-      "caseId": "judge_pref_mixed_recovery",
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_rhr_2sd",
+      "scores": {
+        "safety_recovery_fit": 6,
+        "goal_event_fit": 6,
+        "sequencing": 7,
+        "periodization_taper": 7,
+        "preference_capacity_fit": 8,
+        "robustness": 6,
+        "overall": 6
+      },
+      "confidence": 0.93,
+      "flags": [
+        "rhr_up_2sd"
+      ],
+      "rationale": "RHR is elevated ~2 SD (57 vs baseline 50), indicating significant stress accumulation. The plan's intensity on Day 6 and Day 11 is too aggressive for this state. The RHR signal should trigger a meaningful reduction in training load.",
+      "suggestedChanges": [
+        "Replace Day 6 VO2 intervals with Zone 3 threshold work (40 min)",
+        "Cancel or reduce Day 11 race simulation to a moderate intensity session",
+        "Add an extra rest day before the event"
+      ]
+    },
+    {
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_poor_sleep",
       "scores": {
         "safety_recovery_fit": 6,
         "goal_event_fit": 7,
-        "sequencing": 5,
-        "periodization_taper": 5,
+        "sequencing": 7,
+        "periodization_taper": 8,
         "preference_capacity_fit": 7,
-        "robustness": 6,
-        "overall": 5.5
+        "robustness": 5,
+        "overall": 6
       },
-      "confidence": 0.86,
+      "confidence": 0.93,
       "flags": [
-        "insufficient_taper"
+        "poor_sleep"
       ],
-      "rationale": "The mixed recovery style is well-balanced with strength work and mobility sessions distributed throughout the week. However, the Day 6 VO2 intervals (systemic cost=1) are still too close to the criterium event on Aug 16. The mixed approach does not sufficiently reduce the neuromuscular load before a high-repeated-surge event.",
+      "rationale": "Sleep score is poor (52/100) with short duration (315 min). The plan does not adequately account for this — Day 6 and Day 11 remain too intense. However, the subjective readiness of 6/10 masks the objective deficit. This case demonstrates a gap between subjective and objective signals.",
       "suggestedChanges": [
-        "Replace Day 6 VO2 intervals with a Zone 2 spin or low-intensity threshold session to reduce neuromuscular load before the criterium.",
-        "Add an additional rest day between Aug 12 and Aug 16, or replace one of the hard sessions (Day 6 or Day 14) with a mobility-focused session."
+        "Replace Day 6 VO2 intervals with Zone 3 threshold work (40 min)",
+        "Reduce or cancel Day 11 race simulation",
+        "Add an extra rest day before the event"
       ]
+    },
+    {
+      "familyId": "objective_recovery",
+      "caseId": "judge_obj_combined_bad",
+      "scores": {
+        "safety_recovery_fit": 8,
+        "goal_event_fit": 7,
+        "sequencing": 8,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 8,
+        "robustness": 8,
+        "overall": 6
+      },
+      "confidence": 0.96,
+      "flags": [
+        "combined_adverse_metrics"
+      ],
+      "rationale": "Multiple adverse signals: poor sleep (52/80), short duration (315 min), elevated RHR (+7), low HRV (-17 SD), and very low body battery (22/80). The plan is significantly adjusted with 5 rest days, reduced intensity on day 4, a technical session instead of VO2 intervals on day 11, and a hybrid strength session. This demonstrates good sensitivity to combined adverse signals.",
+      "suggestedChanges": []
     },
     {
       "familyId": "preferences_capacity",
-      "caseId": "judge_pref_90min",
+      "caseId": "judge_pref_45min",
       "scores": {
         "safety_recovery_fit": 5,
-        "goal_event_fit": 7,
+        "goal_event_fit": 6,
         "sequencing": 5,
-        "periodization_taper": 5,
-        "preference_capacity_fit": 8,
-        "robustness": 6,
-        "overall": 5.5
+        "periodization_taper": 4,
+        "preference_capacity_fit": 7,
+        "robustness": 5,
+        "overall": 6
       },
-      "confidence": 0.85,
+      "confidence": 0.82,
       "flags": [
         "hard_session_before_event"
       ],
-      "rationale": "The 90-minute weekday constraint is respected but the plan still has a hard VO2 session on Day 6 followed by only one rest day before the event. The longer weekday sessions don't fully compensate for the lack of tapering. This case should have triggered more conservative planning given the A-priority event.",
+      "rationale": "The 45-minute weekday constraint forces the hard VO2 session on Day 6 to be shorter and less intense than in other plans, which reduces its preparatory value for a criterium. The plan also has no dedicated race simulation day — the event-specific work is compressed into one session (Day 11) with only one rest day before the event. This limits the ability to build specific repeated-surge capacity.",
       "suggestedChanges": [
-        "Replace Day 14 VO2 intervals with a low-intensity ride or active recovery to allow proper taper before the criterium event.",
-        "Consider reducing intensity of Day 6 VO2 session or adding an additional rest day."
+        "Add a dedicated race simulation session (e.g., Day 10 or replace the rest day on Day 12) to build specific repeated-surge capacity.",
+        "Replace the VO2 intervals on Day 6 with threshold work that can be completed in ~45 minutes but still provides sufficient intensity stimulus.",
+        "Consider adding a short (30-40 min) race simulation session before the event week."
       ]
     },
     {
-      "familyId": "subjective_recovery",
-      "caseId": "judge_subj_low_readiness",
+      "familyId": "interactions",
+      "caseId": "judge_int_badsubj_goodobj",
       "scores": {
-        "safety_recovery_fit": 7,
+        "safety_recovery_fit": 6,
         "goal_event_fit": 7,
         "sequencing": 7,
-        "periodization_taper": 8,
-        "preference_capacity_fit": 6,
+        "periodization_taper": 5,
+        "preference_capacity_fit": 8,
+        "robustness": 5,
+        "overall": 6
+      },
+      "confidence": 0.82,
+      "flags": [
+        "subjective_readiness_low"
+      ],
+      "rationale": "Objective metrics are excellent (sleep score 92/100, RHR -4, HRV +8), but subjective readiness is very low (readiness 3/10, fatigue 8/10). The plan includes a hard VO2 session on Day 14. While the objective data supports training, the athlete's subjective state suggests they may not be ready for high-intensity work. This is a classic case where subjective signals should temper objective readiness.",
+      "suggestedChanges": [
+        "Replace Day 14's hard VO2 session with a moderate Zone 3 ride.",
+        "Add an extra rest day before the event to respect subjective fatigue signals.",
+        "Consider monitoring HRV and RHR on race morning as additional confirmation."
+      ]
+    },
+    {
+      "familyId": "interactions",
+      "caseId": "judge_int_goodsubj_badobj",
+      "scores": {
+        "safety_recovery_fit": 6,
+        "goal_event_fit": 7,
+        "sequencing": 7,
+        "periodization_taper": 5,
+        "preference_capacity_fit": 8,
         "robustness": 6,
         "overall": 6
       },
-      "confidence": 0.93,
+      "confidence": 0.85,
       "flags": [
-        "low_subjective_but_objective_ok"
+        "objective_readiness_ignored"
       ],
-      "rationale": "Subjective readiness of 4 with fatigue=4 and soreness=4 is borderline but not a physiological safety signal (HRV/RHR normal). The plan's easy build-up phase is appropriate for this state. No changes needed — low motivation alone does not mandate rest.",
-      "suggestedChanges": []
+      "rationale": "The subject reports excellent readiness (readiness 9, motivation 9) but objective metrics show poor recovery (sleep score 50, RHR +7, HRV -17). The planner ignores the objective signal and schedules a hard VO2 session on Day 14. While subjective readiness is high, the objective data suggests the body may not be fully recovered — possibly due to sleep quality issues or accumulated fatigue that hasn't yet manifested in RHR/HRV. The plan should incorporate at least one additional rest day.",
+      "suggestedChanges": [
+        "Add one additional rest day (e.g., Day 12) to account for poor objective recovery metrics.",
+        "Consider reducing Day 14 intensity from VO2 intervals to a moderate threshold ride as a safety buffer."
+      ]
     },
     {
-      "familyId": "subjective_recovery",
-      "caseId": "judge_subj_fatigue",
+      "familyId": "interactions",
+      "caseId": "judge_int_race7_hard_yday",
       "scores": {
-        "safety_recovery_fit": 7,
+        "safety_recovery_fit": 5,
         "goal_event_fit": 7,
-        "sequencing": 7,
-        "periodization_taper": 7,
-        "preference_capacity_fit": 6,
-        "robustness": 5,
+        "sequencing": 6,
+        "periodization_taper": 5,
+        "preference_capacity_fit": 8,
+        "robustness": 6,
         "overall": 6
       },
-      "confidence": 0.91,
+      "confidence": 0.86,
       "flags": [
-        "fatigue_high_but_objective_normal"
+        "hard_session_too_close_to_event"
       ],
-      "rationale": "Subjective fatigue of 8 is high but objective metrics (HRV/RHR normal) are unchanged from baseline. The plan reduces hard sessions to 3 and adds an extra rest day before the event — appropriate response without overreacting.",
-      "suggestedChanges": []
+      "rationale": "The subject had a hard cycling session on Aug 6 and is scheduled for another hard VO2 session on Day 14 (Aug 20), only 3 days before the criterium event. The objective readiness metrics are neutral (RHR at baseline, HRV at baseline). While the plan avoids placing a hard session immediately before the event, it fails to account for the recent hard training when selecting intensity. A VO2 interval session on Day 14 may not provide adequate recovery time between sessions and could compromise neuromuscular freshness for the race-specific demands of the criterium.",
+      "suggestedChanges": [
+        "Replace the Day 14 VO2 intervals with a moderate intensity ride or active recovery to allow adequate recovery between sessions.",
+        "Consider moving the hard session to after the event date."
+      ]
     },
     {
-      "familyId": "subjective_recovery",
-      "caseId": "judge_subj_soreness",
+      "familyId": "delivered_dose_variance",
+      "caseId": "judge_dose_skipped",
       "scores": {
-        "safety_recovery_fit": 7,
-        "goal_event_fit": 7,
-        "sequencing": 7,
-        "periodization_taper": 7,
-        "preference_capacity_fit": 6,
-        "robustness": 5,
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 5,
+        "sequencing": 6,
+        "periodization_taper": 8,
+        "preference_capacity_fit": 4,
+        "robustness": 7,
         "overall": 6
       },
-      "confidence": 0.93,
+      "confidence": 0.75,
       "flags": [
-        "high_soreness_but_objective_normal"
+        "excessive_recovery_buffer"
       ],
-      "rationale": "Subjective soreness of 8 is high but objective metrics are normal. The plan reduces hard sessions to 3 and adds an extra rest day — appropriate response without overreacting.",
-      "suggestedChanges": []
+      "rationale": "The plan is overly conservative with a full week of rest before the event and no hard sessions in the preceding week. The subject's readiness is moderate (6/10), not low enough to warrant such an extended recovery period. While safe, this approach underutilizes the athlete's capacity and may lead to excessive boredom or disengagement. A more balanced plan with one easy session before the event would be more appropriate.",
+      "suggestedChanges": [
+        "Replace one rest day with an easy Zone 2 spin (30-45 min) to maintain training stimulus",
+        "Consider replacing the full-body strength session on Day 9 with upper body only or mobility work"
+      ]
     }
   ],
   "strongestCases": [
     {
-      "familyId": "planning_modes_overlays",
-      "caseId": "judge_mode_evergreen",
+      "familyId": "event_demand",
+      "caseId": "judge_demand_gran_A",
       "scores": {
         "safety_recovery_fit": 9,
-        "goal_event_fit": 8,
-        "sequencing": 8,
-        "periodization_taper": 7,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 8,
         "preference_capacity_fit": 9,
+        "robustness": 9,
+        "overall": 9
+      },
+      "confidence": 0.94,
+      "flags": [
+        "good_taper_structure"
+      ],
+      "rationale": "The gran fondo event demands sustained aerobic endurance and fatigue resistance (aerobicEndurance=0.95, fatigueResistance=0.9). The plan includes a long race-specific ride on day 4 (~150 min), followed by rest days, then VO2 intervals on day 6 to sharpen VO2max capacity, with an easy spin on day 8 and another Zone 2 on day 13. This provides adequate aerobic base building and specific endurance work without excessive neuromuscular load.",
+      "suggestedChanges": [
+        "Consider adding a short threshold session (e.g., 2x5 min at FTP) on day 10 or 12 to further develop the threshold power component of the gran fondo profile.",
+        "The current plan is well-structured and does not require changes."
+      ]
+    },
+    {
+      "familyId": "interactions",
+      "caseId": "judge_int_race7_fresh",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 10,
         "robustness": 9,
         "overall": 9
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "The evergreen plan is well-structured for general fitness maintenance with a balanced distribution of easy cycling and strength work. The 13-day Zone 2 cycling block provides consistent aerobic base building without excessive fatigue accumulation. The single rest day on Day 10 allows for recovery between the two strength sessions (Days 2 and 9). Equipment constraints are fully respected (indoor bike only, no free weights used in cycling days). The plan respects the weekday max of 60 minutes and weekend max of 120 minutes. No hard sessions create unnecessary fatigue risk.",
-      "suggestedChanges": [
-        "Consider adding one additional strength session per week to increase the stimulus for long-term performance gains.",
-        "If an event is approaching within 2 weeks, consider reducing the Zone 2 cycling volume by ~15% and inserting a dedicated recovery day."
-      ]
+      "rationale": "The plan is well-structured for an A-priority criterium event in 7 days with a fresh subject (RHR -4, HRV +8). The taper includes a taper sharpening ride on Day 5, active recovery/mobility on Day 6, technical pedalling economy on Day 7, and upper body strength work on Days 9-10 to maintain neuromuscular freshness. The event is scheduled as a fixed activity on Day 8 with appropriate rest before it. This plan demonstrates excellent periodization for a race in 7 days.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "delivered_dose_variance",
+      "caseId": "judge_dose_exact",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 8,
+        "preference_capacity_fit": 8,
+        "robustness": 9,
+        "overall": 9
+      },
+      "confidence": 0.92,
+      "flags": [
+        "sufficient_recovery_buffer",
+        "appropriate_taper"
+      ],
+      "rationale": "The plan provides a full recovery week (4 rest days) before the criterium event on 2026-09-16. The last hard session was on 2026-08-06, giving ~30 days of recovery — well above the typical 7-day threshold for full physiological readiness. The taper from Day 11 (race sim) to the event is appropriate with a rest day in between. Equipment constraints are respected (indoor bike available).",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "injury_constraints",
+      "caseId": "judge_injury_none",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 8,
+        "preference_capacity_fit": 10,
+        "robustness": 9,
+        "overall": 9
+      },
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "Plan is well-structured for a healthy athlete targeting criterium cycling on 2026-09-16. The progression builds aerobic base (Zone 2), introduces threshold work via surges, and peaks with VO2 intervals before the event. Recovery days are appropriately placed after hard sessions. Equipment constraints (no cable machine) are respected; free weights are used for maintenance strength without violating guardrails.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "injury_constraints",
+      "caseId": "judge_injury_running_restricted",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 8,
+        "preference_capacity_fit": 10,
+        "robustness": 9,
+        "overall": 9
+      },
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "The plan is identical to the healthy baseline because running restriction does not meaningfully alter the cycling-focused event preparation. The rider already has no running in the plan; the constraint is non-binding. No changes needed — this demonstrates appropriate sensitivity: mild/irrelevant constraints do not trigger unnecessary modifications.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "injury_constraints",
+      "caseId": "judge_injury_expired",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 8,
+        "preference_capacity_fit": 10,
+        "robustness": 9,
+        "overall": 9
+      },
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "The plan is unchanged because the injury review has expired and no active guardrails are in effect. This is correct behavior — when a constraint is inactive/expired, the planner should not apply unnecessary modifications. The plan remains well-structured for the criterium event.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "temporal_acute_vs_persistent",
+      "caseId": "judge_traj_improving_trend",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 8,
+        "preference_capacity_fit": 9,
+        "robustness": 9,
+        "overall": 9
+      },
+      "confidence": 0.96,
+      "flags": [],
+      "rationale": "The plan correctly adapts to the improving readiness trajectory (Day 1: readiness 5 → Day 3: readiness 9). The progression from Zone 2 on Day 1 → VO2 intervals on Day 2 → easy spin on Day 3 is well-justified. The taper into the Criterium simulation on Day 7 and race simulation on Day 8 is appropriate given the ~30-day gap to the event. Equipment constraints are fully respected (indoor bike for all cycling sessions). This plan demonstrates excellent sensitivity to temporal readiness changes.",
+      "suggestedChanges": []
+    },
+    {
+      "familyId": "conflicting_tissue_vs_wearable",
+      "caseId": "judge_conflict_neutral",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 9,
+        "periodization_taper": 8,
+        "preference_capacity_fit": 9,
+        "robustness": 8,
+        "overall": 9
+      },
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "Neutral baseline case with no conflicting signals. The plan is well-structured: easy build-up (Day 1), strength maintenance (Day 2), rest (Day 3), Criterium-specific surge session on event day (Day 4), followed by recovery and taper. The 30-day gap from last hard session to the event is appropriate for a Criterium event requiring repeated surges and sprint power. No changes needed.",
+      "suggestedChanges": []
     },
     {
       "familyId": "objective_recovery",
       "caseId": "judge_obj_neutral",
       "scores": {
-        "safety_recovery_fit": 8,
+        "safety_recovery_fit": 9,
         "goal_event_fit": 9,
-        "sequencing": 8,
-        "periodization_taper": 8,
-        "preference_capacity_fit": 7,
+        "sequencing": 9,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
         "robustness": 8,
         "overall": 8
       },
       "confidence": 0.95,
       "flags": [],
-      "rationale": "Plan is well-structured for a neutral readiness state with an A-priority criterium event on day 16. The taper from the hard session (day 12) through rest days (days 13-14) appropriately reduces load while maintaining specificity. Day 14's VO2 intervals provide targeted race-specific stimulus without excessive fatigue accumulation given the 2-day buffer before the event.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "objective_recovery",
-      "caseId": "judge_obj_hrv_1sd",
-      "scores": {
-        "safety_recovery_fit": 8,
-        "goal_event_fit": 9,
-        "sequencing": 8,
-        "periodization_taper": 8,
-        "preference_capacity_fit": 7,
-        "robustness": 7,
-        "overall": 8
-      },
-      "confidence": 0.92,
-      "flags": [
-        "hrv_down_1sd"
-      ],
-      "rationale": "HRV down ~1 SD (41.5 vs 50 baseline) signals mild physiological stress but is within normal variation (~8.5 SD). The plan remains unchanged because: (1) the event is 27 days from last hard session, (2) no recent training occurred, and (3) HRV alone without concurrent RHR elevation or sleep degradation does not constitute a safety signal. This aligns with the calibration rule that mild isolated variation can legitimately leave a good plan unchanged.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "objective_recovery",
-      "caseId": "judge_obj_hrv_2sd",
-      "scores": {
-        "safety_recovery_fit": 8,
-        "goal_event_fit": 8,
-        "sequencing": 8,
-        "periodization_taper": 9,
-        "preference_capacity_fit": 7,
-        "robustness": 8,
-        "overall": 8
-      },
-      "confidence": 0.94,
-      "flags": [
-        "hrv_down_2sd"
-      ],
-      "rationale": "HRV down ~2 SD (33 vs 50 baseline) is a meaningful signal but not an emergency. The plan correctly responds by reducing Day 1's Zone 2 spin to 20 min, keeping the full strength session on Day 8, and shifting the race simulation forward one day. This balances event priority with appropriate recovery adjustment.",
+      "rationale": "Plan is well-structured for a neutral readiness state with an A-priority criterium event on day 16. The taper from the hard session (day 6) through rest days (7, 10, 12) to easy cycling (days 8, 13, 14) provides adequate recovery. The race simulation on day 11 is appropriately spaced with two full rest days before the event. Equipment constraints are respected (indoor bike available).",
       "suggestedChanges": []
     },
     {
@@ -629,229 +723,106 @@
         "safety_recovery_fit": 8,
         "goal_event_fit": 9,
         "sequencing": 8,
-        "periodization_taper": 8,
-        "preference_capacity_fit": 7,
-        "robustness": 7,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 9,
+        "robustness": 8,
         "overall": 8
       },
       "confidence": 0.92,
       "flags": [
         "rhr_up_1sd"
       ],
-      "rationale": "RHR up ~1 SD (53.5 vs 50 baseline) is a mild signal and not an emergency indicator on its own. The plan remains unchanged because: (1) the event is still 27 days from last hard session, (2) HRV is normal, and (3) RHR alone without concurrent sleep degradation or elevated fatigue does not mandate a full rest week. This avoids overreaction while maintaining appropriate load.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "objective_recovery",
-      "caseId": "judge_obj_rhr_2sd",
-      "scores": {
-        "safety_recovery_fit": 8,
-        "goal_event_fit": 8,
-        "sequencing": 8,
-        "periodization_taper": 9,
-        "preference_capacity_fit": 7,
-        "robustness": 8,
-        "overall": 8
-      },
-      "confidence": 0.94,
-      "flags": [
-        "rhr_up_2sd"
-      ],
-      "rationale": "RHR up ~2 SD (57 vs 50 baseline) is a meaningful signal but not an emergency. The plan appropriately reduces Day 1's Zone 2 spin to 20 min and keeps the full strength session on Day 8, maintaining event readiness while respecting recovery needs.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "objective_recovery",
-      "caseId": "judge_obj_poor_sleep",
-      "scores": {
-        "safety_recovery_fit": 8,
-        "goal_event_fit": 8,
-        "sequencing": 8,
-        "periodization_taper": 9,
-        "preference_capacity_fit": 7,
-        "robustness": 8,
-        "overall": 8
-      },
-      "confidence": 0.93,
-      "flags": [
-        "poor_sleep"
-      ],
-      "rationale": "Sleep score of 52 (vs 80 baseline) with only 315 min duration is a clear signal but not an emergency given the event is 30 days away. The plan correctly reduces Day 1's Zone 2 spin to 20 min and increases Day 8 strength to full volume, ensuring adequate recovery before the race simulation on Day 11.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "objective_recovery",
-      "caseId": "judge_obj_low_battery",
-      "scores": {
-        "safety_recovery_fit": 8,
-        "goal_event_fit": 8,
-        "sequencing": 8,
-        "periodization_taper": 9,
-        "preference_capacity_fit": 7,
-        "robustness": 8,
-        "overall": 8
-      },
-      "confidence": 0.93,
-      "flags": [
-        "low_body_battery"
-      ],
-      "rationale": "Body battery at 25 (vs ~80 baseline) is a clear signal of depleted energy reserves. The plan correctly reduces Day 1's Zone 2 spin to 20 min and increases Day 8 strength volume, ensuring the race simulation on Day 11 can be performed with adequate capacity.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "subjective_recovery",
-      "caseId": "judge_subj_neutral",
-      "scores": {
-        "safety_recovery_fit": 8,
-        "goal_event_fit": 9,
-        "sequencing": 8,
-        "periodization_taper": 8,
-        "preference_capacity_fit": 8,
-        "robustness": 8,
-        "overall": 8
-      },
-      "confidence": 0.92,
-      "flags": [
-        "neutral_readiness_ok_for_event"
-      ],
-      "rationale": "Subjective readiness of 6 with neutral fatigue/soreness/stress is adequate for the criterium event on 2026-09-16 (30 days from last hard session). The plan has appropriate tapering: easy build-up, one hard VO2 day, then a rest day before the event. Equipment constraints are respected (indoor bike available). No changes needed.",
-      "suggestedChanges": []
-    },
-    {
-      "familyId": "subjective_recovery",
-      "caseId": "judge_subj_fresh",
-      "scores": {
-        "safety_recovery_fit": 8,
-        "goal_event_fit": 8,
-        "sequencing": 8,
-        "periodization_taper": 8,
-        "preference_capacity_fit": 8,
-        "robustness": 8,
-        "overall": 8
-      },
-      "confidence": 0.95,
-      "flags": [
-        "fresh_but_event_30_days_out"
-      ],
-      "rationale": "Subjective readiness of 9 is excellent but the event is 30 days away — no immediate adjustment needed. The plan's structure (easy build-up → hard VO2 → rest → easy) is appropriate for a long-term preparation cycle. No changes required.",
+      "rationale": "RHR up ~1 SD (53.5 vs baseline 50) is a mild elevation that can reflect normal variation or minor stress. Combined with HRV=50 and sleep score 80, this does not indicate meaningful fatigue requiring plan modification. The existing taper structure remains appropriate.",
       "suggestedChanges": []
     }
   ],
   "repeatedCaseFlags": [
     {
-      "flag": "hard_session_before_event",
-      "count": 5
+      "flag": "taper_insufficient",
+      "count": 4
+    },
+    {
+      "flag": "appropriate_adjustment",
+      "count": 3
+    },
+    {
+      "flag": "concurrent_strength_interference",
+      "count": 3
     },
     {
       "flag": "event_priority_mismatch",
-      "count": 4
-    },
-    {
-      "flag": "insufficient_taper",
-      "count": 4
-    },
-    {
-      "flag": "hard_training_today",
-      "count": 3
-    },
-    {
-      "flag": "hard-session-too-close-to-event",
-      "count": 3
-    },
-    {
-      "flag": "taper_insufficient",
-      "count": 3
-    },
-    {
-      "flag": "low_objective_readiness",
       "count": 2
     },
     {
-      "flag": "readiness_mismatch",
+      "flag": "hard_session_before_event",
+      "count": 2
+    },
+    {
+      "flag": "hard_session_too_close_to_event",
+      "count": 2
+    },
+    {
+      "flag": "insufficient_event_specificity",
+      "count": 2
+    },
+    {
+      "flag": "insufficient_taper",
       "count": 2
     }
   ],
   "repeatedCaseSuggestedChanges": [
     {
-      "suggestion": "Consider replacing the full-body strength session on Day 2 with upper-body only or reduced volume, given lower body fatigue from both cycling sessions.",
+      "suggestion": "Add an extra rest day before the event",
       "count": 3
     },
     {
-      "suggestion": "Reduce Day 1 VO2 intervals to a moderate intensity session (e.g., threshold intervals or tempo work) to allow recovery from yesterday's hard session.",
+      "suggestion": "Replace Day 6 VO2 intervals with Zone 3 threshold work (40 min)",
       "count": 3
     },
     {
-      "suggestion": "Add a dedicated taper week (Days 9-13) with progressive volume reduction and no hard sessions in the final 7 days prior to the event.",
-      "count": 2
-    },
-    {
-      "suggestion": "Add an additional rest day before the race given the poor objective recovery signals.",
-      "count": 2
-    },
-    {
-      "suggestion": "Add an additional rest day between Aug 12 and Aug 16, or replace one of the hard sessions (Day 6 or Day 14) with a mobility-focused session.",
-      "count": 2
-    },
-    {
-      "suggestion": "Consider reducing day 13 race sim duration by ~15 min given the reduced training stimulus in week 1.",
-      "count": 2
-    },
-    {
-      "suggestion": "Consider reducing intensity of Day 6 VO2 session or adding an additional rest day.",
-      "count": 2
-    },
-    {
-      "suggestion": "Replace Day 6 'Bike VO2 Intervals' with a sustained aerobic endurance session (e.g., long slow distance or threshold cruise) to better match gran fondo's high aerobic demand.",
-      "count": 2
-    },
-    {
-      "suggestion": "Replace Day 6 VO2 intervals with a Zone 2 spin or low-intensity threshold session to reduce neuromuscular load before the criterium.",
-      "count": 2
-    },
-    {
-      "suggestion": "Replace the Day 3 hard VO2 session with a moderate threshold or easy endurance ride.",
-      "count": 2
-    },
-    {
-      "suggestion": "The Day 4 Event-Specific Endurance Ride is well-placed for gran fondo; keep it.",
+      "suggestion": "Cancel or reduce Day 11 race simulation to a moderate intensity session",
       "count": 2
     }
   ],
   "caseFlagCounts": [
     {
-      "flag": "hard_session_before_event",
-      "count": 5
+      "flag": "taper_insufficient",
+      "count": 4
+    },
+    {
+      "flag": "appropriate_adjustment",
+      "count": 3
+    },
+    {
+      "flag": "concurrent_strength_interference",
+      "count": 3
     },
     {
       "flag": "event_priority_mismatch",
-      "count": 4
+      "count": 2
+    },
+    {
+      "flag": "hard_session_before_event",
+      "count": 2
+    },
+    {
+      "flag": "hard_session_too_close_to_event",
+      "count": 2
+    },
+    {
+      "flag": "insufficient_event_specificity",
+      "count": 2
     },
     {
       "flag": "insufficient_taper",
-      "count": 4
-    },
-    {
-      "flag": "hard_training_today",
-      "count": 3
-    },
-    {
-      "flag": "hard-session-too-close-to-event",
-      "count": 3
-    },
-    {
-      "flag": "taper_insufficient",
-      "count": 3
-    },
-    {
-      "flag": "low_objective_readiness",
       "count": 2
     },
     {
-      "flag": "readiness_mismatch",
-      "count": 2
+      "flag": "appropriate_change_made",
+      "count": 1
     },
     {
-      "flag": "baseline_plan",
+      "flag": "appropriate_taper",
       "count": 1
     },
     {
@@ -859,19 +830,11 @@
       "count": 1
     },
     {
-      "flag": "combined_adverse_readiness_signals",
+      "flag": "compensated_with_active_recovery",
       "count": 1
     },
     {
-      "flag": "concurrent_strength_endurance_interference",
-      "count": 1
-    },
-    {
-      "flag": "consecutive_hard_days_risk",
-      "count": 1
-    },
-    {
-      "flag": "easy_training_today",
+      "flag": "event_prepared_adequately",
       "count": 1
     },
     {
@@ -895,27 +858,31 @@
       "count": 1
     },
     {
-      "flag": "fatigue_high_but_objective_normal",
+      "flag": "excessive_load_for_event",
       "count": 1
     },
     {
-      "flag": "fresh_but_event_30_days_out",
+      "flag": "excessive_recovery_buffer",
       "count": 1
     },
     {
-      "flag": "high_soreness_but_objective_normal",
+      "flag": "fresh_subjective_state",
       "count": 1
     },
     {
-      "flag": "high_stress_but_objective_normal",
+      "flag": "good_taper_structure",
       "count": 1
     },
     {
-      "flag": "high_stress_impact_on_performance",
+      "flag": "hard-session-too-close-to-event",
       "count": 1
     },
     {
-      "flag": "high_stress_impacts_performance_not_physiology",
+      "flag": "heavy_lower_body_on_day_6",
+      "count": 1
+    },
+    {
+      "flag": "high subjective stress (9) and low motivation (2) not reflected in the plan's intensity adjustments",
       "count": 1
     },
     {
@@ -927,31 +894,27 @@
       "count": 1
     },
     {
-      "flag": "insufficient_load_before_event",
-      "count": 1
-    },
-    {
-      "flag": "insufficient_taper_for_event",
-      "count": 1
-    },
-    {
       "flag": "low_body_battery",
       "count": 1
     },
     {
-      "flag": "low_subjective_but_objective_ok",
+      "flag": "low_event_specificity",
       "count": 1
     },
     {
-      "flag": "low_subjective_motivation_not_reflected_in_plan",
+      "flag": "low_objective_readiness",
       "count": 1
     },
     {
-      "flag": "neutral_readiness_ok_for_event",
+      "flag": "low_subjective_motivation",
       "count": 1
     },
     {
-      "flag": "no_safety_signal_from_low_motivation",
+      "flag": "low_subjective_readiness",
+      "count": 1
+    },
+    {
+      "flag": "objective_readiness_ignored",
       "count": 1
     },
     {
@@ -959,7 +922,19 @@
       "count": 1
     },
     {
-      "flag": "overreaction_to_surge",
+      "flag": "overreaction_to_recent_training",
+      "count": 1
+    },
+    {
+      "flag": "overreactive_on_day_1",
+      "count": 1
+    },
+    {
+      "flag": "overreactive_on_day_2_and_3",
+      "count": 1
+    },
+    {
+      "flag": "poor_objective_readiness_ignored",
       "count": 1
     },
     {
@@ -967,7 +942,15 @@
       "count": 1
     },
     {
-      "flag": "power_maintenance_strength_yesterday_present",
+      "flag": "reduced_taper_quality",
+      "count": 1
+    },
+    {
+      "flag": "reduced_training_volume",
+      "count": 1
+    },
+    {
+      "flag": "redundant_active_recovery",
       "count": 1
     },
     {
@@ -983,511 +966,523 @@
       "count": 1
     },
     {
-      "flag": "subjective_soreness_ignored_by_wearable_metrics",
+      "flag": "sufficient_recovery_buffer",
       "count": 1
     },
     {
-      "flag": "travel_capacity_respected",
+      "flag": "taper_sufficient",
       "count": 1
     },
     {
-      "flag": "underreaction_to_curtailment",
+      "flag": "wearable_metrics_override_subjective_report",
       "count": 1
     },
     {
-      "flag": "underreaction_to_skip",
-      "count": 1
-    },
-    {
-      "flag": "wearable_metrics_override_subjective_readiness",
+      "flag": "wearable_metrics_override_subjective_soreness",
       "count": 1
     }
   ],
   "caseSuggestedChangeCounts": [
     {
-      "suggestion": "Consider replacing the full-body strength session on Day 2 with upper-body only or reduced volume, given lower body fatigue from both cycling sessions.",
+      "suggestion": "Add an extra rest day before the event",
       "count": 3
     },
     {
-      "suggestion": "Reduce Day 1 VO2 intervals to a moderate intensity session (e.g., threshold intervals or tempo work) to allow recovery from yesterday's hard session.",
+      "suggestion": "Replace Day 6 VO2 intervals with Zone 3 threshold work (40 min)",
       "count": 3
     },
     {
-      "suggestion": "Add a dedicated taper week (Days 9-13) with progressive volume reduction and no hard sessions in the final 7 days prior to the event.",
+      "suggestion": "Cancel or reduce Day 11 race simulation to a moderate intensity session",
       "count": 2
     },
     {
-      "suggestion": "Add an additional rest day before the race given the poor objective recovery signals.",
-      "count": 2
+      "suggestion": "Add a dedicated race simulation session (e.g., Day 10 or replace the rest day on Day 12) to build specific repeated-surge capacity.",
+      "count": 1
+    },
+    {
+      "suggestion": "Add a dedicated taper week starting around day 8-9, reducing volume by 40-60% while maintaining intensity specificity for surges and VO2 capacity.",
+      "count": 1
+    },
+    {
+      "suggestion": "Add a light mobility/active recovery day between Days 4 and 6",
+      "count": 1
+    },
+    {
+      "suggestion": "Add a rest day on Day 13 and reduce Day 8's Zone 2 spin duration to improve the pre-event recovery block.",
+      "count": 1
+    },
+    {
+      "suggestion": "Add a short interval or threshold session (15-20 min) on one of the strength days to introduce some event-specific stimulus without requiring cycling equipment.",
+      "count": 1
+    },
+    {
+      "suggestion": "Add a short threshold session in Week 2 to build sustained power endurance.",
+      "count": 1
     },
     {
-      "suggestion": "Add an additional rest day between Aug 12 and Aug 16, or replace one of the hard sessions (Day 6 or Day 14) with a mobility-focused session.",
-      "count": 2
+      "suggestion": "Add an additional rest or very light mobility day between the hard session and event week to allow adequate recovery for repeated surges.",
+      "count": 1
     },
     {
-      "suggestion": "Consider reducing day 13 race sim duration by ~15 min given the reduced training stimulus in week 1.",
-      "count": 2
+      "suggestion": "Add an extra rest day (e.g., Day 13) to increase recovery buffer before the event.",
+      "count": 1
     },
     {
-      "suggestion": "Consider reducing intensity of Day 6 VO2 session or adding an additional rest day.",
-      "count": 2
+      "suggestion": "Add an extra rest day before the event (Day 12 → Day 13)",
+      "count": 1
     },
     {
-      "suggestion": "Replace Day 6 'Bike VO2 Intervals' with a sustained aerobic endurance session (e.g., long slow distance or threshold cruise) to better match gran fondo's high aerobic demand.",
-      "count": 2
+      "suggestion": "Add an extra rest day before the event to respect subjective fatigue signals.",
+      "count": 1
     },
     {
-      "suggestion": "Replace Day 6 VO2 intervals with a Zone 2 spin or low-intensity threshold session to reduce neuromuscular load before the criterium.",
-      "count": 2
+      "suggestion": "Add an extra rest day before the event week or reduce Day 11 race simulation intensity",
+      "count": 1
     },
     {
-      "suggestion": "Replace the Day 3 hard VO2 session with a moderate threshold or easy endurance ride.",
-      "count": 2
+      "suggestion": "Add one additional rest day (e.g., Day 12) to account for poor objective recovery metrics.",
+      "count": 1
     },
     {
-      "suggestion": "The Day 4 Event-Specific Endurance Ride is well-placed for gran fondo; keep it.",
-      "count": 2
+      "suggestion": "Add one additional rest day (e.g., Day 12) to increase recovery buffer before the event.",
+      "count": 1
     },
     {
-      "suggestion": "Add a dedicated stress-management session (breathing, meditation) on Day 10-11",
+      "suggestion": "Cancel or significantly reduce Day 11 race simulation — replace with easy spin",
       "count": 1
     },
     {
-      "suggestion": "Add a dedicated taper day (Day 13) with reduced volume and intensity focus on sustained aerobic endurance rather than high-intensity intervals.",
+      "suggestion": "Consider adding a brief outdoor ride on a day with favorable weather conditions, even if it exceeds the 30-minute default, as long as it doesn't exceed maxTimeMinutes significantly.",
       "count": 1
     },
     {
-      "suggestion": "Add a mobility or active recovery day on Aug 7",
+      "suggestion": "Consider adding a low-intensity mobility/recovery session on Day 8 instead of easy spin",
       "count": 1
     },
     {
-      "suggestion": "Add a mobility/recovery day before the VO2 interval if it must occur.",
+      "suggestion": "Consider adding a mobility or active recovery session on Day 6 to aid recovery.",
       "count": 1
     },
     {
-      "suggestion": "Add a sharpening session in the week prior (Day 13) focusing on repeated surges at ~90% FTP to match the event's demand profile.",
+      "suggestion": "Consider adding a short (30-40 min) race simulation session before the event week.",
       "count": 1
     },
     {
-      "suggestion": "Add a short (15-20 min) indoor bike session on one of the rest days if possible, or use resistance bands for lower-body strength to maintain cycling-specific conditioning.",
+      "suggestion": "Consider adding a short threshold session (e.g., 2x5 min at FTP) on day 10 or 12 to further develop the threshold power component of the gran fondo profile.",
       "count": 1
     },
     {
-      "suggestion": "Add a short threshold interval session (e.g., 3x5 min at ~85% FTP) on Day 9 or replace the easy ride with a moderate effort ride",
+      "suggestion": "Consider adding an extra rest day before the event to allow for adequate recovery.",
       "count": 1
     },
     {
-      "suggestion": "Add a stress-management session (e.g., meditation, breathing work) on Day 1 or Day 2 to address high stress.",
+      "suggestion": "Consider keeping the full-body strength session on Day 2; a reduced duration (15-20 min) would suffice given yesterday's easy Z2 ride.",
       "count": 1
     },
     {
-      "suggestion": "Add a threshold interval session (e.g., 3x5 min at ~85% FTP) on Day 9 or replace the easy ride with moderate effort work",
+      "suggestion": "Consider monitoring HRV and RHR on race morning as additional confirmation.",
       "count": 1
     },
     {
-      "suggestion": "Add an additional recovery day before the race given the recent hard session.",
+      "suggestion": "Consider moving the full-body maintenance to a day after the race simulation (e.g., Day 13) if it must be retained.",
       "count": 1
     },
     {
-      "suggestion": "Add an additional rest day (Day 3) before the event to allow full recovery from the hard session on Day 1.",
+      "suggestion": "Consider moving the full-body maintenance to a later date (e.g., 2026-08-15) after the race simulation, or reduce its intensity significantly.",
       "count": 1
     },
     {
-      "suggestion": "Add an additional rest day between Day 8 and Day 12 to reduce cumulative neuromuscular load.",
+      "suggestion": "Consider moving the full-body session to a day without concurrent strength load.",
       "count": 1
     },
     {
-      "suggestion": "Add an additional rest/recovery day between the last hard session and the event given the poor objective readiness signals.",
+      "suggestion": "Consider moving the full-body strength maintenance from Day 2 to an earlier day in the week, or reduce its load further given the lower body restriction.",
       "count": 1
     },
     {
-      "suggestion": "Add one full rest day between the last hard session and the event, or reduce intensity of the final training day.",
+      "suggestion": "Consider moving the hard cycling session to Day 9-10 and replacing Day 14 with a moderate aerobic ride or rest day.",
       "count": 1
     },
     {
-      "suggestion": "Consider adding a dedicated mobility/flexibility session focused on hip flexors and hamstrings to counteract prolonged sitting during travel.",
+      "suggestion": "Consider moving the hard session to after the event date.",
       "count": 1
     },
     {
-      "suggestion": "Consider adding a short mobility or light cycling session on Day 9-10 to maintain engagement given low motivation.",
+      "suggestion": "Consider reducing Day 14 intensity from VO2 intervals to a moderate threshold ride as a safety buffer.",
       "count": 1
     },
     {
-      "suggestion": "Consider adding one additional strength session per week to increase the stimulus for long-term performance gains.",
+      "suggestion": "Consider reducing Day 4 Criterium surge session intensity by ~30% to account for systemic fatigue",
       "count": 1
     },
     {
-      "suggestion": "Consider delaying the last hard session to after Aug 16 if possible, or reduce its intensity.",
+      "suggestion": "Consider reducing Day 6's VO2 interval duration to 25–30 min to lower cumulative load while still providing stimulus.",
       "count": 1
     },
     {
-      "suggestion": "Consider motivational support strategies rather than load reduction",
+      "suggestion": "Consider reducing the intensity of the race simulation on Day 11 by ~10% to better align with conservative bias.",
       "count": 1
     },
     {
-      "suggestion": "Consider moving the first hard session to Day 3 instead of Day 2.",
+      "suggestion": "Consider reducing the upper-body strength load slightly given the neuromuscular demand of the criterium and the fact that it's only 20 days out.",
       "count": 1
     },
     {
-      "suggestion": "Consider moving the hard session earlier in the week or reducing its intensity.",
+      "suggestion": "Consider reducing total active recovery volume by ~20% and redirecting that time into race-specific intensity work.",
       "count": 1
     },
     {
-      "suggestion": "Consider reducing day 13 race sim duration by ~10 min given the subject's readiness and the fact that they already completed a hard session within the past week.",
+      "suggestion": "Consider replacing Day 13 Zone 2 with a reduced-intensity threshold session to increase event-day readiness",
       "count": 1
     },
     {
-      "suggestion": "Consider reducing Day 14's tempo ride duration or intensity slightly to ensure full recovery before the event.",
+      "suggestion": "Consider replacing Day 9's full-body strength session with an active mobility or low-intensity cycling session to reduce neuromuscular load without sacrificing training stimulus.",
       "count": 1
     },
     {
-      "suggestion": "Consider reducing Day 14's tempo ride to a very easy spin or active recovery if the athlete is feeling fresh.",
+      "suggestion": "Consider replacing one of the two full-body strength sessions in the last week with upper-body or core-focused work to preserve neuromuscular readiness without excessive systemic fatigue.",
       "count": 1
     },
     {
-      "suggestion": "Consider reducing intensity of all sessions in the final week if objective metrics do not improve.",
+      "suggestion": "Consider replacing the Day 13 race-simulation ride with a shorter threshold or tempo session to ensure adequate recovery for the event.",
       "count": 1
     },
     {
-      "suggestion": "Consider reducing intensity on Day 5 to maintain aerobic specificity without excessive fatigue.",
+      "suggestion": "Consider replacing the full race simulation on Day 13 with a reduced-intensity race-specific session or an easy ride, as the user's conservative bias suggests they may not be prepared for maximal intensity at this stage.",
       "count": 1
     },
     {
-      "suggestion": "Consider reducing the intensity of the full-body strength maintenance on Day 2 given concurrent heavy lower-body load.",
+      "suggestion": "Consider replacing the full-body strength session on Day 9 with upper body only or mobility work",
       "count": 1
     },
     {
-      "suggestion": "Consider reducing the race simulation duration by 10 minutes",
+      "suggestion": "Consider replacing the tempo ride (Day 8) with a shorter, sharper interval session that better targets neuromuscular readiness rather than pure aerobic endurance.",
       "count": 1
     },
     {
-      "suggestion": "Consider reducing the race simulation intensity by ~30% given the systemic fatigue",
+      "suggestion": "Consider replacing the VO2 intervals with a moderate-intensity sustained effort ride to improve event performance marginally.",
       "count": 1
     },
     {
-      "suggestion": "Consider reducing VO2 interval intensity or duration by ~10-15% if the subject reports elevated soreness or fatigue prior to the event.",
+      "suggestion": "Insert a rest day between Day 6 (VO2 intervals) and Day 8 to allow adequate recovery before the race simulation on Day 11.",
       "count": 1
     },
     {
-      "suggestion": "Consider replacing the Day 12 VO2 intervals with a moderate threshold ride to maintain aerobic specificity without excessive neuromuscular fatigue.",
+      "suggestion": "Insert a structured taper phase starting Day 10: reduce cycling volume by ~40% while maintaining neuromuscular activation via low-intensity intervals or short surges.",
       "count": 1
     },
     {
-      "suggestion": "Consider replacing the Day 8 surge session with a longer, lower-intensity steady-state ride to build fatigue resistance without excessive neuromuscular stress.",
+      "suggestion": "Insert a taper phase starting Day 10: reduce cycling volume by ~35% while maintaining neuromuscular activation via short threshold intervals or repeated surges.",
       "count": 1
     },
     {
-      "suggestion": "Consider replacing the full-body strength session on Day 2 with upper-body only or reduced volume, given the lower body fatigue from yesterday's cycling.",
+      "suggestion": "Introduce one or two repeated-surge intervals (e.g., 4 x 3 min at ~90% FTP) to better match the criterium's demand profile.",
       "count": 1
     },
     {
-      "suggestion": "Consider replacing the VO2 intervals on Day 4 with an easy threshold session or reducing intensity to match the prolonged recovery state.",
+      "suggestion": "Keep Day 3 as full Zone 2 — objective metrics show recovery has returned by Day 2.",
       "count": 1
     },
     {
-      "suggestion": "Delay the hard VO2 session to at least Day 10 or later, ensuring a full rest day immediately before the race.",
+      "suggestion": "Keep the full rest on Day 4 given the persistent elevated RHR and fatigue scores.",
       "count": 1
     },
     {
-      "suggestion": "Delay the heavy lower-body strength session to a non-concurrent day (e.g., Day 10 or later) to reduce interference with cycling-specific training.",
+      "suggestion": "Maintain the current structure as-is for safety and feasibility; minor adjustments can be made once travel constraints are confirmed.",
       "count": 1
     },
     {
-      "suggestion": "Ensure at least 7-10 days of recovery between the last hard session and the race day for optimal neuromuscular readiness.",
+      "suggestion": "No change needed — HRV drop of ~1 SD is within normal variation and does not warrant plan modification. The existing taper structure remains appropriate for the A-priority event.",
       "count": 1
     },
     {
-      "suggestion": "Ensure the race simulation on Day 12 is replaced by an easy recovery ride.",
+      "suggestion": "None required. The plan is well-structured for a B-priority gran fondo event.",
       "count": 1
     },
     {
-      "suggestion": "If an event is approaching within 2 weeks, consider reducing the Zone 2 cycling volume by ~15% and inserting a dedicated recovery day.",
+      "suggestion": "Optional: If the athlete wants to maximize performance, move the hard VO2 session to Day 10 or 13.",
       "count": 1
     },
     {
-      "suggestion": "If motivation remains low on event day, consider a slightly reduced intensity on the race simulation",
+      "suggestion": "Reduce Day 14 intensity from VO2 intervals to a moderate threshold ride or long steady-state spin.",
       "count": 1
     },
     {
-      "suggestion": "Include a brief mental preparation routine before the event.",
+      "suggestion": "Reduce Day 2 strength session to 15 min or convert to upper-body only",
       "count": 1
     },
     {
-      "suggestion": "Increase Day 1 Zone 2 spin to 45-60 min for better aerobic base",
+      "suggestion": "Reduce Day 4 surge session intensity by ~30%",
       "count": 1
     },
     {
-      "suggestion": "Increase Day 1 Zone 2 spin to 45-60 min to better build aerobic base for criterium",
+      "suggestion": "Reduce or cancel Day 11 race simulation",
       "count": 1
     },
     {
-      "suggestion": "Insert a dedicated taper day (Day 13) with reduced volume (~50% of Day 12) to allow neuromuscular recovery before the event.",
+      "suggestion": "Reduce the hard VO2 session on Day 7 to a moderate threshold effort (reduce systemic cost from 1.0 to ~0.6) given the conservative bias preference.",
       "count": 1
     },
     {
-      "suggestion": "Insert a rest day between Day 13 (VO2 intervals) and the race simulation on Day 14 to allow full recovery before the high-intensity event.",
+      "suggestion": "Reduce the number of hard sessions from four to two or three by replacing one with an easy or active recovery session.",
       "count": 1
     },
     {
-      "suggestion": "Move the hard VO2 interval session from Day 12 to a later date (e.g., Day 13 or 14) to allow adequate recovery before the race on Aug 16.",
+      "suggestion": "Replace Day 1 Zone 2 Spin with rest or very light mobility work given HRV -17 and body_battery_wake=22",
       "count": 1
     },
     {
-      "suggestion": "Reduce Day 1 Zone 2 Spin to 10-15 min or replace with active recovery",
+      "suggestion": "Replace Day 14 hard VO2 intervals with a moderate threshold or tempo ride.",
       "count": 1
     },
     {
-      "suggestion": "Reduce the intensity of Day 13's VO2 session by ~10-15%",
+      "suggestion": "Replace Day 14's hard VO2 session with a moderate Zone 3 ride.",
       "count": 1
     },
     {
-      "suggestion": "Reduce volume in Days 4-7 by ~30% and focus on low-intensity steady-state cycling rather than tempo rides.",
+      "suggestion": "Replace Day 14's VO2 intervals with a threshold or sustained high-intensity effort (e.g., end_hard_03 or custom threshold session) to reduce neuromuscular fatigue while still providing race-specific intensity.",
       "count": 1
     },
     {
-      "suggestion": "Remove the hard session on Day 12; replace with an easy recovery ride or rest day.",
+      "suggestion": "Replace Day 2 full-body maintenance with upper-body only or rest to allow recovery from power maintenance on Day 1.",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 1 hard VO2 intervals with a rest day or very light mobility work to allow recovery from yesterday's easy spin.",
+      "suggestion": "Replace Day 2 full-body strength with upper-body only or active recovery to reduce unnecessary systemic load from the heavy upper session on Aug 6.",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 1 VO2 intervals with Zone 2 spin or rest to match acute fatigue (fatigue=8, RHR+7, HRV−17).",
+      "suggestion": "Replace Day 2 full-body strength with upper-body only or mobility work to avoid lower-body interference from the heavy session on 2026-08-06.",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 1 Zone 2 spin with a full rest day given persistent fatigue over 3 days (HRV -17 sustained, subjective readiness=3).",
+      "suggestion": "Replace Day 2 rest with a reduced Zone 2 spin (15-20 min) to maintain training continuity while respecting the acute fatigue signal on Day 1.",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 1 Zone 2 Spin with full rest or very light mobility",
+      "suggestion": "Replace Day 6 VO2 intervals (heavy lower body) with a Zone 2 spin or mobility session to respect the avoid_heavy_lower_body guardrail.",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 14 'Bike VO2 Intervals' with a recovery ride or very easy spin — the event is A-priority but the current hard intervals are not specific enough and may cause unnecessary fatigue.",
+      "suggestion": "Replace Day 6 VO2 intervals with a moderate threshold ride (Zone 3-4) to build specific race fitness without excessive neuromuscular fatigue.",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 14 'Bike VO2 Intervals' with a recovery ride or very easy spin — the event is B-priority and the current hard intervals are not specific enough.",
+      "suggestion": "Replace Day 6 VO2 intervals with a moderate threshold session to reduce psychological barrier",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 14 VO2 intervals with a low-intensity ride (Zone 2 or threshold) to allow proper taper before the criterium event on Sep 16.",
+      "suggestion": "Replace Day 6 VO2 intervals with a threshold endurance ride (Zone 3-4) to maintain aerobic base without excessive neuromuscular stress.",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 14 VO2 intervals with a low-intensity ride or active recovery session to allow proper taper before the criterium event.",
+      "suggestion": "Replace Day 6 VO2 intervals with a Zone 2 recovery ride (30 min)",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 14 VO2 intervals with a low-intensity ride or active recovery to allow proper taper before the criterium event.",
+      "suggestion": "Replace Days 2-3 rest with a progressive build-up: Day 2 = Zone 2 spin (15 min), Day 3 = light mobility + easy spin (10 min).",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 14 VO2 intervals with a very low-intensity ride or active recovery to respect the conservative bias and allow adequate taper.",
+      "suggestion": "Replace one of the mobility sessions (e.g., Day 13) with a threshold or tempo ride to better prepare for repeated surges.",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 2 full-body strength with upper-body only or complete rest",
+      "suggestion": "Replace one rest day with an easy Zone 2 spin (30-45 min) to maintain training stimulus",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 2 full-body strength with upper-body only or mobility work given yesterday's heavy lower-body session",
+      "suggestion": "Replace the Day 14 VO2 intervals with a moderate intensity ride or active recovery given the poor objective readiness metrics.",
       "count": 1
     },
     {
-      "suggestion": "Replace day 3 Zone 2 spin with a moderate threshold session (e.g., end_threshold_01) to better recover from the curtailed hard session.",
+      "suggestion": "Replace the Day 14 VO2 intervals with a moderate intensity ride or active recovery to allow adequate recovery between sessions.",
       "count": 1
     },
     {
-      "suggestion": "Replace day 3 Zone 2 spin with a moderate threshold session (e.g., end_threshold_01) to better recover from the missed hard session.",
+      "suggestion": "Replace the final easy spin with a sharpness ride (e.g., threshold + repeated surges at reduced volume) on Day 13, followed by an easy recovery day before the event.",
       "count": 1
     },
     {
-      "suggestion": "Replace day 6 VO2 intervals with a Zone 2 spin or active recovery to reduce unnecessary systemic load before the event.",
+      "suggestion": "Replace the final Zone 2 spin (Day 14) with a race-simulation or threshold-focused session to better prepare for the criterium event.",
       "count": 1
     },
     {
-      "suggestion": "Replace Day 6 VO2 intervals with easy cycling or active recovery",
+      "suggestion": "Replace the full-body strength session on Day 6 with an upper-body focused session to preserve lower body freshness for the criterium.",
       "count": 1
     },
     {
-      "suggestion": "Replace the Day 12 VO2 intervals with a Zone 2 or threshold endurance session to reduce cumulative fatigue.",
+      "suggestion": "Replace the rest day on 2026-08-09 with a short (30–45 min) outdoor threshold or VO2Max-specific ride to sharpen neuromuscular and neuromechanical qualities for the criterium event.",
       "count": 1
     },
     {
-      "suggestion": "Replace the Day 13 hard VO2 session with a moderate threshold or easy endurance ride.",
+      "suggestion": "Replace the VO2 intervals on day 11 with a race-specific surge session (e.g., repeated surges at ~95% FTP) to better match the criterium demand profile.",
       "count": 1
     },
     {
-      "suggestion": "Replace the Day 2 hard session with a moderate threshold ride to reduce neuromuscular load.",
+      "suggestion": "Replace the VO2 intervals on Day 6 with threshold work that can be completed in ~45 minutes but still provides sufficient intensity stimulus.",
       "count": 1
     },
     {
-      "suggestion": "Replace the Day 6 VO2 intervals with a moderate threshold ride to reduce neuromuscular load.",
+      "suggestion": "The current plan is well-structured and does not require changes.",
       "count": 1
     },
     {
-      "suggestion": "Replace the Day 6 VO2 intervals with a Zone 2 or threshold endurance session to reduce cumulative fatigue before the race.",
+      "suggestion": "The current plan may be too demanding for a priority A event; consider a more conservative approach with fewer hard sessions.",
       "count": 1
     },
     {
-      "suggestion": "Replace the final hard session on Day 14 with a moderate intensity ride or active recovery to reduce residual fatigue.",
+      "suggestion": "The plan is safe but overly conservative; a gradual ramp-up would better prepare for the race while respecting recovery needs.",
       "count": 1
     },
     {
-      "suggestion": "Replace the taper sharpening ride on Day 5 with a rest day or very light activity.",
+      "suggestion": "The plan is well-structured and appropriate for an A-priority criterium event.",
       "count": 1
     },
     {
-      "suggestion": "The current plan is already well-structured for a short-term event preparation.",
+      "suggestion": "The surge on Day 6 is acceptable but could be slightly de-emphasized given the A-event priority",
       "count": 1
     },
     {
-      "suggestion": "The upper body work on Days 9-10 is well-placed and can be kept as it doesn't interfere with cycling-specific recovery.",
+      "suggestion": "The taper-sharpening ride on Aug 7 is appropriately reduced in volume; maintain this conservative bias.",
       "count": 1
     }
   ],
   "familyHypotheses": [
     {
-      "hypothesis": "A multi-day rolling window for readiness assessment (e.g., 3-day average) would better capture persistent fatigue states that single-day snapshots miss.",
+      "hypothesis": "Body battery and sleep metrics appear to have similar thresholds as HRV (~2 SD) for triggering plan modifications, which is consistent with safety-first design but may under-react to combined mild signals across multiple axes.",
       "count": 1
     },
     {
-      "hypothesis": "Aerobic base building for gran fondo may need more emphasis on longer Zone 2 duration (45-60 min) rather than shorter sessions",
+      "hypothesis": "Consider a tiered response system where acute adverse signals trigger reduced intensity rather than full rest, unless objective markers indicate genuine risk",
       "count": 1
     },
     {
-      "hypothesis": "Consider adding a 'subjective readiness threshold' gate that triggers plan modification when combined subjective scores fall below a calibrated threshold (e.g., readiness < 5 with multiple elevated axes).",
+      "hypothesis": "For A-priority events within 7 days, the algorithm should enforce a minimum recovery buffer regardless of objective metrics showing 'good' status.",
       "count": 1
     },
     {
-      "hypothesis": "Consider reducing VO2 interval volume on Day 6 for users with lower body restrictions to maintain neuromuscular demand without excessive joint loading.",
+      "hypothesis": "For active recovery preference, increase mobility/mobility flow session frequency and duration by ~20%.",
       "count": 1
     },
     {
-      "hypothesis": "For cases where objective metrics are normal but multiple subjective axes are elevated, consider a weighted composite score rather than treating each axis independently.",
+      "hypothesis": "For conservative bias, reduce neuromuscular cost of hard sessions by ~15% while maintaining cardiovascular stimulus.",
       "count": 1
     },
     {
-      "hypothesis": "For simulationMode=weekly_forecast, readinessTrajectory should be used to adjust the taper intensity even when current-day metrics are borderline.",
+      "hypothesis": "For mixed recovery, reduce total active recovery volume by 15-20% and redirect to race-specific intensity work.",
       "count": 1
     },
     {
-      "hypothesis": "Hard sessions scheduled within 5-7 days of an A-priority event are consistently flagged as suboptimal, suggesting a need for stricter proximity thresholds.",
+      "hypothesis": "For time capacity constraints (45 min), prioritize threshold over VO2 for hard sessions and add a dedicated race simulation day.",
       "count": 1
     },
     {
-      "hypothesis": "Heavy lower-body strength training should trigger a reduction in subsequent lower-body cycling loads (e.g., reduce Zone 2 duration or swap full-body for upper-only)",
+      "hypothesis": "For travel constraint cases, the algorithm could offer alternative low-impact stimulus options (e.g., bodyweight intervals) that still provide some event-specific benefit without requiring specialized equipment.",
       "count": 1
     },
     {
-      "hypothesis": "Heavy upper-body strength training should trigger a reduction in subsequent full-body sessions to avoid posterior chain fatigue carryover",
+      "hypothesis": "No overreaction cases identified — mild variations in readiness do not warrant changing the core structure of the plan.",
       "count": 1
     },
     {
-      "hypothesis": "HRV and RHR signals should be weighted more heavily when combined with sleep degradation or low body battery — the current plan already does this well through multi-signal combination.",
+      "hypothesis": "Recent hard training warrants reducing the first day's intensity but not necessarily eliminating it entirely",
       "count": 1
     },
     {
-      "hypothesis": "No algorithmic adjustment is needed for this family — the default template structure handles the variation in recent load appropriately.",
+      "hypothesis": "Stress alone is not a hard stop for training capacity; it requires additional indicators (sleep disruption, elevated RHR) to trigger plan modification",
       "count": 1
     },
     {
-      "hypothesis": "Power maintenance is below the interference threshold and does not require plan modification",
+      "hypothesis": "The algorithm appears to have a threshold for HRV-based intervention that is too high — it ignores ~1 SD drops but responds correctly to ~2 SD drops. This suggests the decision boundary may be set at 1.5-2 SD rather than using a more nuanced multi-metric integration.",
       "count": 1
     },
     {
-      "hypothesis": "Stress score should be incorporated into readiness calculations as a performance modifier rather than ignored in favor of physical recovery signals",
+      "hypothesis": "The algorithm may be overreacting to persistent but non-critical readiness deficits by defaulting to extended rest periods rather than calibrated tapering",
       "count": 1
     },
     {
-      "hypothesis": "Subjective readiness scores may need a larger penalty weight when objective metrics (RHR, HRV) show clear signs of poor recovery.",
+      "hypothesis": "The algorithm may need a minimum taper rule for A-priority events regardless of days remaining.",
       "count": 1
     },
     {
-      "hypothesis": "Subjective soreness scores should carry higher weight than objective wearable metrics when they conflict, especially after heavy lower-body strength work",
+      "hypothesis": "The base plan is well-structured for a criterium event with appropriate tapering",
       "count": 1
     },
     {
-      "hypothesis": "The 45-minute capacity constraint should be paired with an automatic taper rule that reduces final-week intensity regardless of weekday max time.",
+      "hypothesis": "The conservative bias flag should trigger an additional check for event proximity when hard sessions are scheduled within 5 days of a priority A/B/C event.",
       "count": 1
     },
     {
-      "hypothesis": "The active recovery preference should trigger a greater reduction in hard session count, not just substitution with mobility work.",
+      "hypothesis": "The current algorithm may be underweighting A-priority events in its taper calculation, treating them similarly to B/C priority events.",
       "count": 1
     },
     {
-      "hypothesis": "The algorithm appears to prioritize capacity building over event-specific tapering when the event is more than ~10 days away.",
+      "hypothesis": "The current algorithm may be underweighting event-specific stimulus in the final week, defaulting to generic Zone 2 sessions instead of tapering with specificity.",
       "count": 1
     },
     {
-      "hypothesis": "The algorithm may be overly conservative in inserting rest days when the subject's readiness is moderate and no recent hard sessions exist.",
+      "hypothesis": "The dose variance axis (delivered-dose adherence and variance) is not decision-relevant for this family — all plans maintain adequate recovery before the event regardless of dose variation.",
       "count": 1
     },
     {
-      "hypothesis": "The algorithm may be underweighting neuromuscular fatigue relative to cardiovascular load when judging readiness for repeated-surge events.",
+      "hypothesis": "The event demand profile (0.85 VO2MaxPower, 0.9 repeatedSurges) is not being fully reflected in the planned stimulus intensity.",
       "count": 1
     },
     {
-      "hypothesis": "The algorithm may be underweighting the HRV delta signal when it is persistently negative across multiple days, treating each day independently rather than recognizing a sustained recovery deficit.",
+      "hypothesis": "The evergreen mode should have a built-in progressive overload mechanism rather than defaulting to uniform Zone 2 sessions across all weeks.",
       "count": 1
     },
     {
-      "hypothesis": "The algorithm may not adequately account for the cumulative neuromuscular fatigue from repeated surges across multiple weeks leading into a criterium event.",
+      "hypothesis": "The interaction between recent hard sessions and event proximity may not be weighted heavily enough in the taper calculation.",
       "count": 1
     },
     {
-      "hypothesis": "The algorithm may not adequately weight neuromuscular demand (neuromuscular: 0.6) when selecting taper intensity.",
+      "hypothesis": "The neutral baseline plan demonstrates good default structure but lacks explicit stress-management integration",
       "count": 1
     },
     {
-      "hypothesis": "The conservative bias adjustment is too mild — it should reduce volume more aggressively when the event demand profile exceeds the plan's specific preparation.",
+      "hypothesis": "The plan consistently applies a build-up strategy with reduced load early in the week and event-specific intensity closer to the event, which is appropriate for all subjective states.",
       "count": 1
     },
     {
-      "hypothesis": "The conservative bias preference should be overridden when a hard session falls within 7 days of an A-priority event with high vo2MaxPower demand.",
+      "hypothesis": "The planner may be over-relying on objective readiness metrics (RHR, HRV) and under-weighting subjective fatigue signals when they conflict.",
       "count": 1
     },
     {
-      "hypothesis": "The current plan's taper (Day 13 rest) is appropriate but could be extended by one day for athletes with repeated hard sessions in the event week.",
+      "hypothesis": "The planner may not be properly checking guardrail constraints against session cost profiles before finalizing a plan. It should validate that no session exceeds the threshold for restricted modalities.",
       "count": 1
     },
     {
-      "hypothesis": "The current system correctly avoids overreaction to isolated low-motivation or single-axis high values — this is the desired behavior and should be preserved.",
+      "hypothesis": "The primary differentiator across cases is training volume, which does not meaningfully impact readiness given the 30-day buffer from last hard session to event.",
       "count": 1
     },
     {
-      "hypothesis": "The evergreen mode should include progressive intensity build-up rather than defaulting to low-intensity maintenance for all users.",
+      "hypothesis": "The priority-based adjustment for criterium vs gran fondo is not fully reflected in the training load distribution.",
       "count": 1
     },
     {
-      "hypothesis": "The plan consistently produces a safe progression across all recent training conditions because the base template already includes an easy recovery day after hard sessions.",
+      "hypothesis": "The reduced full-body strength template should be further attenuated when concurrentStrength involves lower-body work within 48 hours of an easy cycling day",
       "count": 1
     },
     {
-      "hypothesis": "The planner may be defaulting to a generic 'criterium' template rather than differentiating between priority-A and B events",
+      "hypothesis": "Underreaction cases: none. The plan appropriately adjusts intensity based on subjective state.",
       "count": 1
     },
     {
-      "hypothesis": "The system may not sufficiently penalize consecutive hard sessions when subjective readiness remains low despite normal sleep metrics.",
+      "hypothesis": "When an injury constraint is present, the planner should proactively substitute conflicting sessions rather than leaving them unchanged — this demonstrates overreaction to irrelevant axes but also reveals underreaction when constraints are active.",
       "count": 1
     },
     {
-      "hypothesis": "The taper logic should consider the specific event demand profile — criterium events require peak neuromuscular freshness and should not be approached with hard sessions within 5-7 days.",
+      "hypothesis": "When concurrentStrength is heavy_lower_yesterday, the system should automatically downgrade the first cycling session to mobility/active recovery rather than a full Zone 2 spin",
       "count": 1
     },
     {
-      "hypothesis": "The threshold for triggering a full rest week (~3 SD combined) is appropriate; 1-2 SD deviations warrant proportional adjustments rather than full cessation of training.",
+      "hypothesis": "When wearable metrics show clear divergence from subjective reports, the algorithm should prioritize objective physiological signals over self-reported soreness/motivation",
       "count": 1
     },
     {
-      "hypothesis": "Travel constraint plans should still meet minimum aerobic volume thresholds (e.g., ≥3.0 cumulative aerobic load) when an A-priority event is present.",
-      "count": 1
-    },
-    {
-      "hypothesis": "Wearable metrics (HRV/RHR) should not override clear subjective pain/soreness flags without additional context or time buffer",
+      "hypothesis": "Zone 2 spin on day 1 serves as an effective warm-up and low-stress session after recent hard work",
       "count": 1
     }
   ],
