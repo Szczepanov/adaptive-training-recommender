@@ -24,34 +24,46 @@ class UsabilityMetricsTracker {
     private memoryEvents: UsabilitySessionEvent[] = [];
     private viewStartTimes: Map<string, number> = new Map();
 
-    private getStoredEvents(): UsabilitySessionEvent[] {
-        if (typeof window !== 'undefined' && window.localStorage) {
-            try {
-                const raw = window.localStorage.getItem(this.storageKey);
-                if (raw) return JSON.parse(raw) as UsabilitySessionEvent[];
-            } catch {
-                // fallback to memory
-            }
+    private readPersistedEvents(): UsabilitySessionEvent[] | null {
+        if (typeof window === 'undefined') return null;
+        try {
+            const raw = window.localStorage?.getItem(this.storageKey);
+            if (!raw) return [];
+            const parsed: unknown = JSON.parse(raw);
+            return Array.isArray(parsed) ? parsed as UsabilitySessionEvent[] : [];
+        } catch {
+            return null;
         }
-        return this.memoryEvents;
+    }
+
+    private getStoredEvents(): UsabilitySessionEvent[] {
+        return this.readPersistedEvents() ?? this.memoryEvents;
     }
 
     private saveEvent(event: UsabilitySessionEvent): void {
         this.memoryEvents.push(event);
-        if (typeof window !== 'undefined' && window.localStorage) {
-            try {
-                const current = this.getStoredEvents();
-                const trimmed = [...current, event].slice(-200);
-                window.localStorage.setItem(this.storageKey, JSON.stringify(trimmed));
-            } catch {
-                // Non-critical local instrumentation failure
-            }
+        if (typeof window === 'undefined') return;
+
+        try {
+            // Read storage directly instead of getStoredEvents(). getStoredEvents() falls
+            // back to memory, which already contains `event` and would duplicate the first
+            // browser event when localStorage is initially empty.
+            const persisted = this.readPersistedEvents();
+            if (persisted === null) return;
+            const trimmed = [...persisted, event].slice(-200);
+            window.localStorage?.setItem(this.storageKey, JSON.stringify(trimmed));
+        } catch {
+            // Non-critical local instrumentation failure.
         }
     }
 
     recordRecommendationView(userId: string, date: string): void {
         const key = `${userId}:${date}`;
-        this.viewStartTimes.set(key, performance.now());
+        // A later render may emit another view event; keep the original clock so TTR means
+        // time from first visible recommendation to first deliberate action.
+        if (!this.viewStartTimes.has(key)) {
+            this.viewStartTimes.set(key, performance.now());
+        }
         this.saveEvent({
             id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             timestamp: new Date().toISOString(),
@@ -65,6 +77,9 @@ class UsabilityMetricsTracker {
         const key = `${userId}:${date}`;
         const startTime = this.viewStartTimes.get(key);
         const durationMs = startTime !== undefined ? Math.round(performance.now() - startTime) : undefined;
+        // Time-to-recommendation is a first-action metric. Subsequent actions on the same
+        // decision must not be timed from the original page view.
+        if (startTime !== undefined) this.viewStartTimes.delete(key);
 
         this.saveEvent({
             id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -126,7 +141,13 @@ class UsabilityMetricsTracker {
             .filter((t): t is number => typeof t === 'number' && t >= 0 && t < 300000)
             .sort((a, b) => a - b);
         const avgTtr = ttrValues.length > 0 ? ttrValues.reduce((sum, v) => sum + v, 0) / ttrValues.length : 0;
-        const medianTtr = ttrValues.length > 0 ? ttrValues[Math.floor(ttrValues.length / 2)] : 0;
+        let medianTtr = 0;
+        if (ttrValues.length > 0) {
+            const middle = Math.floor(ttrValues.length / 2);
+            medianTtr = ttrValues.length % 2 === 0
+                ? (ttrValues[middle - 1] + ttrValues[middle]) / 2
+                : ttrValues[middle];
+        }
 
         const actionBreakdown: Record<string, number> = {};
         for (const action of actions) {
@@ -150,9 +171,9 @@ class UsabilityMetricsTracker {
 
     clear(): void {
         this.memoryEvents = [];
-        if (typeof window !== 'undefined' && window.localStorage) {
+        if (typeof window !== 'undefined') {
             try {
-                window.localStorage.removeItem(this.storageKey);
+                window.localStorage?.removeItem(this.storageKey);
             } catch {
                 // ignore
             }
