@@ -18,6 +18,6 @@
 **Learning:** React components and engine functions were scanning the canonical `EXERCISES` catalog with `.find()` in repeated lookup paths even though `exercises.ts` already exports `EXERCISES_BY_ID` for constant-time identity resolution.
 **Action:** Reuse the canonical `EXERCISES_BY_ID` map for repeated exercise-ID lookups; do not introduce a second exercise map or duplicate catalog index.
 
-## $(date +%Y-%m-%d) - Prevent Redundant Array Filtering on Render
+## 2026-08-26 - Prevent Redundant Array Filtering on Render
 **Learning:** In components with frequent state changes (like form inputs updating `notes`), inline array operations like `.filter()` that rely on static props (like `steps`) will re-execute on every keystroke, causing unnecessary O(N) operations.
 **Action:** Always wrap derived data calculations that iterate over arrays using `useMemo` when the input array is stable and the component is subject to frequent re-renders from other state changes.
