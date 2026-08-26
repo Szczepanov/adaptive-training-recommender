@@ -61,7 +61,7 @@
     "deploy:indexes": "firebase deploy --only firestore:indexes --project adaptive-training-recommender",
     "test": "vitest run",
     "test:rules": "firebase --project demo-adaptive-training emulators:exec --only firestore \"npm run test:rules:emulator\"",
-    "test:rules:emulator": "vitest run src/emulator/*.emulator.test.ts",
+    "test:rules:emulator": "vitest run src/emulator",
     "firestore:rules:drift": "node scripts/check-firestore-rules-drift.mjs --project adaptive-training-recommender",
     "firestore:rules:deploy": "node scripts/deploy-firestore-rules.mjs --project adaptive-training-recommender",
     "firestore:rules:rollback": "node scripts/rollback-firestore-rules.mjs --project adaptive-training-recommender",

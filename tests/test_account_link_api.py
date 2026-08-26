@@ -66,3 +66,32 @@ def test_error_response_adds_stable_metadata_and_sanitizes_message() -> None:
     assert payload["requestId"] == "req-123"
     assert "athlete@example.com" not in payload["error"]
     assert "do-not-leak" not in payload["error"]
+
+
+def test_handle_login_enforces_per_account_rate_limiting(monkeypatch: Any) -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.headers = {"X-Forwarded-For": "203.0.113.10"}
+    handler.client_address = ("127.0.0.1", 12345)
+    handler.request_id = "req-test"
+
+    limiter = LoginRateLimiter()
+    monkeypatch.setattr(account_link_api, "RATE_LIMITER", limiter)
+
+    # Exhaust rate limit for athlete@example.com
+    for _ in range(5):
+        assert limiter.allow("account:athlete@example.com") is True
+
+    handler._read_json = lambda: {"email": "athlete@example.com", "password": "secret"}  # type: ignore[method-assign]  # noqa: SLF001
+
+    captured_errors: list[dict[str, Any]] = []
+
+    def capture_error(status: HTTPStatus, **kwargs: Any) -> None:
+        captured_errors.append({"status": status, **kwargs})
+
+    handler._error_response = capture_error  # type: ignore[method-assign]  # noqa: SLF001
+
+    handler._handle_login()  # noqa: SLF001
+
+    assert len(captured_errors) == 1
+    assert captured_errors[0]["status"] == HTTPStatus.TOO_MANY_REQUESTS
+    assert captured_errors[0]["error_code"] == "garmin_link.rate_limited"
