@@ -46,6 +46,7 @@ import { MinimumSafetyCheckin } from './MinimumSafetyCheckin';
 import { WeekAheadStrip } from './WeekAheadStrip';
 import { LaterDayFollowupCard, type LaterDayFollowupTarget } from './session/LaterDayFollowupCard';
 import { GarminSyncNowButton } from './GarminSyncNowButton';
+import { DataConfidenceIndicator } from './DataConfidenceIndicator';
 import { MorningDecisionCard } from './MorningDecisionCard';
 import { ActivityReclassificationModal } from './ActivityReclassificationModal';
 import { assembleMorningDecisionEvidence } from '../engine/decisionEvidence';
@@ -993,6 +994,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
 
       <div className="home-dashboard-layout">
         <div className="home-main-col">
+          <div className="home-data-confidence-row">
+            <DataConfidenceIndicator confidence={decisionInput?.dataConfidence} onRefresh={loadDashboardData} />
+          </div>
+
           {/* Hero Morning Decision Card with Progressive Disclosure */}
           {activeRec ? (
             <MorningDecisionCard

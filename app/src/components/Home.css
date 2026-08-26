@@ -836,6 +836,15 @@
   gap: 1.5rem;
 }
 
+.home-data-confidence-row {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.home-data-confidence-row:empty {
+  display: none;
+}
+
 .recommendation-description,
 .recommendation-rationale {
   max-width: 70ch;
