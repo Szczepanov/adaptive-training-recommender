@@ -41,7 +41,8 @@ export interface BaselineStabilityResult {
     chronicWindowDays: number;
     acuteVariance: number;
     chronicVariance: number;
-    varianceReductionRatio: number; // chronicVariance / acuteVariance
+    /** chronicVariance / acuteVariance; null when acute variance is zero but chronic variance is positive. */
+    varianceReductionRatio: number | null;
     dampingEfficiencyPct: number;
     comparisonPoints: number;
     sufficientData: boolean;
@@ -114,12 +115,12 @@ export function estimateNormalizedMutualInformation(
     ys: readonly number[],
     binCount = 4,
 ): number | null {
-    const minimumSamples = Math.max(20, binCount * 4);
-    if (xs.length !== ys.length || xs.length < minimumSamples) return null;
-    if (!hasOnlyFiniteValues(xs) || !hasOnlyFiniteValues(ys)) return null;
     if (!Number.isInteger(binCount) || binCount < 2 || binCount > 20) {
         throw new Error('binCount must be an integer between 2 and 20');
     }
+    const minimumSamples = Math.max(20, binCount * 4);
+    if (xs.length !== ys.length || xs.length < minimumSamples) return null;
+    if (!hasOnlyFiniteValues(xs) || !hasOnlyFiniteValues(ys)) return null;
 
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs);
@@ -313,15 +314,19 @@ export function evaluateBaselineWindowStability(
 
     const acuteVar = acuteStd ** 2;
     const chronicVar = chronicStd ** 2;
-    const ratio = acuteVar > 0 ? chronicVar / acuteVar : 1;
-    const dampingPct = Math.max(0, Math.min(100, (1 - ratio) * 100));
+    const ratio = acuteVar === 0
+        ? (chronicVar === 0 ? 1 : null)
+        : chronicVar / acuteVar;
+    const dampingPct = ratio === null
+        ? 0
+        : Math.max(0, Math.min(100, (1 - ratio) * 100));
 
     return {
         acuteWindowDays,
         chronicWindowDays,
         acuteVariance: round(acuteVar, 3),
         chronicVariance: round(chronicVar, 3),
-        varianceReductionRatio: round(ratio, 3),
+        varianceReductionRatio: ratio === null ? null : round(ratio, 3),
         dampingEfficiencyPct: round(dampingPct, 1),
         comparisonPoints,
         sufficientData: true,
