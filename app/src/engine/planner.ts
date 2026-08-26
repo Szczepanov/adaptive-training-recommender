@@ -163,12 +163,25 @@ const ZERO_STIMULUS: WorkoutStimulusProfile = {
     hypertrophy: 0,
 };
 
-function fixedActivityTraceForDate(fixedActivities: FixedActivity[], date: string): {
+export function groupFixedActivitiesByDate(fixedActivities: readonly FixedActivity[]): Map<string, FixedActivity[]> {
+    const map = new Map<string, FixedActivity[]>();
+    for (const activity of fixedActivities) {
+        let list = map.get(activity.date);
+        if (!list) {
+            list = [];
+            map.set(activity.date, list);
+        }
+        list.push(activity);
+    }
+    return map;
+}
+
+function fixedActivityTraceForDate(fixedActivities: readonly FixedActivity[], date: string): {
     count: number;
     cost: WorkoutCostProfile;
     stimulus: WorkoutStimulusProfile;
 } {
-    const activities = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
+    const activities = fixedActivities.filter(activity => (activity.date === date || !activity.date) && !activity.isCompleted);
     const cost = fixedActivityCostProfileForDate(activities, date);
     const stimulus = activities.reduce<WorkoutStimulusProfile>((sum, activity) => {
         const expected = activity.expectedStimulus ?? {};
@@ -943,6 +956,7 @@ export function generateWeekAheadPlan(
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
+    const fixedActivitiesByDate = groupFixedActivitiesByDate(fixedActivities);
     const authoredPlanBlocks = options.authoredPlanBlocks ?? [];
     const suppliedPlanDefinition = options.planDefinition ?? null;
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
@@ -1031,7 +1045,8 @@ export function generateWeekAheadPlan(
     };
 
     const applyFixedActivityStimulus = (date: string) => {
-        const result = applyFixedActivityStimulusCredit(microcycle, fixedActivities, date);
+        const dayFixed = fixedActivitiesByDate.get(date) ?? [];
+        const result = applyFixedActivityStimulusCredit(microcycle, dayFixed, date);
         const freshExposures = result.exposures.filter(exposure => !appliedProjectionOccurrences.has(exposure.occurrenceKey));
         if (freshExposures.length === 0) return;
         freshExposures.forEach(exposure => appliedProjectionOccurrences.add(exposure.occurrenceKey));
@@ -1044,7 +1059,7 @@ export function generateWeekAheadPlan(
     };
 
     const applyFixedActivityCost = (date: string) => {
-        const dayActivities = fixedActivities.filter(a => a.date === date && !a.isCompleted && a.expectedCost);
+        const dayActivities = (fixedActivitiesByDate.get(date) ?? []).filter(a => !a.isCompleted && a.expectedCost);
         const freshActivities = dayActivities.filter(activity => {
             const key = `fixed:${activity.id}:cost`;
             if (appliedFixedCostOccurrences.has(key)) return false;
@@ -1388,7 +1403,7 @@ export function generateWeekAheadPlan(
                         .filter(objective => objective.date === date)
                         .map(objective => objective.objectiveKey),
                 },
-                fixedActivity: fixedActivityTraceForDate(fixedActivities, date),
+                fixedActivity: fixedActivityTraceForDate(fixedActivitiesByDate.get(date) ?? [], date),
                 rejectionCounts: rejectionCountsFor(evaluation),
             },
         });
