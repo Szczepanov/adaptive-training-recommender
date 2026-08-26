@@ -20,7 +20,7 @@ The lightweight property runner uses a seedable PRNG so every failure is reprodu
 - a `harder` adjustment cannot raise execution volume above the active plan ceiling;
 - accepted authored sessions pass the exact production eligibility projection and systemic-cost budget;
 - impossible contexts fall back to the canonical zero-dose Rest template with rationale;
-- missing 28-day baseline evidence cannot unlock a more aggressive mode/tier than an otherwise identical neutral known baseline;
+- missing or partial 28-day baseline inputs cannot fabricate chronic multi-day drift;
 - recommendation rationale and envelope reasons avoid diagnostic claims.
 
 Default seeds are fixed in the tests. A failure reports the seed, iteration, and generated counterexample.
@@ -60,6 +60,8 @@ The simulation contracts currently verify that:
 - recent hard-session density does not escalate into hard-endurance work;
 - an A-priority running event cannot re-enable Running while the modality is explicitly injury-restricted;
 - `avoid_heavy_lower_body` excludes lower-body and full-body strength across the simulated horizon.
+
+The distinction between a directly evaluated check-in date and a provisional future forecast matters. An acute `painFlag` is asserted against the dates on which that check-in is actually evaluated; persistent constraints such as a restricted modality or guardrail are asserted across the full generated horizon.
 
 The global scenario suite in `app/src/engine/scenarios.test.ts` additionally checks equipment/injury constraint violations, recovery presence, horizon completeness, and typed reasons for required-role misses.
 
@@ -106,6 +108,7 @@ When adding a simulation:
 
 - give the scenario a clear adversarial tag;
 - add a scenario-specific contract for the behavior claimed by its description;
+- distinguish direct check-in decisions from provisional future forecasts;
 - do not rely only on aggregate rest percentages or generic equipment checks;
 - keep event/injury/guardrail conflicts explicit in the fixture.
 
