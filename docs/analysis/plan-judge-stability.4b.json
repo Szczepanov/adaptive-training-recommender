@@ -1,0 +1,1672 @@
+{
+  "schema": "adaptive-training-recommender/ai-plan-judge-stability@1",
+  "samples": 5,
+  "familiesCount": 13,
+  "maxContextUtilization": 0.786,
+  "totalPromptTokens": 2120830,
+  "totalCompletionTokens": 110969,
+  "families": [
+    {
+      "familyId": "objective_recovery",
+      "samples": 5,
+      "familySensitivityMedian": 8.5,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 3,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0.13,
+        "goal_event_fit": 0.5,
+        "sequencing": 0.13,
+        "periodization_taper": 0.38,
+        "preference_capacity_fit": 0.88,
+        "robustness": 0.38,
+        "overall": 0.13
+      },
+      "cases": {
+        "judge_obj_neutral": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 7,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        },
+        "judge_obj_hrv_1sd": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 7,
+            "robustness": 7,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 0
+          },
+          "maxSpread": 4
+        },
+        "judge_obj_hrv_2sd": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 7,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 6
+        },
+        "judge_obj_rhr_1sd": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 7,
+            "robustness": 7,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 0
+          },
+          "maxSpread": 3
+        },
+        "judge_obj_rhr_2sd": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 7,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 6
+        },
+        "judge_obj_poor_sleep": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 7,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 6
+        },
+        "judge_obj_low_battery": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 7,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 7
+        },
+        "judge_obj_combined_bad": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 8
+        }
+      }
+    },
+    {
+      "familyId": "subjective_recovery",
+      "samples": 5,
+      "familySensitivityMedian": 8,
+      "familySensitivityMad": 0,
+      "familySensitivitySpread": 2,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0.25,
+        "goal_event_fit": 0,
+        "sequencing": 0,
+        "periodization_taper": 0.5,
+        "preference_capacity_fit": 0.75,
+        "robustness": 0,
+        "overall": 0.38
+      },
+      "cases": {
+        "judge_subj_neutral": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 1
+        },
+        "judge_subj_fresh": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        },
+        "judge_subj_low_readiness": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 6,
+            "robustness": 6,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        },
+        "judge_subj_fatigue": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 6,
+            "robustness": 5,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 1
+          },
+          "maxSpread": 4
+        },
+        "judge_subj_soreness": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 6,
+            "robustness": 5,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 1
+          },
+          "maxSpread": 4
+        },
+        "judge_subj_stress": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7,
+            "sequencing": 6,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 6,
+            "robustness": 5,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 1
+          },
+          "maxSpread": 3
+        },
+        "judge_subj_low_motivation": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 8,
+            "sequencing": 7,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 7,
+            "robustness": 7,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 3
+        },
+        "judge_subj_combined_bad": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 7,
+            "robustness": 9,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        }
+      }
+    },
+    {
+      "familyId": "recent_training",
+      "samples": 5,
+      "familySensitivityMedian": 8,
+      "familySensitivityMad": 0,
+      "familySensitivitySpread": 2,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 1.1,
+        "goal_event_fit": 0.8,
+        "sequencing": 1.2,
+        "periodization_taper": 1.4,
+        "preference_capacity_fit": 0.3,
+        "robustness": 1.2,
+        "overall": 0.8
+      },
+      "cases": {
+        "judge_load_none": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8.5,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0.5,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0.5,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 5
+        },
+        "judge_load_easy_yesterday": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 8,
+            "sequencing": 7,
+            "periodization_taper": 6.5,
+            "preference_capacity_fit": 7,
+            "robustness": 7.5,
+            "overall": 7.5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1.5,
+            "preference_capacity_fit": 0,
+            "robustness": 1.5,
+            "overall": 0.5
+          },
+          "maxSpread": 4
+        },
+        "judge_load_hard_yesterday": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 8.5,
+            "sequencing": 6.5,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 7.5,
+            "robustness": 6.5,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0.5,
+            "sequencing": 1.5,
+            "periodization_taper": 2,
+            "preference_capacity_fit": 0.5,
+            "robustness": 1.5,
+            "overall": 1
+          },
+          "maxSpread": 4
+        },
+        "judge_load_hard_2d": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6.5,
+            "goal_event_fit": 8,
+            "sequencing": 7,
+            "periodization_taper": 6.5,
+            "preference_capacity_fit": 7.5,
+            "robustness": 7,
+            "overall": 7.5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1.5,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1.5,
+            "preference_capacity_fit": 0.5,
+            "robustness": 1,
+            "overall": 0.5
+          },
+          "maxSpread": 4
+        },
+        "judge_load_hard_3d": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 8,
+            "sequencing": 6.5,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 7,
+            "robustness": 6,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 1.5,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 4
+        }
+      }
+    },
+    {
+      "familyId": "event_proximity",
+      "samples": 5,
+      "familySensitivityMedian": 8,
+      "familySensitivityMad": 0,
+      "familySensitivitySpread": 0.5,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 1.6,
+        "goal_event_fit": 0.7,
+        "sequencing": 1,
+        "periodization_taper": 1.4,
+        "preference_capacity_fit": 0.7,
+        "robustness": 1.3,
+        "overall": 1.8
+      },
+      "cases": {
+        "judge_event_40d": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 8,
+            "robustness": 7,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 1.5,
+            "sequencing": 1.5,
+            "periodization_taper": 2,
+            "preference_capacity_fit": 1,
+            "robustness": 2,
+            "overall": 2
+          },
+          "maxSpread": 6
+        },
+        "judge_event_20d": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 6,
+            "sequencing": 6,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 8,
+            "robustness": 6,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 4
+        },
+        "judge_event_14d": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 8,
+            "robustness": 7,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 2,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 2
+          },
+          "maxSpread": 5
+        },
+        "judge_event_7d": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 9,
+            "robustness": 8,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0.5,
+            "robustness": 1.5,
+            "overall": 2
+          },
+          "maxSpread": 6
+        },
+        "judge_event_3d": {
+          "scoreMedians": {
+            "safety_recovery_fit": 5,
+            "goal_event_fit": 5,
+            "sequencing": 5,
+            "periodization_taper": 4,
+            "preference_capacity_fit": 7,
+            "robustness": 5,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 0.5,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 2
+          },
+          "maxSpread": 6
+        }
+      }
+    },
+    {
+      "familyId": "preferences_capacity",
+      "samples": 5,
+      "familySensitivityMedian": 7,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 1.5,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0.83,
+        "goal_event_fit": 0.17,
+        "sequencing": 0.33,
+        "periodization_taper": 0.5,
+        "preference_capacity_fit": 0.5,
+        "robustness": 0.33,
+        "overall": 0.25
+      },
+      "cases": {
+        "judge_pref_neutral": {
+          "scoreMedians": {
+            "safety_recovery_fit": 5,
+            "goal_event_fit": 7,
+            "sequencing": 5,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 8,
+            "robustness": 6,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 1
+        },
+        "judge_pref_conservative": {
+          "scoreMedians": {
+            "safety_recovery_fit": 5,
+            "goal_event_fit": 7,
+            "sequencing": 5,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 7,
+            "robustness": 6,
+            "overall": 5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 5
+        },
+        "judge_pref_active_recovery": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 7,
+            "sequencing": 5,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 8,
+            "robustness": 6,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0.5
+          },
+          "maxSpread": 3
+        },
+        "judge_pref_mixed_recovery": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 7,
+            "sequencing": 5,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 7,
+            "robustness": 6,
+            "overall": 5.5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0.5
+          },
+          "maxSpread": 3
+        },
+        "judge_pref_45min": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 5,
+            "sequencing": 5,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 8,
+            "robustness": 6,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 0
+          },
+          "maxSpread": 4
+        },
+        "judge_pref_90min": {
+          "scoreMedians": {
+            "safety_recovery_fit": 5,
+            "goal_event_fit": 7,
+            "sequencing": 5,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 8,
+            "robustness": 6,
+            "overall": 5.5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 0.5
+          },
+          "maxSpread": 3
+        }
+      }
+    },
+    {
+      "familyId": "event_demand",
+      "samples": 5,
+      "familySensitivityMedian": 8,
+      "familySensitivityMad": 0,
+      "familySensitivitySpread": 2,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0.75,
+        "goal_event_fit": 0.5,
+        "sequencing": 0.5,
+        "periodization_taper": 1.25,
+        "preference_capacity_fit": 0.25,
+        "robustness": 0.5,
+        "overall": 0.75
+      },
+      "cases": {
+        "judge_demand_crit_A": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 6,
+            "sequencing": 7,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 9,
+            "robustness": 7,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 1.5,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 4
+        },
+        "judge_demand_crit_B": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 6,
+            "sequencing": 7,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 9,
+            "robustness": 7,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 1.5,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 4
+        },
+        "judge_demand_gran_A": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8.5,
+            "goal_event_fit": 6,
+            "sequencing": 7,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 8,
+            "robustness": 7,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0.5,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0.5,
+            "robustness": 0,
+            "overall": 0.5
+          },
+          "maxSpread": 5
+        },
+        "judge_demand_gran_B": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8.5,
+            "goal_event_fit": 6,
+            "sequencing": 7,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 8,
+            "robustness": 7,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0.5,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0.5,
+            "robustness": 0,
+            "overall": 0.5
+          },
+          "maxSpread": 5
+        }
+      }
+    },
+    {
+      "familyId": "interactions",
+      "samples": 5,
+      "familySensitivityMedian": 7.5,
+      "familySensitivityMad": 0,
+      "familySensitivitySpread": 1,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0.88,
+        "goal_event_fit": 0.5,
+        "sequencing": 0.5,
+        "periodization_taper": 0.75,
+        "preference_capacity_fit": 0.25,
+        "robustness": 0.75,
+        "overall": 0.5
+      },
+      "cases": {
+        "judge_int_fresh_hard_yday": {
+          "scoreMedians": {
+            "safety_recovery_fit": 5,
+            "goal_event_fit": 8,
+            "sequencing": 6,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 9,
+            "robustness": 6,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 0
+          },
+          "maxSpread": 5
+        },
+        "judge_int_badobj_noload": {
+          "scoreMedians": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 5,
+            "sequencing": 4,
+            "periodization_taper": 3,
+            "preference_capacity_fit": 6,
+            "robustness": 4,
+            "overall": 5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 6
+        },
+        "judge_int_badobj_hard_yday": {
+          "scoreMedians": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 5,
+            "sequencing": 4,
+            "periodization_taper": 3,
+            "preference_capacity_fit": 6,
+            "robustness": 3,
+            "overall": 4
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 7
+        },
+        "judge_int_badsubj_goodobj": {
+          "scoreMedians": {
+            "safety_recovery_fit": 4,
+            "goal_event_fit": 6,
+            "sequencing": 5,
+            "periodization_taper": 4,
+            "preference_capacity_fit": 7,
+            "robustness": 5,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 4
+        },
+        "judge_int_goodsubj_badobj": {
+          "scoreMedians": {
+            "safety_recovery_fit": 4,
+            "goal_event_fit": 5,
+            "sequencing": 5,
+            "periodization_taper": 4,
+            "preference_capacity_fit": 7,
+            "robustness": 4,
+            "overall": 5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 7
+        },
+        "judge_int_race7_fresh": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 9,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        },
+        "judge_int_race7_hard_yday": {
+          "scoreMedians": {
+            "safety_recovery_fit": 5,
+            "goal_event_fit": 6,
+            "sequencing": 5,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 8,
+            "robustness": 5,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 0
+          },
+          "maxSpread": 4
+        },
+        "judge_int_race7_badobj": {
+          "scoreMedians": {
+            "safety_recovery_fit": 3,
+            "goal_event_fit": 5,
+            "sequencing": 4,
+            "periodization_taper": 3,
+            "preference_capacity_fit": 6,
+            "robustness": 4,
+            "overall": 4
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 7
+        }
+      }
+    },
+    {
+      "familyId": "delivered_dose_variance",
+      "samples": 5,
+      "familySensitivityMedian": 8,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 2.5,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 1.13,
+        "goal_event_fit": 0.13,
+        "sequencing": 0.75,
+        "periodization_taper": 1.75,
+        "preference_capacity_fit": 0.5,
+        "robustness": 0.38,
+        "overall": 0.75
+      },
+      "cases": {
+        "judge_dose_exact": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 8,
+            "sequencing": 7,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 9,
+            "robustness": 6,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0.5,
+            "sequencing": 1,
+            "periodization_taper": 2,
+            "preference_capacity_fit": 0,
+            "robustness": 0.5,
+            "overall": 0.20000000000000018
+          },
+          "maxSpread": 6
+        },
+        "judge_dose_surged": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 8,
+            "robustness": 6,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0.5,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0.7999999999999998
+          },
+          "maxSpread": 3
+        },
+        "judge_dose_curtailed": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 6,
+            "sequencing": 6,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 7,
+            "robustness": 5,
+            "overall": 5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 2,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 1
+          },
+          "maxSpread": 5
+        },
+        "judge_dose_skipped": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 6,
+            "sequencing": 6,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 7,
+            "robustness": 5,
+            "overall": 5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 2,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 6
+        }
+      }
+    },
+    {
+      "familyId": "concurrent_strength_endurance",
+      "samples": 5,
+      "familySensitivityMedian": 9,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 2.5,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0.75,
+        "goal_event_fit": 0.5,
+        "sequencing": 0.5,
+        "periodization_taper": 0.5,
+        "preference_capacity_fit": 0.75,
+        "robustness": 0.38,
+        "overall": 0.42
+      },
+      "cases": {
+        "judge_concurrent_none": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2.5
+        },
+        "judge_concurrent_heavy_lower": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7.5,
+            "sequencing": 6.5,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 7,
+            "robustness": 6,
+            "overall": 6.5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1.5,
+            "sequencing": 1.5,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 0.5
+          },
+          "maxSpread": 4
+        },
+        "judge_concurrent_heavy_upper": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 7,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0.5
+          },
+          "maxSpread": 4
+        },
+        "judge_concurrent_power_maintenance": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0.5,
+            "sequencing": 0.5,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0.5,
+            "overall": 0.6999999999999993
+          },
+          "maxSpread": 4.5
+        }
+      }
+    },
+    {
+      "familyId": "injury_constraints",
+      "samples": 5,
+      "familySensitivityMedian": 9,
+      "familySensitivityMad": 0,
+      "familySensitivitySpread": 1,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0,
+        "goal_event_fit": 0,
+        "sequencing": 0,
+        "periodization_taper": 1,
+        "preference_capacity_fit": 0.25,
+        "robustness": 0.25,
+        "overall": 0
+      },
+      "cases": {
+        "judge_injury_none": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8,
+            "robustness": 7,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 3
+        },
+        "judge_injury_running_restricted": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8,
+            "robustness": 7,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 3
+        },
+        "judge_injury_lower_body_restricted": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 7,
+            "robustness": 7,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 0
+          },
+          "maxSpread": 6
+        },
+        "judge_injury_expired": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8,
+            "robustness": 7,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 3
+        }
+      }
+    },
+    {
+      "familyId": "planning_modes_overlays",
+      "samples": 5,
+      "familySensitivityMedian": 8,
+      "familySensitivityMad": 0,
+      "familySensitivitySpread": 1,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0.75,
+        "goal_event_fit": 0.25,
+        "sequencing": 0.75,
+        "periodization_taper": 0.5,
+        "preference_capacity_fit": 0.75,
+        "robustness": 0,
+        "overall": 0
+      },
+      "cases": {
+        "judge_mode_event_directed": {
+          "scoreMedians": {
+            "safety_recovery_fit": 5,
+            "goal_event_fit": 5,
+            "sequencing": 5,
+            "periodization_taper": 4,
+            "preference_capacity_fit": 8,
+            "robustness": 7,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 4
+        },
+        "judge_mode_evergreen": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 9,
+            "robustness": 9,
+            "overall": 9
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 7
+        },
+        "judge_mode_travel_overlay": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 6,
+            "sequencing": 7,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 4
+        },
+        "judge_mode_conservative_preference": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 5,
+            "sequencing": 5,
+            "periodization_taper": 4,
+            "preference_capacity_fit": 8,
+            "robustness": 6,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 5
+        }
+      }
+    },
+    {
+      "familyId": "temporal_acute_vs_persistent",
+      "samples": 5,
+      "familySensitivityMedian": 8,
+      "familySensitivityMad": 0,
+      "familySensitivitySpread": 2,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 1,
+        "goal_event_fit": 0.25,
+        "sequencing": 0.5,
+        "periodization_taper": 0.25,
+        "preference_capacity_fit": 0.5,
+        "robustness": 0.75,
+        "overall": 0.25
+      },
+      "cases": {
+        "judge_traj_neutral": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        },
+        "judge_traj_acute_adverse_day1": {
+          "scoreMedians": {
+            "safety_recovery_fit": 4,
+            "goal_event_fit": 7,
+            "sequencing": 6,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 7,
+            "robustness": 5,
+            "overall": 5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 6
+        },
+        "judge_traj_persistent_adverse_3d": {
+          "scoreMedians": {
+            "safety_recovery_fit": 4,
+            "goal_event_fit": 5,
+            "sequencing": 4,
+            "periodization_taper": 3,
+            "preference_capacity_fit": 6,
+            "robustness": 4,
+            "overall": 4
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 2,
+            "overall": 0
+          },
+          "maxSpread": 7
+        },
+        "judge_traj_improving_trend": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 9,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        }
+      }
+    },
+    {
+      "familyId": "conflicting_tissue_vs_wearable",
+      "samples": 5,
+      "familySensitivityMedian": 7.5,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 1.5,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0.75,
+        "goal_event_fit": 0.63,
+        "sequencing": 0.75,
+        "periodization_taper": 0.75,
+        "preference_capacity_fit": 1,
+        "robustness": 1.25,
+        "overall": 0.88
+      },
+      "cases": {
+        "judge_conflict_neutral": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        },
+        "judge_conflict_sore_legs_great_hrv": {
+          "scoreMedians": {
+            "safety_recovery_fit": 5,
+            "goal_event_fit": 8,
+            "sequencing": 7,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 7,
+            "robustness": 6,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 0.5,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 2,
+            "overall": 1
+          },
+          "maxSpread": 6
+        },
+        "judge_conflict_fresh_legs_terrible_hrv": {
+          "scoreMedians": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 6,
+            "sequencing": 6,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 4,
+            "robustness": 3,
+            "overall": 5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 2,
+            "sequencing": 2,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 2,
+            "robustness": 2,
+            "overall": 2
+          },
+          "maxSpread": 6
+        },
+        "judge_conflict_high_stress_fresh_body": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 7,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 6,
+            "robustness": 6,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 0.5
+          },
+          "maxSpread": 4
+        }
+      }
+    }
+  ]
+}

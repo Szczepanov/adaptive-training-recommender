@@ -106,4 +106,27 @@ describe('judge:diff:prev provenance hardening', () => {
         expect(result.status).toBe(1);
         expect(result.stderr).toContain('missing case-set provenance');
     });
+
+    it('auto-resolves 4B baseline when judgeModel matches 4B and 4B baseline exists', () => {
+        const root = mkdtempSync(join(tmpdir(), 'judge-drift-4b-'));
+        roots.push(root);
+        const appDir = join(root, 'app');
+        const currentPath = join(appDir, 'artifacts/ai-plan-judge/latest/judge-summary.json');
+        const baseline4bPath = join(root, 'docs/analysis/plan-judge-baseline.4b.json');
+        mkdirSync(dirname(currentPath), { recursive: true });
+        mkdirSync(dirname(baseline4bPath), { recursive: true });
+
+        const current4b = summary('current');
+        current4b.provenance.judgeModel = 'hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF';
+        const baseline4b = summary('baseline');
+        baseline4b.provenance.judgeModel = 'hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF';
+
+        writeFileSync(currentPath, JSON.stringify(current4b));
+        writeFileSync(baseline4bPath, JSON.stringify(baseline4b));
+
+        const result = spawnSync(process.execPath, [SCRIPT], { cwd: appDir, encoding: 'utf8' });
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('Baseline (4B)');
+        expect(result.stdout).toContain('Diff check complete');
+    });
 });

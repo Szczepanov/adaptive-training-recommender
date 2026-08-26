@@ -106,6 +106,15 @@ if (againstCustomPath) {
     console.error(`No judge history directory exists at ${historyDir}; cannot compare with --previous.`);
     process.exit(1);
   }
+} else {
+  const judgeModel = current.provenance?.judgeModel || '';
+  if (/4b/i.test(judgeModel)) {
+    const candidate4b = resolve('../docs/analysis/plan-judge-baseline.4b.json');
+    if (existsSync(candidate4b)) {
+      baselinePath = candidate4b;
+      baselineLabel = 'Baseline (4B)';
+    }
+  }
 }
 
 const rawBaseline = readJson(baselinePath, baselineLabel);
@@ -172,7 +181,7 @@ if (fatal.length > 0) {
   process.exit(1);
 }
 
-console.log(`=== AI Plan Judge Diff Check (${usePrevious ? 'Current vs Previous Run' : againstCustomPath ? `Current vs ${againstCustomPath}` : 'Current vs Baseline'}) ===\n`);
+console.log(`=== AI Plan Judge Diff Check (Current vs ${baselineLabel}) ===\n`);
 console.log(`${usePrevious ? 'Previous' : 'Baseline'} corpus commit: ${baseline.provenance.corpusCommit ?? 'unknown'}`);
 console.log(`Current corpus commit:  ${current.provenance.corpusCommit ?? 'unknown'}`);
 console.log(`Judge model:            ${current.provenance.judgeModel ?? 'unknown'}`);
