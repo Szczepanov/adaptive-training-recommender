@@ -316,6 +316,8 @@ export function evaluateDataConfidence(
         signals.rhr = { signal: 'rhr', displayName: 'Resting Heart Rate', status: 'MISSING', value: null, unit: 'bpm', isPlausible: false };
         signals.sleep = { signal: 'sleep', displayName: 'Sleep Duration & Score', status: 'MISSING', value: null, unit: 'min', isPlausible: false };
         signals.steps = { signal: 'steps', displayName: 'Ambient Steps (D-1)', status: 'MISSING', value: null, unit: 'steps', expectedDate: getPreviousLocalDateString(input.date), isPlausible: false };
+        signals.respiration = { signal: 'respiration', displayName: 'Sleeping Respiration', status: 'MISSING', value: null, unit: 'brpm', isPlausible: false };
+        signals.bodyBattery = { signal: 'bodyBattery', displayName: 'Body Battery (Wake)', status: 'MISSING', value: null, unit: 'pts', isPlausible: false };
     }
 
     const sensorTier: SensorTier = hasPlausibleHrv && hasPlausibleRhr && hasPlausibleSleep
