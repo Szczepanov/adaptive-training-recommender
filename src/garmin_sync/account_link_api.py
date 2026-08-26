@@ -266,7 +266,8 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
             )
 
     def _handle_login(self) -> None:
-        if not RATE_LIMITER.allow(self._client_key()):
+        client_key = self._client_key()
+        if not RATE_LIMITER.allow(client_key):
             self._error_response(
                 HTTPStatus.TOO_MANY_REQUESTS,
                 message="Too many login attempts. Try again later.",
@@ -279,6 +280,15 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
         password = payload.get("password")
         if not isinstance(email, str) or not isinstance(password, str):
             raise ValueError("Garmin email and password must be strings.")
+        email_key = f"account:{email.strip().lower()}"
+        if not RATE_LIMITER.allow(email_key):
+            self._error_response(
+                HTTPStatus.TOO_MANY_REQUESTS,
+                message="Too many login attempts. Try again later.",
+                error_code="garmin_link.rate_limited",
+                retryable=True,
+            )
+            return
         requested_uid = _verified_uid(self.headers.get("Authorization"))
         result = _service().start_login(email, password, requested_uid=requested_uid)
         self._json_response(HTTPStatus.OK, result)

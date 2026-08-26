@@ -85,17 +85,24 @@ export async function inspectDeployedFirestoreRules(project) {
   };
 }
 
+export function normalizeRulesSource(source) {
+  return typeof source === 'string' ? source.replace(/\r\n/g, '\n') : '';
+}
+
 export async function compareLocalFirestoreRules(project) {
-  const [localSource, deployed] = await Promise.all([
+  const [localSourceRaw, deployed] = await Promise.all([
     readFile(firestoreRulesPath, 'utf8'),
     inspectDeployedFirestoreRules(project),
   ]);
 
+  const localSource = normalizeRulesSource(localSourceRaw);
+  const deployedSource = normalizeRulesSource(deployed.source);
+
   return {
     ...deployed,
     localHash: sha256(localSource),
-    deployedHash: sha256(deployed.source),
-    matches: localSource === deployed.source,
+    deployedHash: sha256(deployedSource),
+    matches: localSource === deployedSource,
   };
 }
 
