@@ -92,6 +92,14 @@ describe('deriveFeedbackLoopEvidence', () => {
             record({ date: '2026-08-01', recommendationRef: { recommendationId: 'rec-1', revision: 3 } }),
             record({ date: '2026-08-01', recommendationRef: { recommendationId: 'rec-1', revision: 3 } }),
         ]);
-        expect(evidence.sourceIds.feedbackRecordIds).toEqual(['2026-08-01@r3', '2026-08-02@r1']);
+        expect(evidence.sourceIds.feedbackRecordIds).toEqual(['2026-08-01@r3:rec-1', '2026-08-02@r1:rec-2']);
+    });
+
+    it('keeps distinct recommendations with the same date and revision from colliding in feedbackRecordIds', () => {
+        const evidence = deriveFeedbackLoopEvidence([
+            record({ date: '2026-08-01', recommendationRef: { recommendationId: 'rec-a', revision: 1 } }),
+            record({ date: '2026-08-01', recommendationRef: { recommendationId: 'rec-b', revision: 1 } }),
+        ]);
+        expect(evidence.sourceIds.feedbackRecordIds).toEqual(['2026-08-01@r1:rec-a', '2026-08-01@r1:rec-b']);
     });
 });

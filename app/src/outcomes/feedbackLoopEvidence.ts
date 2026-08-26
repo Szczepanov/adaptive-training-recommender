@@ -83,7 +83,7 @@ function compareCodeUnits(left: string, right: string): number {
 }
 
 function feedbackRecordRef(record: ClosedLoopFeedbackRecord): string {
-    return `${record.date}@r${record.recommendationRef.revision}`;
+    return `${record.date}@r${record.recommendationRef.revision}:${record.recommendationRef.recommendationId}`;
 }
 
 /**

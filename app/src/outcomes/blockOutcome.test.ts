@@ -180,7 +180,7 @@ describe('deriveBlockOutcome', () => {
         expect(withFeedback.verdict).toBe(withoutFeedback.verdict);
         expect(withFeedback.feedbackLoopEvidence.recordCount).toBe(1);
         expect(withFeedback.feedbackLoopEvidence.regretClassCounts.overreaching_crash).toBe(1);
-        expect(withFeedback.sourceIds.feedbackRecordIds).toEqual(['2026-08-05@r1']);
+        expect(withFeedback.sourceIds.feedbackRecordIds).toEqual(['2026-08-05@r1:rec-1']);
     });
 
     it('withholds the verdict when process adequacy is below the versioned threshold', () => {
