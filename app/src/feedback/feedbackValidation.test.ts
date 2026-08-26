@@ -93,6 +93,50 @@ describe('feedbackValidation', () => {
         it('does not silently coerce a malformed optional hold compliance field to null', () => {
             expect(() => parseDoseReconciliation({ ...validPayload, holdCompliancePct: '92' })).toThrow('holdCompliancePct');
         });
+
+        it('rejects percentage deltas that contradict their planned and actual values', () => {
+            expect(() => parseDoseReconciliation({
+                ...validPayload,
+                durationDeltaPct: 0,
+            })).toThrow('durationDeltaPct');
+            expect(() => parseDoseReconciliation({
+                ...validPayload,
+                workDeltaPct: -20,
+            })).toThrow('workDeltaPct');
+        });
+
+        it('defines zero-plan and unavailable-source delta semantics explicitly', () => {
+            const zeroDose = parseDoseReconciliation({
+                ...validPayload,
+                plannedDurationMin: 0,
+                actualDurationMin: 0,
+                durationDeltaPct: 0,
+                plannedWorkKj: 0,
+                actualWorkKj: 0,
+                workDeltaPct: 0,
+            });
+            expect(zeroDose.durationDeltaPct).toBe(0);
+            expect(zeroDose.workDeltaPct).toBe(0);
+
+            const unboundedDuration = parseDoseReconciliation({
+                ...validPayload,
+                plannedDurationMin: 0,
+                actualDurationMin: 20,
+                durationDeltaPct: null,
+                plannedWorkKj: 500,
+                actualWorkKj: null,
+                workDeltaPct: null,
+            });
+            expect(unboundedDuration.durationDeltaPct).toBeNull();
+            expect(unboundedDuration.workDeltaPct).toBeNull();
+
+            expect(() => parseDoseReconciliation({
+                ...validPayload,
+                plannedDurationMin: 0,
+                actualDurationMin: 20,
+                durationDeltaPct: 100,
+            })).toThrow('durationDeltaPct');
+        });
     });
 
     describe('parseRecoveryTrajectory', () => {

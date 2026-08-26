@@ -42,7 +42,9 @@ export interface DoseReconciliation {
     actualDurationMin: number;
     plannedWorkKj: number | null;
     actualWorkKj: number | null;
-    durationDeltaPct: number;
+    /** Rounded percent change from planned duration; 0 for 0-to-0 and null for 0-to-positive. */
+    durationDeltaPct: number | null;
+    /** Rounded percent change from planned work; null when unavailable or zero planned work becomes positive. */
     workDeltaPct: number | null;
     completedZoneDistribution: ZoneDistributionSeconds | null;
     holdCompliancePct: number | null;

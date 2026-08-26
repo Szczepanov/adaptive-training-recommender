@@ -75,6 +75,7 @@ function hasOnlyFiniteValues(values: readonly number[]): boolean {
     return values.every(Number.isFinite);
 }
 
+/** Computes Pearson's r for finite paired samples, returning null when it is undefined. */
 export function computePearsonCorrelation(
     xs: readonly number[],
     ys: readonly number[],
@@ -174,6 +175,7 @@ export function estimateNormalizedMutualInformation(
     return round(Math.max(0, Math.min(1, normalized)), 3);
 }
 
+/** Builds pairwise exploratory dependence diagnostics from complete observations. */
 export function computeSignalCorrelationMatrix(
     rows: readonly SignalObservationRow[],
     collinearityThreshold = 0.70,
@@ -232,6 +234,7 @@ export function computeSignalCorrelationMatrix(
     };
 }
 
+/** Summarizes finite per-signal samples without imputing missing observations. */
 export function evaluateSignalVariances(
     rows: readonly SignalObservationRow[],
 ): Record<HealthSignalKey, SignalVarianceProfile> {
@@ -267,6 +270,7 @@ export function evaluateSignalVariances(
     return result;
 }
 
+/** Compares acute and chronic rolling means over identical endpoint dates. */
 export function evaluateBaselineWindowStability(
     dailyValues: readonly number[],
     acuteWindowDays = 7,

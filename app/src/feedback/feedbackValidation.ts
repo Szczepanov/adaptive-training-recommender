@@ -107,6 +107,29 @@ function isNullableString(value: unknown): value is string | null {
     return value === null || typeof value === 'string';
 }
 
+function derivePercentageDelta(planned: number | null, actual: number | null): number | null {
+    if (planned === null || actual === null) return null;
+    if (planned === 0) return actual === 0 ? 0 : null;
+    return Math.round(((actual - planned) / planned) * 10_000) / 100;
+}
+
+function validateDerivedPercentageDelta(
+    provided: unknown,
+    expected: number | null,
+    field: 'durationDeltaPct' | 'workDeltaPct',
+): number | null {
+    if (expected === null) {
+        if (provided !== null) {
+            throw new Error(`Invalid ${field} in DoseReconciliation: expected null for unavailable values or positive actual dose after a zero plan`);
+        }
+        return null;
+    }
+    if (!isFiniteNumber(provided) || Math.abs(provided - expected) > 0.005) {
+        throw new Error(`Invalid ${field} in DoseReconciliation: does not match planned and actual dose`);
+    }
+    return expected;
+}
+
 function parseRecommendationRef(value: unknown, context: string): { recommendationId: string; revision: number } {
     if (!isPlainObject(value)
         || typeof value.recommendationId !== 'string'
@@ -142,6 +165,7 @@ function parseRecoveryTrajectoryPoint(value: unknown, context: string): Recovery
     };
 }
 
+/** Parses an athlete decision while preserving its immutable recommendation revision. */
 export function parseAthleteDecisionLog(value: unknown): AthleteDecisionLog {
     if (!isPlainObject(value)) throw new Error('AthleteDecisionLog must be an object');
     if (!isRealLocalDate(value.date)) throw new Error('Invalid date in AthleteDecisionLog');
@@ -174,6 +198,7 @@ export function parseAthleteDecisionLog(value: unknown): AthleteDecisionLog {
     };
 }
 
+/** Parses executed dose and verifies that stored percentage deltas match their source values. */
 export function parseDoseReconciliation(value: unknown): DoseReconciliation {
     if (!isPlainObject(value)) throw new Error('DoseReconciliation must be an object');
     if (!isRealLocalDate(value.date)) throw new Error('Invalid date in DoseReconciliation');
@@ -190,13 +215,20 @@ export function parseDoseReconciliation(value: unknown): DoseReconciliation {
     if (!isNullableFiniteNonNegative(value.actualWorkKj)) {
         throw new Error('Invalid actualWorkKj in DoseReconciliation');
     }
-    if (!isFiniteNumber(value.durationDeltaPct)) {
-        throw new Error('Invalid durationDeltaPct in DoseReconciliation');
-    }
-    const workDeltaPct = value.workDeltaPct;
-    if (workDeltaPct !== null && !isFiniteNumber(workDeltaPct)) {
-        throw new Error('Invalid workDeltaPct in DoseReconciliation');
-    }
+    const expectedDurationDeltaPct = derivePercentageDelta(
+        value.plannedDurationMin,
+        value.actualDurationMin,
+    );
+    const durationDeltaPct = validateDerivedPercentageDelta(
+        value.durationDeltaPct,
+        expectedDurationDeltaPct,
+        'durationDeltaPct',
+    );
+    const workDeltaPct = validateDerivedPercentageDelta(
+        value.workDeltaPct,
+        derivePercentageDelta(value.plannedWorkKj, value.actualWorkKj),
+        'workDeltaPct',
+    );
     const holdCompliancePct = value.holdCompliancePct;
     if (holdCompliancePct !== null
         && (!isFiniteNumber(holdCompliancePct) || holdCompliancePct < 0 || holdCompliancePct > 100)) {
@@ -233,14 +265,15 @@ export function parseDoseReconciliation(value: unknown): DoseReconciliation {
         actualDurationMin: value.actualDurationMin,
         plannedWorkKj: value.plannedWorkKj,
         actualWorkKj: value.actualWorkKj,
-        durationDeltaPct: value.durationDeltaPct,
-        workDeltaPct: workDeltaPct as number | null,
+        durationDeltaPct,
+        workDeltaPct,
         completedZoneDistribution,
         holdCompliancePct: holdCompliancePct as number | null,
         stepOmissionsCount: value.stepOmissionsCount,
     };
 }
 
+/** Parses bounded 24h, 48h, and 72h recovery observations. */
 export function parseRecoveryTrajectory(value: unknown): RecoveryTrajectory {
     if (!isPlainObject(value)) throw new Error('RecoveryTrajectory must be an object');
     if (!isRealLocalDate(value.date)) throw new Error('Invalid date in RecoveryTrajectory');
@@ -258,6 +291,7 @@ export function parseRecoveryTrajectory(value: unknown): RecoveryTrajectory {
     };
 }
 
+/** Parses an observational regret label without treating it as a causal conclusion. */
 export function parseCounterfactualRegret(value: unknown): CounterfactualRegret {
     if (!isPlainObject(value)) throw new Error('CounterfactualRegret must be an object');
     if (!isRealLocalDate(value.date)) throw new Error('Invalid date in CounterfactualRegret');
@@ -296,6 +330,7 @@ export function parseCounterfactualRegret(value: unknown): CounterfactualRegret 
     };
 }
 
+/** Parses the athlete's bounded usefulness and clarity ratings. */
 export function parseSubjectiveUtility(value: unknown): SubjectiveUtility {
     if (!isPlainObject(value)) throw new Error('SubjectiveUtility must be an object');
     if (!Number.isInteger(value.utilityScore) || (value.utilityScore as number) < 1 || (value.utilityScore as number) > 5) {
@@ -320,6 +355,7 @@ export function parseSubjectiveUtility(value: unknown): SubjectiveUtility {
     };
 }
 
+/** Parses a complete feedback record and enforces nested date/reference consistency. */
 export function parseClosedLoopFeedbackRecord(value: unknown): ClosedLoopFeedbackRecord {
     if (!isPlainObject(value)) throw new Error('ClosedLoopFeedbackRecord must be an object');
     if (!isRealLocalDate(value.date)) throw new Error('Invalid date in ClosedLoopFeedbackRecord');

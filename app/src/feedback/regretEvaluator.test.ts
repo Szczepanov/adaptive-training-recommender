@@ -8,6 +8,7 @@ describe('regretEvaluator', () => {
             date: '2026-08-26',
             action: 'accepted',
             prescribedMode: 'proceed',
+            completedTraining: false,
             athleteDeclaredRegret: null,
             recoveryTrajectory: null,
         });
@@ -27,12 +28,35 @@ describe('regretEvaluator', () => {
             date: '2026-08-26',
             action: 'accepted',
             prescribedMode: 'proceed',
+            completedTraining: true,
             athleteDeclaredRegret: 'none',
             recoveryTrajectory: trajectory,
         });
 
         expect(result.regretClass).toBe('inconclusive');
         expect(result.confidence).toBe('low');
+    });
+
+    it('fails closed when an expected trajectory has no complete outcome observation', () => {
+        const trajectory: RecoveryTrajectory = {
+            date: '2026-08-26',
+            hours24: { hrvDeltaPct: null, rhrDeltaBpm: null, sorenessScore: null, readinessScore: null },
+            hours48: { hrvDeltaPct: null, rhrDeltaBpm: null, sorenessScore: null, readinessScore: null },
+            hours72: { hrvDeltaPct: null, rhrDeltaBpm: null, sorenessScore: null, readinessScore: null },
+            autonomicReboundState: 'expected',
+        };
+
+        const result = evaluateCounterfactualRegret({
+            date: '2026-08-26',
+            action: 'accepted',
+            prescribedMode: 'proceed',
+            completedTraining: true,
+            athleteDeclaredRegret: 'none',
+            recoveryTrajectory: trajectory,
+        });
+
+        expect(result.regretClass).toBe('inconclusive');
+        expect(result.rationales.join(' ')).toContain('complete 24h or 48h');
     });
 
     it('flags overreaching only when a higher-than-recommended decision is followed by corroborated suppression', () => {
@@ -48,6 +72,7 @@ describe('regretEvaluator', () => {
             date: '2026-08-26',
             action: 'rejected_train_harder',
             prescribedMode: 'scale',
+            completedTraining: true,
             athleteDeclaredRegret: 'should_have_rested',
             recoveryTrajectory: trajectory,
         });
@@ -70,6 +95,7 @@ describe('regretEvaluator', () => {
             date: '2026-08-26',
             action: 'accepted',
             prescribedMode: 'proceed',
+            completedTraining: true,
             athleteDeclaredRegret: null,
             recoveryTrajectory: trajectory,
         });
@@ -91,6 +117,7 @@ describe('regretEvaluator', () => {
             date: '2026-08-26',
             action: 'accepted',
             prescribedMode: 'proceed',
+            completedTraining: true,
             athleteDeclaredRegret: null,
             recoveryTrajectory: trajectory,
             initialSoreness: 3,
@@ -99,6 +126,29 @@ describe('regretEvaluator', () => {
         expect(result.regretClass).toBe('injury_exacerbation');
         expect(result.confidence).toBe('medium');
         expect(result.rationales.join(' ')).toContain('does not establish');
+    });
+
+    it('does not attribute natural symptom worsening to training when rest was accepted', () => {
+        const trajectory: RecoveryTrajectory = {
+            date: '2026-08-26',
+            hours24: { hrvDeltaPct: 0, rhrDeltaBpm: 0, sorenessScore: 5, readinessScore: 50 },
+            hours48: { hrvDeltaPct: 0, rhrDeltaBpm: 0, sorenessScore: 5, readinessScore: 45 },
+            hours72: { hrvDeltaPct: 0, rhrDeltaBpm: 0, sorenessScore: 3, readinessScore: 60 },
+            autonomicReboundState: 'expected',
+        };
+
+        const result = evaluateCounterfactualRegret({
+            date: '2026-08-26',
+            action: 'accepted',
+            prescribedMode: 'rest',
+            completedTraining: false,
+            athleteDeclaredRegret: 'should_have_rested',
+            recoveryTrajectory: trajectory,
+            initialSoreness: 3,
+        });
+
+        expect(result.regretClass).toBe('inconclusive');
+        expect(result.rationales.join(' ')).toContain('no completed training');
     });
 
     it('does not infer tissue exacerbation from unchanged high soreness', () => {
@@ -114,6 +164,7 @@ describe('regretEvaluator', () => {
             date: '2026-08-26',
             action: 'accepted',
             prescribedMode: 'proceed',
+            completedTraining: true,
             athleteDeclaredRegret: null,
             recoveryTrajectory: trajectory,
             initialSoreness: 4,
@@ -135,6 +186,7 @@ describe('regretEvaluator', () => {
             date: '2026-08-26',
             action: 'rejected_rest',
             prescribedMode: 'proceed',
+            completedTraining: false,
             athleteDeclaredRegret: 'should_have_trained_harder',
             recoveryTrajectory: trajectory,
         });
@@ -156,6 +208,7 @@ describe('regretEvaluator', () => {
             date: '2026-08-26',
             action: 'rejected_rest',
             prescribedMode: 'proceed',
+            completedTraining: false,
             athleteDeclaredRegret: 'should_have_trained_harder',
             recoveryTrajectory: trajectory,
         });
@@ -176,6 +229,7 @@ describe('regretEvaluator', () => {
             date: '2026-08-26',
             action: 'rejected_rest',
             prescribedMode: 'proceed',
+            completedTraining: false,
             athleteDeclaredRegret: null,
             recoveryTrajectory: trajectory,
         });
@@ -197,6 +251,7 @@ describe('regretEvaluator', () => {
             date: '2026-08-26',
             action: 'accepted',
             prescribedMode: 'proceed',
+            completedTraining: true,
             athleteDeclaredRegret: 'none',
             recoveryTrajectory: trajectory,
         });

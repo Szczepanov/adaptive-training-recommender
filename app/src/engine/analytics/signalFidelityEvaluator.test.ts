@@ -44,6 +44,12 @@ describe('signalFidelityEvaluator', () => {
             expect(estimateNormalizedMutualInformation([1, 2, 3], [1, 4, 9])).toBeNull();
             expect(estimateNormalizedMutualInformation(Array(20).fill(1), Array.from({ length: 20 }, (_, i) => i))).toBeNull();
         });
+
+        it('rejects invalid bin counts before taking the insufficient-sample path', () => {
+            expect(() => estimateNormalizedMutualInformation([1], [1], 1)).toThrow('binCount');
+            expect(() => estimateNormalizedMutualInformation([1], [1], 2.5)).toThrow('binCount');
+            expect(() => estimateNormalizedMutualInformation([1], [1], Number.POSITIVE_INFINITY)).toThrow('binCount');
+        });
     });
 
     describe('computeSignalCorrelationMatrix', () => {
@@ -139,6 +145,14 @@ describe('signalFidelityEvaluator', () => {
         it('rejects invalid window definitions and non-finite values', () => {
             expect(() => evaluateBaselineWindowStability([1, 2, 3], 7, 7)).toThrow('acuteWindowDays < chronicWindowDays');
             expect(() => evaluateBaselineWindowStability([1, 2, Number.NaN], 1, 2)).toThrow('finite numbers');
+        });
+
+        it('reports an unbounded ratio without claiming perfect damping', () => {
+            const stability = evaluateBaselineWindowStability([0, 1, 2, 1], 2, 3);
+            expect(stability.acuteVariance).toBe(0);
+            expect(stability.chronicVariance).toBeGreaterThan(0);
+            expect(stability.varianceReductionRatio).toBeNull();
+            expect(stability.dampingEfficiencyPct).toBe(0);
         });
     });
 });

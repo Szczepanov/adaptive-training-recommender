@@ -11,6 +11,8 @@ export interface RegretEvaluationInput {
     date: string;
     action: AthleteDecisionAction;
     prescribedMode: PrescribedMode;
+    /** Confirmed from completed-training evidence; never inferred from the decision action. */
+    completedTraining: boolean;
     athleteDeclaredRegret: AthleteDeclaredRegret | null;
     recoveryTrajectory: RecoveryTrajectory | null;
     initialSoreness?: number | null;
@@ -27,11 +29,20 @@ function hasCompleteFreshnessEvidence(point: RecoveryTrajectory['hours24']): boo
         && point.readinessScore >= 70;
 }
 
+function hasCompleteOutcomeEvidence(point: RecoveryTrajectory['hours24']): boolean {
+    return point.hrvDeltaPct !== null
+        && point.rhrDeltaBpm !== null
+        && point.sorenessScore !== null
+        && point.readinessScore !== null;
+}
+
+/** Classifies observational regret conservatively without asserting a causal counterfactual. */
 export function evaluateCounterfactualRegret(input: RegretEvaluationInput): CounterfactualRegret {
     const {
         date,
         action,
         prescribedMode,
+        completedTraining,
         athleteDeclaredRegret,
         recoveryTrajectory,
         initialSoreness,
@@ -70,7 +81,7 @@ export function evaluateCounterfactualRegret(input: RegretEvaluationInput): Coun
         && peakPostSoreness >= 4
         && peakPostSoreness >= initialSoreness + 2;
 
-    if (action !== 'rejected_rest' && tissueSymptomsWorsened) {
+    if (completedTraining && tissueSymptomsWorsened) {
         return {
             date,
             regretClass: 'injury_exacerbation',
@@ -84,6 +95,20 @@ export function evaluateCounterfactualRegret(input: RegretEvaluationInput): Coun
         };
     }
 
+    if (!completedTraining && tissueSymptomsWorsened) {
+        return {
+            date,
+            regretClass: 'inconclusive',
+            athleteDeclaredRegret,
+            confidence: 'low',
+            rationales: [
+                'Tissue symptoms worsened, but no completed training was confirmed for this decision.',
+                'Natural symptom progression cannot be attributed to the recommendation or an executed dose.',
+            ],
+            counterfactualAlternative: null,
+        };
+    }
+
     const corroboratedSuppression = autonomicReboundState === 'suppressed'
         && (
             ((hours48.hrvDeltaPct ?? 0) < -15 && (hours48.rhrDeltaBpm ?? 0) > 3)
@@ -92,7 +117,7 @@ export function evaluateCounterfactualRegret(input: RegretEvaluationInput): Coun
     const exceededRecommendation = action === 'scaled_up' || action === 'rejected_train_harder';
     const conservativePrescription = prescribedMode === 'scale' || prescribedMode === 'rest';
 
-    if (exceededRecommendation && corroboratedSuppression) {
+    if (completedTraining && exceededRecommendation && corroboratedSuppression) {
         return {
             date,
             regretClass: 'overreaching_crash',
@@ -149,6 +174,17 @@ export function evaluateCounterfactualRegret(input: RegretEvaluationInput): Coun
             athleteDeclaredRegret,
             confidence: 'low',
             rationales: ['Post-rest freshness cannot establish that the skipped workout was unnecessary without corroborating regret and prospective comparison.'],
+            counterfactualAlternative: null,
+        };
+    }
+
+    if (!hasCompleteOutcomeEvidence(hours24) && !hasCompleteOutcomeEvidence(hours48)) {
+        return {
+            date,
+            regretClass: 'inconclusive',
+            athleteDeclaredRegret,
+            confidence: 'low',
+            rationales: ['Recovery trajectory lacks a complete 24h or 48h outcome observation.'],
             counterfactualAlternative: null,
         };
     }
