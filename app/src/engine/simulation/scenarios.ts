@@ -604,4 +604,65 @@ export const SCENARIOS: AthleteScenario[] = [
         readinessForWeek: () => stableReadiness({ readiness: 7, fatigue: 4, soreness: 3 }),
     },
     ...SUBJECTIVE_PROFILE_KINDS.map(subjectiveProfileScenario),
+    {
+        id: 'adversarial_pain_with_high_readiness',
+        label: 'Adversarial: Chronic Pain with High Objective Readiness',
+        description: 'Pristine wearable metrics and high subjective energy, but painFlag is persistently declared. Safety gates must force recovery / non-impact days.',
+        context: context({ indoor_bike: true, free_weights: true, treadmill: true }, ['Running'], []),
+        startDate: START_DATE,
+        weeks: 2,
+        tags: ['adversarial', 'safety', 'pain-gate'],
+        readinessForWeek: () => stableReadiness(
+            { readiness: 8, fatigue: 3, soreness: 7, painFlag: true, timeAvailable: 60 },
+            { sleep_score: 95, sleep_duration_min: 520, body_battery_wake: 92, hrv_delta: 12, rhr_delta: -3 },
+        ),
+    },
+    {
+        id: 'adversarial_delayed_fatigue_masked_sleep',
+        label: 'Adversarial: Excessive Load Masked by Isolated Sleep Spikes',
+        description: 'High recent hard training density paired with high sleep scores. Cumulative strain penalties must prevent premature high-intensity escalation.',
+        context: context({ indoor_bike: true, free_weights: true }, ['Cycling'], []),
+        event: eventOn('adv-delayed-fatigue-event', 28, 'cycling_event', 'road_race', 'A'),
+        startDate: START_DATE,
+        weeks: 2,
+        tags: ['adversarial', 'safety', 'fatigue-fusion'],
+        readinessForWeek: (weekIndex) => weekIndex === 0
+            ? stableReadiness(
+                { readiness: 7, fatigue: 6, soreness: 6, timeAvailable: 90 },
+                { last_3_days_hard_sessions_count: 2, sleep_score: 94, sleep_duration_min: 510, body_battery_wake: 85 },
+            )
+            : stableReadiness({ readiness: 6, fatigue: 4, soreness: 4 }),
+    },
+    {
+        id: 'adversarial_injury_vs_a_priority_race',
+        label: 'Adversarial: Knee Injury Exclusion vs A-Priority Running Race',
+        description: 'Approaching an A-priority running race with a mandatory knee injury restriction. The engine must never prescribe running despite the event priority.',
+        context: context({ free_weights: true, indoor_bike: true, treadmill: true }, ['Running'], ['Running']),
+        event: eventOn('adv-injury-running-race', 14, 'running_race', 'half_marathon', 'A'),
+        startDate: START_DATE,
+        weeks: 2,
+        tags: ['adversarial', 'safety', 'injury-dominance'],
+        readinessForWeek: () => stableReadiness({ readiness: 8, fatigue: 3, soreness: 2 }),
+    },
+    {
+        id: 'adversarial_cross_sport_football_strength',
+        label: 'Adversarial: Multi-Sport Lower-Body Collision with Guardrails',
+        description: 'Multi-sport training with avoid_heavy_lower_body guardrail enabled to prevent dangerous lower-body tissue failure.',
+        context: {
+            ...context({ free_weights: true, indoor_bike: true }, ['Field', 'Strength'], []),
+            trainingSettings: {
+                ...trainingSettings({ free_weights: true, indoor_bike: true }),
+                guardrails: {
+                    avoid_high_impact: false,
+                    avoid_heavy_lower_body: true,
+                    avoid_overhead_pressing: false,
+                    avoid_heavy_spinal_loading: false,
+                },
+            },
+        },
+        startDate: START_DATE,
+        weeks: 2,
+        tags: ['adversarial', 'safety', 'cross-sport-guardrails'],
+        readinessForWeek: () => stableReadiness({ readiness: 7, fatigue: 4, soreness: 4 }),
+    },
 ];

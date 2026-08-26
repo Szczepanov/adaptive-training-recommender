@@ -53,6 +53,25 @@ function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemp
     return options[hash % options.length];
 }
 
+export function getCanonicalRestTemplate(): SessionTemplate {
+    return ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
+        ?? TEMPLATES.find(template => template.category === 'Rest')
+        ?? {
+            id: 'rest_01',
+            category: 'Rest',
+            modality: 'None',
+            durationMin: 0,
+            durationMax: 0,
+            title: 'Total Rest',
+            description: 'Focus on sleep, hydration, and completely shutting off physical stress.',
+            requiredEquipment: [],
+            environment: 'either',
+            safetyTags: [],
+            systemicCost: 0.0,
+            objectiveTransferable: true,
+        };
+}
+
 function clamp(value: number, min: number, max: number): number {
     return Math.max(min, Math.min(max, value));
 }
@@ -389,7 +408,7 @@ export function evaluateTraining(
         return true;
     });
 
-    let selectedTemplate = availableTemplates.find(t => t.category === 'Rest') || TEMPLATES[1];
+    let selectedTemplate = availableTemplates.find(t => t.category === 'Rest') || getCanonicalRestTemplate();
     let rationale = '';
     let modalityNote: string | null = null;
 
@@ -421,7 +440,7 @@ export function evaluateTraining(
         const preferenceResult = applyModalityPreference(modifyOptions, modifyOptions, subjective.preferredModalityToday);
         modalityNote = preferenceResult.note;
         const rankedModifyOptions = rankByModalityPreference(preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities);
-        selectedTemplate = rankedModifyOptions.length > 0 ? pickTemplate(rankedModifyOptions, date)! : TEMPLATES[0];
+        selectedTemplate = rankedModifyOptions.length > 0 ? pickTemplate(rankedModifyOptions, date)! : (availableTemplates.find(t => t.category === 'Rest') ?? getCanonicalRestTemplate());
         rationale = "You're showing moderate soreness or slight downward trends in Garmin baselines. We're capping today's systemic/autonomic load rather than ruling out a whole modality.";
         if (selectedTemplate.category === 'Upper-body Strength') rationale += " Upper-body strength is included: it's a low-systemic-load, muscle-local stimulus, so softer HRV/RHR readings are a better reason to skip legs or intervals than to skip push/pull work.";
     } else {
@@ -441,7 +460,7 @@ export function evaluateTraining(
     if (postRecoverBufferApplied) rationale += " Yesterday was a mandated recovery day, so easing back in today (rather than going straight to a hard session) even though this morning's numbers look fully green.";
     if (objective.yesterday_training && objective.yesterday_training.duration_min && mode === 'modify') rationale += ` Giving your body a break after yesterday's ${objective.yesterday_training.type} session.`;
     if (!selectedTemplate) {
-        selectedTemplate = TEMPLATES[0];
+        selectedTemplate = getCanonicalRestTemplate();
         rationale += ' (Defaulted to Rest/Mobility due to severe time/equipment constraints).';
     }
     return { template: selectedTemplate, rationale, mode, envelopes, telemetry };
@@ -505,9 +524,7 @@ function adjudicatedExternalRecommendation(
     const verdict = adjudicateExternalSession(session, readiness, context, envelopeState, intent.plannedDose, date, availability);
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale';
 
-    const restTemplate = ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
-        ?? TEMPLATES.find(template => template.category === 'Rest')
-        ?? TEMPLATES[0];
+    const restTemplate = getCanonicalRestTemplate();
 
     return {
         template: actionable ? toSyntheticTemplate(session, planId, revision) : restTemplate,
@@ -684,9 +701,7 @@ export async function evaluateTrainingWithIntent(
         : {};
     if (!pick) {
         const safeRecovery = candidates.find(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
-            ?? ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
-            ?? TEMPLATES.find(template => template.category === 'Rest')
-            ?? TEMPLATES[0];
+            ?? getCanonicalRestTemplate();
         return {
             template: safeRecovery,
             rationale: `${externalFallbackPrefix}${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`,
