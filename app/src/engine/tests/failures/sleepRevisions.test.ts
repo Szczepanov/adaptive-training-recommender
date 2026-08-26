@@ -91,7 +91,12 @@ describe('Failure Mode 1: Sleep Arriving Late or Being Revised', () => {
             userId: 'u1',
             date: '2026-08-26',
             schemaVersion: 3,
-            source: { garminSyncedAt: '2026-08-26T08:15:00Z', sourceSchemaVersion: 3, timezone: 'Europe/Warsaw' },
+            source: {
+                garminSyncedAt: '2026-08-26T08:15:00Z',
+                sourceSchemaVersion: 3,
+                timezone: 'Europe/Warsaw',
+                metricDates: { steps: '2026-08-25' },
+            },
             raw: {
                 hrvOvernightAvg: 62,
                 restingHr: 49,
