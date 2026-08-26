@@ -1,7 +1,9 @@
 import type { CompetitionOutcome } from '../observations/models';
 import type { ProgressResult } from '../observations/progress';
+import type { ClosedLoopFeedbackRecord } from '../feedback/feedbackModels';
 import type { OutcomeEvaluationSnapshot, OutcomeMetricBinding } from './evaluationSpec';
 import type { BlockProcessEvidence } from './blockProcessEvidence';
+import { deriveFeedbackLoopEvidence, type FeedbackLoopEvidence } from './feedbackLoopEvidence';
 import type { PolicySegment } from './policySegments';
 
 export const BLOCK_VERDICT_POLICY_VERSION = 'block-adequacy-v1' as const;
@@ -23,6 +25,11 @@ export interface BlockOutcomeReport {
     metricProgress: readonly ProgressResult[];
     ecologicalOutcomes: readonly CompetitionOutcome[];
     process: BlockProcessEvidence;
+    /**
+     * SV4 evidence sidecar: closed-loop athlete-decision/regret/utility telemetry summarized
+     * over the same window. Purely additive -- it never participates in `verdict`.
+     */
+    feedbackLoopEvidence: FeedbackLoopEvidence;
     verdict: BlockVerdict;
     reasons: readonly string[];
     policySegments: readonly PolicySegment[];
@@ -32,6 +39,7 @@ export interface BlockOutcomeReport {
         sessionIds: readonly string[];
         recommendationIds: readonly string[];
         ecologicalOutcomeIds: readonly string[];
+        feedbackRecordIds: readonly string[];
     };
 }
 
@@ -46,6 +54,9 @@ export interface BlockOutcomeInput {
     ecologicalOutcomes: readonly CompetitionOutcome[];
     process: BlockProcessEvidence;
     policySegments: readonly PolicySegment[];
+    /** Optional: omitted or empty when no closed-loop feedback records exist yet for this
+     * window (no reader has been wired to a persistence store as of SV4). */
+    feedbackRecords?: readonly ClosedLoopFeedbackRecord[];
 }
 
 function pct(numerator: number, denominator: number): number {
@@ -167,6 +178,7 @@ export function deriveBlockOutcome(input: BlockOutcomeInput): BlockOutcomeReport
     }
 
     const ecologicalOutcomes = sortedEcologicalOutcomes(input.ecologicalOutcomes);
+    const feedbackLoopEvidence = deriveFeedbackLoopEvidence(input.feedbackRecords ?? []);
     return {
         evaluationRef: {
             id: evaluation.revision.id,
@@ -177,6 +189,7 @@ export function deriveBlockOutcome(input: BlockOutcomeInput): BlockOutcomeReport
         metricProgress,
         ecologicalOutcomes,
         process,
+        feedbackLoopEvidence,
         verdict,
         reasons,
         policySegments: [...input.policySegments].sort((a, b) => compareCodeUnits(a.startDate, b.startDate)),
@@ -186,6 +199,7 @@ export function deriveBlockOutcome(input: BlockOutcomeInput): BlockOutcomeReport
             sessionIds: uniqueSorted(process.sourceIds.sessionIds),
             recommendationIds: uniqueSorted(process.sourceIds.recommendationIds),
             ecologicalOutcomeIds: uniqueSorted(ecologicalOutcomes.map(item => item.id)),
+            feedbackRecordIds: feedbackLoopEvidence.sourceIds.feedbackRecordIds,
         },
     };
 }

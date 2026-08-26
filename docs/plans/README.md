@@ -122,9 +122,10 @@ all-`Ready` table became unusable.
 | UX | [Mobile UX/UI redesign](./mobile_ux_implementation_plan.md) | **Implemented** | none | none | mobile-first daily decision flow, single-page rapid check-in, state-first Home layout, unblocked recommendation, 44px+ touch targets, and mobile layout tokens |
 | OV | [Performance outcome validation & goal-progress loop](./performance-outcome-validation.md) | **In progress** | OV7 operational evidence; OV4.4/OV6.2 only when their triggers are met | OV7 follows the event/block timeline; OV4.4 needs close-spaced repeats; OV6.2 needs repeated report use; OV8 needs multiple prospective blocks | sole implementation/status owner of repeated testing/progress; engineering through OV6.1 is merged (#154/#155/#163/#164/#169), with production selection authority still explicitly excluded |
 | HA | [Health anomaly and possible-illness alerting](./health-anomaly-and-illness-risk-alerting.md) | **In progress** | HA7 evidence & prospective accumulation | HA6.4 needs enough labelled personal history; HA7 needs real replay/prospective evidence; HA8/HA9 remain release-gated | explainable physiological-anomaly evidence with structured confounders; HA0–HA5 on `main` (HA5 via #171), HA6.1–HA6.3 prospective labels implemented in PR #174 |
+| SV | [Scientific validation & closed feedback loop](./scientific-validation-and-feedback-loop.md) | **In progress** | SV6 prospective calibration synthesis | SV6 needs multi-block real athlete history | evaluates signal marginal information value, window stability, collinearity, closed-loop telemetry, and counterfactual regret |
 
-Rows G, S, M, UX, OV, and HA are **not phases**. They are capability/surface plans whose work items are
-prefixed `G*`, `S*`, `M*`, `UX*`, `OV*`, `HA*` precisely so they cannot be mistaken for the `Phase 0`–`9`
+Rows G, S, M, UX, OV, HA, and SV are **not phases**. They are capability/surface plans whose work items are
+prefixed `G*`, `S*`, `M*`, `UX*`, `OV*`, `HA*`, `SV*` precisely so they cannot be mistaken for the `Phase 0`–`9`
 sequence; the `#` column carries that prefix rather than a phase number. For capability plans, an item
 with satisfied dependencies but an unmet usage trigger is **not** listed as startable. A transferred
 historical item (former M7) is likewise not listed under its old plan; only the canonical owner tracks it.

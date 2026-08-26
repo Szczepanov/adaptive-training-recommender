@@ -146,7 +146,8 @@ export function resolveJudgeConfig(argv = process.argv.slice(2), env = process.e
     openai: 'gpt-4o',
   };
 
-  const model = cliModel || env.JUDGE_MODEL || defaultModels[provider];
+  // When --quick is set, prioritize quick model over JUDGE_MODEL env var
+  const model = cliModel || (isQuick ? defaultModels[provider] : env.JUDGE_MODEL) || defaultModels[provider];
 
   // Thinking mode
   let thinkingEnabled = true;

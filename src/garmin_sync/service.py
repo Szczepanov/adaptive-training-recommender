@@ -259,14 +259,15 @@ class GarminSyncService:
         snapshot is assembled from a date's canonical metrics, used by sync_daily,
         backfill, and rebuild so they can never drift from each other."""
         target_date = parse_date_string(context.target_iso)
-        w7_start = get_date_string(n_days_ago(target_date, 7))
-        w28_start = get_date_string(n_days_ago(target_date, 28))
-
-        sorted_history_dates = [
-            d for d in sorted(context.raw_memory_store.keys()) if d < context.target_iso
-        ]
-        window_7d = [context.raw_memory_store[d] for d in sorted_history_dates if d >= w7_start]
-        window_28d = [context.raw_memory_store[d] for d in sorted_history_dates if d >= w28_start]
+        window_28d: list[dict[str, Any]] = []
+        window_7d: list[dict[str, Any]] = []
+        for offset in range(28, 0, -1):
+            d_iso = get_date_string(n_days_ago(target_date, offset))
+            raw_entry = context.raw_memory_store.get(d_iso)
+            if raw_entry is not None:
+                window_28d.append(raw_entry)
+                if offset <= 7:
+                    window_7d.append(raw_entry)
 
         dummy_current = {
             "sleepScore": context.canonical.sleep_score,
@@ -663,11 +664,30 @@ class GarminSyncService:
 
         self._seed_prehistory(raw_memory_store, start_d)
 
+        existing_snapshots: dict[str, dict[str, Any]] = {}
+        bulk_snapshot_lookup_succeeded = False
+        if not force:
+            get_historical = getattr(self.repository, "get_historical_snapshots", None)
+            if callable(get_historical):
+                try:
+                    start_target_iso = get_date_string(target_dates[0])
+                    end_target_iso = get_date_string(target_dates[-1])
+                    fetched_snapshots = get_historical(start_target_iso, end_target_iso)
+                    if isinstance(fetched_snapshots, dict):
+                        existing_snapshots = fetched_snapshots
+                        bulk_snapshot_lookup_succeeded = True
+                except Exception as exc:
+                    logger.debug("Failed to bulk fetch historical snapshots for backfill: %s", exc)
+
         for target_date in target_dates:
             target_iso = get_date_string(target_date)
 
             if not force:
-                existing = self.repository.get_snapshot(target_iso)
+                existing = (
+                    existing_snapshots.get(target_iso)
+                    if bulk_snapshot_lookup_succeeded
+                    else self.repository.get_snapshot(target_iso)
+                )
                 if existing and existing.get("raw"):
                     raw_memory_store[target_iso] = existing["raw"]
                     logger.info(

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { LoggedExercise, LoggedSet, StrengthSession } from '../engine/models';
 import { strengthSessionService } from '../services/strengthSessionService';
 import { recommendationService } from '../services/recommendationService';
@@ -336,7 +336,11 @@ export function useStrengthSessionRunner(userId: string | null | undefined): Use
         return acknowledgedSetKeys.has(setSyncKey(exercise, set)) ? 'synced' as const : 'pending' as const;
     }, [acknowledgedSetKeys, syncUnavailable]);
 
-    const navigationSteps = resolveStepNavigation(session?.exercises ?? [], plannedExercises);
+    // ⚡ Bolt: Memoize navigation steps to prevent recalculation on every draft keystroke
+    const navigationSteps = useMemo(
+        () => resolveStepNavigation(session?.exercises ?? [], plannedExercises),
+        [session?.exercises, plannedExercises],
+    );
 
     return {
         loading, saving, error, session, plannedExercises, navigationSteps,

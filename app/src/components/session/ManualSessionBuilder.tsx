@@ -106,6 +106,12 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
         blocks,
     }), [blocks, definitionId, durationMin, modality, summary, title]);
 
+    // ⚡ Bolt: Precompute static exercise options to prevent full 176-item catalog array mapping on every keystroke
+    const exerciseOptions = useMemo(
+        () => EXERCISES.map(exercise => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>),
+        [],
+    );
+
     const updateBlock = (blockIndex: number, patch: Partial<SessionBlock>) => setBlocks(current =>
         current.map((block, index) => index === blockIndex ? { ...block, ...patch } : block));
 
@@ -342,7 +348,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                                 updateStep(blockIndex, stepIndex, exercise
                                                     ? { title: exercise.name, exerciseRef: { kind: 'catalog', exerciseId: exercise.id }, resolutionNote: undefined }
                                                     : { exerciseRef: { kind: 'unresolved_free_text', name: step.title ?? 'Custom movement' }, resolutionNote: 'Custom movement: executable and loggable, but it has no catalog-derived safety, cost, stimulus, PR or 1RM semantics.' });
-                                            }}><option value="__custom__">Custom / free text</option>{EXERCISES.map(exercise => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select></label>
+                                            }}><option value="__custom__">Custom / free text</option>{exerciseOptions}</select></label>
                                             <label>Dose<select value={dose?.kind ?? 'repetition'} onChange={event => changeDose(blockIndex, stepIndex, event.target.value as SessionDose['kind'])}><option value="repetition">Repetitions</option><option value="duration">Timed hold</option><option value="distance">Distance</option><option value="checkoff">Check-off</option></select></label>
                                             {dose?.kind === 'repetition' && <><label>Sets<input type="number" min={1} value={dose.sets} onChange={event => updateStep(blockIndex, stepIndex, { dose: { ...dose, sets: Math.max(1, Number(event.target.value) || 1) } })} /></label><label>Reps<input type="number" min={1} value={typeof dose.reps === 'number' ? dose.reps : dose.reps.min} onChange={event => updateStep(blockIndex, stepIndex, { dose: { ...dose, reps: Math.max(1, Number(event.target.value) || 1) } })} /></label></>}
                                             {dose?.kind === 'duration' && <><label>Sets<input type="number" min={1} value={dose.sets ?? 1} onChange={event => updateStep(blockIndex, stepIndex, { dose: { ...dose, sets: Math.max(1, Number(event.target.value) || 1) } })} /></label><label>Seconds<input type="number" min={1} value={typeof dose.seconds === 'number' ? dose.seconds : dose.seconds.min} onChange={event => updateStep(blockIndex, stepIndex, { dose: { ...dose, seconds: Math.max(1, Number(event.target.value) || 1) } })} /></label></>}
@@ -374,7 +380,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
                                                         <select value={altExercise} onChange={event => {
                                                             const exercise = EXERCISES_BY_ID.get(event.target.value);
                                                             updateAlternative(blockIndex, stepIndex, alt.id, exercise?.id, exercise?.name ?? alt.title);
-                                                        }} aria-label="Alternative movement"><option value="__custom__">Custom / free text</option>{EXERCISES.map(exercise => <option key={exercise.id} value={exercise.id}>{exercise.name}</option>)}</select>
+                                                        }} aria-label="Alternative movement"><option value="__custom__">Custom / free text</option>{exerciseOptions}</select>
                                                         <button type="button" onClick={() => removeAlternative(blockIndex, stepIndex, alt.id)} aria-label="Remove alternative">Remove</button>
                                                     </div>;
                                                 })}

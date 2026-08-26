@@ -147,7 +147,14 @@ export function packWeeklyDose(
 
     for (const requirement of requirements) {
         const adaptationCandidates = coverage.roles.filter(role => role.adaptations.includes(requirement.adaptation));
-        const candidates = adaptationCandidates.filter(role => permittedWorkoutIds(role, requirement).length > 0);
+        const permittedByRole = new Map<CoverageRoleDescriptor, string[]>();
+        for (const role of adaptationCandidates) {
+            const permitted = permittedWorkoutIds(role, requirement);
+            if (permitted.length > 0) {
+                permittedByRole.set(role, permitted);
+            }
+        }
+        const candidates = adaptationCandidates.filter(role => permittedByRole.has(role));
         if (candidates.length === 0) {
             const code = adaptationCandidates.length > 0 ? 'goal_constraint_conflict' : 'no_exact_eligible_role';
             shortfalls.push({ code, adaptation: requirement.adaptation, message: code === 'goal_constraint_conflict'
@@ -162,13 +169,21 @@ export function packWeeklyDose(
         const allowedSessions = sessionLimit(requirement.priority);
 
         while (delivered < requiredDose && packed.length < allowedSessions) {
+            const unusedSlots = slots.filter(slot => !slot.used);
+            const penaltyByDate = new Map<string, number>();
+            for (const slot of unusedSlots) {
+                if (!penaltyByDate.has(slot.date)) {
+                    penaltyByDate.set(slot.date, placementTieBreakerPenalty(slot.date, packed, capacity.targetSessions));
+                }
+            }
+
             const assignment = candidates
-                .flatMap(role => slots.filter(slot => !slot.used && slot.availableMinutes >= role.durationMinutes)
+                .flatMap(role => unusedSlots.filter(slot => slot.availableMinutes >= role.durationMinutes)
                     .map(slot => ({ role, slot })))
                 .sort((left, right) =>
                     right.role.durationMinutes - left.role.durationMinutes
-                    || placementTieBreakerPenalty(left.slot.date, packed, capacity.targetSessions)
-                        - placementTieBreakerPenalty(right.slot.date, packed, capacity.targetSessions)
+                    || (penaltyByDate.get(left.slot.date) ?? 0)
+                        - (penaltyByDate.get(right.slot.date) ?? 0)
                     || left.role.id.localeCompare(right.role.id)
                     || left.slot.date.localeCompare(right.slot.date),
                 )[0];
@@ -179,7 +194,7 @@ export function packWeeklyDose(
                 coverageSetId: coverage.id,
                 coverageRoleId: assignment.role.id,
                 date: assignment.slot.date,
-                exactWorkoutIds: permittedWorkoutIds(assignment.role, requirement),
+                exactWorkoutIds: permittedByRole.get(assignment.role) ?? permittedWorkoutIds(assignment.role, requirement),
                 adaptations: assignment.role.adaptations,
                 priority: requirement.priority,
                 descriptor: assignment.role,
