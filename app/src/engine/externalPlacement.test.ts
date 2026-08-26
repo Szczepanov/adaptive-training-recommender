@@ -56,7 +56,7 @@ describe('resolvePlacement', () => {
         expect(placed[0].status).toBe('moved');
     });
 
-    it('keeps multiple sessions on the same preferred day (double days)', () => {
+    it('keeps multiple sessions on the same preferred day (double and triple days)', () => {
         const easyAerobic = session('easy-aerobic', {
             title: 'Easy Aerobic Volume',
             placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
@@ -65,9 +65,14 @@ describe('resolvePlacement', () => {
             title: 'Upper-Body Strength Maintenance',
             placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
         });
-        const placed = resolvePlacement(plan([easyAerobic, strengthMaint]), null);
+        const mobility = session('evening-mobility', {
+            title: 'Evening Hip & Spine Mobility',
+            placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+            gating: { modality: 'mobility', intensity: 'recovery', durationMin: 15, durationMax: 25, environment: 'indoor', equipment: [] },
+        });
+        const placed = resolvePlacement(plan([easyAerobic, strengthMaint, mobility]), null);
 
-        expect(placed.length).toBe(2);
+        expect(placed.length).toBe(3);
         expect(placed.every(item => item.date === '2026-08-20')).toBe(true);
         expect(placed.every(item => item.moved === false)).toBe(true);
         expect(placed.every(item => item.status === 'planned')).toBe(true);
