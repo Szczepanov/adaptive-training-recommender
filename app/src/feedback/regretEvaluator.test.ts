@@ -1,0 +1,100 @@
+import { describe, expect, it } from 'vitest';
+import { evaluateCounterfactualRegret } from './regretEvaluator';
+import type { RecoveryTrajectory } from './feedbackModels';
+
+describe('regretEvaluator', () => {
+    it('returns inconclusive when recovery trajectory is null', () => {
+        const result = evaluateCounterfactualRegret({
+            date: '2026-08-26',
+            action: 'accepted',
+            prescribedMode: 'proceed',
+            athleteDeclaredRegret: null,
+            recoveryTrajectory: null,
+        });
+        expect(result.regretClass).toBe('inconclusive');
+    });
+
+    it('classifies overreaching crash when training hard leads to 48h suppression', () => {
+        const trajectory: RecoveryTrajectory = {
+            date: '2026-08-26',
+            hours24: { hrvDeltaPct: -18, rhrDeltaBpm: 4, sorenessScore: 3, readinessScore: 40 },
+            hours48: { hrvDeltaPct: -22, rhrDeltaBpm: 5, sorenessScore: 4, readinessScore: 35 },
+            hours72: { hrvDeltaPct: -5, rhrDeltaBpm: 1, sorenessScore: 2, readinessScore: 65 },
+            autonomicReboundState: 'suppressed',
+        };
+
+        const result = evaluateCounterfactualRegret({
+            date: '2026-08-26',
+            action: 'rejected_train_harder',
+            prescribedMode: 'scale',
+            athleteDeclaredRegret: 'should_have_rested',
+            recoveryTrajectory: trajectory,
+        });
+
+        expect(result.regretClass).toBe('overreaching_crash');
+        expect(result.confidence).toBe('high');
+        expect(result.counterfactualAlternative).toContain('Scaling intensity');
+    });
+
+    it('classifies injury exacerbation when pushing through soreness worsens joint/tissue pain', () => {
+        const trajectory: RecoveryTrajectory = {
+            date: '2026-08-26',
+            hours24: { hrvDeltaPct: 0, rhrDeltaBpm: 0, sorenessScore: 4, readinessScore: 50 },
+            hours48: { hrvDeltaPct: 0, rhrDeltaBpm: 0, sorenessScore: 5, readinessScore: 45 },
+            hours72: { hrvDeltaPct: 0, rhrDeltaBpm: 0, sorenessScore: 3, readinessScore: 60 },
+            autonomicReboundState: 'expected',
+        };
+
+        const result = evaluateCounterfactualRegret({
+            date: '2026-08-26',
+            action: 'accepted',
+            prescribedMode: 'proceed',
+            athleteDeclaredRegret: null,
+            recoveryTrajectory: trajectory,
+            initialSoreness: 3,
+        });
+
+        expect(result.regretClass).toBe('injury_exacerbation');
+        expect(result.confidence).toBe('high');
+    });
+
+    it('classifies unnecessary forfeiture when skipping a workout despite completely fresh state', () => {
+        const trajectory: RecoveryTrajectory = {
+            date: '2026-08-26',
+            hours24: { hrvDeltaPct: 5, rhrDeltaBpm: -1, sorenessScore: 1, readinessScore: 90 },
+            hours48: { hrvDeltaPct: 4, rhrDeltaBpm: -1, sorenessScore: 1, readinessScore: 90 },
+            hours72: { hrvDeltaPct: 3, rhrDeltaBpm: 0, sorenessScore: 1, readinessScore: 90 },
+            autonomicReboundState: 'expected',
+        };
+
+        const result = evaluateCounterfactualRegret({
+            date: '2026-08-26',
+            action: 'rejected_rest',
+            prescribedMode: 'proceed',
+            athleteDeclaredRegret: 'should_have_trained_harder',
+            recoveryTrajectory: trajectory,
+        });
+
+        expect(result.regretClass).toBe('unnecessary_forfeiture');
+    });
+
+    it('classifies optimal choice when recovery proceeds normally', () => {
+        const trajectory: RecoveryTrajectory = {
+            date: '2026-08-26',
+            hours24: { hrvDeltaPct: -5, rhrDeltaBpm: 1, sorenessScore: 2, readinessScore: 75 },
+            hours48: { hrvDeltaPct: 2, rhrDeltaBpm: 0, sorenessScore: 1, readinessScore: 85 },
+            hours72: { hrvDeltaPct: 4, rhrDeltaBpm: -1, sorenessScore: 1, readinessScore: 90 },
+            autonomicReboundState: 'expected',
+        };
+
+        const result = evaluateCounterfactualRegret({
+            date: '2026-08-26',
+            action: 'accepted',
+            prescribedMode: 'proceed',
+            athleteDeclaredRegret: 'none',
+            recoveryTrajectory: trajectory,
+        });
+
+        expect(result.regretClass).toBe('optimal_choice');
+    });
+});
