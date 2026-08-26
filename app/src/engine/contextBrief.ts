@@ -614,22 +614,22 @@ function renderGoalsAndIntent(goals: readonly UserGoal[] | undefined, profile: T
 export function buildContextBrief(input: ContextBriefInput): string {
     const { asOfDate, windowDays } = input;
     const startDate = addDaysToLocalDateString(asOfDate, -(windowDays - 1));
-    const inWindow = <T extends { date: string }>(items: readonly T[]): T[] =>
-        items.filter(item => withinWindow(item.date, startDate, asOfDate))
-            .sort((a, b) => a.date.localeCompare(b.date));
+    const sortByDateAsc = <T extends { date: string }>(items: readonly T[]): T[] =>
+        [...items].sort((a, b) => a.date.localeCompare(b.date));
+    const filterRange = <T extends { date: string }>(sortedItems: readonly T[], start: string, end: string): T[] =>
+        sortedItems.filter(item => item.date >= start && item.date <= end);
 
     // Not clamped up to windowDays: a baseline equal to the window is meaningless, and
     // renderSubjectiveBaseline says so rather than printing all-flat deltas.
     const baselineDays = input.subjectiveBaselineDays ?? SUBJECTIVE_BASELINE_DAYS;
     const baselineStart = addDaysToLocalDateString(asOfDate, -(baselineDays - 1));
 
-    const snapshots = inWindow(input.snapshots);
-    const checkins = inWindow(input.checkins);
-    const baselineCheckins = input.checkins
-        .filter(checkin => withinWindow(checkin.date, baselineStart, asOfDate))
-        .sort((a, b) => a.date.localeCompare(b.date));
-    const activities = inWindow(input.activities);
-    const recommendations = inWindow(input.recommendations);
+    const sortedCheckins = sortByDateAsc(input.checkins);
+    const snapshots = filterRange(sortByDateAsc(input.snapshots), startDate, asOfDate);
+    const checkins = filterRange(sortedCheckins, startDate, asOfDate);
+    const baselineCheckins = filterRange(sortedCheckins, baselineStart, asOfDate);
+    const activities = filterRange(sortByDateAsc(input.activities), startDate, asOfDate);
+    const recommendations = filterRange(sortByDateAsc(input.recommendations), startDate, asOfDate);
 
     // A short retrospective window can legitimately have zero recorded sessions or
     // check-ins in range; without this note that reads as "this athlete does not train"

@@ -5,6 +5,7 @@ import type {
     WorkoutCostProfile,
 } from './models';
 import type { CompletedExposure } from './microcycleHistory';
+import { getDayDiff } from '../utils/localDate';
 
 export const DECAY_HALF_LIVES_HOURS: Record<keyof DimensionalFatigue, number> = {
     systemic: 36,
@@ -14,6 +15,9 @@ export const DECAY_HALF_LIVES_HOURS: Record<keyof DimensionalFatigue, number> = 
     impactTissue: 48,
     neuromuscular: 36,
 };
+
+const RUN_OR_FIELD_SPORT_REGEX = /run|soccer|football|trail/i;
+const WALK_OR_HIKE_REGEX = /walk|hike/i;
 
 /** Production remains on `max`. The additive option is accepted only by the simulation
  * harness so a fatigue-policy experiment cannot reach a live recommendation by accident. */
@@ -70,14 +74,14 @@ export function decayFatigue(
     elapsedHours: number
 ): DimensionalFatigue {
     if (elapsedHours <= 0) return { ...fatigue };
-    const decayed: DimensionalFatigue = { ...fatigue };
-
-    (Object.keys(DECAY_HALF_LIVES_HOURS) as (keyof DimensionalFatigue)[]).forEach(dim => {
-        const halfLife = DECAY_HALF_LIVES_HOURS[dim];
-        decayed[dim] = Math.max(0, fatigue[dim] * Math.pow(0.5, elapsedHours / halfLife));
-    });
-
-    return decayed;
+    return {
+        systemic: Math.max(0, fatigue.systemic * Math.pow(0.5, elapsedHours / 36)),
+        cardiovascular: Math.max(0, fatigue.cardiovascular * Math.pow(0.5, elapsedHours / 24)),
+        lowerBody: Math.max(0, fatigue.lowerBody * Math.pow(0.5, elapsedHours / 48)),
+        upperBody: Math.max(0, fatigue.upperBody * Math.pow(0.5, elapsedHours / 36)),
+        impactTissue: Math.max(0, fatigue.impactTissue * Math.pow(0.5, elapsedHours / 48)),
+        neuromuscular: Math.max(0, fatigue.neuromuscular * Math.pow(0.5, elapsedHours / 36)),
+    };
 }
 
 /**
@@ -86,14 +90,14 @@ export function decayFatigue(
  */
 export function estimateActivitySteps(training: { type?: string; duration_min?: number } | null | undefined): number {
     if (!training || !training.duration_min || training.duration_min <= 0) return 0;
-    const type = (training.type || '').toLowerCase();
+    const type = training.type || '';
 
     // Running and high-cadence field sports: ~155 steps/min
-    if (type.includes('run') || type.includes('soccer') || type.includes('football') || type.includes('trail')) {
+    if (RUN_OR_FIELD_SPORT_REGEX.test(type)) {
         return Math.round(training.duration_min * 155);
     }
     // Dedicated walking or hiking activities: ~110 steps/min
-    if (type.includes('walk') || type.includes('hike')) {
+    if (WALK_OR_HIKE_REGEX.test(type)) {
         return Math.round(training.duration_min * 110);
     }
     // Other sports (cycling, swimming, gym strength) do not produce primary ambulatory impact steps
@@ -166,9 +170,7 @@ export function applyCompletedSessionLoad(
     fusionPolicy: FatigueFusionPolicy = 'max',
 ): FatigueState {
     // 1. Calculate hours between last update and completed session date
-    const d1 = new Date(currentState.lastUpdatedDate + 'T00:00:00');
-    const d2 = new Date(completedDateStr + 'T00:00:00');
-    const elapsedHours = Math.max(0, (d2.getTime() - d1.getTime()) / (1000 * 60 * 60));
+    const elapsedHours = Math.max(0, getDayDiff(completedDateStr, currentState.lastUpdatedDate) * 24);
 
     // 2. Decay previous external load (both saturated and raw latent)
     const decayedExternal = decayFatigue(currentState.externalLoadFatigue, elapsedHours);

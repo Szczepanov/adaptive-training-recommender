@@ -1,4 +1,5 @@
 import statistics
+from collections.abc import Sequence
 from typing import Any
 
 from .models import BASELINE_COMPUTATION_VERSION, DerivedDeltas, DerivedMetrics
@@ -8,7 +9,7 @@ HARD_SESSION_MIN_TRAINING_EFFECT = 3.0
 HARD_SESSION_MIN_AVERAGE_HR = 145
 
 
-def calculate_average(values: list[float | int | None], min_required: int) -> float | None:
+def calculate_average(values: Sequence[float | int | None], min_required: int) -> float | None:
     """Calculate mean of non-None values if count meets min_required threshold."""
     valid_values = [v for v in values if v is not None]
     if len(valid_values) >= min_required:
@@ -23,7 +24,7 @@ def calculate_delta(current: float | int | None, baseline: float | None) -> floa
     return None
 
 
-def calculate_stdev(values: list[float | int | None], min_required: int) -> float | None:
+def calculate_stdev(values: Sequence[float | int | None], min_required: int) -> float | None:
     """Population stdev of non-None values if count meets min_required threshold.
 
     Uses the same min_required as the corresponding baseline average so a stdev is
@@ -35,7 +36,7 @@ def calculate_stdev(values: list[float | int | None], min_required: int) -> floa
     return None
 
 
-def calculate_median(values: list[float | int | None], min_required: int) -> float | None:
+def calculate_median(values: Sequence[float | int | None], min_required: int) -> float | None:
     """Median of non-None values if count meets min_required threshold.
 
     Median is an outlier-resistant location estimator. Respiration uses it for the v3
@@ -49,7 +50,7 @@ def calculate_median(values: list[float | int | None], min_required: int) -> flo
     return None
 
 
-def calculate_mad(values: list[float | int | None], min_required: int) -> float | None:
+def calculate_mad(values: Sequence[float | int | None], min_required: int) -> float | None:
     """Return the median absolute deviation scaled by the normal-consistency factor 1.4826.
 
     Under an approximately Gaussian distribution this scaled MAD has a magnitude comparable
@@ -97,6 +98,44 @@ def classify_activity_intensity(
     return is_hard, intensity_tag
 
 
+def _extract_window_metrics(raws: list[dict[str, Any]]) -> dict[str, list[float | int]]:
+    """Extract non-None metric series from a window in a single pass."""
+    metrics: dict[str, list[float | int]] = {
+        "sleepScore": [],
+        "restingHr": [],
+        "hrvOvernightAvg": [],
+        "respirationAvg": [],
+        "totalSteps": [],
+        "bodyBatteryWake": [],
+        "stressAvg": [],
+        "stressMax": [],
+        "trainingReadiness": [],
+    }
+    for d in raws:
+        if (v := d.get("sleepScore")) is not None:
+            metrics["sleepScore"].append(v)
+        if (v := d.get("restingHr")) is not None:
+            metrics["restingHr"].append(v)
+        if (v := d.get("hrvOvernightAvg")) is not None:
+            metrics["hrvOvernightAvg"].append(v)
+        if (v := d.get("respirationAvg")) is not None:
+            metrics["respirationAvg"].append(v)
+        if (v := d.get("totalSteps")) is not None:
+            metrics["totalSteps"].append(v)
+        if (v := d.get("bodyBatteryWake")) is not None:
+            metrics["bodyBatteryWake"].append(v)
+        if stress := d.get("stress"):
+            if isinstance(stress, dict):
+                if (v := stress.get("avg")) is not None:
+                    metrics["stressAvg"].append(v)
+                if (v := stress.get("max")) is not None:
+                    metrics["stressMax"].append(v)
+        if readiness := d.get("trainingReadiness"):
+            if isinstance(readiness, dict) and (v := readiness.get("score")) is not None:
+                metrics["trainingReadiness"].append(v)
+    return metrics
+
+
 def compute_derived_metrics(
     raw_current: dict[str, Any],
     window_7d_raws: list[dict[str, Any]],
@@ -108,83 +147,73 @@ def compute_derived_metrics(
     - 28-day baseline requires >= 14 valid points
     - Current day must be excluded from windows
     """
-    sleep_7d = calculate_average([d.get("sleepScore") for d in window_7d_raws], 4)
-    sleep_28d = calculate_average([d.get("sleepScore") for d in window_28d_raws], 14)
+    w7 = _extract_window_metrics(window_7d_raws)
+    w28 = _extract_window_metrics(window_28d_raws)
 
-    rhr_7d = calculate_average([d.get("restingHr") for d in window_7d_raws], 4)
-    rhr_28d = calculate_average([d.get("restingHr") for d in window_28d_raws], 14)
+    sleep_7d = calculate_average(w7["sleepScore"], 4)
+    sleep_28d = calculate_average(w28["sleepScore"], 14)
 
-    hrv_7d = calculate_average([d.get("hrvOvernightAvg") for d in window_7d_raws], 4)
-    hrv_28d = calculate_average([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
+    rhr_7d = calculate_average(w7["restingHr"], 4)
+    rhr_28d = calculate_average(w28["restingHr"], 14)
+
+    hrv_7d = calculate_average(w7["hrvOvernightAvg"], 4)
+    hrv_28d = calculate_average(w28["hrvOvernightAvg"], 14)
 
     # Respiration's v3 robust-baseline candidate uses median so a small number of elevated
     # nights do not redefine the trailing center. Production scoring remains default-off
     # pending replay/calibration; see ADR-0006 and ADR-0024.
-    resp_7d = calculate_median([d.get("respirationAvg") for d in window_7d_raws], 4)
-    resp_28d = calculate_median([d.get("respirationAvg") for d in window_28d_raws], 14)
+    resp_7d = calculate_median(w7["respirationAvg"], 4)
+    resp_28d = calculate_median(w28["respirationAvg"], 14)
 
-    steps_7d = calculate_average([d.get("totalSteps") for d in window_7d_raws], 4)
-    steps_28d = calculate_average([d.get("totalSteps") for d in window_28d_raws], 14)
+    steps_7d = calculate_average(w7["totalSteps"], 4)
+    steps_28d = calculate_average(w28["totalSteps"], 14)
 
     # 28-day trailing stdev per metric -- this person's own night-to-night noise floor,
     # consumed by the engine to normalize deltas instead of comparing against a single
     # fixed absolute threshold for everyone (see DerivedMetrics.hrv28dStdev docstring).
-    hrv_sd28 = calculate_stdev([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
-    rhr_sd28 = calculate_stdev([d.get("restingHr") for d in window_28d_raws], 14)
-    sleep_sd28 = calculate_stdev([d.get("sleepScore") for d in window_28d_raws], 14)
-    steps_sd28 = calculate_stdev([d.get("totalSteps") for d in window_28d_raws], 14)
+    hrv_sd28 = calculate_stdev(w28["hrvOvernightAvg"], 14)
+    rhr_sd28 = calculate_stdev(w28["restingHr"], 14)
+    sleep_sd28 = calculate_stdev(w28["sleepScore"], 14)
+    steps_sd28 = calculate_stdev(w28["totalSteps"], 14)
     # Respiration's candidate robust spread is persisted for comparison. Scaled MAD is
     # normal-consistent, not universally equivalent to stdev; see calculate_mad/ADR-0024.
-    resp_mad28 = calculate_mad([d.get("respirationAvg") for d in window_28d_raws], 14)
+    resp_mad28 = calculate_mad(w28["respirationAvg"], 14)
 
     # v4: candidate median/MAD summaries alongside the existing live estimators. These are
     # observation-only. ADR-0024 explicitly rejects treating them as a presumed successor
     # for every metric (notably HRV, steps and bounded sleep score).
-    sleep_7d_median = calculate_median([d.get("sleepScore") for d in window_7d_raws], 4)
-    sleep_28d_median = calculate_median([d.get("sleepScore") for d in window_28d_raws], 14)
-    rhr_7d_median = calculate_median([d.get("restingHr") for d in window_7d_raws], 4)
-    rhr_28d_median = calculate_median([d.get("restingHr") for d in window_28d_raws], 14)
-    hrv_7d_median = calculate_median([d.get("hrvOvernightAvg") for d in window_7d_raws], 4)
-    hrv_28d_median = calculate_median([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
-    steps_7d_median = calculate_median([d.get("totalSteps") for d in window_7d_raws], 4)
-    steps_28d_median = calculate_median([d.get("totalSteps") for d in window_28d_raws], 14)
+    sleep_7d_median = calculate_median(w7["sleepScore"], 4)
+    sleep_28d_median = calculate_median(w28["sleepScore"], 14)
+    rhr_7d_median = calculate_median(w7["restingHr"], 4)
+    rhr_28d_median = calculate_median(w28["restingHr"], 14)
+    hrv_7d_median = calculate_median(w7["hrvOvernightAvg"], 4)
+    hrv_28d_median = calculate_median(w28["hrvOvernightAvg"], 14)
+    steps_7d_median = calculate_median(w7["totalSteps"], 4)
+    steps_28d_median = calculate_median(w28["totalSteps"], 14)
 
-    sleep_mad28 = calculate_mad([d.get("sleepScore") for d in window_28d_raws], 14)
-    rhr_mad28 = calculate_mad([d.get("restingHr") for d in window_28d_raws], 14)
-    hrv_mad28 = calculate_mad([d.get("hrvOvernightAvg") for d in window_28d_raws], 14)
-    steps_mad28 = calculate_mad([d.get("totalSteps") for d in window_28d_raws], 14)
+    sleep_mad28 = calculate_mad(w28["sleepScore"], 14)
+    rhr_mad28 = calculate_mad(w28["restingHr"], 14)
+    hrv_mad28 = calculate_mad(w28["hrvOvernightAvg"], 14)
+    steps_mad28 = calculate_mad(w28["totalSteps"], 14)
 
     # v5: observation-only candidate baselines for provider composites/enrichment fields.
     # These overlap upstream physiology (for example HRV/sleep/stress) and must not simply
     # become additive strain terms; ADR-0024 requires correlation/double-counting analysis.
-    def _stress_avg(d: dict[str, Any]) -> float | int | None:
-        return (d.get("stress") or {}).get("avg")
+    bb_wake_7d_median = calculate_median(w7["bodyBatteryWake"], 4)
+    bb_wake_28d_median = calculate_median(w28["bodyBatteryWake"], 14)
+    bb_wake_mad28 = calculate_mad(w28["bodyBatteryWake"], 14)
 
-    def _stress_max(d: dict[str, Any]) -> float | int | None:
-        return (d.get("stress") or {}).get("max")
+    stress_avg_7d_median = calculate_median(w7["stressAvg"], 4)
+    stress_avg_28d_median = calculate_median(w28["stressAvg"], 14)
+    stress_avg_mad28 = calculate_mad(w28["stressAvg"], 14)
 
-    def _training_readiness_score(d: dict[str, Any]) -> float | int | None:
-        return (d.get("trainingReadiness") or {}).get("score")
+    stress_max_7d_median = calculate_median(w7["stressMax"], 4)
+    stress_max_28d_median = calculate_median(w28["stressMax"], 14)
+    stress_max_mad28 = calculate_mad(w28["stressMax"], 14)
 
-    bb_wake_7d_median = calculate_median([d.get("bodyBatteryWake") for d in window_7d_raws], 4)
-    bb_wake_28d_median = calculate_median([d.get("bodyBatteryWake") for d in window_28d_raws], 14)
-    bb_wake_mad28 = calculate_mad([d.get("bodyBatteryWake") for d in window_28d_raws], 14)
-
-    stress_avg_7d_median = calculate_median([_stress_avg(d) for d in window_7d_raws], 4)
-    stress_avg_28d_median = calculate_median([_stress_avg(d) for d in window_28d_raws], 14)
-    stress_avg_mad28 = calculate_mad([_stress_avg(d) for d in window_28d_raws], 14)
-
-    stress_max_7d_median = calculate_median([_stress_max(d) for d in window_7d_raws], 4)
-    stress_max_28d_median = calculate_median([_stress_max(d) for d in window_28d_raws], 14)
-    stress_max_mad28 = calculate_mad([_stress_max(d) for d in window_28d_raws], 14)
-
-    readiness_7d_median = calculate_median(
-        [_training_readiness_score(d) for d in window_7d_raws], 4
-    )
-    readiness_28d_median = calculate_median(
-        [_training_readiness_score(d) for d in window_28d_raws], 14
-    )
-    readiness_mad28 = calculate_mad([_training_readiness_score(d) for d in window_28d_raws], 14)
+    readiness_7d_median = calculate_median(w7["trainingReadiness"], 4)
+    readiness_28d_median = calculate_median(w28["trainingReadiness"], 14)
+    readiness_mad28 = calculate_mad(w28["trainingReadiness"], 14)
 
     current_stress = raw_current.get("stress") or {}
     current_readiness = raw_current.get("trainingReadiness") or {}

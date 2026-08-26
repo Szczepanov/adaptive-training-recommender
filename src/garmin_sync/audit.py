@@ -61,9 +61,21 @@ def run_audit(
             endpoint, start_iso, end_iso
         )
 
+    get_historical = getattr(repository, "get_historical_snapshots", None)
+    snapshots_by_date: dict[str, dict] | None = None
+    if callable(get_historical):
+        try:
+            snapshots_by_date = repository.get_historical_snapshots(start_iso, end_iso)
+        except Exception:
+            snapshots_by_date = None
+
     for target_date in expected_dates:
         date_iso = get_date_string(target_date)
-        snapshot = repository.get_snapshot(date_iso)
+        snapshot = (
+            snapshots_by_date.get(date_iso)
+            if snapshots_by_date is not None
+            else repository.get_snapshot(date_iso)
+        )
         if not snapshot:
             missing_snapshots.append(date_iso)
             continue
