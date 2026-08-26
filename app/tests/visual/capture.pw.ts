@@ -71,6 +71,27 @@ for (const scenario of VISUAL_SCENARIOS) {
 
     await capture(page, scenario);
 
+    if (scenario.id === 'home-normal-load') {
+      const confidenceButton = page.getByRole('button', { name: /Data confidence: / });
+      await confidenceButton.click();
+      await expect(confidenceButton).toHaveAttribute('aria-expanded', 'true');
+      const confidencePanel = page.getByRole('region', { name: 'Data confidence diagnostic breakdown' });
+      await expect(confidencePanel).toBeVisible();
+      const panelBounds = await confidencePanel.boundingBox();
+      const viewport = page.viewportSize();
+      expect(panelBounds).not.toBeNull();
+      expect(viewport).not.toBeNull();
+      expect(panelBounds!.x).toBeGreaterThanOrEqual(0);
+      expect(panelBounds!.x + panelBounds!.width).toBeLessThanOrEqual(viewport!.width);
+      expect(panelBounds!.y).toBeGreaterThanOrEqual(0);
+      expect(panelBounds!.y + panelBounds!.height).toBeLessThanOrEqual(viewport!.height);
+      await capture(page, scenario, 'confidence-expanded', [
+        'The data-confidence badge exposes signal freshness, maturity, plausibility, and cautions without competing with today’s training decision.',
+      ]);
+      await page.getByRole('button', { name: 'Close data confidence details' }).click();
+      await expect(confidenceButton).toHaveAttribute('aria-expanded', 'false');
+    }
+
     if (scenario.id.startsWith('home-') && scenario.id !== 'home-missing-data') {
       // Home can also contain imported-plan session buttons with the same label. This
       // interaction captures the recommendation card's own disclosure specifically.

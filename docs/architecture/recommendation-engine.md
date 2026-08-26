@@ -597,6 +597,31 @@ comparison data and reasoning. Greedy (`generateWeekAheadPlan`) remains the live
 
 ---
 
+## Data-confidence observability (`dataConfidence.ts`)
+
+`DecisionComposer.composeDailyDecisionInput` computes a dashboard-only
+`DataConfidenceScore` after the normal source-state composition step. The evaluator reports
+four bounded diagnostics (completeness, freshness, baseline maturity, and physiological
+plausibility), an operational coverage tier, per-signal status, and plain-language
+cautions. Freshness uses the snapshot sync timestamp together with metric dates: sleep,
+HRV, RHR, and wake Body Battery must belong to the target date, while `totalSteps` must
+belong to the completed Warsaw calendar day D-1.
+
+This score is **not a third readiness authority**. It is not passed into
+`evaluateReadinessAndSafetyEnvelope`, eligibility, dose, or ranking, and therefore cannot
+strengthen or weaken a recommendation. Existing fail-closed composition and adverse-only
+readiness rules remain authoritative. The dashboard indicator exposes why evidence is
+missing, stale, immature, or implausible; the neighboring Garmin sync control remains the
+actual ingestion action.
+
+The confidence profile is recomputed when dashboard data is composed and is not persisted
+in `RecommendationAudit`. Consequently it describes current composition-time evidence and
+must not be presented as frozen replay provenance. Adding it to decision policy or replay
+would require an explicit ADR/schema change, Firestore validation updates, and a
+`POLICY_VERSION` review.
+
+---
+
 ## Verification & audit tooling
 
 ### Coverage visibility (`test:coverage` / `pytest --cov`)
