@@ -284,6 +284,23 @@ def test_backfill_with_include_details_fetches_and_persists_details():
     assert payload["powerInZones"][0]["zoneNumber"] == 2
 
 
+def test_backfill_uses_bulk_snapshot_lookup_without_per_date_reads():
+    provider = DetailFakeProvider()
+    service, repo = _detail_service(provider)
+
+    assert service.backfill(
+        start_date_str="2026-08-06",
+        end_date_str="2026-08-08",
+        force=False,
+    )
+
+    # One range query seeds prehistory and one covers the requested dates. An empty
+    # successful range result is authoritative; it must not trigger an N+1 fallback.
+    assert repo.get_historical_snapshots.call_count == 2
+    repo.get_snapshot.assert_not_called()
+    assert len(provider.fetch_daily_metrics_calls) == 3
+
+
 def test_push_workout_fails_when_garmin_does_not_return_a_workout_id():
     settings = Settings(app_user_id="test_uid_789")
     client = MagicMock()

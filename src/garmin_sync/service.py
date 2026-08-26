@@ -664,11 +664,30 @@ class GarminSyncService:
 
         self._seed_prehistory(raw_memory_store, start_d)
 
+        existing_snapshots: dict[str, dict[str, Any]] = {}
+        bulk_snapshot_lookup_succeeded = False
+        if not force:
+            get_historical = getattr(self.repository, "get_historical_snapshots", None)
+            if callable(get_historical):
+                try:
+                    start_target_iso = get_date_string(target_dates[0])
+                    end_target_iso = get_date_string(target_dates[-1])
+                    fetched_snapshots = get_historical(start_target_iso, end_target_iso)
+                    if isinstance(fetched_snapshots, dict):
+                        existing_snapshots = fetched_snapshots
+                        bulk_snapshot_lookup_succeeded = True
+                except Exception as exc:
+                    logger.debug("Failed to bulk fetch historical snapshots for backfill: %s", exc)
+
         for target_date in target_dates:
             target_iso = get_date_string(target_date)
 
             if not force:
-                existing = self.repository.get_snapshot(target_iso)
+                existing = (
+                    existing_snapshots.get(target_iso)
+                    if bulk_snapshot_lookup_succeeded
+                    else self.repository.get_snapshot(target_iso)
+                )
                 if existing and existing.get("raw"):
                     raw_memory_store[target_iso] = existing["raw"]
                     logger.info(

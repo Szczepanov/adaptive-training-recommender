@@ -521,6 +521,7 @@ def test_provider_adapter_reuses_cached_stats_and_sleep_across_overlapping_dates
     # that call and this test would never exercise sleep-cache reuse.
     mock_client.get_sleep_data.return_value = {}
     mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 60}}
+    mock_client.get_heart_rate_zones.return_value = []
 
     adapter = GarminProviderAdapter(mock_client)
 
@@ -537,6 +538,9 @@ def test_provider_adapter_reuses_cached_stats_and_sleep_across_overlapping_dates
         "2026-08-06",
         "2026-08-07",
     }
+    # Heart-rate zones are profile-level settings, so the same adapter should fetch
+    # them only once even while daily telemetry advances through a backfill window.
+    mock_client.get_heart_rate_zones.assert_called_once_with()
 
     # Same reasoning applies to sleep: get_sleep_data(target) always fires, and (since
     # sleep_today is empty here) get_sleep_data(yesterday_iso) fires for the fallback too

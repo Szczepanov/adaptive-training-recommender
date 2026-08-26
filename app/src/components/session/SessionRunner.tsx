@@ -372,12 +372,85 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         if (runner.sessionEnded) setShowCompletionSheet(true);
     }, [runner.sessionEnded]);
 
+    const definition = runner.definition;
+    const activeBlock = runner.activeBlock;
+
+    // ⚡ Bolt: Memoize AST comparison, choice lookups, step summaries, and group progress before early returns
+    const comparison = useMemo(
+        () => (definition ? comparePlannedVsPerformed(definition, entries) : null),
+        [definition, entries],
+    );
+
+    const answeredChoiceIds = useMemo(
+        () => new Set(
+            entries
+                .filter(e => e.payload.kind === 'choice')
+                .map(e => (e.payload as { choiceId: string }).choiceId),
+        ),
+        [entries],
+    );
+
+    // The choice due at the active step is authored and not yet answered. Other step
+    // controls stay blocked until it is resolved, so a prescribed step never changes
+    // without a recorded athlete action (D-MCHOICE).
+    const dueChoice = useMemo(
+        () => activeStep && activeBlock
+            ? (activeBlock.optionSets ?? []).find(choice => choice.appliesAtStepId === activeStep.id && !answeredChoiceIds.has(choice.id)) ?? null
+            : null,
+        [activeStep, activeBlock, answeredChoiceIds],
+    );
+
+    const stepSummaries: SessionStepSummary[] = useMemo(
+        () => (comparison
+            ? comparison.stepComparisons.map((sc, idx) => ({
+                exerciseIndex: idx,
+                exerciseId: null,
+                displayName: sc.stepTitle,
+                isPlanned: true,
+                optional: sc.isOptional,
+                targetSets: sc.targetSets,
+                targetReps: null,
+                targetGauge: null,
+                loggedSetsCount: sc.completedSets,
+                isComplete: sc.isComplete,
+            }))
+            : []),
+        [comparison],
+    );
+
+    const stepCompletedCounts = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const e of entries) {
+            if (e.stepId && e.payload.kind !== 'choice') {
+                counts.set(e.stepId, (counts.get(e.stepId) ?? 0) + 1);
+            }
+        }
+        return counts;
+    }, [entries]);
+
+    // The rest banner previews the next step, including rotation within circuits and
+    // supersets, instead of naming the set that was just logged.
+    const restNextStep = useMemo(() => {
+        if (!definition || !activeBlock) return null;
+        const groupProgress = getGroupProgress(activeBlock, entries, runner.activeStepIndex);
+        if (groupProgress) {
+            return groupProgress.nextStepIndex !== null ? activeBlock.steps[groupProgress.nextStepIndex] : null;
+        }
+        if (runner.activeStepIndex + 1 < activeBlock.steps.length) {
+            return activeBlock.steps[runner.activeStepIndex + 1];
+        }
+        const nextBlock = definition.blocks.find(
+            (candidate, index) => index > runner.activeBlockIndex && candidate.steps.length > 0,
+        );
+        return nextBlock ? nextBlock.steps[0] : null;
+    }, [definition, activeBlock, entries, runner.activeStepIndex, runner.activeBlockIndex]);
+
     // If no active session, show fixture picker to start an unplanned session
     if (runner.isRestoring) {
         return <div className="session-runner-container no-active"><p>Restoring an active session…</p></div>;
     }
 
-    if (!runner.definition || !runner.execution || runner.execution.state !== 'in_progress') {
+    if (!definition || !comparison || !runner.execution || runner.execution.state !== 'in_progress') {
         // M4.3: offered once, right after the primary session finishes (completed or
         // abandoned) -- never concurrently with it. Starting a companion creates its own
         // execution and takes over this same "active session" view normally; skipping just
@@ -481,22 +554,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         );
     }
 
-    const definition = runner.definition!;
-    const comparison = comparePlannedVsPerformed(definition, entries);
-
-    const answeredChoiceIds = new Set(
-        entries
-            .filter(e => e.payload.kind === 'choice')
-            .map(e => (e.payload as { choiceId: string }).choiceId),
-    );
-    // The choice due at the active step -- authored, not yet answered (D-MCHOICE). Other
-    // step controls stay blocked until it is resolved: no code path changes a prescribed
-    // step without a recorded athlete action.
-    const dueChoice = activeStep && runner.activeBlock
-        ? (runner.activeBlock.optionSets ?? []).find(choice => choice.appliesAtStepId === activeStep.id && !answeredChoiceIds.has(choice.id)) ?? null
-        : null;
-
-    function describeChoiceEntry(entry: SessionEntry): string {
+    const describeChoiceEntry = (entry: SessionEntry): string => {
         if (entry.payload.kind !== 'choice') return '';
         const { choiceId, optionId } = entry.payload;
         for (const block of definition.blocks) {
@@ -505,20 +563,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             if (option) return option.label;
         }
         return optionId;
-    }
-
-    const stepSummaries: SessionStepSummary[] = comparison.stepComparisons.map((sc, idx) => ({
-        exerciseIndex: idx,
-        exerciseId: null,
-        displayName: sc.stepTitle,
-        isPlanned: true,
-        optional: sc.isOptional,
-        targetSets: sc.targetSets,
-        targetReps: null,
-        targetGauge: null,
-        loggedSetsCount: sc.completedSets,
-        isComplete: sc.isComplete,
-    }));
+    };
 
     const formatTime = (totalSec: number) => {
         const m = Math.floor(totalSec / 60);
@@ -591,27 +636,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
 
     const inputProfile = activeStep ? resolveStepInputProfile(activeStep) : 'repetition_mass';
     const activeEffort = activeStep ? formatEffort(activeStep) : null;
-    const activeBlock = runner.activeBlock;
-
-    // The step the rest banner should preview as "Next" -- not simply activeStep, which for an
-    // ordinary sequential block doesn't advance until the athlete moves on, so it would still
-    // name the exercise a set was just logged for. Rotating groups (circuit/superset/alternating)
-    // use the same rotation logic GroupProgress renders; other blocks fall through to the plain
-    // next step/next non-empty block, mirroring useSessionRunner's own nextStep().
-    const restNextStep = (() => {
-        if (!definition || !activeBlock) return null;
-        const groupProgress = getGroupProgress(activeBlock, entries, runner.activeStepIndex);
-        if (groupProgress) {
-            return groupProgress.nextStepIndex !== null ? activeBlock.steps[groupProgress.nextStepIndex] : null;
-        }
-        if (runner.activeStepIndex + 1 < activeBlock.steps.length) {
-            return activeBlock.steps[runner.activeStepIndex + 1];
-        }
-        const nextBlock = definition.blocks.find(
-            (candidate, index) => index > runner.activeBlockIndex && candidate.steps.length > 0,
-        );
-        return nextBlock ? nextBlock.steps[0] : null;
-    })();
 
     return (
         <div className="session-runner-container">
@@ -690,7 +714,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         <span className="block-role-label">{block.title || block.role}</span>
                         <div className="step-pills">
                             {block.steps.map((step, sIdx) => {
-                                const stepCompletedSets = entries.filter(e => e.stepId === step.id && e.payload.kind !== 'choice').length;
+                                const stepCompletedSets = stepCompletedCounts.get(step.id) ?? 0;
                                 // Shares the same target-set contract GroupProgress uses below, so a
                                 // rotating group's block.rounds (not just the step's own dose.sets)
                                 // is honored consistently between the two displays.

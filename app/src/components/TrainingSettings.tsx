@@ -1,4 +1,4 @@
-import { type FormEvent, useCallback, useEffect, useState } from 'react';
+import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type { BodyRegion, GuardrailKey, InjuryConstraint, SessionTemplate, TrainingSettings as TrainingSettingsModel } from '../engine/models';
 import { resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { trainingSettingsService, type TrainingSettingsUpdate } from '../services/trainingSettingsService';
@@ -93,6 +93,16 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
       note: injury.note ?? '',
     });
   };
+
+  const today = getLocalDateString();
+  // ⚡ Bolt: Memoize derived injury restrictions to prevent recalculation on every draft keystroke
+  const derivedRestrictions = useMemo(
+    () => resolveInjuryRestrictions(settings?.injuries, today),
+    [settings?.injuries, today],
+  );
+  const hasDerived = derivedRestrictions.restrictedModalities.length > 0
+    || derivedRestrictions.impliedGuardrails.length > 0
+    || derivedRestrictions.restrictedCategories.length > 0;
 
   if (!settings) return <main className="training-settings"><p>{error ?? 'Loading training settings…'}</p></main>;
 
@@ -214,19 +224,14 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
           <p><small>No active injuries recorded.</small></p>
         )}
 
-        {(() => {
-          const derived = resolveInjuryRestrictions(settings.injuries, getLocalDateString());
-          const hasDerived = derived.restrictedModalities.length > 0 || derived.impliedGuardrails.length > 0 || derived.restrictedCategories.length > 0;
-          if (!hasDerived) return null;
-          return (
-            <div className="derived-restrictions" style={{ marginTop: '12px', padding: '8px 12px', background: '#f5f5f5', borderRadius: '4px' }}>
-              <h4>Derived Restrictions (Read-only)</h4>
-              {derived.restrictedModalities.length > 0 && <p><small><strong>Restricted Modalities:</strong> {derived.restrictedModalities.join(', ')}</small></p>}
-              {derived.impliedGuardrails.length > 0 && <p><small><strong>Implied Guardrails:</strong> {derived.impliedGuardrails.join(', ')}</small></p>}
-              {derived.restrictedCategories.length > 0 && <p><small><strong>Restricted Categories:</strong> {derived.restrictedCategories.join(', ')}</small></p>}
-            </div>
-          );
-        })()}
+        {hasDerived && (
+          <div className="derived-restrictions" style={{ marginTop: '12px', padding: '8px 12px', background: '#f5f5f5', borderRadius: '4px' }}>
+            <h4>Derived Restrictions (Read-only)</h4>
+            {derivedRestrictions.restrictedModalities.length > 0 && <p><small><strong>Restricted Modalities:</strong> {derivedRestrictions.restrictedModalities.join(', ')}</small></p>}
+            {derivedRestrictions.impliedGuardrails.length > 0 && <p><small><strong>Implied Guardrails:</strong> {derivedRestrictions.impliedGuardrails.join(', ')}</small></p>}
+            {derivedRestrictions.restrictedCategories.length > 0 && <p><small><strong>Restricted Categories:</strong> {derivedRestrictions.restrictedCategories.join(', ')}</small></p>}
+          </div>
+        )}
       </section>
     </main>
   );
