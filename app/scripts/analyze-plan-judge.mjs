@@ -195,16 +195,19 @@ const provenance = {
   analyzedAt: new Date().toISOString(),
   ...(manifest ? {
     judgeSettings: {
-      provider: manifest.judgeProvider,
-      model: manifest.judgeModel,
+      provider: manifest.runtime?.endpointType ?? manifest.judgeProvider,
+      model: manifest.runtime?.model ?? manifest.judgeModel,
       samples: manifest.samples,
       packetVersion: manifest.packetVersion,
-      thinkingEnabled: manifest.thinkingEnabled,
+      thinkingEnabled: manifest.runtime?.thinkingEnabled ?? manifest.thinkingEnabled,
       baseSeed: manifest.baseSeed,
       seedStrategy: manifest.seedStrategy,
       rubricScale: manifest.rubricScale,
       isPairwise: manifest.isPairwise,
-      concurrency: manifest.concurrency,
+      concurrency: manifest.runtime?.concurrency ?? manifest.concurrency,
+      temperature: manifest.runtime?.temperature,
+      numCtx: manifest.runtime?.requestedNumCtx,
+      numPredict: manifest.runtime?.requestedNumPredict,
     }
   } : {}),
 };

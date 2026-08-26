@@ -163,6 +163,9 @@ const ZERO_STIMULUS: WorkoutStimulusProfile = {
     hypertrophy: 0,
 };
 
+/**
+ * Pre-indexes dated fixed activities into a date map to enable O(1) day lookups during rolling plan projection.
+ */
 export function groupFixedActivitiesByDate(fixedActivities: readonly FixedActivity[]): Map<string, FixedActivity[]> {
     const map = new Map<string, FixedActivity[]>();
     for (const activity of fixedActivities) {
@@ -957,6 +960,11 @@ export function generateWeekAheadPlan(
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
     const fixedActivitiesByDate = groupFixedActivitiesByDate(fixedActivities);
+    const unsetDateFixedActivities = fixedActivities.filter(a => !a.date);
+    const getFixedActivitiesForDate = (targetDate: string): FixedActivity[] => {
+        const dated = fixedActivitiesByDate.get(targetDate) ?? [];
+        return unsetDateFixedActivities.length > 0 ? [...dated, ...unsetDateFixedActivities] : dated;
+    };
     const authoredPlanBlocks = options.authoredPlanBlocks ?? [];
     const suppliedPlanDefinition = options.planDefinition ?? null;
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
@@ -1045,7 +1053,7 @@ export function generateWeekAheadPlan(
     };
 
     const applyFixedActivityStimulus = (date: string) => {
-        const dayFixed = fixedActivitiesByDate.get(date) ?? [];
+        const dayFixed = getFixedActivitiesForDate(date);
         const result = applyFixedActivityStimulusCredit(microcycle, dayFixed, date);
         const freshExposures = result.exposures.filter(exposure => !appliedProjectionOccurrences.has(exposure.occurrenceKey));
         if (freshExposures.length === 0) return;
@@ -1059,7 +1067,7 @@ export function generateWeekAheadPlan(
     };
 
     const applyFixedActivityCost = (date: string) => {
-        const dayActivities = (fixedActivitiesByDate.get(date) ?? []).filter(a => !a.isCompleted && a.expectedCost);
+        const dayActivities = getFixedActivitiesForDate(date).filter(a => !a.isCompleted && a.expectedCost);
         const freshActivities = dayActivities.filter(activity => {
             const key = `fixed:${activity.id}:cost`;
             if (appliedFixedCostOccurrences.has(key)) return false;
@@ -1403,7 +1411,7 @@ export function generateWeekAheadPlan(
                         .filter(objective => objective.date === date)
                         .map(objective => objective.objectiveKey),
                 },
-                fixedActivity: fixedActivityTraceForDate(fixedActivitiesByDate.get(date) ?? [], date),
+                fixedActivity: fixedActivityTraceForDate(getFixedActivitiesForDate(date), date),
                 rejectionCounts: rejectionCountsFor(evaluation),
             },
         });

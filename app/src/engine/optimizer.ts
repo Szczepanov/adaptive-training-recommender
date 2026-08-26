@@ -238,6 +238,10 @@ export interface HistoryFeatureSummary {
     recentModalitiesInRolling6d: Set<string>;
 }
 
+/**
+ * Aggregates candidate recovery, anchor, and spacing features in a single linear pre-pass over history,
+ * allowing O(1) candidate gate evaluation during ranking.
+ */
 export function buildHistoryFeatureSummary(
     history: SessionHistoryEntry[],
     targetDate: string
