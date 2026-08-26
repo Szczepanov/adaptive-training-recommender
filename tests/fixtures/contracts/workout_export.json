@@ -1,0 +1,64 @@
+{
+    "_comment": "Shared Contract 4 fixture (Persistence <-> Privileged Workout-Export Jobs). Loaded by both tests/test_contracts_workout_export.py and app/src/contracts/workoutExportContract.test.ts. `queueEntry` mirrors the real GarminQueuedWorkout document at users/{userId}/garmin_workout_queue/{date} (app/src/services/garminWorkoutQueueService.ts) -- note the status enum is pending|synced|failed, not in_flight|completed. `queueEntry.payload` is the real cross-language wire shape (CanonicalWorkoutExport, app/src/utils/workoutJsonExport.ts) that src/garmin_sync/service.py reads via `data.get('payload')` and hands to workout_export.py -- durationSeconds (not durationSec) and targets as a string array (not a target object).",
+    "queueEntry": {
+        "userId": "user-1",
+        "date": "2026-08-26",
+        "workoutTitle": "VO2 Max Intervals",
+        "modality": "cycling",
+        "status": "pending",
+        "queuedAt": "2026-08-26T06:30:00Z",
+        "syncedAt": null,
+        "error": null,
+        "payload": {
+            "schemaVersion": "canonical_workout_v1",
+            "title": "VO2 Max Intervals",
+            "workoutId": "cycling_vo2_intervals",
+            "modality": "cycling",
+            "targetDurationMin": 30,
+            "exportedAt": "2026-08-26T06:00:00Z",
+            "blocks": [
+                {
+                    "id": "warmup",
+                    "name": "Warm-up",
+                    "role": "warmup",
+                    "steps": [
+                        {
+                            "id": "wu_step",
+                            "name": "Easy spin",
+                            "durationSeconds": 600,
+                            "targets": ["140-160 W"]
+                        }
+                    ]
+                },
+                {
+                    "id": "intervals",
+                    "name": "VO2 Intervals",
+                    "role": "main",
+                    "steps": [
+                        {
+                            "id": "work_step",
+                            "name": "VO2 Repeat",
+                            "durationSeconds": 180,
+                            "sets": 4,
+                            "restAfterSec": 180,
+                            "targets": ["300-320 W"]
+                        }
+                    ]
+                },
+                {
+                    "id": "cooldown",
+                    "name": "Cool-down",
+                    "role": "cooldown",
+                    "steps": [
+                        {
+                            "id": "cd_step",
+                            "name": "Easy spin",
+                            "durationSeconds": 240,
+                            "targets": ["110-130 W"]
+                        }
+                    ]
+                }
+            ]
+        }
+    }
+}
