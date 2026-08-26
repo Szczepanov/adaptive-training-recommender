@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useId } from 'react';
+import { useState, useEffect, useCallback, useId, useMemo } from 'react';
 import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
@@ -423,6 +423,30 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     }
   };
 
+  // ⚡ Bolt: Memoize tissue and physiology derivations before early returns to satisfy Hook rules
+  const tissueResponses = useMemo(
+    () => Object.values(checkin?.tissueResponses ?? {}).filter(
+      (response): response is RegionTissueResponse => response !== undefined,
+    ),
+    [checkin?.tissueResponses],
+  );
+  const manualPhysiologyMissing = useMemo(
+    () => ({
+      rhr: recoverySnapshot?.raw.restingHr == null,
+      hrv: recoverySnapshot?.raw.hrvOvernightAvg == null,
+      respiration: recoverySnapshot?.raw.respirationAvg == null,
+    }),
+    [
+      recoverySnapshot?.raw.restingHr,
+      recoverySnapshot?.raw.hrvOvernightAvg,
+      recoverySnapshot?.raw.respirationAvg,
+    ],
+  );
+  const availableBodyRegions = useMemo(
+    () => BODY_REGIONS.filter(region => !checkin?.tissueResponses?.[region]),
+    [checkin?.tissueResponses],
+  );
+
   if (loading) {
     return (
       <div className="checkin-container">
@@ -464,9 +488,6 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
 
   const answeredSubjectiveCount = SCALES.filter(scale => typeof checkin[scale.key] === 'number').length;
   const wearableRevealAllowed = Boolean(checkin.initialSubmittedAt && checkin.dataQuality?.isComplete);
-  const tissueResponses = Object.values(checkin.tissueResponses ?? {}).filter(
-    (response): response is RegionTissueResponse => response !== undefined,
-  );
   const isAlreadySubmitted = isCompletedSubjectiveCheckin(checkin);
 
   return (
@@ -627,11 +648,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
           <HealthContextSection
             value={checkin.healthContext}
             symptomsPresent={Boolean(checkin.illnessSymptoms)}
-            manualPhysiologyMissing={{
-              rhr: recoverySnapshot?.raw.restingHr == null,
-              hrv: recoverySnapshot?.raw.hrvOvernightAvg == null,
-              respiration: recoverySnapshot?.raw.respirationAvg == null,
-            }}
+            manualPhysiologyMissing={manualPhysiologyMissing}
             onChange={handleHealthContextChange}
           />
 
@@ -652,7 +669,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                 onChange={(e) => setPendingTissueRegion(e.target.value as BodyRegion | '')}
               >
                 <option value="">Select a region…</option>
-                {BODY_REGIONS.filter(region => !checkin.tissueResponses?.[region]).map(region => (
+                {availableBodyRegions.map(region => (
                   <option key={region} value={region}>{REGION_LABELS[region]}</option>
                 ))}
               </select>
