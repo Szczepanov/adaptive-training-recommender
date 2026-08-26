@@ -20,6 +20,31 @@ describe('usabilityMetrics task-based evaluation', () => {
         expect(report.actionBreakdown.start_workout).toBe(1);
     });
 
+    it('times only the first action after a recommendation view', () => {
+        const userId = 'athlete-test';
+        const date = '2026-08-26';
+
+        usabilityMetrics.recordRecommendationView(userId, date);
+        const firstDuration = usabilityMetrics.recordActionSelected(userId, date, 'open_details');
+        const laterDuration = usabilityMetrics.recordActionSelected(userId, date, 'start_workout');
+
+        expect(typeof firstDuration).toBe('number');
+        expect(laterDuration).toBeUndefined();
+        expect(usabilityMetrics.generateSummaryReport().totalActions).toBe(2);
+    });
+
+    it('does not restart the TTR clock when the same recommendation is viewed again before action', () => {
+        const userId = 'athlete-test';
+        const date = '2026-08-26';
+
+        usabilityMetrics.recordRecommendationView(userId, date);
+        usabilityMetrics.recordRecommendationView(userId, date);
+        const durationMs = usabilityMetrics.recordActionSelected(userId, date, 'start_workout');
+
+        expect(typeof durationMs).toBe('number');
+        expect(usabilityMetrics.generateSummaryReport().totalViews).toBe(2);
+    });
+
     it('computes override rate and error rate accurately', () => {
         const userId = 'athlete-test';
         const date = '2026-08-26';
