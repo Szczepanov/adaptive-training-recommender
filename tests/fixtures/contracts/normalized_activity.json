@@ -1,0 +1,24 @@
+{
+    "_comment": "Shared Contract 1 fixture (normalized activity). Loaded by both tests/test_contracts_ingestion.py (as CanonicalActivity constructor args, snake_case) and app/src/contracts/ingestionSnapshotContract.test.ts (as the already-normalized camelCase output shape). Keep the two field sets in sync by hand -- they describe the same activity across the snake_case/camelCase boundary.",
+    "canonical": {
+        "activity_id": "act-101",
+        "date": "2026-08-26",
+        "type": "running",
+        "duration_min": 50,
+        "duration_seconds": 3000,
+        "training_effect_aerobic": 3.5,
+        "training_effect_anaerobic": 1.2,
+        "average_hr": 152.0,
+        "training_load": 120.0,
+        "intensity_tag": "hard"
+    },
+    "normalized": {
+        "activityId": "act-101",
+        "date": "2026-08-26",
+        "type": "running",
+        "durationMin": 50,
+        "intensityTag": "hard",
+        "syncRunId": "run-contract",
+        "syncedAt": "2026-08-26T12:00:00Z"
+    }
+}

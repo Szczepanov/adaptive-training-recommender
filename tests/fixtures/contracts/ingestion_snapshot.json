@@ -1,0 +1,55 @@
+{
+    "_comment": "Shared Contract 1 fixture (Ingestion <-> Canonical Observations). Loaded by both tests/test_contracts_ingestion.py and app/src/contracts/ingestionSnapshotContract.test.ts. Only fields the contract validates are listed here -- see src/garmin_sync/models.py for the full (larger) DailyRecoverySnapshot schema. Edit this file, not a copy, when the shared shape changes.",
+    "userId": "athlete-1",
+    "date": "2026-08-26",
+    "source": {
+        "sourceSchemaVersion": 3,
+        "garminSyncedAt": "2026-08-26T06:00:00Z"
+    },
+    "raw": {
+        "sleepScore": 85,
+        "sleepDurationSec": 28800,
+        "restingHr": 48,
+        "hrvOvernightAvg": 65.0,
+        "respirationAvg": 14.5,
+        "bodyBatteryWake": 85,
+        "bodyBatteryChange": 50,
+        "totalSteps": 9000,
+        "last3DaysHardSessionsCount": 1,
+        "yesterdayTraining": null,
+        "todayTraining": null
+    },
+    "derived": {
+        "baselineComputationVersion": 5,
+        "sleepScore7dAvg": 82.0,
+        "sleepScore28dAvg": 80.0,
+        "restingHr7dAvg": 49.0,
+        "restingHr28dAvg": 50.0,
+        "hrv7dAvg": 64.0,
+        "hrv28dAvg": 63.0,
+        "respiration7dAvg": 14.2,
+        "respiration28dAvg": 14.1,
+        "steps7dAvg": 9200.0,
+        "steps28dAvg": 8900.0,
+        "steps28dStdev": 1100.0,
+        "deltas": {
+            "sleepScoreVs7d": 3.0,
+            "sleepScoreVs28d": 5.0,
+            "restingHrVs7d": -1.0,
+            "restingHrVs28d": -2.0,
+            "hrvVs7d": 1.0,
+            "hrvVs28d": 2.0,
+            "respirationVs7d": 0.3,
+            "respirationVs28d": 0.4,
+            "stepsVs7d": -200.0,
+            "stepsVs28d": 100.0
+        }
+    },
+    "dataQuality": {
+        "sleepScoreAvailable": true,
+        "restingHrAvailable": true,
+        "hrvAvailable": true,
+        "baseline7dReady": true,
+        "baseline28dReady": true
+    }
+}
