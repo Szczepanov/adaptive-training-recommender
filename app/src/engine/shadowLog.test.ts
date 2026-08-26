@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildShadowLog, buildShadowLogRow, deriveEngineVerdictFromMode, renderShadowLogCsv, type ShadowLogDayInput } from './shadowLog';
 import type { DailyRecommendation, DailyRecoverySnapshot, DailySubjectiveCheckin, DecisionJournalEntry, ShadowVerdict } from './models';
+import type { ClosedLoopFeedbackRecord } from '../feedback/feedbackModels';
 
 const DATE = '2026-08-16';
 type RecommendationWithVerdict = DailyRecommendation & { engineVerdict?: ShadowVerdict };
@@ -31,6 +32,34 @@ function checkin(overrides: Partial<DailySubjectiveCheckin> = {}): DailySubjecti
         notes: 'a private note that must never appear in the export',
         submittedAt: DATE, dataQuality: { isComplete: true, missingFields: [] }, schemaVersion: 1,
         createdAt: DATE, updatedAt: DATE,
+        ...overrides,
+    };
+}
+
+function feedbackRecord(overrides: Partial<ClosedLoopFeedbackRecord> = {}): ClosedLoopFeedbackRecord {
+    return {
+        date: DATE,
+        recommendationRef: { recommendationId: 'rec-1', revision: 1 },
+        decision: {
+            date: DATE,
+            recommendationRef: { recommendationId: 'rec-1', revision: 1 },
+            action: 'scaled_down',
+            reasons: ['feeling_fatigued'],
+            note: null,
+            decidedAt: `${DATE}T07:00:00Z`,
+        },
+        doseReconciliation: {
+            date: DATE, plannedDurationMin: 60, actualDurationMin: 45, plannedWorkKj: null, actualWorkKj: null,
+            durationDeltaPct: -25, workDeltaPct: null, completedZoneDistribution: null, holdCompliancePct: null, stepOmissionsCount: 0,
+        },
+        recoveryTrajectory: null,
+        regret: {
+            date: DATE, regretClass: 'optimal_choice', athleteDeclaredRegret: 'none', confidence: 'medium',
+            rationales: ['no adverse signal observed'], counterfactualAlternative: null,
+        },
+        utility: { utilityScore: 4, clarityScore: 5, coachingHelpfulness: 'helpful', feedbackNote: null },
+        createdAt: `${DATE}T07:01:00Z`,
+        updatedAt: `${DATE}T07:02:00Z`,
         ...overrides,
     };
 }
@@ -67,7 +96,7 @@ describe('deriveEngineVerdictFromMode', () => {
 });
 
 describe('buildShadowLogRow', () => {
-    it('returns null for a day with none of the three evidence sources', () => {
+    it('returns null for a day with none of the four evidence sources', () => {
         const row = buildShadowLogRow({ date: DATE, recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: null });
         expect(row).toBeNull();
     });
@@ -162,6 +191,28 @@ describe('buildShadowLogRow', () => {
         expect(JSON.stringify(row)).not.toContain('totalSteps');
     });
 
+    it('builds a row from a closed-loop feedback record alone (no recommendation/journal/checkin that day)', () => {
+        const row = buildShadowLogRow({
+            date: DATE, recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: null,
+            feedbackRecord: feedbackRecord(),
+        });
+        expect(row).not.toBeNull();
+        expect(row!.athleteDecisionAction).toBe('scaled_down');
+        expect(row!.athleteDecisionReasons).toEqual(['feeling_fatigued']);
+        expect(row!.regretClass).toBe('optimal_choice');
+        expect(row!.regretConfidence).toBe('medium');
+        expect(row!.athleteDeclaredRegret).toBe('none');
+        expect(row!.utilityScore).toBe(4);
+        expect(row!.coachingHelpfulness).toBe('helpful');
+    });
+
+    it('leaves the feedback fields null when no feedback record exists for the day', () => {
+        const row = buildShadowLogRow({ date: DATE, recommendation: recommendation(), journalEntry: null, checkin: null, recoverySnapshot: null });
+        expect(row!.athleteDecisionAction).toBeNull();
+        expect(row!.regretClass).toBeNull();
+        expect(row!.utilityScore).toBeNull();
+    });
+
     it('carries the journal note through, but never the check-in free-text notes field', () => {
         const row = buildShadowLogRow({
             date: DATE, recommendation: null,
@@ -196,7 +247,8 @@ describe('renderShadowLogCsv', () => {
             'date,engineVerdict,engineMode,externalVerdict,externalNote,sawEngineVerdictFirst,actualVerdict,adherenceFollowed,'
             + 'actualDurationMin,agreement,readiness,sleepQuality,fatigue,soreness,mentalStress,motivation,'
             + 'sleepScoreVs7d,sleepScoreVs28d,restingHrVs7d,restingHrVs28d,hrvVs7d,hrvVs28d,respirationVs7d,respirationVs28d,'
-            + 'policyVersion,externalPlanContentHash',
+            + 'policyVersion,externalPlanContentHash,athleteDecisionAction,athleteDecisionReasons,regretClass,'
+            + 'regretConfidence,athleteDeclaredRegret,utilityScore,coachingHelpfulness',
         );
         expect(lines[1]).toContain(DATE);
         expect(lines[1]).toContain('"took it easy, race, ""quotes"""');
