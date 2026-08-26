@@ -1,4 +1,4 @@
-import { useState, memo, useEffect, useCallback } from 'react';
+import { useState, memo, useEffect, useCallback, useRef } from 'react';
 import { recommendationService } from '../services/recommendationService';
 import type { DailyRecommendation } from '../engine/models';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
@@ -8,7 +8,7 @@ export type AdherenceAnswer = Parameters<typeof recommendationService.recordAdhe
 
 interface AdherencePromptProps {
   userId: string;
-  date: string; // the date the recommendation being answered for was generated
+  date: string;
   recommendation: DailyRecommendation;
   /** Called once an answer has been recorded, so the parent can hide this prompt, refresh
    *  adherence stats, and (Phase 9.0.3) sync the decision journal's `actualVerdict` when
@@ -26,8 +26,13 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
   const [notes, setNotes] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const submitInFlightRef = useRef(false);
 
   const submit = useCallback(async (answer: AdherenceAnswer) => {
+    // State updates are asynchronous; the ref closes the small window where a rapid key
+    // repeat/click could enqueue the same Firestore write twice before `submitting` renders.
+    if (submitInFlightRef.current) return;
+    submitInFlightRef.current = true;
     setSubmitting(true);
     setError(null);
     try {
@@ -38,7 +43,10 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
       }
       usabilityMetrics.recordCompletionReport(userId, date, answer.followed === true, answer.actualModality);
       onResolved(answer);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save your answer -- please try again.');
     } finally {
+      submitInFlightRef.current = false;
       setSubmitting(false);
     }
   }, [userId, date, onResolved]);
@@ -53,10 +61,10 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
     notes: notes ? `${notes} · RPE ${rpe}/10` : `RPE ${rpe}/10`,
   }), [submit, actualModality, actualDurationMin, notes, rpe]);
 
-  // Keyboard shortcut listener
   useEffect(() => {
     if (step !== 'initial') return;
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.repeat || submitInFlightRef.current) return;
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) {
         return;
       }
@@ -83,7 +91,7 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
         Scheduled: <strong>{recommendation.templateTitle}</strong> ({recommendation.category})
       </p>
 
-      {error && <p className="adherence-error">{error}</p>}
+      {error && <p className="adherence-error" role="alert">{error}</p>}
 
       {step === 'initial' ? (
         <div className="adherence-quick-flow">
@@ -105,31 +113,13 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
           </div>
 
           <div className="adherence-buttons">
-            <button
-              type="button"
-              className="adherence-btn followed"
-              disabled={submitting}
-              onClick={handleFollowed}
-              aria-label="Completed session as prescribed (Keyboard shortcut 1)"
-            >
+            <button type="button" className="adherence-btn followed" disabled={submitting} onClick={handleFollowed} aria-label="Completed session as prescribed (Keyboard shortcut 1)">
               ✅ [1] Followed as prescribed
             </button>
-            <button
-              type="button"
-              className="adherence-btn modified"
-              disabled={submitting}
-              onClick={() => setStep('details')}
-              aria-label="Modified session or did something else (Keyboard shortcut 2)"
-            >
+            <button type="button" className="adherence-btn modified" disabled={submitting} onClick={() => setStep('details')} aria-label="Modified session or did something else (Keyboard shortcut 2)">
               🔄 [2] Did something else
             </button>
-            <button
-              type="button"
-              className="adherence-btn skipped"
-              disabled={submitting}
-              onClick={handleSkipped}
-              aria-label="Skipped workout or rested (Keyboard shortcut 3)"
-            >
+            <button type="button" className="adherence-btn skipped" disabled={submitting} onClick={handleSkipped} aria-label="Skipped workout or rested (Keyboard shortcut 3)">
               ⏭️ [3] Rested / skipped
             </button>
           </div>
@@ -138,55 +128,25 @@ export const AdherencePrompt = memo(function AdherencePrompt({ userId, date, rec
         <div className="adherence-details-form">
           <div className="form-group">
             <label htmlFor="actual-modality">What did you actually do?</label>
-            <select
-              id="actual-modality"
-              value={actualModality}
-              onChange={(e) => setActualModality(e.target.value)}
-              className="select-input"
-            >
+            <select id="actual-modality" value={actualModality} onChange={(e) => setActualModality(e.target.value)} className="select-input">
               <option value="">Select modality</option>
               {MODALITY_OPTIONS.map(m => <option key={m} value={m}>{m}</option>)}
             </select>
           </div>
           <div className="form-group">
             <label htmlFor="actual-duration">Duration (minutes)</label>
-            <input
-              id="actual-duration"
-              type="number"
-              min="0"
-              max="600"
-              value={actualDurationMin}
-              onChange={(e) => setActualDurationMin(e.target.value)}
-              className="number-input"
-            />
+            <input id="actual-duration" type="number" min="0" max="600" value={actualDurationMin} onChange={(e) => setActualDurationMin(e.target.value)} className="number-input" />
           </div>
           <div className="form-group">
             <label htmlFor="actual-notes">Notes (optional)</label>
-            <input
-              id="actual-notes"
-              type="text"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. felt good, swapped for upper body"
-              className="text-input"
-            />
+            <input id="actual-notes" type="text" value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. felt good, swapped for upper body" className="text-input" />
           </div>
           <div className="adherence-details-actions">
-            <button
-              type="button"
-              className="adherence-btn secondary"
-              disabled={submitting}
-              onClick={() => setStep('initial')}
-            >
+            <button type="button" className="adherence-btn secondary" disabled={submitting} onClick={() => setStep('initial')}>
               Back
             </button>
-            <button
-              type="button"
-              className="adherence-btn modified"
-              disabled={submitting}
-              onClick={handleDidSomethingElseSubmit}
-            >
-              Save Report ✓
+            <button type="button" className="adherence-btn modified" disabled={submitting} onClick={handleDidSomethingElseSubmit}>
+              {submitting ? 'Saving…' : 'Save Report ✓'}
             </button>
           </div>
         </div>
