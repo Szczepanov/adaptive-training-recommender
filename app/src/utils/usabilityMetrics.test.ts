@@ -57,4 +57,13 @@ describe('usabilityMetrics task-based evaluation', () => {
         expect(report.overrideRate).toBe(1);
         expect(report.errorRate).toBe(1);
     });
+
+    it('safely handles corrupted or [null] entries in localStorage', () => {
+        if (typeof window !== 'undefined' && window.localStorage) {
+            window.localStorage.setItem('adaptive_training_usability_events_v1', JSON.stringify([null, { malformed: true }]));
+            const report = usabilityMetrics.generateSummaryReport();
+            expect(report.totalViews).toBe(0);
+            expect(report.totalActions).toBe(0);
+        }
+    });
 });

@@ -40,6 +40,15 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
         { min: 45, label: '45 min', id: 'time-45' },
     ];
 
+    const ALTERNATIVE_LABELS: Record<string, string> = {
+        'time-20': '20 min Express Session',
+        'time-30': '30 min Condensed Session',
+        'time-45': '45 min Condensed Session',
+        'home-bodyweight': 'Home Bodyweight (Zero Equipment)',
+        'mobility': 'Joint Mobility Flow',
+        'recovery-walk': 'Active Recovery Walk',
+    };
+
     return (
         <section className="one-tap-alternatives-container" aria-label="1-Tap Training Alternatives">
             <div className="alternatives-header">
@@ -58,6 +67,7 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
                                 type="button"
                                 className={`pill-btn ${activeAlternativeId === opt.id ? 'active' : ''}`}
                                 onClick={() => onSelectTimeCrunch(opt.min)}
+                                aria-pressed={activeAlternativeId === opt.id}
                                 aria-label={`Switch to ${opt.min} minute condensed session`}
                             >
                                 {opt.label}
@@ -74,6 +84,7 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
                             type="button"
                             className={`pill-btn ${activeAlternativeId === 'home-bodyweight' ? 'active' : ''}`}
                             onClick={onSelectHomeAlternative}
+                            aria-pressed={activeAlternativeId === 'home-bodyweight'}
                             aria-label="Switch to Home Bodyweight workout with no equipment needed"
                         >
                             🏠 Home / Bodyweight
@@ -89,6 +100,7 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
                             type="button"
                             className={`pill-btn ${activeAlternativeId === 'mobility' ? 'active' : ''}`}
                             onClick={onSelectMobilityAlternative}
+                            aria-pressed={activeAlternativeId === 'mobility'}
                             aria-label="Switch to joint mobility and stretching flow"
                         >
                             🧘 Joint Mobility
@@ -97,6 +109,7 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
                             type="button"
                             className={`pill-btn ${activeAlternativeId === 'recovery-walk' ? 'active' : ''}`}
                             onClick={onSelectActiveRecoveryWalk}
+                            aria-pressed={activeAlternativeId === 'recovery-walk'}
                             aria-label="Switch to easy Zone 1 active recovery walk"
                         >
                             🚶 Recovery Walk
@@ -107,7 +120,7 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
 
             {activeAlternativeId && (
                 <div className="alternative-active-banner">
-                    <span>✨ Alternative applied: <strong>{activeAlternativeId}</strong></span>
+                    <span>✨ Alternative applied: <strong>{ALTERNATIVE_LABELS[activeAlternativeId] || activeAlternativeId}</strong></span>
                     <button type="button" className="btn-reset-alternative" onClick={onResetOriginal}>
                         ↺ Reset to Engine Recommendation
                     </button>

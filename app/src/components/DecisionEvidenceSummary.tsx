@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
+import { signed } from '../engine/decisionEvidence';
 import './DecisionEvidenceSummary.css';
 
 interface DecisionEvidenceSummaryProps {
@@ -25,7 +26,7 @@ export const DecisionEvidenceSummary = memo(function DecisionEvidenceSummary({ e
                             <div className="dod-chip">
                                 <span className="chip-label">Overnight HRV</span>
                                 <span className={`chip-value ${deltas.hrvDeltaYesterday >= 0 ? 'positive' : 'negative'}`}>
-                                    {deltas.hrvToday} ms ({deltas.hrvDeltaYesterday >= 0 ? `+${deltas.hrvDeltaYesterday}` : deltas.hrvDeltaYesterday} ms)
+                                    {deltas.hrvToday} ms ({signed(deltas.hrvDeltaYesterday, 'ms')})
                                 </span>
                             </div>
                         )}
@@ -33,7 +34,7 @@ export const DecisionEvidenceSummary = memo(function DecisionEvidenceSummary({ e
                             <div className="dod-chip">
                                 <span className="chip-label">Sleep Score</span>
                                 <span className={`chip-value ${deltas.sleepScoreDelta >= 0 ? 'positive' : 'negative'}`}>
-                                    {deltas.sleepScoreToday}/100 ({deltas.sleepScoreDelta >= 0 ? `+${deltas.sleepScoreDelta}` : deltas.sleepScoreDelta} pts)
+                                    {deltas.sleepScoreToday}/100 ({signed(deltas.sleepScoreDelta, 'pts')})
                                 </span>
                             </div>
                         )}
@@ -41,7 +42,7 @@ export const DecisionEvidenceSummary = memo(function DecisionEvidenceSummary({ e
                             <div className="dod-chip">
                                 <span className="chip-label">Resting HR</span>
                                 <span className={`chip-value ${deltas.restingHrDelta <= 0 ? 'positive' : 'caution'}`}>
-                                    {deltas.restingHrToday} bpm ({deltas.restingHrDelta >= 0 ? `+${deltas.restingHrDelta}` : deltas.restingHrDelta} bpm)
+                                    {deltas.restingHrToday} bpm ({signed(deltas.restingHrDelta, 'bpm')})
                                 </span>
                             </div>
                         )}
@@ -49,7 +50,7 @@ export const DecisionEvidenceSummary = memo(function DecisionEvidenceSummary({ e
                             <div className="dod-chip">
                                 <span className="chip-label">Wake Battery</span>
                                 <span className={`chip-value ${deltas.bodyBatteryDelta >= 0 ? 'positive' : 'negative'}`}>
-                                    {deltas.bodyBatteryToday} ({deltas.bodyBatteryDelta >= 0 ? `+${deltas.bodyBatteryDelta}` : deltas.bodyBatteryDelta})
+                                    {deltas.bodyBatteryToday} ({signed(deltas.bodyBatteryDelta)})
                                 </span>
                             </div>
                         )}

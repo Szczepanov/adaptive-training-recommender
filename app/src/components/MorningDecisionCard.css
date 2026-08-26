@@ -186,11 +186,29 @@
     border-color: rgba(56, 189, 248, 0.4);
 }
 
-.tab-panel-content {
-    animation: fadeIn 0.2s ease-out;
+.btn-reclassify-trigger {
+    background: transparent;
+    border: 1px solid var(--border-subtle, #3f3f46);
+    color: var(--text-muted, #a1a1aa);
+    padding: 0.25rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
 }
 
-@keyframes fadeIn {
+.btn-reclassify-trigger:hover {
+    border-color: #38bdf8;
+    color: #38bdf8;
+    background: rgba(56, 189, 248, 0.08);
+}
+
+.tab-panel-content {
+    animation: fade-in 0.2s ease-out;
+}
+
+@keyframes fade-in {
     from {
         opacity: 0;
         transform: translateY(-4px);

@@ -30,7 +30,15 @@ class UsabilityMetricsTracker {
             const raw = window.localStorage?.getItem(this.storageKey);
             if (!raw) return [];
             const parsed: unknown = JSON.parse(raw);
-            return Array.isArray(parsed) ? parsed as UsabilitySessionEvent[] : [];
+            if (!Array.isArray(parsed)) return [];
+            return parsed.filter((e): e is UsabilitySessionEvent =>
+                e !== null &&
+                typeof e === 'object' &&
+                typeof (e as UsabilitySessionEvent).id === 'string' &&
+                typeof (e as UsabilitySessionEvent).eventType === 'string' &&
+                typeof (e as UsabilitySessionEvent).userId === 'string' &&
+                typeof (e as UsabilitySessionEvent).date === 'string'
+            );
         } catch {
             return null;
         }
@@ -95,16 +103,24 @@ class UsabilityMetricsTracker {
         return durationMs;
     }
 
-    recordAlternativeChosen(userId: string, date: string, alternativeType: string, targetWorkoutId?: string): void {
+    recordAlternativeChosen(userId: string, date: string, alternativeType: string, targetWorkoutId?: string): number | undefined {
+        const key = `${userId}:${date}`;
+        const startTime = this.viewStartTimes.get(key);
+        const durationMs = startTime !== undefined ? Math.round(performance.now() - startTime) : undefined;
+        this.viewStartTimes.delete(key);
+
         this.saveEvent({
             id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             timestamp: new Date().toISOString(),
             eventType: 'alternative_chosen',
             userId,
             date,
+            durationMs,
             actionType: alternativeType,
             details: { targetWorkoutId },
         });
+
+        return durationMs;
     }
 
     recordOverrideAttempt(userId: string, date: string, reason: string, blockedByGate: boolean): void {

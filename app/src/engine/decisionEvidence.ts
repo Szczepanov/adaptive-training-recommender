@@ -82,8 +82,8 @@ export interface MorningDecisionEvidence {
     executiveSummary: string;
 }
 
-function signed(val: number | null, unit = ''): string {
-    if (val === null || !Number.isFinite(val)) return '—';
+export function signed(val: number | null, unit = ''): string {
+    if (val === null || !Number.isFinite(val)) return '-';
     const rounded = Math.round(val * 10) / 10;
     const prefix = rounded > 0 ? `+${rounded}` : `${rounded}`;
     return unit ? `${prefix} ${unit}` : prefix;
@@ -235,10 +235,13 @@ export function computeRankedEvidence(
                 weightBadge: 'Primary Driver',
             });
         } else {
+            const hrvDesc = deltas.hrvDeltaBaseline !== null
+                ? `Overnight HRV (${hrvVal} ms) is stable within normal rolling tolerance relative to your 28-day baseline.`
+                : `Overnight HRV (${hrvVal} ms) is in normal range.`;
             items.push({
                 id: 'hrv-stable',
                 title: 'Stable Overnight HRV Signal',
-                description: `Overnight HRV (${hrvVal} ms) is close to the available 28-day mean.`,
+                description: hrvDesc,
                 impact: 'positive',
                 category: 'recovery',
                 weightBadge: 'Moderate Impact',
@@ -256,8 +259,8 @@ export function computeRankedEvidence(
             id: 'tissue-load-protection',
             title: 'Musculoskeletal Safety Protection',
             description: clinicalFlag
-                ? 'The engine safety envelope contains an active clinical restriction, so higher-risk loading remains constrained.'
-                : `The engine safety envelope restricts: ${restrictedModalities.join(', ')}.`,
+                ? (safetyEnv?.clinicalReason || 'An active clinical flag restricts physical loading.')
+                : `Restricted modalities: ${restrictedModalities.join(', ')}.`,
             impact: 'restricting',
             category: 'safety',
             weightBadge: 'Hard Gate',
@@ -277,7 +280,7 @@ export function computeRankedEvidence(
         items.push({
             id: 'microcycle-adaptation',
             title: `Weekly Stimulus Target (${recommendation.template.category})`,
-            description: `Prescribed ${recommendation.template.title} to develop ${recommendation.template.modality.toLowerCase()} adaptations within the engine's current load envelope.`,
+            description: `Prescribed ${recommendation.template.title} to develop ${recommendation.template.modality.toLowerCase()} adaptations within the available load caps.`,
             impact: 'positive',
             category: 'stimulus',
             weightBadge: 'Core Goal',
@@ -288,8 +291,8 @@ export function computeRankedEvidence(
         const sleep = deltas.sleepScoreToday;
         items.push({
             id: 'sleep-quality',
-            title: 'Garmin Sleep Score',
-            description: `Garmin Sleep Score is ${sleep}/100, providing a ${sleep >= 75 ? 'favorable' : 'cautious'} recovery signal alongside the other decision inputs.`,
+            title: 'Sleep Architecture',
+            description: `Garmin Sleep Score of ${sleep}/100 supports ${sleep >= 75 ? 'normal training capacity' : 'restrained session duration'}.`,
             impact: sleep >= 75 ? 'positive' : 'cautious',
             category: 'recovery',
             weightBadge: 'Supporting',
@@ -307,10 +310,11 @@ export function computeDecisionBoundaries(
     const softOptimizations: SoftOptimizationFactor[] = [];
 
     const safetyEnv = recommendation?.envelopes?.safety;
+    const clinicalFlag = safetyEnv?.clinicalFlagActive ?? false;
     const restrictedModalities = safetyEnv?.restrictedModalities ?? [];
     const hasTissueRestricted = restrictedModalities.length > 0;
-    const clinicalFlag = safetyEnv?.clinicalFlagActive ?? false;
     const tissueGateActive = clinicalFlag || hasTissueRestricted;
+
     hardGates.push({
         id: 'clinical-pain',
         name: 'Musculoskeletal Tissue Gate',
@@ -321,6 +325,17 @@ export function computeDecisionBoundaries(
                 ? `Restricted modalities: ${restrictedModalities.join(', ')}`
                 : 'No tissue injury restrictions active.',
         severity: clinicalFlag ? 'blocking' : hasTissueRestricted ? 'caution' : 'clear',
+    });
+
+    const isRecoveryMode = recommendation?.mode === 'recover';
+    hardGates.push({
+        id: 'recovery-mode',
+        name: 'Recovery Day Protection',
+        active: isRecoveryMode,
+        reason: isRecoveryMode
+            ? 'Scheduled recovery day restricts harder physical loading.'
+            : 'Training capacity permitted by daily readiness mode.',
+        severity: isRecoveryMode ? 'blocking' : 'clear',
     });
 
     const illnessSymptoms = input?.subjectiveCheckin?.illnessSymptoms === true;
@@ -375,7 +390,7 @@ export function computeDecisionBoundaries(
         && !hasTissueRestricted
         && !illnessSymptoms
         && !hardCeiling
-        && recommendation?.mode !== 'recover';
+        && !isRecoveryMode;
 
     return {
         hardGatesActiveCount,

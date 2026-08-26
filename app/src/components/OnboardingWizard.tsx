@@ -1,6 +1,7 @@
 import { useState, memo } from 'react';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
+import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import './OnboardingWizard.css';
 
 interface OnboardingWizardProps {
@@ -45,9 +46,7 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                 pullup_bar: equipment === 'full_gym' || equipment === 'home_dumbbells',
             };
 
-            // Persist the idempotent profile update first. An active goal is used by App as
-            // an onboarding-complete signal; creating it first could hide this wizard after
-            // a partial Promise.all failure and leave the athlete with default equipment.
+            // Persist training settings and intent profile first before active goal creation.
             await trainingSettingsService.updateTrainingSettings(userId, {
                 equipment: equipmentMap,
                 defaults: {
@@ -57,13 +56,31 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                 },
             });
 
-            await goalService.createGoal(userId, {
-                category: 'short-term',
-                domain,
-                title,
-                priority: 3,
-                status: 'active',
+            await trainingIntentProfileService.upsert(userId, {
+                planningMode: 'evergreen',
+                priorities: [
+                    domain === 'endurance' ? 'endurance' : domain === 'strength' ? 'strength_muscle' : 'health',
+                ],
+                weeklyCommitment: {
+                    minSessions: Math.max(1, daysPerWeek - 1),
+                    targetSessions: daysPerWeek,
+                    maxSessions: Math.min(7, daysPerWeek + 1),
+                },
+                organizationPreference: 'auto',
+                schemaVersion: 1,
             });
+
+            const existingGoals = await goalService.listGoals(userId);
+            const hasActiveGoal = existingGoals.some(g => g.status === 'active');
+            if (!hasActiveGoal) {
+                await goalService.createGoal(userId, {
+                    category: 'short-term',
+                    domain,
+                    title,
+                    priority: 3,
+                    status: 'active',
+                });
+            }
 
             onCompleted();
         } catch (err) {

@@ -29,6 +29,7 @@ interface MorningDecisionCardProps {
     onSelectMobilityAlternative: () => void;
     onSelectActiveRecoveryWalk: () => void;
     onResetAlternative: () => void;
+    onOpenReclassify?: () => void;
 }
 
 const MODE_LABELS: Record<Recommendation['mode'], string> = {
@@ -56,6 +57,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     onSelectMobilityAlternative,
     onSelectActiveRecoveryWalk,
     onResetAlternative,
+    onOpenReclassify,
 }: MorningDecisionCardProps) {
     const [activeTab, setActiveTab] = useState<'none' | 'why' | 'alternatives' | 'workout'>('none');
     const [launching, setLaunching] = useState(false);
@@ -150,6 +152,17 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                         <span className={`confidence-badge ${evidence.confidence.badgeClass}`}>
                             {evidence.confidence.label}
                         </span>
+                        {onOpenReclassify && (
+                            <button
+                                type="button"
+                                className="btn-reclassify-trigger"
+                                onClick={onOpenReclassify}
+                                title="Correct or reclassify Garmin activity"
+                                aria-label="Correct Garmin activity"
+                            >
+                                ✏️ Correct
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -236,15 +249,30 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
             </div>
 
             {recommendation && (
-                <div className="decision-tabs-bar" role="tablist" aria-label="Decision details and adjustments">
-                    <button type="button" role="tab" id="tab-why" aria-selected={activeTab === 'why'} aria-controls={`${panelId}-why`} className={`decision-tab-btn ${activeTab === 'why' ? 'active' : ''}`} onClick={() => handleTabToggle('why')}>
+                <div className="decision-tabs-bar">
+                    <button
+                        type="button"
+                        aria-expanded={activeTab === 'why'}
+                        className={`decision-tab-btn ${activeTab === 'why' ? 'active' : ''}`}
+                        onClick={() => handleTabToggle('why')}
+                    >
                         💡 Why & Invalidation Rules {activeTab === 'why' ? '▲' : '▼'}
                     </button>
-                    <button type="button" role="tab" id="tab-alternatives" aria-selected={activeTab === 'alternatives'} aria-controls={`${panelId}-alternatives`} className={`decision-tab-btn ${activeTab === 'alternatives' ? 'active' : ''}`} onClick={() => handleTabToggle('alternatives')}>
+                    <button
+                        type="button"
+                        aria-expanded={activeTab === 'alternatives'}
+                        className={`decision-tab-btn ${activeTab === 'alternatives' ? 'active' : ''}`}
+                        onClick={() => handleTabToggle('alternatives')}
+                    >
                         ⚡ 1-Tap Alternatives {activeTab === 'alternatives' ? '▲' : '▼'}
                     </button>
                     {prescription && (
-                        <button type="button" role="tab" id="tab-workout" aria-selected={activeTab === 'workout'} aria-controls={`${panelId}-workout`} className={`decision-tab-btn ${activeTab === 'workout' ? 'active' : ''}`} onClick={() => handleTabToggle('workout')}>
+                        <button
+                            type="button"
+                            aria-expanded={activeTab === 'workout'}
+                            className={`decision-tab-btn ${activeTab === 'workout' ? 'active' : ''}`}
+                            onClick={() => handleTabToggle('workout')}
+                        >
                             📋 Workout Steps {activeTab === 'workout' ? '▲' : '▼'}
                         </button>
                     )}
@@ -252,13 +280,23 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
             )}
 
             {activeTab === 'why' && (
-                <div id={`${panelId}-why`} role="tabpanel" aria-labelledby="tab-why" className="tab-panel-content animate-fade-in">
+                <div
+                    id={`${panelId}-why`}
+                    role="region"
+                    aria-label="Why and Invalidation Rules"
+                    className="tab-panel-content animate-fade-in"
+                >
                     <DecisionEvidenceSummary evidence={evidence} />
                 </div>
             )}
 
             {activeTab === 'alternatives' && (
-                <div id={`${panelId}-alternatives`} role="tabpanel" aria-labelledby="tab-alternatives" className="tab-panel-content animate-fade-in">
+                <div
+                    id={`${panelId}-alternatives`}
+                    role="region"
+                    aria-label="1-Tap Alternatives and Load Adjustment"
+                    className="tab-panel-content animate-fade-in"
+                >
                     <div className="load-adjustment-box">
                         <span className="box-title">Adjust Intensity & Volume:</span>
                         <div className="load-stepper-row">
@@ -292,7 +330,12 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
             )}
 
             {activeTab === 'workout' && prescription && (
-                <div id={`${panelId}-workout`} role="tabpanel" aria-labelledby="tab-workout" className="tab-panel-content animate-fade-in">
+                <div
+                    id={`${panelId}-workout`}
+                    role="region"
+                    aria-label="Workout Step Breakdown"
+                    className="tab-panel-content animate-fade-in"
+                >
                     <section className="detailed-plan-panel" aria-label="Workout Step Breakdown">
                         <div className="plan-summary-bar">
                             <span>Target: <strong>{prescription.targetDurationMin} minutes</strong></span>

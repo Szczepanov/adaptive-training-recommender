@@ -1000,6 +1000,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               date={decisionInput?.date ?? ''}
               recommendation={activeRec}
               evidence={morningEvidence}
+              prescription={activeRec?.prescription}
               adjustmentDirection={adjustmentDirection}
               activeAlternativeId={activeAlternativeId}
               isGateLocked={recommendation?.envelopes?.safety.clinicalFlagActive ?? false}
@@ -1011,6 +1012,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               onSelectActiveRecoveryWalk={handleSelectActiveRecoveryWalk}
               onResetAlternative={handleResetAlternative}
               onStartSession={onStartSession}
+              onOpenReclassify={recentActivities.length > 0 ? () => setReclassifyModalOpen(true) : undefined}
             />
           ) : (
             <div className="dashboard-card empty-recommendation-card">

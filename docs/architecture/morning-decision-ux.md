@@ -91,7 +91,7 @@ Do not interpret these events as server-side population telemetry unless a futur
 
 ## 8. Adherence quick actions
 
-Keyboard shortcuts `[1]`, `[2]`, and `[3]` are convenience controls. A synchronous in-flight guard prevents key repeat or rapid click/key combinations from enqueueing duplicate adherence writes before React state has re-rendered the disabled controls.
+Keyboard shortcuts `[1]`, `[2]`, and `[3]` are convenience controls. A synchronous in-flight guard prevents key repeat or rapid click/key combinations from enqueuing duplicate adherence writes before React state has re-rendered the disabled controls.
 
 ## 9. Verification
 

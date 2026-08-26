@@ -412,9 +412,11 @@ function mergeAdherenceIntoGarmin(
     const evidenceTier: EvidenceTier = recommendation.adherence.followed && candidate.template?.stimulusProfile
         ? 'exactPrescribedMatch'
         : (event.evidenceTier ?? 'garminTrainingEffect');
+    const sources = Array.from(new Set([...event.sources, 'adherence' as const]));
+    const notes = recommendation.adherence.notes || event.athleteFeedback?.notes || null;
     return {
         ...event,
-        sources: ['garmin', 'adherence'],
+        sources,
         confidence: 'high',
         evidenceTier,
         linkedRecommendationDate: recommendation.date,
@@ -427,7 +429,7 @@ function mergeAdherenceIntoGarmin(
             ? candidate.template.stimulusProfile
             : event.estimatedStimulus,
         exactTemplateMatch: !!(recommendation.adherence.followed && candidate.template?.stimulusProfile),
-        athleteFeedback: { followed: recommendation.adherence.followed, notes: recommendation.adherence.notes },
+        athleteFeedback: { followed: recommendation.adherence.followed, notes },
     };
 }
 
