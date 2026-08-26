@@ -29,7 +29,7 @@ import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingInte
 import { POLICY_VERSION } from './policy';
 import { resolveExecutionDose } from './dose';
 import { isTemplatePhaseEligible } from './periodization';
-import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
+import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import { adjudicateExternalSession } from './externalSession';
 import { externalEventAsFixedActivity, toSyntheticTemplate, externalSessionDisplayPrescription } from './externalSessionProfiles';
 // M3.6: this module only ever reads gating/isEvent/id/title, identical on v1 and v2
@@ -656,7 +656,7 @@ export async function evaluateTrainingWithIntent(
         preferences ?? context.preferences,
         date,
         {
-            resolveMinimumDaysAfterHardLowerBody, resolvedAvailability: availability, fatigueTier: mode, authoredPlanBlocks,
+            resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, resolvedAvailability: availability, fatigueTier: mode, authoredPlanBlocks,
             ...(evergreen ? { coverageState: buildCoverageState(evergreen.planDefinition, date) } : {}),
         },
         fixedActivities,

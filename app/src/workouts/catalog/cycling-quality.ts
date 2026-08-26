@@ -10,7 +10,7 @@ export const CYCLING_QUALITY_WORKOUTS: WorkoutDefinition[] = [
     duration: { defaultMin: 70, minimumMin: 45, maximumMin: 90 },
     loadProfile: { cardiovascular: 4, muscular: 3, mechanical: 1, eccentric: 1, coordination: 1, recoveryHours: 48 },
     eligibility: { minimumReadiness: 6, maximumSoreness: 6, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain'] },
-    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
+    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'], engineTemplateIds: ['end_hard_02'], engineTemplatePriority: 20,
     blocks: [
       { id: 'warmup', name: 'Progressive warm-up', role: 'warmup', steps: [
         timeStep('threshold_warmup', 'bike_progressive_warmup', 'Progressive warm-up', 720, { target: { type: 'rpe', min: 1, max: 3 } }),
@@ -45,7 +45,7 @@ export const CYCLING_QUALITY_WORKOUTS: WorkoutDefinition[] = [
     duration: { defaultMin: 75, minimumMin: 50, maximumMin: 95 },
     loadProfile: { cardiovascular: 4, muscular: 4, mechanical: 1, eccentric: 1, coordination: 2, recoveryHours: 54 },
     eligibility: { minimumReadiness: 7, maximumSoreness: 5, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain'] },
-    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
+    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'], engineTemplateIds: ['end_hard_02'], engineTemplatePriority: 0,
     blocks: [
       { id: 'warmup', name: 'Warm-up', role: 'warmup', steps: [ timeStep('ou_warmup', 'bike_progressive_warmup', 'Progressive warm-up', 900, { target: { type: 'rpe', min: 1, max: 3 } }) ]},
       { id: 'main', name: 'Over-under blocks', role: 'main', steps: [ timeStep('ou_repeats', 'bike_over_under_interval', 'Over-under block', 720, { sets: 3, restAfterSec: 300, target: { type: 'rpe', min: 6, max: 8 }, notes: ['Alternate brief surges with meaningful pedalling near sustainable power', 'Change only one or two progression variables at a time'] }) ]},
@@ -75,7 +75,7 @@ export const CYCLING_QUALITY_WORKOUTS: WorkoutDefinition[] = [
     duration: { defaultMin: 60, minimumMin: 40, maximumMin: 75 },
     loadProfile: { cardiovascular: 4, muscular: 4, mechanical: 1, eccentric: 1, coordination: 3, recoveryHours: 48 },
     eligibility: { minimumReadiness: 6, maximumSoreness: 6, forbiddenPainFlags: ['knee_swelling', 'acute_knee_pain'] },
-    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'],
+    equipment: ['bike'], contraindicationTags: ['acute_knee_pain'], engineTemplateIds: ['end_crit_surges_01'], engineTemplatePriority: 20,
     blocks: [
       { id: 'warmup', name: 'Warm-up', role: 'warmup', steps: [ timeStep('surge_warmup', 'bike_progressive_warmup', 'Progressive warm-up', 900, { target: { type: 'rpe', min: 1, max: 3 } }) ]},
       { id: 'main', name: 'Surge set', role: 'main', steps: [ timeStep('surges', 'bike_short_surge', 'Short acceleration', 20, { sets: 10, restAfterSec: 160, target: { type: 'rpe', min: 8, max: 9 }, notes: ['Continue pedalling during recovery', 'Do not turn every surge into a sprint test'] }) ]},

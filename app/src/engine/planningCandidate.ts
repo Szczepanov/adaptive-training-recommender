@@ -122,18 +122,21 @@ export function buildPlanningCandidateIndex(
 ): Map<string, PlanningCandidate> {
     const index = new Map<string, PlanningCandidate>();
     for (const workout of workouts) {
-        if (workout.status !== 'active') continue;
+        if (workout.status !== 'active' || workout.manualOnly) continue;
         const candidate = derivePlanningCandidate(workout, templates);
         if (!candidate) continue;
         const templateId = workout.engineTemplateIds?.[0];
         if (!templateId) continue;
         // A template already indexed keeps whichever workout comes first in the catalog
-        // array unless engineTemplatePriority says otherwise -- same tie-break WorkoutDefinition
-        // itself documents for "several detailed workouts implement one template".
+        // array unless engineTemplatePriority says otherwise -- the *lower* number wins,
+        // ties keep whichever was inserted first. This must match `workoutForTemplate`
+        // (prescription.ts), the pre-existing resolver for the same field: two independent
+        // "which workout represents this template" answers would otherwise disagree the
+        // moment more than one workout links to the same template id.
         const existingWorkout = index.has(templateId)
             ? workouts.find(w => w.id === index.get(templateId)!.workoutId)
             : undefined;
-        if (existingWorkout && (existingWorkout.engineTemplatePriority ?? 0) >= (workout.engineTemplatePriority ?? 0)) continue;
+        if (existingWorkout && (workout.engineTemplatePriority ?? 1) >= (existingWorkout.engineTemplatePriority ?? 1)) continue;
         index.set(templateId, candidate);
     }
     return index;
@@ -147,4 +150,10 @@ export const PLANNING_CANDIDATE_INDEX: Map<string, PlanningCandidate> = buildPla
  *  declares a stricter one. */
 export function resolveMinimumDaysAfterHardLowerBody(templateId: string): number | undefined {
     return PLANNING_CANDIDATE_INDEX.get(templateId)?.minimumDaysAfterHardLowerBody;
+}
+
+/** Looks up the declared recovery hours for a given engine template id from the
+ *  active catalog's planning candidate index. */
+export function resolveRecoveryHoursForTemplate(templateId: string): number | undefined {
+    return PLANNING_CANDIDATE_INDEX.get(templateId)?.recoveryHours;
 }

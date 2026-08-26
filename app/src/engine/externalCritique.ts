@@ -82,6 +82,7 @@ const RECOVERY_CONSTRAINT_DETAIL: Record<string, string> = {
     HARD_LOWER_BODY_SPACING_VIOLATION: 'heavy lower-body work repeats before the spacing this engine requires',
     ROLLING_HARD_CAP_EXCEEDED: 'this would be the fourth hard session inside a rolling seven days',
     ANCHOR_PROTECTION_VIOLATION: 'heavy strength work and a key cycling session are stacked within a day of each other',
+    RECOVERY_WINDOW_UNELAPSED: 'a hard session sits within the declared recovery window of a prior session',
 };
 
 /**

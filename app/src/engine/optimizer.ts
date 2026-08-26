@@ -57,6 +57,7 @@ export interface RecentHistoryEntry {
     systemicCost?: number;
     lowerBodyCost?: number;
     durationMin?: number;
+    recoveryHours?: number;
 }
 
 export interface OptimizationOptions {
@@ -77,6 +78,8 @@ export interface OptimizationOptions {
     fatigueTier?: 'train' | 'modify' | 'recover';
     /** Phase 5.2: per-workout hard-lower-body spacing. */
     resolveMinimumDaysAfterHardLowerBody?: (templateId: string) => number | undefined;
+    /** Declared recovery hours lookup for prior session templates. */
+    resolveRecoveryHours?: (templateId: string) => number | undefined;
     /** Explicit, user-authored date overlays applied to the focus event plan. */
     authoredPlanBlocks?: readonly AuthoredPlanBlock[];
     /** Resolved safety guardrails, including structured injury-derived guardrails. */
@@ -200,6 +203,7 @@ export function normalizeHistory(
         const modality = ((entry.modality ?? entry.type ?? 'None') as SessionTemplate['modality']);
         const systemicCost = entry.systemicCost ?? 0;
         const lowerBodyCost = ('lowerBodyCost' in entry && typeof entry.lowerBodyCost === 'number') ? entry.lowerBodyCost : 0;
+        const recoveryHours = ('recoveryHours' in entry && typeof entry.recoveryHours === 'number') ? entry.recoveryHours : undefined;
 
         let role: SessionRole = 'supporting';
         if ('role' in entry && entry.role) role = entry.role;
@@ -218,12 +222,14 @@ export function normalizeHistory(
             intensityClass,
             systemicCost,
             lowerBodyCost,
+            ...(recoveryHours !== undefined ? { recoveryHours } : {}),
         };
     });
 }
 
 export interface HistoryFeatureSummary {
     hasPriorAnchor1d: boolean;
+    hasActivePriorRecoveryWindow: boolean;
     priorHardLowerBodyGaps: number[];
     hardInRollingWindowCount: number;
     priorKeyCyclingWindow0to1: boolean;
@@ -244,9 +250,11 @@ export interface HistoryFeatureSummary {
  */
 export function buildHistoryFeatureSummary(
     history: SessionHistoryEntry[],
-    targetDate: string
+    targetDate: string,
+    resolveRecoveryHours?: (templateId: string) => number | undefined,
 ): HistoryFeatureSummary {
     let hasPriorAnchor1d = false;
+    let hasActivePriorRecoveryWindow = false;
     const priorHardLowerBodyGaps: number[] = [];
     let hardInRollingWindowCount = 0;
     let priorKeyCyclingWindow0to1 = false;
@@ -269,6 +277,15 @@ export function buildHistoryFeatureSummary(
 
         if (diff > 0 && diff < 2 && (h.role === 'anchor' || (h.category && ANCHOR_HISTORY_CATEGORIES.includes(h.category)))) {
             hasPriorAnchor1d = true;
+        }
+
+        const recHours = h.recoveryHours
+            ?? (h.templateId && resolveRecoveryHours ? resolveRecoveryHours(h.templateId) : undefined);
+        if (diff >= 1 && diff <= 5 && recHours !== undefined && recHours > 0) {
+            const requiredDays = Math.ceil(recHours / 24);
+            if (diff < requiredDays) {
+                hasActivePriorRecoveryWindow = true;
+            }
         }
 
         if (diff >= 1 && h.lowerBodyCost >= 0.6) {
@@ -338,6 +355,7 @@ export function buildHistoryFeatureSummary(
 
     return {
         hasPriorAnchor1d,
+        hasActivePriorRecoveryWindow,
         priorHardLowerBodyGaps,
         hardInRollingWindowCount,
         priorKeyCyclingWindow0to1,
@@ -382,7 +400,7 @@ export function evaluateRecoveryConstraints(
     summary?: HistoryFeatureSummary,
 ): string[] {
     const reasons: string[] = [];
-    const histSummary = summary ?? buildHistoryFeatureSummary(history, targetDate);
+    const histSummary = summary ?? buildHistoryFeatureSummary(history, targetDate, options.resolveRecoveryHours);
 
     const isCandidateAnchor = options.anchorRole
         ? candidateMatchesAnchorRole(template, options.anchorRole)
@@ -390,6 +408,14 @@ export function evaluateRecoveryConstraints(
 
     if (isCandidateAnchor && histSummary.hasPriorAnchor1d) {
         reasons.push('QUALITY_SPACING_VIOLATION');
+    }
+
+    const isHardOrAnchorCandidate = isCandidateAnchor
+        || template.systemicCost >= 0.5
+        || ANCHOR_HISTORY_CATEGORIES.includes(template.category);
+
+    if (isHardOrAnchorCandidate && histSummary.hasActivePriorRecoveryWindow) {
+        reasons.push('RECOVERY_WINDOW_UNELAPSED');
     }
 
     const candidateLowerBodyCost = template.costProfile?.lowerBody ?? (STRENGTH_CATEGORIES.includes(template.category) ? 0.6 : 0);
@@ -575,6 +601,7 @@ export function buildOptimizationContext(
         const systemic = costProf?.systemic;
         const lowerBody = costProf?.lowerBody;
         const entryType = 'type' in e && typeof e.type === 'string' ? e.type : undefined;
+        const recoveryHours = ('recoveryHours' in e && typeof e.recoveryHours === 'number') ? e.recoveryHours : undefined;
 
         return {
             date: completedDate ?? e.date,
@@ -584,6 +611,7 @@ export function buildOptimizationContext(
             role: e.role,
             systemicCost: e.systemicCost ?? systemic ?? 0,
             lowerBodyCost: ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number') ? e.lowerBodyCost : (lowerBody ?? 0),
+            ...(recoveryHours !== undefined ? { recoveryHours } : {}),
             ...((typeof (e as Record<string, unknown>).durationMin === 'number') || recordDurationMin !== undefined
                 ? { durationMin: typeof (e as Record<string, unknown>).durationMin === 'number'
                     ? (e as Record<string, number>).durationMin
@@ -624,6 +652,7 @@ export function buildOptimizationContext(
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),
+            ...(options.resolveRecoveryHours ? { resolveRecoveryHours: options.resolveRecoveryHours } : {}),
         },
     };
 }
@@ -645,7 +674,7 @@ export function rankCandidates(
     const rawHistory = options.recentHistory ?? [];
     const targetDate = options.date ?? getLocalDateString();
     const history = normalizeHistory(rawHistory, targetDate);
-    const summary = buildHistoryFeatureSummary(history, targetDate);
+    const summary = buildHistoryFeatureSummary(history, targetDate, options.resolveRecoveryHours);
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
     const coverageState = options.coverageState;
     const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';

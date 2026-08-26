@@ -560,6 +560,7 @@ export interface SessionHistoryEntry {
     intensityClass?: IntensityClass;
     systemicCost: number;
     lowerBodyCost: number;
+    recoveryHours?: number;
 }
 
 export type SessionPlanRelationship =

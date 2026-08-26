@@ -58,7 +58,7 @@ import {
     resolveRecoveryStyle,
 } from './optimizer';
 import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
-import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
+import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
@@ -524,7 +524,7 @@ export function evaluateProjectedDate(
         shared.preferences,
         date,
         {
-            anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier,
+            anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier,
             authoredPlanBlocks: shared.authoredPlanBlocks,
             ...(shared.planDefinition ? { coverageState: buildCoverageState(planDefinition, date) } : {}),
         },
@@ -637,6 +637,8 @@ export function projectTrailingHistory(
         if ('lowerBodyCost' in e && typeof e.lowerBodyCost === 'number') item.lowerBodyCost = e.lowerBodyCost;
         if ('durationMin' in e && typeof e.durationMin === 'number') item.durationMin = e.durationMin;
         else if (recordDurationMin !== undefined) item.durationMin = recordDurationMin;
+        if ('recoveryHours' in e && typeof e.recoveryHours === 'number') item.recoveryHours = e.recoveryHours;
+        else if (item.templateId) item.recoveryHours = resolveRecoveryHoursForTemplate(item.templateId);
         return item;
     });
 }
@@ -653,6 +655,7 @@ export function trailingHistoryFromCompletedExposures(
         systemicCost: e.costProfile?.systemic ?? 0,
         lowerBodyCost: e.costProfile?.lowerBody ?? 0,
         durationMin: e.trainingRecordLike?.duration_min ?? e.deliveredDose?.completedDurationMin,
+        recoveryHours: e.recoveryHours ?? (e.templateId ? resolveRecoveryHoursForTemplate(e.templateId) : undefined),
     }));
 }
 
@@ -1127,6 +1130,7 @@ export function generateWeekAheadPlan(
         systemicCost: template.systemicCost,
         lowerBodyCost: template.costProfile?.lowerBody ?? 0,
         durationMin: template.durationMin,
+        recoveryHours: resolveRecoveryHoursForTemplate(template.id),
         type: template.title,
     });
 
