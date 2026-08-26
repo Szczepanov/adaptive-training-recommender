@@ -263,13 +263,8 @@ export function buildHistoryFeatureSummary(
     let lastEntry: SessionHistoryEntry | null = null;
     let lastEntryDiff = Number.POSITIVE_INFINITY;
 
-    const historyByDate = new Map<string, SessionHistoryEntry>();
-
     for (let i = 0; i < history.length; i++) {
         const h = history[i];
-        if (!historyByDate.has(h.date)) {
-            historyByDate.set(h.date, h);
-        }
         const diff = getDayDiff(targetDate, h.date);
 
         if (diff > 0 && diff < 2 && (h.role === 'anchor' || (h.category && ANCHOR_HISTORY_CATEGORIES.includes(h.category)))) {
@@ -332,7 +327,7 @@ export function buildHistoryFeatureSummary(
     let consecutiveHardStreak = 0;
     for (let checkOffset = 1; checkOffset <= 14; checkOffset++) {
         const checkDate = addDaysToLocalDateString(targetDate, -checkOffset);
-        const entry = historyByDate.get(checkDate);
+        const entry = history.find(h => h.date === checkDate);
         if (!entry || entry.category === 'Rest' || entry.category === 'Mobility/Recovery') {
             break;
         }
