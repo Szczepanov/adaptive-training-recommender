@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import type { BodyRegion, TissueResponseLevel } from '../../engine/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import { COMPLETION_TISSUE_LEVEL_OPTIONS } from './sessionCompletionOptions';
@@ -58,7 +58,9 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     const [showAbandonConfirm, setShowAbandonConfirm] = useState(openAbandonConfirmation);
     const [elapsedMinutes] = useState(() => Math.max(1, Math.round((Date.now() - Date.parse(startedAt)) / 60000)));
 
-    const missingRequiredSteps = steps.filter(s => s.isPlanned && !s.optional && !s.isComplete);
+    // ⚡ Bolt: Memoize step array filters to prevent redundant O(N) operations on every form state change (e.g. typing in notes)
+    const missingRequiredSteps = useMemo(() => steps.filter(s => s.isPlanned && !s.optional && !s.isComplete), [steps]);
+    const completedExercisesCount = useMemo(() => steps.filter(s => s.loggedSetsCount > 0).length, [steps]);
 
     const handleConfirmComplete = async () => {
         const payload: SessionCompletionPayload = {
@@ -118,7 +120,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                             </div>
                             <div className="metric-pill">
                                 <span className="metric-label">Exercises</span>
-                                <span className="metric-value">{steps.filter(s => s.loggedSetsCount > 0).length}</span>
+                                <span className="metric-value">{completedExercisesCount}</span>
                             </div>
                         </div>
 
