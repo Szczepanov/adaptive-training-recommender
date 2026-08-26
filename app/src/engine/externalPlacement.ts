@@ -51,12 +51,11 @@ function weekDates(plan: ExternalTrainingPlan, week: number): string[] {
 
 /**
  * Resolves every session to a date. The stored overlay wins; otherwise the plan's own
- * week/day preference applies, and a `preferred`/`any_day` session shifts to the next free
- * day in its own week rather than doubling up.
+ * week/day preference applies. Multiple sessions authored for the same preferred day
+ * (e.g. double training days like ride + strength) remain co-located on that date.
  *
- * A `fixed` session never moves — if its day is taken it stays there and the caller sees
- * two sessions on one date, which is a real conflict the athlete should resolve rather
- * than one this function should silently paper over.
+ * Sessions with flexibility 'any_day' and no preferred day spread to the first unoccupied
+ * day in their week.
  */
 export function resolvePlacement(
     plan: ExternalTrainingPlan,
@@ -69,31 +68,48 @@ export function resolvePlacement(
     );
     const placed: PlacedSession[] = [];
 
-    // Fixed sessions first: they cannot yield, so everything else spreads around them.
-    const ordered = [...plan.sessions].sort((left, right) => {
-        const fixedRank = Number(right.placement.flexibility === 'fixed') - Number(left.placement.flexibility === 'fixed');
-        if (fixedRank !== 0) return fixedRank;
-        return left.placement.week - right.placement.week;
-    });
+    // Process sessions with an explicit day target (overlay override or declared preferredDay)
+    // first so that 'any_day' sessions can spread around them.
+    const explicitSessions: ExternalPlanSession[] = [];
+    const floatingSessions: ExternalPlanSession[] = [];
 
-    for (const session of ordered) {
+    for (const session of plan.sessions) {
+        if (assigned.has(session.id) || Boolean(session.placement.preferredDay)) {
+            explicitSessions.push(session);
+        } else {
+            floatingSessions.push(session);
+        }
+    }
+
+    for (const session of explicitSessions) {
         const override = assigned.get(session.id);
         if (override) {
+            const date = override.date;
             placed.push({
                 session,
-                date: override.date,
+                date,
                 status: override.status,
-                moved: override.date !== impliedDate(plan, session),
+                moved: date !== impliedDate(plan, session),
             });
-            if (occupiesDate(override.status) && override.date) taken.add(override.date);
+            if (occupiesDate(override.status) && date) taken.add(date);
             continue;
         }
 
+        const date = impliedDate(plan, session);
+        taken.add(date);
+        placed.push({
+            session,
+            date,
+            status: 'planned',
+            moved: false,
+        });
+    }
+
+    // Distribute floating (any_day without preferredDay) sessions across open days in the week
+    for (const session of floatingSessions) {
         const wanted = impliedDate(plan, session);
         let date = wanted;
-        if (session.placement.flexibility !== 'fixed' && taken.has(wanted)) {
-            // Forward within the week first: moving a blocked Saturday session to Monday
-            // would schedule it in the past relative to where the plan put it.
+        if (taken.has(wanted)) {
             const week = weekDates(plan, session.placement.week);
             const free = week.find(candidate => candidate > wanted && !taken.has(candidate))
                 ?? week.find(candidate => !taken.has(candidate));

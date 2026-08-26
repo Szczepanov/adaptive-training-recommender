@@ -56,13 +56,30 @@ describe('resolvePlacement', () => {
         expect(placed[0].status).toBe('moved');
     });
 
-    it('spreads a moveable session off a day a fixed session already owns', () => {
-        const fixed = session('fixed', { placement: { week: 1, preferredDay: 'monday', flexibility: 'fixed', ifMissed: 'drop' } });
-        const moveable = session('moveable', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
-        const placed = resolvePlacement(plan([moveable, fixed]), null);
+    it('keeps multiple sessions on the same preferred day (double days)', () => {
+        const easyAerobic = session('easy-aerobic', {
+            title: 'Easy Aerobic Volume',
+            placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+        });
+        const strengthMaint = session('upper-strength', {
+            title: 'Upper-Body Strength Maintenance',
+            placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+        });
+        const placed = resolvePlacement(plan([easyAerobic, strengthMaint]), null);
 
-        expect(placed.find(item => item.session.id === 'fixed')!.date).toBe(MONDAY);
-        expect(placed.find(item => item.session.id === 'moveable')!.date).not.toBe(MONDAY);
+        expect(placed.length).toBe(2);
+        expect(placed.every(item => item.date === '2026-08-20')).toBe(true);
+        expect(placed.every(item => item.moved === false)).toBe(true);
+        expect(placed.every(item => item.status === 'planned')).toBe(true);
+    });
+
+    it('spreads an unanchored any_day session off a day that already has a preferred session', () => {
+        const preferred = session('preferred', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
+        const floating = session('floating', { placement: { week: 1, flexibility: 'any_day', ifMissed: 'drop' } });
+        const placed = resolvePlacement(plan([floating, preferred]), null);
+
+        expect(placed.find(item => item.session.id === 'preferred')!.date).toBe(MONDAY);
+        expect(placed.find(item => item.session.id === 'floating')!.date).not.toBe(MONDAY);
     });
 
     it('never moves a fixed session, even onto a free day', () => {
@@ -74,40 +91,45 @@ describe('resolvePlacement', () => {
         expect(placed.every(item => item.moved === false)).toBe(true);
     });
 
-    it('treats an uncompleted fixed activity as occupying its day', () => {
-        const moveable = session('s1', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
-        const placed = resolvePlacement(plan([moveable]), null, { fixedActivities: [fixedActivity(MONDAY)] });
+    it('treats an uncompleted fixed activity as occupying its day for floating any_day sessions', () => {
+        const floating = session('s1', { placement: { week: 1, flexibility: 'any_day', ifMissed: 'drop' } });
+        const placed = resolvePlacement(plan([floating]), null, { fixedActivities: [fixedActivity(MONDAY)] });
 
         expect(placed[0].date).not.toBe(MONDAY);
     });
 
-    it('ignores a completed fixed activity, whose day is free again', () => {
-        const moveable = session('s1', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
+    it('ignores a completed fixed activity, whose day is free again for floating sessions', () => {
+        const floating = session('s1', { placement: { week: 1, flexibility: 'any_day', ifMissed: 'drop' } });
         const done = { ...fixedActivity(MONDAY), isCompleted: true };
-        expect(resolvePlacement(plan([moveable]), null, { fixedActivities: [done] })[0].date).toBe(MONDAY);
+        expect(resolvePlacement(plan([floating]), null, { fixedActivities: [done] })[0].date).toBe(MONDAY);
     });
 
     it('keeps a moved session holding its new date', () => {
         const moved = session('moved', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
-        const other = session('other', { placement: { week: 1, preferredDay: 'wednesday', flexibility: 'preferred', ifMissed: 'drop' } });
+        const other = session('other', { placement: { week: 1, flexibility: 'any_day', ifMissed: 'drop' } });
         const placed = resolvePlacement(plan([moved, other]), overlay([{ sessionId: 'moved', date: '2026-08-19', status: 'moved' }]));
 
         expect(placed.find(item => item.session.id === 'moved')!.date).toBe('2026-08-19');
-        expect(placed.find(item => item.session.id === 'other')!.date).not.toBe('2026-08-19');
+        expect(placed.find(item => item.session.id === 'other')!.date).toBe(MONDAY);
     });
 
-    it('frees the date of a dropped session', () => {
+    it('frees the date of a dropped session for floating sessions', () => {
         const dropped = session('dropped', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
-        const other = session('other', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
+        const other = session('other', { placement: { week: 1, flexibility: 'any_day', ifMissed: 'drop' } });
         const placed = resolvePlacement(plan([dropped, other]), overlay([{ sessionId: 'dropped', date: MONDAY, status: 'dropped' }]));
 
         expect(placed.find(item => item.session.id === 'other')!.date).toBe(MONDAY);
     });
 
-    it('spreads forward within the week, never backwards into the past', () => {
+    it('spreads floating sessions forward within the week, never backwards into the past', () => {
         const saturdayFixed = session('fixed', { placement: { week: 1, preferredDay: 'saturday', flexibility: 'fixed', ifMissed: 'drop' } });
-        const saturdayFlex = session('flex', { placement: { week: 1, preferredDay: 'saturday', flexibility: 'preferred', ifMissed: 'drop' } });
-        const placed = resolvePlacement(plan([saturdayFixed, saturdayFlex]), null);
+        const mondayFixed = session('mon', { placement: { week: 1, preferredDay: 'monday', flexibility: 'fixed', ifMissed: 'drop' } });
+        const tueFixed = session('tue', { placement: { week: 1, preferredDay: 'tuesday', flexibility: 'fixed', ifMissed: 'drop' } });
+        const wedFixed = session('wed', { placement: { week: 1, preferredDay: 'wednesday', flexibility: 'fixed', ifMissed: 'drop' } });
+        const thuFixed = session('thu', { placement: { week: 1, preferredDay: 'thursday', flexibility: 'fixed', ifMissed: 'drop' } });
+        const friFixed = session('fri', { placement: { week: 1, preferredDay: 'friday', flexibility: 'fixed', ifMissed: 'drop' } });
+        const floating = session('flex', { placement: { week: 1, flexibility: 'any_day', ifMissed: 'drop' } });
+        const placed = resolvePlacement(plan([saturdayFixed, mondayFixed, tueFixed, wedFixed, thuFixed, friFixed, floating]), null);
 
         expect(placed.find(item => item.session.id === 'flex')!.date).toBe('2026-08-23');
     });

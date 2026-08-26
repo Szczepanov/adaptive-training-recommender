@@ -130,4 +130,51 @@ describe('ExternalPlanWeek occupancy and scheduling contracts', () => {
         expect(html).not.toContain('2026-08-26');
         expect(html).toContain('Endurance Ride');
     });
+
+    it('renders multiple training sessions on a single day (double day)', () => {
+        const doubleDayPlaced: PlacedSession[] = [
+            {
+                session: {
+                    id: 'w1-thu-easy-aerobic', title: 'Easy Aerobic Volume', priority: 'supporting',
+                    placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+                    gating: { modality: 'cycling', intensity: 'easy', durationMin: 35, durationMax: 50, environment: 'either', equipment: [] },
+                    prescription: { summary: 'Low-cost aerobic volume before the race rehearsal.' },
+                },
+                date: '2026-08-27',
+                status: 'planned',
+                moved: false,
+            },
+            {
+                session: {
+                    id: 'w1-thu-upper-maintenance', title: 'Upper-Body Strength Maintenance', priority: 'optional',
+                    placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+                    gating: { modality: 'strength', intensity: 'moderate', durationMin: 25, durationMax: 35, environment: 'indoor', equipment: ['free_weights', 'pullup_bar'] },
+                    prescription: { summary: 'Low-fatigue upper-body maintenance.' },
+                },
+                date: '2026-08-27',
+                status: 'planned',
+                moved: false,
+            },
+        ];
+
+        const html = renderToStaticMarkup(
+            React.createElement(ExternalPlanWeek, {
+                userId: 'user-1',
+                planTitle: 'Adaptive Peak Plan',
+                weekStartDate: '2026-08-24',
+                placed: doubleDayPlaced,
+                critique: null,
+                today: '2026-08-24',
+                onProposeReplacement: () => ({ sessionId: 's1', missedDate: '2026-08-24', outcome: 'unresolved' as const, rationale: '' }),
+                onConfirmReplacement: () => {},
+                onChooseDate: () => {},
+            }),
+        );
+
+        expect(html).toContain('2026-08-27');
+        expect(html).toContain('Easy Aerobic Volume');
+        expect(html).toContain('Upper-Body Strength Maintenance');
+        expect(html).toContain('easy · 35–50 min');
+        expect(html).toContain('moderate · 25–35 min');
+    });
 });

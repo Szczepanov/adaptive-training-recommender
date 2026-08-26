@@ -26,15 +26,49 @@ export function planEndDate(header: Pick<ExternalPlanHeader, 'startDate' | 'week
     return addDaysToLocalDateString(header.startDate, header.weekCount * 7 - 1);
 }
 
-/** A session still to be done. `completed` is excluded: the day's decision is already made. */
-export function placedSessionForDate(active: ActiveExternalPlan, date: string): PlacedSession | null {
-    return active.placed.find(item =>
+const PRIORITY_RANK: Record<string, number> = {
+    key: 3,
+    supporting: 2,
+    optional: 1,
+};
+
+/** All sessions still to be done on a date (`completed`, `dropped`, `superseded` are excluded). */
+export function placedSessionsForDate(active: ActiveExternalPlan, date: string): PlacedSession[] {
+    return active.placed.filter(item =>
         item.date === date && (item.status === 'planned' || item.status === 'moved'),
-    ) ?? null;
+    );
 }
 
 /**
- * Builds the adjudication input for one day, or null when nothing is placed. The
+ * Primary session still to be done on a date. If multiple sessions exist on the same day
+ * (e.g. double training days), returns the highest-priority session (key > supporting > optional).
+ */
+export function placedSessionForDate(active: ActiveExternalPlan, date: string): PlacedSession | null {
+    const sessions = placedSessionsForDate(active, date);
+    if (sessions.length === 0) return null;
+    if (sessions.length === 1) return sessions[0];
+    return [...sessions].sort((left, right) => {
+        const leftRank = PRIORITY_RANK[left.session.priority] ?? 0;
+        const rightRank = PRIORITY_RANK[right.session.priority] ?? 0;
+        return rightRank - leftRank;
+    })[0];
+}
+
+/**
+ * Builds the adjudication inputs for all sessions on a day.
+ */
+export function externalPlanContextsForDate(active: ActiveExternalPlan, date: string): ExternalPlanContext[] {
+    const placedList = placedSessionsForDate(active, date);
+    return placedList.map(placed => ({
+        planId: active.plan.planId,
+        revision: active.plan.revision,
+        session: placed.session,
+        contentHash: active.header.contentHash,
+    }));
+}
+
+/**
+ * Builds the primary adjudication input for one day, or null when nothing is placed. The
  * `contentHash` comes from the stored header rather than being recomputed here, so the
  * decision audit records the hash the import actually agreed to (ADR-0019 D-IMMUT).
  */
