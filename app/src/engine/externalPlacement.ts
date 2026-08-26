@@ -49,20 +49,22 @@ function weekDates(plan: ExternalTrainingPlan, week: number): string[] {
     return Array.from({ length: 7 }, (_, offset) => addDaysToLocalDateString(start, offset));
 }
 
-/** Sessions authored for the same plan week + preferred weekday form one placement unit.
- * That is the only reliable signal the schema has for an intentional double/triple day. */
-function preferredDayGroupKey(session: ExternalPlanSession): string | null {
+/** Only movable `preferred` sessions authored for the same week + weekday form one
+ * intentional placement unit. `fixed` remains hard occupancy, preserving its pre-existing
+ * precedence over movable work on the same date. */
+function preferredBundleKey(session: ExternalPlanSession): string | null {
     const day = session.placement.preferredDay;
-    return day ? `${session.placement.week}:${day}` : null;
+    return session.placement.flexibility === 'preferred' && day
+        ? `${session.placement.week}:${day}`
+        : null;
 }
 
 /**
- * Resolves every session to a date. The stored overlay wins. Sessions authored for the
- * same week + `preferredDay` are kept together as one intentional double/triple-day bundle.
- * A movable (`preferred`) bundle still yields to unrelated occupancy and moves as a unit
- * within its week; a bundle containing a `fixed` session stays anchored and exposes the
- * conflict instead. `any_day` sessions without a preferred day spread individually after
- * the authored bundles have been placed.
+ * Resolves every session to a date. The stored overlay wins. Movable sessions authored for
+ * the same week + `preferredDay` are kept together as one intentional double/triple-day
+ * bundle and, when their preferred date is occupied, move together within the week.
+ * `fixed` sessions are placed first and never yield; `any_day` sessions then spread
+ * individually across the remaining open dates.
  */
 export function resolvePlacement(
     plan: ExternalTrainingPlan,
@@ -90,8 +92,8 @@ export function resolvePlacement(
     };
 
     // Explicit overlay assignments are absolute per-session decisions and therefore win
-    // before authored grouping. A same-group assignment that still sits on the authored
-    // date is allowed to coexist with its unresolved siblings below.
+    // before authored placement. A same-bundle assignment that remains on the authored
+    // date may coexist with its unresolved preferred siblings below.
     for (const session of plan.sessions) {
         const override = assigned.get(session.id);
         if (!override) continue;
@@ -105,16 +107,28 @@ export function resolvePlacement(
         if (occupiesDate(override.status)) addOccupancy(date, session.id);
     }
 
-    const groups = new Map<string, ExternalPlanSession[]>();
-    for (const session of plan.sessions) {
-        if (assigned.has(session.id) || !session.placement.preferredDay) continue;
-        const key = preferredDayGroupKey(session)!;
-        const group = groups.get(key) ?? [];
-        group.push(session);
-        groups.set(key, group);
+    // Preserve the original fixed-session contract: fixed work owns its implied date even
+    // when that creates a real conflict. Preferred companions must yield rather than making
+    // `preferred` silently equivalent to `fixed`.
+    const fixedSessions = plan.sessions
+        .filter(session => !assigned.has(session.id) && session.placement.flexibility === 'fixed')
+        .sort((left, right) => impliedDate(plan, left).localeCompare(impliedDate(plan, right)) || left.id.localeCompare(right.id));
+    for (const session of fixedSessions) {
+        const date = impliedDate(plan, session);
+        placed.push({ session, date, status: 'planned', moved: false });
+        addOccupancy(date, session.id);
     }
 
-    const orderedGroups = [...groups.entries()].sort(([, left], [, right]) => {
+    const bundles = new Map<string, ExternalPlanSession[]>();
+    for (const session of plan.sessions) {
+        const key = preferredBundleKey(session);
+        if (assigned.has(session.id) || !key) continue;
+        const bundle = bundles.get(key) ?? [];
+        bundle.push(session);
+        bundles.set(key, bundle);
+    }
+
+    const orderedBundles = [...bundles.entries()].sort(([, left], [, right]) => {
         const leftSession = left[0];
         const rightSession = right[0];
         return leftSession.placement.week - rightSession.placement.week
@@ -122,16 +136,15 @@ export function resolvePlacement(
             || leftSession.id.localeCompare(rightSession.id);
     });
 
-    for (const [groupKey, group] of orderedGroups) {
-        const wanted = impliedDate(plan, group[0]);
-        const anchored = group.some(session => session.placement.flexibility === 'fixed');
+    for (const [bundleKey, bundle] of orderedBundles) {
+        const wanted = impliedDate(plan, bundle[0]);
 
-        // An overlay for a sibling that explicitly remains on the authored date should not
-        // split the authored double day. An overlay moved elsewhere is intentionally not
-        // ignored: manual placement is per-session authority and may split the bundle.
-        const sameGroupOverlayAtWanted = new Set(
+        // An overlay for a preferred sibling that explicitly remains on the authored date
+        // should not split the double day. A sibling moved elsewhere is intentionally not
+        // ignored: overlay authority is per-session and may split the authored bundle.
+        const sameBundleOverlayAtWanted = new Set(
             plan.sessions
-                .filter(session => preferredDayGroupKey(session) === groupKey)
+                .filter(session => preferredBundleKey(session) === bundleKey)
                 .filter(session => {
                     const assignment = assigned.get(session.id);
                     return assignment?.date === wanted && occupiesDate(assignment.status);
@@ -140,32 +153,33 @@ export function resolvePlacement(
         );
 
         let date = wanted;
-        if (!anchored && isBlocked(wanted, sameGroupOverlayAtWanted)) {
-            const week = weekDates(plan, group[0].placement.week);
+        if (isBlocked(wanted, sameBundleOverlayAtWanted)) {
+            const week = weekDates(plan, bundle[0].placement.week);
             const free = week.find(candidate => candidate > wanted && !isBlocked(candidate))
                 ?? week.find(candidate => !isBlocked(candidate));
             if (free) date = free;
         }
 
-        for (const session of group) {
+        for (const session of bundle) {
             placed.push({ session, date, status: 'planned', moved: date !== wanted });
             addOccupancy(date, session.id);
         }
     }
 
-    // Distribute unanchored sessions across remaining open days. A malformed/legacy fixed
-    // session without preferredDay retains its implied Monday rather than being moved.
+    // Distribute remaining non-fixed, non-bundled sessions (normally `any_day`) across the
+    // open days. A preferred-day session only reaches this path when its schema combination
+    // is not `flexibility: preferred`, so it remains an individual placement rather than an
+    // authored double-day signal.
     const floatingSessions = plan.sessions
-        .filter(session => !assigned.has(session.id) && !session.placement.preferredDay)
-        .sort((left, right) => {
-            const fixedRank = Number(right.placement.flexibility === 'fixed') - Number(left.placement.flexibility === 'fixed');
-            return fixedRank || left.placement.week - right.placement.week || left.id.localeCompare(right.id);
-        });
+        .filter(session => !assigned.has(session.id)
+            && session.placement.flexibility !== 'fixed'
+            && !preferredBundleKey(session))
+        .sort((left, right) => left.placement.week - right.placement.week || left.id.localeCompare(right.id));
 
     for (const session of floatingSessions) {
         const wanted = impliedDate(plan, session);
         let date = wanted;
-        if (session.placement.flexibility !== 'fixed' && isBlocked(wanted)) {
+        if (isBlocked(wanted)) {
             const week = weekDates(plan, session.placement.week);
             const free = week.find(candidate => candidate > wanted && !isBlocked(candidate))
                 ?? week.find(candidate => !isBlocked(candidate));
