@@ -51,8 +51,8 @@ export function installVisualServices(fixture: VisualFixture): void {
   );
   activityOverrideService.getAllOverrides = async () => ({});
   activityOverrideService.getOverride = async () => null;
-  activityOverrideService.setOverride = async () => {};
-  activityOverrideService.deleteOverride = async () => {};
+  activityOverrideService.saveOverride = async () => true;
+  activityOverrideService.deleteOverride = async () => true;
   activityService.getActivitiesInRange = async () => ({
     status: 'AVAILABLE', data: fixture.activities, revision: null,
   });
