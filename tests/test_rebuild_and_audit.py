@@ -228,7 +228,15 @@ def test_audit_reports_missing_snapshots_and_availability() -> None:
             }
         }
 
+    def get_historical_snapshots_side_effect(start_iso: str, end_iso: str) -> dict[str, dict]:
+        res = {}
+        for d in ["2026-08-02", "2026-08-03", "2026-08-05", "2026-08-06"]:
+            if start_iso <= d <= end_iso:
+                res[d] = get_snapshot_side_effect(d)
+        return res
+
     mock_repo.get_snapshot.side_effect = get_snapshot_side_effect
+    mock_repo.get_historical_snapshots.side_effect = get_historical_snapshots_side_effect
 
     archive_store = MagicMock()
     archive_store.list_archived_dates.return_value = set()

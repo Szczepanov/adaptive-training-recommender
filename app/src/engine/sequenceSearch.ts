@@ -328,7 +328,18 @@ export function beamSearchWeekAheadPlan(
             }
             return b.cumulativeScore - a.cumulativeScore;
         });
-        if (nextGeneration.length > 0) beam = nextGeneration.slice(0, beamWidth);
+
+        const deduplicated: SearchBranch[] = [];
+        const seenSignatures = new Set<string>();
+        for (const branch of nextGeneration) {
+            const signature = branch.days.map(d => d.template.id).join(';');
+            if (!seenSignatures.has(signature)) {
+                seenSignatures.add(signature);
+                deduplicated.push(branch);
+                if (deduplicated.length >= beamWidth) break;
+            }
+        }
+        if (deduplicated.length > 0) beam = deduplicated;
     }
 
     const winner = beam[0] ?? seedBranch;
