@@ -6,6 +6,7 @@ import { DecisionEvidenceSummary } from './DecisionEvidenceSummary';
 import { OneTapAlternatives } from './OneTapAlternatives';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
+import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
 import './MorningDecisionCard.css';
 
@@ -57,6 +58,8 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     onResetAlternative,
 }: MorningDecisionCardProps) {
     const [activeTab, setActiveTab] = useState<'none' | 'why' | 'alternatives' | 'workout'>('none');
+    const [launching, setLaunching] = useState(false);
+    const [launchError, setLaunchError] = useState<string | null>(null);
     const panelId = useId();
 
     const handleTabToggle = (tab: 'why' | 'alternatives' | 'workout') => {
@@ -67,13 +70,48 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         }
     };
 
-    const handleStartPrimary = () => {
-        usabilityMetrics.recordActionSelected(userId, date, 'start_primary_session');
+    const handleStartPrimary = async () => {
+        usabilityMetrics.recordActionSelected(userId, date, 'start_primary_session', {
+            adjusted: adjustmentDirection !== null,
+            alternativeId: activeAlternativeId,
+        });
+        setLaunchError(null);
+
         if (isCheckinMissing && onNavigateCheckin) {
             onNavigateCheckin();
-        } else if (recommendation?.primarySession && onStartSession) {
-            void onStartSession(recommendation.primarySession);
-        } else if (recommendation?.prescription) {
+            return;
+        }
+
+        if (!recommendation) return;
+
+        // A recommendation's primarySession is an immutable binding for the original
+        // authored prescription. Once the athlete selects a one-tap alternative or load
+        // adjustment, launch the currently displayed prescription instead of silently
+        // executing that stale binding.
+        const needsAdjustedBinding = Boolean(activeAlternativeId || adjustmentDirection !== null);
+        if (onStartSession && needsAdjustedBinding && prescription) {
+            setLaunching(true);
+            try {
+                const launch = await prepareCatalogSessionLaunch(userId, prescription);
+                await onStartSession(launch.binding);
+            } catch (error) {
+                setLaunchError(error instanceof Error ? error.message : 'Unable to prepare the adjusted session.');
+            } finally {
+                setLaunching(false);
+            }
+            return;
+        }
+
+        if (recommendation.primarySession && onStartSession) {
+            setLaunching(true);
+            try {
+                await onStartSession(recommendation.primarySession);
+            } catch (error) {
+                setLaunchError(error instanceof Error ? error.message : 'Unable to start this session.');
+            } finally {
+                setLaunching(false);
+            }
+        } else if (prescription) {
             setActiveTab('workout');
         }
     };
@@ -84,17 +122,22 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
             return;
         }
         usabilityMetrics.recordActionSelected(userId, date, `adjust_load_${dir ?? 'reset'}`);
+        setLaunchError(null);
         onAdjustLoad(dir);
     };
 
     const isHardGateActive = isGateLocked || !evidence.boundaries.harderAdjustmentAllowed;
+    const canLaunchCurrentPrescription = Boolean(
+        onStartSession
+        && prescription
+        && (activeAlternativeId || adjustmentDirection !== null),
+    );
 
     return (
         <section
             className={`morning-decision-card ${recommendation ? `mode-${recommendation.mode}` : 'mode-pending'}`}
             aria-label="Today's Morning Training Decision"
         >
-            {/* HERO LAYER 0: What should I do today? */}
             <div className="decision-hero-layer">
                 <div className="hero-top-row">
                     <span className="hero-kicker">Today&apos;s Training Plan</span>
@@ -117,12 +160,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                             Answer 4 quick questions (~10s) so the engine can check your recovery safety gates and finalize today&apos;s workout dose.
                         </p>
                         <div className="hero-cta-wrap">
-                            <button
-                                type="button"
-                                className="btn-hero-primary"
-                                onClick={handleStartPrimary}
-                                aria-label="Start morning check-in"
-                            >
+                            <button type="button" className="btn-hero-primary" onClick={() => void handleStartPrimary()} aria-label="Start morning check-in">
                                 ✓ Start Morning Check-in →
                             </button>
                         </div>
@@ -150,23 +188,22 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                             <span className="metric-tag">{recommendation.template.category}</span>
                         </p>
 
-                        {/* Why this today - 1-sentence punchy summary */}
                         <div className="hero-why-callout" role="note">
                             <p className="why-text">
                                 <strong>Why today:</strong> {recommendation.rationale}
                             </p>
                         </div>
 
-                        {/* Dominant Primary Action CTA */}
                         <div className="hero-cta-wrap">
-                            {recommendation.primarySession && onStartSession ? (
+                            {(canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession)) ? (
                                 <button
                                     type="button"
                                     className="btn-hero-primary"
-                                    onClick={handleStartPrimary}
+                                    onClick={() => void handleStartPrimary()}
+                                    disabled={launching}
                                     aria-label={`Start ${recommendation.template.title}`}
                                 >
-                                    {recommendation.template.modality === 'Strength' ? '🏋️' : '▶️'} Start Session →
+                                    {recommendation.template.modality === 'Strength' ? '🏋️' : '▶️'} {launching ? 'Preparing Session…' : 'Start Session →'}
                                 </button>
                             ) : prescription ? (
                                 <button
@@ -189,6 +226,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                 />
                             )}
                         </div>
+                        {launchError && <p className="form-error-msg" role="alert">{launchError}</p>}
                     </div>
                 ) : (
                     <div className="hero-empty-state">
@@ -197,94 +235,40 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                 )}
             </div>
 
-            {/* PROGRESSIVE DISCLOSURE TABS */}
             {recommendation && (
                 <div className="decision-tabs-bar" role="tablist" aria-label="Decision details and adjustments">
-                    <button
-                        type="button"
-                        role="tab"
-                        id="tab-why"
-                        aria-selected={activeTab === 'why'}
-                        aria-controls={`${panelId}-why`}
-                        className={`decision-tab-btn ${activeTab === 'why' ? 'active' : ''}`}
-                        onClick={() => handleTabToggle('why')}
-                    >
+                    <button type="button" role="tab" id="tab-why" aria-selected={activeTab === 'why'} aria-controls={`${panelId}-why`} className={`decision-tab-btn ${activeTab === 'why' ? 'active' : ''}`} onClick={() => handleTabToggle('why')}>
                         💡 Why & Invalidation Rules {activeTab === 'why' ? '▲' : '▼'}
                     </button>
-                    <button
-                        type="button"
-                        role="tab"
-                        id="tab-alternatives"
-                        aria-selected={activeTab === 'alternatives'}
-                        aria-controls={`${panelId}-alternatives`}
-                        className={`decision-tab-btn ${activeTab === 'alternatives' ? 'active' : ''}`}
-                        onClick={() => handleTabToggle('alternatives')}
-                    >
+                    <button type="button" role="tab" id="tab-alternatives" aria-selected={activeTab === 'alternatives'} aria-controls={`${panelId}-alternatives`} className={`decision-tab-btn ${activeTab === 'alternatives' ? 'active' : ''}`} onClick={() => handleTabToggle('alternatives')}>
                         ⚡ 1-Tap Alternatives {activeTab === 'alternatives' ? '▲' : '▼'}
                     </button>
                     {prescription && (
-                        <button
-                            type="button"
-                            role="tab"
-                            id="tab-workout"
-                            aria-selected={activeTab === 'workout'}
-                            aria-controls={`${panelId}-workout`}
-                            className={`decision-tab-btn ${activeTab === 'workout' ? 'active' : ''}`}
-                            onClick={() => handleTabToggle('workout')}
-                        >
+                        <button type="button" role="tab" id="tab-workout" aria-selected={activeTab === 'workout'} aria-controls={`${panelId}-workout`} className={`decision-tab-btn ${activeTab === 'workout' ? 'active' : ''}`} onClick={() => handleTabToggle('workout')}>
                             📋 Workout Steps {activeTab === 'workout' ? '▲' : '▼'}
                         </button>
                     )}
                 </div>
             )}
 
-            {/* EXPANDED TAB PANELS */}
             {activeTab === 'why' && (
-                <div
-                    id={`${panelId}-why`}
-                    role="tabpanel"
-                    aria-labelledby="tab-why"
-                    className="tab-panel-content animate-fade-in"
-                >
+                <div id={`${panelId}-why`} role="tabpanel" aria-labelledby="tab-why" className="tab-panel-content animate-fade-in">
                     <DecisionEvidenceSummary evidence={evidence} />
                 </div>
             )}
 
             {activeTab === 'alternatives' && (
-                <div
-                    id={`${panelId}-alternatives`}
-                    role="tabpanel"
-                    aria-labelledby="tab-alternatives"
-                    className="tab-panel-content animate-fade-in"
-                >
-                    {/* Load Adjustment Stepper */}
+                <div id={`${panelId}-alternatives`} role="tabpanel" aria-labelledby="tab-alternatives" className="tab-panel-content animate-fade-in">
                     <div className="load-adjustment-box">
                         <span className="box-title">Adjust Intensity & Volume:</span>
                         <div className="load-stepper-row">
-                            <button
-                                type="button"
-                                className={`stepper-btn ${adjustmentDirection === 'easier' ? 'active' : ''}`}
-                                onClick={() => handleLoadAdjustClick(adjustmentDirection === 'easier' ? null : 'easier')}
-                                aria-label="Set easier load"
-                            >
+                            <button type="button" className={`stepper-btn ${adjustmentDirection === 'easier' ? 'active' : ''}`} onClick={() => handleLoadAdjustClick(adjustmentDirection === 'easier' ? null : 'easier')} aria-label="Set easier load">
                                 🟢 Easier
                             </button>
-                            <button
-                                type="button"
-                                className={`stepper-btn ${adjustmentDirection === null ? 'active' : ''}`}
-                                onClick={() => handleLoadAdjustClick(null)}
-                                aria-label="Set recommended load"
-                            >
+                            <button type="button" className={`stepper-btn ${adjustmentDirection === null ? 'active' : ''}`} onClick={() => handleLoadAdjustClick(null)} aria-label="Set recommended load">
                                 🔵 As Recommended
                             </button>
-                            <button
-                                type="button"
-                                className={`stepper-btn ${adjustmentDirection === 'harder' ? 'active' : ''}`}
-                                disabled={isHardGateActive}
-                                onClick={() => handleLoadAdjustClick(adjustmentDirection === 'harder' ? null : 'harder')}
-                                title={isHardGateActive ? 'Harder load locked by active safety gate' : 'Increase load'}
-                                aria-label="Set harder load"
-                            >
+                            <button type="button" className={`stepper-btn ${adjustmentDirection === 'harder' ? 'active' : ''}`} disabled={isHardGateActive} onClick={() => handleLoadAdjustClick(adjustmentDirection === 'harder' ? null : 'harder')} title={isHardGateActive ? 'Harder load locked by active safety gate' : 'Increase load'} aria-label="Set harder load">
                                 🔴 Harder {isHardGateActive && '🔒'}
                             </button>
                         </div>
@@ -308,12 +292,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
             )}
 
             {activeTab === 'workout' && prescription && (
-                <div
-                    id={`${panelId}-workout`}
-                    role="tabpanel"
-                    aria-labelledby="tab-workout"
-                    className="tab-panel-content animate-fade-in"
-                >
+                <div id={`${panelId}-workout`} role="tabpanel" aria-labelledby="tab-workout" className="tab-panel-content animate-fade-in">
                     <section className="detailed-plan-panel" aria-label="Workout Step Breakdown">
                         <div className="plan-summary-bar">
                             <span>Target: <strong>{prescription.targetDurationMin} minutes</strong></span>
