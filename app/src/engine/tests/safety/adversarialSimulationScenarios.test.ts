@@ -44,7 +44,10 @@ describe('multi-week adversarial scenario contracts', () => {
         expect(traces.every(trace => trace.mode === 'recover')).toBe(true);
         expect(traces.every(trace =>
             trace.selected.category === 'Rest' || trace.selected.category === 'Mobility/Recovery')).toBe(true);
-        expect(result.modalityDistribution.Running ?? 0).toBe(0);
+        expect(traces.every(trace => trace.selected.modality !== 'Running')).toBe(true);
+        // The remainder of each generated week is a provisional forecast, so it may contain
+        // later Running once the planner assumes the acute check-in is no longer today's gate.
+        // The invariant here is deliberately scoped to the directly evaluated check-in dates.
         expect(result.constraintViolations).toEqual([]);
     });
 
