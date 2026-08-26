@@ -147,6 +147,8 @@ app/src/engine/
   subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline
   subjectiveDriftAudit.ts # Phase 9.7: compact SubjectiveDriftAudit shape + replay validation
   simulation/          # Scenario harness: runAllScenarios, decision-quality metrics, drift comparisons
+  testing/             # Adversarial PRNG generators & property testing runner
+  tests/safety/        # Adversarial domain scenarios, safety invariants, wellness language audit
 
 app/src/sessions/
   models.ts            # Source-neutral session definitions, prescriptions, occurrences, executions
