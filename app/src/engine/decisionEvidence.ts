@@ -5,7 +5,6 @@ import type {
     Recommendation,
 } from './models';
 
-
 export interface DayOverDayDeltas {
     hasYesterdayData: boolean;
     sleepScoreDelta: number | null;
@@ -153,9 +152,9 @@ export function computeDayOverDayDeltas(
     const phrases: string[] = [];
     if (hrvDeltaYesterday !== null) {
         if (hrvDeltaYesterday >= 4) {
-            phrases.push(`HRV recovered (${signed(hrvDeltaYesterday, 'ms')})`);
+            phrases.push(`HRV increased (${signed(hrvDeltaYesterday, 'ms')})`);
         } else if (hrvDeltaYesterday <= -5) {
-            phrases.push(`HRV dipped (${signed(hrvDeltaYesterday, 'ms')})`);
+            phrases.push(`HRV decreased (${signed(hrvDeltaYesterday, 'ms')})`);
         } else {
             phrases.push(`HRV remained stable (${signed(hrvDeltaYesterday, 'ms')})`);
         }
@@ -165,17 +164,24 @@ export function computeDayOverDayDeltas(
         if (sleepScoreDelta >= 5) {
             phrases.push(`sleep score improved (${signed(sleepScoreDelta)} pts)`);
         } else if (sleepScoreDelta <= -5) {
-            phrases.push(`sleep quality decreased (${signed(sleepScoreDelta)} pts)`);
+            phrases.push(`sleep score decreased (${signed(sleepScoreDelta)} pts)`);
         }
     }
 
     if (restingHrDelta !== null && Math.abs(restingHrDelta) >= 3) {
-        phrases.push(`resting HR is ${restingHrDelta > 0 ? 'elevated' : 'lower'} (${signed(restingHrDelta, 'bpm')})`);
+        phrases.push(`resting HR is ${restingHrDelta > 0 ? 'higher' : 'lower'} (${signed(restingHrDelta, 'bpm')})`);
     }
 
-    const summaryText = phrases.length > 0
-        ? `Since yesterday: ${phrases.join(', ')}.`
-        : 'Physiological markers are within normal rolling baseline variation.';
+    let summaryText: string;
+    if (!yesterdaySnapshot) {
+        summaryText = hrvDeltaBaseline !== null
+            ? `No comparable prior-day snapshot is available. Today's HRV is ${signed(hrvDeltaBaseline, 'ms')} versus the 28-day mean.`
+            : 'No comparable prior-day snapshot is available; showing today’s signals without day-over-day claims.';
+    } else if (phrases.length > 0) {
+        summaryText = `Since yesterday: ${phrases.join(', ')}.`;
+    } else {
+        summaryText = 'Comparable day-over-day signals show only small changes.';
+    }
 
     return {
         hasYesterdayData: !!yesterdaySnapshot,
@@ -207,15 +213,14 @@ export function computeRankedEvidence(
 
     if (!recommendation || !input) return items;
 
-    // 1. Overnight Autonomic Recovery State
     const hrvVal = deltas.hrvToday;
     const hrvBaseDelta = deltas.hrvDeltaBaseline;
     if (hrvVal !== null) {
         if (hrvBaseDelta !== null && hrvBaseDelta >= 2) {
             items.push({
                 id: 'hrv-recovery',
-                title: 'Autonomic Nervous System Recovery',
-                description: `Overnight HRV is ${hrvVal} ms (${signed(hrvBaseDelta, 'ms')} vs 28d baseline), indicating favorable parasympathetic recovery.`,
+                title: 'Overnight HRV Signal',
+                description: `Overnight HRV is ${hrvVal} ms (${signed(hrvBaseDelta, 'ms')} vs 28d mean), a favorable recovery signal when interpreted with the other inputs.`,
                 impact: 'positive',
                 category: 'recovery',
                 weightBadge: 'Primary Driver',
@@ -223,8 +228,8 @@ export function computeRankedEvidence(
         } else if (hrvBaseDelta !== null && hrvBaseDelta <= -4) {
             items.push({
                 id: 'hrv-depression',
-                title: 'Suppressed Autonomic Recovery',
-                description: `Overnight HRV is ${hrvVal} ms (${signed(hrvBaseDelta, 'ms')} below baseline), indicating autonomic stress or incomplete recovery.`,
+                title: 'Lower Overnight HRV Signal',
+                description: `Overnight HRV is ${hrvVal} ms (${signed(hrvBaseDelta, 'ms')} vs 28d mean), a cautious recovery signal that should be interpreted with the other inputs.`,
                 impact: 'cautious',
                 category: 'recovery',
                 weightBadge: 'Primary Driver',
@@ -232,8 +237,8 @@ export function computeRankedEvidence(
         } else {
             items.push({
                 id: 'hrv-stable',
-                title: 'Stable Baseline Recovery',
-                description: `Overnight HRV (${hrvVal} ms) is stable within normal rolling tolerance.`,
+                title: 'Stable Overnight HRV Signal',
+                description: `Overnight HRV (${hrvVal} ms) is close to the available 28-day mean.`,
                 impact: 'positive',
                 category: 'recovery',
                 weightBadge: 'Moderate Impact',
@@ -241,40 +246,50 @@ export function computeRankedEvidence(
         }
     }
 
-    // 2. Musculoskeletal & Check-in Signals
     const checkin = input.subjectiveCheckin;
     const soreness = checkin?.soreness ?? 0;
-    const clinicalFlag = recommendation.envelopes?.safety.clinicalFlagActive;
-    if (clinicalFlag || soreness >= 3) {
+    const safetyEnv = recommendation.envelopes?.safety;
+    const clinicalFlag = safetyEnv?.clinicalFlagActive ?? false;
+    const restrictedModalities = safetyEnv?.restrictedModalities ?? [];
+    if (clinicalFlag || restrictedModalities.length > 0) {
         items.push({
             id: 'tissue-load-protection',
             title: 'Musculoskeletal Safety Protection',
-            description: `Active soreness (${soreness}/10) or tissue restriction is shielding high impact and maximum loading.`,
+            description: clinicalFlag
+                ? 'The engine safety envelope contains an active clinical restriction, so higher-risk loading remains constrained.'
+                : `The engine safety envelope restricts: ${restrictedModalities.join(', ')}.`,
             impact: 'restricting',
             category: 'safety',
             weightBadge: 'Hard Gate',
         });
+    } else if (soreness >= 3) {
+        items.push({
+            id: 'soreness-context',
+            title: 'Reported Soreness',
+            description: `Morning soreness is ${soreness}/10. This is a caution signal, not by itself an engine hard gate.`,
+            impact: 'cautious',
+            category: 'recovery',
+            weightBadge: 'Supporting',
+        });
     }
 
-    // 3. Weekly Microcycle Stimulus Alignment
     if (recommendation.template) {
         items.push({
             id: 'microcycle-adaptation',
             title: `Weekly Stimulus Target (${recommendation.template.category})`,
-            description: `Prescribed ${recommendation.template.title} to develop ${recommendation.template.modality.toLowerCase()} adaptations without exceeding systemic load caps.`,
+            description: `Prescribed ${recommendation.template.title} to develop ${recommendation.template.modality.toLowerCase()} adaptations within the engine's current load envelope.`,
             impact: 'positive',
             category: 'stimulus',
             weightBadge: 'Core Goal',
         });
     }
 
-    // 4. Sleep & Subjective Readiness
     if (deltas.sleepScoreToday !== null) {
         const sleep = deltas.sleepScoreToday;
         items.push({
             id: 'sleep-quality',
-            title: 'Sleep Architecture',
-            description: `Garmin Sleep Score of ${sleep}/100 supports ${sleep >= 75 ? 'normal training capacity' : 'restrained session duration'}.`,
+            title: 'Garmin Sleep Score',
+            description: `Garmin Sleep Score is ${sleep}/100, providing a ${sleep >= 75 ? 'favorable' : 'cautious'} recovery signal alongside the other decision inputs.`,
             impact: sleep >= 75 ? 'positive' : 'cautious',
             category: 'recovery',
             weightBadge: 'Supporting',
@@ -292,49 +307,49 @@ export function computeDecisionBoundaries(
     const softOptimizations: SoftOptimizationFactor[] = [];
 
     const safetyEnv = recommendation?.envelopes?.safety;
-    const hasTissueRestricted = (safetyEnv?.restrictedModalities?.length ?? 0) > 0;
-
-    // Check Hard Gates
+    const restrictedModalities = safetyEnv?.restrictedModalities ?? [];
+    const hasTissueRestricted = restrictedModalities.length > 0;
     const clinicalFlag = safetyEnv?.clinicalFlagActive ?? false;
+    const tissueGateActive = clinicalFlag || hasTissueRestricted;
     hardGates.push({
         id: 'clinical-pain',
         name: 'Musculoskeletal Tissue Gate',
-        active: clinicalFlag || hasTissueRestricted,
+        active: tissueGateActive,
         reason: clinicalFlag
-            ? 'Active symptom/injury flag restricts heavy loading and high-impact work.'
+            ? safetyEnv?.clinicalReason || 'Active symptom/injury flag restricts heavy loading and high-impact work.'
             : hasTissueRestricted
-            ? `Restricted modalities: ${safetyEnv?.restrictedModalities.join(', ')}`
-            : 'No tissue injury restrictions active.',
-        severity: clinicalFlag ? 'blocking' : 'clear',
+                ? `Restricted modalities: ${restrictedModalities.join(', ')}`
+                : 'No tissue injury restrictions active.',
+        severity: clinicalFlag ? 'blocking' : hasTissueRestricted ? 'caution' : 'clear',
     });
 
-    const isFeverOrIll = false; // Evaluated through health anomaly runtime if present
+    const illnessSymptoms = input?.subjectiveCheckin?.illnessSymptoms === true;
     hardGates.push({
         id: 'illness-anomaly',
         name: 'Physiological Illness Gate',
-        active: isFeverOrIll,
-        reason: isFeverOrIll
-            ? 'Acute biomarker anomaly detected. Training restricted for immune safety.'
-            : 'No acute physiological illness markers detected.',
-        severity: isFeverOrIll ? 'blocking' : 'clear',
+        active: illnessSymptoms,
+        reason: illnessSymptoms
+            ? 'The morning check-in reports illness symptoms. Harder training is locked pending a fresh decision.'
+            : 'No illness symptoms are reported in the available morning check-in.',
+        severity: illnessSymptoms ? 'blocking' : 'clear',
     });
 
-    const hardCeiling = recommendation?.envelopes?.plan.maxAllowableTier === 'Rest' || recommendation?.envelopes?.plan.maxAllowableTier === 'Mobility';
+    const maxAllowableTier = recommendation?.envelopes?.plan.maxAllowableTier;
+    const hardCeiling = maxAllowableTier === 'Rest' || maxAllowableTier === 'Mobility';
     hardGates.push({
         id: 'systemic-ceiling',
         name: 'Systemic Load Ceiling',
         active: hardCeiling,
         reason: hardCeiling
-            ? 'Recent heavy fatigue caps today’s volume to rest or mobility.'
-            : 'Systemic capacity open for prescribed dose.',
+            ? `The engine currently caps today at ${maxAllowableTier}.`
+            : 'The plan envelope does not impose a rest/mobility ceiling.',
         severity: hardCeiling ? 'caution' : 'clear',
     });
 
-    // Soft Optimizations
     softOptimizations.push({
         id: 'stimulus-role',
         name: 'Weekly Microcycle Role Allocation',
-        description: 'Selected workout fills pending weekly credit without excessive fatigue overlap.',
+        description: 'The selected workout reflects the engine’s current weekly stimulus allocation.',
         category: 'stimulus',
     });
 
@@ -350,12 +365,17 @@ export function computeDecisionBoundaries(
     softOptimizations.push({
         id: 'progressive-overload',
         name: 'Prescription Dose Titration',
-        description: 'Dose calibrated to recent 28-day chronic volume envelope.',
+        description: 'The displayed dose is the engine-selected prescription for the current decision context.',
         category: 'overload',
     });
 
     const hardGatesActiveCount = hardGates.filter(g => g.active).length;
-    const harderAdjustmentAllowed = !clinicalFlag && recommendation?.mode !== 'recover';
+    const harderAdjustmentAllowed = Boolean(recommendation)
+        && !clinicalFlag
+        && !hasTissueRestricted
+        && !illnessSymptoms
+        && !hardCeiling
+        && recommendation?.mode !== 'recover';
 
     return {
         hardGatesActiveCount,
@@ -363,48 +383,45 @@ export function computeDecisionBoundaries(
         hardGates,
         softOptimizations,
         summary: hardGatesActiveCount > 0
-            ? `${hardGatesActiveCount} active safety guardrails are strictly protecting your session.`
-            : 'All hard safety gates are clear. Recommendation is fully optimized for training adaptation.',
+            ? `${hardGatesActiveCount} active safety guardrail${hardGatesActiveCount === 1 ? '' : 's'} represented here; harder adjustment stays locked while any is active.`
+            : 'No active hard gates are represented by today’s safety envelope and available check-in.',
     };
 }
 
 export function computeInvalidationTriggers(
     recommendation: Recommendation | null,
 ): InvalidationTrigger[] {
-    const triggers: InvalidationTrigger[] = [
+    return [
         {
             id: 'pain-spike',
             icon: '⚡',
             trigger: 'If localized muscle/joint pain exceeds 3/10 during warmup',
-            action: 'Stop immediately and pivot to Joint Mobility or easy Zone 1 recovery walk.',
-            alternativeActionId: 'mobility-pivot',
+            action: 'Stop immediately and pivot to Joint Mobility or another low-load option allowed by the current safety envelope.',
+            alternativeActionId: 'mobility',
         },
         {
             id: 'time-reduction',
             icon: '⏱️',
             trigger: 'If available time drops below 30 minutes',
-            action: 'Select the 1-tap "Express 20m" alternative to preserve stimulus without rushing.',
-            alternativeActionId: 'express-20m',
+            action: 'Select the 1-tap "Express 20m" alternative to preserve the planned structure without rushing.',
+            alternativeActionId: 'time-20',
         },
         {
             id: 'venue-shift',
             icon: '🏠',
             trigger: recommendation?.template.modality === 'Strength'
                 ? 'If gym / barbell equipment is unexpectedly unavailable'
-                : 'If outdoor weather prevents safe execution',
-            action: 'Switch to zero-equipment Home Bodyweight flow.',
+                : 'If the planned venue or weather prevents safe execution',
+            action: 'Switch to the zero-equipment Home Bodyweight option.',
             alternativeActionId: 'home-bodyweight',
         },
         {
             id: 'illness-symptom',
             icon: '🤒',
             trigger: 'If fever, chills, or systemic illness symptoms appear',
-            action: 'Rest completely. Do not train through systemic sickness.',
-            alternativeActionId: 'rest-day',
+            action: 'Do not use a harder alternative. Update the check-in and follow the resulting safety decision; seek medical care when clinically indicated.',
         },
     ];
-
-    return triggers;
 }
 
 export function computeDataConfidence(
@@ -415,7 +432,7 @@ export function computeDataConfidence(
             tier: 'low',
             label: 'Low Confidence (No Data)',
             badgeClass: 'confidence-low',
-            uncertaintyStatement: 'Cannot evaluate recommendation without input data.',
+            uncertaintyStatement: 'Cannot evaluate recommendation confidence without daily input data.',
             reasons: ['No daily input available.'],
         };
     }
@@ -425,41 +442,56 @@ export function computeDataConfidence(
 
     const hasGarmin = dataQuality.hasRecoverySnapshot;
     const hasCheckin = dataQuality.hasSubjectiveCheckin;
+    const checkinComplete = dataQuality.subjectiveCheckinComplete;
     const hasHrv = recoverySnapshot?.raw.hrvOvernightAvg != null;
     const hasSleep = recoverySnapshot?.raw.sleepScore != null;
 
-    if (hasGarmin && hasHrv && hasSleep && hasCheckin) {
-        reasons.push('Continuous overnight Garmin HRV & sleep architecture synced.');
-        reasons.push('Morning subjective readiness & soreness check-in completed.');
+    if (hasGarmin && hasHrv && hasSleep && hasCheckin && checkinComplete) {
+        reasons.push('Garmin overnight HRV and sleep score are available.');
+        reasons.push('Morning subjective check-in is complete.');
         return {
             tier: 'high',
             label: 'High Confidence',
             badgeClass: 'confidence-high',
-            uncertaintyStatement: 'Multi-stream biometric & subjective signals are fully aligned.',
+            uncertaintyStatement: 'The decision has both core wearable signals and a complete subjective check-in.',
             reasons,
         };
     }
 
     if (hasGarmin && (hasHrv || hasSleep)) {
-        reasons.push('Garmin overnight biometric data available.');
+        reasons.push('At least one core Garmin overnight biometric signal is available.');
         if (!hasCheckin) {
-            reasons.push('Morning check-in missing; estimating subjective readiness from wearable baselines.');
+            reasons.push('Morning subjective check-in is missing.');
+        } else if (!checkinComplete) {
+            reasons.push('Morning subjective check-in exists but is incomplete.');
         }
         return {
             tier: 'moderate',
-            label: 'Moderate Confidence (Wearable Only)',
+            label: 'Moderate Confidence',
             badgeClass: 'confidence-moderate',
-            uncertaintyStatement: 'Wearable data is solid, but subjective muscle soreness and energy are estimated.',
+            uncertaintyStatement: 'Useful wearable data is available, but at least one decision input stream is incomplete.',
             reasons,
         };
     }
 
-    reasons.push('Limited or incomplete overnight biometric streams.');
+    if (hasCheckin && checkinComplete) {
+        reasons.push('Morning subjective check-in is complete.');
+        reasons.push('Core overnight Garmin signals are missing or incomplete.');
+        return {
+            tier: 'moderate',
+            label: 'Moderate Confidence (Check-in Only)',
+            badgeClass: 'confidence-moderate',
+            uncertaintyStatement: 'The subjective check-in is usable, but wearable corroboration is limited.',
+            reasons,
+        };
+    }
+
+    reasons.push('Core overnight biometric and/or subjective inputs are incomplete.');
     return {
         tier: 'low',
         label: 'Low Confidence (Sparse Data)',
         badgeClass: 'confidence-low',
-        uncertaintyStatement: 'Recommendation relies on rolling default baselines. Listen closely to internal cues.',
+        uncertaintyStatement: 'The decision has limited direct input evidence. Follow the safety envelope and update missing data when possible.',
         reasons,
     };
 }
@@ -480,7 +512,7 @@ export function assembleMorningDecisionEvidence(
 
     const executiveSummary = recommendation
         ? `${recommendation.template.title} (${recommendation.template.durationMin}m ${recommendation.template.modality}): ${recommendation.rationale}`
-        : 'Complete your morning check-in and sync Garmin data to generate today’s decision.';
+        : 'Complete your morning check-in and sync available recovery data to generate today’s decision.';
 
     return {
         deltas,
