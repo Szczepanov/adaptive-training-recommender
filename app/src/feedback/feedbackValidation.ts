@@ -2,14 +2,21 @@ import type {
     AthleteDeclaredRegret,
     AthleteDecisionAction,
     AthleteDecisionLog,
+    AutonomicReboundState,
+    ClosedLoopFeedbackRecord,
+    CoachingHelpfulness,
     CounterfactualRegret,
     CounterfactualRegretClass,
     DoseReconciliation,
     ModificationReason,
+    RecoveryTrajectory,
+    RecoveryTrajectoryPoint,
+    SubjectiveUtility,
     ZoneDistributionSeconds,
 } from './feedbackModels';
 
 const LOCAL_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_TIMESTAMP_WITH_OFFSET_RE = /^\d{4}-\d{2}-\d{2}T(?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d(?:\.\d{1,9})?(?:Z|[+-](?:[01]\d|2[0-3]):[0-5]\d)$/;
 
 const VALID_ACTIONS: readonly AthleteDecisionAction[] = [
     'accepted',
@@ -45,6 +52,21 @@ const VALID_DECLARED_REGRETS: readonly AthleteDeclaredRegret[] = [
     'should_have_trained_harder',
 ];
 
+const VALID_REBOUND_STATES: readonly AutonomicReboundState[] = [
+    'accelerated',
+    'expected',
+    'suppressed',
+    'insufficient_data',
+];
+
+const VALID_COACHING_HELPFULNESS: readonly CoachingHelpfulness[] = [
+    'very_helpful',
+    'helpful',
+    'neutral',
+    'unhelpful',
+    'counterproductive',
+];
+
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === 'object' && !Array.isArray(value);
 }
@@ -59,41 +81,92 @@ function isRealLocalDate(value: unknown): value is string {
         && date.getUTCDate() === day;
 }
 
+function isIsoTimestampWithOffset(value: unknown): value is string {
+    if (typeof value !== 'string' || !ISO_TIMESTAMP_WITH_OFFSET_RE.test(value)) return false;
+    if (!isRealLocalDate(value.slice(0, 10))) return false;
+    return Number.isFinite(Date.parse(value));
+}
+
+function isFiniteNumber(value: unknown): value is number {
+    return typeof value === 'number' && Number.isFinite(value);
+}
+
+function isFiniteNonNegative(value: unknown): value is number {
+    return isFiniteNumber(value) && value >= 0;
+}
+
+function isNullableFiniteNumber(value: unknown): value is number | null {
+    return value === null || isFiniteNumber(value);
+}
+
+function isNullableFiniteNonNegative(value: unknown): value is number | null {
+    return value === null || isFiniteNonNegative(value);
+}
+
+function isNullableString(value: unknown): value is string | null {
+    return value === null || typeof value === 'string';
+}
+
+function parseRecommendationRef(value: unknown, context: string): { recommendationId: string; revision: number } {
+    if (!isPlainObject(value)
+        || typeof value.recommendationId !== 'string'
+        || value.recommendationId.trim().length === 0
+        || typeof value.revision !== 'number'
+        || !Number.isInteger(value.revision)
+        || value.revision < 1) {
+        throw new Error(`Invalid recommendationRef in ${context}`);
+    }
+    return {
+        recommendationId: value.recommendationId,
+        revision: value.revision,
+    };
+}
+
+function parseRecoveryTrajectoryPoint(value: unknown, context: string): RecoveryTrajectoryPoint {
+    if (!isPlainObject(value)) throw new Error(`Invalid ${context} in RecoveryTrajectory`);
+    if (!isNullableFiniteNumber(value.hrvDeltaPct)) throw new Error(`Invalid hrvDeltaPct in ${context}`);
+    if (!isNullableFiniteNumber(value.rhrDeltaBpm)) throw new Error(`Invalid rhrDeltaBpm in ${context}`);
+    if (value.sorenessScore !== null
+        && (!isFiniteNumber(value.sorenessScore) || value.sorenessScore < 0 || value.sorenessScore > 10)) {
+        throw new Error(`Invalid sorenessScore in ${context}`);
+    }
+    if (value.readinessScore !== null
+        && (!isFiniteNumber(value.readinessScore) || value.readinessScore < 0 || value.readinessScore > 100)) {
+        throw new Error(`Invalid readinessScore in ${context}`);
+    }
+    return {
+        hrvDeltaPct: value.hrvDeltaPct as number | null,
+        rhrDeltaBpm: value.rhrDeltaBpm as number | null,
+        sorenessScore: value.sorenessScore as number | null,
+        readinessScore: value.readinessScore as number | null,
+    };
+}
+
 export function parseAthleteDecisionLog(value: unknown): AthleteDecisionLog {
     if (!isPlainObject(value)) throw new Error('AthleteDecisionLog must be an object');
     if (!isRealLocalDate(value.date)) throw new Error('Invalid date in AthleteDecisionLog');
-
-    if (!isPlainObject(value.recommendationRef)
-        || typeof value.recommendationRef.recommendationId !== 'string'
-        || value.recommendationRef.recommendationId.length === 0
-        || typeof value.recommendationRef.revision !== 'number'
-        || !Number.isInteger(value.recommendationRef.revision)
-        || value.recommendationRef.revision < 1) {
-        throw new Error('Invalid recommendationRef in AthleteDecisionLog');
-    }
+    const recommendationRef = parseRecommendationRef(value.recommendationRef, 'AthleteDecisionLog');
 
     if (typeof value.action !== 'string' || !VALID_ACTIONS.includes(value.action as AthleteDecisionAction)) {
         throw new Error(`Invalid action in AthleteDecisionLog: ${String(value.action)}`);
     }
 
-    if (!Array.isArray(value.reasons) || !value.reasons.every(r => typeof r === 'string' && VALID_REASONS.includes(r as ModificationReason))) {
+    if (!Array.isArray(value.reasons)
+        || !value.reasons.every(r => typeof r === 'string' && VALID_REASONS.includes(r as ModificationReason))) {
         throw new Error('Invalid reasons array in AthleteDecisionLog');
     }
 
-    if (value.note !== null && typeof value.note !== 'string') {
+    if (!isNullableString(value.note)) {
         throw new Error('Invalid note in AthleteDecisionLog');
     }
 
-    if (typeof value.decidedAt !== 'string' || Number.isNaN(Date.parse(value.decidedAt))) {
+    if (!isIsoTimestampWithOffset(value.decidedAt)) {
         throw new Error('Invalid decidedAt ISO timestamp in AthleteDecisionLog');
     }
 
     return {
         date: value.date,
-        recommendationRef: {
-            recommendationId: value.recommendationRef.recommendationId,
-            revision: value.recommendationRef.revision,
-        },
+        recommendationRef,
         action: value.action as AthleteDecisionAction,
         reasons: [...value.reasons] as ModificationReason[],
         note: value.note,
@@ -105,25 +178,33 @@ export function parseDoseReconciliation(value: unknown): DoseReconciliation {
     if (!isPlainObject(value)) throw new Error('DoseReconciliation must be an object');
     if (!isRealLocalDate(value.date)) throw new Error('Invalid date in DoseReconciliation');
 
-    if (typeof value.plannedDurationMin !== 'number' || value.plannedDurationMin < 0) {
+    if (!isFiniteNonNegative(value.plannedDurationMin)) {
         throw new Error('Invalid plannedDurationMin in DoseReconciliation');
     }
-    if (typeof value.actualDurationMin !== 'number' || value.actualDurationMin < 0) {
+    if (!isFiniteNonNegative(value.actualDurationMin)) {
         throw new Error('Invalid actualDurationMin in DoseReconciliation');
     }
-    if (value.plannedWorkKj !== null && (typeof value.plannedWorkKj !== 'number' || value.plannedWorkKj < 0)) {
+    if (!isNullableFiniteNonNegative(value.plannedWorkKj)) {
         throw new Error('Invalid plannedWorkKj in DoseReconciliation');
     }
-    if (value.actualWorkKj !== null && (typeof value.actualWorkKj !== 'number' || value.actualWorkKj < 0)) {
+    if (!isNullableFiniteNonNegative(value.actualWorkKj)) {
         throw new Error('Invalid actualWorkKj in DoseReconciliation');
     }
-    if (typeof value.durationDeltaPct !== 'number' || !Number.isFinite(value.durationDeltaPct)) {
+    if (!isFiniteNumber(value.durationDeltaPct)) {
         throw new Error('Invalid durationDeltaPct in DoseReconciliation');
     }
-    if (value.workDeltaPct !== null && (typeof value.workDeltaPct !== 'number' || !Number.isFinite(value.workDeltaPct))) {
+    const workDeltaPct = value.workDeltaPct;
+    if (workDeltaPct !== null && !isFiniteNumber(workDeltaPct)) {
         throw new Error('Invalid workDeltaPct in DoseReconciliation');
     }
-    if (typeof value.stepOmissionsCount !== 'number' || value.stepOmissionsCount < 0) {
+    const holdCompliancePct = value.holdCompliancePct;
+    if (holdCompliancePct !== null
+        && (!isFiniteNumber(holdCompliancePct) || holdCompliancePct < 0 || holdCompliancePct > 100)) {
+        throw new Error('Invalid holdCompliancePct in DoseReconciliation');
+    }
+    if (typeof value.stepOmissionsCount !== 'number'
+        || !Number.isInteger(value.stepOmissionsCount)
+        || value.stepOmissionsCount < 0) {
         throw new Error('Invalid stepOmissionsCount in DoseReconciliation');
     }
 
@@ -133,17 +214,16 @@ export function parseDoseReconciliation(value: unknown): DoseReconciliation {
             throw new Error('Invalid completedZoneDistribution in DoseReconciliation');
         }
         const zd = value.completedZoneDistribution;
-        if (typeof zd.z1Seconds !== 'number' || typeof zd.z2Seconds !== 'number'
-            || typeof zd.z3Seconds !== 'number' || typeof zd.z4Seconds !== 'number'
-            || typeof zd.z5Seconds !== 'number') {
+        const zoneValues = [zd.z1Seconds, zd.z2Seconds, zd.z3Seconds, zd.z4Seconds, zd.z5Seconds];
+        if (!zoneValues.every(isFiniteNonNegative)) {
             throw new Error('Invalid zone distribution values in DoseReconciliation');
         }
         completedZoneDistribution = {
-            z1Seconds: zd.z1Seconds,
-            z2Seconds: zd.z2Seconds,
-            z3Seconds: zd.z3Seconds,
-            z4Seconds: zd.z4Seconds,
-            z5Seconds: zd.z5Seconds,
+            z1Seconds: zd.z1Seconds as number,
+            z2Seconds: zd.z2Seconds as number,
+            z3Seconds: zd.z3Seconds as number,
+            z4Seconds: zd.z4Seconds as number,
+            z5Seconds: zd.z5Seconds as number,
         };
     }
 
@@ -154,10 +234,27 @@ export function parseDoseReconciliation(value: unknown): DoseReconciliation {
         plannedWorkKj: value.plannedWorkKj,
         actualWorkKj: value.actualWorkKj,
         durationDeltaPct: value.durationDeltaPct,
-        workDeltaPct: value.workDeltaPct,
+        workDeltaPct: workDeltaPct as number | null,
         completedZoneDistribution,
-        holdCompliancePct: typeof value.holdCompliancePct === 'number' ? value.holdCompliancePct : null,
+        holdCompliancePct: holdCompliancePct as number | null,
         stepOmissionsCount: value.stepOmissionsCount,
+    };
+}
+
+export function parseRecoveryTrajectory(value: unknown): RecoveryTrajectory {
+    if (!isPlainObject(value)) throw new Error('RecoveryTrajectory must be an object');
+    if (!isRealLocalDate(value.date)) throw new Error('Invalid date in RecoveryTrajectory');
+    if (typeof value.autonomicReboundState !== 'string'
+        || !VALID_REBOUND_STATES.includes(value.autonomicReboundState as AutonomicReboundState)) {
+        throw new Error('Invalid autonomicReboundState in RecoveryTrajectory');
+    }
+
+    return {
+        date: value.date,
+        hours24: parseRecoveryTrajectoryPoint(value.hours24, 'hours24'),
+        hours48: parseRecoveryTrajectoryPoint(value.hours48, 'hours48'),
+        hours72: parseRecoveryTrajectoryPoint(value.hours72, 'hours72'),
+        autonomicReboundState: value.autonomicReboundState as AutonomicReboundState,
     };
 }
 
@@ -165,29 +262,104 @@ export function parseCounterfactualRegret(value: unknown): CounterfactualRegret 
     if (!isPlainObject(value)) throw new Error('CounterfactualRegret must be an object');
     if (!isRealLocalDate(value.date)) throw new Error('Invalid date in CounterfactualRegret');
 
-    if (typeof value.regretClass !== 'string' || !VALID_REGRET_CLASSES.includes(value.regretClass as CounterfactualRegretClass)) {
+    if (typeof value.regretClass !== 'string'
+        || !VALID_REGRET_CLASSES.includes(value.regretClass as CounterfactualRegretClass)) {
         throw new Error(`Invalid regretClass in CounterfactualRegret: ${String(value.regretClass)}`);
     }
 
-    if (!['low', 'medium', 'high'].includes(value.confidence as string)) {
+    if (typeof value.confidence !== 'string' || !['low', 'medium', 'high'].includes(value.confidence)) {
         throw new Error('Invalid confidence in CounterfactualRegret');
     }
 
-    if (!Array.isArray(value.rationales) || !value.rationales.every(r => typeof r === 'string')) {
+    if (!Array.isArray(value.rationales)
+        || !value.rationales.every(r => typeof r === 'string' && r.trim().length > 0)) {
         throw new Error('Invalid rationales in CounterfactualRegret');
     }
 
-    const declaredRegret = typeof value.athleteDeclaredRegret === 'string'
-        && VALID_DECLARED_REGRETS.includes(value.athleteDeclaredRegret as AthleteDeclaredRegret)
-        ? (value.athleteDeclaredRegret as AthleteDeclaredRegret)
-        : null;
+    if (value.athleteDeclaredRegret !== null
+        && (typeof value.athleteDeclaredRegret !== 'string'
+            || !VALID_DECLARED_REGRETS.includes(value.athleteDeclaredRegret as AthleteDeclaredRegret))) {
+        throw new Error('Invalid athleteDeclaredRegret in CounterfactualRegret');
+    }
+
+    if (!isNullableString(value.counterfactualAlternative)) {
+        throw new Error('Invalid counterfactualAlternative in CounterfactualRegret');
+    }
 
     return {
         date: value.date,
         regretClass: value.regretClass as CounterfactualRegretClass,
-        athleteDeclaredRegret: declaredRegret,
+        athleteDeclaredRegret: value.athleteDeclaredRegret as AthleteDeclaredRegret | null,
         confidence: value.confidence as 'low' | 'medium' | 'high',
         rationales: [...value.rationales],
-        counterfactualAlternative: typeof value.counterfactualAlternative === 'string' ? value.counterfactualAlternative : null,
+        counterfactualAlternative: value.counterfactualAlternative,
+    };
+}
+
+export function parseSubjectiveUtility(value: unknown): SubjectiveUtility {
+    if (!isPlainObject(value)) throw new Error('SubjectiveUtility must be an object');
+    if (!Number.isInteger(value.utilityScore) || (value.utilityScore as number) < 1 || (value.utilityScore as number) > 5) {
+        throw new Error('Invalid utilityScore in SubjectiveUtility');
+    }
+    if (!Number.isInteger(value.clarityScore) || (value.clarityScore as number) < 1 || (value.clarityScore as number) > 5) {
+        throw new Error('Invalid clarityScore in SubjectiveUtility');
+    }
+    if (typeof value.coachingHelpfulness !== 'string'
+        || !VALID_COACHING_HELPFULNESS.includes(value.coachingHelpfulness as CoachingHelpfulness)) {
+        throw new Error('Invalid coachingHelpfulness in SubjectiveUtility');
+    }
+    if (!isNullableString(value.feedbackNote)) {
+        throw new Error('Invalid feedbackNote in SubjectiveUtility');
+    }
+
+    return {
+        utilityScore: value.utilityScore as number,
+        clarityScore: value.clarityScore as number,
+        coachingHelpfulness: value.coachingHelpfulness as CoachingHelpfulness,
+        feedbackNote: value.feedbackNote,
+    };
+}
+
+export function parseClosedLoopFeedbackRecord(value: unknown): ClosedLoopFeedbackRecord {
+    if (!isPlainObject(value)) throw new Error('ClosedLoopFeedbackRecord must be an object');
+    if (!isRealLocalDate(value.date)) throw new Error('Invalid date in ClosedLoopFeedbackRecord');
+    const recommendationRef = parseRecommendationRef(value.recommendationRef, 'ClosedLoopFeedbackRecord');
+    const decision = parseAthleteDecisionLog(value.decision);
+    const doseReconciliation = parseDoseReconciliation(value.doseReconciliation);
+    const recoveryTrajectory = value.recoveryTrajectory === null ? null : parseRecoveryTrajectory(value.recoveryTrajectory);
+    const regret = value.regret === null ? null : parseCounterfactualRegret(value.regret);
+    const utility = value.utility === null ? null : parseSubjectiveUtility(value.utility);
+
+    if (!isIsoTimestampWithOffset(value.createdAt) || !isIsoTimestampWithOffset(value.updatedAt)) {
+        throw new Error('Invalid timestamps in ClosedLoopFeedbackRecord');
+    }
+    if (Date.parse(value.updatedAt) < Date.parse(value.createdAt)) {
+        throw new Error('updatedAt precedes createdAt in ClosedLoopFeedbackRecord');
+    }
+
+    const nestedDates = [
+        decision.date,
+        doseReconciliation.date,
+        recoveryTrajectory?.date ?? value.date,
+        regret?.date ?? value.date,
+    ];
+    if (nestedDates.some(date => date !== value.date)) {
+        throw new Error('Nested date mismatch in ClosedLoopFeedbackRecord');
+    }
+    if (decision.recommendationRef.recommendationId !== recommendationRef.recommendationId
+        || decision.recommendationRef.revision !== recommendationRef.revision) {
+        throw new Error('Nested recommendationRef mismatch in ClosedLoopFeedbackRecord');
+    }
+
+    return {
+        date: value.date,
+        recommendationRef,
+        decision,
+        doseReconciliation,
+        recoveryTrajectory,
+        regret,
+        utility,
+        createdAt: value.createdAt,
+        updatedAt: value.updatedAt,
     };
 }

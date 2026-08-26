@@ -6,10 +6,14 @@
 * **Blocked by:** none for evidence-only data modeling and analytical modules (`SV0`–`SV5`); `SV6` longitudinal calibration requires multi-block real athlete history.
 * **Unlocks:** Signal information-value quantification, short vs. long baseline calibration, collinearity diagnostics, complete closed feedback loop telemetry, counterfactual regret tracking, and prospective real-world outcome validation.
 * **Source analysis:** [`2026-08-26-scientific-and-recommendation-quality-validation.md`](../analysis/2026-08-26-scientific-and-recommendation-quality-validation.md)
+* **Review hardening:** [`2026-08-26-scientific-validation-review-hardening.md`](../analysis/2026-08-26-scientific-validation-review-hardening.md)
 * **Origin / architecture reused:** ADR-0010 (Replay & provenance), ADR-0013 (Injury constraints), ADR-0020 (Subjective baselines), ADR-0023 (Multidomain session evidence), ADR-0025 (Physiological anomaly evaluation), and OV (Performance outcome validation).
 
 > **This is an evidence and calibration capability, not an immediate recommendation-policy mutation.**
 > `SV*` modules collect, reconcile, and derive evidence regarding recommendation efficacy, athlete adherence, recovery trajectories, and regret. They operate as analysis sidecars and do not silently modify same-day selection weights without an explicit, versioned ADR.
+
+> **Counterfactual labels are observational heuristics, not causal estimates.**
+> A single realized session reveals only the observed outcome. Alternate outcomes remain unobserved and must be treated as candidate comparisons for later prospective calibration rather than asserted facts.
 
 ---
 
@@ -30,10 +34,10 @@ Evidence
 The capability must answer:
 1. Does each input signal (HRV, RHR, Sleep, Respiration, Load, Soreness) materially improve daily decisions?
 2. Are $7\text{d}$ rolling acute windows and $28\text{d}$ chronic reference baselines optimally balanced for signal-to-noise ratio?
-3. Are highly correlated signals being double-counted across cascading stress states?
-4. How often does the athlete modify or reject engine recommendations, and what are the primary causal drivers?
-5. Did following (or overriding) a recommendation result in favorable or adverse multi-day recovery and performance?
-6. What is the counterfactual regret rate (*"Would a different recommendation have produced a better outcome?"*)?
+3. Are highly correlated or nonlinearly dependent signals being double-counted across cascading stress states?
+4. How often does the athlete modify or reject engine recommendations, and what reasons are reported?
+5. Which recommendation/athlete-decision patterns are prospectively associated with favorable or adverse multi-day recovery and performance?
+6. What is the operational regret-label rate, and which candidate counterfactuals should be tested prospectively?
 
 ---
 
@@ -44,7 +48,8 @@ This plan does **not**:
 * Create a single opaque "AI confidence" scalar;
 * Silently adjust production fatigue decay half-lives or readiness gates before calibration evidence is reviewed;
 * Override athlete agency or force locked execution;
-* Leak user health data across user isolation boundaries.
+* Leak user health data across user isolation boundaries;
+* Claim causal effects or known counterfactual outcomes from a single-session observational record.
 
 ---
 
@@ -83,27 +88,29 @@ SV6: Multi-Block Prospective Calibration Synthesis
 - [x] Author `docs/plans/scientific-validation-and-feedback-loop.md`.
 
 ### `SV1`: Closed-Loop Domain Models & Validation (`app/src/feedback/`)
-- [ ] Define `feedbackModels.ts`:
+- [x] Define `feedbackModels.ts`:
   - `AthleteDecisionAction` (`accepted`, `scaled_down`, `scaled_up`, `substituted`, `rejected_rest`, `rejected_train_harder`).
   - `DoseReconciliation` (duration, work kJ, zone distribution, hold compliance).
   - `RecoveryTrajectory` (24h, 48h, 72h autonomic rebound, subjective tissue recovery).
   - `CounterfactualRegret` (classification, confidence, counterfactual alternative).
   - `SubjectiveUtility` (Likert utility score 1–5, coaching value).
-- [ ] Implement `feedbackValidation.ts` with strict schema parsing and error guards.
-- [ ] Implement unit tests in `feedbackValidation.test.ts`.
+- [x] Implement `feedbackValidation.ts` with fail-closed schema parsing, finite/range guards, and nested referential integrity.
+- [x] Implement unit tests in `feedbackValidation.test.ts`.
 
 ### `SV2`: Signal Information Value & Collinearity Analytics (`app/src/engine/analytics/`)
-- [ ] Implement `signalFidelityEvaluator.ts`:
-  - Quantify signal variance contribution and mutual information.
-  - Compute collinearity correlation matrix across HRV, RHR, Sleep, Respiration, Load, and Soreness.
-  - Assess $7\text{d}$ vs. $28\text{d}$ baseline stability and noise damping under perturbation.
-- [ ] Implement unit tests in `signalFidelityEvaluator.test.ts`.
+- [x] Implement `signalFidelityEvaluator.ts`:
+  - Quantify signal variance and exploratory normalized mutual information.
+  - Compute Pearson collinearity matrix across HRV, RHR, Sleep, Respiration, Load, Soreness, and Readiness.
+  - Assess $7\text{d}$ vs. $28\text{d}$ baseline stability on identical endpoint dates and expose insufficient-history state.
+- [x] Implement unit tests in `signalFidelityEvaluator.test.ts`.
 
 ### `SV3`: Counterfactual Regret & Usefulness Evaluator (`app/src/feedback/`)
-- [ ] Implement `regretEvaluator.ts`:
-  - Pure rule-based counterfactual regret classifier.
-  - Identifies `optimal_choice`, `overreaching_crash`, `unnecessary_forfeiture`, and `injury_exacerbation`.
-- [ ] Implement unit tests in `regretEvaluator.test.ts`.
+- [x] Implement `regretEvaluator.ts`:
+  - Pure rule-based observational regret classifier.
+  - Identifies `optimal_choice`, `overreaching_crash`, `unnecessary_forfeiture`, and `injury_exacerbation` while preserving an explicit `inconclusive` path.
+  - Counterfactual alternatives are hypotheses/candidate comparisons, not asserted causal outcomes.
+- [x] Implement strict `SubjectiveUtility` validation in `feedbackValidation.ts`.
+- [x] Implement unit tests in `regretEvaluator.test.ts` and utility-schema coverage in `feedbackValidation.test.ts`.
 
 ### `SV4`: Outcome & Shadow Integration
 - [ ] Update `app/src/outcomes/blockOutcome.ts` to include feedback loop metrics in `BlockOutcomeReport`.
@@ -111,6 +118,11 @@ SV6: Multi-Block Prospective Calibration Synthesis
 - [ ] Verify test suite compatibility across `blockOutcome.test.ts` and `shadowLog.test.ts`.
 
 ### `SV5`: Verification & Invariant Assurance
-- [ ] Run full unit test suite (`npm test`).
-- [ ] Run scenario simulation suite (`npm run simulate:scenarios`).
+- [ ] Run full unit test suite (`npm test`) on the final review head.
+- [ ] Run scenario simulation suite (`npm run simulate:scenarios`) on the final review head.
 - [ ] Run baseline diff (`npm run simulate:diff`) ensuring zero unintended drift in live decision policy.
+
+### `SV6`: Multi-Block Prospective Calibration Synthesis
+- [ ] Accumulate sufficient real-athlete history across multiple blocks before estimating signal marginal value or policy changes.
+- [ ] Compare candidate baseline windows and signal combinations using prospective outcomes, not only offline agreement.
+- [ ] Review any proposed production threshold/weight change through an explicit versioned ADR/policy update.
