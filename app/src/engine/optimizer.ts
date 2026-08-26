@@ -222,14 +222,146 @@ export function normalizeHistory(
     });
 }
 
+export interface HistoryFeatureSummary {
+    hasPriorAnchor1d: boolean;
+    priorHardLowerBodyGaps: number[];
+    hardInRollingWindowCount: number;
+    priorKeyCyclingWindow0to1: boolean;
+    priorHeavyStrengthWindow0to1: boolean;
+    priorHeavyLowerBody1d: boolean;
+    usedYesterdayTemplateIds: Set<string>;
+    strengthInLast7DaysCount: number;
+    lastRecoveryWasRest: boolean;
+    lastWasHighIntensity: boolean;
+    consecutiveHardStreak: number;
+    recentRaceSpecificCount6d: number;
+    recentModalitiesInRolling6d: Set<string>;
+}
+
+export function buildHistoryFeatureSummary(
+    history: SessionHistoryEntry[],
+    targetDate: string
+): HistoryFeatureSummary {
+    let hasPriorAnchor1d = false;
+    const priorHardLowerBodyGaps: number[] = [];
+    let hardInRollingWindowCount = 0;
+    let priorKeyCyclingWindow0to1 = false;
+    let priorHeavyStrengthWindow0to1 = false;
+    let priorHeavyLowerBody1d = false;
+    const usedYesterdayTemplateIds = new Set<string>();
+    let strengthInLast7DaysCount = 0;
+    let recentRaceSpecificCount6d = 0;
+    const recentModalitiesInRolling6d = new Set<string>();
+
+    let lastRecoveryEntry: SessionHistoryEntry | null = null;
+    let lastRecoveryDiff = Number.POSITIVE_INFINITY;
+
+    let lastEntry: SessionHistoryEntry | null = null;
+    let lastEntryDiff = Number.POSITIVE_INFINITY;
+
+    for (let i = 0; i < history.length; i++) {
+        const h = history[i];
+        const diff = getDayDiff(targetDate, h.date);
+
+        if (diff > 0 && diff < 2 && (h.role === 'anchor' || (h.category && ANCHOR_HISTORY_CATEGORIES.includes(h.category)))) {
+            hasPriorAnchor1d = true;
+        }
+
+        if (diff >= 1 && h.lowerBodyCost >= 0.6) {
+            priorHardLowerBodyGaps.push(diff);
+        }
+
+        if (diff >= 1 && diff <= 6) {
+            if (h.systemicCost >= 0.5) hardInRollingWindowCount++;
+            if (h.modality) recentModalitiesInRolling6d.add(h.modality);
+        }
+
+        if (diff <= 6 && h.category === 'Race-Specific Endurance') {
+            recentRaceSpecificCount6d++;
+        }
+
+        if (diff >= 0 && diff <= 1) {
+            if (h.modality === 'Cycling' && (h.role === 'anchor' || (h.category && ['Race-Specific Endurance', 'Hard Endurance'].includes(h.category)))) {
+                priorKeyCyclingWindow0to1 = true;
+            }
+            if ((h.category && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(h.category)) || (h.modality === 'Strength' && h.lowerBodyCost >= 0.6)) {
+                priorHeavyStrengthWindow0to1 = true;
+            }
+        }
+
+        if (diff === 1) {
+            if (h.templateId) usedYesterdayTemplateIds.add(h.templateId);
+            if ((h.category && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(h.category)) ||
+                (h.modality === 'Strength' && (h.lowerBodyCost ?? 0) >= 0.6) ||
+                (h.modality === 'Strength' && (h.systemicCost ?? 0) >= 0.65)) {
+                priorHeavyLowerBody1d = true;
+            }
+        }
+
+        if (diff <= 7 && (h.modality === 'Strength' || (h.category && STRENGTH_CATEGORIES.includes(h.category)))) {
+            strengthInLast7DaysCount++;
+        }
+
+        if (diff >= 1) {
+            if (diff < lastEntryDiff) {
+                lastEntryDiff = diff;
+                lastEntry = h;
+            }
+            if (h.category === 'Rest' || h.category === 'Mobility/Recovery') {
+                if (diff < lastRecoveryDiff) {
+                    lastRecoveryDiff = diff;
+                    lastRecoveryEntry = h;
+                }
+            }
+        }
+    }
+
+    const lastRecoveryWasRest = !lastRecoveryEntry || lastRecoveryEntry.category === 'Rest';
+    const lastWasHighIntensity = (lastEntry?.systemicCost ?? 0) >= INTENSITY_STACK_THRESHOLD;
+
+    // Consecutive training days spacing (prevents monotonous 7-14 day training streaks without recovery)
+    let consecutiveHardStreak = 0;
+    for (let checkOffset = 1; checkOffset <= 14; checkOffset++) {
+        const checkDate = addDaysToLocalDateString(targetDate, -checkOffset);
+        const entry = history.find(h => h.date === checkDate);
+        if (!entry || entry.category === 'Rest' || entry.category === 'Mobility/Recovery') {
+            break;
+        }
+        if ((entry.systemicCost ?? 0) >= 0.40) {
+            consecutiveHardStreak++;
+        }
+    }
+
+    return {
+        hasPriorAnchor1d,
+        priorHardLowerBodyGaps,
+        hardInRollingWindowCount,
+        priorKeyCyclingWindow0to1,
+        priorHeavyStrengthWindow0to1,
+        priorHeavyLowerBody1d,
+        usedYesterdayTemplateIds,
+        strengthInLast7DaysCount,
+        lastRecoveryWasRest,
+        lastWasHighIntensity,
+        consecutiveHardStreak,
+        recentRaceSpecificCount6d,
+        recentModalitiesInRolling6d,
+    };
+}
+
 function needsMultisportModalityCoverage(
     template: SessionTemplate,
     focusEvent: UserEvent | null | undefined,
     history: SessionHistoryEntry[],
     targetDate: string,
+    summary?: HistoryFeatureSummary,
 ): boolean {
     if (focusEvent?.category !== 'triathlon') return false;
     if (template.modality !== 'Cycling' && template.modality !== 'Running') return false;
+
+    if (summary) {
+        return !summary.recentModalitiesInRolling6d.has(template.modality);
+    }
 
     const seenInRollingWindow = history.some(entry => {
         const diff = getDayDiff(targetDate, entry.date);
@@ -242,40 +374,29 @@ export function evaluateRecoveryConstraints(
     template: SessionTemplate,
     targetDate: string,
     history: SessionHistoryEntry[],
-    options: OptimizationOptions
+    options: OptimizationOptions,
+    summary?: HistoryFeatureSummary,
 ): string[] {
     const reasons: string[] = [];
+    const histSummary = summary ?? buildHistoryFeatureSummary(history, targetDate);
 
     const isCandidateAnchor = options.anchorRole
         ? candidateMatchesAnchorRole(template, options.anchorRole)
         : ANCHOR_HISTORY_CATEGORIES.includes(template.category);
 
-    if (isCandidateAnchor) {
-        const priorAnchor = history.find(h => {
-            const diff = getDayDiff(targetDate, h.date);
-            return diff > 0 && diff < 2 && (
-                h.role === 'anchor' || (h.category && ANCHOR_HISTORY_CATEGORIES.includes(h.category))
-            );
-        });
-        if (priorAnchor) reasons.push('QUALITY_SPACING_VIOLATION');
+    if (isCandidateAnchor && histSummary.hasPriorAnchor1d) {
+        reasons.push('QUALITY_SPACING_VIOLATION');
     }
 
     const candidateLowerBodyCost = template.costProfile?.lowerBody ?? (STRENGTH_CATEGORIES.includes(template.category) ? 0.6 : 0);
     if (candidateLowerBodyCost >= 0.6) {
         const minGapDays = options.resolveMinimumDaysAfterHardLowerBody?.(template.id) ?? 2;
-        const priorHardLower = history.find(h => {
-            const diff = getDayDiff(targetDate, h.date);
-            return diff >= 1 && diff < minGapDays && h.lowerBodyCost >= 0.6;
-        });
-        if (priorHardLower) reasons.push('HARD_LOWER_BODY_SPACING_VIOLATION');
+        const hasViolation = histSummary.priorHardLowerBodyGaps.some(diff => diff < minGapDays);
+        if (hasViolation) reasons.push('HARD_LOWER_BODY_SPACING_VIOLATION');
     }
 
     if (template.systemicCost >= 0.5) {
-        const hardInRollingWindow = history.filter(h => {
-            const diff = getDayDiff(targetDate, h.date);
-            return diff >= 1 && diff <= 6 && h.systemicCost >= 0.5;
-        }).length;
-        if (hardInRollingWindow >= 3) reasons.push('ROLLING_HARD_CAP_EXCEEDED');
+        if (histSummary.hardInRollingWindowCount >= 3) reasons.push('ROLLING_HARD_CAP_EXCEEDED');
     }
 
     const isHeavyLowerBodyStrength = HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(template.category) ||
@@ -284,22 +405,9 @@ export function evaluateRecoveryConstraints(
         || (template.modality === 'Cycling' && (template.category === 'Race-Specific Endurance' || template.category === 'Hard Endurance'));
 
     if (isHeavyLowerBodyStrength) {
-        const priorKeyCycling = history.find(h => {
-            const diff = getDayDiff(targetDate, h.date);
-            return diff >= 0 && diff <= 1 && h.modality === 'Cycling' && (
-                h.role === 'anchor' || (h.category && ['Race-Specific Endurance', 'Hard Endurance'].includes(h.category))
-            );
-        });
-        if (priorKeyCycling) reasons.push('ANCHOR_PROTECTION_VIOLATION');
+        if (histSummary.priorKeyCyclingWindow0to1) reasons.push('ANCHOR_PROTECTION_VIOLATION');
     } else if (isKeyCyclingSession) {
-        const priorHeavyStrength = history.find(h => {
-            const diff = getDayDiff(targetDate, h.date);
-            return diff >= 0 && diff <= 1 && (
-                (h.category && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(h.category)) ||
-                (h.modality === 'Strength' && h.lowerBodyCost >= 0.6)
-            );
-        });
-        if (priorHeavyStrength) reasons.push('ANCHOR_PROTECTION_VIOLATION');
+        if (histSummary.priorHeavyStrengthWindow0to1) reasons.push('ANCHOR_PROTECTION_VIOLATION');
     }
 
     const focusEvent = options.focusEvent;
@@ -328,15 +436,7 @@ export function evaluateRecoveryConstraints(
 
     const minDaysSpacing = options.resolveMinimumDaysAfterHardLowerBody?.(template.id);
     if (minDaysSpacing === undefined || minDaysSpacing > 1) {
-        const priorHeavyLowerBody = history.find(h => {
-            const diff = getDayDiff(targetDate, h.date);
-            return diff === 1 && (
-                (h.category && HEAVY_LOWER_BODY_STRENGTH_CATEGORIES.includes(h.category)) ||
-                (h.modality === 'Strength' && (h.lowerBodyCost ?? 0) >= 0.6) ||
-                (h.modality === 'Strength' && (h.systemicCost ?? 0) >= 0.65)
-            );
-        });
-        if (priorHeavyLowerBody && (template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category))) {
+        if (histSummary.priorHeavyLowerBody1d && (template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category))) {
             reasons.push('POST_HEAVY_STRENGTH_BUFFER');
         }
     }
@@ -541,6 +641,7 @@ export function rankCandidates(
     const rawHistory = options.recentHistory ?? [];
     const targetDate = options.date ?? getLocalDateString();
     const history = normalizeHistory(rawHistory, targetDate);
+    const summary = buildHistoryFeatureSummary(history, targetDate);
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
     const coverageState = options.coverageState;
     const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';
@@ -579,7 +680,7 @@ export function rankCandidates(
             excludedReasons.push('INTENSITY_SCALE_INADMISSIBLE');
         }
 
-        excludedReasons.push(...evaluateRecoveryConstraints(template, targetDate, history, options));
+        excludedReasons.push(...evaluateRecoveryConstraints(template, targetDate, history, options, summary));
 
         let benefit = calculateStimulusBenefit(template, unresolvedObjectives);
         const fulfilsNominatedAnchor = candidateMatchesAnchorRole(template, options.anchorRole);
@@ -607,11 +708,7 @@ export function rankCandidates(
 
                 // Priority B: cap race-specific endurance sessions to 1 per week, directing the 2nd quality day to general tempo/threshold
                 if (focusEvent.priority === 'B' && template.category === 'Race-Specific Endurance') {
-                    const recentRaceSpecific = history.filter(h =>
-                        getDayDiff(targetDate, h.date) <= 6 &&
-                        h.category === 'Race-Specific Endurance'
-                    ).length;
-                    if (recentRaceSpecific >= 1) {
+                    if (summary.recentRaceSpecificCount6d >= 1) {
                         benefit *= 0.35;
                     }
                 }
@@ -627,7 +724,7 @@ export function rankCandidates(
             }
         }
 
-        if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate)) {
+        if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate, summary)) {
             benefit += MULTISPORT_MODALITY_COVERAGE_BENEFIT;
         }
         if (fulfilsNominatedAnchor) benefit += ANCHOR_TIMING_BENEFIT;
@@ -671,7 +768,7 @@ export function rankCandidates(
             prefMultiplier *= 1.20;
         }
 
-        const usedYesterday = history.some(h => getDayDiff(targetDate, h.date) === 1 && h.templateId === template.id);
+        const usedYesterday = summary.usedYesterdayTemplateIds.has(template.id);
         if (usedYesterday) prefMultiplier *= 0.2;
 
         const isStrengthCategory = STRENGTH_CATEGORIES.includes(template.category);
@@ -679,7 +776,7 @@ export function rankCandidates(
             if (focusEvent) {
                 prefMultiplier *= 0.20;
             } else {
-                const strengthInLast7Days = history.filter(h => getDayDiff(targetDate, h.date) <= 7 && (h.modality === 'Strength' || (h.category && STRENGTH_CATEGORIES.includes(h.category)))).length;
+                const strengthInLast7Days = summary.strengthInLast7DaysCount;
                 if (strengthInLast7Days < 2 && !usedYesterday) {
                     prefMultiplier *= 1.15;
                 } else {
@@ -693,41 +790,18 @@ export function rankCandidates(
             prefMultiplier *= 1.60;
         }
 
-        const lastRecovery = history
-            .filter(h => getDayDiff(targetDate, h.date) >= 1 && (h.category === 'Rest' || h.category === 'Mobility/Recovery'))
-            .sort((a, b) => getDayDiff(targetDate, a.date) - getDayDiff(targetDate, b.date))[0];
-        const lastRecoveryWasRest = !lastRecovery || lastRecovery.category === 'Rest';
-
         if (recoveryStyle === 'mixed' && (template.category === 'Rest' || template.category === 'Mobility/Recovery')) {
-            if (lastRecoveryWasRest && template.category === 'Mobility/Recovery') {
+            if (summary.lastRecoveryWasRest && template.category === 'Mobility/Recovery') {
                 prefMultiplier *= 1.40;
-            } else if (!lastRecoveryWasRest && template.category === 'Rest') {
+            } else if (!summary.lastRecoveryWasRest && template.category === 'Rest') {
                 prefMultiplier *= 1.40;
             }
         }
 
-        const lastEntry = history
-            .filter(h => getDayDiff(targetDate, h.date) >= 1)
-            .sort((a, b) => getDayDiff(targetDate, a.date) - getDayDiff(targetDate, b.date))[0];
-        const lastWasHighIntensity = (lastEntry?.systemicCost ?? 0) >= INTENSITY_STACK_THRESHOLD;
         const candidateIsHighIntensity = template.systemicCost >= INTENSITY_STACK_THRESHOLD;
-        if (lastWasHighIntensity && candidateIsHighIntensity) prefMultiplier *= INTENSITY_STACK_PENALTY;
+        if (summary.lastWasHighIntensity && candidateIsHighIntensity) prefMultiplier *= INTENSITY_STACK_PENALTY;
 
-        // Consecutive training days spacing (prevents monotonous 7-14 day training streaks without recovery)
-        let streak = 0;
-        let checkOffset = 1;
-        while (checkOffset <= 14) {
-            const checkDate = addDaysToLocalDateString(targetDate, -checkOffset);
-            const entry = history.find(h => h.date === checkDate);
-            if (!entry || entry.category === 'Rest' || entry.category === 'Mobility/Recovery') {
-                break;
-            }
-            if ((entry.systemicCost ?? 0) >= 0.40) {
-                streak++;
-            }
-            checkOffset++;
-        }
-
+        const streak = summary.consecutiveHardStreak;
         const isAerobicDefault = template.category === 'Easy Endurance' || (template.title ?? '').toLowerCase().includes('zone 2');
         if (unresolvedObjectives.length === 0) {
             if (streak >= 3) {
@@ -750,7 +824,7 @@ export function rankCandidates(
         let rationale = `Coverage tier: ${coverageNeedTier}. Benefit score: ${benefit.toFixed(2)}, Fatigue cost penalty: ${costPenalty.toFixed(2)}.`;
         if (coverageNeedTier <= 1) rationale += ' (Advances an explicit required weekly programming role.)';
         if (isDisliked(template)) rationale += ` (Soft penalty applied: modality '${template.modality}' is marked as avoided/disliked).`;
-        if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate)) {
+        if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate, summary)) {
             rationale += ` (Event-modality coverage: ${template.modality} has no exposure in the rolling 6-day history.)`;
         }
 
@@ -792,13 +866,25 @@ export function rankCandidates(
         );
 
         if (nearEquivalents.length > 1) {
+            const recencyMap = new Map<string, number>();
             const getRecentIndex = (template: SessionTemplate) => {
+                const cached = recencyMap.get(template.id);
+                if (cached !== undefined) return cached;
                 for (let i = rawHistory.length - 1; i >= 0; i--) {
                     const entry = rawHistory[i];
                     const typeStr = ('type' in entry && typeof entry.type === 'string' ? entry.type : undefined) ?? entry.modality ?? '';
-                    if (template.id && typeStr.includes(template.id)) return rawHistory.length - i;
-                    if (template.title && typeStr.includes(template.title)) return rawHistory.length - i;
+                    if (template.id && typeStr.includes(template.id)) {
+                        const recency = rawHistory.length - i;
+                        recencyMap.set(template.id, recency);
+                        return recency;
+                    }
+                    if (template.title && typeStr.includes(template.title)) {
+                        const recency = rawHistory.length - i;
+                        recencyMap.set(template.id, recency);
+                        return recency;
+                    }
                 }
+                recencyMap.set(template.id, 999);
                 return 999;
             };
 

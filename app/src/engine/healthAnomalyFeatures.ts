@@ -58,35 +58,68 @@ function formatEpochDay(day: number): string {
     return new Date(day * DAY_MS).toISOString().slice(0, 10);
 }
 
-function valueForSignal(snapshot: DailyRecoverySnapshot, signal: HealthCoreSignal): number | null {
-    if (signal === 'rhr') return finiteNumber(snapshot.raw.restingHr);
-    if (signal === 'respiration') return finiteNumber(snapshot.raw.respirationAvg);
-    return finiteNumber(snapshot.raw.hrvOvernightAvg);
+export type ExtractedSignalObservations = {
+    rhr: SignalObservation[];
+    respiration: SignalObservation[];
+    hrv: SignalObservation[];
+};
+
+/**
+ * Extract deduplicated, date-sorted observations for all core signals in a single pass.
+ * Current/future rows are discarded, preserving the invariant that the current day
+ * never enters its own reference baseline.
+ */
+export function extractSignalObservations(
+    currentDate: string,
+    history: readonly DailyRecoverySnapshot[],
+): ExtractedSignalObservations {
+    const currentDay = parseEpochDay(currentDate);
+    if (currentDay === null) {
+        return { rhr: [], respiration: [], hrv: [] };
+    }
+    const startDay = currentDay - HEALTH_ANOMALY_BASELINE_WINDOW_DAYS;
+    const byDateRhr = new Map<string, SignalObservation>();
+    const byDateResp = new Map<string, SignalObservation>();
+    const byDateHrv = new Map<string, SignalObservation>();
+
+    for (let i = 0; i < history.length; i++) {
+        const snapshot = history[i];
+        const day = parseEpochDay(snapshot.date);
+        if (day === null || day < startDay || day >= currentDay) continue;
+
+        const rhrVal = finiteNumber(snapshot.raw.restingHr);
+        if (rhrVal !== null) {
+            byDateRhr.set(snapshot.date, { date: snapshot.date, day, value: rhrVal });
+        }
+        const respVal = finiteNumber(snapshot.raw.respirationAvg);
+        if (respVal !== null) {
+            byDateResp.set(snapshot.date, { date: snapshot.date, day, value: respVal });
+        }
+        const hrvVal = finiteNumber(snapshot.raw.hrvOvernightAvg);
+        if (hrvVal !== null) {
+            byDateHrv.set(snapshot.date, { date: snapshot.date, day, value: hrvVal });
+        }
+    }
+
+    const sortFn = (left: SignalObservation, right: SignalObservation) => left.day - right.day;
+
+    return {
+        rhr: [...byDateRhr.values()].sort(sortFn),
+        respiration: [...byDateResp.values()].sort(sortFn),
+        hrv: [...byDateHrv.values()].sort(sortFn),
+    };
 }
 
 /**
  * Normalize a caller-supplied history into one valid observation per prior calendar day.
- * Current/future rows are discarded even if a caller accidentally includes them, preserving
- * the plan invariant that the current day can never enter its own reference baseline.
  */
 function historyForSignal(
     currentDate: string,
     history: readonly DailyRecoverySnapshot[],
     signal: HealthCoreSignal,
 ): SignalObservation[] {
-    const currentDay = parseEpochDay(currentDate);
-    if (currentDay === null) return [];
-    const startDay = currentDay - HEALTH_ANOMALY_BASELINE_WINDOW_DAYS;
-    const byDate = new Map<string, SignalObservation>();
-
-    for (const snapshot of history) {
-        const day = parseEpochDay(snapshot.date);
-        const value = valueForSignal(snapshot, signal);
-        if (day === null || value === null || day < startDay || day >= currentDay) continue;
-        byDate.set(snapshot.date, { date: snapshot.date, day, value });
-    }
-
-    return [...byDate.values()].sort((left, right) => left.day - right.day);
+    const extracted = extractSignalObservations(currentDate, history);
+    return extracted[signal];
 }
 
 function suspectedTies(observations: readonly SignalObservation[]): boolean {
@@ -254,9 +287,10 @@ function buildRhrFeatures(
     snapshot: DailyRecoverySnapshot,
     history: readonly DailyRecoverySnapshot[],
     baselineVersion: number | null,
+    preExtractedObservations?: SignalObservation[],
 ): HealthCoreSignalFeatures {
     const current = finiteNumber(snapshot.raw.restingHr);
-    const observations = historyForSignal(snapshot.date, history, 'rhr');
+    const observations = preExtractedObservations ?? historyForSignal(snapshot.date, history, 'rhr');
     const meanScale = finiteNumber(snapshot.derived.restingHr28dStdev);
     const medianScale = finiteNumber(snapshot.derived.restingHr28dMad);
     const medianCompatible = baselineVersion !== null && baselineVersion >= 4;
@@ -297,9 +331,10 @@ function buildRespirationFeatures(
     snapshot: DailyRecoverySnapshot,
     history: readonly DailyRecoverySnapshot[],
     baselineVersion: number | null,
+    preExtractedObservations?: SignalObservation[],
 ): HealthCoreSignalFeatures {
     const current = finiteNumber(snapshot.raw.respirationAvg);
-    const observations = historyForSignal(snapshot.date, history, 'respiration');
+    const observations = preExtractedObservations ?? historyForSignal(snapshot.date, history, 'respiration');
     const scale = finiteNumber(snapshot.derived.respiration28dMad);
     const compatible = baselineVersion !== null && baselineVersion >= 3;
     const candidates = [buildCandidate({
@@ -332,9 +367,10 @@ function buildHrvFeatures(
     snapshot: DailyRecoverySnapshot,
     history: readonly DailyRecoverySnapshot[],
     baselineVersion: number | null,
+    preExtractedObservations?: SignalObservation[],
 ): HealthCoreSignalFeatures {
     const current = finiteNumber(snapshot.raw.hrvOvernightAvg);
-    const observations = historyForSignal(snapshot.date, history, 'hrv');
+    const observations = preExtractedObservations ?? historyForSignal(snapshot.date, history, 'hrv');
     const meanScale = finiteNumber(snapshot.derived.hrv28dStdev);
     const medianScale = finiteNumber(snapshot.derived.hrv28dMad);
     const medianCompatible = baselineVersion !== null && baselineVersion >= 4;
@@ -382,13 +418,14 @@ export function mapRecoverySnapshotToHealthAnomalyFeatures(
     history: readonly DailyRecoverySnapshot[] = [],
 ): HealthAnomalyFeatureSet {
     const baselineVersion = finiteNumber(snapshot.derived.baselineComputationVersion);
+    const extracted = extractSignalObservations(snapshot.date, history);
     return {
         date: snapshot.date,
         baselineVersion,
         coreSignals: [
-            buildRhrFeatures(snapshot, history, baselineVersion),
-            buildRespirationFeatures(snapshot, history, baselineVersion),
-            buildHrvFeatures(snapshot, history, baselineVersion),
+            buildRhrFeatures(snapshot, history, baselineVersion, extracted.rhr),
+            buildRespirationFeatures(snapshot, history, baselineVersion, extracted.respiration),
+            buildHrvFeatures(snapshot, history, baselineVersion, extracted.hrv),
         ],
     };
 }
