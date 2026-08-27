@@ -2,11 +2,16 @@
 
 Analyzes multi-provider coverage, baseline stability, and cross-source telemetry
 (Garmin Direct vs Eight Sleep) across empirical historical datasets.
+
+PI5/ADR-0028: rolling baseline admission consumes an exact fail-closed
+`EffectiveIdentityDecisionProjection`; it never calls the provisional co-presence heuristic.
+Until PI6 persistence supplies a projection, a shared-source night remains preserved/descriptive
+but cannot enter HRV/respiration baseline statistics.
 """
 
 import math
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Mapping
 
 from .canonical import (
     METRIC_DAILY_RESPIRATION_RATE_BRPM,
@@ -14,7 +19,12 @@ from .canonical import (
     METRIC_SLEEP_DURATION_SECONDS,
 )
 from .firestore_repository import FirestoreRecoveryRepository
-from .presence_filter import validate_co_presence
+from .identity_eligibility import (
+    EffectiveIdentityDecisionProjection,
+    IdentityBundleKey,
+    is_bundle_baseline_eligible,
+    resolve_bundle_identity_projection,
+)
 
 
 @dataclass
@@ -34,6 +44,8 @@ class MultisourceAuditReport:
     eightSleepRespCount: int
     eightSleepRespMedian: float | None
     eightSleepRespMad: float | None
+    eightSleepIdentityEligibleDays: int
+    eightSleepIdentityExcludedDays: int
     dailyComparisons: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -74,8 +86,21 @@ def run_multisource_audit(
     repository: FirestoreRecoveryRepository,
     start_date_iso: str,
     end_date_iso: str,
+    effective_identity_decisions: Mapping[IdentityBundleKey, EffectiveIdentityDecisionProjection]
+    | None = None,
 ) -> MultisourceAuditReport:
-    """Run empirical shadow audit between Garmin Direct and Eight Sleep."""
+    """Run empirical shadow audit between Garmin Direct and Eight Sleep.
+
+    Missing effective-identity projections fail closed for baseline admission. The raw bundle
+    remains available to descriptive coverage/session-delta telemetry.
+    """
+    identity_decisions = (
+        repository.get_effective_identity_decision_projections_in_range(
+            start_date_iso, end_date_iso
+        )
+        if effective_identity_decisions is None
+        else effective_identity_decisions
+    )
     # 1. Fetch Garmin Direct snapshots
     garmin_snaps = repository.get_historical_snapshots(start_date_iso, end_date_iso)
 
@@ -114,6 +139,8 @@ def run_multisource_audit(
 
     eight_hrv_vals: list[float] = []
     eight_resp_vals: list[float] = []
+    identity_eligible_days = 0
+    identity_excluded_days = 0
 
     daily_comparisons: list[dict[str, Any]] = []
 
@@ -143,11 +170,20 @@ def run_multisource_audit(
         eight_sleep = None
         eight_hrv = None
         eight_resp = None
+        admitted_to_baseline = False
+        effective_identity_status = "UNCERTAIN"
 
         if bundle:
-            # D-MS-PREBASE: Gating check before baseline accumulation
-            verdict = validate_co_presence(snap, bundle)
-            admitted_to_baseline = verdict.verifiedAthlete
+            # D-PID-PREBASE: exact effective decision before baseline accumulation. Missing or
+            # stale projections fail closed; no legacy physiological heuristic can admit a night.
+            admitted_to_baseline = is_bundle_baseline_eligible(bundle, identity_decisions)
+            identity_projection = resolve_bundle_identity_projection(bundle, identity_decisions)
+            if identity_projection is not None:
+                effective_identity_status = identity_projection.effective_status
+            if admitted_to_baseline:
+                identity_eligible_days += 1
+            else:
+                identity_excluded_days += 1
 
             for obs in bundle.get("observations", []):
                 metric = obs.get("metric")
@@ -184,6 +220,8 @@ def run_multisource_audit(
                 "sleepDeltaMinutes": round(sleep_delta, 1) if sleep_delta is not None else None,
                 "eightSleepHrv": round(eight_hrv, 1) if eight_hrv else None,
                 "eightSleepRespiration": round(eight_resp, 1) if eight_resp else None,
+                "effectiveIdentityStatus": effective_identity_status if bundle else None,
+                "identityBaselineEligible": admitted_to_baseline if bundle else None,
             }
         )
 
@@ -215,5 +253,7 @@ def run_multisource_audit(
         eightSleepRespCount=len(eight_resp_vals),
         eightSleepRespMedian=round(resp_median, 1) if resp_median is not None else None,
         eightSleepRespMad=round(resp_mad, 2) if resp_mad is not None else None,
+        eightSleepIdentityEligibleDays=identity_eligible_days,
+        eightSleepIdentityExcludedDays=identity_excluded_days,
         dailyComparisons=daily_comparisons,
     )

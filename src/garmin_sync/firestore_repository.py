@@ -1,11 +1,22 @@
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Any, cast
+from typing import Any, Mapping, cast
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.exceptions import Conflict
 from google.cloud.firestore_v1.base_query import FieldFilter
+
+from .identity_eligibility import (
+    EffectiveIdentityDecisionProjection,
+    IdentityBundleKey,
+    build_effective_identity_decision_index,
+    validate_automatic_identity_assessment,
+    validate_identity_passport_current,
+    validate_identity_passport_version,
+    validate_identity_review_event,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -628,3 +639,137 @@ class FirestoreRecoveryRepository:
         )
         doc = doc_ref.get()
         return doc.to_dict() if doc.exists else None
+
+    def _identity_collection(self, collection_name: str) -> Any:
+        return self._get_db().collection("users").document(self.user_id).collection(collection_name)
+
+    def _save_immutable_identity_document(
+        self,
+        collection_name: str,
+        document_id: str,
+        payload: Mapping[str, Any],
+    ) -> bool:
+        """Create an immutable server-owned identity document atomically and idempotently.
+
+        Firestore ``create`` is a single create-only write. Replaying the exact bytes after a
+        conflict is a no-op; reusing an existing identity for different content is rejected so a
+        concurrent writer cannot overwrite evidence needed by historical replay.
+        """
+
+        if not document_id:
+            raise ValueError("Identity document id must be non-empty.")
+        stored = dict(payload)
+        doc_ref = self._identity_collection(collection_name).document(document_id)
+        try:
+            doc_ref.create(stored)
+            return True
+        except Conflict as error:
+            snapshot = doc_ref.get()
+            if snapshot.exists and snapshot.to_dict() == stored:
+                return False
+            raise ValueError(
+                f"Immutable identity document {collection_name}/{document_id} already exists "
+                "with different content."
+            ) from error
+
+    def save_identity_passport_version(self, passport: Mapping[str, Any]) -> bool:
+        """Persist one fully validated immutable/replayable passport version."""
+
+        if not validate_identity_passport_version(passport):
+            raise ValueError("Identity passport version does not match the persisted schema.")
+        version = cast(str, passport.get("passportVersion"))
+        return self._save_immutable_identity_document(
+            "physiological_identity_passport_versions", version, passport
+        )
+
+    def set_current_identity_passport(self, passport: Mapping[str, Any]) -> None:
+        """Replace the fully validated server-owned online passport materialization."""
+
+        if not validate_identity_passport_current(passport):
+            raise ValueError("Current identity passport does not match the persisted schema.")
+        self._identity_collection("physiological_identity_passports").document("current").set(
+            dict(passport)
+        )
+
+    def get_current_identity_passport(self) -> dict[str, Any] | None:
+        snapshot = (
+            self._identity_collection("physiological_identity_passports").document("current").get()
+        )
+        return snapshot.to_dict() if snapshot.exists else None
+
+    def get_identity_passport_version(self, version: str) -> dict[str, Any] | None:
+        snapshot = (
+            self._identity_collection("physiological_identity_passport_versions")
+            .document(version)
+            .get()
+        )
+        return snapshot.to_dict() if snapshot.exists else None
+
+    def save_automatic_identity_assessment(self, assessment: Mapping[str, Any]) -> bool:
+        """Persist fully validated immutable model output and every contributing bundle ref."""
+
+        if not validate_automatic_identity_assessment(assessment):
+            raise ValueError("Automatic identity assessment does not match the persisted schema.")
+        assessment_id = cast(str, assessment.get("id"))
+        return self._save_immutable_identity_document(
+            "health_identity_assessments", assessment_id, assessment
+        )
+
+    def get_automatic_identity_assessment(self, assessment_id: str) -> dict[str, Any] | None:
+        snapshot = (
+            self._identity_collection("health_identity_assessments").document(assessment_id).get()
+        )
+        return snapshot.to_dict() if snapshot.exists else None
+
+    def save_identity_review_event(self, event: Mapping[str, Any]) -> bool:
+        """Persist a fully validated append-only admin/user review event."""
+
+        if not validate_identity_review_event(event):
+            raise ValueError("Identity review event does not match the persisted schema.")
+        event_id = cast(str, event.get("id"))
+        stored_event = dict(event)
+        recorded_at = cast(str, stored_event["recordedAt"])
+        parsed = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
+        stored_event["recordedAt"] = parsed
+        return self._save_immutable_identity_document(
+            "health_identity_review_events", event_id, stored_event
+        )
+
+    def get_identity_assessments_in_range(
+        self, start_night_key: str, end_night_key: str
+    ) -> list[dict[str, Any]]:
+        query = (
+            self._identity_collection("health_identity_assessments")
+            .where(filter=FieldFilter("sourceNightKey", ">=", start_night_key))
+            .where(filter=FieldFilter("sourceNightKey", "<=", end_night_key))
+        )
+        assessments = [doc.to_dict() for doc in query.stream()]
+        assessments.sort(key=lambda item: (item.get("sourceNightKey", ""), item.get("id", "")))
+        return assessments
+
+    def get_identity_review_events(self, assessment_id: str) -> list[dict[str, Any]]:
+        query = self._identity_collection("health_identity_review_events").where(
+            filter=FieldFilter("assessmentId", "==", assessment_id)
+        )
+        events = [doc.to_dict() for doc in query.stream()]
+        for event in events:
+            recorded_at = event.get("recordedAt")
+            if isinstance(recorded_at, datetime):
+                event["recordedAt"] = (
+                    recorded_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                )
+        events.sort(key=lambda item: (item.get("recordedAt", ""), item.get("id", "")))
+        return events
+
+    def get_effective_identity_decision_projections_in_range(
+        self, start_night_key: str, end_night_key: str
+    ) -> dict[IdentityBundleKey, EffectiveIdentityDecisionProjection]:
+        """Derive baseline-authoritative decisions from immutable persisted evidence."""
+
+        assessments = self.get_identity_assessments_in_range(start_night_key, end_night_key)
+        reviews = {
+            assessment_id: self.get_identity_review_events(assessment_id)
+            for assessment in assessments
+            if isinstance((assessment_id := assessment.get("id")), str)
+        }
+        return build_effective_identity_decision_index(assessments, reviews)

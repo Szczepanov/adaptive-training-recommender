@@ -49,13 +49,16 @@ describe('multisourceBaselines', () => {
             });
         }
 
-        const baseline = computeSourceMetricBaseline(
+        const baseline = computeSourceMetricBaseline({
             bundles,
-            'hrv_rmssd_ms',
-            'garmin',
-            'google_health',
-            '2026-08-28',
-        );
+            userId: 'user1',
+            effectiveIdentityProjections: [],
+            identityPolicy: { identityRequiredSources: [] },
+            metric: 'hrv_rmssd_ms',
+            provider: 'garmin',
+            transport: 'google_health',
+            referenceDate: '2026-08-28',
+        });
 
         expect(baseline.count28d).toBe(28);
         expect(baseline.count7d).toBe(7);
