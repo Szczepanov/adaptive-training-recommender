@@ -13,6 +13,7 @@ const outputDir = resolve('artifacts/persona-plan-judge/latest');
 const corpusPath = resolve(outputDir, 'corpus.json');
 const familiesPath = resolve(outputDir, 'families.jsonl');
 const promptPath = resolve(outputDir, 'judge-prompt.md');
+const manifestPath = resolve(outputDir, 'judge-run-manifest.json');
 const scoresPath = resolve(outputDir, 'judge-scores.jsonl');
 const stabilityPath = resolve(outputDir, 'judge-stability.json');
 
@@ -109,17 +110,31 @@ const familiesSha256 = hashFile(familiesPath);
 const promptSha256 = hashFile(promptPath);
 const judgeScoresSha256 = hashFile(scoresPath);
 
-// Extract judge config from corpus or first score row
-const judgeConfig = corpus?.judgeConfig ?? scoreRows[0]?.judgeConfig ?? null;
-const judgeModel = judgeConfig?.model ?? null;
-const judgeProvider = judgeConfig?.provider ?? null;
+// Extract judge config from run manifest (written by runner after scoring)
+let manifest = null;
+if (existsSync(manifestPath)) {
+  try {
+    manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
+  } catch (error) {
+    console.warn(`Warning: could not parse judge-run-manifest.json: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+const judgeModel = manifest?.judgeModel ?? null;
+const judgeProvider = manifest?.judgeProvider ?? null;
+const judgeConfig = manifest
+  ? {
+      model: manifest.judgeModel,
+      provider: manifest.judgeProvider,
+      samples: manifest.samples,
+      baseSeed: manifest.baseSeed,
+      seedStrategy: manifest.seedStrategy,
+      thinkingEnabled: manifest.thinkingEnabled,
+      concurrency: manifest.concurrency,
+    }
+  : null;
 
-if (!judgeModel || typeof judgeModel !== 'string') {
-  console.warn('Warning: judgeModel not found in corpus — provenance.judgeModel will be null.');
-}
-if (!judgeProvider || typeof judgeProvider !== 'string') {
-  console.warn('Warning: judgeProvider not found in corpus — provenance.judgeProvider will be null.');
-}
+if (!judgeModel) console.warn('Warning: judgeModel not in manifest — run `npm run persona:local` first to generate judge-run-manifest.json.');
+if (!judgeProvider) console.warn('Warning: judgeProvider not in manifest.');
 
 // --- Aggregate score averages across all cases ---
 const allCaseScores = scoreRows.flatMap((row) => row.caseScores ?? []);

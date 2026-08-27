@@ -179,6 +179,19 @@ async function judgeCorpus(corpus) {
 
   writeFileSync(resolve(OUTPUT_DIR, 'judge-scores.jsonl'), `${scoreRows.map((row) => JSON.stringify(row)).join('\n')}\n`);
   writeFileSync(resolve(OUTPUT_DIR, 'judge-stability.json'), `${JSON.stringify(stabilityRows, null, 2)}\n`);
+
+  const manifest = {
+    schema: 'adaptive-training-recommender/persona-plan-judge-run-manifest@1',
+    judgeModel: config.model,
+    judgeProvider: config.provider,
+    samples: config.samples,
+    baseSeed: config.baseSeed,
+    seedStrategy: config.seedStrategy,
+    thinkingEnabled: config.thinkingEnabled,
+    concurrency: config.concurrency,
+    completedAt: new Date().toISOString(),
+  };
+  writeFileSync(resolve(OUTPUT_DIR, 'judge-run-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   console.log(`Wrote persona AI-judge results to ${OUTPUT_DIR}`);
 }
 
