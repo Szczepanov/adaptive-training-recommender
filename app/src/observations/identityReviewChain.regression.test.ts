@@ -69,7 +69,7 @@ describe('identity review chain fail-closed resolution', () => {
             .toBe('UNCERTAIN');
     });
 
-    it('ignores non-monotonic and semantically invalid corrections', () => {
+    it('ignores non-monotonic and structurally invalid corrections', () => {
         const root = review({
             id: 'review-1',
             label: 'NOT_USER',
@@ -80,14 +80,21 @@ describe('identity review chain fail-closed resolution', () => {
             supersedesReviewEventId: 'review-1',
             recordedAt: '2026-08-27T07:00:00.000Z',
         });
-        const invalidUser = review({
+        const invalidCorrection = review({
             id: 'review-3',
-            label: 'USER',
-            occupancyAttestation: 'UNKNOWN',
+            schemaVersion: 2,
             supersedesReviewEventId: 'review-1',
             recordedAt: '2026-08-27T09:00:00.000Z',
         });
-        expect(findEffectiveReviewEvent([root, olderCorrection, invalidUser])?.id).toBe('review-1');
+        expect(findEffectiveReviewEvent([root, olderCorrection, invalidCorrection])?.id).toBe('review-1');
+    });
+
+    it('keeps USER identity separate from MIXED occupancy eligibility', () => {
+        const mixed = review({ occupancyAttestation: 'MIXED' });
+        const decision = deriveEffectiveIdentityDecision(assessment(), [mixed]);
+        expect(decision.effectiveStatus).toBe('USER');
+        expect(decision.eligibility.baselineLearning).toBe(false);
+        expect(decision.eligibility.passportLearning).toBe(false);
     });
 
     it('drops duplicate review IDs so ambiguous evidence cannot authorize USER', () => {
