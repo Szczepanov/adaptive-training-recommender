@@ -276,4 +276,57 @@ describe('multisourceFusion (MS15)', () => {
         expect(res1.fusedMetrics['daily_resting_heart_rate_bpm']).toBeDefined();
         expect(res1.fusedMetrics['daily_resting_heart_rate_bpm'].agreementStatus).toBe('SINGLE_SOURCE');
     });
+
+    it('rejects imposter Eight Sleep payload in fusion when child sleeps on bed', () => {
+        const garminBundle: HealthObservationDayBundle = {
+            userId: 'user_1',
+            logicalDate: '2026-08-27',
+            provider: 'garmin',
+            transport: 'garmin_direct',
+            observations: [
+                { observationId: 'obs_g1', metric: 'daily_resting_heart_rate_bpm', value: 43, unit: 'bpm' },
+                { observationId: 'obs_g2', metric: 'hrv_rmssd_ms', value: 65, unit: 'ms' },
+            ],
+            sourcePayloadHash: 'hash_g',
+            schemaVersion: 1,
+            normalizerVersion: 1,
+            revision: 1,
+            ingestedAt: '2026-08-27T08:00:00Z',
+            effectiveAt: '2026-08-27T08:00:00Z',
+        };
+
+        const imposterEightSleepBundle: HealthObservationDayBundle = {
+            userId: 'user_1',
+            logicalDate: '2026-08-27',
+            provider: 'eight_sleep',
+            transport: 'google_health',
+            observations: [
+                { observationId: 'obs_e1', metric: 'daily_resting_heart_rate_bpm', value: 85, unit: 'bpm' }, // Child RHR
+                { observationId: 'obs_e2', metric: 'hrv_rmssd_ms', value: 30, unit: 'ms' },
+            ],
+            sourcePayloadHash: 'hash_e',
+            schemaVersion: 1,
+            normalizerVersion: 1,
+            revision: 1,
+            ingestedAt: '2026-08-27T08:00:00Z',
+            effectiveAt: '2026-08-27T08:00:00Z',
+        };
+
+        const result = evaluateMultisourceFusion({
+            logicalDate: '2026-08-27',
+            policy: 'candidate-v1',
+            bundles: [garminBundle, imposterEightSleepBundle],
+            baselines: [matureGarminHrvBaseline, matureEightSleepHrvBaseline],
+        });
+
+        // Co-presence should detect imposter and discard Eight Sleep
+        expect(result.coPresenceVerdict?.verifiedAthlete).toBe(false);
+        expect(result.coPresenceVerdict?.status).toBe('IMPOSTER_REJECTED');
+
+        // HRV evidence should fall back 100% to Garmin Direct single source
+        const hrv = result.fusedMetrics['hrv_rmssd_ms'];
+        expect(hrv.effectiveSource).toBe('garmin_garmin_direct');
+        expect(hrv.agreementStatus).toBe('SINGLE_SOURCE');
+        expect(hrv.fusedZScore).toBe(1.0); // Genuine athlete's Garmin z-score
+    });
 });

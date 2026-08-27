@@ -8,6 +8,7 @@
  */
 
 import type { HealthObservationDayBundle } from '../observations/models';
+import { validateCoPresence, type CoPresenceValidationResult } from './coPresenceValidator';
 import type { CrossSourceAgreementTelemetry } from './crossSourceTelemetry';
 import type { SourceMetricBaseline } from './multisourceBaselines';
 
@@ -27,7 +28,7 @@ export const DEFAULT_METRIC_ACTIVATION_CONFIG: MultisourceMetricActivationConfig
     restingHeartRate: true,
     respiration: true,
     sleepDuration: true,
-    sleepStages: false, // shadow only
+    sleepStages: true, // Activated: Eight Sleep BCG is primary for sleep architecture
     proprietaryScores: false, // blocked
 };
 
@@ -49,6 +50,7 @@ export interface MultisourceFusionResult {
     logicalDate: string;
     policy: MultisourceFusionPolicy;
     fusedMetrics: Record<string, FusedMetricEvidence>;
+    coPresenceVerdict: CoPresenceValidationResult | null;
     crossSourceTelemetry: CrossSourceAgreementTelemetry | null;
 }
 
@@ -56,6 +58,7 @@ export function evaluateMultisourceFusion(params: {
     logicalDate: string;
     policy?: MultisourceFusionPolicy;
     metricActivation?: Partial<MultisourceMetricActivationConfig>;
+    athleteRhr28dMedian?: number | null;
     bundles: readonly HealthObservationDayBundle[];
     baselines: readonly SourceMetricBaseline[];
     agreementTelemetry?: CrossSourceAgreementTelemetry | null;
@@ -67,7 +70,7 @@ export function evaluateMultisourceFusion(params: {
     };
     const { logicalDate, bundles, baselines } = params;
 
-    const dayBundles = bundles.filter((b) => b.logicalDate === logicalDate);
+    const rawDayBundles = bundles.filter((b) => b.logicalDate === logicalDate);
 
     // If policy is off, return baseline un-fused structure
     if (policy === 'off') {
@@ -75,11 +78,42 @@ export function evaluateMultisourceFusion(params: {
             logicalDate,
             policy: 'off',
             fusedMetrics: {},
+            coPresenceVerdict: null,
             crossSourceTelemetry: params.agreementTelemetry || null,
         };
     }
 
-    // Evaluate candidate-v1 fusion
+    // Step 1: Co-presence and Imposter Validation
+    let garminRhr: number | null = null;
+    let eightSleepRhr: number | null = null;
+
+    for (const bundle of rawDayBundles) {
+        for (const obs of bundle.observations) {
+            if (obs.metric === 'daily_resting_heart_rate_bpm' && typeof obs.value === 'number') {
+                if (bundle.provider === 'garmin') {
+                    garminRhr = obs.value;
+                } else if (bundle.provider === 'eight_sleep') {
+                    eightSleepRhr = obs.value;
+                }
+            }
+        }
+    }
+
+    const coPresenceVerdict = validateCoPresence({
+        garminRhr,
+        eightSleepRhr,
+        athleteRhr28dMedian: params.athleteRhr28dMedian,
+    });
+
+    // Step 2: Filter day bundles (discard Eight Sleep if imposter detected)
+    const validDayBundles = rawDayBundles.filter((b) => {
+        if (b.provider === 'eight_sleep' && !coPresenceVerdict.verifiedAthlete) {
+            return false; // Discard imposter guest data
+        }
+        return true;
+    });
+
+    // Step 3: Evaluate candidate-v1 fusion across active metric streams
     const fusedMetrics: Record<string, FusedMetricEvidence> = {};
     const candidateMetricConfigs: { metric: string; enabled: boolean }[] = [
         { metric: 'hrv_rmssd_ms', enabled: metricActivation.hrv },
@@ -103,7 +137,7 @@ export function evaluateMultisourceFusion(params: {
             weight: number;
         }[] = [];
 
-        for (const bundle of dayBundles) {
+        for (const bundle of validDayBundles) {
             const base = baselines.find(
                 (b) =>
                     b.metric === metric &&
@@ -120,7 +154,17 @@ export function evaluateMultisourceFusion(params: {
                 if (obs.metric === metric && typeof obs.value === 'number') {
                     if (base.median28d !== null && base.mad28d && base.mad28d > 0) {
                         const z = (obs.value - base.median28d) / base.mad28d;
-                        const weight = bundle.provider === 'garmin' ? 0.6 : 0.4;
+                        // Sleep stages and respiration prioritize Eight Sleep BCG (0.7 weight)
+                        // HRV and RHR prioritize Garmin Direct primary (0.6 weight)
+                        const weight =
+                            metric.startsWith('sleep_stage_') || metric === 'daily_respiration_rate_brpm'
+                                ? bundle.provider === 'eight_sleep'
+                                    ? 0.7
+                                    : 0.3
+                                : bundle.provider === 'garmin'
+                                  ? 0.6
+                                  : 0.4;
+
                         sourceDeviations.push({
                             provider: bundle.provider,
                             transport: bundle.transport,
@@ -225,6 +269,7 @@ export function evaluateMultisourceFusion(params: {
         logicalDate,
         policy: 'candidate-v1',
         fusedMetrics,
+        coPresenceVerdict,
         crossSourceTelemetry: params.agreementTelemetry || null,
     };
 }
