@@ -82,6 +82,14 @@ def derive_warsaw_logical_date(
     return warsaw_dt.strftime("%Y-%m-%d")
 
 
+def _first_not_none(*values: Any) -> Any:
+    """Return the first value that is not None, preserving legitimate 0 / False values."""
+    for v in values:
+        if v is not None:
+            return v
+    return None
+
+
 class GoogleHealthMapper:
     """Normalizes raw Google Health API payloads into CanonicalHealthObservation instances."""
 
@@ -208,23 +216,27 @@ class GoogleHealthMapper:
         summary_obj = session_obj.get("summary", {}) or point.get("summary", {})
 
         # Handle durations and stages from either value dict or sleepSession/summary
-        duration_sec = (
-            value_dict.get("durationSeconds")
-            or value_dict.get("duration_seconds")
-            or (
-                int(summary_obj["minutesAsleep"]) * 60 if summary_obj.get("minutesAsleep") else None
-            )
+        minutes_asleep = summary_obj.get("minutesAsleep")
+        duration_sec = _first_not_none(
+            value_dict.get("durationSeconds"),
+            value_dict.get("duration_seconds"),
+            int(minutes_asleep) * 60 if minutes_asleep is not None else None,
         )
         if duration_sec is None and start_time and end_time:
             duration_sec = int((end_time - start_time).total_seconds())
 
-        deep_sec = value_dict.get("deepSleepSeconds") or value_dict.get("deep_seconds")
-        rem_sec = value_dict.get("remSleepSeconds") or value_dict.get("rem_seconds")
-        light_sec = value_dict.get("lightSleepSeconds") or value_dict.get("light_seconds")
-        awake_sec = (
-            value_dict.get("awakeSleepSeconds")
-            or value_dict.get("awake_seconds")
-            or (int(summary_obj["minutesAwake"]) * 60 if summary_obj.get("minutesAwake") else None)
+        deep_sec = _first_not_none(
+            value_dict.get("deepSleepSeconds"), value_dict.get("deep_seconds")
+        )
+        rem_sec = _first_not_none(value_dict.get("remSleepSeconds"), value_dict.get("rem_seconds"))
+        light_sec = _first_not_none(
+            value_dict.get("lightSleepSeconds"), value_dict.get("light_seconds")
+        )
+        minutes_awake = summary_obj.get("minutesAwake")
+        awake_sec = _first_not_none(
+            value_dict.get("awakeSleepSeconds"),
+            value_dict.get("awake_seconds"),
+            int(minutes_awake) * 60 if minutes_awake is not None else None,
         )
 
         # Parse stagesSummary if present in summary_obj
@@ -331,19 +343,21 @@ class GoogleHealthMapper:
         end_time: datetime | None,
         logical_date: str,
     ) -> list[CanonicalHealthObservation]:
-        val = point.get("value") or point.get("dailyHeartRateVariability") or point.get("hrv") or {}
+        val = _first_not_none(
+            point.get("value"), point.get("dailyHeartRateVariability"), point.get("hrv"), {}
+        )
         hrv_rmssd = None
         if isinstance(val, (int, float)):
             hrv_rmssd = float(val)
         elif isinstance(val, dict):
-            hrv_rmssd = (
-                val.get("deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds")
-                or val.get("averageHeartRateVariabilityMilliseconds")
-                or val.get("rmssd")
-                or val.get("hrvRmssd")
-                or val.get("value")
-                or val.get("hrv")
-                or val.get("dailyHeartRateVariability")
+            hrv_rmssd = _first_not_none(
+                val.get("deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds"),
+                val.get("averageHeartRateVariabilityMilliseconds"),
+                val.get("rmssd"),
+                val.get("hrvRmssd"),
+                val.get("value"),
+                val.get("hrv"),
+                val.get("dailyHeartRateVariability"),
             )
 
         if hrv_rmssd is not None:
@@ -368,23 +382,23 @@ class GoogleHealthMapper:
         end_time: datetime | None,
         logical_date: str,
     ) -> list[CanonicalHealthObservation]:
-        val = (
-            point.get("value")
-            or point.get("dailyRestingHeartRate")
-            or point.get("restingHeartRate")
-            or {}
+        val = _first_not_none(
+            point.get("value"),
+            point.get("dailyRestingHeartRate"),
+            point.get("restingHeartRate"),
+            {},
         )
         rhr = None
         if isinstance(val, (int, float)):
             rhr = float(val)
         elif isinstance(val, dict):
-            rhr = (
-                val.get("beatsPerMinute")
-                or val.get("bpm")
-                or val.get("rate")
-                or val.get("value")
-                or val.get("restingHeartRate")
-                or val.get("dailyRestingHeartRate")
+            rhr = _first_not_none(
+                val.get("beatsPerMinute"),
+                val.get("bpm"),
+                val.get("rate"),
+                val.get("value"),
+                val.get("restingHeartRate"),
+                val.get("dailyRestingHeartRate"),
             )
 
         if rhr is not None:
@@ -409,12 +423,14 @@ class GoogleHealthMapper:
         end_time: datetime | None,
         logical_date: str,
     ) -> list[CanonicalHealthObservation]:
-        val = point.get("value") or point.get("heartRate") or {}
+        val = _first_not_none(point.get("value"), point.get("heartRate"), {})
         bpm = None
         if isinstance(val, (int, float)):
             bpm = float(val)
         elif isinstance(val, dict):
-            bpm = val.get("beatsPerMinute") or val.get("bpm") or val.get("rate") or val.get("value")
+            bpm = _first_not_none(
+                val.get("beatsPerMinute"), val.get("bpm"), val.get("rate"), val.get("value")
+            )
 
         if bpm is not None:
             return [
@@ -438,22 +454,22 @@ class GoogleHealthMapper:
         end_time: datetime | None,
         logical_date: str,
     ) -> list[CanonicalHealthObservation]:
-        val = (
-            point.get("value")
-            or point.get("dailyRespiratoryRate")
-            or point.get("respiratoryRate")
-            or {}
+        val = _first_not_none(
+            point.get("value"),
+            point.get("dailyRespiratoryRate"),
+            point.get("respiratoryRate"),
+            {},
         )
         brpm = None
         if isinstance(val, (int, float)):
             brpm = float(val)
         elif isinstance(val, dict):
-            brpm = (
-                val.get("breathsPerMinute")
-                or val.get("rate")
-                or val.get("brpm")
-                or val.get("value")
-                or val.get("dailyRespiratoryRate")
+            brpm = _first_not_none(
+                val.get("breathsPerMinute"),
+                val.get("brpm"),
+                val.get("rate"),
+                val.get("value"),
+                val.get("dailyRespiratoryRate"),
             )
 
         if brpm is not None:

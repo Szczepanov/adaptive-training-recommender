@@ -12,7 +12,7 @@ from garmin_sync.health_observation_service import HealthObservationService
 from garmin_sync.provider import RecoveryObservationProvider
 
 
-def test_health_observation_service_sync_date_multi_provider():
+def test_health_observation_service_sync_date_multi_provider() -> None:
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
     mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
 
@@ -60,7 +60,7 @@ def test_health_observation_service_sync_date_multi_provider():
     assert mock_repo.save_health_observation_day_bundle.call_count == 2
 
 
-def test_health_observation_service_backfill_range():
+def test_health_observation_service_backfill_range() -> None:
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
     mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
 

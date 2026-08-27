@@ -114,8 +114,16 @@ class GoogleHealthWebhookHandler:
         except Exception:
             return 400, {"error": "Invalid JSON body"}
 
+        if not isinstance(data, dict):
+            return 400, {"error": "Invalid JSON body: expected root object"}
+
         events_data = data.get("events", [data])
+        if not isinstance(events_data, list):
+            return 400, {"error": "Field 'events' must be an array"}
+
         for evt_dict in events_data:
+            if not isinstance(evt_dict, dict):
+                continue
             event = GoogleHealthWebhookEvent(
                 healthUserId=evt_dict.get("healthUserId", ""),
                 dataType=evt_dict.get("dataType", ""),

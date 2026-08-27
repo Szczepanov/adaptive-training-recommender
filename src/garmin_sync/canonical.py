@@ -72,8 +72,14 @@ class CanonicalHealthObservation:
     def __post_init__(self) -> None:
         if not self.metric or not self.metric.strip():
             raise ValueError("CanonicalHealthObservation requires a non-empty metric name.")
-        if not self.logical_date or len(self.logical_date) != 10:
+        if not self.logical_date:
             raise ValueError("CanonicalHealthObservation requires a valid YYYY-MM-DD logical_date.")
+        try:
+            datetime.strptime(self.logical_date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError(
+                f"CanonicalHealthObservation requires a valid YYYY-MM-DD logical_date, got: {self.logical_date!r}"
+            ) from exc
 
 
 @dataclass

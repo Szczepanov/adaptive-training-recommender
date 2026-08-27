@@ -52,7 +52,7 @@ sleep_stage_rem_seconds            6          0          0.0%       (missing)
 ## 3. Analysis & Implications for Multi-Source Architecture
 
 1. **Resting Heart Rate Equivalence**:
-   - For 44 of 59 days, Garmin Google Health RHR matched Garmin Direct RHR with 0 bpm difference. The remaining days exhibited a 1 bpm rounding delta ($\text{Mean }\Delta = 0.593\text{ bpm}$), confirming that Google Health faithfully captures Garmin's passive daily RHR.
+   - For 44 of 59 days (74.6%), Garmin Google Health RHR matched Garmin Direct RHR with 0 bpm difference. The 15 nonmatching days exhibited small 1–3 bpm synchronization window deltas (mean delta of 2.33 bpm among nonmatching days, yielding an overall mean delta of 0.593 bpm across all 59 days), confirming that Google Health faithfully captures Garmin's passive daily RHR within acceptable discrete precision.
 2. **Missing HRV & Respiration from Garmin**:
    - Garmin Connect Android app (`com.garmin.android.apps.connectmobile`) omits HRV and Respiration when exporting to Android Health Connect / Google Health.
    - This validates the **ADR-0027** multi-provider design: we cannot consolidate all Garmin ingestion through Google Health.

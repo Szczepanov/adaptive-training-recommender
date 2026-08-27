@@ -87,6 +87,6 @@ def test_mapper_normalizes_sleep_and_hrv():
     assert metrics[METRIC_DAILY_RESTING_HEART_RATE_BPM].value == 48.0
     assert metrics[METRIC_DAILY_RESTING_HEART_RATE_BPM].source.provider == "eight_sleep"
 
-    # Verify no steps in observations
-    assert "steps_count" not in metrics
-    assert "steps" not in metrics
+    # Verify no steps in observations (D-MS-STEPS / P9)
+    assert not any(o.source.source_record_id == "rec_steps_1" for o in batch.observations)
+    assert not any("step" in o.metric.lower() for o in batch.observations)

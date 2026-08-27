@@ -130,14 +130,17 @@ class TransportEquivalenceAnalyzer:
                         )
                     )
                 except (ValueError, TypeError):
+                    match_nonnumeric = val_direct == val_google
+                    if not match_nonnumeric:
+                        transforming_count += 1
                     comparisons.append(
                         MetricComparison(
                             metric=metric,
                             directValue=None,
                             googleValue=None,
                             difference=None,
-                            isWithinTolerance=(val_direct == val_google),
-                            status="MATCH" if (val_direct == val_google) else "DELTA",
+                            isWithinTolerance=match_nonnumeric,
+                            status="MATCH" if match_nonnumeric else "DELTA",
                         )
                     )
 

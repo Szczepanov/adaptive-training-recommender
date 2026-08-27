@@ -1,7 +1,7 @@
 from garmin_sync.presence_filter import validate_co_presence
 
 
-def test_co_presence_verified_match():
+def test_co_presence_verified_match() -> None:
     garmin_snap = {"raw": {"restingHr": 44}}
     eight_bundle = {"observations": [{"metric": "daily_resting_heart_rate_bpm", "value": 45.0}]}
 
@@ -11,7 +11,7 @@ def test_co_presence_verified_match():
     assert verdict.rhrDelta == 1.0
 
 
-def test_co_presence_imposter_child_rejected():
+def test_co_presence_imposter_child_rejected() -> None:
     garmin_snap = {"raw": {"restingHr": 43}}
     # Child sleeping on mattress with RHR of 82 bpm
     eight_bundle = {"observations": [{"metric": "daily_resting_heart_rate_bpm", "value": 82.0}]}
@@ -23,7 +23,7 @@ def test_co_presence_imposter_child_rejected():
     assert "Likely a family member" in verdict.reason
 
 
-def test_co_presence_watch_off_wrist_normal():
+def test_co_presence_watch_off_wrist_normal() -> None:
     # Watch charging overnight, genuine athlete on mattress (RHR 45 bpm)
     eight_bundle = {"observations": [{"metric": "daily_resting_heart_rate_bpm", "value": 45.0}]}
 
@@ -32,7 +32,7 @@ def test_co_presence_watch_off_wrist_normal():
     assert verdict.imposterConfidence == "UNVERIFIED_OFF_WRIST"
 
 
-def test_co_presence_watch_off_wrist_imposter():
+def test_co_presence_watch_off_wrist_imposter() -> None:
     # Watch charging, but child sleeping on bed (RHR 75 bpm)
     eight_bundle = {"observations": [{"metric": "daily_resting_heart_rate_bpm", "value": 75.0}]}
 

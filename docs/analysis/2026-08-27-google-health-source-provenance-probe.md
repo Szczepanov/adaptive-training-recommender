@@ -4,7 +4,7 @@
 **Timezone**: `Europe/Warsaw`
 **Governing ADR**: [`ADR-0027`](../adr/0027-source-aware-multisource-health-observations.md)
 **Plan Reference**: [`multisource-health-and-recovery-ingestion.md`](../plans/multisource-health-and-recovery-ingestion.md)
-**Runbook**: [`docs/ops/google-health-source-provenance-probe.md`](../ops/google-health-source-provenance-probe.md)
+**Runbook**: [`../ops/google-health-source-provenance-probe.md`](../ops/google-health-source-provenance-probe.md)
 
 ---
 

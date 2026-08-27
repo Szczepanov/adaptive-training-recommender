@@ -57,7 +57,7 @@ class HealthObservationService:
         repository: FirestoreRecoveryRepository,
         archive_store: RawArchiveStore,
         providers: dict[str, RecoveryObservationProvider] | None = None,
-    ):
+    ) -> None:
         self.user_id = user_id
         self.repository = repository
         self.archive_store = archive_store

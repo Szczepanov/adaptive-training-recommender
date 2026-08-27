@@ -122,16 +122,12 @@ class HealthProvenanceProbe:
                     )
             except Exception as e:
                 logger.warning("Probe query failed for %s: %s", dtype, e)
+                notes.append(f"Query failed for {dtype}: {e}")
 
             summaries.append(summary)
 
         # Classify Eight Sleep result per Section 10 of probe guide
-        required_eight_sleep_metrics = {
-            "sleep",
-            "daily-heart-rate-variability",
-            "daily-resting-heart-rate",
-            "daily-respiratory-rate",
-        }
+        required_eight_sleep_metrics = set(PROBE_DATA_TYPES)
         if required_eight_sleep_metrics.issubset(eight_sleep_metrics_seen):
             eight_sleep_status = "FULL_PASS"
         elif len(eight_sleep_metrics_seen) > 0:
