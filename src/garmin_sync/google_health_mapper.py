@@ -120,17 +120,48 @@ class GoogleHealthMapper:
         target_logical_date: str,
     ) -> list[CanonicalHealthObservation]:
         data_type = point.get("dataTypeName", "") or point.get("dataType", "")
+        if not data_type:
+            if "dailyHeartRateVariability" in point:
+                data_type = "daily_heart_rate_variability"
+            elif "dailyRestingHeartRate" in point:
+                data_type = "daily_resting_heart_rate"
+            elif "dailyRespiratoryRate" in point:
+                data_type = "daily_respiratory_rate"
+            elif "sleepSession" in point:
+                data_type = "sleep"
+
         data_source = point.get("dataSource", {}) or {}
         app_meta = data_source.get("application", {}) or {}
         package_name = app_meta.get("packageName") or app_meta.get("id")
         provider = resolve_provider_from_package(package_name)
         device_meta = data_source.get("device", {}) or {}
         device_id = device_meta.get("model") or device_meta.get("id")
-        source_record_id = point.get("dataPointId") or point.get("id")
+        source_record_id = point.get("dataPointId") or point.get("id") or point.get("name")
 
-        start_time = parse_iso_datetime(point.get("startTime") or point.get("startTimeNanos"))
-        end_time = parse_iso_datetime(point.get("endTime") or point.get("endTimeNanos"))
-        logical_date = derive_warsaw_logical_date(end_time, start_time)
+        session_obj = point.get("sleepSession", {}) or {}
+        start_time = parse_iso_datetime(
+            session_obj.get("startTime") or point.get("startTime") or point.get("startTimeNanos")
+        )
+        end_time = parse_iso_datetime(
+            session_obj.get("endTime") or point.get("endTime") or point.get("endTimeNanos")
+        )
+
+        # Check sub-object date dictionaries e.g. {"year": 2026, "month": 8, "day": 17}
+        date_dict = None
+        for key in ("dailyHeartRateVariability", "dailyRestingHeartRate", "dailyRespiratoryRate"):
+            sub_d = point.get(key, {}).get("date")
+            if sub_d and isinstance(sub_d, dict) and "year" in sub_d:
+                date_dict = sub_d
+                break
+
+        if date_dict:
+            logical_date = (
+                f"{date_dict['year']:04d}-{date_dict['month']:02d}-{date_dict['day']:02d}"
+            )
+        elif end_time or start_time:
+            logical_date = derive_warsaw_logical_date(end_time, start_time)
+        else:
+            logical_date = target_logical_date
 
         # Step count provenance lock (D-MS-STEPS / P9):
         # Steps from Google Health are excluded from recovery observations.
@@ -306,7 +337,9 @@ class GoogleHealthMapper:
             hrv_rmssd = float(val)
         elif isinstance(val, dict):
             hrv_rmssd = (
-                val.get("rmssd")
+                val.get("deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds")
+                or val.get("averageHeartRateVariabilityMilliseconds")
+                or val.get("rmssd")
                 or val.get("hrvRmssd")
                 or val.get("value")
                 or val.get("hrv")
@@ -346,7 +379,8 @@ class GoogleHealthMapper:
             rhr = float(val)
         elif isinstance(val, dict):
             rhr = (
-                val.get("bpm")
+                val.get("beatsPerMinute")
+                or val.get("bpm")
                 or val.get("rate")
                 or val.get("value")
                 or val.get("restingHeartRate")
@@ -380,7 +414,7 @@ class GoogleHealthMapper:
         if isinstance(val, (int, float)):
             bpm = float(val)
         elif isinstance(val, dict):
-            bpm = val.get("bpm") or val.get("rate") or val.get("value")
+            bpm = val.get("beatsPerMinute") or val.get("bpm") or val.get("rate") or val.get("value")
 
         if bpm is not None:
             return [
@@ -415,8 +449,8 @@ class GoogleHealthMapper:
             brpm = float(val)
         elif isinstance(val, dict):
             brpm = (
-                val.get("rate")
-                or val.get("breathsPerMinute")
+                val.get("breathsPerMinute")
+                or val.get("rate")
                 or val.get("brpm")
                 or val.get("value")
                 or val.get("dailyRespiratoryRate")
