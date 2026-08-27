@@ -142,4 +142,30 @@ describe('identity recommendation provenance (PI6)', () => {
             anchorBundleRefs: [{ ...provenance.anchorBundleRefs[0], lineageKey: '' }],
         })).toContain('Identity anchor bundle 2026-08-27_garmin_garmin_direct has incomplete replay metadata.');
     });
+
+    it('rejects a shared bundle reference with an empty id', () => {
+        const provenance = buildIdentityDecisionProvenance({
+            assessment: assessment(),
+            decision: decision(),
+            selectedEffectiveSource: null,
+            fallbackReason: null,
+        });
+        expect(identityDecisionProvenanceReplayErrors({
+            ...provenance,
+            sharedBundleRef: { ...provenance.sharedBundleRef, id: '' },
+        })).toContain('Shared identity bundle ID is missing.');
+    });
+
+    it('rejects an anchor bundle reference with an empty id', () => {
+        const provenance = buildIdentityDecisionProvenance({
+            assessment: assessment(),
+            decision: decision(),
+            selectedEffectiveSource: null,
+            fallbackReason: null,
+        });
+        expect(identityDecisionProvenanceReplayErrors({
+            ...provenance,
+            anchorBundleRefs: [{ ...provenance.anchorBundleRefs[0], id: '' }],
+        })).toContain('Identity anchor bundle  has incomplete replay metadata.');
+    });
 });
