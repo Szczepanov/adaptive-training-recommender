@@ -12,6 +12,41 @@ const localDispatcher = new Agent({
   bodyTimeout: 0,
 });
 
+export function transformSchemaForOllama(schema) {
+  if (!schema || typeof schema !== 'object') return schema;
+  const cloned = JSON.parse(JSON.stringify(schema));
+
+  if (
+    cloned.properties?.caseScores?.items?.properties?.caseId?.enum &&
+    Array.isArray(cloned.properties.caseScores.items.properties.caseId.enum)
+  ) {
+    const caseIds = cloned.properties.caseScores.items.properties.caseId.enum;
+    const itemTemplate = cloned.properties.caseScores.items;
+    delete cloned.properties.caseScores.items;
+    cloned.properties.caseScores.prefixItems = caseIds.map((caseId) => {
+      const item = JSON.parse(JSON.stringify(itemTemplate));
+      item.properties.caseId = { const: caseId };
+      return item;
+    });
+  }
+
+  if (
+    cloned.properties?.results?.items?.properties?.caseId?.enum &&
+    Array.isArray(cloned.properties.results.items.properties.caseId.enum)
+  ) {
+    const caseIds = cloned.properties.results.items.properties.caseId.enum;
+    const itemTemplate = cloned.properties.results.items;
+    delete cloned.properties.results.items;
+    cloned.properties.results.prefixItems = caseIds.map((caseId) => {
+      const item = JSON.parse(JSON.stringify(itemTemplate));
+      item.properties.caseId = { const: caseId };
+      return item;
+    });
+  }
+
+  return cloned;
+}
+
 export async function callOllama({
   packetJson,
   schema,
@@ -28,7 +63,7 @@ export async function callOllama({
   const body = {
     model: config.model,
     messages: [{ role: 'user', content: userPrompt }],
-    format: schema,
+    format: transformSchemaForOllama(schema),
     stream: false,
     options: {
       num_ctx: config.local.numCtx,
