@@ -13,6 +13,24 @@ import type { SourceMetricBaseline } from './multisourceBaselines';
 
 export type MultisourceFusionPolicy = 'off' | 'candidate-v1';
 
+export interface MultisourceMetricActivationConfig {
+    hrv: boolean;
+    restingHeartRate: boolean;
+    respiration: boolean;
+    sleepDuration: boolean;
+    sleepStages: boolean;
+    proprietaryScores: boolean;
+}
+
+export const DEFAULT_METRIC_ACTIVATION_CONFIG: MultisourceMetricActivationConfig = {
+    hrv: true,
+    restingHeartRate: true,
+    respiration: true,
+    sleepDuration: true,
+    sleepStages: false, // shadow only
+    proprietaryScores: false, // blocked
+};
+
 export interface FusedMetricEvidence {
     metric: string;
     fusedZScore: number | null;
@@ -37,11 +55,16 @@ export interface MultisourceFusionResult {
 export function evaluateMultisourceFusion(params: {
     logicalDate: string;
     policy?: MultisourceFusionPolicy;
+    metricActivation?: Partial<MultisourceMetricActivationConfig>;
     bundles: readonly HealthObservationDayBundle[];
     baselines: readonly SourceMetricBaseline[];
     agreementTelemetry?: CrossSourceAgreementTelemetry | null;
 }): MultisourceFusionResult {
     const policy = params.policy || 'off';
+    const metricActivation: MultisourceMetricActivationConfig = {
+        ...DEFAULT_METRIC_ACTIVATION_CONFIG,
+        ...(params.metricActivation || {}),
+    };
     const { logicalDate, bundles, baselines } = params;
 
     const dayBundles = bundles.filter((b) => b.logicalDate === logicalDate);
@@ -58,9 +81,20 @@ export function evaluateMultisourceFusion(params: {
 
     // Evaluate candidate-v1 fusion
     const fusedMetrics: Record<string, FusedMetricEvidence> = {};
-    const targetMetrics = ['hrv_rmssd_ms', 'daily_resting_heart_rate_bpm', 'sleep_duration_seconds'];
+    const candidateMetricConfigs: { metric: string; enabled: boolean }[] = [
+        { metric: 'hrv_rmssd_ms', enabled: metricActivation.hrv },
+        { metric: 'daily_resting_heart_rate_bpm', enabled: metricActivation.restingHeartRate },
+        { metric: 'daily_respiration_rate_brpm', enabled: metricActivation.respiration },
+        { metric: 'sleep_duration_seconds', enabled: metricActivation.sleepDuration },
+        { metric: 'sleep_stage_deep_seconds', enabled: metricActivation.sleepStages },
+        { metric: 'sleep_stage_rem_seconds', enabled: metricActivation.sleepStages },
+        { metric: 'proprietary_recovery_score', enabled: metricActivation.proprietaryScores },
+    ];
 
-    for (const metric of targetMetrics) {
+    for (const { metric, enabled } of candidateMetricConfigs) {
+        if (!enabled) {
+            continue;
+        }
         // Collect available mature observations for this metric on this date
         const sourceDeviations: {
             provider: string;

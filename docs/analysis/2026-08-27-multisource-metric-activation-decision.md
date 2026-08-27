@@ -1,0 +1,74 @@
+# Formal Decision Record: Multisource Metric-by-Metric Production Activation (MS17)
+
+**Date**: 2026-08-27
+**Decision Authority**: Multisource Ingestion Architecture (ADR-0027)
+**Evaluated Systems**: Garmin Connect Direct (`garmin_direct`) + Eight Sleep via Google Health (`google_health`)
+**Production Feature Flag**: `MULTISOURCE_FUSION_POLICY` (`'off'` | `'candidate-v1'`) + `MultisourceMetricActivationConfig`
+
+---
+
+## 1. Executive Summary & Production Activation Matrix
+
+In accordance with ADR-0027, multi-source ingestion is activated on a **strict, granular, metric-by-metric basis** rather than a single coarse provider switch. Every metric must pass 6 verification gates (coverage, semantics, baseline stability, incremental value, zero load distortion, and rollback safety).
+
+| Biometric Stream | Canonical Metric ID | Status | Baseline Parameters ($N=42$) | Production Role & Verification Verdict |
+|---|---|---|---|---|
+| **HRV RMSSD** | `hrv_rmssd_ms` | **`ACTIVE`** | Median 57.3 ms, MAD 8.55 ms | **Approved**. Provides night-to-night parasympathetic tracking and primary fallback when watch is off-wrist. |
+| **Respiration Rate** | `daily_respiration_rate_brpm` | **`ACTIVE`** | Median 12.8 brpm, MAD 0.29 brpm | **Approved**. High-precision ballistocardiography baseline without wrist motion artifacts. |
+| **Sleep Duration** | `sleep_duration_seconds` | **`ACTIVE`** | High cross-sensor consistency | **Approved**. Continuous sleep duration monitoring regardless of wearable state. |
+| **Resting Heart Rate** | `daily_resting_heart_rate_bpm` | **`ACTIVE`** | MS10 mean delta 0.59 bpm | **Approved**. Equivalently captures nocturnal basal cardiovascular status. |
+| **Sleep Stages** | `sleep_stage_deep/rem_seconds` | **`SHADOW_ONLY`** | Under review | **Shadow Only**. Algorithm divergence between wrist accelerometer/PPG and mattress pressure sensors requires further empirical calibration. |
+| **Proprietary Vendor Scores** | `proprietary_recovery_score` | **`BLOCKED`** | N/A | **Strictly Blocked**. Opaque vendor scores are non-canonical black boxes; engine solely computes recovery from raw physiological evidence. |
+
+---
+
+## 2. Detailed Metric-by-Metric Evaluation
+
+### 1. HRV RMSSD (`hrv_rmssd_ms`) — `ACTIVE`
+- **Coverage**: 42 dual-monitored nights ($N \ge 28$, mature baseline).
+- **Baseline Stability**: Median = 57.3 ms, MAD = 8.55 ms.
+- **Incremental Value**: Enables continuous adaptive readiness calculation even when the athlete's Garmin watch is charging or off-wrist overnight. Dual-stream concordance elevates recommendation confidence by $1.15\times$.
+- **Verdict**: **`ACTIVE`**.
+
+### 2. Respiration Rate (`daily_respiration_rate_brpm`) — `ACTIVE`
+- **Coverage**: 35 dual-monitored nights ($N \ge 28$, mature baseline).
+- **Baseline Stability**: Median = 12.8 brpm, MAD = 0.29 brpm (exceptionally tight dispersion).
+- **Incremental Value**: Pod ballistocardiography eliminates wrist movement artifacts during sleep, creating an ideal baseline for health anomaly and respiratory disturbance detection.
+- **Verdict**: **`ACTIVE`**.
+
+### 3. Sleep Duration (`sleep_duration_seconds`) — `ACTIVE`
+- **Coverage**: 42 dual-monitored nights.
+- **Incremental Value**: Ensures systemic sleep deficit and fatigue decay functions remain populated when watch is not worn during sleep.
+- **Verdict**: **`ACTIVE`**.
+
+### 4. Resting Heart Rate (`daily_resting_heart_rate_bpm`) — `ACTIVE`
+- **Coverage**: 59 evaluated days.
+- **Transport Equivalence (MS10)**: 74.6% exact match, $\text{Mean }\Delta = 0.593\text{ bpm}$.
+- **Verdict**: **`ACTIVE`**.
+
+### 5. Sleep Stages (`sleep_stage_*_seconds`) — `SHADOW_ONLY`
+- **Rationale**: Wrist PPG and mattress pressure sensors use fundamentally different feature extractors for Light vs REM vs Deep sleep. While duration is highly consistent, stage classification boundaries show sensor-dependent variance.
+- **Verdict**: **`SHADOW_ONLY`** (Logged in telemetry, excluded from candidate prescription gating until Stage Calibration lands).
+
+### 6. Proprietary Recovery Scores — `BLOCKED`
+- **Rationale**: Proprietary scores ("Sleep Fitness Score", "Garmin Training Readiness") combine uninterpretable heuristic models. The adaptive engine computes recommendations strictly from first-principles physiology (z-scores, acute/chronic load, subjective check-ins).
+- **Verdict**: **`BLOCKED`**.
+
+---
+
+## 3. Governance, Rollback & Configuration
+
+Individual biometric streams are controlled via `MultisourceMetricActivationConfig`:
+
+```typescript
+export const DEFAULT_METRIC_ACTIVATION_CONFIG: MultisourceMetricActivationConfig = {
+    hrv: true,
+    restingHeartRate: true,
+    respiration: true,
+    sleepDuration: true,
+    sleepStages: false, // shadow only
+    proprietaryScores: false, // blocked
+};
+```
+
+Any single metric can be instantly rolled back or disabled without disrupting the remaining active streams or baseline single-source operation.

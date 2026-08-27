@@ -231,4 +231,49 @@ describe('multisourceFusion (MS15)', () => {
         expect(hrvEvidence.fusedZScore).toBe(1.0); // Keeps Garmin's z-score
         expect(hrvEvidence.confidenceMultiplier).toBe(0.85); // Dampened confidence
     });
+
+    it('respects granular metric activation config', () => {
+        const eightSleepBundle: HealthObservationDayBundle = {
+            userId: 'user_1',
+            logicalDate: '2026-08-27',
+            provider: 'eight_sleep',
+            transport: 'google_health',
+            observations: [
+                { observationId: 'obs_e1', metric: 'hrv_rmssd_ms', value: 61, unit: 'ms' },
+                { observationId: 'obs_e2', metric: 'daily_resting_heart_rate_bpm', value: 45, unit: 'bpm' },
+            ],
+            sourcePayloadHash: 'hash_e',
+            schemaVersion: 1,
+            normalizerVersion: 1,
+            revision: 1,
+            ingestedAt: '2026-08-27T08:00:00Z',
+            effectiveAt: '2026-08-27T08:00:00Z',
+        };
+
+        const matureEightSleepRhrBaseline: SourceMetricBaseline = {
+            metric: 'daily_resting_heart_rate_bpm',
+            provider: 'eight_sleep',
+            transport: 'google_health',
+            count7d: 7,
+            count28d: 28,
+            median7d: 45,
+            median28d: 45,
+            mad28d: 2.0,
+            maturity: 'MATURE',
+            latestObservedDate: '2026-08-27',
+        };
+
+        // Case 1: HRV disabled, RHR enabled
+        const res1 = evaluateMultisourceFusion({
+            logicalDate: '2026-08-27',
+            policy: 'candidate-v1',
+            metricActivation: { hrv: false, restingHeartRate: true },
+            bundles: [eightSleepBundle],
+            baselines: [matureEightSleepHrvBaseline, matureEightSleepRhrBaseline],
+        });
+
+        expect(res1.fusedMetrics['hrv_rmssd_ms']).toBeUndefined();
+        expect(res1.fusedMetrics['daily_resting_heart_rate_bpm']).toBeDefined();
+        expect(res1.fusedMetrics['daily_resting_heart_rate_bpm'].agreementStatus).toBe('SINGLE_SOURCE');
+    });
 });
