@@ -64,7 +64,7 @@ export const Header: React.FC<HeaderProps> = ({
             <span className="brand-icon">⚡</span>
             <span className="brand-name">Adaptive Coach</span>
           </button>
-          {userId && date && <GarminSyncBadge userId={userId} date={date} />}
+          {userId && <GarminSyncBadge userId={userId} date={date} onSynced={loadDecisionInput} />}
         </div>
 
         <nav className="navbar-desktop-menu">

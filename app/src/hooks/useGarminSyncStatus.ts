@@ -1,5 +1,10 @@
 import { useState, useEffect } from 'react';
 import { garminWorkoutQueueService, type GarminQueuedWorkout } from '../services/garminWorkoutQueueService';
+import { recoverySnapshotService } from '../services/recoverySnapshotService';
+import type { DailyRecoverySnapshot } from '../engine/models';
+import { useGarminSyncTrigger } from './useGarminSyncTrigger';
+import { resolveGarminSyncStatus } from './garminSyncStatusResolver';
+import { getLocalDateString } from '../utils/localDate';
 
 export type GarminSyncStatusState = 'idle' | 'pending' | 'synced' | 'failed';
 
@@ -8,15 +13,43 @@ export interface UseGarminSyncStatusResult {
     queuedWorkout: GarminQueuedWorkout | null;
     pendingCount: number;
     isPending: boolean;
+    isBusy: boolean;
+    isStale: boolean;
     error: string | null;
+    latestSyncedAt: string | null;
+    latestGetSyncedAt: string | null;
+    latestPostSyncedAt: string | null;
+    triggerSync: () => Promise<string | null>;
 }
 
-export function useGarminSyncStatus(userId: string | null | undefined): UseGarminSyncStatusResult {
+export function useGarminSyncStatus(
+    userId: string | null | undefined,
+    date?: string,
+    onSynced?: () => void
+): UseGarminSyncStatusResult {
     const [queueItems, setQueueItems] = useState<GarminQueuedWorkout[]>([]);
-    const [error, setError] = useState<string | null>(null);
+    const [snapshot, setSnapshot] = useState<DailyRecoverySnapshot | null>(null);
+    // Surfaces a queue/snapshot subscription failure (e.g. Firestore rules denial, the
+    // client going offline) as a real error status instead of silently swallowing it.
+    // Cleared on the next successful update from either subscription so it can't
+    // outlive the problem that caused it.
+    const [subscriptionError, setSubscriptionError] = useState<string | null>(null);
 
+    const {
+        request: syncRequest,
+        triggering,
+        localError: triggerError,
+        isInFlight: isGetInFlight,
+        isStale,
+        triggerSync,
+    } = useGarminSyncTrigger(userId, onSynced);
+
+    const targetDate = date || getLocalDateString();
+
+    // 1. Subscribe to Workout Push Queue (POST)
     useEffect(() => {
         if (!userId) {
+            setQueueItems([]);
             return;
         }
 
@@ -24,10 +57,11 @@ export function useGarminSyncStatus(userId: string | null | undefined): UseGarmi
             userId,
             (items) => {
                 setQueueItems(items);
+                setSubscriptionError(null);
             },
             (err) => {
-                console.error('[useGarminSyncStatus] Subscription error:', err);
-                setError(err.message);
+                console.error('[useGarminSyncStatus] Workout queue subscription error:', err);
+                setSubscriptionError(err.message);
             }
         );
 
@@ -36,35 +70,56 @@ export function useGarminSyncStatus(userId: string | null | undefined): UseGarmi
         };
     }, [userId]);
 
+    // 2. Subscribe to Recovery Snapshot (GET)
+    useEffect(() => {
+        if (!userId || !targetDate) {
+            setSnapshot(null);
+            return;
+        }
+
+        const unsubscribe = recoverySnapshotService.subscribeToSnapshot(
+            userId,
+            targetDate,
+            (snap) => {
+                setSnapshot(snap);
+                setSubscriptionError(null);
+            },
+            (err) => {
+                console.error('[useGarminSyncStatus] Snapshot subscription error:', err);
+                setSubscriptionError(err.message);
+            }
+        );
+
+        return () => {
+            unsubscribe();
+        };
+    }, [userId, targetDate]);
+
     const activeItems = userId ? queueItems : [];
-    const pendingItems = activeItems.filter(item => item.status === 'pending');
-    const failedItems = activeItems.filter(item => item.status === 'failed');
-    const syncedItems = activeItems
-        .filter(item => item.status === 'synced')
-        .sort((a, b) => (b.syncedAt || b.queuedAt || '').localeCompare(a.syncedAt || a.queuedAt || ''));
 
-    let status: GarminSyncStatusState = 'idle';
-    let queuedWorkout: GarminQueuedWorkout | null = null;
-    let activeError: string | null = error;
-
-    if (pendingItems.length > 0) {
-        status = 'pending';
-        // Pick the most recently queued pending item
-        queuedWorkout = [...pendingItems].sort((a, b) => (b.queuedAt || '').localeCompare(a.queuedAt || ''))[0];
-    } else if (failedItems.length > 0) {
-        status = 'failed';
-        queuedWorkout = failedItems[0];
-        activeError = queuedWorkout.error || error || 'Sync failed';
-    } else if (syncedItems.length > 0) {
-        status = 'synced';
-        queuedWorkout = syncedItems[0];
-    }
+    const resolution = resolveGarminSyncStatus({
+        queueItems: activeItems,
+        syncRequest,
+        snapshot,
+        triggering,
+        isGetInFlight,
+        isStale,
+        // A client-side subscription/request error takes priority for the tooltip,
+        // falling back to a subscription-connectivity error.
+        clientError: triggerError || subscriptionError,
+    });
 
     return {
-        status,
-        queuedWorkout,
-        pendingCount: pendingItems.length,
-        isPending: status === 'pending',
-        error: activeError,
+        status: resolution.status,
+        queuedWorkout: resolution.queuedWorkout,
+        pendingCount: resolution.pendingCount,
+        isPending: resolution.status === 'pending',
+        isBusy: resolution.isBusy,
+        isStale,
+        error: resolution.error,
+        latestSyncedAt: resolution.latestSyncedAt,
+        latestGetSyncedAt: resolution.latestGetSyncedAt,
+        latestPostSyncedAt: resolution.latestPostSyncedAt,
+        triggerSync,
     };
 }

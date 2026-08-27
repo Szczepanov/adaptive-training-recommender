@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useCallback } from 'react';
 import { useGarminSyncStatus } from '../hooks/useGarminSyncStatus';
 import './GarminSyncBadge.css';
 
 export interface GarminSyncBadgeProps {
     userId: string | null | undefined;
     date?: string;
+    onSynced?: () => void;
 }
 
 function formatSyncTimestamp(isoString: string | null | undefined): string {
@@ -18,46 +19,91 @@ function formatSyncTimestamp(isoString: string | null | undefined): string {
     }
 }
 
-export const GarminSyncBadge: React.FC<GarminSyncBadgeProps> = ({ userId }) => {
-    const { status, queuedWorkout, pendingCount, error } = useGarminSyncStatus(userId);
-
-    if (status === 'idle') {
-        return null;
+function formatDetailedTimestamp(isoString: string | null | undefined): string {
+    if (!isoString) return 'None';
+    try {
+        const d = new Date(isoString);
+        if (isNaN(d.getTime())) return isoString;
+        return d.toLocaleString([], {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+        });
+    } catch {
+        return isoString;
     }
+}
+
+export const GarminSyncBadge: React.FC<GarminSyncBadgeProps> = ({ userId, date, onSynced }) => {
+    const {
+        status,
+        queuedWorkout,
+        pendingCount,
+        isBusy,
+        error,
+        latestSyncedAt,
+        latestGetSyncedAt,
+        latestPostSyncedAt,
+        triggerSync,
+    } = useGarminSyncStatus(userId, date, onSynced);
+
+    const handleClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
+        e.stopPropagation();
+        if (isBusy) return;
+        await triggerSync();
+    }, [isBusy, triggerSync]);
 
     let badgeClass = 'garmin-sync-badge';
-    let icon = '🔄';
-    let label = 'Garmin: Syncing...';
-    let tooltip = 'Workout is queued for export to Garmin Connect.';
+    let icon: string;
+    let label: string;
+    let tooltip: string;
+    let disabled: boolean;
 
-    if (status === 'pending') {
+    if (status === 'pending' || isBusy) {
         badgeClass += ' status-pending';
         icon = '🔄';
         label = pendingCount > 1 ? `Garmin: Syncing (${pendingCount})...` : 'Garmin: Syncing...';
-        tooltip = `Pushing "${queuedWorkout?.workoutTitle || 'Workout'}" (${queuedWorkout?.date || 'Session'}) to Garmin Connect...`;
-    } else if (status === 'synced') {
-        badgeClass += ' status-synced';
-        icon = '✓';
-        const timeFormatted = formatSyncTimestamp(queuedWorkout?.syncedAt);
-        label = timeFormatted ? `Garmin: Synced (${timeFormatted})` : 'Garmin: Synced';
-        const syncDetails = timeFormatted ? ` at ${timeFormatted}` : '';
-        tooltip = `"${queuedWorkout?.workoutTitle || 'Workout'}" (${queuedWorkout?.date}) synced to Garmin Connect${syncDetails}.`;
+        tooltip = queuedWorkout
+            ? `Pushing "${queuedWorkout.workoutTitle || 'Workout'}" (${queuedWorkout.date || 'Session'}) to Garmin Connect...`
+            : 'Syncing with Garmin Connect...';
+        disabled = true;
     } else if (status === 'failed') {
         badgeClass += ' status-failed';
         icon = '⚠️';
-        label = 'Garmin: Error';
-        tooltip = `Failed to sync "${queuedWorkout?.workoutTitle || 'Workout'}" (${queuedWorkout?.date}): ${queuedWorkout?.error || error || 'Unknown error'}`;
+        label = 'Garmin: Error (Retry)';
+        tooltip = `Garmin sync error: ${error || 'Unknown error'}. Click to retry.`;
+        disabled = false;
+    } else if (status === 'synced' && latestSyncedAt) {
+        badgeClass += ' status-synced';
+        icon = '✓';
+        const timeFormatted = formatSyncTimestamp(latestSyncedAt);
+        label = timeFormatted ? `Garmin: Synced (${timeFormatted})` : 'Garmin: Synced';
+        const getDetails = formatDetailedTimestamp(latestGetSyncedAt);
+        const postDetails = formatDetailedTimestamp(latestPostSyncedAt);
+        tooltip = `Garmin synced.\n• Health & recovery: ${getDetails}\n• Workout export: ${postDetails}\nClick to force sync now.`;
+        disabled = false;
+    } else {
+        badgeClass += ' status-idle';
+        icon = '🔄';
+        label = 'Garmin: Sync now';
+        tooltip = 'Click to sync health & recovery data with Garmin Connect.';
+        disabled = false;
     }
 
     return (
-        <div
+        <button
+            type="button"
             className={badgeClass}
             title={tooltip}
             aria-label={tooltip}
-            role="status"
+            disabled={disabled}
+            onClick={handleClick}
+            aria-busy={status === 'pending' || isBusy}
         >
             <span className="garmin-sync-icon" aria-hidden="true">{icon}</span>
             <span className="garmin-sync-label">{label}</span>
-        </div>
+        </button>
     );
 };
