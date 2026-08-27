@@ -109,18 +109,24 @@ describe('coPresenceValidator (ADR-0027 D-MS-IDENTITY, D-MS-PREBASE)', () => {
             expect(result.reason).toContain('quarantined');
         });
 
-        it('exposes no status value that represents a confirmed identity verdict', () => {
-            // The provisional CoPresenceStatus vocabulary is a quarantine/concordance signal, not
-            // an identity classifier: it must never surface a definitive "NOT_USER" determination.
-            // (The ternary USER | NOT_USER | UNCERTAIN model belongs to ADR-0028/PI1+.)
-            const allStatuses: string[] = [
+        it('exposes no production status value that represents a confirmed identity verdict', () => {
+            const allStatuses = [
+                validateCoPresence({ garminRhr: 44, eightSleepRhr: 45 }).status,
+                validateCoPresence({ garminRhr: 44, eightSleepRhr: 82 }).status,
+                validateCoPresence({
+                    garminRhr: null,
+                    eightSleepRhr: 45,
+                    athleteRhr28dMedian: 44,
+                }).status,
+                validateCoPresence({ garminRhr: 44, eightSleepRhr: null }).status,
+            ];
+
+            expect(new Set(allStatuses)).toEqual(new Set([
                 'CONCORDANT',
-                'VERIFIED',
                 'DISCORDANT_SECONDARY',
-                'IMPOSTER_REJECTED',
                 'UNVERIFIED_OFF_WRIST',
                 'NO_SECONDARY_DATA',
-            ];
+            ]));
             expect(allStatuses).not.toContain('NOT_USER');
             expect(allStatuses).not.toContain('USER');
         });
