@@ -10,10 +10,10 @@ Absence of a valid, unambiguous projection is ``UNCERTAIN``/ineligible, never gu
 physiology.
 """
 
-from dataclasses import dataclass
-from datetime import datetime
 import math
 import re
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal, Mapping, Sequence, TypeAlias, cast
 
 IdentityStatus: TypeAlias = Literal["USER", "NOT_USER", "UNCERTAIN"]
@@ -256,7 +256,7 @@ def validate_automatic_identity_assessment(value: object) -> bool:
         or not _is_finite_or_none(identity_score)
         or value.get("confidenceTier") not in _IDENTITY_CONFIDENCE_TIERS
         or not isinstance(reason_codes, list)
-        or not all(code in _IDENTITY_REASON_CODES for code in reason_codes)
+        or not all(isinstance(code, str) and code in _IDENTITY_REASON_CODES for code in reason_codes)
         or (passport_version is not None and _non_empty_string(passport_version) is None)
         or _non_empty_string(value.get("policyVersion")) is None
         or _non_empty_string(value.get("featureSchemaVersion")) is None
