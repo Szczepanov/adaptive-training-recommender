@@ -187,9 +187,14 @@ describe('identityEligibility (PI5, ADR-0028 D-PID-PREBASE)', () => {
             reasonCodes: ['MIXED_OCCUPANCY_SUSPECTED'],
             assessmentId,
             reviewEvents: [
+                // user_ui review shape requires EXCLUSIVE occupancy for a USER label (matches the
+                // Firestore client-write rules); a USER label with MIXED occupancy can only be
+                // persisted via admin_replay, which preserves historical combinations unavailable
+                // through the user UI while keeping identity and occupancy as separate evidence.
                 review(assessmentId, {
                     label: 'USER',
                     occupancyAttestation: 'MIXED',
+                    source: 'admin_replay',
                 }),
             ],
         });
