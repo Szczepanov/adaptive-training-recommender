@@ -6,8 +6,9 @@ import {
     type IdentityReviewEvent,
 } from './identityModels';
 
-function assessment(automaticStatus: AutomaticIdentityAssessment['automaticStatus'] = 'UNCERTAIN'):
-AutomaticIdentityAssessment {
+function assessment(
+    automaticStatus: AutomaticIdentityAssessment['automaticStatus'] = 'UNCERTAIN',
+): AutomaticIdentityAssessment {
     return {
         id: 'assessment-1',
         sourceNightKey: '2026-08-27',
