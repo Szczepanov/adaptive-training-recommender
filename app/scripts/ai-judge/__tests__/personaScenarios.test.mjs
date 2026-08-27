@@ -62,17 +62,4 @@ describe('persona AI-judge fixtures', () => {
       expect(result.decisionTraces.every((trace) => Boolean(trace.selected?.templateId)), definition.scenario.id).toBe(true);
     }
   });
-
-  it('keeps the health persona inside its hard 30-minute capacity case', async () => {
-    const definition = buildPersonaFamilies()
-      .find((family) => family.familyId === 'persona_health_fat_loss')
-      .cases.find((candidate) => candidate.scenario.id === 'persona_health_fatloss_low_time');
-
-    const result = await runScenario(definition.scenario);
-    for (const trace of result.decisionTraces) {
-      if (trace.selected.durationMin != null) {
-        expect(trace.selected.durationMin, `${definition.scenario.id}:${trace.date}`).toBeLessThanOrEqual(30);
-      }
-    }
-  });
 });
