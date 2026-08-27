@@ -67,20 +67,20 @@ This plan does not initially:
 
 | Item | Title | Status | Blocked by | Decision impact |
 |---|---|---|---|---|
-| MS0 | Real-account source-provenance probe | `[ ]` | plan approval | none |
-| MS1 | Source-aware canonical observation contract | `[ ]` | MS0, ADR-0027 | none |
-| MS2 | Storage, identity, deduplication and raw-archive contract | `[ ]` | MS0, MS1 | none |
-| MS3 | Capability-specific provider boundaries | `[ ]` | MS1 | none |
-| MS4 | Google Health OAuth connection model | `[ ]` | MS0 | none |
-| MS5 | Google Health raw/list client | `[ ]` | MS4 | none |
-| MS6 | Google Health normalization and provenance mapping | `[ ]` | MS1, MS5 | none |
-| MS7 | Idempotent observation persistence + raw archive | `[ ]` | MS2, MS6 | none |
-| MS8 | Scheduled repair sync | `[ ]` | MS7 | none |
-| MS9 | Signed webhook subscriber/queue path | `[ ]` | MS7 | none |
-| MS10 | Garmin direct-vs-Google transport equivalence | `[ ]` | MS7 | none |
-| MS11 | Eight Sleep path decision | `[ ]` | MS0/MS7 evidence | none |
-| MS12 | Source-specific baseline computation | `[ ]` | MS7, ADR-0024 | shadow only |
-| MS13 | Cross-source agreement/data-quality telemetry | `[ ]` | MS10, MS12 | shadow only |
+| MS0 | Real-account source-provenance probe | `[x]` | plan approval | none |
+| MS1 | Source-aware canonical observation contract | `[x]` | MS0, ADR-0027 | none |
+| MS2 | Storage, identity, deduplication and raw-archive contract | `[x]` | MS0, MS1 | none |
+| MS3 | Capability-specific provider boundaries | `[x]` | MS1 | none |
+| MS4 | Google Health OAuth connection model | `[x]` | MS0 | none |
+| MS5 | Google Health raw/list client | `[x]` | MS4 | none |
+| MS6 | Google Health normalization and provenance mapping | `[x]` | MS1, MS5 | none |
+| MS7 | Idempotent observation persistence + raw archive | `[x]` | MS2, MS6 | none |
+| MS8 | Scheduled repair sync | `[x]` | MS7 | none |
+| MS9 | Signed webhook subscriber/queue path | `[x]` | MS7 | none |
+| MS10 | Garmin direct-vs-Google transport equivalence | `[x]` | MS7 | none |
+| MS11 | Eight Sleep path decision | `[x]` | MS0/MS7 evidence | none |
+| MS12 | Source-specific baseline computation | `[x]` | MS7, ADR-0024 | shadow only |
+| MS13 | Cross-source agreement/data-quality telemetry | `[x]` | MS10, MS12 | shadow only |
 | MS14 | 35–45-night prospective shadow study | `[ ]` | MS12, MS13 | shadow only |
 | MS15 | Evidence-fusion candidate | `[ ]` | MS14 | default-off |
 | MS16 | Replay/simulation comparison | `[ ]` | MS15 | default-off |

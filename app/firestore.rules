@@ -1467,5 +1467,17 @@ service cloud.firestore {
       allow create: if hasValidCompetitionOutcome(userId, outcomeId);
       allow update, delete: if false;
     }
+
+    // --- MS2/ADR-0027: server-owned multisource health observation day bundles.
+    match /users/{userId}/health_observation_days/{daySourceId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Server-managed only
+    }
+
+    // --- MS4/ADR-0027: server-owned integration connection metadata.
+    match /users/{userId}/connections/{connectionId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Server-managed only
+    }
   }
 }

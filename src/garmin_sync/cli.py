@@ -377,6 +377,116 @@ def run_poll_manual_sync_all_cmd(args: list[str] | None = None) -> int:
     )
 
 
+def run_probe_health_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run Google Health source-provenance probe (MS0).")
+    parser.add_argument(
+        "--token", type=str, default=None, help="Google OAuth access token for direct testing"
+    )
+    parser.add_argument("--client-id", type=str, default=None, help="Google OAuth Client ID")
+    parser.add_argument(
+        "--client-secret", type=str, default=None, help="Google OAuth Client Secret"
+    )
+    parser.add_argument(
+        "--refresh-token", type=str, default=None, help="Google OAuth Refresh Token"
+    )
+    parser.add_argument("--start-time", type=str, default=None, help="Start ISO timestamp")
+    parser.add_argument("--end-time", type=str, default=None, help="End ISO timestamp")
+    parsed_args = parser.parse_args(args)
+
+    import os
+    import time
+
+    from .google_health_auth import GoogleHealthAuthManager, GoogleHealthTokenCredentials
+    from .google_health_client import GoogleHealthClient
+    from .health_probe import HealthProvenanceProbe
+
+    token = parsed_args.token or os.environ.get("GOOGLE_HEALTH_ACCESS_TOKEN")
+    client_id = parsed_args.client_id or os.environ.get("GOOGLE_HEALTH_CLIENT_ID")
+    client_secret = parsed_args.client_secret or os.environ.get("GOOGLE_HEALTH_CLIENT_SECRET")
+    refresh_token = parsed_args.refresh_token or os.environ.get("GOOGLE_HEALTH_REFRESH_TOKEN")
+
+    if not token and not (client_id and client_secret and refresh_token):
+        print("\n" + "=" * 70)
+        print("  GOOGLE HEALTH SOURCE-PROVENANCE PROBE (MS0)")
+        print("=" * 70)
+        print("\nNo Google Health credentials or access token were provided.\n")
+        print("To run the probe on your real account, choose one of these options:")
+        print("\nOption A: Pass a temporary access token from Google OAuth Playground:")
+        print("  uv run python -m garmin_sync probe-health --token <YOUR_ACCESS_TOKEN>\n")
+        print("Option B: Pass full OAuth credentials:")
+        print(
+            "  uv run python -m garmin_sync probe-health --client-id <ID> --client-secret <SECRET> --refresh-token <REFRESH_TOKEN>\n"
+        )
+        print("Option C: Set environment variables:")
+        print("  $env:GOOGLE_HEALTH_ACCESS_TOKEN='<YOUR_ACCESS_TOKEN>'")
+        print("  uv run python -m garmin_sync probe-health\n")
+        print("=" * 70 + "\n")
+        return 1
+
+    try:
+        if token:
+            creds = GoogleHealthTokenCredentials(
+                access_token=token,
+                refresh_token="",
+                expires_at=time.time() + 3600,
+            )
+            auth_manager = GoogleHealthAuthManager(
+                client_id="direct_token",
+                client_secret="direct_token",
+                credentials=creds,
+            )
+        else:
+            creds = GoogleHealthTokenCredentials(
+                access_token="",
+                refresh_token=refresh_token or "",
+                expires_at=0.0,
+            )
+            auth_manager = GoogleHealthAuthManager(
+                client_id=client_id or "",
+                client_secret=client_secret or "",
+                credentials=creds,
+            )
+
+        client = GoogleHealthClient(auth_manager=auth_manager)
+        probe = HealthProvenanceProbe(
+            client=client,
+            scopes=[
+                "https://www.googleapis.com/auth/googlehealth.sleep.readonly",
+                "https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly",
+            ],
+        )
+
+        print("\nQuerying Google Health endpoints...")
+        result = probe.run_probe(
+            start_time_iso=parsed_args.start_time,
+            end_time_iso=parsed_args.end_time,
+        )
+
+        print("\n" + "=" * 75)
+        print(f"  GOOGLE HEALTH SOURCE-PROVENANCE PROBE RESULTS ({result.timestamp[:10]})")
+        print("=" * 75)
+        print(f"  Garmin Status:       {result.garminStatus}")
+        print(f"  Eight Sleep Status:  {result.eightSleepStatus}")
+        print("-" * 75)
+        print(
+            f"{'Data Type':<26} {'Points':<8} {'Garmin?':<10} {'EightSleep?':<12} {'Other Packages'}"
+        )
+        print("-" * 75)
+        for s in result.dataTypesSummary:
+            other_pkgs = ", ".join(s.otherSourcesSeen) if s.otherSourcesSeen else "none"
+            garmin_str = "YES" if s.garminSeen else "NO"
+            eight_str = "YES" if s.eightSleepSeen else "NO"
+            print(
+                f"{s.dataType:<26} {s.totalDataPoints:<8} {garmin_str:<10} {eight_str:<12} {other_pkgs}"
+            )
+        print("=" * 75 + "\n")
+        return 0
+
+    except Exception as error:
+        log_exception(logger, "probe health", error)
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Garmin Sync Pipeline CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -410,6 +520,16 @@ def main() -> int:
     rebuild_parser.add_argument("--start-date", type=str, required=True)
     rebuild_parser.add_argument("--end-date", type=str, required=True)
 
+    probe_health_parser = subparsers.add_parser(
+        "probe-health", help="Run Google Health source-provenance probe (MS0)"
+    )
+    probe_health_parser.add_argument("--token", type=str, default=None)
+    probe_health_parser.add_argument("--client-id", type=str, default=None)
+    probe_health_parser.add_argument("--client-secret", type=str, default=None)
+    probe_health_parser.add_argument("--refresh-token", type=str, default=None)
+    probe_health_parser.add_argument("--start-time", type=str, default=None)
+    probe_health_parser.add_argument("--end-time", type=str, default=None)
+
     push_workout_parser = subparsers.add_parser("push-workout", help="Push one queued workout")
     push_workout_parser.add_argument("--date", type=str, default=None)
 
@@ -440,6 +560,8 @@ def main() -> int:
         return run_audit_cmd(sys.argv[2:])
     if args.command == "rebuild":
         return run_rebuild_cmd(sys.argv[2:])
+    if args.command == "probe-health":
+        return run_probe_health_cmd(sys.argv[2:])
     if args.command == "push-workout":
         return run_push_workout_cmd(sys.argv[2:])
     if args.command == "push-pending-workouts":

@@ -42,6 +42,25 @@ def _object_dir(prefix: str, endpoint: str, logical_date: str) -> str:
     return f"{prefix}/{endpoint}/{year}/{month}/{logical_date}"
 
 
+def compute_observation_id(
+    user_id: str,
+    provider: str,
+    transport: str,
+    metric: str,
+    source_record_id: str | None = None,
+    observed_start: str | None = None,
+    observed_end: str | None = None,
+    payload_content: Any = None,
+) -> str:
+    """Compute deterministic observation ID per ADR-0027 / MS2."""
+    if source_record_id:
+        key = f"{user_id}:{provider}:{transport}:{metric}:{source_record_id}"
+    else:
+        payload_hash = _payload_sha256(payload_content) if payload_content is not None else ""
+        key = f"{user_id}:{provider}:{transport}:{metric}:{observed_start or ''}:{observed_end or ''}:{payload_hash}"
+    return f"sha256:{hashlib.sha256(key.encode('utf-8')).hexdigest()}"
+
+
 @dataclasses.dataclass(frozen=True)
 class ArchiveRecord:
     endpoint: str
@@ -49,6 +68,17 @@ class ArchiveRecord:
     payload: Any
     sync_run_id: str
     garminconnect_version: str | None = None
+
+
+@dataclasses.dataclass(frozen=True)
+class HealthArchiveRecord:
+    user_id: str
+    provider: str
+    transport: str
+    logical_date: str
+    payload: Any
+    revision: int = 1
+    normalizer_version: int = 1
 
 
 class RawArchiveStore(Protocol):

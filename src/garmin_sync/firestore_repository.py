@@ -443,3 +443,125 @@ class FirestoreRecoveryRepository:
             # Firestore aggregation queries may be unavailable in older emulators/mocks --
             # fall back to a client-side count.
             return sum(1 for _ in query.stream())
+
+    def save_health_observation_day_bundle(
+        self,
+        bundle: Any,  # HealthObservationDayBundle
+    ) -> tuple[bool, int]:
+        """Save a day-source observation bundle to Firestore under
+        users/{userId}/health_observation_days/{YYYY-MM-DD}_{provider}_{transport}.
+
+        Returns (changed: bool, revision: int). If identical payload exists, returns (False, rev).
+        If payload updated, increments revision and saves.
+        """
+        db = self._get_db()
+        doc_id = f"{bundle.logicalDate}_{bundle.provider}_{bundle.transport}"
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("health_observation_days")
+            .document(doc_id)
+        )
+
+        existing_doc = doc_ref.get()
+        now_iso = datetime.now(timezone.utc).isoformat()
+        current_rev = 1
+
+        if existing_doc.exists:
+            data = existing_doc.to_dict() or {}
+            existing_hash = data.get("sourcePayloadHash")
+            current_rev = data.get("revision", 1)
+            if existing_hash == bundle.sourcePayloadHash:
+                logger.debug(
+                    "Health observation bundle %s already up to date at revision %d.",
+                    doc_id,
+                    current_rev,
+                )
+                return False, current_rev
+            current_rev += 1
+
+        bundle.revision = current_rev
+        bundle.ingestedAt = now_iso
+        bundle.effectiveAt = now_iso
+
+        doc_ref.set(bundle.to_dict())
+        logger.info(
+            "Saved health observation bundle %s for user=<UID-redacted> at revision %d (%d observations).",
+            doc_id,
+            current_rev,
+            len(bundle.observations),
+        )
+        return True, current_rev
+
+    def get_health_observation_day_bundle(
+        self,
+        logical_date: str,
+        provider: str,
+        transport: str,
+    ) -> dict[str, Any] | None:
+        """Retrieve a specific day-source bundle from Firestore."""
+        db = self._get_db()
+        doc_id = f"{logical_date}_{provider}_{transport}"
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("health_observation_days")
+            .document(doc_id)
+        )
+        doc = doc_ref.get()
+        return doc.to_dict() if doc.exists else None
+
+    def get_health_observation_bundles_in_range(
+        self,
+        start_date: str,
+        end_date: str,
+        provider: str | None = None,
+        transport: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Retrieve all health observation day bundles within [start_date, end_date]."""
+        db = self._get_db()
+        query = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("health_observation_days")
+            .where(filter=FieldFilter("logicalDate", ">=", start_date))
+            .where(filter=FieldFilter("logicalDate", "<=", end_date))
+        )
+        if provider:
+            query = query.where(filter=FieldFilter("provider", "==", provider))
+        if transport:
+            query = query.where(filter=FieldFilter("transport", "==", transport))
+
+        docs = [doc.to_dict() for doc in query.stream()]
+        docs.sort(key=lambda d: d.get("logicalDate", ""))
+        return docs
+
+    def save_connection_metadata(
+        self,
+        connection_name: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Save non-secret connection metadata to users/{userId}/connections/{connection_name}."""
+        db = self._get_db()
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("connections")
+            .document(connection_name)
+        )
+        doc_ref.set(metadata, merge=True)
+
+    def get_connection_metadata(
+        self,
+        connection_name: str,
+    ) -> dict[str, Any] | None:
+        """Retrieve connection metadata from users/{userId}/connections/{connection_name}."""
+        db = self._get_db()
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("connections")
+            .document(connection_name)
+        )
+        doc = doc_ref.get()
+        return doc.to_dict() if doc.exists else None

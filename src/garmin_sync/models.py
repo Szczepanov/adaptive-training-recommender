@@ -356,3 +356,53 @@ class DailyRecoverySnapshot:
         if self.updatedAt:
             res["updatedAt"] = self.updatedAt
         return res
+
+
+@dataclass
+class HealthObservationDTO:
+    observationId: str
+    metric: str
+    value: float | int | str | dict[str, Any] | None
+    unit: str | None
+    sourceRecordId: str | None = None
+    observedStart: str | None = None
+    observedEnd: str | None = None
+    originApplication: str | None = None
+    originDevice: str | None = None
+    quality: dict[str, Any] | None = None
+    semanticVersion: str = "1.0.0"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {k: v for k, v in asdict(self).items() if v is not None}
+
+
+@dataclass
+class HealthObservationDayBundle:
+    userId: str
+    logicalDate: str
+    provider: str
+    transport: str
+    observations: list[HealthObservationDTO]
+    sourcePayloadHash: str
+    rawArchiveRef: str | None = None
+    schemaVersion: int = 1
+    normalizerVersion: int = 1
+    revision: int = 1
+    ingestedAt: str | None = None
+    effectiveAt: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "userId": self.userId,
+            "logicalDate": self.logicalDate,
+            "provider": self.provider,
+            "transport": self.transport,
+            "observations": [o.to_dict() for o in self.observations],
+            "sourcePayloadHash": self.sourcePayloadHash,
+            "rawArchiveRef": self.rawArchiveRef,
+            "schemaVersion": self.schemaVersion,
+            "normalizerVersion": self.normalizerVersion,
+            "revision": self.revision,
+            "ingestedAt": self.ingestedAt,
+            "effectiveAt": self.effectiveAt,
+        }
