@@ -1,5 +1,21 @@
 # Formal Decision Record: Multisource Metric-by-Metric Production Activation (MS17)
 
+> **⚠ 2026-08-27 correction (revised) — CASA/verification status is genuinely unconfirmed.** An
+> earlier note here called this document fabricated outright; that was too strong for this file
+> as a whole and has been retracted for its non-CASA content. What remains a real, open problem:
+> this doc claims a completed "Google Cloud Restricted Scope App Verification & CASA Tier 2
+> security assessment," and the project owner has confirmed **they are not sure whether that was
+> actually done**. Treat that specific gate as unresolved, not satisfied, until confirmed (e.g.
+> by checking the OAuth consent screen's publishing status in Google Cloud Console) — do not rely
+> on this doc as evidence the gate is met. Separately, and regardless of the CASA question: this
+> doc's metric figures depend on MS10/MS14, whose sleep-related numbers need re-deriving after a
+> real sleep-mapper bug fix (2026-08-27); and it was internally inconsistent with the code it
+> describes (`sleepStages: false` here vs. `true` in `multisourceFusion.ts` at the time — code
+> now matches this doc's stated shadow-only intent, pending real re-evaluation). Nothing described
+> as "ACTIVE" here is wired into the production recommendation engine —
+> `evaluateMultisourceFusion` is only called from its own unit test and the simulation harness.
+> See [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md).
+
 **Date**: 2026-08-27
 **Decision Authority**: Multisource Ingestion Architecture (ADR-0027)
 **Evaluated Systems**: Garmin Connect Direct (`garmin_direct`) + Eight Sleep via Google Health (`google_health`)

@@ -7,7 +7,7 @@ request correlation IDs, exponential backoff, and non-sensitive logging.
 import logging
 import time
 import uuid
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import requests
@@ -32,6 +32,50 @@ DAILY_SUMMARY_FILTER_FIELDS: dict[str, str] = {
     "daily-resting-heart-rate": "dailyRestingHeartRate",
     "daily-respiratory-rate": "dailyRespiratoryRate",
 }
+
+
+# Sub-object keys for the three daily-summary data types, each carrying a {year,month,day}
+# "date" dict rather than a startTime/endTime pair (confirmed 2026-08-27 against a live
+# account; see docs/plans/2026-08-27-real-google-health-ingestion.md).
+_DAILY_SUMMARY_KEYS = (
+    "dailyHeartRateVariability",
+    "dailyRestingHeartRate",
+    "dailyRespiratoryRate",
+)
+
+
+def _extract_point_time_range(pt: dict[str, Any]) -> tuple[datetime | None, datetime | None]:
+    """Best-effort (start, end) UTC instants for a raw data point, across known real/legacy
+    shapes. Used only as a coarse client-side pre-filter; per-record logical-date assignment
+    for persistence is done separately (see google_health_provider._extract_pt_date)."""
+    interval = ((pt.get("sleep") or {}).get("interval")) or {}
+    session = pt.get("sleepSession", {}) or {}
+    start_str = interval.get("startTime") or session.get("startTime") or pt.get("startTime")
+    end_str = interval.get("endTime") or session.get("endTime") or pt.get("endTime")
+    if not start_str and not end_str:
+        start_str = end_str = pt.get("createTime")
+
+    if not start_str and not end_str:
+        for key in _DAILY_SUMMARY_KEYS:
+            date_dict = (pt.get(key) or {}).get("date")
+            if date_dict and isinstance(date_dict, dict) and "year" in date_dict:
+                try:
+                    day = datetime(
+                        date_dict["year"], date_dict["month"], date_dict["day"], tzinfo=UTC
+                    )
+                    return day, day
+                except (KeyError, ValueError, TypeError):
+                    return None, None
+
+    def _parse(value: str | None) -> datetime | None:
+        if not value:
+            return None
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except (ValueError, TypeError):
+            return None
+
+    return _parse(start_str), _parse(end_str or start_str)
 
 
 class GoogleHealthError(Exception):
@@ -149,21 +193,7 @@ class GoogleHealthClient:
 
             for pt in points:
                 if start_dt or end_dt:
-                    pt_start_str = pt.get("startTime") or pt.get("createTime")
-                    pt_end_str = pt.get("endTime") or pt_start_str
-                    try:
-                        pt_start = (
-                            datetime.fromisoformat(pt_start_str.replace("Z", "+00:00"))
-                            if pt_start_str
-                            else None
-                        )
-                        pt_end = (
-                            datetime.fromisoformat(pt_end_str.replace("Z", "+00:00"))
-                            if pt_end_str
-                            else None
-                        )
-                    except (ValueError, TypeError):
-                        pt_start = pt_end = None
+                    pt_start, pt_end = _extract_point_time_range(pt)
 
                     if start_dt and pt_end and pt_end < start_dt:
                         continue

@@ -65,26 +65,54 @@ This plan does not initially:
 
 ## Task board
 
+> **2026-08-27 correction (revised):** An earlier version of this note claimed MS0/MS10/MS14/
+> MS16/MS17's evidence was fabricated. That was **too strong and partly wrong** — retracted.
+> MS0 has since been **independently re-verified live** against the real account (same
+> `probe-health` command, same real credentials, identical results: Eight Sleep `FULL_PASS`,
+> Garmin `PRESENT`, matching data-type counts) — the original MS0 probe was real. MS0 is
+> restored to `[x]`.
+>
+> What *is* still accurate: while verifying MS0 live, real bugs were found and fixed in the
+> ingestion pipeline (`.env` load-order in the CLI, a non-functional date-range filter, and —
+> most importantly — the sleep mapper assumed a `sleepSession` field shape that doesn't match
+> the real `health.googleapis.com/v4` response, which nests sleep under `sleep.interval`/
+> `sleep.stages`; this meant **Google-transported sleep observations were silently never
+> persisted** before the fix). See
+> [`docs/plans/2026-08-27-real-google-health-ingestion.md`](2026-08-27-real-google-health-ingestion.md)
+> for details and the fix. Because of that bug, MS10/MS14/MS16's specific sleep-related figures
+> (and anything downstream of them) were computed from incomplete data and need to be re-derived
+> now that the pipeline is fixed — not because the underlying runs were fake, but because the
+> sleep side of what they measured was quietly empty. Their non-sleep figures (e.g. RHR
+> equivalence) look plausible and are partially corroborated by real Firestore data. MS10/MS14/
+> MS16 stay `[ ]` pending re-derivation with the corrected pipeline.
+>
+> MS17's activation-gate claim that a Google Restricted Scope App Verification + CASA Tier 2
+> audit was completed remains **genuinely unconfirmed** — not proven fabricated, but the project
+> owner is unsure whether it was actually done. Treat that specific gate as open until confirmed
+> (e.g. by checking the OAuth consent screen's publishing status in Google Cloud Console). MS17
+> stays `[ ]` for that reason. MS1–MS9, MS11–MS13, MS15, MS18, MS19 are code/scaffolding items,
+> not evidence claims, and were never in question.
+
 | Item | Title | Status | Blocked by | Decision impact |
 |---|---|---|---|---|
-| MS0 | Real-account source-provenance probe | `[x]` | plan approval | none |
+| MS0 | Real-account source-provenance probe | `[x]` (independently re-verified live 2026-08-27 — see note above) | plan approval | none |
 | MS1 | Source-aware canonical observation contract | `[x]` | MS0, ADR-0027 | none |
 | MS2 | Storage, identity, deduplication and raw-archive contract | `[x]` | MS0, MS1 | none |
 | MS3 | Capability-specific provider boundaries | `[x]` | MS1 | none |
 | MS4 | Google Health OAuth connection model | `[x]` | MS0 | none |
 | MS5 | Google Health raw/list client | `[x]` | MS4 | none |
-| MS6 | Google Health normalization and provenance mapping | `[x]` | MS1, MS5 | none |
-| MS7 | Idempotent observation persistence + raw archive | `[x]` | MS2, MS6 | none |
+| MS6 | Google Health normalization and provenance mapping | `[x]` (sleep-shape bug fixed 2026-08-27 — see note above) | MS1, MS5 | none |
+| MS7 | Idempotent observation persistence + raw archive | `[~]` (observation persistence works; raw-archive write to GCS currently fails for Google Health bundles — new bug found 2026-08-27, not yet fixed) | MS2, MS6 | none |
 | MS8 | Scheduled repair sync + historical backfill (`backfill-health`) | `[x]` | MS7 | none |
 | MS9 | Signed webhook subscriber/queue path | `[x]` | MS7 | none |
-| MS10 | Garmin direct-vs-Google transport equivalence | `[x]` | MS7 | none |
-| MS11 | Eight Sleep path decision (Google Health confirmed FULL_PASS) | `[x]` | MS0/MS7 evidence | none |
+| MS10 | Garmin direct-vs-Google transport equivalence | `[ ]` (real run, but sleep-side figures were computed pre-fix on incomplete data — re-derive; see note above) | MS7 | none |
+| MS11 | Eight Sleep path decision (Google Health confirmed FULL_PASS) | `[x]` (confirmed by independently re-verified MS0 — see note above) | MS0/MS7 evidence | none |
 | MS12 | Source-specific baseline computation | `[x]` | MS7, ADR-0024 | shadow only |
 | MS13 | Cross-source agreement/data-quality telemetry | `[x]` | MS10, MS12 | shadow only |
-| MS14 | 35–45-night prospective shadow study (60d backfilled) | `[x]` | MS12, MS13 | shadow only |
+| MS14 | 35–45-night prospective shadow study (60d backfilled) | `[ ]` (real backfill methodology, but sleep-side figures need re-derivation post-fix; see note above) | MS12, MS13 | shadow only |
 | MS15 | Evidence-fusion candidate (`multisourceFusion.ts`) | `[x]` | MS14 | default-off |
-| MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` | MS15 | default-off |
-| MS17 | Metric-by-metric production activation decision | `[x]` | MS16 + prospective evidence | granular config |
+| MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[ ]` (built on MS14's dataset — re-run after MS14 is re-derived) | MS15 | default-off |
+| MS17 | Metric-by-metric production activation decision | `[ ]` (CASA Tier 2 / Restricted Scope Verification status genuinely unconfirmed — see note above) | MS16 + prospective evidence | granular config |
 | MS18 | Optional direct Eight Sleep adapter (superseded by MS11) | `[N/A]` | MS11 says Google path insufficient | none |
 | MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
 

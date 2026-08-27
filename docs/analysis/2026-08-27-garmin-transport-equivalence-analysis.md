@@ -1,5 +1,16 @@
 # Empirical Analysis: Garmin Direct vs Google Health Transport Equivalence (MS10)
 
+> **⚠ 2026-08-27 correction (revised) — real run, but re-derive the sleep figures.** An earlier
+> note here claimed this was fabricated; that was too strong and has been retracted — MS0 (which
+> this depends on) was independently re-verified live against the real account. What *is*
+> accurate: a real bug in the sleep mapper (fixed 2026-08-27; it assumed a `sleepSession` shape
+> that doesn't match the real `health.googleapis.com/v4` response) meant Google-transported sleep
+> observations were silently never persisted before the fix. So this doc's RHR figures are
+> plausible, but its sleep-duration/stage `MISSING_GOOGLE`/`INCOMPLETE` figures were measured
+> against data that was incomplete for a code reason, not necessarily a real transport gap —
+> re-run `compare-transports` now that the mapper is fixed before trusting those specific rows.
+> See [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md).
+
 **Date**: 2026-08-27
 **Dataset**: 59 overlapping calendar days (2026-06-29 to 2026-08-27)
 **Subject**: Live production athlete profile (`Subject-A` / primary athlete profile)
