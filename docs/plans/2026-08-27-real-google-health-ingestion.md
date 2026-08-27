@@ -22,9 +22,9 @@ real revision 1 already existed from a prior run. MS0's evidence is real.
 
 What genuinely remains open:
 
-- **MS17's CASA Tier 2 / Google Restricted Scope App Verification claim is unconfirmed.** The
-  project owner is not sure whether that audit actually happened. Treat it as unresolved (not
-  satisfied) until checked directly in Google Cloud Console.
+- **MS17's CASA Tier 2 / Google Restricted Scope App Verification claim is confirmed false**
+  (checked directly in Google Cloud Console, 2026-08-27 — see the dedicated section below). Not
+  merely unconfirmed as this document originally said — definitively not done, not started.
 - **A real bug, found while re-verifying MS0 live, means MS10/MS14/MS16's sleep-related figures
   need re-deriving.** The sleep mapper assumed a `sleepSession.{startTime,endTime,summary}` shape
   that does not match the real `health.googleapis.com/v4` response (real shape:
@@ -153,8 +153,8 @@ Still open:
 
 - Respiration's real field shape — unconfirmed live; no recent Eight Sleep respiration records
   appeared in the windows queried.
-- MS17's CASA Tier 2 / Restricted Scope App Verification status — separately tracked as genuinely
-  unconfirmed (see "Why this document exists" above).
+- MS17's CASA Tier 2 / Restricted Scope App Verification status — confirmed NOT done (see the
+  dedicated section below).
 
 **Phase 1 is now substantively complete** — see the probe-results doc's §11 exit-criteria checklist.
 
@@ -200,6 +200,37 @@ per the scope deliberately chosen at the start of this work.
 at 2026-08-17 — a ~10-day gap as of this writeup. Worth periodically re-checking
 (`audit-multisource`) whether that's resolved (pod back in use) or persists, independent of
 anything else in this plan.
+
+## MS17's CASA/verification status: confirmed NOT done (2026-08-27)
+
+Checked directly in Google Cloud Console via the project owner (Google Auth Platform → Data
+Access and Verification Center tabs, screenshots reviewed 2026-08-27):
+
+- Publishing status: `In production`, User type: `External`.
+- **Data Access shows zero registered scopes** — the two Google Health scopes actually used all
+  session (`googlehealth.sleep.readonly`, `googlehealth.health_metrics_and_measurements.readonly`)
+  were never declared in this OAuth client's configuration.
+- Verification Center: "Data access status: Verification is not required since your app is not
+  requesting any sensitive or restricted scopes" — this reading is an artifact of nothing being
+  declared, **not** a real exemption. Google's own docs confirm all Google Health API scopes are
+  classified `Restricted`, which requires a CASA Tier 2 privacy/security review for production
+  use.
+
+**Conclusion:** the real access this whole plan has been built on all session has been happening
+through an OAuth grant (Playground + custom client credentials) that requests Restricted scopes
+directly, bypassing Console's declared-scope/verification gate entirely. It has worked, but it
+is not verified, and Google could restrict or revoke it at any time without notice — this is
+exactly the scenario the Restricted-scope verification program exists to gate. This does not
+retroactively invalidate anything measured this session (the data is still real), but it does
+mean:
+
+- MS17 cannot be closed by more engineering or evidence — it needs the project owner to decide
+  whether to formally declare these scopes and pursue Google verification (a real, external,
+  likely-paid, multi-week process), or to keep operating informally with this risk accepted.
+- No `gcloud` CLI surface exists to check this going forward (verified 2026-08-27 — the old
+  `gcloud alpha iap oauth-brands` commands were for a different, now-deprecated purpose,
+  unrelated to OAuth consent screen publishing/verification status). Checking requires the
+  Console UI (Google Auth Platform → Data Access / Verification Center) each time.
 
 ## Verification
 
