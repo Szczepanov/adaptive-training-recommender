@@ -7,6 +7,7 @@ request correlation IDs, exponential backoff, and non-sensitive logging.
 import logging
 import time
 import uuid
+from datetime import datetime
 from typing import Any
 
 import requests
@@ -79,21 +80,50 @@ class GoogleHealthClient:
         page_token: str | None = None
         url = f"{self.base_url}/users/me/dataTypes/{data_type}/dataPoints"
 
+        start_dt = (
+            datetime.fromisoformat(start_time_iso.replace("Z", "+00:00"))
+            if start_time_iso
+            else None
+        )
+        end_dt = (
+            datetime.fromisoformat(end_time_iso.replace("Z", "+00:00")) if end_time_iso else None
+        )
+
         while True:
             params: dict[str, Any] = {"pageSize": page_size}
-            if start_time_iso:
-                params["startTime"] = start_time_iso
-            if end_time_iso:
-                params["endTime"] = end_time_iso
             if page_token:
                 params["pageToken"] = page_token
 
             result = self._execute_request("GET", url, params=params)
             points = result.get("dataPoints", [])
-            data_points.extend(points)
+
+            for pt in points:
+                if start_dt or end_dt:
+                    pt_start_str = pt.get("startTime") or pt.get("createTime")
+                    pt_end_str = pt.get("endTime") or pt_start_str
+                    try:
+                        pt_start = (
+                            datetime.fromisoformat(pt_start_str.replace("Z", "+00:00"))
+                            if pt_start_str
+                            else None
+                        )
+                        pt_end = (
+                            datetime.fromisoformat(pt_end_str.replace("Z", "+00:00"))
+                            if pt_end_str
+                            else None
+                        )
+                    except (ValueError, TypeError):
+                        pt_start = pt_end = None
+
+                    if start_dt and pt_end and pt_end < start_dt:
+                        continue
+                    if end_dt and pt_start and pt_start > end_dt:
+                        continue
+
+                data_points.append(pt)
 
             page_token = result.get("nextPageToken")
-            if not page_token or not points:
+            if not page_token:
                 break
 
         return data_points

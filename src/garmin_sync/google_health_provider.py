@@ -39,6 +39,7 @@ class GoogleHealthProvider:
         self.mapper = mapper
         self.data_types = data_types or RECOVERY_DATA_TYPES
         self._cache: dict[str, ObservationBatch] = {}
+        self._raw_points_cache: dict[str, list[dict[str, Any]]] = {}
 
     def fetch_observations(self, logical_date_iso: str, previous_date_iso: str) -> ObservationBatch:
         """Fetch recovery observations for a logical recovery date (e.g. overnight sleep and morning readings)."""
@@ -53,19 +54,42 @@ class GoogleHealthProvider:
         start_local = datetime.combine(prev_dt.date(), time(18, 0), tzinfo=WARSAW_TZ)
         end_local = datetime.combine(curr_dt.date(), time(14, 0), tzinfo=WARSAW_TZ)
 
-        start_utc = start_local.astimezone(timezone.utc).isoformat()
-        end_utc = end_local.astimezone(timezone.utc).isoformat()
+        start_utc = start_local.astimezone(timezone.utc)
+        end_utc = end_local.astimezone(timezone.utc)
 
         all_points: list[dict[str, Any]] = []
 
         for dtype in self.data_types:
             try:
-                points = self.client.list_data_points(
-                    data_type=dtype,
-                    start_time_iso=start_utc,
-                    end_time_iso=end_utc,
-                )
-                all_points.extend(points)
+                if dtype not in self._raw_points_cache:
+                    self._raw_points_cache[dtype] = self.client.list_data_points(data_type=dtype)
+
+                raw_pts = self._raw_points_cache[dtype]
+                # Filter points within [start_utc, end_utc]
+                for pt in raw_pts:
+                    pt_start_str = pt.get("startTime") or pt.get("createTime")
+                    pt_end_str = pt.get("endTime") or pt_start_str
+                    try:
+                        pt_start = (
+                            datetime.fromisoformat(pt_start_str.replace("Z", "+00:00"))
+                            if pt_start_str
+                            else None
+                        )
+                        pt_end = (
+                            datetime.fromisoformat(pt_end_str.replace("Z", "+00:00"))
+                            if pt_end_str
+                            else None
+                        )
+                    except (ValueError, TypeError):
+                        pt_start = pt_end = None
+
+                    if pt_end and pt_end < start_utc:
+                        continue
+                    if pt_start and pt_start > end_utc:
+                        continue
+
+                    all_points.append(pt)
+
             except Exception as e:
                 logger.warning(
                     "Failed to query Google Health data type '%s' for %s: %s",
@@ -81,3 +105,4 @@ class GoogleHealthProvider:
     def clear_cache(self) -> None:
         """Clear internal cache between runs."""
         self._cache.clear()
+        self._raw_points_cache.clear()
