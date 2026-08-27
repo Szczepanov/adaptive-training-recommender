@@ -13,26 +13,29 @@ import './IdentityReviewCard.css';
 
 const COPY: Record<
     ReturnType<typeof identityReviewCopyVariant>,
-    { title: string; body: string }
+    (sourceNightKey: string) => { title: string; body: string }
 > = {
-    ANCHOR_MISSING: {
+    // The lookback window can surface a candidate from up to a week ago (IdentityReviewCard's
+    // `lookbackDays`), so the copy must never say "tonight" -- naming the actual night avoids
+    // an athlete answering about the wrong sleep period.
+    ANCHOR_MISSING: (sourceNightKey) => ({
         title: 'Eight Sleep data not verified',
         body:
-            "We couldn't find a Garmin record to confirm tonight's Eight Sleep measurements " +
+            `We couldn't find a Garmin record to confirm your Eight Sleep measurements from ${sourceNightKey} ` +
             'were yours, so they were not used for recovery or baseline learning.',
-    },
-    ANCHOR_QUALITY_INSUFFICIENT: {
+    }),
+    ANCHOR_QUALITY_INSUFFICIENT: (sourceNightKey) => ({
         title: 'Eight Sleep data not verified',
         body:
-            "Tonight's Garmin record wasn't complete enough to confirm tonight's Eight Sleep " +
+            `The Garmin record for ${sourceNightKey} wasn't complete enough to confirm the Eight Sleep ` +
             'measurements were yours, so they were not used for recovery or baseline learning.',
-    },
-    DEFAULT: {
+    }),
+    DEFAULT: (sourceNightKey) => ({
         title: 'Eight Sleep data not verified',
         body:
-            "Tonight's Eight Sleep measurements did not agree strongly enough with your " +
+            `Your Eight Sleep measurements from ${sourceNightKey} did not agree strongly enough with your ` +
             'independently worn Garmin record. They were not used for recovery or baseline learning.',
-    },
+    }),
 };
 
 const REASON_CODE_EXPLANATIONS: Partial<Record<string, string>> = {
@@ -59,7 +62,7 @@ interface IdentityReviewFormProps {
 export function IdentityReviewForm({ assessment, existingReviewLabel, onSubmit }: IdentityReviewFormProps) {
     const [submitting, setSubmitting] = useState<IdentityReviewButtonChoice | null>(null);
     const [error, setError] = useState(false);
-    const copy = COPY[identityReviewCopyVariant(assessment.reasonCodes)];
+    const copy = COPY[identityReviewCopyVariant(assessment.reasonCodes)](assessment.sourceNightKey);
 
     const submit = async (choice: IdentityReviewButtonChoice) => {
         setSubmitting(choice);

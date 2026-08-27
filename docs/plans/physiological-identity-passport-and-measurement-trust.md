@@ -716,9 +716,11 @@ copy-variant selection by leading reason code, review-choice → event-fields ma
 unit-tested) and [`IdentityReviewCard.tsx`](../../app/src/components/IdentityReviewCard.tsx) (the
 presentational form + Firestore-wired card, following the existing `HealthAnomalyFollowupCard`
 pattern), wired into the "data" screen in [`App.tsx`](../../app/src/App.tsx) alongside
-`HealthAnomalyShadowPanel`. All four review copy variants, the progressive-disclosure reason-code
-explanations, and the append-only supersession flow (each submission supersedes the card's own
-prior submission, never edits it) are covered by tests.
+`HealthAnomalyShadowPanel`. All three copy variants (`ANCHOR_MISSING`, `ANCHOR_QUALITY_INSUFFICIENT`,
+and the default discordant-evidence wording shared by every other trigger reason code), the four
+review buttons, the progressive-disclosure reason-code explanations, and the append-only
+supersession flow (each submission supersedes the card's own prior submission, never edits it) are
+covered by tests.
 
 The mandatory "invalidate and rebuild, or enforce a versioned read barrier" requirement below is
 satisfied by construction rather than by new reconciliation code: `computeSourceMetricBaseline()`
@@ -996,15 +998,14 @@ framing for this item:
   section) exists per-item as each PI was implemented, not as one separately tracked PI10
   deliverable — see each PIx status note above for its own test coverage.
 
-After production activation:
+Still remaining, genuinely gated on production activation (not done ahead of time above):
 
-- update `docs/architecture/ingestion-pipeline.md` with the identity gate location;
-- document operational passport rebuild/versioning commands;
-- document how to replay one night's identity decision including all evidence refs;
-- add telemetry for assessment coverage/status/reasons without leaking health values or identity fingerprints into general logs;
-- add a runbook for reverting to Garmin-only recovery authority;
-- update PR/README wording so “imposter protection” means the ADR-0028 implementation, not the initial RHR heuristic;
-- document retention/deletion/export behaviour for passport versions and review labels as sensitive derived health/identity data.
+- ~~update `docs/architecture/ingestion-pipeline.md` with the identity gate location~~ — done in the Status note above, ahead of activation.
+- ~~add a runbook for reverting to Garmin-only recovery authority~~ — done in the Status note above (the architecture doc's Runbook section); trivial today because nothing production-facing consumes this yet, but it will need re-verifying against whatever activation actually wires up.
+- build the operational passport-rebuild and `replay-identity-decision` CLIs (the *mechanism* is already documented in the architecture doc; the admin tooling around it is what's missing);
+- add telemetry for assessment coverage/status/reasons without leaking health values or identity fingerprints into general logs (blocked on this application having an analytics pipeline at all, not just on this plan);
+- write the formal retention/deletion/export policy for passport versions and review labels as sensitive derived health/identity data (the Status note above only confirms today's default account-deletion behaviour, not a considered retention policy);
+- ~~update PR/README wording so "imposter protection" means the ADR-0028 implementation~~ — checked: no README/`docs/` file outside this plan and ADR-0028 itself (an immutable decision record, not edited) uses "imposter" wording; nothing to update.
 
 Recommended privacy-safe telemetry:
 

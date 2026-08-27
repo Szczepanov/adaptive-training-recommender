@@ -44,6 +44,18 @@ describe('IdentityReviewForm', () => {
         expect(html).not.toContain('sensor bad');
     });
 
+    it('names the actual reviewed night instead of "tonight" (the candidate can be up to a week old)', () => {
+        const html = renderToStaticMarkup(
+            <IdentityReviewForm
+                assessment={assessment({ sourceNightKey: '2026-08-14' })}
+                existingReviewLabel={null}
+                onSubmit={vi.fn()}
+            />,
+        );
+        expect(html).toContain('2026-08-14');
+        expect(html).not.toMatch(/tonight/i);
+    });
+
     it('uses ANCHOR_MISSING copy when that is the leading reason code', () => {
         const html = renderToStaticMarkup(
             <IdentityReviewForm
