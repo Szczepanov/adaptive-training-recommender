@@ -9,7 +9,10 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .canonical import ObservationBatch
-from .google_health_client import GoogleHealthClient
+from .google_health_client import (
+    GoogleHealthClient,
+    GoogleHealthNotFoundError,
+)
 from .google_health_mapper import (
     GoogleHealthMapper,
     derive_warsaw_logical_date,
@@ -89,13 +92,26 @@ class GoogleHealthProvider:
                     if pt_date == logical_date_iso:
                         all_points.append(pt)
 
-            except Exception as e:
+            except GoogleHealthNotFoundError as e:
+                # 404 for this data type is a legitimate "not available" signal -- safe to
+                # treat as this type having no data and continue with the others.
                 logger.warning(
-                    "Failed to query Google Health data type '%s' for %s: %s",
+                    "Google Health data type '%s' not found for %s: %s",
                     dtype,
                     logical_date_iso,
                     e,
                 )
+            except Exception:
+                # Any other failure (auth expiry, rate limit, account-not-linked, network)
+                # is NOT evidence the source has no data -- it means we couldn't check.
+                # HealthObservationService._reconcile_missing_sources deletes previously
+                # stored bundles when a provider returns an empty batch, so silently
+                # swallowing this here would tombstone real data on a transient failure
+                # (confirmed live 2026-08-27: an access-token expiry mid-backfill deleted a
+                # same-day bundle this way). Let it propagate so the caller's error path
+                # (no reconciliation) is taken instead. See
+                # docs/plans/2026-08-27-real-google-health-ingestion.md.
+                raise
 
         batch = self.mapper.normalize_data_points(all_points, target_logical_date=logical_date_iso)
         self._cache[logical_date_iso] = batch

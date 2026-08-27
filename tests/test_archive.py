@@ -4,6 +4,7 @@ import pytest
 
 from garmin_sync.archive import (
     ArchiveRecord,
+    HealthArchiveRecord,
     LocalRawArchiveStore,
     NullArchiveStore,
     create_archive_store,
@@ -83,6 +84,29 @@ def test_archive_rejects_path_traversal_identifiers(tmp_path: Path) -> None:
         store.archive(ArchiveRecord("stats", "2026-02-30", {"x": 1}, "run-1"))
     with pytest.raises(ValueError, match="sync run ID"):
         store.archive(ArchiveRecord("stats", "2026-08-06", {"x": 1}, "../run"))
+
+
+def test_local_archive_health_bundle_round_trip(tmp_path: Path) -> None:
+    """Regression test: archive_health builds endpoint="health/{provider}_{transport}", which
+    _object_dir validates as a single path segment and rejects because of the embedded "/" --
+    this was a real bug (2026-08-27) that made every Google Health backfill archive attempt fail
+    with production shapes like provider="google_health", transport="bundle". See
+    docs/plans/2026-08-27-real-google-health-ingestion.md."""
+    store = LocalRawArchiveStore(base_dir=tmp_path)
+    record = HealthArchiveRecord(
+        user_id="user123",
+        provider="google_health",
+        transport="bundle",
+        logical_date="2026-08-07",
+        payload=[{"metric": "sleep_duration_seconds", "value": 27000}],
+        revision=1,
+        normalizer_version=1,
+    )
+
+    object_path = store.archive_health(record)
+
+    assert object_path is not None
+    assert Path(object_path).exists()
 
 
 def test_create_archive_store_disabled_returns_null_store() -> None:

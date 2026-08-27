@@ -69,6 +69,56 @@ What genuinely remains open:
    HRV or respiration to Health Connect at all, per the probe's own source matrix — that looks
    like a genuine transport gap, not a bug).
 
+## Incident: transient auth failure deleted 46 real bundles, then fixed (2026-08-27)
+
+While re-running the full 2026-06-29→2026-08-27 backfill with the sleep-mapper fix applied, the
+`GOOGLE_HEALTH_ACCESS_TOKEN` in `.env` expired partway through the run (~9 minutes in, around
+2026-08-27 13:46). `_resolve_google_health_auth_manager` (`cli.py`) preferred that static access
+token over the also-available refresh token, so once it expired every subsequent date failed
+Google Health auth with HTTP 401 for all four data types.
+
+That alone would just mean missing data for those dates — but `GoogleHealthProvider.
+fetch_observations` (`google_health_provider.py`) caught **every** exception per data-type query,
+including auth errors, and silently continued, so a date that 401'd on all four types produced a
+*clean empty* `ObservationBatch` rather than a raised error. `HealthObservationService.sync_date`
+cannot distinguish "the source genuinely has no data this run" from "we couldn't check" — an empty
+batch triggers `_reconcile_missing_sources`, which **deletes** any previously stored bundle whose
+(provider, transport) doesn't appear in the current (empty) batch. Result: **every date from
+2026-07-31 through 2026-08-27 (46 bundles, both `garmin_google_health` and
+`eight_sleep_google_health` where applicable) was deleted** — a transient token expiry cascaded
+into real data loss for the most recent ~4 weeks.
+
+Two fixes landed together:
+
+1. `cli.py` — `_resolve_google_health_auth_manager` now prefers the refresh-token path whenever
+   `client_id`/`client_secret`/`refresh_token` are all available, instead of a static access
+   token that can't renew itself. `expires_at` is forced to `0.0` on that path so it always
+   refreshes once up front rather than trusting a possibly-already-stale token value.
+2. `google_health_provider.py` — `fetch_observations` now only swallows `GoogleHealthNotFoundError`
+   (a legitimate "this data type isn't available" signal) per data type; every other exception
+   (auth, rate limit, account-not-linked, network) propagates instead of being silently absorbed
+   into an empty batch. `HealthObservationService.sync_date`'s existing error path already skips
+   reconciliation on a raised exception, so this alone prevents the tombstone cascade even if a
+   future credential problem recurs.
+
+Recovery: re-ran `backfill-health --start-date 2026-07-31 --end-date 2026-08-27` with both fixes
+in place — 0 auth errors, 0 tombstones, 44/44 bundles restored. Verified directly against
+Firestore afterward: `garmin_google_health` covers 59/60 days in the full range (the one gap,
+2026-07-18, pre-dates this incident and this session entirely — a genuine pre-existing sync gap,
+not something this incident caused); `eight_sleep_google_health` covers 2026-06-29 through
+2026-08-17 (42 days), consistent with the real ~10-day Eight Sleep gap noted earlier in this doc.
+
+Separately fixed in the same pass: `archive_health()` in both `LocalRawArchiveStore` and
+`GcsRawArchiveStore` built a path segment `"health/{provider}_{transport}"` containing a `/`,
+which the path-safety validator (correctly) rejected as unsafe — every single Google Health raw
+archive write had been failing since MS7 landed. Fixed by moving `"health"` onto the store's
+prefix instead of the validated segment; verified live against real GCS
+(`gs://adaptive-training-garmin-archive/raw/garmin/health/google_health_bundle/...`). Added a
+regression test (`tests/test_archive.py::test_local_archive_health_bundle_round_trip`) using the
+exact production shapes (`provider="google_health"`, `transport="bundle"`) that triggered it —
+there was no prior test coverage for `archive_health()` at all, which is why this went unnoticed
+since MS7.
+
 ## Phase 1 status (per `docs/ops/google-health-source-provenance-probe.md`)
 
 Done and written up in

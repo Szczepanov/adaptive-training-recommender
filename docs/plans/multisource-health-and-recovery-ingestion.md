@@ -102,7 +102,7 @@ This plan does not initially:
 | MS4 | Google Health OAuth connection model | `[x]` | MS0 | none |
 | MS5 | Google Health raw/list client | `[x]` | MS4 | none |
 | MS6 | Google Health normalization and provenance mapping | `[x]` (sleep-shape bug fixed 2026-08-27 — see note above) | MS1, MS5 | none |
-| MS7 | Idempotent observation persistence + raw archive | `[~]` (observation persistence works; raw-archive write to GCS currently fails for Google Health bundles — new bug found 2026-08-27, not yet fixed) | MS2, MS6 | none |
+| MS7 | Idempotent observation persistence + raw archive | `[x]` (raw-archive GCS-write bug fixed and verified live 2026-08-27; a related data-loss bug — transient auth failure silently tombstoning real bundles — found and fixed the same day, 46 deleted bundles restored; see `docs/plans/2026-08-27-real-google-health-ingestion.md`) | MS2, MS6 | none |
 | MS8 | Scheduled repair sync + historical backfill (`backfill-health`) | `[x]` | MS7 | none |
 | MS9 | Signed webhook subscriber/queue path | `[x]` | MS7 | none |
 | MS10 | Garmin direct-vs-Google transport equivalence | `[ ]` (real run, but sleep-side figures were computed pre-fix on incomplete data — re-derive; see note above) | MS7 | none |

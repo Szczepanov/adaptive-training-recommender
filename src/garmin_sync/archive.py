@@ -168,8 +168,15 @@ class LocalRawArchiveStore:
 
     def archive_health(self, record: HealthArchiveRecord) -> str | None:
         _validate_archive_identifier(record.user_id, "user ID")
-        endpoint = f"health/{record.provider}_{record.transport}"
-        target_dir = self._dir(endpoint, record.logical_date)
+        # endpoint must be a single safe path segment (_object_dir validates it as one);
+        # "health/" is a directory level, not part of the segment -- so it goes on the
+        # instance prefix, matching how _object_dir/_validate_archive_identifier are used
+        # everywhere else. See docs/plans/2026-08-27-real-google-health-ingestion.md.
+        endpoint = f"{record.provider}_{record.transport}"
+        log_label = f"health/{endpoint}"
+        target_dir = self.base_dir / _object_dir(
+            f"{self.prefix}/health", endpoint, record.logical_date
+        )
         payload_hash = _payload_sha256(record.payload)
 
         if target_dir.exists():
@@ -178,7 +185,7 @@ class LocalRawArchiveStore:
                     meta = json.loads(existing.read_text())
                     if meta.get("payloadSha256") == payload_hash:
                         logger.debug(
-                            f"Skipping health archive for {endpoint}/{record.logical_date}: identical payload already archived."
+                            f"Skipping health archive for {log_label}/{record.logical_date}: identical payload already archived."
                         )
                         return None
                 except Exception:
@@ -202,7 +209,7 @@ class LocalRawArchiveStore:
             "payloadSha256": payload_hash,
         }
         meta_path.write_text(json.dumps(metadata, indent=2))
-        logger.info(f"Archived health {endpoint}/{record.logical_date} -> {object_path}")
+        logger.info(f"Archived health {log_label}/{record.logical_date} -> {object_path}")
         return str(object_path)
 
     def load(self, endpoint: str, logical_date: str) -> Any | None:
@@ -288,8 +295,12 @@ class GcsRawArchiveStore:
             _validate_archive_identifier(record.user_id, "user ID")
             client = self._client()
             bucket = client.bucket(self.bucket_name)
-            endpoint = f"health/{record.provider}_{record.transport}"
-            object_dir = _object_dir(self.prefix, endpoint, record.logical_date)
+            # endpoint must be a single safe path segment (_object_dir validates it as one);
+            # "health/" is a directory level, not part of the segment -- so it goes on the
+            # prefix. See docs/plans/2026-08-27-real-google-health-ingestion.md.
+            endpoint = f"{record.provider}_{record.transport}"
+            log_label = f"health/{endpoint}"
+            object_dir = _object_dir(f"{self.prefix}/health", endpoint, record.logical_date)
             payload_hash = _payload_sha256(record.payload)
 
             for existing_blob in client.list_blobs(bucket, prefix=f"{object_dir}/"):
@@ -298,7 +309,7 @@ class GcsRawArchiveStore:
                     and existing_blob.metadata.get("payloadSha256") == payload_hash
                 ):
                     logger.debug(
-                        f"Skipping GCS health archive for {endpoint}/{record.logical_date}: identical payload already archived."
+                        f"Skipping GCS health archive for {log_label}/{record.logical_date}: identical payload already archived."
                     )
                     return None
 
@@ -319,12 +330,12 @@ class GcsRawArchiveStore:
             blob.content_encoding = "gzip"
             blob.upload_from_string(compressed, content_type="application/json")
             logger.info(
-                f"Archived health {endpoint}/{record.logical_date} -> gs://{self.bucket_name}/{object_path}"
+                f"Archived health {log_label}/{record.logical_date} -> gs://{self.bucket_name}/{object_path}"
             )
             return object_path
         except Exception as e:
             logger.error(
-                f"Failed to archive health {record.provider}/{record.logical_date} to GCS: {e}"
+                f"Failed to archive health {record.provider}_{record.transport}/{record.logical_date} to GCS: {e}"
             )
             return None
 

@@ -403,6 +403,29 @@ def _resolve_google_health_auth_manager(
     if not token and not (client_id and client_secret and refresh_token):
         return None, "No Google Health credentials or access token were provided."
 
+    # Prefer the refresh-token path whenever it's fully available: it can renew itself when
+    # the access token expires mid-run (confirmed live 2026-08-27: a 60-day backfill outlives
+    # a raw access token's ~1hr lifetime), whereas a bare access token cannot refresh at all
+    # and just starts failing partway through. Only fall back to the direct-token-only path
+    # when refresh credentials aren't fully available. See
+    # docs/plans/2026-08-27-real-google-health-ingestion.md.
+    if client_id and client_secret and refresh_token:
+        # expires_at=0.0 forces an immediate refresh on first use rather than trusting a
+        # possibly-already-stale `token` value from .env/--token.
+        creds = GoogleHealthTokenCredentials(
+            access_token=token or "",
+            refresh_token=refresh_token,
+            expires_at=0.0,
+        )
+        return (
+            GoogleHealthAuthManager(
+                client_id=client_id,
+                client_secret=client_secret,
+                credentials=creds,
+            ),
+            None,
+        )
+
     if token:
         creds = GoogleHealthTokenCredentials(
             access_token=token,
