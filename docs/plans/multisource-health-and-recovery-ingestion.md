@@ -83,7 +83,7 @@ This plan does not initially:
 | MS13 | Cross-source agreement/data-quality telemetry | `[x]` | MS10, MS12 | shadow only |
 | MS14 | 35–45-night prospective shadow study (60d backfilled) | `[x]` | MS12, MS13 | shadow only |
 | MS15 | Evidence-fusion candidate (`multisourceFusion.ts`) | `[x]` | MS14 | default-off |
-| MS16 | Replay/simulation comparison | `[ ]` | MS15 | default-off |
+| MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` | MS15 | default-off |
 | MS17 | Metric-by-metric production activation decision | `[ ]` | MS16 + prospective evidence | potential |
 | MS18 | Optional direct Eight Sleep adapter (superseded by MS11) | `[N/A]` | MS11 says Google path insufficient | none |
 | MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
