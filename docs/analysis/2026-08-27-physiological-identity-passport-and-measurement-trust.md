@@ -1,10 +1,10 @@
 # Physiological Identity Passport & Measurement Trust Analysis
 
-**Date:** 2026-08-27  
-**Scope:** shared-surface recovery observations, with Eight Sleep via Google Health as the first concrete case  
-**Reviewed implementation:** PR #240, including current review-head changes through `0c3373d`  
-**Related ADRs:** [ADR-0024](../adr/0024-biometric-baseline-estimator-policy.md), [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md), [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md)  
-**Decision proposed:** [ADR-0028](../adr/0028-physiological-identity-attribution-and-measurement-trust.md)  
+**Date:** 2026-08-27
+**Scope:** shared-surface recovery observations, with Eight Sleep via Google Health as the first concrete case
+**Reviewed implementation:** PR #240, including current review-head changes through `0c3373d`
+**Related ADRs:** [ADR-0024](../adr/0024-biometric-baseline-estimator-policy.md), [ADR-0025](../adr/0025-physiological-anomaly-and-possible-illness-signals.md), [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md)
+**Decision proposed:** [ADR-0028](../adr/0028-physiological-identity-attribution-and-measurement-trust.md)
 **Implementation plan:** [Physiological Identity Passport & Measurement Trust](../plans/physiological-identity-passport-and-measurement-trust.md)
 
 ---
@@ -163,7 +163,7 @@ This aligns with ADR-0025: anomaly evidence should survive identity attribution 
 
 A longitudinal analysis of 92,457 adults found substantially greater between-person than within-person RHR variability, supporting personal baselines. Yet 20% of participants experienced at least one week with a 10 bpm-or-greater RHR fluctuation. Personal physiology is therefore useful evidence, but “outside normal” cannot mean “not the user.”
 
-Reference: Quer G, et al. *Inter- and intraindividual variability in daily resting heart rate...* PLOS One, 2020.  
+Reference: Quer G, et al. *Inter- and intraindividual variability in daily resting heart rate...* PLOS One, 2020.
 https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0227709
 
 ### 6.2 Raw cross-device HRV equality is not scientifically safe
@@ -191,21 +191,21 @@ References:
 
 Eight Sleep reports vendor-run validation of Pod HR/HRV against ECG across more than 474 nights / 163 subjects. That supports the mattress as a meaningful physiological sensor. It does not establish that a record belongs to the intended app user when another person sleeps on the same surface.
 
-Reference: Eight Sleep, *The Eight Sleep Pod Heart Rate and Heart Rate Variability Accuracy*. 2023.  
+Reference: Eight Sleep, *The Eight Sleep Pod Heart Rate and Heart Rate Variability Accuracy*. 2023.
 https://www.eightsleep.com/blog/hrv-accuracy/
 
 ### 6.4 Raw bed-sensor person identification is promising but not directly available
 
 A 2025 Sensors study demonstrated household-sized person identification using raw piezoelectric BCG frequency features in ten participants, while noting daily variation as a limitation. This supports the feasibility of the general problem, not the applicability of that method to Google Health nightly summaries.
 
-Reference: Takahashi K, Tanno Y, Ueno H. *Identification of People in a Household Using Ballistocardiography Signals Through Deep Learning*. Sensors. 2025.  
+Reference: Takahashi K, Tanno Y, Ueno H. *Identification of People in a Household Using Ballistocardiography Signals Through Deep Learning*. Sensors. 2025.
 https://pubmed.ncbi.nlm.nih.gov/40292805/
 
 ### 6.5 Abstention is a principled classification strategy
 
 Classification with a reject option explicitly allows uncertain samples to remain unclassified to reduce error among accepted cases. That maps naturally to `UNCERTAIN`: the fallback cost is small, while wrong-person false acceptance can alter future state.
 
-Reference: Franc V, Prusa D, Voracek V. *Optimal Strategies for Reject Option Classifiers*. JMLR. 2023.  
+Reference: Franc V, Prusa D, Voracek V. *Optimal Strategies for Reject Option Classifiers*. JMLR. 2023.
 https://www.jmlr.org/papers/v24/21-0048.html
 
 ---
