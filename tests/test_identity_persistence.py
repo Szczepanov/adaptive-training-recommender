@@ -184,9 +184,15 @@ def test_identity_persistence_rejects_incomplete_or_malformed_documents() -> Non
         repository.set_current_identity_passport(current)
 
     review = _review()
-    review["occupancyAttestation"] = "UNKNOWN"
+    review["source"] = "untrusted_import"
     with pytest.raises(ValueError, match="review event does not match"):
         repository.save_identity_review_event(review)
+
+
+def test_identity_persistence_accepts_user_mixed_occupancy_review() -> None:
+    repository = FirestoreRecoveryRepository("athlete-1", db=_Db())
+    review = {**_review(), "occupancyAttestation": "MIXED"}
+    assert repository.save_identity_review_event(review) is True
 
 
 def test_repository_derives_effective_decision_index_from_persisted_evidence(
