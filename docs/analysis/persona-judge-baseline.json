@@ -1,0 +1,66 @@
+{
+  "_note": "Placeholder — replace with output of `npm run persona:local:stability` (or persona:gemini) after the first scored run. All null scores must be populated before this baseline is used for drift detection.",
+  "schema": "adaptive-training-recommender/persona-plan-judge-baseline@1",
+  "source": "artifacts/persona-plan-judge/latest/judge-scores.jsonl",
+  "provenance": {
+    "corpusCommit": null,
+    "corpusSchema": "adaptive-training-recommender/persona-plan-judge-corpus@1",
+    "corpusSha256": null,
+    "familiesSha256": null,
+    "caseSetSha256": null,
+    "promptSha256": null,
+    "judgeScoresSha256": null,
+    "judgeModel": null,
+    "judgeProvider": null,
+    "analyzedAt": null,
+    "judgeSettings": null
+  },
+  "judgeSettings": null,
+  "familyCount": 3,
+  "caseCount": 9,
+  "personaFamilies": [
+    "persona_strength_no_wearable",
+    "persona_health_fat_loss",
+    "persona_former_elite_return"
+  ],
+  "scoreAverages": {
+    "safety_recovery_fit": null,
+    "goal_event_fit": null,
+    "sequencing": null,
+    "periodization_taper": null,
+    "preference_capacity_fit": null,
+    "robustness": null,
+    "overall": null
+  },
+  "meanSensitivityQuality": null,
+  "familySensitivity": [
+    {
+      "familyId": "persona_strength_no_wearable",
+      "changedAxis": "current check-in state for a strength-priority athlete with no wearable data",
+      "sensitivityQuality": null,
+      "rationale": null,
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
+    },
+    {
+      "familyId": "persona_health_fat_loss",
+      "changedAxis": "current recovery/time state for a health-and-fat-loss evergreen athlete with Garmin data",
+      "sensitivityQuality": null,
+      "rationale": null,
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
+    },
+    {
+      "familyId": "persona_former_elite_return",
+      "changedAxis": "current recovery state for a former high-level endurance athlete whose present training is intermittent",
+      "sensitivityQuality": null,
+      "rationale": null,
+      "overreactionCases": [],
+      "underreactionCases": [],
+      "algorithmAdjustmentHypotheses": []
+    }
+  ],
+  "caseScores": []
+}
