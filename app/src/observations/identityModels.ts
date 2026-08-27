@@ -133,6 +133,7 @@ export function freezeAutomaticIdentityAssessment(
     assessment: AutomaticIdentityAssessment,
 ): Readonly<AutomaticIdentityAssessment> {
     Object.freeze(assessment.reasonCodes);
+    Object.freeze(assessment.sharedSource);
     Object.freeze(assessment.sharedBundleRef);
     for (const ref of assessment.anchorBundleRefs) {
         Object.freeze(ref);

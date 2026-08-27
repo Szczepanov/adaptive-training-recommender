@@ -120,6 +120,7 @@ describe('identityModels (PI1, ADR-0028)', () => {
             const assessment = freezeAutomaticIdentityAssessment(makeAssessment());
             expect(Object.isFrozen(assessment)).toBe(true);
             expect(Object.isFrozen(assessment.reasonCodes)).toBe(true);
+            expect(Object.isFrozen(assessment.sharedSource)).toBe(true);
             expect(Object.isFrozen(assessment.sharedBundleRef)).toBe(true);
             expect(Object.isFrozen(assessment.anchorBundleRefs)).toBe(true);
             expect(Object.isFrozen(assessment.anchorBundleRefs[0])).toBe(true);
@@ -127,6 +128,10 @@ describe('identityModels (PI1, ADR-0028)', () => {
             expect(() => {
                 // @ts-expect-error -- intentionally attempting a forbidden mutation
                 assessment.automaticStatus = 'USER';
+            }).toThrow();
+            expect(() => {
+                // The canonical contract is runtime-frozen as well as top-level immutable.
+                assessment.sharedSource.provider = 'forged_provider';
             }).toThrow();
         });
 

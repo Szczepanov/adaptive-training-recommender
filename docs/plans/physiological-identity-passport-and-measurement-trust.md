@@ -113,8 +113,8 @@ The central migration requirement is moving effective identity eligibility **ups
 | PI1 | Identity, eligibility, evidence and review contracts | `[x]` | PI0 | none |
 | PI2 | Cross-source pairing, lineage and feature extraction | `[x]` | PI1 | none |
 | PI3 | Versioned Physiological Identity Passport model + bootstrap | `[x]` | PI2 | shadow only |
-| PI4 | Ternary identity evaluator with abstention | `[ ]` | PI3 | shadow only |
-| PI5 | Pre-baseline effective-eligibility gate | `[ ]` | PI4 | blocks unverified Eight Sleep baseline learning |
+| PI4 | Ternary identity evaluator with abstention | `[x]` | PI3 | shadow only |
+| PI5 | Pre-baseline effective-eligibility gate | `[x]` | PI4 | blocks unverified Eight Sleep baseline learning |
 | PI6 | Persistence, review events, replay provenance and Firestore rules | `[ ]` | PI1, PI4 | none |
 | PI7 | Suspicious-night review UI | `[ ]` | PI6 | manual labels only |
 | PI8 | Historical out-of-sample replay + prospective label collection | `[ ]` | PI4, PI6 | evidence only |

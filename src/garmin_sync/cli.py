@@ -741,6 +741,9 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
         print("-" * 80)
         print("  EIGHT SLEEP ROLLING BASELINE TELEMETRY:")
         print(
+            f"  Identity Eligible / Excluded: {report.eightSleepIdentityEligibleDays} / {report.eightSleepIdentityExcludedDays} nights"
+        )
+        print(
             f"  HRV RMSSD (N={report.eightSleepHrvCount}):           Median = {report.eightSleepHrvMedian} ms, MAD = {report.eightSleepHrvMad} ms"
         )
         print(
