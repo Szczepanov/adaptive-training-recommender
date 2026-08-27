@@ -209,7 +209,10 @@ third-party pedometers), ingesting aggregator steps into the recovery pipeline c
 load accounting and violates the $D-1$ evaluation window.
 
 `totalSteps` remains strictly locked to `provider=garmin, transport=garmin_direct`. Aggregator step
-counts from Google Health are excluded from recovery and fatigue calculations.
+counts from Google Health are excluded from recovery and fatigue calculations. Furthermore, if completed
+$D-1$ steps are unavailable from Garmin direct, `totalSteps` is recorded as `None` / omitted rather than
+falling back to incomplete partial steps from today ($D$), preventing uncompleted-window bias in ambient
+fatigue normalization.
 
 ### D-MS-GH — Google Health is an optional read-only transport
 

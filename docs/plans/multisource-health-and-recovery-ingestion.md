@@ -7,7 +7,7 @@
   transport-equivalence measurement, and evidence-gated multisource recovery fusion.
 * **Source analysis:**
   [`2026-08-27-google-health-and-multisource-wearable-integration.md`](../analysis/2026-08-27-google-health-and-multisource-wearable-integration.md)
-* **Proposed decision record:**
+* **Decision record:**
   [`ADR-0027`](../adr/0027-source-aware-multisource-health-observations.md)
 
 > **Not a top-level phase.** This is a capability plan, like G/S/M/OV/HA/SV. Work items use the
@@ -57,7 +57,7 @@ This plan does not initially:
 | P4 | ADR-0010 requires decision-impacting changes to be replayable/auditable. |
 | P5 | ADR-0024 governs baseline-estimator choices. |
 | P6 | ADR-0026 keeps vendor response shapes behind provider boundaries. |
-| P7 | Proposed ADR-0027 governs multisource provenance/fusion once accepted. |
+| P7 | ADR-0027 governs multisource provenance, observation bundling, and evidence-gated recovery fusion. |
 | P8 | Existing Garmin + subjective production behavior must remain available when MS is disabled or degraded. |
 | P9 | Step count provenance: `totalSteps` remains locked to `provider=garmin, transport=garmin_direct` ($D-1$ completed calendar day per ADR-0003 and AGENTS.md) to prevent double-counting training load from aggregator steps. |
 
@@ -224,7 +224,7 @@ Do not use ingestion timestamp in the identity.
 
 ## Proposed Firestore ownership
 
-To optimize 28-day baseline reads (avoiding 450+ individual document reads per morning recommendation while preserving exact observation granularity and provenance), store observations as **day-source bundles**:
+To optimize 28-day baseline reads (avoiding 450+ individual document reads per morning recommendation while preserving exact observation granularity, multiple daily sessions/intervals, and provenance), store observations as **day-source bundles**:
 
 ```text
 users/{userId}/health_observation_days/{YYYY-MM-DD}_{provider}_{transport}
@@ -238,8 +238,9 @@ Holding:
   "logicalDate": "2026-08-27",
   "provider": "garmin",
   "transport": "google_health",
-  "observations": {
-    "hrv_rmssd_ms": {
+  "observations": [
+    {
+      "observationId": "sha256:...",
       "metric": "hrv_rmssd_ms",
       "value": 61.2,
       "unit": "ms",
@@ -249,10 +250,25 @@ Holding:
       "originApplication": "com.garmin.android.apps.connectmobile",
       "quality": { "coverage": 0.95 }
     },
-    "sleeping_heart_rate_bpm": { ... }
-  },
+    {
+      "observationId": "sha256:...",
+      "metric": "sleep_session",
+      "value": {
+        "durationSeconds": 26100,
+        "deepSeconds": 4800,
+        "remSeconds": 5400,
+        "lightSeconds": 13500,
+        "awakeSeconds": 2400
+      },
+      "unit": null,
+      "sourceRecordId": "...",
+      "observedStart": "2026-08-26T22:30:00Z",
+      "observedEnd": "2026-08-27T05:45:00Z",
+      "originApplication": "com.garmin.android.apps.connectmobile"
+    }
+  ],
   "sourcePayloadHash": "sha256:...",
-  "rawArchiveRef": "raw/health/garmin/google_health/users/uid/2026/08/2026-08-27.json",
+  "rawArchiveRef": "raw/health/garmin/google_health/users/uid/2026/08/2026-08-27_rev1_a1b2c3d4.json",
   "schemaVersion": 1,
   "normalizerVersion": 1,
   "revision": 1,
@@ -261,13 +277,15 @@ Holding:
 }
 ```
 
+Using an array of structured observations ensures that multiple sessions or sample intervals of the same metric (e.g., daytime nap + overnight sleep, or multiple heart-rate summaries) are preserved without key collision or overwriting.
+
 For high-frequency streams (intra-sleep HR/HRV epoch series), keep epoch-level data in the raw archive (GCS) and persist only summary/aggregate observations in Firestore.
 
 ## Replay and Revision Lineage (ADR-0010)
 
 If upstream delivers a late correction for an already ingested date:
-- An updated payload increments `revision` and sets `effectiveAt`.
-- When `RecommendationAudit` (ADR-0010) captures decision provenance, it records the exact `(observationDayId, revision, sourcePayloadHash)` evaluated at decision time.
+- An updated payload increments `revision`, sets `effectiveAt`, and writes a new append-only raw archive file (`{YYYY-MM-DD}_rev{revision}_{hash}.json`) rather than overwriting historical bytes.
+- When `RecommendationAudit` (ADR-0010) captures decision provenance, it records the exact `(observationDayId, revision, sourcePayloadHash, rawArchiveRef)` evaluated at decision time.
 - Replaying a historical decision evaluates the revision that was effective at decision time, guaranteeing deterministic bit-identical replay.
 
 ## Required fields
@@ -356,11 +374,20 @@ Do not rename the whole package in the same PR unless required. Keep the behavio
 Initial scopes should be limited to:
 
 ```text
-googlehealth.sleep.readonly
-googlehealth.health_metrics_and_measurements.readonly
+https://www.googleapis.com/auth/googlehealth.sleep.readonly
+https://www.googleapis.com/auth/googlehealth.health_metrics_and_measurements.readonly
 ```
 
-Add activity scope only if later tasks actually consume activity data.
+Add activity scope (`https://www.googleapis.com/auth/googlehealth.activity_and_fitness.readonly`) only if later tasks actually consume activity data.
+
+## Security & Launch Compliance Gates
+
+Google Health OAuth scopes for sensitive health measurements require formal verification before public launch:
+1. **Testing Mode**: During `MS0`–`MS16`, the OAuth consent screen operates in restricted Testing mode with explicitly authorized test accounts.
+2. **Launch Prerequisites (MS17 Gate)**: Before any public or multi-tenant production activation:
+   - Complete Google Cloud Restricted Scope App Verification.
+   - Complete Cloud Application Security Assessment (CASA Tier 2) / third-party security assessment.
+   - Implement in-app prominent health-data disclosure and explicit user consent flows complying with Google Health Limited Use requirements (strict prohibition on transferring or selling health data).
 
 ## Connection state
 
@@ -481,8 +508,8 @@ Responsibilities:
 The public endpoint should:
 
 1. validate endpoint authorization;
-2. verify the Google Health signature against the official rotating public keyset (JWKS), using an in-memory cached keyset with a 24-hour TTL to prevent external network latency and rate-limiting on every webhook hit;
-3. reject invalid payloads;
+2. verify the Google Health asymmetric signature against the official rotating public keyset (`webhooks_public_keyset.json` in Tink `EcdsaPublicKey` format) using Tink `PublicKeyVerify` (or manual ECDSA P-256 / SHA-256 decoding) with an in-memory cached keyset (24-hour TTL) to avoid per-request external network latency;
+3. reject invalid signatures/payloads with 401/400;
 4. enqueue a compact event to Cloud Tasks / background worker;
 5. return `204 No Content` / `200 OK` quickly without blocking on downstream API fetches.
 
@@ -493,11 +520,17 @@ Do not perform full health-data fetching inline in the HTTP request.
 Worker uses `healthUserId` to resolve the correct user/token mapping and then performs a bounded
 raw-list refresh for the affected data type/time interval. Concurrent token refresh operations must be serialized via a mutual exclusion lock to prevent token invalidation races.
 
+### Operation Types & Deletion Handling
+
+Google Health webhooks dispatch operation events:
+- **`UPSERT`**: Fetch latest raw data points and update/revision the day-source bundle idempotently.
+- **`DELETE`**: For deleted data points, the worker marks affected observations as deleted (`deletedAt: timestamp`) or recalculates the day-source bundle excluding the deleted records, ensuring removed upstream data points do not linger in active baseline calculations.
+
 ## Reliability
 
 - idempotent event processing;
 - duplicate webhook safe;
-- repair sync covers missed >7-day gaps;
+- repair sync covers missed >7-day gaps and unnotified system-level deletions;
 - metric for last webhook received vs last successful fetch.
 
 ---
@@ -547,18 +580,16 @@ No assumption is made before measurement.
 
 # MS11 — Eight Sleep path decision
 
-Three possible outcomes:
-
-### A. Required Eight Sleep data appears with stable provenance
+## Outcome A: Required Eight Sleep data appears with stable provenance
 
 Proceed with Google Health as the preferred Eight Sleep transport.
 
-### B. Partial Eight Sleep data appears
+## Outcome B: Partial Eight Sleep data appears
 
 Use Google Health for the available metrics; decide whether the missing metrics justify a
 separate direct adapter.
 
-### C. No useful Eight Sleep-origin data appears
+## Outcome C: No useful Eight Sleep-origin data appears
 
 Do not build code that pretends otherwise. Schedule MS18 only if Eight Sleep adds enough
 scientific/product value to justify unsupported/private API risk.
@@ -718,6 +749,8 @@ Each needs:
 - stable baseline;
 - incremental evidence;
 - acceptable false-positive/false-negative behavior;
+- completed Google Cloud Restricted Scope App Verification & CASA Tier 2 security assessment (for Google Health transport);
+- in-app health data disclosure & user consent flow verified;
 - rollback flag.
 
 Proprietary scores should have the highest activation bar.

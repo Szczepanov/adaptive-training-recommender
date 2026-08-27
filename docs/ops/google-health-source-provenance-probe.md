@@ -146,14 +146,14 @@ Target candidate data types based on current API support and granted scopes.
 
 At minimum inspect sleep and the available HRV/resting-HR/respiration families.
 
-For each returned data point, reduce and record:
+For each returned data point, inspect `dataSource.application.packageName` (or equivalent package identifier in the response) and reduce/record:
 
 ```json
 {
   "dataType": "...",
   "intervalKind": "...",
   "source": {
-    "applicationPackage": "...",
+    "applicationPackage": "...", // extracted from dataSource.application.packageName
     "platform": "...",
     "recordingMethod": "..."
   },
@@ -222,24 +222,24 @@ No need to manufacture bad health data.
 
 ## 10. Eight Sleep export-direction probe
 
-The critical test is source provenance.
+The critical test is source provenance for the **required recovery metric set**:
+- `sleep_session` / sleep duration
+- `sleep_stages` (deep, rem, light, awake)
+- `hrv_rmssd_ms` (overnight HRV)
+- `sleeping_heart_rate_bpm` / `daily_resting_heart_rate_bpm`
+- `respiration_rate_brpm` (sleeping respiration)
 
-### Pass condition
+### Full Pass condition
 
-At least one required recovery data type appears in raw Google Health data with source metadata
-that can be confidently mapped to Eight Sleep.
+**All** required recovery metrics appear in raw Google Health data with verified Eight Sleep source provenance (`dataSource.application.packageName == "com.eightsleep.eightsleep"` or equivalent verified package).
 
-Then determine coverage by metric.
+### Partial Pass condition
 
-### Partial condition
-
-Only some Eight Sleep-derived data types appear.
-
-Record exactly which ones.
+**At least one, but not all**, required recovery data types appear with Eight Sleep provenance. Record exactly which metrics are present and which are missing to inform the hybrid transport decision in MS11.
 
 ### Fail condition
 
-No useful Eight Sleep-origin records appear despite:
+**None** of the required Eight Sleep-origin records appear despite:
 
 - Health Connect linkage being enabled;
 - the Pod having a completed night;

@@ -39,7 +39,7 @@ format: format-python format-frontend
 check: check-python check-frontend
 
 ## Run all backend Python checks and tests
-check-python: lint-python format-python-check typecheck-python test-python
+check-python: lint-python typecheck-python test-python
 
 ## Run all frontend TypeScript checks and tests
 check-frontend: typecheck-frontend lint-frontend test-frontend validate-workouts
@@ -193,7 +193,7 @@ help:
 	@echo --------------------------------------------------------------------------------
 	@echo Python Targets:
 	@echo   make check-python      - Run ruff, format-check, mypy, and pytest
-	@echo   make lint-python       - Run ruff linter
+	@echo   make lint-python       - Run ruff linter and format check
 	@echo   make format-python     - Format Python code with ruff
 	@echo   make typecheck-python  - Run mypy type checker
 	@echo   make test-python       - Run pytest test suite
