@@ -158,6 +158,49 @@ Still open:
 
 **Phase 1 is now substantively complete** — see the probe-results doc's §11 exit-criteria checklist.
 
+## Phase 2/3 status — further ahead than expected (2026-08-27)
+
+The original plan assumed Phase 3 (re-deriving MS14/MS16/MS17 for real) would need several
+calendar weeks of accumulation before it could start. That assumption turned out to be wrong:
+the real 60-day backfill already restored in Phase 2 (2026-06-29 → 2026-08-27) **is** genuine
+prospective-equivalent evidence — it's real device data from real calendar days, now correctly
+mapped. There was no need to wait.
+
+Re-ran the real evidence tools directly against it today:
+
+- `compare-transports --start-date 2026-06-29 --end-date 2026-08-27` (MS10) — reproduced the
+  original RHR finding exactly (74.6% match, 0.593 bpm mean delta) and the HRV/respiration
+  transport-gap finding exactly (0% — Garmin genuinely doesn't export these to Health Connect).
+  Sleep, previously unmeasurable, now shows a real `TRANSFORMING` result (18.6% exact
+  duration match, ~9.6 min mean delta; 9–11% exact stage match, sub-5s mean deltas). Full
+  writeup: [`docs/analysis/2026-08-27-garmin-transport-equivalence-analysis.md`](../analysis/2026-08-27-garmin-transport-equivalence-analysis.md)
+  (rewritten with the fresh run).
+- `audit-multisource --start-date 2026-06-29 --end-date 2026-08-27` (MS14) — reproduced the
+  original 42/18/0/0 night coverage split exactly and the HRV/respiration rolling-baseline
+  statistics closely (small differences plausible from revision churn after the mapper fix, not
+  evidence either run was fake). New: a cross-source sleep-duration correlation of 0.613 —
+  moderate, not high, which is genuine new information the original doc never had (sleep was
+  unmeasurable before the fix). Full writeup:
+  [`docs/analysis/2026-08-27-multisource-shadow-study.md`](../analysis/2026-08-27-multisource-shadow-study.md)
+  (rewritten with the fresh run).
+- `npx vitest run src/engine/simulation/multisourceComparison.test.ts` (MS16) — this doesn't
+  depend on real account data at all (synthetic-scenario/invariant testing of the fusion logic),
+  so it was never actually blocked by the mapper bug. 5/5 tests pass, matching the doc's claims.
+  Full writeup: [`docs/analysis/2026-08-27-multisource-simulation-comparison.md`](../analysis/2026-08-27-multisource-simulation-comparison.md)
+  (banner updated, content unchanged since it checked out).
+
+**MS17 is now the only open item in the entire MS0–MS19 chain**, and it's open for exactly one
+reason: the CASA Tier 2 / Restricted Scope App Verification status is genuinely unconfirmed by
+the project owner. Even with every other gate now backed by real evidence, that one gate has to
+be answered before any real production-activation decision — and separately, `MULTISOURCE_FUSION_POLICY`
+should stay `'off'` regardless while this remains a manual-reauth (not durable/automated) setup,
+per the scope deliberately chosen at the start of this work.
+
+**One real, still-open finding worth tracking going forward:** Eight Sleep data currently stops
+at 2026-08-17 — a ~10-day gap as of this writeup. Worth periodically re-checking
+(`audit-multisource`) whether that's resolved (pod back in use) or persists, independent of
+anything else in this plan.
+
 ## Verification
 
 - `uv run pytest` (85 passed), `uv run ruff check .` clean, `uv run mypy` clean on touched files,

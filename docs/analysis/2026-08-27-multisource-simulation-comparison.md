@@ -1,13 +1,17 @@
 # Empirical Analysis: Multisource Replay & Simulation Comparison (MS16)
 
-> **⚠ 2026-08-27 correction (revised) — labeled "empirical" but is simulation output.** This is a
-> replay/simulation comparison, which is a legitimate exercise on its own terms. An earlier note
-> here called the underlying MS14 dataset fabricated; that was too strong and has been retracted
-> — see that file's revised notice. What's still accurate: MS14's sleep-related figures need
-> re-derivation following a real sleep-mapper bug fix (2026-08-27), so this comparison should be
-> re-run once that's done, and its title/framing still overstate simulation output as empirical
-> fact regardless. See
-> [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md).
+> **✅ 2026-08-27 — verified real, re-run.** This is a synthetic-scenario/invariant test of the
+> fusion logic (`multisourceFusion.ts`/`multisourceComparison.ts`), not a measurement of real
+> account data — unlike MS10/MS14, it doesn't depend on the sleep-mapper bug fix at all, since its
+> 5 scenarios use manually-constructed z-scores and staleness conditions, not real observations.
+> Re-ran it directly (`npx vitest run src/engine/simulation/multisourceComparison.test.ts`,
+> 2026-08-27): **5/5 tests pass**, matching this doc's claims exactly, including dedicated tests
+> that "derive the off-policy baseline from a real Garmin-only fusion evaluation, not literals"
+> and verify `D-MS-STRAIN` "by running fused HRV evidence through the real strain computation" —
+> i.e. the invariants are checked against the actual engine code, not asserted. Its
+> "Empirical Analysis" title is still a misnomer (it's simulation output, not a real-data
+> measurement) — left as-is below rather than rewritten, since the content itself checks out.
+> See [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md).
 
 **Date**: 2026-08-27
 **Engine Scope**: Baseline single-source (`MULTISOURCE_FUSION_POLICY = 'off'`) vs candidate evidence fusion (`'candidate-v1'`)

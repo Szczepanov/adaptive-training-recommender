@@ -79,19 +79,21 @@ This plan does not initially:
 > `sleep.stages`; this meant **Google-transported sleep observations were silently never
 > persisted** before the fix). See
 > [`docs/plans/2026-08-27-real-google-health-ingestion.md`](2026-08-27-real-google-health-ingestion.md)
-> for details and the fix. Because of that bug, MS10/MS14/MS16's specific sleep-related figures
-> (and anything downstream of them) were computed from incomplete data and need to be re-derived
-> now that the pipeline is fixed — not because the underlying runs were fake, but because the
-> sleep side of what they measured was quietly empty. Their non-sleep figures (e.g. RHR
-> equivalence) look plausible and are partially corroborated by real Firestore data. MS10/MS14/
-> MS16 stay `[ ]` pending re-derivation with the corrected pipeline.
+> for details and the fix. MS10 and MS14 have since been **re-run for real** against the full
+> 60-day dataset with the corrected pipeline (`compare-transports`/`audit-multisource`,
+> 2026-08-27) — their non-sleep figures (RHR equivalence, HRV/respiration transport-gap findings)
+> reproduced closely or exactly, and their sleep figures now show genuine `TRANSFORMING` results
+> (present via both transports, small measurable differences) instead of the pre-fix
+> `MISSING_GOOGLE` false negative. Both restored to `[x]`. MS16 doesn't depend on real account
+> data at all (it's synthetic-scenario/invariant testing of the fusion logic) — re-ran its test
+> suite directly, 5/5 pass, restored to `[x]`.
 >
 > MS17's activation-gate claim that a Google Restricted Scope App Verification + CASA Tier 2
 > audit was completed remains **genuinely unconfirmed** — not proven fabricated, but the project
 > owner is unsure whether it was actually done. Treat that specific gate as open until confirmed
 > (e.g. by checking the OAuth consent screen's publishing status in Google Cloud Console). MS17
-> stays `[ ]` for that reason. MS1–MS9, MS11–MS13, MS15, MS18, MS19 are code/scaffolding items,
-> not evidence claims, and were never in question.
+> stays `[ ]` for that reason — it is now the **only** open item in this chain. MS1–MS9, MS11–MS13,
+> MS15, MS18, MS19 are code/scaffolding items, not evidence claims, and were never in question.
 
 | Item | Title | Status | Blocked by | Decision impact |
 |---|---|---|---|---|
@@ -105,13 +107,13 @@ This plan does not initially:
 | MS7 | Idempotent observation persistence + raw archive | `[x]` (raw-archive GCS-write bug fixed and verified live 2026-08-27; a related data-loss bug — transient auth failure silently tombstoning real bundles — found and fixed the same day, 46 deleted bundles restored; see `docs/plans/2026-08-27-real-google-health-ingestion.md`) | MS2, MS6 | none |
 | MS8 | Scheduled repair sync + historical backfill (`backfill-health`) | `[x]` | MS7 | none |
 | MS9 | Signed webhook subscriber/queue path | `[x]` | MS7 | none |
-| MS10 | Garmin direct-vs-Google transport equivalence | `[ ]` (real run, but sleep-side figures were computed pre-fix on incomplete data — re-derive; see note above) | MS7 | none |
+| MS10 | Garmin direct-vs-Google transport equivalence | `[x]` (re-run for real post-fix 2026-08-27: RHR 74.6%/0.593bpm delta reproduced exactly; sleep now `TRANSFORMING` not `MISSING_GOOGLE`; see refreshed doc) | MS7 | none |
 | MS11 | Eight Sleep path decision (Google Health confirmed FULL_PASS) | `[x]` (confirmed by independently re-verified MS0 — see note above) | MS0/MS7 evidence | none |
 | MS12 | Source-specific baseline computation | `[x]` | MS7, ADR-0024 | shadow only |
 | MS13 | Cross-source agreement/data-quality telemetry | `[x]` | MS10, MS12 | shadow only |
-| MS14 | 35–45-night prospective shadow study (60d backfilled) | `[ ]` (real backfill methodology, but sleep-side figures need re-derivation post-fix; see note above) | MS12, MS13 | shadow only |
+| MS14 | 35–45-night prospective shadow study (60d backfilled) | `[x]` (re-run for real post-fix 2026-08-27: 42/18/0/0 night split and baselines reproduced closely; new cross-source sleep-duration correlation 0.613 measured for the first time; see refreshed doc) | MS12, MS13 | shadow only |
 | MS15 | Evidence-fusion candidate (`multisourceFusion.ts`) | `[x]` | MS14 | default-off |
-| MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[ ]` (built on MS14's dataset — re-run after MS14 is re-derived) | MS15 | default-off |
+| MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` (doesn't depend on real account data — synthetic-scenario/invariant testing; re-ran `multisourceComparison.test.ts` directly 2026-08-27, 5/5 pass) | MS15 | default-off |
 | MS17 | Metric-by-metric production activation decision | `[ ]` (CASA Tier 2 / Restricted Scope Verification status genuinely unconfirmed — see note above) | MS16 + prospective evidence | granular config |
 | MS18 | Optional direct Eight Sleep adapter (superseded by MS11) | `[N/A]` | MS11 says Google path insufficient | none |
 | MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
