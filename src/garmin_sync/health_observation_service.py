@@ -83,38 +83,50 @@ class HealthObservationService:
             try:
                 batch = provider.fetch_observations(logical_date_iso, previous_date_iso)
                 if not batch.observations:
-                    logger.info(
+                    logger.debug(
                         "No observations returned by %s for %s.", provider_name, logical_date_iso
                     )
                     results[provider_name] = {"status": "empty", "observations": 0}
                     continue
 
-                # Convert to DTOs
-                dtos = [observation_to_dto(self.user_id, o) for o in batch.observations]
+                # Group observations by (provider, transport) so that e.g. Eight Sleep and Garmin
+                # within Google Health get their own separate day-source bundles.
+                grouped: dict[tuple[str, str], list[CanonicalHealthObservation]] = {}
+                for o in batch.observations:
+                    key = (o.source.provider, o.source.transport)
+                    grouped.setdefault(key, []).append(o)
 
-                # Determine effective provider & transport from first observation or provider name
-                obs_provider = batch.observations[0].source.provider
-                obs_transport = batch.observations[0].source.transport
+                provider_results: dict[str, Any] = {}
+                for (obs_provider, obs_transport), source_obs in grouped.items():
+                    dtos = [observation_to_dto(self.user_id, o) for o in source_obs]
 
-                bundle = HealthObservationDayBundle(
-                    userId=self.user_id,
-                    logicalDate=logical_date_iso,
-                    provider=obs_provider,
-                    transport=obs_transport,
-                    observations=dtos,
-                    sourcePayloadHash=batch.source_payload_hash,
-                    rawArchiveRef=batch.raw_archive_ref,
-                    schemaVersion=batch.schema_version,
-                    normalizerVersion=batch.normalizer_version,
-                    revision=batch.revision,
-                )
+                    bundle = HealthObservationDayBundle(
+                        userId=self.user_id,
+                        logicalDate=logical_date_iso,
+                        provider=obs_provider,
+                        transport=obs_transport,
+                        observations=dtos,
+                        sourcePayloadHash=batch.source_payload_hash,
+                        rawArchiveRef=batch.raw_archive_ref,
+                        schemaVersion=batch.schema_version,
+                        normalizerVersion=batch.normalizer_version,
+                        revision=batch.revision,
+                    )
 
-                changed, revision = self.repository.save_health_observation_day_bundle(bundle)
+                    changed, revision = self.repository.save_health_observation_day_bundle(bundle)
+                    provider_key = f"{obs_provider}_{obs_transport}"
+                    provider_results[provider_key] = {
+                        "status": "saved" if changed else "unchanged",
+                        "observations": len(dtos),
+                        "revision": revision,
+                    }
+
                 results[provider_name] = {
-                    "status": "saved" if changed else "unchanged",
-                    "observations": len(dtos),
-                    "revision": revision,
+                    "status": "success",
+                    "sources": provider_results,
+                    "totalObservations": len(batch.observations),
                 }
+
             except Exception as e:
                 logger.error(
                     "Error syncing observations from %s for %s: %s",
@@ -142,4 +154,39 @@ class HealthObservationService:
             date_result = self.sync_date(date_iso, prev_iso)
             summary.append({"date": date_iso, "results": date_result})
 
+        return summary
+
+    def backfill_range(
+        self,
+        start_date_iso: str,
+        end_date_iso: str,
+    ) -> list[dict[str, Any]]:
+        """Run historical backfill for date range [start_date_iso, end_date_iso] (inclusive)."""
+        start_dt = datetime.strptime(start_date_iso, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date_iso, "%Y-%m-%d")
+
+        if start_dt > end_dt:
+            raise ValueError(f"Start date {start_date_iso} is after end date {end_date_iso}")
+
+        summary: list[dict[str, Any]] = []
+        curr_dt = start_dt
+
+        logger.info(
+            "Starting historical health observation backfill for range [%s, %s]...",
+            start_date_iso,
+            end_date_iso,
+        )
+
+        while curr_dt <= end_dt:
+            date_iso = curr_dt.strftime("%Y-%m-%d")
+            prev_iso = (curr_dt - timedelta(days=1)).strftime("%Y-%m-%d")
+
+            date_result = self.sync_date(date_iso, prev_iso)
+            summary.append({"date": date_iso, "results": date_result})
+            curr_dt += timedelta(days=1)
+
+        logger.info(
+            "Completed health observation backfill: %d dates processed.",
+            len(summary),
+        )
         return summary
