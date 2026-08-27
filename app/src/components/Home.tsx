@@ -1006,11 +1006,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             <DataConfidenceIndicator confidence={decisionInput?.dataConfidence} onRefresh={loadDashboardData} />
           </div>
 
-          {/* Phase 9.0.3: the journal renders first and un-collapsed, above the reveal gate
-              it controls -- it was previously buried in the sidebar's collapsed "More
-              insights" disclosure, where an athlete had no reason to open it before ever
-              seeing today's recommendation. */}
-          {decisionInput && (
+          {/* The first, still-unrecorded verdict is an intentional reveal gate. Once it has
+              been recorded, it no longer needs premium dashboard space and moves to the
+              insights disclosure below, where the editable evening outcome remains available. */}
+          {decisionInput && !todaysJournalEntry && (
             <DecisionJournalCard
               userId={userId}
               date={decisionInput.date}
@@ -1110,6 +1109,15 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           <details className="home-insights-disclosure">
             <summary className="home-insights-summary">More insights & history ›</summary>
             <div className="home-insights-content">
+          {decisionInput && todaysJournalEntry && (
+            <DecisionJournalCard
+              userId={userId}
+              date={decisionInput.date}
+              engineVerdict={todaysEngineVerdict}
+              engineRevealed={recommendationEffectivelyRevealed}
+              onEntryChange={handleJournalEntryChange}
+            />
+          )}
           {completeness < 100 && (
             <div className="completeness-card dashboard-card">
               <div className="completeness-header">

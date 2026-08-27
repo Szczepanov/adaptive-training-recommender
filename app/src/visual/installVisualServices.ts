@@ -19,6 +19,7 @@ import { fixedActivityService } from '../services/fixedActivityService';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { computeContentHash } from '../engine/externalPlanHash';
+import type { DecisionJournalEntry } from '../engine/models';
 import type { VisualFixture } from './fixtures';
 
 /**
@@ -27,6 +28,8 @@ import type { VisualFixture } from './fixtures';
  * against stable synthetic inputs without authenticating or reading Firestore.
  */
 export function installVisualServices(fixture: VisualFixture): void {
+  let journalEntry: DecisionJournalEntry | null = fixture.decisionJournalEntry ?? null;
+
   // Phase 9.4: visual fixtures model canonical DailyDecisionInput, while the composer now
   // returns a composition-only extension carrying normalized/compact history evidence.
   // Visual review has no Firestore history source, so represent that honestly as missing.
@@ -195,27 +198,39 @@ export function installVisualServices(fixture: VisualFixture): void {
   sessionOccurrenceService.getOccurrence = async () => ({ status: 'MISSING' });
   sessionOccurrenceService.saveOccurrence = async () => {};
 
-  decisionJournalService.getEntryState = async () => ({ status: 'MISSING' });
-  decisionJournalService.getEntry = async () => null;
-  decisionJournalService.recordActualVerdict = async (_userId, _date, actualVerdict) => ({
-    userId: fixture.input.userId,
-    date: fixture.input.date,
-    externalVerdict: 'proceed',
-    actualVerdict,
-    sawEngineVerdictFirst: false,
-    schemaVersion: 1,
-    createdAt: fixture.input.date,
-    updatedAt: fixture.input.date,
-  });
-  decisionJournalService.recordMorningEntry = async () => ({
-    userId: fixture.input.userId,
-    date: fixture.input.date,
-    externalVerdict: 'proceed',
-    sawEngineVerdictFirst: false,
-    schemaVersion: 1,
-    createdAt: fixture.input.date,
-    updatedAt: fixture.input.date,
-  });
+  decisionJournalService.getEntryState = async () => (
+    journalEntry
+      ? { status: 'AVAILABLE', data: journalEntry, revision: null }
+      : { status: 'MISSING' }
+  );
+  decisionJournalService.getEntry = async () => journalEntry;
+  decisionJournalService.recordActualVerdict = async (_userId, _date, actualVerdict) => {
+    journalEntry = {
+      ...(journalEntry ?? {
+        userId: fixture.input.userId,
+        date: fixture.input.date,
+        externalVerdict: 'proceed' as const,
+        sawEngineVerdictFirst: false,
+        schemaVersion: 1 as const,
+        createdAt: fixture.input.date,
+      }),
+      actualVerdict,
+      updatedAt: fixture.input.date,
+    };
+    return journalEntry;
+  };
+  decisionJournalService.recordMorningEntry = async () => {
+    journalEntry = {
+      userId: fixture.input.userId,
+      date: fixture.input.date,
+      externalVerdict: 'proceed',
+      sawEngineVerdictFirst: false,
+      schemaVersion: 1,
+      createdAt: fixture.input.date,
+      updatedAt: fixture.input.date,
+    };
+    return journalEntry;
+  };
 
   recommendationService.getAdherenceStats = async () => ({
     totalRecommendations: 14,

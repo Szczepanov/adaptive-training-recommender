@@ -171,6 +171,7 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
   // same-day reveal remains a reveal even after navigation/reload.
   const engineWasSeen = engineRevealed || hasPersistedReveal(userId, date);
   const engineVerdictVisible = engineWasSeen || !!entry;
+  const actualVerdictSaved = entry?.actualVerdict !== undefined && entry.actualVerdict === actualVerdict;
 
   return (
     <div className="dashboard-card decision-journal-card">
@@ -243,6 +244,11 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
       {entry && (
         <div className="journal-evening">
           <label>What actually happened?</label>
+          {entry.actualVerdict && (
+            <p className="journal-actual-saved" role="status">
+              Actual result recorded: <strong>{VERDICT_LABELS[entry.actualVerdict]}</strong>
+            </p>
+          )}
           <div className="journal-evening-row">
             <select
               className="select-input"
@@ -254,8 +260,8 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
                 <option key={verdict} value={verdict}>{VERDICT_LABELS[verdict]}</option>
               ))}
             </select>
-            <button type="button" className="journal-btn primary" disabled={submitting || !actualVerdict} onClick={submitEvening}>
-              Save
+            <button type="button" className="journal-btn primary" disabled={submitting || !actualVerdict || actualVerdictSaved} onClick={submitEvening}>
+              {submitting ? 'Saving…' : actualVerdictSaved ? 'Saved ✓' : entry.actualVerdict ? 'Update result' : 'Save result'}
             </button>
           </div>
         </div>
