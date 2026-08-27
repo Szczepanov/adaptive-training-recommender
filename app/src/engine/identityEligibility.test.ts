@@ -230,4 +230,36 @@ describe('identityEligibility (PI5, ADR-0028 D-PID-PREBASE)', () => {
         const foreign = bundle({ userId: 'user-2' });
         expect(baseline([foreign], [projection(foreign)]).count28d).toBe(0);
     });
+
+    it('reflects a PI7 review correction on the next call with no separate invalidation step (P-PI-14)', () => {
+        // computeSourceMetricBaseline has no materialized/cached baseline document to invalidate --
+        // it always re-derives eligibility from the effective-identity projections it is given.
+        // Appending a superseding review event and recomputing with the updated projection list
+        // (exactly what a refetch after a Firestore write produces) is therefore sufficient; PI7's
+        // "invalidate and rebuild, or enforce a versioned read barrier" requirement is met by this
+        // module's statelessness rather than by a separate reconciliation step.
+        const sourceBundle = bundle();
+        const assessmentId = 'assessment-correction';
+        const notMeReview = review(assessmentId, { label: 'NOT_USER', occupancyAttestation: 'UNKNOWN' });
+        const excludedProjection = projection(sourceBundle, {
+            automaticStatus: 'UNCERTAIN',
+            assessmentId,
+            reviewEvents: [notMeReview],
+        });
+        expect(baseline([sourceBundle], [excludedProjection]).count28d).toBe(0);
+
+        const correctedReview = review(assessmentId, {
+            id: 'review-correction',
+            supersedesReviewEventId: notMeReview.id,
+            recordedAt: '2026-08-27T09:00:00Z',
+        });
+        const correctedProjection = projection(sourceBundle, {
+            automaticStatus: 'UNCERTAIN',
+            assessmentId,
+            reviewEvents: [notMeReview, correctedReview],
+        });
+        const correctedResult = baseline([sourceBundle], [correctedProjection]);
+        expect(correctedResult.count28d).toBe(1);
+        expect(correctedResult.median28d).toBe(60);
+    });
 });
