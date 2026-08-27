@@ -76,7 +76,7 @@ export function Preferences({ userId }: PreferencesProps) {
       )}
 
       <div className="preferences-content">
-        <GarminConnectionSection />
+        <GarminConnectionSection userId={userId} />
 
         <GoogleHealthConnectionSection userId={userId} />
 

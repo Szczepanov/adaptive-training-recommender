@@ -171,6 +171,13 @@ class GarminConnectionRepository:
         """
         identity_ref = self.db.collection("garminIdentities").document(identity_digest)
         connection_ref = self.db.collection("garminConnections").document(uid)
+        # Non-secret mirror of connection_ref, under the user's own tree so the frontend can
+        # read its own status directly (see users/{userId}/connections/{connectionId} in
+        # firestore.rules, the same MS4/ADR-0027 path Google Health's connection status uses).
+        # garminConnections itself stays server-only because it also holds tokenObject.
+        client_status_ref = (
+            self.db.collection("users").document(uid).collection("connections").document("garmin")
+        )
         transaction = self.db.transaction()
         server_timestamp = google_firestore.SERVER_TIMESTAMP
 
@@ -222,6 +229,17 @@ class GarminConnectionRepository:
                     "identityKind": identity_kind,
                     "tokenObject": token_object,
                     "source": "garmin-connect-unofficial",
+                    "linkedAt": server_timestamp,
+                    "updatedAt": server_timestamp,
+                },
+                merge=True,
+            )
+            # Client-readable status only -- no tokenObject/identityDigest.
+            transaction_obj.set(
+                client_status_ref,
+                {
+                    "status": "active",
+                    "identityKind": identity_kind,
                     "linkedAt": server_timestamp,
                     "updatedAt": server_timestamp,
                 },
