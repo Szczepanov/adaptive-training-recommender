@@ -1,8 +1,8 @@
 from collections.abc import Mapping
 from typing import Any
 
-from google.cloud.exceptions import Conflict
 import pytest
+from google.cloud.exceptions import Conflict
 
 from garmin_sync.firestore_repository import FirestoreRecoveryRepository
 
