@@ -159,7 +159,7 @@ jobs:
       # Only firestore:rules:deploy needs this (it runs the emulator suite before deploying),
       # but it's cheap enough to always install rather than condition on deploy_rules.
       - name: Set up Java for Firestore Emulator
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "21"

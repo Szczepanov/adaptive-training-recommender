@@ -18,6 +18,7 @@ import { stepName } from '../../sessions/stepDisplay';
 import { GroupProgress } from './GroupProgress';
 import { ChoiceCard } from './ChoiceCard';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
+import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
 import './SessionRunner.css';
 
@@ -109,6 +110,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [savedDefinitions, setSavedDefinitions] = useState<SessionDefinitionHeader[]>([]);
     const [savedDefinitionsError, setSavedDefinitionsError] = useState<string | null>(null);
     const [startingSavedDefinitionId, setStartingSavedDefinitionId] = useState<string | null>(null);
+    const [previewDefinition, setPreviewDefinition] = useState<{
+        definition: SessionDefinition;
+        header?: SessionDefinitionHeader;
+    } | null>(null);
+    const [previewingSavedDefinitionId, setPreviewingSavedDefinitionId] = useState<string | null>(null);
     // M4.3: a companion is a separately executable session referenced from the one that just
     // finished (SessionDefinition.companionSessions), never an embedded block -- those already
     // render inline within the same execution. Starting one creates its own execution; it may
@@ -292,6 +298,22 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             setSavedDefinitionsError(error instanceof Error ? error.message : 'Could not start the saved session.');
         } finally {
             setStartingSavedDefinitionId(null);
+        }
+    };
+
+    const previewSavedDefinition = async (header: SessionDefinitionHeader) => {
+        setPreviewingSavedDefinitionId(header.definitionId);
+        setSavedDefinitionsError(null);
+        try {
+            const result = await sessionDefinitionService.getDefinitionRevision(userId, header.definitionId, header.latestRevision);
+            if (result.status !== 'AVAILABLE') {
+                throw new Error(result.status === 'MISSING' ? 'The latest saved revision is missing.' : 'The saved session cannot be read safely.');
+            }
+            setPreviewDefinition({ definition: result.data, header });
+        } catch (error) {
+            setSavedDefinitionsError(error instanceof Error ? error.message : 'Could not preview the saved session.');
+        } finally {
+            setPreviewingSavedDefinitionId(null);
         }
     };
 
@@ -508,6 +530,24 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
         return (
             <div className="session-runner-container no-active">
+                {previewDefinition ? (
+                    <section className="session-definition-preview-screen" aria-labelledby="session-definition-preview-title">
+                        <button type="button" className="preview-back-button" onClick={() => setPreviewDefinition(null)}>
+                            ← All structured sessions
+                        </button>
+                        <h2 id="session-definition-preview-title" className="sr-only">Session preview</h2>
+                        <SessionDefinitionPreview
+                            definition={previewDefinition.definition}
+                            onStart={() => {
+                                if (previewDefinition.header) {
+                                    void startSavedDefinition(previewDefinition.header);
+                                } else {
+                                    void runner.startFixtureSession(previewDefinition.definition);
+                                }
+                            }}
+                        />
+                    </section>
+                ) : <>
                 <header className="session-runner-header">
                     <h2>🚀 Start a Structured Session</h2>
                     <p className="session-runner-subtitle">Start a reviewed session, or make one that is stored and validated before execution.</p>
@@ -526,9 +566,19 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 <h3 className="fixture-title">{header.title}</h3>
                                 {header.dominantModality && <p className="fixture-summary">{header.dominantModality}</p>}
                             </div>
-                            <button type="button" className="start-fixture-btn" disabled={startingSavedDefinitionId !== null} onClick={() => startSavedDefinition(header)}>
-                                {startingSavedDefinitionId === header.definitionId ? 'Starting…' : 'Start session'}
-                            </button>
+                            <div className="fixture-card-actions">
+                                <button
+                                    type="button"
+                                    className="preview-fixture-btn"
+                                    disabled={previewingSavedDefinitionId !== null}
+                                    onClick={() => { void previewSavedDefinition(header); }}
+                                >
+                                    {previewingSavedDefinitionId === header.definitionId ? 'Loading…' : 'Preview'}
+                                </button>
+                                <button type="button" className="start-fixture-btn" disabled={startingSavedDefinitionId !== null} onClick={() => { void startSavedDefinition(header); }}>
+                                    {startingSavedDefinitionId === header.definitionId ? 'Starting…' : 'Start session'}
+                                </button>
+                            </div>
                         </div>)}
                     </div>
                 </section>}
@@ -540,16 +590,22 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 <h3 className="fixture-title">{fixture.title}</h3>
                                 <p className="fixture-summary">{fixture.summary || `${fixture.blocks.length} blocks`}</p>
                             </div>
-                            <button
-                                type="button"
-                                className="start-fixture-btn"
-                                onClick={() => runner.startFixtureSession(fixture)}
-                            >
-                                Start Session →
-                            </button>
+                            <div className="fixture-card-actions">
+                                <button type="button" className="preview-fixture-btn" onClick={() => setPreviewDefinition({ definition: fixture })}>
+                                    Preview
+                                </button>
+                                <button
+                                    type="button"
+                                    className="start-fixture-btn"
+                                    onClick={() => { void runner.startFixtureSession(fixture); }}
+                                >
+                                    Start Session →
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>
+                </>}
             </div>
         );
     }
