@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { runScenario } from '../../../src/engine/simulation/analyze.ts';
 import { assertPersonaFixtureIntegrity, buildPersonaFamilies } from '../personaScenarios.mjs';
 
 describe('persona AI-judge fixtures', () => {
@@ -50,5 +51,28 @@ describe('persona AI-judge fixtures', () => {
       'avoid_overhead_pressing',
       'avoid_heavy_spinal_loading',
     ]);
+  });
+
+  it('executes every persona state through the real multi-week planner', async () => {
+    const definitions = buildPersonaFamilies().flatMap((family) => family.cases);
+
+    for (const definition of definitions) {
+      const result = await runScenario(definition.scenario);
+      expect(result.decisionTraces.length, definition.scenario.id).toBeGreaterThan(0);
+      expect(result.decisionTraces.every((trace) => Boolean(trace.selected?.templateId)), definition.scenario.id).toBe(true);
+    }
+  });
+
+  it('keeps the health persona inside its hard 30-minute capacity case', async () => {
+    const definition = buildPersonaFamilies()
+      .find((family) => family.familyId === 'persona_health_fat_loss')
+      .cases.find((candidate) => candidate.scenario.id === 'persona_health_fatloss_low_time');
+
+    const result = await runScenario(definition.scenario);
+    for (const trace of result.decisionTraces) {
+      if (trace.selected.durationMin != null) {
+        expect(trace.selected.durationMin, `${definition.scenario.id}:${trace.date}`).toBeLessThanOrEqual(30);
+      }
+    }
   });
 });
