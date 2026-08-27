@@ -78,9 +78,10 @@ deploy-indexes:
 # Python Backend Targets
 # -----------------------------------------------------------------------------
 
-## Lint Python backend source and tests with ruff
+## Lint Python backend source and tests with ruff (including code formatting)
 lint-python:
 	uv run ruff check .
+	uv run ruff format --check .
 
 ## Check Python code formatting with ruff
 format-python-check:

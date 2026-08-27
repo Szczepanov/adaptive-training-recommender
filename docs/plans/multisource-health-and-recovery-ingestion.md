@@ -136,6 +136,7 @@ class ObservationSource:
     origin_device: str | None = None
     source_record_id: str | None = None
 
+
 @dataclass(frozen=True)
 class CanonicalHealthObservation:
     metric: str
