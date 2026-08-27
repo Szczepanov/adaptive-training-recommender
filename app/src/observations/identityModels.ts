@@ -173,7 +173,13 @@ function reviewEventShapeIsValid(event: IdentityReviewEvent): boolean {
     if (!Number.isFinite(Date.parse(event.recordedAt))) return false;
     if (event.supersedesReviewEventId === event.id) return false;
     if (event.source !== 'user_ui' && event.source !== 'admin_replay') return false;
-    return true;
+    if (event.source === 'admin_replay') return true;
+    // Match the client-write Firestore contract. Admin replay may preserve historical combinations
+    // that were never available through the user UI, while eligibility still treats identity and
+    // occupancy as separate evidence dimensions.
+    if (event.label === 'USER') return event.occupancyAttestation === 'EXCLUSIVE';
+    if (event.label === 'NOT_USER') return event.occupancyAttestation === 'UNKNOWN';
+    return event.occupancyAttestation === 'MIXED' || event.occupancyAttestation === 'UNKNOWN';
 }
 
 /**
@@ -181,8 +187,7 @@ function reviewEventShapeIsValid(event: IdentityReviewEvent): boolean {
  * `supersedesReviewEventId` links. Only a complete chain rooted at an unsuperseding event is
  * admitted; orphaned, cyclic, duplicate-ID, non-monotonic, or structurally malformed events fail
  * closed and cannot override the automatic assessment. Identity label and occupancy attestation
- * remain separate evidence dimensions: for example, `USER + MIXED` is a valid manual statement
- * but remains baseline/passport-learning ineligible via `deriveObservationEligibility`.
+ * remain separate evidence dimensions in the derived eligibility projection.
  */
 export function findEffectiveReviewEvent(
     reviewEvents: readonly IdentityReviewEvent[],
