@@ -3,6 +3,7 @@ import {
   type DailyDecisionInput,
   type DailyRecoverySnapshot,
   type DailySubjectiveCheckin,
+  type DecisionJournalEntry,
   type ExternalTrainingPlan,
   type NormalizedGarminActivity,
   type TrainingIntentProfile,
@@ -41,6 +42,8 @@ export interface VisualFixture {
    * the ordinary screens keep exercising the ranked path. */
   externalPlan?: ExternalTrainingPlan;
   strengthSession?: StrengthSession | null;
+  /** A recorded journal moves the card from the primary decision surface into insights. */
+  decisionJournalEntry?: DecisionJournalEntry;
 }
 
 const settings: TrainingSettings = {
@@ -172,7 +175,7 @@ const eventGoal: UserGoal & { id: string } = {
 };
 
 function buildFixture(
-  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession'>> = {},
+  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession' | 'decisionJournalEntry'>> = {},
   trainingIntentProfile: TrainingIntentProfile | null = null,
 ): VisualFixture {
   const fixtureSettings = overrides.settings ?? settings;
@@ -209,6 +212,7 @@ function buildFixture(
     activities: fixtureActivities,
     ...(overrides.externalPlan ? { externalPlan: overrides.externalPlan } : {}),
     ...(overrides.strengthSession ? { strengthSession: overrides.strengthSession } : {}),
+    ...(overrides.decisionJournalEntry ? { decisionJournalEntry: overrides.decisionJournalEntry } : {}),
     input,
   };
 }
@@ -231,6 +235,17 @@ const recoveryCheckin: DailySubjectiveCheckin = {
   soreness: 8,
   painOrInjury: true,
   notes: 'New lower-leg pain during stairs.',
+};
+
+const recordedJournalEntry: DecisionJournalEntry = {
+  userId: VISUAL_USER_ID,
+  date: VISUAL_DATE,
+  externalVerdict: 'scale',
+  actualVerdict: 'scale',
+  sawEngineVerdictFirst: false,
+  schemaVersion: 1,
+  createdAt: TIMESTAMP,
+  updatedAt: TIMESTAMP,
 };
 
 const incompleteCheckin: DailySubjectiveCheckin = {
@@ -408,6 +423,16 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     screen: 'home',
     expectedFocus: ['Today is the primary action.', 'Target-event context is visible without competing with the plan.', 'Tomorrow is selected in the seven-day view.'],
     fixture: standardFixture,
+  },
+  {
+    id: 'home-journal-recorded',
+    title: 'Home — recorded decision journal',
+    screen: 'home',
+    expectedFocus: [
+      'The recorded journal no longer competes with today’s training decision on the primary dashboard.',
+      'The journal remains available, with its saved morning and actual outcomes, inside More insights & history.',
+    ],
+    fixture: buildFixture({ decisionJournalEntry: recordedJournalEntry }),
   },
   {
     id: 'home-reduced-load',
