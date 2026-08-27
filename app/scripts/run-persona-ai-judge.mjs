@@ -173,7 +173,7 @@ async function judgeCorpus(corpus) {
         sampleIndex,
         seed,
       });
-      const result = validateAndNormalizeJudgeRow(response.value, family.familyId, new Set(expectedCaseIds));
+      const result = validateAndNormalizeJudgeRow(response.value, family.familyId, expectedCaseIds);
       samples.push({ sampleIndex, seed, result, telemetry: response.telemetry ?? null });
     }
 
