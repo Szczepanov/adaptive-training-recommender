@@ -75,18 +75,18 @@ This plan does not initially:
 | MS5 | Google Health raw/list client | `[x]` | MS4 | none |
 | MS6 | Google Health normalization and provenance mapping | `[x]` | MS1, MS5 | none |
 | MS7 | Idempotent observation persistence + raw archive | `[x]` | MS2, MS6 | none |
-| MS8 | Scheduled repair sync | `[x]` | MS7 | none |
+| MS8 | Scheduled repair sync + historical backfill (`backfill-health`) | `[x]` | MS7 | none |
 | MS9 | Signed webhook subscriber/queue path | `[x]` | MS7 | none |
 | MS10 | Garmin direct-vs-Google transport equivalence | `[x]` | MS7 | none |
-| MS11 | Eight Sleep path decision | `[x]` | MS0/MS7 evidence | none |
+| MS11 | Eight Sleep path decision (Google Health confirmed FULL_PASS) | `[x]` | MS0/MS7 evidence | none |
 | MS12 | Source-specific baseline computation | `[x]` | MS7, ADR-0024 | shadow only |
 | MS13 | Cross-source agreement/data-quality telemetry | `[x]` | MS10, MS12 | shadow only |
-| MS14 | 35–45-night prospective shadow study | `[ ]` | MS12, MS13 | shadow only |
+| MS14 | 35–45-night prospective shadow study (60d backfilled) | `[~]` | MS12, MS13 | shadow only |
 | MS15 | Evidence-fusion candidate | `[ ]` | MS14 | default-off |
 | MS16 | Replay/simulation comparison | `[ ]` | MS15 | default-off |
 | MS17 | Metric-by-metric production activation decision | `[ ]` | MS16 + prospective evidence | potential |
-| MS18 | Optional direct Eight Sleep adapter | `[ ]` | MS11 says Google path insufficient | none until separately gated |
-| MS19 | Living architecture / ops reconciliation | `[ ]` | corresponding code landed | documentation |
+| MS18 | Optional direct Eight Sleep adapter (superseded by MS11) | `[N/A]` | MS11 says Google path insufficient | none |
+| MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
 
 ---
 
