@@ -1,7 +1,7 @@
 # Persona simulation + AI plan judge review
 
-**Date:** 2026-08-27  
-**Status:** Implemented evaluation layer  
+**Date:** 2026-08-27
+**Status:** Implemented evaluation layer
 **Scope:** Synthetic persona simulations for heterogeneous real-world users; independent AI judging of resulting plans.
 
 ## Executive conclusion
@@ -102,10 +102,9 @@ It intentionally sends a compact packet containing:
 - anonymized persona facts;
 - current readiness and declared data availability;
 - goals, constraints, preferences and evergreen intent;
-- selected multi-day plan;
-- only a small output summary.
+- selected multi-day plan.
 
-It does **not** show the evaluator planner utility/rejection internals as an answer key. The candidate must be judged from user-facing evidence.
+It deliberately withholds per-persona judge expectations, planner utility, projected cost/stimulus diagnostics, rejection codes and template safety tags so the evaluator does not receive an answer key. The candidate must be judged from user-facing evidence.
 
 Run deterministic simulation only:
 
