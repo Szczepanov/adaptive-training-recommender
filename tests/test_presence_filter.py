@@ -117,17 +117,24 @@ def test_co_presence_extreme_divergence_is_not_an_identity_fraud_claim() -> None
 
 
 def test_co_presence_status_vocabulary_has_no_confirmed_identity_verdict() -> None:
-    # The provisional concordanceStatus vocabulary is a quarantine/concordance signal, not an
-    # identity classifier: it must never surface a definitive "NOT_USER"/"USER" determination.
-    # (The ternary USER | NOT_USER | UNCERTAIN model belongs to ADR-0028/PI1+.)
-    known_statuses = {
+    garmin_snap = {"raw": {"restingHr": 44}}
+    concordant = {"observations": [{"metric": "daily_resting_heart_rate_bpm", "value": 45.0}]}
+    discordant = {"observations": [{"metric": "daily_resting_heart_rate_bpm", "value": 82.0}]}
+    statuses = {
+        validate_co_presence(garmin_snap, concordant, 44.0).concordanceStatus,
+        validate_co_presence(garmin_snap, discordant, 44.0).concordanceStatus,
+        validate_co_presence(None, concordant, 44.0).concordanceStatus,
+        validate_co_presence(garmin_snap, None, 44.0).concordanceStatus,
+    }
+
+    assert statuses == {
         "CONCORDANT",
         "DISCORDANT_SECONDARY",
         "UNVERIFIED_OFF_WRIST",
         "NO_SECONDARY_DATA",
     }
-    assert "NOT_USER" not in known_statuses
-    assert "USER" not in known_statuses
+    assert "NOT_USER" not in statuses
+    assert "USER" not in statuses
 
 
 def test_co_presence_quarantines_equally_regardless_of_divergence_magnitude() -> None:
