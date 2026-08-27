@@ -116,10 +116,10 @@ The central migration requirement is moving effective identity eligibility **ups
 | PI4 | Ternary identity evaluator with abstention | `[x]` | PI3 | shadow only |
 | PI5 | Pre-baseline effective-eligibility gate | `[x]` | PI4 | blocks unverified Eight Sleep baseline learning |
 | PI6 | Persistence, review events, replay provenance and Firestore rules | `[x]` | PI1, PI4 | none |
-| PI7 | Suspicious-night review UI | `[ ]` | PI6 | manual labels only |
-| PI8 | Historical out-of-sample replay + prospective label collection | `[ ]` | PI4, PI6 | evidence only |
-| PI9 | Activation decision and replacement of `CoPresenceValidator` | `[ ]` | PI5, PI7, PI8 | production identity gate |
-| PI10 | Living architecture, telemetry, operations and regression suite | `[ ]` | PI9 | documentation/ops |
+| PI7 | Suspicious-night review UI | `[x]` | PI6 | manual labels only |
+| PI8 | Historical out-of-sample replay + prospective label collection | `[-]` harness built, real-data run pending | PI4, PI6 | evidence only |
+| PI9 | Activation decision and replacement of `CoPresenceValidator` | `[-]` fusion migrated additively; activation decision not made (needs real evidence) | PI5, PI7, PI8 | production identity gate |
+| PI10 | Living architecture, telemetry, operations and regression suite | `[-]` architecture doc + runbook + privacy docs written; telemetry deferred to activation | PI9 | documentation/ops |
 
 ---
 
@@ -709,6 +709,29 @@ This makes the cross-source decision actually replayable. Referencing only the s
 
 # PI7 — Suspicious-night review UI
 
+## Status (2026-08-27)
+
+Implemented: [`identityReviewUi.ts`](../../app/src/engine/identityReviewUi.ts) (candidate selection,
+copy-variant selection by leading reason code, review-choice → event-fields mapping, all
+unit-tested) and [`IdentityReviewCard.tsx`](../../app/src/components/IdentityReviewCard.tsx) (the
+presentational form + Firestore-wired card, following the existing `HealthAnomalyFollowupCard`
+pattern), wired into the "data" screen in [`App.tsx`](../../app/src/App.tsx) alongside
+`HealthAnomalyShadowPanel`. All three copy variants (`ANCHOR_MISSING`, `ANCHOR_QUALITY_INSUFFICIENT`,
+and the default discordant-evidence wording shared by every other trigger reason code), the four
+review buttons, the progressive-disclosure reason-code explanations, and the append-only
+supersession flow (each submission supersedes the card's own prior submission, never edits it) are
+covered by tests.
+
+The mandatory "invalidate and rebuild, or enforce a versioned read barrier" requirement below is
+satisfied by construction rather than by new reconciliation code: `computeSourceMetricBaseline()`
+has no materialized baseline document to invalidate — it recomputes eligibility from whatever
+`EffectiveIdentityDecision` projections it is handed on every call (see the regression test added
+to [`identityEligibility.test.ts`](../../app/src/engine/identityEligibility.test.ts)). If a future
+change introduces a cached/materialized baseline, that cache must add its own invalidation path.
+
+**Not yet done** (requires a live account/UI session, not just code): actually seeing the card
+render against real suspicious nights and clicking through it end to end.
+
 Only interrupt the user when action can change data authority.
 
 Copy is selected by the assessment's leading reason code — the discrepant-evidence wording below is only accurate when a Garmin record actually exists and disagreed. `ANCHOR_MISSING`/`ANCHOR_QUALITY_INSUFFICIENT` nights use different wording because no usable independent record was compared.
@@ -799,6 +822,24 @@ If the user later corrects a review, append a superseding event instead of editi
 
 # PI8 — Historical out-of-sample shadow replay + prospective label collection
 
+## Status (2026-08-27)
+
+The replay **harness** is implemented and unit-tested: [`identityReplay.ts`](../../app/src/engine/identityReplay.ts)
+composes PI2 pairing/lineage/feature extraction, PI3's existing `leaveOneNightOutReplay`/
+`chronologicalExpandingWindowReplay`, and PI4's evaluator into `runIdentityReplay()`, producing
+every report field below except fusion-output deltas (not yet wired — would additionally require
+driving `multisourceFusion.ts` per gated/ungated night). [`identity-replay-evidence.mjs`](../../app/scripts/identity-replay-evidence.mjs)
+(`npm run evidence:identity-replay -- --input <replay.json>`) is the CLI entry point, mirroring
+`health-anomaly-evidence.mjs`'s pattern; it has been smoke-tested against a synthetic fixture end
+to end (JSON/Markdown reports generated correctly).
+
+**Not yet done:** running this against the real 60-day/42-paired-night history and publishing the
+resulting evidence doc. That requires exporting real Garmin + Eight Sleep per-night bundle data
+(session intervals, RHR/respiration/HRV, bundle refs) as `identityReplay.ts`'s input shape — no
+such exporter exists yet (unlike `audit-multisource`, which only checks pre-existing identity
+projections rather than deriving out-of-sample ones). Building that exporter and running/reviewing
+the real replay is the remaining work before this item can be marked done.
+
 ## Historical replay
 
 Run the existing 60-day / 42 paired-night window through:
@@ -851,6 +892,44 @@ Because selective classifiers explicitly trade coverage for accepted-case risk, 
 
 # PI9 — Activation decision and replacement of `CoPresenceValidator`
 
+## Status (2026-08-27)
+
+**The activation decision itself is explicitly NOT made.** It cannot be made from this repository
+alone: several minimum activation conditions below (the reviewed 42-night shadow replay, and
+prospective suspicious-night labels) require real evidence gathered from actual account usage over
+time, which this session does not have authorization or ability to produce truthfully (see PI8's
+status note on the missing real-data exporter). Claiming activation-readiness without that
+evidence would repeat exactly the kind of unverified-evidence mistake this project has already
+had to correct once (see the multisource shadow study's fabrication correction). The rollout
+therefore remains at Stage 1 (shadow only) / Stage 2 (baseline protection is code-complete but
+unactivated) per the Rollout strategy section below.
+
+What **is** done, code-side, toward the "replacement of `CoPresenceValidator`" half of this item:
+
+- [`multisourceFusion.ts`](../../app/src/engine/multisourceFusion.ts) now accepts
+  `effectiveIdentityProjections`/`identityPolicy` and, when supplied, uses
+  `selectEligibleHealthObservationBundles()` (the same PI5 gate that already protects baseline
+  learning) as the *authoritative* shared-source eligibility decision — superseding, not merging
+  with, `coPresenceValidator.ts`'s scalar heuristic. This is additive/opt-in (existing callers that
+  don't pass identity evidence keep today's legacy-heuristic behaviour unchanged, so no simulation
+  snapshot/baseline doc needed regenerating). See `result.identityGateApplied` and the "PI9 identity
+  gate" test group in
+  [`multisourceFusion.test.ts`](../../app/src/engine/multisourceFusion.test.ts), which proves the
+  identity gate overrides a legacy-discordant verdict (admits a night the heuristic would have
+  quarantined) and vice versa (excludes a night the heuristic would have accepted).
+- On the Python side, `run_multisource_audit()` already never calls `validate_co_presence()`
+  (confirmed by reading `src/garmin_sync/multisource_audit.py`); `presence_filter.py` is unused
+  outside its own test — no further isolation work was needed there.
+- `coPresenceValidator.ts`'s module doc now states plainly that it is a fallback default, not an
+  authoritative path, once a caller supplies real identity evidence.
+
+**Not done**: migrating the MS16 simulation/replay harness
+(`app/src/engine/simulation/multisourceComparison.ts`, ~10 call sites) to construct and pass real
+`effectiveIdentityProjections` instead of relying on the legacy fallback, and the deeper "remove
+`coPresenceValidator.ts` entirely" end state. That migration touches simulation snapshot/baseline
+artifacts (`docs/analysis/simulation-baseline.json`) and deserves its own reviewed change rather
+than being folded into this session silently.
+
 Production activation is a separate decision after PI8 evidence.
 
 ## Minimum activation conditions
@@ -887,15 +966,46 @@ Do not preserve `verifiedAthlete: boolean` as the primary contract. A boolean ca
 
 # PI10 — Living architecture, telemetry, privacy and regression suite
 
-After production activation:
+## Status (2026-08-27)
 
-- update `docs/architecture/ingestion-pipeline.md` with the identity gate location;
-- document operational passport rebuild/versioning commands;
-- document how to replay one night's identity decision including all evidence refs;
-- add telemetry for assessment coverage/status/reasons without leaking health values or identity fingerprints into general logs;
-- add a runbook for reverting to Garmin-only recovery authority;
-- update PR/README wording so “imposter protection” means the ADR-0028 implementation, not the initial RHR heuristic;
-- document retention/deletion/export behaviour for passport versions and review labels as sensitive derived health/identity data.
+Done now, ahead of activation, because it costs nothing to be accurate about the current
+(shadow-only) state:
+
+- [`docs/architecture/physiological-identity-passport.md`](../architecture/physiological-identity-passport.md)
+  — the living architecture doc, covering every PI0–PI9 piece, the "replaying one night's
+  decision" mechanism, the runbook (trivial today: nothing needs reverting because nothing
+  production-facing consumes this yet), and the privacy posture;
+- [`docs/architecture/ingestion-pipeline.md`](../architecture/ingestion-pipeline.md) now has an
+  "Identity gate location" subsection pointing at the fail-closed boundary on both the TS and
+  Python sides;
+- [`docs/README.md`](../README.md) indexes ADR-0028, this plan, and the new architecture doc (none
+  were previously listed).
+
+Deferred to the actual activation decision, per the plan's own "After production activation"
+framing for this item:
+
+- **Telemetry** is not emitted. There is currently no analytics/metrics pipeline in this
+  application at all — the recommended counters below remain a forward-looking design. Emitting
+  counters for a code path nothing in production calls would have nothing real to count, and
+  wiring up a whole analytics pipeline is out of this plan's scope.
+- **Operational passport-rebuild and `replay-identity-decision` CLIs** do not exist; the
+  underlying library functions do (see the architecture doc), but building admin tooling around
+  them is deferred until there is a passport worth rebuilding in production.
+- **Formal retention/export/deletion policy** beyond "these documents follow the existing
+  account-deletion path like every other `users/{uid}/...` document" is not written; ADR-0028
+  itself defers the exact lawful-basis/retention design to deployment context.
+- The regression suite (unit/property/integration/replay tests from the Verification matrix
+  section) exists per-item as each PI was implemented, not as one separately tracked PI10
+  deliverable — see each PIx status note above for its own test coverage.
+
+Still remaining, genuinely gated on production activation (not done ahead of time above):
+
+- ~~update `docs/architecture/ingestion-pipeline.md` with the identity gate location~~ — done in the Status note above, ahead of activation.
+- ~~add a runbook for reverting to Garmin-only recovery authority~~ — done in the Status note above (the architecture doc's Runbook section); trivial today because nothing production-facing consumes this yet, but it will need re-verifying against whatever activation actually wires up.
+- build the operational passport-rebuild and `replay-identity-decision` CLIs (the *mechanism* is already documented in the architecture doc; the admin tooling around it is what's missing);
+- add telemetry for assessment coverage/status/reasons without leaking health values or identity fingerprints into general logs (blocked on this application having an analytics pipeline at all, not just on this plan);
+- write the formal retention/deletion/export policy for passport versions and review labels as sensitive derived health/identity data (the Status note above only confirms today's default account-deletion behaviour, not a considered retention policy);
+- ~~update PR/README wording so "imposter protection" means the ADR-0028 implementation~~ — checked: no README/`docs/` file outside this plan and ADR-0028 itself (an immutable decision record, not edited) uses "imposter" wording; nothing to update.
 
 Recommended privacy-safe telemetry:
 

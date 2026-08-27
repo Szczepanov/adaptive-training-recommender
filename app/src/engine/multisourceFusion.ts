@@ -5,6 +5,14 @@
  * baseline maturity state machines, and cross-source agreement telemetry.
  *
  * Governed by MULTISOURCE_FUSION_POLICY feature flag (default: 'off').
+ *
+ * PI9 migration (ADR-0028): shared-source bundle eligibility is decided by
+ * `selectEligibleHealthObservationBundles()` -- the same ADR-0028 identity gate PI5 already
+ * enforces upstream of baseline learning -- whenever a caller supplies `effectiveIdentityProjections`.
+ * `coPresenceValidator.ts`'s scalar heuristic remains only as the default fallback for callers
+ * (currently: the MS16 simulation/replay harness) that have not yet threaded real identity
+ * evidence through; it is not used to gate anything in production, since nothing calls this
+ * evaluator from `recommendationService.ts` yet. See `identityGateApplied` on the result.
  */
 
 import type { HealthObservationDayBundle } from '../observations/models';
@@ -14,7 +22,37 @@ import {
     type SleepSessionInterval,
 } from './coPresenceValidator';
 import type { CrossSourceAgreementTelemetry } from './crossSourceTelemetry';
+import {
+    selectEligibleHealthObservationBundles,
+    type EffectiveBundleIdentityProjection,
+    type IdentityEligibilityPolicy,
+} from './identityEligibility';
 import type { SourceMetricBaseline } from './multisourceBaselines';
+
+/**
+ * Default identity policy for the PI9 gate below: `eight_sleep`/`google_health` is the only
+ * currently-known shared source this plan targets (ADR-0028). Callers with a different
+ * shared-source deployment should pass their own `identityPolicy`.
+ */
+const DEFAULT_FUSION_IDENTITY_POLICY: IdentityEligibilityPolicy = {
+    identityRequiredSources: [{ provider: 'eight_sleep', transport: 'google_health' }],
+};
+
+/**
+ * Resolves the single user id the identity gate should scope to when the caller did not pass an
+ * explicit `userId`. Fails loudly on a genuinely ambiguous multi-user bundle set rather than
+ * silently picking one -- see the PI9 code-review finding this guards against.
+ */
+function resolveSingleUserId(bundles: readonly HealthObservationDayBundle[]): string {
+    const distinctUserIds = new Set(bundles.map((bundle) => bundle.userId));
+    if (distinctUserIds.size > 1) {
+        throw new Error(
+            'evaluateMultisourceFusion: effectiveIdentityProjections requires an explicit `userId` ' +
+                'when `bundles` spans more than one user for this logicalDate.',
+        );
+    }
+    return bundles[0]?.userId ?? '';
+}
 
 export type MultisourceFusionPolicy = 'off' | 'candidate-v1';
 
@@ -56,6 +94,13 @@ export interface MultisourceFusionResult {
     fusedMetrics: Record<string, FusedMetricEvidence>;
     coPresenceVerdict: CoPresenceValidationResult | null;
     crossSourceTelemetry: CrossSourceAgreementTelemetry | null;
+    /**
+     * `true` when the caller supplied `effectiveIdentityProjections` and the ADR-0028 identity
+     * gate (not the legacy `coPresenceVerdict` heuristic) was authoritative for shared-source
+     * bundle eligibility this call (PI9). `coPresenceVerdict` is still computed either way for
+     * diagnostic/back-compat display, but it only *decides* bundle inclusion when this is `false`.
+     */
+    identityGateApplied: boolean;
 }
 
 export function evaluateMultisourceFusion(params: {
@@ -67,6 +112,14 @@ export function evaluateMultisourceFusion(params: {
     bundles: readonly HealthObservationDayBundle[];
     baselines: readonly SourceMetricBaseline[];
     agreementTelemetry?: CrossSourceAgreementTelemetry | null;
+    /**
+     * PI9 migration point (ADR-0028): when provided, `selectEligibleHealthObservationBundles()`
+     * decides shared-source bundle eligibility instead of the legacy `coPresenceVerdict` scalar
+     * heuristic. Omit to keep today's legacy-heuristic behaviour unchanged (existing simulation
+     * snapshots/callers are unaffected until they opt in).
+     */
+    effectiveIdentityProjections?: readonly EffectiveBundleIdentityProjection[];
+    identityPolicy?: IdentityEligibilityPolicy;
 }): MultisourceFusionResult {
     const policy = params.policy || 'off';
     const metricActivation: MultisourceMetricActivationConfig = {
@@ -88,15 +141,17 @@ export function evaluateMultisourceFusion(params: {
             fusedMetrics: {},
             coPresenceVerdict: null,
             crossSourceTelemetry: params.agreementTelemetry || null,
+            identityGateApplied: false,
         };
     }
 
     // Step 1: Secondary-source identity & session concordance validation (D-MS-IDENTITY, D-MS-PREBASE)
     //
-    // PROVISIONAL (PI0/PI9, ADR-0028): PI5 now protects baseline accumulation upstream through
-    // explicit EffectiveIdentityDecision eligibility. This downstream call remains only as a
-    // legacy candidate-fusion compatibility guard; PI9 must replace it with the same effective
-    // decision projection rather than extend its fixed thresholds.
+    // PROVISIONAL (PI0, ADR-0028): this scalar heuristic remains the *default* fallback only for
+    // backward compatibility with callers that have not yet migrated to real identity evidence.
+    // `coPresenceVerdict` is still computed unconditionally below for diagnostic/back-compat
+    // display, but as of PI9 it decides bundle inclusion only when the caller has not supplied
+    // `effectiveIdentityProjections` -- see the identity-gate branch after Step 1.
     let garminRhr: number | null = null;
     let eightSleepRhr: number | null = null;
     let garminSleepInterval: SleepSessionInterval | null = null;
@@ -129,18 +184,38 @@ export function evaluateMultisourceFusion(params: {
         eightSleepInterval,
     });
 
-    // Step 2: Filter day bundles (discard Eight Sleep if discordant/mismatched per D-MS-IDENTITY)
-    const validDayBundles = rawDayBundles.filter((b) => {
-        if (b.provider === 'eight_sleep') {
-            if (
-                coPresenceVerdict.status === 'DISCORDANT_SECONDARY' ||
-                coPresenceVerdict.status === 'IMPOSTER_REJECTED'
-            ) {
-                return false; // Quarantined from fusion & baselines
-            }
-        }
-        return true;
-    });
+    // Step 2: Filter day bundles (discard shared-source bundles per D-MS-IDENTITY/ADR-0028).
+    //
+    // PI9 (ADR-0028): when the caller supplies real identity evidence, the ternary
+    // USER/NOT_USER/UNCERTAIN gate is authoritative -- it supersedes, rather than combines with,
+    // `coPresenceVerdict`'s scalar heuristic (P-PI-2: identity attribution is a separate decision
+    // from technical/physiological plausibility, which is what the legacy heuristic conflates).
+    const identityGateApplied = params.effectiveIdentityProjections !== undefined;
+    const validDayBundles = identityGateApplied
+        ? selectEligibleHealthObservationBundles({
+              bundles: rawDayBundles,
+              // Fusion is inherently a single-user-per-call computation, but when the caller
+              // supplies identity evidence without also passing `userId`, `rawDayBundles` above
+              // was only scoped by `logicalDate` -- it could still contain more than one user's
+              // bundles. Guessing an arbitrary one (e.g. the first by array order) would silently
+              // drop every other user's data with no error, so require an explicit `userId`
+              // whenever that ambiguity is real rather than resolve it by array order.
+              userId: userId ?? resolveSingleUserId(rawDayBundles),
+              effectiveIdentityProjections: params.effectiveIdentityProjections ?? [],
+              identityPolicy: params.identityPolicy ?? DEFAULT_FUSION_IDENTITY_POLICY,
+              requireEligibility: 'recovery',
+          })
+        : rawDayBundles.filter((b) => {
+              if (b.provider === 'eight_sleep') {
+                  if (
+                      coPresenceVerdict.status === 'DISCORDANT_SECONDARY' ||
+                      coPresenceVerdict.status === 'IMPOSTER_REJECTED'
+                  ) {
+                      return false; // Quarantined from fusion & baselines
+                  }
+              }
+              return true;
+          });
 
     // Step 3: Evaluate candidate-v1 fusion across active metric streams
     const fusedMetrics: Record<string, FusedMetricEvidence> = {};
@@ -300,5 +375,6 @@ export function evaluateMultisourceFusion(params: {
         fusedMetrics,
         coPresenceVerdict,
         crossSourceTelemetry: params.agreementTelemetry || null,
+        identityGateApplied,
     };
 }
