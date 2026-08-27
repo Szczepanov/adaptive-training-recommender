@@ -19,6 +19,7 @@ from .account_link import (
     GarminLinkConfigurationError,
     GarminLinkConflictError,
 )
+from .connection_status import reconcile_garmin_connection_status
 from .error_reporting import log_exception, sanitize_text
 
 logging.basicConfig(
@@ -178,6 +179,9 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         self.request_id = secrets.token_hex(8)
         try:
+            if self.path == "/api/garmin/status":
+                self._handle_status()
+                return
             if self.path == "/api/garmin/login":
                 self._handle_login()
                 return
@@ -264,6 +268,13 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
                 error_code=report.code,
                 retryable=report.retryable,
             )
+
+    def _handle_status(self) -> None:
+        uid = _verified_uid(self.headers.get("Authorization"))
+        if not uid:
+            raise GarminConnectAuthenticationError("App authentication is required.")
+        result = reconcile_garmin_connection_status(uid)
+        self._json_response(HTTPStatus.OK, result)
 
     def _handle_login(self) -> None:
         client_key = self._client_key()

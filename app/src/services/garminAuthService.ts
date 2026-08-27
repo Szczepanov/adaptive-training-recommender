@@ -4,6 +4,11 @@ export type GarminAuthResult =
   | { status: 'mfa_required'; challengeId: string }
   | { status: 'authenticated'; customToken: string; isNewUser: boolean };
 
+export interface GarminConnectionStatus {
+  status: 'active' | 'disconnected';
+  linkedAt?: string;
+}
+
 interface GarminErrorOptions {
   code: string;
   status?: number;
@@ -52,26 +57,32 @@ async function request(path: string, init: RequestInit): Promise<Response> {
   }
 }
 
+function responseError(
+  response: Response,
+  payload: Record<string, unknown>,
+  fallbackMessage: string,
+): GarminAuthError {
+  const message = typeof payload.error === 'string' ? payload.error : fallbackMessage;
+  const code = typeof payload.errorCode === 'string'
+    ? payload.errorCode
+    : `garmin_link.http_${response.status}`;
+  const retryable = typeof payload.retryable === 'boolean'
+    ? payload.retryable
+    : response.status === 429 || response.status >= 500;
+  return new GarminAuthError(message, {
+    code,
+    status: response.status,
+    retryable,
+    requestId: responseRequestId(response, payload),
+  });
+}
+
 async function parseResponse(response: Response): Promise<GarminAuthResult> {
   const payload = asRecord(await response.json().catch(() => null));
   const requestId = responseRequestId(response, payload);
 
   if (!response.ok) {
-    const message = typeof payload.error === 'string'
-      ? payload.error
-      : 'Garmin authentication failed.';
-    const code = typeof payload.errorCode === 'string'
-      ? payload.errorCode
-      : `garmin_link.http_${response.status}`;
-    const retryable = typeof payload.retryable === 'boolean'
-      ? payload.retryable
-      : response.status === 429 || response.status >= 500;
-    throw new GarminAuthError(message, {
-      code,
-      status: response.status,
-      retryable,
-      requestId,
-    });
+    throw responseError(response, payload, 'Garmin authentication failed.');
   }
 
   if (payload.status === 'mfa_required' && typeof payload.challengeId === 'string') {
@@ -96,18 +107,54 @@ async function parseResponse(response: Response): Promise<GarminAuthResult> {
   });
 }
 
+async function appAuthorizationHeader(): Promise<Record<string, string>> {
+  const currentUser = getAuthInstance().currentUser;
+  if (!currentUser) {
+    throw new GarminAuthError('Your app session expired. Sign in again first.', {
+      code: 'garmin_link.app_session_expired',
+      retryable: false,
+    });
+  }
+  return { Authorization: `Bearer ${await currentUser.getIdToken()}` };
+}
+
+async function parseConnectionStatus(response: Response): Promise<GarminConnectionStatus> {
+  const payload = asRecord(await response.json().catch(() => null));
+  if (!response.ok) {
+    throw responseError(response, payload, 'Could not verify Garmin connection status.');
+  }
+
+  if (payload.status === 'disconnected') {
+    return { status: 'disconnected' };
+  }
+  if (payload.status === 'active') {
+    return {
+      status: 'active',
+      linkedAt: typeof payload.linkedAt === 'string' ? payload.linkedAt : undefined,
+    };
+  }
+
+  throw new GarminAuthError('Garmin status returned an unexpected response.', {
+    code: 'garmin_link.invalid_status_response',
+    status: response.status,
+    retryable: false,
+    requestId: responseRequestId(response, payload),
+  });
+}
+
 export const garminAuthService = {
+  async getConnectionStatus(): Promise<GarminConnectionStatus> {
+    const response = await request('/api/garmin/status', {
+      method: 'POST',
+      headers: await appAuthorizationHeader(),
+    });
+    return parseConnectionStatus(response);
+  },
+
   async startLogin(email: string, password: string, linkCurrentUser = false): Promise<GarminAuthResult> {
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (linkCurrentUser) {
-      const currentUser = getAuthInstance().currentUser;
-      if (!currentUser) {
-        throw new GarminAuthError('Your app session expired. Sign in again first.', {
-          code: 'garmin_link.app_session_expired',
-          retryable: false,
-        });
-      }
-      headers.Authorization = `Bearer ${await currentUser.getIdToken()}`;
+      Object.assign(headers, await appAuthorizationHeader());
     }
     const response = await request('/api/garmin/login', {
       method: 'POST',

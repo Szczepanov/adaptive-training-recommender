@@ -4,11 +4,12 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { getAuthInstance, getDb } from '../../firebase';
 import { garminAuthService } from '../../services/garminAuthService';
 import { getErrorMessage } from '../../utils/errors';
+import { firestoreDateToDate, type FirestoreDateValue } from '../../utils/firestoreDate';
 import { getLocalDateString } from '../../utils/localDate';
 
 interface GarminConnection {
   status?: string;
-  linkedAt?: string;
+  linkedAt?: FirestoreDateValue;
 }
 
 interface GarminConnectionSectionProps {
@@ -18,6 +19,7 @@ interface GarminConnectionSectionProps {
 export function GarminConnectionSection({ userId }: GarminConnectionSectionProps) {
   const [connection, setConnection] = useState<GarminConnection | null>(null);
   const [loadingConnection, setLoadingConnection] = useState(true);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -28,23 +30,67 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    let reconciliationStarted = false;
+    setLoadingConnection(true);
+    setConnectionError(null);
+
+    const reconcileWithServer = async () => {
+      if (reconciliationStarted) return;
+      reconciliationStarted = true;
+      try {
+        const status = await garminAuthService.getConnectionStatus();
+        if (cancelled) return;
+        setConnection(status.status === 'active' ? status : null);
+        setConnectionError(null);
+      } catch (err: unknown) {
+        if (cancelled) return;
+        setConnectionError(getErrorMessage(err) || 'Could not verify Garmin connection status.');
+      } finally {
+        if (!cancelled) setLoadingConnection(false);
+      }
+    };
+
     const ref = doc(getDb(), 'users', userId, 'connections', 'garmin');
-    return onSnapshot(
+    const unsubscribe = onSnapshot(
       ref,
       (snap) => {
-        setConnection(snap.exists() ? (snap.data() as GarminConnection) : null);
-        setLoadingConnection(false);
+        if (snap.exists() && snap.data().status === 'active') {
+          setConnection(snap.data() as GarminConnection);
+          setConnectionError(null);
+          setLoadingConnection(false);
+          return;
+        }
+        // Older links have no mirror. Ask the authenticated backend for canonical state;
+        // it transactionally repairs the non-secret mirror so subsequent loads are direct.
+        void reconcileWithServer();
       },
-      () => setLoadingConnection(false),
+      () => {
+        // Firestore may be temporarily unavailable or the mirror may not exist yet. The
+        // canonical server-only connection record remains the authority for this fallback.
+        void reconcileWithServer();
+      },
     );
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
   }, [userId]);
 
   const isConnected = connection?.status === 'active';
+  const linkedAtDate = firestoreDateToDate(connection?.linkedAt);
+  const linkedAtLabel = linkedAtDate ? getLocalDateString(linkedAtDate) : null;
 
   const finish = async (customToken: string) => {
     // The backend only issues a token for the same Firebase UID when this form is used
     // from an authenticated session. Signing it in refreshes auth without changing owner.
     await signInWithCustomToken(getAuthInstance(), customToken);
+    // commit_link() has already committed canonical + mirror status before issuing the token.
+    // Mark this render connected immediately rather than flashing the login form while the
+    // Firestore listener catches up.
+    setConnection({ status: 'active' });
+    setConnectionError(null);
     setSuccess(true);
     setChallengeId(null);
     setMfaCode('');
@@ -89,7 +135,9 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
     }
   };
 
-  const formVisible = !loadingConnection && (!isConnected || showForm);
+  // An unknown status is intentionally not rendered as "disconnected". Presenting the
+  // credential form after a verification failure would recreate the original false-status UX.
+  const formVisible = !loadingConnection && !connectionError && (!isConnected || showForm);
 
   return (
     <section className="preference-section">
@@ -99,9 +147,14 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
         the app keeps the resulting refreshable session token, not the password.
       </p>
 
+      {loadingConnection && <p className="preference-desc">Checking Garmin connection…</p>}
+      {!loadingConnection && connectionError && (
+        <p className="error-message">{connectionError} Refresh the page before reconnecting.</p>
+      )}
+
       {!loadingConnection && isConnected && (
         <p className="preference-success-note">
-          Connected{connection?.linkedAt ? ` since ${getLocalDateString(new Date(connection.linkedAt))}` : ''}.
+          Connected{linkedAtLabel ? ` since ${linkedAtLabel}` : ''}.
         </p>
       )}
 
@@ -112,74 +165,74 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
       )}
 
       {formVisible && (
-      <form onSubmit={submit}>
-        {challengeId ? (
-          <div className="form-group">
-            <input
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              placeholder="Garmin verification code"
-              value={mfaCode}
-              onChange={(event) => setMfaCode(event.target.value)}
-              required
-            />
-          </div>
-        ) : (
-          <>
+        <form onSubmit={submit}>
+          {challengeId ? (
             <div className="form-group">
               <input
-                type="email"
-                autoComplete="username"
-                placeholder="Garmin email"
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                type="text"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                placeholder="Garmin verification code"
+                value={mfaCode}
+                onChange={(event) => setMfaCode(event.target.value)}
                 required
               />
             </div>
-            <div className="form-group">
-              <input
-                type="password"
-                autoComplete="current-password"
-                placeholder="Garmin password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                required
-              />
-            </div>
-          </>
-        )}
-        {error && <p className="error-message">{error}</p>}
-        {success && <p className="preference-success-note">Garmin is connected to this app account.</p>}
-        <button type="submit" className="login-btn" disabled={loading}>
-          {loading ? 'Connecting...' : challengeId ? 'Verify Garmin' : 'Connect Garmin'}
-        </button>
-        {challengeId && (
-          <button
-            type="button"
-            className="auth-secondary-btn"
-            onClick={() => {
-              setChallengeId(null);
-              setMfaCode('');
-              setError(null);
-            }}
-          >
-            Restart login
+          ) : (
+            <>
+              <div className="form-group">
+                <input
+                  type="email"
+                  autoComplete="username"
+                  placeholder="Garmin email"
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <input
+                  type="password"
+                  autoComplete="current-password"
+                  placeholder="Garmin password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  required
+                />
+              </div>
+            </>
+          )}
+          {error && <p className="error-message">{error}</p>}
+          {success && <p className="preference-success-note">Garmin is connected to this app account.</p>}
+          <button type="submit" className="login-btn" disabled={loading}>
+            {loading ? 'Connecting...' : challengeId ? 'Verify Garmin' : 'Connect Garmin'}
           </button>
-        )}
-        {isConnected && !challengeId && (
-          <button
-            type="button"
-            className="auth-secondary-btn"
-            onClick={() => {
-              setShowForm(false);
-              setError(null);
-            }}
-          >
-            Cancel
-          </button>
-        )}
-      </form>
+          {challengeId && (
+            <button
+              type="button"
+              className="auth-secondary-btn"
+              onClick={() => {
+                setChallengeId(null);
+                setMfaCode('');
+                setError(null);
+              }}
+            >
+              Restart login
+            </button>
+          )}
+          {isConnected && !challengeId && (
+            <button
+              type="button"
+              className="auth-secondary-btn"
+              onClick={() => {
+                setShowForm(false);
+                setError(null);
+              }}
+            >
+              Cancel
+            </button>
+          )}
+        </form>
       )}
     </section>
   );
