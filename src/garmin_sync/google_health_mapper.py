@@ -8,6 +8,7 @@ and the step count provenance lock (D-MS-STEPS).
 import hashlib
 import json
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -82,6 +83,21 @@ def derive_warsaw_logical_date(
     return warsaw_dt.strftime("%Y-%m-%d")
 
 
+# The real Google Health API v4 response does not carry a flat "dataTypeName"/"dataType"
+# field on each point -- the reliable signal is the resource name path, e.g.
+# "users/{id}/dataTypes/sleep/dataPoints/{id}". Confirmed 2026-08-27 against a live account;
+# see docs/plans/2026-08-27-real-google-health-ingestion.md.
+_NAME_DATA_TYPE_RE = re.compile(r"/dataTypes/([^/]+)/dataPoints")
+
+
+def _data_type_from_name(point: dict[str, Any]) -> str | None:
+    name = point.get("name")
+    if not isinstance(name, str):
+        return None
+    match = _NAME_DATA_TYPE_RE.search(name)
+    return match.group(1) if match else None
+
+
 def _first_not_none(*values: Any) -> Any:
     """Return the first value that is not None, preserving legitimate 0 / False values."""
     for v in values:
@@ -129,13 +145,17 @@ class GoogleHealthMapper:
     ) -> list[CanonicalHealthObservation]:
         data_type = point.get("dataTypeName", "") or point.get("dataType", "")
         if not data_type:
+            # Real API points don't carry a flat type field -- the resource name path
+            # ("users/.../dataTypes/{type}/dataPoints/...") is the reliable signal.
+            data_type = _data_type_from_name(point) or ""
+        if not data_type:
             if "dailyHeartRateVariability" in point:
                 data_type = "daily_heart_rate_variability"
             elif "dailyRestingHeartRate" in point:
                 data_type = "daily_resting_heart_rate"
             elif "dailyRespiratoryRate" in point:
                 data_type = "daily_respiratory_rate"
-            elif "sleepSession" in point:
+            elif "sleep" in point or "sleepSession" in point:
                 data_type = "sleep"
 
         data_source = point.get("dataSource", {}) or {}
@@ -146,12 +166,21 @@ class GoogleHealthMapper:
         device_id = device_meta.get("model") or device_meta.get("id")
         source_record_id = point.get("dataPointId") or point.get("id") or point.get("name")
 
+        # Real sleep points nest the session window under sleep.interval; legacy/synthetic
+        # fixtures may still use a flat "sleepSession" or top-level startTime/endTime shape.
+        sleep_interval = ((point.get("sleep") or {}).get("interval")) or {}
         session_obj = point.get("sleepSession", {}) or {}
         start_time = parse_iso_datetime(
-            session_obj.get("startTime") or point.get("startTime") or point.get("startTimeNanos")
+            sleep_interval.get("startTime")
+            or session_obj.get("startTime")
+            or point.get("startTime")
+            or point.get("startTimeNanos")
         )
         end_time = parse_iso_datetime(
-            session_obj.get("endTime") or point.get("endTime") or point.get("endTimeNanos")
+            sleep_interval.get("endTime")
+            or session_obj.get("endTime")
+            or point.get("endTime")
+            or point.get("endTimeNanos")
         )
 
         # Check sub-object date dictionaries e.g. {"year": 2026, "month": 8, "day": 17}
@@ -216,14 +245,13 @@ class GoogleHealthMapper:
         summary_obj = session_obj.get("summary", {}) or point.get("summary", {})
 
         # Handle durations and stages from either value dict or sleepSession/summary
+        # (legacy/synthetic shapes).
         minutes_asleep = summary_obj.get("minutesAsleep")
         duration_sec = _first_not_none(
             value_dict.get("durationSeconds"),
             value_dict.get("duration_seconds"),
             int(minutes_asleep) * 60 if minutes_asleep is not None else None,
         )
-        if duration_sec is None and start_time and end_time:
-            duration_sec = int((end_time - start_time).total_seconds())
 
         deep_sec = _first_not_none(
             value_dict.get("deepSleepSeconds"), value_dict.get("deep_seconds")
@@ -239,7 +267,8 @@ class GoogleHealthMapper:
             int(minutes_awake) * 60 if minutes_awake is not None else None,
         )
 
-        # Parse stagesSummary if present in summary_obj
+        # Parse stagesSummary if present in summary_obj (legacy/synthetic shape: pre-aggregated
+        # minutes per stage type).
         for stage in summary_obj.get("stagesSummary", []):
             stype = stage.get("type", "").upper()
             mins = int(stage.get("minutes", 0))
@@ -251,6 +280,34 @@ class GoogleHealthMapper:
                 light_sec = mins * 60
             elif stype == "AWAKE" and awake_sec is None:
                 awake_sec = mins * 60
+
+        # Real API shape (confirmed 2026-08-27 against a live account): point["sleep"]["stages"]
+        # is a flat list of {startTime, endTime, type} intervals -- sum durations per type rather
+        # than a pre-aggregated minutes figure.
+        real_stages = ((point.get("sleep") or {}).get("stages")) or []
+        if real_stages:
+            stage_totals: dict[str, float] = {}
+            for stage in real_stages:
+                s_start = parse_iso_datetime(stage.get("startTime"))
+                s_end = parse_iso_datetime(stage.get("endTime"))
+                if not s_start or not s_end:
+                    continue
+                stype = str(stage.get("type", "")).upper()
+                stage_totals[stype] = (
+                    stage_totals.get(stype, 0.0) + (s_end - s_start).total_seconds()
+                )
+
+            if deep_sec is None and "DEEP" in stage_totals:
+                deep_sec = int(stage_totals["DEEP"])
+            if rem_sec is None and "REM" in stage_totals:
+                rem_sec = int(stage_totals["REM"])
+            if light_sec is None and "LIGHT" in stage_totals:
+                light_sec = int(stage_totals["LIGHT"])
+            if awake_sec is None and "AWAKE" in stage_totals:
+                awake_sec = int(stage_totals["AWAKE"])
+
+        if duration_sec is None and start_time and end_time:
+            duration_sec = int((end_time - start_time).total_seconds())
 
         session_val = {
             "durationSeconds": duration_sec,

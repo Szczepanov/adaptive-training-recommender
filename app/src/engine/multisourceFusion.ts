@@ -32,7 +32,7 @@ export const DEFAULT_METRIC_ACTIVATION_CONFIG: MultisourceMetricActivationConfig
     restingHeartRate: true,
     respiration: true,
     sleepDuration: true,
-    sleepStages: true, // Activated: Eight Sleep BCG is primary for sleep architecture
+    sleepStages: false, // shadow only — 2026-08-27: no real evidence supports activation; see docs/plans/2026-08-27-real-google-health-ingestion.md
     proprietaryScores: false, // blocked
 };
 

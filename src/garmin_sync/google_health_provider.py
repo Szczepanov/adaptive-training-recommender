@@ -36,9 +36,12 @@ def _extract_pt_date(pt: dict[str, Any]) -> str | None:
         if d and isinstance(d, dict) and "year" in d:
             return f"{d['year']:04d}-{d['month']:02d}-{d['day']:02d}"
 
+    # Real API shape nests the session window under sleep.interval (confirmed 2026-08-27
+    # against a live account); "sleepSession" only appears in legacy/synthetic fixtures.
+    interval = ((pt.get("sleep") or {}).get("interval")) or {}
     session = pt.get("sleepSession", {}) or {}
-    end_str = session.get("endTime") or pt.get("endTime")
-    start_str = session.get("startTime") or pt.get("startTime")
+    end_str = interval.get("endTime") or session.get("endTime") or pt.get("endTime")
+    start_str = interval.get("startTime") or session.get("startTime") or pt.get("startTime")
     if end_str or start_str:
         end_dt = parse_iso_datetime(end_str)
         start_dt = parse_iso_datetime(start_str)

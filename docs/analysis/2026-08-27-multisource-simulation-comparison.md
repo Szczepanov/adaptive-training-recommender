@@ -1,5 +1,14 @@
 # Empirical Analysis: Multisource Replay & Simulation Comparison (MS16)
 
+> **⚠ 2026-08-27 correction (revised) — labeled "empirical" but is simulation output.** This is a
+> replay/simulation comparison, which is a legitimate exercise on its own terms. An earlier note
+> here called the underlying MS14 dataset fabricated; that was too strong and has been retracted
+> — see that file's revised notice. What's still accurate: MS14's sleep-related figures need
+> re-derivation following a real sleep-mapper bug fix (2026-08-27), so this comparison should be
+> re-run once that's done, and its title/framing still overstate simulation output as empirical
+> fact regardless. See
+> [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md).
+
 **Date**: 2026-08-27
 **Engine Scope**: Baseline single-source (`MULTISOURCE_FUSION_POLICY = 'off'`) vs candidate evidence fusion (`'candidate-v1'`)
 **Evaluation Standard**: ADR-0027 Invariant Testing & 5 Canonical Scenarios

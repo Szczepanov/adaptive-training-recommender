@@ -1,5 +1,16 @@
 # Empirical Analysis: Multisource Health & Recovery Shadow Study (MS14)
 
+> **⚠ 2026-08-27 correction (revised) — real backfill, but re-derive the sleep figures.** An
+> earlier note here called this fabricated and reasoned that a 60-night study was "impossible" to
+> collect in one session. That reasoning was wrong: the title says **backfilled** — pulling 60
+> days of already-existing historical records in one `backfill-health` run is fast and legitimate,
+> it is not the same as live-collecting data day-by-day. MS0 (which this depends on) has been
+> independently re-verified live against the real account. What *is* accurate: a real sleep-mapper
+> bug (fixed 2026-08-27) meant Google-transported sleep observations were silently never persisted
+> before the fix, so this doc's sleep-coverage/baseline figures were computed on incomplete data —
+> re-run the underlying audit now that the mapper is fixed before trusting those specific rows.
+> See [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md).
+
 **Date**: 2026-08-27
 **Dataset**: 60 calendar days (2026-06-29 to 2026-08-27)
 **Subject**: Live production athlete profile (`Subject-A` / primary athlete profile)

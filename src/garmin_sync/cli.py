@@ -386,7 +386,14 @@ def _resolve_google_health_auth_manager(
     import os
     import time
 
+    from dotenv import load_dotenv
+
     from .google_health_auth import GoogleHealthAuthManager, GoogleHealthTokenCredentials
+
+    # Probe/backfill-health entry points don't otherwise call load_settings()/load_dotenv()
+    # before this resolves credentials, so a repo-root .env would silently be ignored without
+    # this explicit load (CLI flags still take precedence below).
+    load_dotenv()
 
     token = parsed_args.token or os.environ.get("GOOGLE_HEALTH_ACCESS_TOKEN")
     client_id = parsed_args.client_id or os.environ.get("GOOGLE_HEALTH_CLIENT_ID")
