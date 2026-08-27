@@ -527,12 +527,16 @@ class FirestoreRecoveryRepository:
             .where(filter=FieldFilter("logicalDate", ">=", start_date))
             .where(filter=FieldFilter("logicalDate", "<=", end_date))
         )
-        if provider:
-            query = query.where(filter=FieldFilter("provider", "==", provider))
-        if transport:
-            query = query.where(filter=FieldFilter("transport", "==", transport))
 
-        docs = [doc.to_dict() for doc in query.stream()]
+        docs: list[dict[str, Any]] = []
+        for doc in query.stream():
+            data = doc.to_dict()
+            if provider and data.get("provider") != provider:
+                continue
+            if transport and data.get("transport") != transport:
+                continue
+            docs.append(data)
+
         docs.sort(key=lambda d: d.get("logicalDate", ""))
         return docs
 

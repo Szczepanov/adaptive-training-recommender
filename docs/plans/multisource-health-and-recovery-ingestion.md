@@ -576,6 +576,14 @@ Google route is missing enough Garmin data that it should only serve generic agg
 
 No assumption is made before measurement.
 
+## Empirical Result (2026-08-27)
+
+Evaluated across 59 overlapping days (`users/9fp9JuWSecVo1DRqv8cXzz8ucNI2`):
+* **Resting Heart Rate**: **`EQUIVALENT`** (74.6% exact match, $\text{Mean }\Delta = 0.59\text{ bpm}$).
+* **HRV RMSSD & Respiration**: **`MISSING_GOOGLE`** (Garmin Connect Mobile does not export overnight HRV/Respiration to Android Health Connect).
+* **Verdict**: **`INCOMPLETE`**. Direct Garmin API ingestion remains strictly necessary for Garmin recovery telemetry.
+* **Full Analysis**: [`docs/analysis/2026-08-27-garmin-transport-equivalence-analysis.md`](../analysis/2026-08-27-garmin-transport-equivalence-analysis.md).
+
 ---
 
 # MS11 — Eight Sleep path decision
