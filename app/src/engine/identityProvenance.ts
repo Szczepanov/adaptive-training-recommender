@@ -49,7 +49,10 @@ export function identityDecisionProvenanceReplayErrors(
     if (!provenance.identityAssessmentId) errors.push('Identity assessment ID is missing.');
     if (!provenance.identityPolicyVersion) errors.push('Identity policy version is missing.');
     if (!provenance.featureSchemaVersion) errors.push('Identity feature schema version is missing.');
-    if (provenance.sharedBundleRef.revision < 1) errors.push('Shared identity bundle revision is invalid.');
+    if (!provenance.sharedBundleRef.id) errors.push('Shared identity bundle ID is missing.');
+    if (!Number.isInteger(provenance.sharedBundleRef.revision) || provenance.sharedBundleRef.revision < 1) {
+        errors.push('Shared identity bundle revision is invalid.');
+    }
     if (!provenance.sharedBundleRef.sourcePayloadHash) errors.push('Shared identity bundle hash is missing.');
     if (!provenance.sharedBundleRef.lineageKey) errors.push('Shared identity bundle lineage is missing.');
     if (
@@ -59,7 +62,7 @@ export function identityDecisionProvenanceReplayErrors(
         errors.push('Identity audit has no anchor bundle evidence.');
     }
     for (const ref of provenance.anchorBundleRefs) {
-        if (ref.revision < 1 || !ref.sourcePayloadHash || !ref.lineageKey) {
+        if (!ref.id || !Number.isInteger(ref.revision) || ref.revision < 1 || !ref.sourcePayloadHash || !ref.lineageKey) {
             errors.push(`Identity anchor bundle ${ref.id} has incomplete replay metadata.`);
         }
     }
