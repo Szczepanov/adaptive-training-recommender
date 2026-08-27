@@ -502,6 +502,12 @@ def run_backfill_health_cmd(args: list[str] | None = None) -> int:
     parser.add_argument(
         "--refresh-token", type=str, default=None, help="Google OAuth Refresh Token"
     )
+    parser.add_argument(
+        "--user-id",
+        type=str,
+        default=None,
+        help="Target application User ID (or APP_USER_ID env var)",
+    )
     parsed_args = parser.parse_args(args)
 
     import os
@@ -522,13 +528,18 @@ def run_backfill_health_cmd(args: list[str] | None = None) -> int:
     client_secret = parsed_args.client_secret or os.environ.get("GOOGLE_HEALTH_CLIENT_SECRET")
     refresh_token = parsed_args.refresh_token or os.environ.get("GOOGLE_HEALTH_REFRESH_TOKEN")
 
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
     if not token and not (client_id and client_secret and refresh_token):
         print("\n" + "=" * 70)
         print("  GOOGLE HEALTH BACKFILL (backfill-health)")
         print("=" * 70)
         print("\nNo Google Health credentials or access token were provided.\n")
         print("Pass an access token or credentials:")
-        print("  uv run python -m garmin_sync backfill-health --token <ACCESS_TOKEN> --days 56\n")
+        print(
+            "  uv run python -m garmin_sync backfill-health --token <ACCESS_TOKEN> --days 56 --user-id <USER_ID>\n"
+        )
         print("=" * 70 + "\n")
         return 1
 
@@ -654,6 +665,7 @@ def main() -> int:
     backfill_health_parser.add_argument("--client-id", type=str, default=None)
     backfill_health_parser.add_argument("--client-secret", type=str, default=None)
     backfill_health_parser.add_argument("--refresh-token", type=str, default=None)
+    backfill_health_parser.add_argument("--user-id", type=str, default=None)
 
     audit_parser = subparsers.add_parser("audit", help="Report sync completeness")
     audit_parser.add_argument("--days", type=int, default=90)
