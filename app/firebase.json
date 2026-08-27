@@ -43,6 +43,13 @@
         }
       },
       {
+        "source": "/api/google-health/**",
+        "run": {
+          "serviceId": "google-health-account-link",
+          "region": "europe-central2"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }
