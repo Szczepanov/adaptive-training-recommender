@@ -99,6 +99,18 @@ def test_stale_projection_does_not_resolve_as_current_identity_status() -> None:
     )
 
 
+def test_boolean_bundle_revision_is_rejected() -> None:
+    bundle = _bundle()
+    bundle["revision"] = True
+    assert (
+        resolve_bundle_identity_projection(
+            bundle,
+            {("2026-08-27", "shared_bed", "health_aggregator"): _decision(bundle_revision=1)},
+        )
+        is None
+    )
+
+
 def test_projection_is_immutable() -> None:
     decision = _decision()
     with pytest.raises(FrozenInstanceError):
@@ -111,14 +123,31 @@ def _assessment(**overrides: object) -> dict[str, object]:
         "sourceNightKey": "2026-08-27",
         "sharedSource": {"provider": "shared_bed", "transport": "health_aggregator"},
         "automaticStatus": "UNCERTAIN",
+        "identityScore": 0.42,
+        "confidenceTier": "LOW",
         "reasonCodes": ["SESSION_TIMING_DISCORDANT"],
+        "passportVersion": "2026-08-27.1",
+        "policyVersion": "identity-v1-shadow",
+        "featureSchemaVersion": "identity-features-v1",
+        "assessedAt": "2026-08-27T06:30:00.000Z",
         "sharedBundleRef": {
             "id": "2026-08-27_shared_bed_health_aggregator",
             "provider": "shared_bed",
             "transport": "health_aggregator",
             "revision": 2,
             "sourcePayloadHash": "sha256:shared",
+            "lineageKey": "shared_bed:pod-side:a",
         },
+        "anchorBundleRefs": [
+            {
+                "id": "2026-08-27_wearable_direct",
+                "provider": "wearable",
+                "transport": "direct",
+                "revision": 1,
+                "sourcePayloadHash": "sha256:anchor",
+                "lineageKey": "wearable:device:athlete",
+            }
+        ],
     }
     value.update(overrides)
     return value
@@ -133,6 +162,7 @@ def _review(**overrides: object) -> dict[str, object]:
         "occupancyAttestation": "EXCLUSIVE",
         "supersedesReviewEventId": None,
         "recordedAt": "2026-08-27T08:00:00.000Z",
+        "source": "user_ui",
     }
     value.update(overrides)
     return value
@@ -173,6 +203,43 @@ def test_orphan_or_non_monotonic_review_cannot_change_effective_identity() -> No
     assert projection.effective_status == "USER"
     assert projection.review_event_id is None
     assert projection.baseline_learning is True
+
+
+def test_cyclic_review_chain_cannot_change_effective_identity() -> None:
+    assessment = _assessment(automaticStatus="UNCERTAIN")
+    first = _review(id="review-1", supersedesReviewEventId="review-2")
+    second = _review(
+        id="review-2",
+        supersedesReviewEventId="review-1",
+        recordedAt="2026-08-27T09:00:00.000Z",
+    )
+    projection = derive_effective_identity_decision_projection(assessment, [first, second])
+    assert projection is not None
+    assert projection.effective_status == "UNCERTAIN"
+    assert projection.review_event_id is None
+    assert projection.baseline_learning is False
+
+
+def test_incomplete_assessment_cannot_produce_projection() -> None:
+    assessment = _assessment()
+    assessment.pop("policyVersion")
+    assert derive_effective_identity_decision_projection(assessment, [_review()]) is None
+
+    missing_lineage = _assessment()
+    shared_ref = dict(missing_lineage["sharedBundleRef"])  # type: ignore[arg-type]
+    shared_ref.pop("lineageKey")
+    missing_lineage["sharedBundleRef"] = shared_ref
+    assert derive_effective_identity_decision_projection(missing_lineage, [_review()]) is None
+
+
+def test_malformed_review_event_cannot_override_automatic_identity() -> None:
+    assessment = _assessment(automaticStatus="UNCERTAIN")
+    malformed = _review()
+    malformed.pop("source")
+    projection = derive_effective_identity_decision_projection(assessment, [malformed])
+    assert projection is not None
+    assert projection.effective_status == "UNCERTAIN"
+    assert projection.review_event_id is None
 
 
 def test_mixed_occupancy_requires_explicit_exclusive_user_attestation() -> None:
