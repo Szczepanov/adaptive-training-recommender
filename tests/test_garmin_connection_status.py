@@ -127,9 +127,11 @@ def test_status_handler_returns_reconciled_status(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         account_link_api,
         "reconcile_garmin_connection_status",
-        lambda uid: {"status": "active", "linkedAt": "2026-08-01T12:30:00+00:00"}
-        if uid == "uid-1"
-        else {"status": "disconnected", "linkedAt": None},
+        lambda uid: (
+            {"status": "active", "linkedAt": "2026-08-01T12:30:00+00:00"}
+            if uid == "uid-1"
+            else {"status": "disconnected", "linkedAt": None}
+        ),
     )
 
     handler._handle_status()  # noqa: SLF001 - endpoint contract regression
