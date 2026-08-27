@@ -11,8 +11,8 @@ This guide containerizes the Python Garmin ingestion/sync package and deploys a 
   minutes and pushes anything queued by "Sync to Garmin" in the web app
   (`python -m garmin_sync push-pending-workouts-all`)
 * **`garmin-manual-sync`** -- polls for a "Sync Now" request queued by the web app's
-  Garmin Sync Now button (e.g. because the athlete is up before the morning poll
-  window) and runs an immediate forced sync if one is pending
+  clickable Garmin sync badge in the navigation bar (or the inline sync trigger)
+  and runs an immediate forced sync if one is pending
   (`python -m garmin_sync poll-manual-sync-all`)
 
 All four share one container image and one runtime service account. Run the sections below in order.
