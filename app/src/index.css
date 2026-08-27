@@ -23,6 +23,25 @@
   --touch-target-min: 44px;
   --radius-card: 14px;
   --radius-control: 10px;
+
+  /* Aliases: several components (DecisionJournalCard, AdherencePrompt, ActivityTelemetry,
+     DataView, Home's reveal gate, TestingWorkflow) reference --text-color/--card-background/
+     --border-color/--hover-background, which were never actually defined anywhere in this
+     theme. An undefined var() falls back to the property's initial/inherited value rather
+     than the intended dark surface, which is what produced form controls (e.g. the Decision
+     Journal's verdict <select>) rendering as unstyled black-on-white or white-on-white
+     depending on browser/OS defaults. Aliased to the real tokens above instead of hunting
+     down and rewriting every call site. */
+  --text-color: var(--text-primary);
+  --card-background: var(--surface-card);
+  --border-color: rgba(148, 163, 184, 0.24);
+  --hover-background: rgba(255, 255, 255, 0.06);
+
+  /* This app has one dark theme only. Without this, native form-control chrome (a <select>'s
+     own dropdown popup, checkboxes, scrollbars) renders using the browser/OS default color
+     scheme -- typically light -- regardless of the author styles above, which is the other
+     half of how "white text on white background" happens inside an open <select> popup. */
+  color-scheme: dark;
 }
 
 body {
