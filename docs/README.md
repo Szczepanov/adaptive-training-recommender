@@ -78,6 +78,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0024: Metric-Specific Biometric Baseline Estimators**](./adr/0024-biometric-baseline-estimator-policy.md) — *Accepted.* Metric-specific robust location/scale estimators (median/MAD vs mean/stdev) justified by replay evidence.
 * [**ADR-0025: Physiological Anomaly and Possible-Illness Signals**](./adr/0025-physiological-anomaly-and-possible-illness-signals.md) — *Accepted.* Defines a separate health-anomaly capability, independent of training strain, using respiration/RHR/HRV to detect pre-symptomatic patterns.
 * [**ADR-0026: Wearable Telemetry Enrichment Boundaries and Ownership**](./adr/0026-wearable-telemetry-enrichment-boundaries.md) — *Accepted.* Separates date-bound recovery data (including SpO2/skin-temperature), current Garmin performance/profile/gear imports, per-activity enrichment (including running dynamics), and replay ownership; a gait-asymmetry alert, an interactive sleep-stage chart, and a generic gear-retirement rule remain explicitly deferred.
+* [**ADR-0027: Source-Aware Multisource Health Observations**](./adr/0027-source-aware-multisource-health-observations.md) — *Accepted.* Provenance-separated provider and transport dimensions, day-source observation bundling, source-specific baselines with maturity lifecycle, no arithmetic cross-sensor averaging, step count provenance locking, and evidence-gated fusion.
 
 ---
 
@@ -108,6 +109,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-26 Architecture and maintainability review**](./analysis/2026-08-26-architecture-and-maintainability-review.md) — Architectural integrity, policy boundaries, and schema evolution audit across the backend, frontend, and rules layer.
 * [**2026-08-26 Scientific and recommendation-quality validation**](./analysis/2026-08-26-scientific-and-recommendation-quality-validation.md) — Point-in-time analysis of physiological/mathematical validity of signals, baseline sensitivity, and closed-loop feedback design.
 * [**2026-08-26 Scientific validation PR review hardening**](./analysis/2026-08-26-scientific-validation-review-hardening.md) — Review corrections for the SV1–SV3 evidence-sidecar implementation.
+* [**2026-08-27 Google Health and Multisource Wearable Integration**](./analysis/2026-08-27-google-health-and-multisource-wearable-integration.md) — Structural analysis of Google Health REST/webhook integration, Eight Sleep export uncertainties, transport vs provider separation, and raw observation storage.
 * [**Phase 9.4 Subjective history integration**](./analysis/phase-9-4-subjective-history-integration.md) — Integration analysis for composition-boundary range reads and data-quality handling.
 
 ---
@@ -136,6 +138,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Performance outcome validation & goal-progress loop**](./plans/performance-outcome-validation.md) — *In progress and canonical for repeated testing/progress.* Engineering through OV6.1 is merged (#154, #155, #163, #164, #169). Operational OV7 on the real event/block timeline is active; OV4.4 and OV6.2 remain evidence/usage-gated, with production recommendation authority strictly excluded.
 * [**Health anomaly and possible-illness alerting**](./plans/health-anomaly-and-illness-risk-alerting.md) — *In progress.* Explainable physiological-anomaly evidence with structured confounders; HA0–HA5 on `main` (HA5 via #171), HA6.1–HA6.3 prospective outcome labels implemented.
 * [**Health anomaly causality & canonicalization cleanup**](./plans/health-anomaly-causality-cleanup.md) — *Implemented.* Shared health-context defaults, temporal causality, and adverse physiology persistence under explanatory context.
+* [**Multisource Health & Recovery Ingestion**](./plans/multisource-health-and-recovery-ingestion.md) — *Approved (MS0 ready).* Source-aware observation contract, Google Health raw ingestion, Eight Sleep export probing, transport-equivalence testing, and evidence-gated recovery fusion (ADR-0027).
 
 ---
 
@@ -157,6 +160,7 @@ In-depth technical design documents covering system subsystems:
 ### 🛠️ Operations & Guides
 Operational manuals and operational procedures:
 
+* [**Google Health Source-Provenance Probe**](./ops/google-health-source-provenance-probe.md) — Real-account empirical validation procedure for Google Health API data types, source application provenance, Garmin equivalence, and Eight Sleep export presence.
 * [**GCP Cloud Run & Cloud Scheduler Deployment**](./ops/cloud-run-deployment.md) — Packaging Docker images, GCS token store management, Cloud Run services and jobs, and Cloud Scheduler setups.
 * [**Data Backfill, Audit & Offline Rebuild**](./ops/data-backfill-and-rebuild.md) — Executing historical backfills, data completeness audits, and offline raw payload rebuilds.
 * [**Firestore Rules Deployment**](./ops/firestore-rules-deployment.md) — Local repository-owned deployment, deployed-source drift checks, and ruleset rollback.
