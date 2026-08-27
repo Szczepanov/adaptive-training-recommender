@@ -5,12 +5,17 @@ from typing import Any, Mapping, cast
 
 import firebase_admin
 from firebase_admin import credentials, firestore
+from google.cloud.exceptions import Conflict
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from .identity_eligibility import (
     EffectiveIdentityDecisionProjection,
     IdentityBundleKey,
     build_effective_identity_decision_index,
+    validate_automatic_identity_assessment,
+    validate_identity_passport_current,
+    validate_identity_passport_version,
+    validate_identity_review_event,
 )
 
 logger = logging.getLogger(__name__)
@@ -644,43 +649,44 @@ class FirestoreRecoveryRepository:
         document_id: str,
         payload: Mapping[str, Any],
     ) -> bool:
-        """Create an immutable server-owned identity document idempotently.
+        """Create an immutable server-owned identity document atomically and idempotently.
 
-        Replaying the exact bytes is a no-op. Reusing an existing identity for different content
-        is rejected instead of overwriting evidence needed by historical replay.
+        Firestore ``create`` is a single create-only write. Replaying the exact bytes after a
+        conflict is a no-op; reusing an existing identity for different content is rejected so a
+        concurrent writer cannot overwrite evidence needed by historical replay.
         """
 
         if not document_id:
             raise ValueError("Identity document id must be non-empty.")
         stored = dict(payload)
         doc_ref = self._identity_collection(collection_name).document(document_id)
-        snapshot = doc_ref.get()
-        if snapshot.exists:
-            if snapshot.to_dict() == stored:
+        try:
+            doc_ref.create(stored)
+            return True
+        except Conflict as error:
+            snapshot = doc_ref.get()
+            if snapshot.exists and snapshot.to_dict() == stored:
                 return False
             raise ValueError(
                 f"Immutable identity document {collection_name}/{document_id} already exists "
                 "with different content."
-            )
-        doc_ref.set(stored)
-        return True
+            ) from error
 
     def save_identity_passport_version(self, passport: Mapping[str, Any]) -> bool:
-        """Persist one immutable/replayable passport version."""
+        """Persist one fully validated immutable/replayable passport version."""
 
-        version = passport.get("passportVersion")
-        if not isinstance(version, str) or not version:
-            raise ValueError("Identity passport requires passportVersion.")
+        if not validate_identity_passport_version(passport):
+            raise ValueError("Identity passport version does not match the persisted schema.")
+        version = cast(str, passport.get("passportVersion"))
         return self._save_immutable_identity_document(
             "physiological_identity_passport_versions", version, passport
         )
 
     def set_current_identity_passport(self, passport: Mapping[str, Any]) -> None:
-        """Replace the server-owned online passport materialization."""
+        """Replace the fully validated server-owned online passport materialization."""
 
-        version = passport.get("passportVersion")
-        if not isinstance(version, str) or not version:
-            raise ValueError("Current identity passport requires passportVersion.")
+        if not validate_identity_passport_current(passport):
+            raise ValueError("Current identity passport does not match the persisted schema.")
         self._identity_collection("physiological_identity_passports").document("current").set(
             dict(passport)
         )
@@ -700,11 +706,11 @@ class FirestoreRecoveryRepository:
         return snapshot.to_dict() if snapshot.exists else None
 
     def save_automatic_identity_assessment(self, assessment: Mapping[str, Any]) -> bool:
-        """Persist immutable automatic model output and every contributing bundle ref."""
+        """Persist fully validated immutable model output and every contributing bundle ref."""
 
-        assessment_id = assessment.get("id")
-        if not isinstance(assessment_id, str) or not assessment_id:
-            raise ValueError("Automatic identity assessment requires id.")
+        if not validate_automatic_identity_assessment(assessment):
+            raise ValueError("Automatic identity assessment does not match the persisted schema.")
+        assessment_id = cast(str, assessment.get("id"))
         return self._save_immutable_identity_document(
             "health_identity_assessments", assessment_id, assessment
         )
@@ -716,21 +722,15 @@ class FirestoreRecoveryRepository:
         return snapshot.to_dict() if snapshot.exists else None
 
     def save_identity_review_event(self, event: Mapping[str, Any]) -> bool:
-        """Persist an append-only admin/user review event without mutating its assessment."""
+        """Persist a fully validated append-only admin/user review event."""
 
-        event_id = event.get("id")
-        if not isinstance(event_id, str) or not event_id:
-            raise ValueError("Identity review event requires id.")
+        if not validate_identity_review_event(event):
+            raise ValueError("Identity review event does not match the persisted schema.")
+        event_id = cast(str, event.get("id"))
         stored_event = dict(event)
-        recorded_at = stored_event.get("recordedAt")
-        if isinstance(recorded_at, str):
-            try:
-                parsed = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
-            except ValueError as error:
-                raise ValueError("Identity review event requires a valid recordedAt.") from error
-            if parsed.tzinfo is None:
-                raise ValueError("Identity review event recordedAt must include a timezone.")
-            stored_event["recordedAt"] = parsed
+        recorded_at = cast(str, stored_event["recordedAt"])
+        parsed = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
+        stored_event["recordedAt"] = parsed
         return self._save_immutable_identity_document(
             "health_identity_review_events", event_id, stored_event
         )
