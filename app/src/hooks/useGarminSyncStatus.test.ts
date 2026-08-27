@@ -1,49 +1,15 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { useGarminSyncStatus } from './useGarminSyncStatus';
-import { garminWorkoutQueueService } from '../services/garminWorkoutQueueService';
-import { garminSyncRequestService } from '../services/garminSyncRequestService';
-import { recoverySnapshotService } from '../services/recoverySnapshotService';
 
-vi.mock('../services/garminWorkoutQueueService', () => ({
-    garminWorkoutQueueService: {
-        subscribeToUserQueue: vi.fn(),
-    },
-}));
-
-vi.mock('../services/garminSyncRequestService', () => ({
-    garminSyncRequestService: {
-        subscribeToRequest: vi.fn(),
-        requestSync: vi.fn(async () => '2026-08-27T08:00:00.000Z'),
-        getRequest: vi.fn(async () => null),
-    },
-}));
-
-vi.mock('../services/recoverySnapshotService', () => ({
-    recoverySnapshotService: {
-        subscribeToSnapshot: vi.fn(),
-    },
-}));
-
+// This repo has no interactive component/hook-render test harness (no
+// @testing-library/react, no jsdom environment configured) -- useEffect never runs
+// under react-dom/server, so the subscriptions this hook installs can't be meaningfully
+// exercised here (see GarminSyncNowButton.test.tsx for the same constraint). The status
+// resolution this hook is built around is a pure function for exactly that reason --
+// see garminSyncStatusResolver.test.ts for its real behavioral coverage (status/isBusy
+// transitions, unified GET/POST timestamp aggregation, error precedence).
 describe('useGarminSyncStatus', () => {
-    beforeEach(() => {
-        vi.clearAllMocks();
-    });
-
     it('exports useGarminSyncStatus function', () => {
         expect(typeof useGarminSyncStatus).toBe('function');
-    });
-
-    it('subscribes to workout queue, sync requests, and recovery snapshots', () => {
-        const unsubQueue = vi.fn();
-        const unsubRequest = vi.fn();
-        const unsubSnapshot = vi.fn();
-
-        vi.mocked(garminWorkoutQueueService.subscribeToUserQueue).mockReturnValue(unsubQueue);
-        vi.mocked(garminSyncRequestService.subscribeToRequest).mockReturnValue(unsubRequest);
-        vi.mocked(recoverySnapshotService.subscribeToSnapshot).mockReturnValue(unsubSnapshot);
-
-        expect(garminWorkoutQueueService.subscribeToUserQueue).toBeDefined();
-        expect(garminSyncRequestService.subscribeToRequest).toBeDefined();
-        expect(recoverySnapshotService.subscribeToSnapshot).toBeDefined();
     });
 });
