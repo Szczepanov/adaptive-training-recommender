@@ -135,11 +135,30 @@ behavior was **not** tested (no transition occurred in the sampled window) — p
 guidance, this is deliberately left unverified until an actual transition is observed rather than
 simulated.
 
-## 9. Remaining open items
+## 9. Health Connect phone-side check (runbook §3)
 
-- Runbook §3 (Health Connect phone-side check: confirming Garmin/Eight Sleep appear as connected
-  apps with the expected read/write permissions) — needs the project owner to check their Android
-  device directly; not done.
+Checked directly on the project owner's Android device (2026-08-27):
+
+```text
+Garmin connected? yes
+Garmin write categories visible: all categories toggled on
+Eight Sleep connected? yes
+Eight Sleep write categories visible: all categories toggled on
+Eight Sleep read categories visible: (not distinguished separately by the device UI)
+```
+
+Both apps are connected to Health Connect with every category enabled. As the runbook itself
+notes, this UI check alone can't prove *export direction* — it only confirms permission is
+granted, not that data actually flows. That direction question is already answered by the live
+API data pulled in §1/§2 (real Eight Sleep-sourced HRV/RHR/respiration/sleep records with
+`com.eightsleep.eight` provenance, and real Garmin-sourced sleep/RHR records) — this phone-side
+check is corroborating, not the primary evidence. "All categories toggled on" is also consistent
+with the real backfilled data covering more than just the four data types this probe specifically
+queried (§2's data-type list was deliberately scoped to the required recovery metric set, not
+Health Connect's full category list).
+
+## 10. Remaining open items
+
 - Respiration field shape (§2) — not confirmed live; no recent records appeared in the windows
   queried.
 - True revision/duplicate behavior across a real device resync (§6) — not tested, deliberately not
@@ -147,3 +166,20 @@ simulated.
 - MS17's CASA Tier 2 / Google Restricted Scope App Verification status — separately tracked as
   genuinely unconfirmed; see
   [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md).
+
+## 11. Phase 1 exit criteria (runbook §18)
+
+- source application provenance observed and recorded — ✅ (§2)
+- Eight Sleep export direction empirically classified — ✅ `FULL_PASS` (§1, corroborated by §9)
+- Garmin transport behavior classified — ✅ present, sleep/RHR confirmed real-shape (§2)
+- minimum viable scopes known — ✅ (`googlehealth.sleep.readonly`,
+  `googlehealth.health_metrics_and_measurements.readonly`)
+- date semantics understood — ✅ (§8), DST transition intentionally left unverified
+- duplicate/revision behavior understood enough for MS2 — partial (§6); real device-resync
+  behavior remains untested
+- latency measured — ✅ (§7), wide variance, repair-sync lookback confirmed necessary
+- sanitized evidence published — ✅ this document
+- MS plan updated accordingly — ✅ (parent plan's task board)
+
+Phase 1 is substantively complete. The two remaining open items (§10) are lower-priority
+follow-ups, not blockers.

@@ -145,14 +145,18 @@ Done and written up in
 - Also found RHR's real `beatsPerMinute` field is a **string**, not a number (still parses
   correctly via `float()`, just worth knowing).
 
+- §3 Health Connect phone-side check — done: both Garmin and Eight Sleep are connected with all
+  categories toggled on. Corroborates (doesn't independently prove) the export direction already
+  established by the live API data.
+
 Still open:
 
-- §3 Health Connect phone-side check (Garmin/Eight Sleep connected-app permissions) — needs the
-  project owner to check their Android device directly.
 - Respiration's real field shape — unconfirmed live; no recent Eight Sleep respiration records
   appeared in the windows queried.
 - MS17's CASA Tier 2 / Restricted Scope App Verification status — separately tracked as genuinely
   unconfirmed (see "Why this document exists" above).
+
+**Phase 1 is now substantively complete** — see the probe-results doc's §11 exit-criteria checklist.
 
 ## Verification
 
