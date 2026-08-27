@@ -18,6 +18,38 @@
   margin: 0;
 }
 
+/* Phase 9.0.3 reveal gate: recovered after being dropped, along with the JSX that renders
+   it, by the mobile-responsiveness redesign (b97c248) that hardcoded
+   recommendationEffectivelyRevealed to true. */
+.recommendation-hidden {
+  text-align: center;
+  padding: 1rem 0.5rem;
+}
+
+.reveal-recommendation-btn {
+  margin: 0.75rem 0;
+  padding: 0.6rem 1.25rem;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  background: var(--card-background);
+  color: var(--text-color);
+  transition: all 0.2s;
+}
+
+.reveal-recommendation-btn:hover {
+  background: var(--hover-background);
+}
+
+.reveal-hint {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  max-width: 32rem;
+  margin: 0 auto;
+}
+
 .logout-btn {
   background: rgba(239, 68, 68, 0.2);
   color: #f87171;

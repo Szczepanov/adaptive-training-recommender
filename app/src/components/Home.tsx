@@ -96,7 +96,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const [error, setError] = useState<string | null>(null);
   const [errorRepairTargets, setErrorRepairTargets] = useState<ErrorRepairAction[]>([]);
   const [pendingAdherence, setPendingAdherence] = useState<{ date: string; recommendation: DailyRecommendation } | null>(null);
-  const [, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
+  const [recommendationRevealed, setRecommendationRevealed] = useState(false);
+  const [todaysJournalEntry, setTodaysJournalEntry] = useState<DecisionJournalEntry | null>(null);
   const [historySnapshot, setHistorySnapshot] = useState<TrainingHistorySnapshot | null>(null);
   const [yesterdaySnapshot, setYesterdaySnapshot] = useState<DailyRecoverySnapshot | null>(null);
   const [yesterdayRecommendation, setYesterdayRecommendation] = useState<DailyRecommendation | null>(null);
@@ -125,6 +126,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     }
   }, [userId]);
   const handleJournalEntryChange = useCallback((entry: DecisionJournalEntry | null) => setTodaysJournalEntry(entry), []);
+  const handleRevealRecommendation = useCallback(() => setRecommendationRevealed(true), []);
   const dashboardRequest = useRef(0);
 
   useEffect(() => {
@@ -597,7 +599,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     onSynced: loadDashboardData,
   });
 
+  // Phase 9.0.3: a new calendar day starts hidden again. todaysJournalEntry must be reset
+  // here too, not left to DecisionJournalCard's own async read -- otherwise a non-null
+  // entry from yesterday would make recommendationEffectivelyRevealed true for today until
+  // the new fetch resolves, revealing today's recommendation before the athlete has had a
+  // chance to record (or decline to record) today's blind verdict.
   useEffect(() => {
+    setRecommendationRevealed(false);
     setTodaysJournalEntry(null);
   }, [decisionInput?.date]);
 
@@ -794,7 +802,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const todaysEngineVerdict = activeRec && canGenerateNormalPlan
     ? resolveEngineShadowVerdict(activeRec.mode, activeRec.externalVerdict?.decision)
     : null;
-  const recommendationEffectivelyRevealed = true;
+  const recommendationEffectivelyRevealed = recommendationRevealed || !!todaysJournalEntry;
 
   const eventPeriodization = useMemo(() => {
     if (!decisionInput) return null;
@@ -998,27 +1006,53 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             <DataConfidenceIndicator confidence={decisionInput?.dataConfidence} onRefresh={loadDashboardData} />
           </div>
 
+          {/* Phase 9.0.3: the journal renders first and un-collapsed, above the reveal gate
+              it controls -- it was previously buried in the sidebar's collapsed "More
+              insights" disclosure, where an athlete had no reason to open it before ever
+              seeing today's recommendation. */}
+          {decisionInput && (
+            <DecisionJournalCard
+              userId={userId}
+              date={decisionInput.date}
+              engineVerdict={todaysEngineVerdict}
+              engineRevealed={recommendationEffectivelyRevealed}
+              onEntryChange={handleJournalEntryChange}
+            />
+          )}
+
           {/* Hero Morning Decision Card with Progressive Disclosure */}
           {activeRec ? (
-            <MorningDecisionCard
-              userId={userId}
-              date={decisionInput?.date ?? ''}
-              recommendation={activeRec}
-              evidence={morningEvidence}
-              prescription={activeRec?.prescription}
-              adjustmentDirection={adjustmentDirection}
-              activeAlternativeId={activeAlternativeId}
-              isGateLocked={recommendation?.envelopes?.safety.clinicalFlagActive ?? false}
-              gateLockedReason={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option is disabled because an active pain or injury flag restricts physical loading.' : undefined}
-              onAdjustLoad={handleAdjustSession}
-              onSelectTimeCrunch={handleSelectTimeCrunch}
-              onSelectHomeAlternative={handleSelectHomeAlternative}
-              onSelectMobilityAlternative={handleSelectMobilityAlternative}
-              onSelectActiveRecoveryWalk={handleSelectActiveRecoveryWalk}
-              onResetAlternative={handleResetAlternative}
-              onStartSession={onStartSession}
-              onOpenReclassify={recentActivities.length > 0 ? () => setReclassifyModalOpen(true) : undefined}
-            />
+            canGenerateNormalPlan && !recommendationEffectivelyRevealed ? (
+              <div className="dashboard-card recommendation-hidden">
+                <p className="card-empty">Today's recommendation is ready.</p>
+                <button type="button" className="reveal-recommendation-btn" onClick={handleRevealRecommendation}>
+                  👁️ Reveal today's recommendation
+                </button>
+                <p className="reveal-hint">
+                  Recording your own plan's verdict first is what the Decision Journal card above measures.
+                </p>
+              </div>
+            ) : (
+              <MorningDecisionCard
+                userId={userId}
+                date={decisionInput?.date ?? ''}
+                recommendation={activeRec}
+                evidence={morningEvidence}
+                prescription={activeRec?.prescription}
+                adjustmentDirection={adjustmentDirection}
+                activeAlternativeId={activeAlternativeId}
+                isGateLocked={recommendation?.envelopes?.safety.clinicalFlagActive ?? false}
+                gateLockedReason={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option is disabled because an active pain or injury flag restricts physical loading.' : undefined}
+                onAdjustLoad={handleAdjustSession}
+                onSelectTimeCrunch={handleSelectTimeCrunch}
+                onSelectHomeAlternative={handleSelectHomeAlternative}
+                onSelectMobilityAlternative={handleSelectMobilityAlternative}
+                onSelectActiveRecoveryWalk={handleSelectActiveRecoveryWalk}
+                onResetAlternative={handleResetAlternative}
+                onStartSession={onStartSession}
+                onOpenReclassify={recentActivities.length > 0 ? () => setReclassifyModalOpen(true) : undefined}
+              />
+            )
           ) : (
             <div className="dashboard-card empty-recommendation-card">
               <p className="card-empty">
@@ -1097,16 +1131,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               date={pendingAdherence.date}
               recommendation={pendingAdherence.recommendation}
               onResolved={handlePendingAdherenceResolved}
-            />
-          )}
-
-          {decisionInput && (
-            <DecisionJournalCard
-              userId={userId}
-              date={decisionInput.date}
-              engineVerdict={todaysEngineVerdict}
-              engineRevealed={recommendationEffectivelyRevealed}
-              onEntryChange={handleJournalEntryChange}
             />
           )}
 
