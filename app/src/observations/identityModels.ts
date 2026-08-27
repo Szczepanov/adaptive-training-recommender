@@ -158,29 +158,31 @@ export function freezeAutomaticIdentityAssessment(
 }
 
 function compareReviewEventsByRecencyDesc(a: IdentityReviewEvent, b: IdentityReviewEvent): number {
-    if (a.recordedAt !== b.recordedAt) {
-        return a.recordedAt < b.recordedAt ? 1 : -1;
+    const aTime = Date.parse(a.recordedAt);
+    const bTime = Date.parse(b.recordedAt);
+    if (aTime !== bTime) {
+        return bTime - aTime;
     }
     // Deterministic tie-break when `recordedAt` collides (defensive; server ordering should
     // normally avoid this).
     return a.id < b.id ? 1 : -1;
 }
 
-function reviewEventSemanticsAreValid(event: IdentityReviewEvent): boolean {
+function reviewEventShapeIsValid(event: IdentityReviewEvent): boolean {
     if (event.schemaVersion !== 1 || !event.id || !event.assessmentId) return false;
     if (!Number.isFinite(Date.parse(event.recordedAt))) return false;
     if (event.supersedesReviewEventId === event.id) return false;
     if (event.source !== 'user_ui' && event.source !== 'admin_replay') return false;
-    if (event.label === 'USER') return event.occupancyAttestation === 'EXCLUSIVE';
-    if (event.label === 'NOT_USER') return event.occupancyAttestation === 'UNKNOWN';
-    return event.occupancyAttestation === 'MIXED' || event.occupancyAttestation === 'UNKNOWN';
+    return true;
 }
 
 /**
  * Resolves the single currently-effective review event out of an append-only chain, following
  * `supersedesReviewEventId` links. Only a complete chain rooted at an unsuperseding event is
- * admitted; orphaned, cyclic, duplicate-ID, non-monotonic, or semantically malformed events fail
- * closed and cannot override the automatic assessment.
+ * admitted; orphaned, cyclic, duplicate-ID, non-monotonic, or structurally malformed events fail
+ * closed and cannot override the automatic assessment. Identity label and occupancy attestation
+ * remain separate evidence dimensions: for example, `USER + MIXED` is a valid manual statement
+ * but remains baseline/passport-learning ineligible via `deriveObservationEligibility`.
  */
 export function findEffectiveReviewEvent(
     reviewEvents: readonly IdentityReviewEvent[],
@@ -192,7 +194,7 @@ export function findEffectiveReviewEvent(
     const candidates = new Map<string, IdentityReviewEvent>();
     const duplicateIds = new Set<string>();
     for (const event of reviewEvents) {
-        if (!reviewEventSemanticsAreValid(event)) continue;
+        if (!reviewEventShapeIsValid(event)) continue;
         if (candidates.has(event.id)) duplicateIds.add(event.id);
         candidates.set(event.id, event);
     }
