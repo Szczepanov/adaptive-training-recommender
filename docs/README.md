@@ -110,6 +110,10 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-26 Scientific and recommendation-quality validation**](./analysis/2026-08-26-scientific-and-recommendation-quality-validation.md) — Point-in-time analysis of physiological/mathematical validity of signals, baseline sensitivity, and closed-loop feedback design.
 * [**2026-08-26 Scientific validation PR review hardening**](./analysis/2026-08-26-scientific-validation-review-hardening.md) — Review corrections for the SV1–SV3 evidence-sidecar implementation.
 * [**2026-08-27 Google Health and Multisource Wearable Integration**](./analysis/2026-08-27-google-health-and-multisource-wearable-integration.md) — Structural analysis of Google Health REST/webhook integration, Eight Sleep export uncertainties, transport vs provider separation, and raw observation storage.
+* [**2026-08-27 Garmin Direct vs Google Health Transport Equivalence Analysis**](./analysis/2026-08-27-garmin-transport-equivalence-analysis.md) — Empirical MS10 audit (59 overlapping days) proving Garmin Google Health RHR equivalence (0.59 bpm delta) and establishing that direct Garmin ingestion is mandatory due to missing HRV/Respiration export in Health Connect.
+* [**2026-08-27 Multisource Health & Recovery Shadow Study**](./analysis/2026-08-27-multisource-shadow-study.md) — Empirical MS14 study (60-day dataset, 42 dual-monitored nights) confirming Eight Sleep HRV ($N=42$, MAD 8.55 ms) and Respiration ($N=35$, MAD 0.29 brpm) baselines are fully mature.
+* [**2026-08-27 Multisource Replay & Simulation Comparison**](./analysis/2026-08-27-multisource-simulation-comparison.md) — Empirical MS16 simulation evaluating 5 canonical scenario families (missing watch fallback, concordance, divergence dampening, staleness gating, zero strain double-counting).
+* [**2026-08-27 Multisource Metric-by-Metric Production Activation Decision**](./analysis/2026-08-27-multisource-metric-activation-decision.md) — Formal MS17 decision activating HRV, Respiration, Sleep Duration, and Resting HR with granular feature flags, while keeping Sleep Stages in shadow mode and blocking proprietary scores.
 * [**Phase 9.4 Subjective history integration**](./analysis/phase-9-4-subjective-history-integration.md) — Integration analysis for composition-boundary range reads and data-quality handling.
 
 ---
@@ -117,6 +121,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 ### 🗺️ Implementation Plans
 How agreed changes get made. Mutable, status-tracked, and expected to go stale — see [`docs/plans/`](./plans/) for the index and conventions.
 
+* [**Multisource Health & Recovery Ingestion**](./plans/multisource-health-and-recovery-ingestion.md) — *Implemented (MS0–MS19).* Multi-source Google Health / Eight Sleep ingestion, OAuth connection management, historical backfill, empirical audits, candidate evidence-fusion engine, simulation comparator, and metric-by-metric production activation.
 * [**Phase 0: Instrumentation & developer baseline**](./plans/phase-0-instrumentation.md) — Coaching invariants as the CI gate; clean-clone runnability.
 * [**Phase 1: Live defects**](./plans/phase-1-live-defects.md) — Injury gate, Garmin objective credit, recommendation immutability.
 * [**Phase 2: Plan intent is the planning authority**](./plans/phase-2-plan-intent-authority.md) — ADR-0012, `PlanDefinition`, collapsing the two selection paths.

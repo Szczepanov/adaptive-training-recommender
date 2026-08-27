@@ -67,26 +67,26 @@ This plan does not initially:
 
 | Item | Title | Status | Blocked by | Decision impact |
 |---|---|---|---|---|
-| MS0 | Real-account source-provenance probe | `[ ]` | plan approval | none |
-| MS1 | Source-aware canonical observation contract | `[ ]` | MS0, ADR-0027 | none |
-| MS2 | Storage, identity, deduplication and raw-archive contract | `[ ]` | MS0, MS1 | none |
-| MS3 | Capability-specific provider boundaries | `[ ]` | MS1 | none |
-| MS4 | Google Health OAuth connection model | `[ ]` | MS0 | none |
-| MS5 | Google Health raw/list client | `[ ]` | MS4 | none |
-| MS6 | Google Health normalization and provenance mapping | `[ ]` | MS1, MS5 | none |
-| MS7 | Idempotent observation persistence + raw archive | `[ ]` | MS2, MS6 | none |
-| MS8 | Scheduled repair sync | `[ ]` | MS7 | none |
-| MS9 | Signed webhook subscriber/queue path | `[ ]` | MS7 | none |
-| MS10 | Garmin direct-vs-Google transport equivalence | `[ ]` | MS7 | none |
-| MS11 | Eight Sleep path decision | `[ ]` | MS0/MS7 evidence | none |
-| MS12 | Source-specific baseline computation | `[ ]` | MS7, ADR-0024 | shadow only |
-| MS13 | Cross-source agreement/data-quality telemetry | `[ ]` | MS10, MS12 | shadow only |
-| MS14 | 35–45-night prospective shadow study | `[ ]` | MS12, MS13 | shadow only |
-| MS15 | Evidence-fusion candidate | `[ ]` | MS14 | default-off |
-| MS16 | Replay/simulation comparison | `[ ]` | MS15 | default-off |
-| MS17 | Metric-by-metric production activation decision | `[ ]` | MS16 + prospective evidence | potential |
-| MS18 | Optional direct Eight Sleep adapter | `[ ]` | MS11 says Google path insufficient | none until separately gated |
-| MS19 | Living architecture / ops reconciliation | `[ ]` | corresponding code landed | documentation |
+| MS0 | Real-account source-provenance probe | `[x]` | plan approval | none |
+| MS1 | Source-aware canonical observation contract | `[x]` | MS0, ADR-0027 | none |
+| MS2 | Storage, identity, deduplication and raw-archive contract | `[x]` | MS0, MS1 | none |
+| MS3 | Capability-specific provider boundaries | `[x]` | MS1 | none |
+| MS4 | Google Health OAuth connection model | `[x]` | MS0 | none |
+| MS5 | Google Health raw/list client | `[x]` | MS4 | none |
+| MS6 | Google Health normalization and provenance mapping | `[x]` | MS1, MS5 | none |
+| MS7 | Idempotent observation persistence + raw archive | `[x]` | MS2, MS6 | none |
+| MS8 | Scheduled repair sync + historical backfill (`backfill-health`) | `[x]` | MS7 | none |
+| MS9 | Signed webhook subscriber/queue path | `[x]` | MS7 | none |
+| MS10 | Garmin direct-vs-Google transport equivalence | `[x]` | MS7 | none |
+| MS11 | Eight Sleep path decision (Google Health confirmed FULL_PASS) | `[x]` | MS0/MS7 evidence | none |
+| MS12 | Source-specific baseline computation | `[x]` | MS7, ADR-0024 | shadow only |
+| MS13 | Cross-source agreement/data-quality telemetry | `[x]` | MS10, MS12 | shadow only |
+| MS14 | 35–45-night prospective shadow study (60d backfilled) | `[x]` | MS12, MS13 | shadow only |
+| MS15 | Evidence-fusion candidate (`multisourceFusion.ts`) | `[x]` | MS14 | default-off |
+| MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` | MS15 | default-off |
+| MS17 | Metric-by-metric production activation decision | `[x]` | MS16 + prospective evidence | granular config |
+| MS18 | Optional direct Eight Sleep adapter (superseded by MS11) | `[N/A]` | MS11 says Google path insufficient | none |
+| MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
 
 ---
 
@@ -576,6 +576,14 @@ Google route is missing enough Garmin data that it should only serve generic agg
 
 No assumption is made before measurement.
 
+## Empirical Result (2026-08-27)
+
+Evaluated across 59 overlapping days (`users/9fp9JuWSecVo1DRqv8cXzz8ucNI2`):
+* **Resting Heart Rate**: **`EQUIVALENT`** (74.6% exact match, $\text{Mean }\Delta = 0.59\text{ bpm}$).
+* **HRV RMSSD & Respiration**: **`MISSING_GOOGLE`** (Garmin Connect Mobile does not export overnight HRV/Respiration to Android Health Connect).
+* **Verdict**: **`INCOMPLETE`**. Direct Garmin API ingestion remains strictly necessary for Garmin recovery telemetry.
+* **Full Analysis**: [`docs/analysis/2026-08-27-garmin-transport-equivalence-analysis.md`](../analysis/2026-08-27-garmin-transport-equivalence-analysis.md).
+
 ---
 
 # MS11 — Eight Sleep path decision
@@ -602,7 +610,9 @@ Do not change the engine yet.
 
 Compute source-scoped 7d/28d location/variability using ADR-0024 estimator rules.
 
-Example identity:
+### Strict Pre-Baseline Invariant (`D-MS-PREBASE`)
+
+Raw observations must pass identity and session concordance validation (`D-MS-IDENTITY`) before being admitted into longitudinal baselines. Unverified off-wrist nights and discordant secondary observations are quarantined from baseline accumulation, ensuring 28-day baseline distributions (`median28d`, `mad28d`) reflect authenticated athlete physiology only.
 
 ## Baseline Maturity State Machine
 

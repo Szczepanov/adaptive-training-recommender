@@ -1,7 +1,9 @@
 import argparse
 import logging
+import os
 import sys
 from collections.abc import Callable
+from typing import Any
 
 from .account_link import list_active_garmin_connections
 from .audit import format_report, run_audit
@@ -377,6 +379,381 @@ def run_poll_manual_sync_all_cmd(args: list[str] | None = None) -> int:
     )
 
 
+def _resolve_google_health_auth_manager(
+    parsed_args: argparse.Namespace,
+) -> tuple[Any | None, str | None]:
+    """Resolve Google Health AuthManager from CLI flags or environment variables."""
+    import os
+    import time
+
+    from .google_health_auth import GoogleHealthAuthManager, GoogleHealthTokenCredentials
+
+    token = parsed_args.token or os.environ.get("GOOGLE_HEALTH_ACCESS_TOKEN")
+    client_id = parsed_args.client_id or os.environ.get("GOOGLE_HEALTH_CLIENT_ID")
+    client_secret = parsed_args.client_secret or os.environ.get("GOOGLE_HEALTH_CLIENT_SECRET")
+    refresh_token = parsed_args.refresh_token or os.environ.get("GOOGLE_HEALTH_REFRESH_TOKEN")
+
+    if not token and not (client_id and client_secret and refresh_token):
+        return None, "No Google Health credentials or access token were provided."
+
+    if token:
+        creds = GoogleHealthTokenCredentials(
+            access_token=token,
+            refresh_token="",
+            expires_at=time.time() + 3600,
+        )
+        return (
+            GoogleHealthAuthManager(
+                client_id="direct_token",
+                client_secret="direct_token",
+                credentials=creds,
+            ),
+            None,
+        )
+
+    creds = GoogleHealthTokenCredentials(
+        access_token="",
+        refresh_token=refresh_token or "",
+        expires_at=0.0,
+    )
+    return (
+        GoogleHealthAuthManager(
+            client_id=client_id or "",
+            client_secret=client_secret or "",
+            credentials=creds,
+        ),
+        None,
+    )
+
+
+def _resolve_date_range(parsed_args: argparse.Namespace, default_days: int = 56) -> tuple[str, str]:
+    """Resolve start_date and end_date strings in YYYY-MM-DD format."""
+    from datetime import datetime, timedelta
+
+    from .dates import local_today
+
+    end_date_str = parsed_args.end_date or local_today().strftime("%Y-%m-%d")
+    if parsed_args.start_date:
+        start_date_str = parsed_args.start_date
+    else:
+        days = getattr(parsed_args, "days", default_days) or default_days
+        end_dt = datetime.strptime(end_date_str, "%Y-%m-%d")
+        start_date_str = (end_dt - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    return start_date_str, end_date_str
+
+
+def run_probe_health_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Run Google Health source-provenance probe (MS0).")
+    parser.add_argument(
+        "--token", type=str, default=None, help="Google OAuth access token for local-debug testing"
+    )
+    parser.add_argument("--client-id", type=str, default=None, help="Google OAuth Client ID")
+    parser.add_argument(
+        "--client-secret", type=str, default=None, help="Google OAuth Client Secret"
+    )
+    parser.add_argument(
+        "--refresh-token", type=str, default=None, help="Google OAuth Refresh Token"
+    )
+    parser.add_argument("--start-time", type=str, default=None, help="Start ISO timestamp")
+    parser.add_argument("--end-time", type=str, default=None, help="End ISO timestamp")
+    parsed_args = parser.parse_args(args)
+
+    from .google_health_client import GoogleHealthClient
+    from .health_probe import HealthProvenanceProbe
+
+    auth_manager, err = _resolve_google_health_auth_manager(parsed_args)
+    if err or not auth_manager:
+        print("\n" + "=" * 70)
+        print("  GOOGLE HEALTH SOURCE-PROVENANCE PROBE (MS0)")
+        print("=" * 70)
+        print(f"\n{err}\n")
+        print("To run the probe on your real account, choose one of these options:")
+        print("\nOption A: Pass a temporary access token from Google OAuth Playground:")
+        print("  uv run python -m garmin_sync probe-health --token <YOUR_ACCESS_TOKEN>\n")
+        print("Option B: Pass full OAuth credentials:")
+        print(
+            "  uv run python -m garmin_sync probe-health --client-id <ID> --client-secret <SECRET> --refresh-token <REFRESH_TOKEN>\n"
+        )
+        print("Option C: Set environment variables (Recommended):")
+        print("  $env:GOOGLE_HEALTH_ACCESS_TOKEN='<YOUR_ACCESS_TOKEN>'")
+        print("  uv run python -m garmin_sync probe-health\n")
+        print("=" * 70 + "\n")
+        return 1
+
+    try:
+        client = GoogleHealthClient(auth_manager=auth_manager)
+        probe = HealthProvenanceProbe(client=client)
+
+        print("\nRunning Google Health source-provenance probe...")
+        result = probe.run_probe(
+            start_time_iso=parsed_args.start_time,
+            end_time_iso=parsed_args.end_time,
+        )
+
+        total_pts = sum(s.totalDataPoints for s in result.dataTypesSummary)
+        print("\n" + "=" * 75)
+        print("  GOOGLE HEALTH SOURCE-PROVENANCE PROBE REPORT (MS0)")
+        print("=" * 75)
+        print(f"  Execution Time:             {result.timestamp}")
+        print(f"  Eight Sleep Export Status:  {result.eightSleepStatus}")
+        print(f"  Garmin Export Status:       {result.garminStatus}")
+        print(f"  Total Data Points Audited:  {total_pts}")
+        print("-" * 75)
+        print(
+            f"{'Data Type':<26} {'Points':<8} {'Garmin?':<10} {'EightSleep?':<12} {'Other Packages'}"
+        )
+        print("-" * 75)
+        for s in result.dataTypesSummary:
+            other_pkgs = ", ".join(s.otherSourcesSeen) if s.otherSourcesSeen else "none"
+            garmin_str = "YES" if s.garminSeen else "NO"
+            eight_str = "YES" if s.eightSleepSeen else "NO"
+            print(
+                f"{s.dataType:<26} {s.totalDataPoints:<8} {garmin_str:<10} {eight_str:<12} {other_pkgs}"
+            )
+        print("=" * 75 + "\n")
+        return 0
+
+    except Exception as error:
+        log_exception(logger, "probe health", error)
+        return 1
+
+
+def run_backfill_health_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Run historical backfill for Google Health (Eight Sleep & Garmin)."
+    )
+    parser.add_argument("--days", type=int, default=56, help="Number of trailing days (default 56)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
+    parser.add_argument(
+        "--token", type=str, default=None, help="Google OAuth access token for local debug"
+    )
+    parser.add_argument("--client-id", type=str, default=None, help="Google OAuth Client ID")
+    parser.add_argument(
+        "--client-secret", type=str, default=None, help="Google OAuth Client Secret"
+    )
+    parser.add_argument(
+        "--refresh-token", type=str, default=None, help="Google OAuth Refresh Token"
+    )
+    parser.add_argument(
+        "--user-id",
+        type=str,
+        default=None,
+        help="Target application User ID (or APP_USER_ID env var)",
+    )
+    parsed_args = parser.parse_args(args)
+
+    import os
+
+    from .archive import create_archive_store
+    from .firestore_repository import FirestoreRecoveryRepository
+    from .google_health_client import GoogleHealthClient
+    from .google_health_mapper import GoogleHealthMapper
+    from .google_health_provider import GoogleHealthProvider
+    from .health_observation_service import HealthObservationService
+
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
+    auth_manager, err = _resolve_google_health_auth_manager(parsed_args)
+    if err or not auth_manager:
+        print("\n" + "=" * 70)
+        print("  GOOGLE HEALTH BACKFILL (backfill-health)")
+        print("=" * 70)
+        print(f"\n{err}\n")
+        print("Pass an access token or set GOOGLE_HEALTH_ACCESS_TOKEN:")
+        print(
+            "  uv run python -m garmin_sync backfill-health --token <ACCESS_TOKEN> --days 56 --user-id <USER_ID>\n"
+        )
+        print("=" * 70 + "\n")
+        return 1
+
+    try:
+        settings = load_settings()
+        repo = FirestoreRecoveryRepository(
+            user_id=settings.app_user_id,
+            collection_name=settings.firestore_recovery_collection,
+            db=None,
+            credentials_path=settings.firebase_credentials_path,
+        )
+        archive = create_archive_store(
+            enabled=settings.garmin_archive_enabled,
+            store_type=settings.garmin_archive_store,
+            local_dir=settings.garmin_archive_local_dir,
+            bucket_name=settings.resolved_archive_bucket(),
+            prefix=settings.garmin_archive_prefix,
+        )
+
+        client = GoogleHealthClient(auth_manager=auth_manager)
+        mapper = GoogleHealthMapper(user_id=settings.app_user_id)
+        provider = GoogleHealthProvider(client=client, mapper=mapper)
+
+        service = HealthObservationService(
+            user_id=settings.app_user_id,
+            repository=repo,
+            archive_store=archive,
+            providers={"google_health": provider},
+        )
+
+        start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=56)
+
+        print(
+            f"\nRunning Google Health backfill for {settings.app_user_id}: {start_date_str} to {end_date_str}..."
+        )
+        summary = service.backfill_range(start_date_str, end_date_str)
+
+        total_obs = 0
+        saved_bundles = 0
+        for item in summary:
+            results = item.get("results", {}).get("google_health", {})
+            total_obs += results.get("totalObservations", 0)
+            sources = results.get("sources", {})
+            for _src_key, src_res in sources.items():
+                if src_res.get("status") == "saved":
+                    saved_bundles += 1
+
+        print("\n" + "=" * 70)
+        print("  GOOGLE HEALTH BACKFILL COMPLETED")
+        print("=" * 70)
+        print(f"  Dates Processed:      {len(summary)}")
+        print(f"  Total Observations:   {total_obs}")
+        print(f"  Day Bundles Saved:    {saved_bundles}")
+        print("=" * 70 + "\n")
+        return 0
+
+    except Exception as error:
+        log_exception(logger, "backfill health", error)
+        return 1
+
+
+def run_compare_transports_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Run Garmin direct vs Google Health transport equivalence analysis (MS10)."
+    )
+    parser.add_argument("--days", type=int, default=60, help="Number of trailing days (default 60)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
+    parser.add_argument("--user-id", type=str, default=None, help="Application User ID")
+    parsed_args = parser.parse_args(args)
+
+    import os
+
+    from .equivalence import run_equivalence_analysis
+    from .firestore_repository import FirestoreRecoveryRepository
+
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
+    try:
+        settings = load_settings()
+        repo = FirestoreRecoveryRepository(
+            user_id=settings.app_user_id,
+            collection_name=settings.firestore_recovery_collection,
+            db=None,
+            credentials_path=settings.firebase_credentials_path,
+        )
+
+        start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=56)
+
+        print(
+            f"\nRunning Garmin transport equivalence analysis for {settings.app_user_id}: {start_date_str} to {end_date_str}..."
+        )
+        report = run_equivalence_analysis(repo, start_date_str, end_date_str)
+
+        print("\n" + "=" * 80)
+        print("  GARMIN DIRECT VS GOOGLE HEALTH TRANSPORT EQUIVALENCE REPORT (MS10)")
+        print("=" * 80)
+        print(f"  Date Range:                 {report.startDate} to {report.endDate}")
+        print(f"  Overlapping Dates:          {report.totalOverlapDays}")
+        print(f"  Direct-Only Dates:          {report.directOnlyDays}")
+        print(f"  Google-Only Dates:          {report.googleOnlyDays}")
+        print(f"  Overall Classification:     {report.overallClassification}")
+        print("-" * 80)
+        print(
+            f"{'Metric':<34} {'Evaluated':<10} {'Matches':<10} {'Match %':<10} {'Mean Delta':<12}"
+        )
+        print("-" * 80)
+        for m, s in report.metricSummaries.items():
+            print(
+                f"{m:<34} {s['totalEvaluated']:<10} {s['matchCount']:<10} {s['matchRatePct']:<9}% {s['meanDifference']:<12}"
+            )
+        print("=" * 80 + "\n")
+        return 0
+
+    except Exception as error:
+        log_exception(logger, "compare transports", error)
+        return 1
+
+
+def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Run multisource shadow audit between Garmin Direct and Eight Sleep (MS14)."
+    )
+    parser.add_argument("--days", type=int, default=60, help="Number of trailing days (default 60)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
+    parser.add_argument("--user-id", type=str, default=None, help="Application User ID")
+    parsed_args = parser.parse_args(args)
+
+    from .firestore_repository import FirestoreRecoveryRepository
+    from .multisource_audit import run_multisource_audit
+
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
+    try:
+        settings = load_settings()
+        repo = FirestoreRecoveryRepository(
+            user_id=settings.app_user_id,
+            collection_name=settings.firestore_recovery_collection,
+            db=None,
+            credentials_path=settings.firebase_credentials_path,
+        )
+
+        start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=60)
+
+        print(
+            f"\nRunning multisource shadow audit for {settings.app_user_id}: {start_date_str} to {end_date_str}..."
+        )
+        report = run_multisource_audit(repo, start_date_str, end_date_str)
+
+        print("\n" + "=" * 80)
+        print("  MULTISOURCE SHADOW AUDIT REPORT (GARMIN DIRECT VS EIGHT SLEEP) — MS14")
+        print("=" * 80)
+        print(
+            f"  Date Range:                 {report.startDate} to {report.endDate} ({report.totalDays} days)"
+        )
+        both_pct = (
+            round(report.bothSourcesDays / report.totalDays * 100, 1)
+            if report.totalDays > 0
+            else 0.0
+        )
+        print(f"  Both Sources Available:     {report.bothSourcesDays} nights ({both_pct}%)")
+        print(f"  Garmin Direct Only:         {report.garminOnlyDays} nights")
+        print(f"  Eight Sleep Only:           {report.eightSleepOnlyDays} nights")
+        print(f"  Neither Source:             {report.neitherDays} nights")
+        print("-" * 80)
+        print("  CROSS-SOURCE AGREEMENT TELEMETRY:")
+        print(f"  Sleep Duration Mean Delta:  {report.sleepDurationMeanDiffMinutes} minutes")
+        print(
+            f"  Sleep Duration Correlation: {report.sleepDurationCorrelation if report.sleepDurationCorrelation is not None else 'N/A'}"
+        )
+        print("-" * 80)
+        print("  EIGHT SLEEP ROLLING BASELINE TELEMETRY:")
+        print(
+            f"  HRV RMSSD (N={report.eightSleepHrvCount}):           Median = {report.eightSleepHrvMedian} ms, MAD = {report.eightSleepHrvMad} ms"
+        )
+        print(
+            f"  Respiration Rate (N={report.eightSleepRespCount}):    Median = {report.eightSleepRespMedian} brpm, MAD = {report.eightSleepRespMad} brpm"
+        )
+        print("=" * 80 + "\n")
+        return 0
+
+    except Exception as error:
+        log_exception(logger, "audit multisource", error)
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Garmin Sync Pipeline CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -402,6 +779,18 @@ def main() -> int:
     backfill_parser.add_argument("--force", action="store_true", help="Force re-fetch")
     backfill_parser.add_argument("--include-details", action="store_true")
 
+    backfill_health_parser = subparsers.add_parser(
+        "backfill-health", help="Run historical backfill for Google Health (Eight Sleep & Garmin)"
+    )
+    backfill_health_parser.add_argument("--days", type=int, default=56)
+    backfill_health_parser.add_argument("--start-date", type=str, default=None)
+    backfill_health_parser.add_argument("--end-date", type=str, default=None)
+    backfill_health_parser.add_argument("--token", type=str, default=None)
+    backfill_health_parser.add_argument("--client-id", type=str, default=None)
+    backfill_health_parser.add_argument("--client-secret", type=str, default=None)
+    backfill_health_parser.add_argument("--refresh-token", type=str, default=None)
+    backfill_health_parser.add_argument("--user-id", type=str, default=None)
+
     audit_parser = subparsers.add_parser("audit", help="Report sync completeness")
     audit_parser.add_argument("--days", type=int, default=90)
     audit_parser.add_argument("--end-date", type=str, default=None)
@@ -409,6 +798,34 @@ def main() -> int:
     rebuild_parser = subparsers.add_parser("rebuild", help="Rebuild snapshots from raw archive")
     rebuild_parser.add_argument("--start-date", type=str, required=True)
     rebuild_parser.add_argument("--end-date", type=str, required=True)
+
+    probe_health_parser = subparsers.add_parser(
+        "probe-health", help="Run Google Health source-provenance probe (MS0)"
+    )
+    probe_health_parser.add_argument("--token", type=str, default=None)
+    probe_health_parser.add_argument("--client-id", type=str, default=None)
+    probe_health_parser.add_argument("--client-secret", type=str, default=None)
+    probe_health_parser.add_argument("--refresh-token", type=str, default=None)
+    probe_health_parser.add_argument("--start-time", type=str, default=None)
+    probe_health_parser.add_argument("--end-time", type=str, default=None)
+
+    compare_transports_parser = subparsers.add_parser(
+        "compare-transports",
+        help="Run Garmin direct vs Google Health transport equivalence analysis (MS10)",
+    )
+    compare_transports_parser.add_argument("--days", type=int, default=60)
+    compare_transports_parser.add_argument("--start-date", type=str, default=None)
+    compare_transports_parser.add_argument("--end-date", type=str, default=None)
+    compare_transports_parser.add_argument("--user-id", type=str, default=None)
+
+    audit_multisource_parser = subparsers.add_parser(
+        "audit-multisource",
+        help="Run multisource shadow audit between Garmin Direct and Eight Sleep (MS14)",
+    )
+    audit_multisource_parser.add_argument("--days", type=int, default=60)
+    audit_multisource_parser.add_argument("--start-date", type=str, default=None)
+    audit_multisource_parser.add_argument("--end-date", type=str, default=None)
+    audit_multisource_parser.add_argument("--user-id", type=str, default=None)
 
     push_workout_parser = subparsers.add_parser("push-workout", help="Push one queued workout")
     push_workout_parser.add_argument("--date", type=str, default=None)
@@ -436,10 +853,18 @@ def main() -> int:
         return run_daily_sync_all(sys.argv[2:])
     if args.command == "backfill":
         return run_backfill(sys.argv[2:])
+    if args.command == "backfill-health":
+        return run_backfill_health_cmd(sys.argv[2:])
+    if args.command == "compare-transports":
+        return run_compare_transports_cmd(sys.argv[2:])
+    if args.command == "audit-multisource":
+        return run_audit_multisource_cmd(sys.argv[2:])
     if args.command == "audit":
         return run_audit_cmd(sys.argv[2:])
     if args.command == "rebuild":
         return run_rebuild_cmd(sys.argv[2:])
+    if args.command == "probe-health":
+        return run_probe_health_cmd(sys.argv[2:])
     if args.command == "push-workout":
         return run_push_workout_cmd(sys.argv[2:])
     if args.command == "push-pending-workouts":

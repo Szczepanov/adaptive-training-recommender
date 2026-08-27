@@ -183,3 +183,48 @@ export interface CompetitionOutcome {
     context: ObservationContext;
     createdAt: string;
 }
+
+// --- MS1/MS2/ADR-0027 Multisource Health Observation Contracts ---
+
+export interface HealthObservationSource {
+    provider: string;
+    transport: string;
+    originApplication?: string;
+    originDevice?: string;
+    sourceRecordId?: string;
+}
+
+export interface HealthObservationDTO {
+    observationId: string;
+    metric: string;
+    value: number | string | Record<string, unknown> | null;
+    unit?: string | null;
+    sourceRecordId?: string;
+    observedStart?: string;
+    observedEnd?: string;
+    originApplication?: string;
+    originDevice?: string;
+    quality?: Record<string, unknown>;
+    semanticVersion?: string;
+}
+
+export interface HealthObservationDayBundle {
+    userId: string;
+    logicalDate: string;
+    provider: string;
+    transport: string;
+    observations: readonly HealthObservationDTO[];
+    sourcePayloadHash: string;
+    rawArchiveRef?: string | null;
+    schemaVersion: number;
+    normalizerVersion: number;
+    revision: number;
+    ingestedAt: string;
+    effectiveAt: string;
+}
+
+export type BaselineMaturity =
+    | 'INSUFFICIENT_HISTORY' // N < 14 days: shadow observation only; never eligible for fusion
+    | 'PROVISIONAL'          // 14 <= N < 28 days: eligible for trend tracking, dampened fusion confidence
+    | 'MATURE'               // N >= 28 days: full ADR-0024 MAD/median baseline authority
+    | 'STALE';               // Last observation > 3 days old: decay source confidence

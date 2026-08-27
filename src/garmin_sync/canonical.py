@@ -6,7 +6,95 @@ the fields already extracted from Garmin -- nothing invented, nothing added that
 provider actually supplies yet.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any
+
+# Standard multisource metric vocabulary (ADR-0027)
+METRIC_SLEEP_SESSION = "sleep_session"
+METRIC_SLEEP_DURATION_SECONDS = "sleep_duration_seconds"
+METRIC_SLEEP_STAGE_AWAKE_SECONDS = "sleep_stage_awake_seconds"
+METRIC_SLEEP_STAGE_LIGHT_SECONDS = "sleep_stage_light_seconds"
+METRIC_SLEEP_STAGE_DEEP_SECONDS = "sleep_stage_deep_seconds"
+METRIC_SLEEP_STAGE_REM_SECONDS = "sleep_stage_rem_seconds"
+METRIC_HRV_RMSSD_MS = "hrv_rmssd_ms"
+METRIC_HEART_RATE_BPM = "heart_rate_bpm"
+METRIC_DAILY_RESTING_HEART_RATE_BPM = "daily_resting_heart_rate_bpm"
+METRIC_SLEEPING_HEART_RATE_BPM = "sleeping_heart_rate_bpm"
+METRIC_RESPIRATION_RATE_BRPM = "respiration_rate_brpm"
+METRIC_DAILY_RESPIRATION_RATE_BRPM = "daily_respiration_rate_brpm"
+METRIC_SLEEP_RESPIRATION_SUMMARY = "sleep_respiration_summary"
+
+STANDARD_OBSERVATION_METRICS = {
+    METRIC_SLEEP_SESSION,
+    METRIC_SLEEP_DURATION_SECONDS,
+    METRIC_SLEEP_STAGE_AWAKE_SECONDS,
+    METRIC_SLEEP_STAGE_LIGHT_SECONDS,
+    METRIC_SLEEP_STAGE_DEEP_SECONDS,
+    METRIC_SLEEP_STAGE_REM_SECONDS,
+    METRIC_HRV_RMSSD_MS,
+    METRIC_HEART_RATE_BPM,
+    METRIC_DAILY_RESTING_HEART_RATE_BPM,
+    METRIC_SLEEPING_HEART_RATE_BPM,
+    METRIC_RESPIRATION_RATE_BRPM,
+    METRIC_DAILY_RESPIRATION_RATE_BRPM,
+    METRIC_SLEEP_RESPIRATION_SUMMARY,
+}
+
+
+@dataclass(frozen=True)
+class ObservationSource:
+    provider: str
+    transport: str
+    origin_application: str | None = None
+    origin_device: str | None = None
+    source_record_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.provider or not self.provider.strip():
+            raise ValueError("ObservationSource requires a non-empty provider.")
+        if not self.transport or not self.transport.strip():
+            raise ValueError("ObservationSource requires a non-empty transport.")
+
+
+@dataclass(frozen=True)
+class CanonicalHealthObservation:
+    metric: str
+    value: float | int | str | dict[str, Any] | None
+    unit: str | None
+    source: ObservationSource
+    observed_start: datetime | None
+    observed_end: datetime | None
+    logical_date: str
+    semantic_version: str = "1.0.0"
+    quality: dict[str, float | int | str | bool] | None = None
+
+    def __post_init__(self) -> None:
+        if not self.metric or not self.metric.strip():
+            raise ValueError("CanonicalHealthObservation requires a non-empty metric name.")
+        if not self.logical_date:
+            raise ValueError("CanonicalHealthObservation requires a valid YYYY-MM-DD logical_date.")
+        try:
+            datetime.strptime(self.logical_date, "%Y-%m-%d")
+        except ValueError as exc:
+            raise ValueError(
+                f"CanonicalHealthObservation requires a valid YYYY-MM-DD logical_date, got: {self.logical_date!r}"
+            ) from exc
+
+
+@dataclass
+class ObservationBatch:
+    logical_date: str
+    observations: list[CanonicalHealthObservation] = field(default_factory=list)
+    source_payload_hash: str = ""
+    raw_archive_ref: str | None = None
+    schema_version: int = 1
+    normalizer_version: int = 1
+    revision: int = 1
+
+    def __post_init__(self) -> None:
+        if not self.source_payload_hash:
+            raise ValueError("ObservationBatch requires a non-empty source_payload_hash.")
 
 
 @dataclass

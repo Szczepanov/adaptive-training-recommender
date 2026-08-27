@@ -66,6 +66,61 @@ Primary Firestore paths written or coordinated by this subsystem are:
 * `users/{userId}/garmin_sync_requests/latest` — the single shared manual/automatic sync request.
 * `users/{userId}/garmin_runtime/execution_lease` — per-user Garmin-operation lease.
 * `users/{userId}/garmin_workout_queue/{date}` — outbound workout queue.
+* `users/{userId}/health_observation_days/{YYYY-MM-DD}_{provider}_{transport}` — multi-source day-source recovery observation bundles (ADR-0027).
+
+---
+
+## 🌐 Multi-Source Recovery Ingestion Architecture (ADR-0027)
+
+```text
+Google Health API (v4) / REST Data Points
+  ├── sleep (sleepSession, stage summaries)
+  ├── daily-heart-rate-variability (average HRV, deep sleep RMSSD)
+  ├── daily-resting-heart-rate (RHR bpm)
+  └── daily-respiratory-rate (breaths per minute)
+                    │
+                    ▼
+┌──────────────────────────────────────────────────────────────┐
+│ GoogleHealthClient (`health.googleapis.com/v4`)              │
+│ authenticated OAuth client, pagination, error classification │
+└─────────────────────────────┬────────────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+              ▼                               ▼
+┌──────────────────────────┐   ┌────────────────────────────────┐
+│ GoogleHealthAuthManager  │   │ GoogleHealthProvider           │
+│ token & credentials      │   │ RecoveryObservationProvider    │
+└──────────────────────────┘   └───────────────┬────────────────┘
+                                               │ raw payload batches
+                                               ▼
+                              ┌────────────────────────────────┐
+                              │ GoogleHealthMapper             │
+                              │ package origin attribution:    │
+                              │ - com.eightsleep.eight         │
+                              │ - com.garmin.android...        │
+                              └───────────────┬────────────────┘
+                                               │ CanonicalHealthObservation[]
+                                               ▼
+                              ┌────────────────────────────────┐
+                              │ HealthObservationService       │
+                              │ sync / repair / backfill-range │
+                              └───────────────┬────────────────┘
+                                               │
+                     ┌─────────────────────────┴─────────────────────────┐
+                     │                                                   │
+                     ▼                                                   ▼
+         ┌──────────────────────────┐                    ┌──────────────────────────────┐
+         │ RawArchiveStore          │                    │ FirestoreRecoveryRepository  │
+         │ immutable GCS / gzip     │                    │ health_observation_days      │
+         └──────────────────────────┘                    └──────────────────────────────┘
+```
+
+### Key Multi-Source Invariants
+1. **Source Attribution**: Every observation preserves exact `provider` (`garmin`, `eight_sleep`), `transport` (`google_health`, `direct`), origin package, and hardware device.
+2. **Day-Source Bundles**: Observations are stored under `users/{userId}/health_observation_days/{date}_{provider}_{transport}` with deterministic observation IDs.
+3. **Step Count Semantics (`D-MS-STEPS`)**: Aggregator step counts from Google Health are strictly ignored to prevent double-counting structured training fatigue.
+4. **Instant Maturity via Backfill**: Historical data is backfilled via `uv run python -m garmin_sync backfill-health --days 60 --token <TOKEN>`, immediately seeding 28-day mature baselines.
 
 ---
 
