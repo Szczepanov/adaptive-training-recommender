@@ -13,9 +13,9 @@ ADR-0027 established source-aware multisource health observations and, during PR
 - `D-MS-IDENTITY` — shared/secondary source observations require identity/session concordance rather than pretending nightly scalar summaries provide biometric authentication;
 - `D-MS-PREBASE` — identity/concordance gating must happen before source-specific baseline accumulation.
 
-Those decisions establish the correct ordering. The current implementation also improved from an RHR-only heuristic to include Garmin ↔ Eight Sleep sleep-session overlap and now quarantines off-wrist Eight Sleep data rather than treating it as verified.
+PR #240 is now merged on `main` (`8312fe90`), so ADR-0028 is no longer blocked on that foundation.
 
-The remaining architectural question is how to turn that bounded concordance check into a durable, learnable, replayable identity-attribution capability without conflating genuine physiological novelty with wrong-person data.
+The merged implementation improved from an RHR-only heuristic to include Garmin ↔ Eight Sleep sleep-session overlap and now quarantines off-wrist Eight Sleep data rather than treating it as verified. The remaining architectural question is how to turn that bounded concordance check into a durable, learnable, replayable identity-attribution capability without conflating genuine physiological novelty with wrong-person data.
 
 The immediate case is Eight Sleep through Google Health:
 
@@ -34,9 +34,11 @@ The current `CoPresenceValidator` is a useful provisional guard but is not a suf
 - it uses fixed default thresholds (`60 min` overlap, `10 bpm` paired RHR delta, `14 bpm` off-wrist baseline delta);
 - one RHR dimension still carries most physiological identity authority;
 - absolute overlap minutes cannot reliably detect sessions where one interval substantially contains another;
-- there is no versioned personal cross-source fingerprint;
-- the TypeScript baseline API does not itself require identity/eligibility, so ADR-0027's pre-baseline invariant is not type-enforced;
-- there is no canonical ternary identity state, manual ground-truth review loop, or passport version in recommendation replay provenance.
+- the baseline API does not itself require identity/eligibility, so ADR-0027's pre-baseline invariant is not type-enforced;
+- the current model does not preserve all cross-source evidence refs needed for deterministic replay;
+- provider/transport differences do not by themselves prove that two observations are sensor-lineage independent;
+- there is no canonical immutable automatic assessment + append-only review + effective-decision contract;
+- naive historical replay can evaluate a night using a passport fitted on that same night and therefore overstate confidence.
 
 This ADR **refines ADR-0027**. It does not replace `D-MS-IDENTITY` or `D-MS-PREBASE`; it defines the model and contracts that make those decisions enforceable and evolvable.
 
@@ -56,13 +58,13 @@ The system keeps four questions distinct:
 
 ```text
 1. provenance
-   who/device produced the observation and how it arrived
+   which sensor/device/provider produced the observation and how it arrived
 
 2. technical quality
-   whether the observation is structurally/technically usable
+   whether the observation and any anchor are structurally/technically usable
 
 3. identity attribution
-   whether a shared-source night belongs to the authenticated athlete
+   whether the shared-source aggregate belongs to the authenticated athlete
 
 4. physiological interpretation
    what the athlete's state means after identity is sufficiently trusted
@@ -74,6 +76,7 @@ Therefore:
 physiologically unusual != NOT_USER
 technically valid       != USER
 provider=eight_sleep    != USER
+transport differs       != independent sensor evidence
 ```
 
 ADR-0025 anomaly/possible-illness logic remains downstream. A genuine athlete night can be both `USER` and physiologically anomalous.
@@ -103,7 +106,25 @@ This role assignment is based on current live-account behaviour, where Garmin wa
 
 The role is configurable policy, not a universal statement about every future Garmin or mattress integration. It provides corroboration, not cryptographic authentication.
 
-### D-PID-TERNARY — Canonical identity state is USER / NOT_USER / UNCERTAIN
+### D-PID-INDEPENDENCE — Corroborating evidence must be provenance-lineage independent
+
+Identity confidence may increase only from genuinely independent evidence streams.
+
+A provider/transport tuple is not enough to establish independence. For example:
+
+```text
+Garmin Direct measurement
++ same Garmin measurement mirrored through an aggregator
+!= two independent corroborating sensors
+```
+
+Each contributing observation therefore carries sufficient source lineage/origin metadata to determine whether evidence is independently measured, derived, mirrored, or re-exported.
+
+If lineage independence cannot be established, duplicated/dependent evidence is not counted twice. If too little independent evidence remains, the result is `UNCERTAIN`.
+
+This follows the general health-data provenance principle that authenticity, trust and reproducibility depend on the entities/processes that created and transformed a resource, not merely the last transport hop.
+
+### D-PID-TERNARY — Canonical automatic identity state is USER / NOT_USER / UNCERTAIN
 
 The shared-source identity contract is:
 
@@ -117,10 +138,10 @@ UNCERTAIN
 
 V1 automation is intentionally asymmetric:
 
-- strong independent multi-feature concordance may automatically produce `USER`;
-- missing anchor, conflicting evidence, insufficient passport maturity, or suspected mixed occupancy produces `UNCERTAIN`;
+- strong independent multi-feature concordance with a technically eligible anchor may automatically produce `USER`;
+- missing/ineligible anchor, dependent lineage, conflicting evidence, insufficient passport maturity, ambiguous pairing, or suspected mixed occupancy produces `UNCERTAIN`;
 - automatic `NOT_USER` remains disabled until labelled prospective evidence supports it;
-- explicit user confirmation may produce `NOT_USER` immediately.
+- explicit user confirmation may produce effective `NOT_USER` immediately.
 
 The system is not required to automate `NOT_USER` later if USER/UNCERTAIN automation plus manual correction provides a better risk/complexity trade-off.
 
@@ -134,10 +155,12 @@ The passport contains conceptually:
 
 ```text
 version metadata
+feature-schema version
 trusted-anchor policy
 source-specific supporting fingerprints
 cross-source relationship distributions
 calibration/evidence metadata
+training-set fingerprint
 ```
 
 For Eight Sleep ↔ Garmin, candidate relationship features include:
@@ -160,7 +183,7 @@ V1 uses robust personal estimators such as median, scaled MAD, IQR, and sample c
 
 The passport primarily asks whether two independently observed nights relate in the athlete's usual way.
 
-A source-specific Eight Sleep RHR/respiration/HRV profile may provide supporting evidence, but it cannot independently establish `USER` when the personal-device anchor is absent.
+A source-specific Eight Sleep RHR/respiration/HRV profile may provide supporting evidence, but it cannot independently establish `USER` when the personal-device anchor is absent or technically ineligible.
 
 This preserves the distinction between:
 
@@ -205,9 +228,22 @@ This catches cases where an Eight Sleep session substantially contains the athle
 
 Exact scoring remains evidence-gated by the implementation plan.
 
-### D-PID-NIGHT — Identity attribution is at source-night/session level
+### D-PID-ANCHOR-QUALITY — A present anchor must still be technically eligible
 
-Identity applies to the shared-source nightly/session bundle, not independently to each scalar metric.
+A Garmin bundle existing for a night is not, by itself, sufficient anchor evidence.
+
+High-confidence automatic `USER` requires the configured anchor to pass relevant technical/wear/session-quality checks. Distinguish:
+
+```text
+ANCHOR_MISSING
+ANCHOR_QUALITY_INSUFFICIENT
+```
+
+Both represent insufficient positive evidence and therefore abstain to `UNCERTAIN`; neither implies `NOT_USER`.
+
+### D-PID-NIGHT — Identity attribution is at shared-source night/session-bundle level
+
+Identity applies to the shared-source nightly/session aggregate, not independently to each scalar metric.
 
 Prefer:
 
@@ -225,8 +261,6 @@ respiration = USER
 
 Metric-specific technical quality remains independent and may differ within the same night.
 
-Every persisted assessment references the exact observation bundle id/revision/source-payload hash used.
-
 ### D-PID-MIXED — Aggregate mixed occupancy is quarantined, not de-mixed
 
 The current Google Health route provides nightly summary physiology and session timing, not raw/epoch-level Eight Sleep physiology or occupancy transitions.
@@ -236,11 +270,13 @@ If evidence suggests partial/mixed occupancy:
 ```text
 identity = UNCERTAIN
 → preserve the raw/shared-source bundle
-→ exclude the complete Eight Sleep nightly aggregate from recovery/baseline/passport-positive learning
+→ exclude the complete nightly aggregate from recovery/baseline/passport-positive learning
 → use trusted fallback evidence when available
 ```
 
 The system must not invent an athlete-only RHR/HRV/respiration value from a potentially mixed nightly aggregate.
+
+A manual statement that the athlete was present is **not sufficient** to override this quarantine. To make a suspicious aggregate eligible, manual review must explicitly attest exclusive/full-interval attribution. If the user reports mixed/shared occupancy, the aggregate remains non-authoritative.
 
 A future epoch-level source can revisit segmentation under a separate decision.
 
@@ -252,33 +288,42 @@ Pipeline:
 
 ```text
 raw/source-aware observation
-→ technical quality
+→ technical quality + lineage
 → source-night pairing
-→ identity assessment
-→ explicit observation eligibility
+→ immutable automatic identity assessment
+→ append-only review events (optional)
+→ effective identity decision + eligibility
 → source-specific baseline
 → physiological interpretation
 → multisource fusion
 → recommendation
 ```
 
-Baseline code must either:
+Baseline code must either accept only an already-typed eligible projection or require effective identity decisions explicitly.
+
+A shared-source `UNCERTAIN`, `NOT_USER`, or mixed-occupancy night must be structurally unable to enter source-specific baseline learning through an ordinary supported call path.
+
+### D-PID-ASSESSMENT — Automatic assessment is immutable; effective decision is derived
+
+The system separates three records/concepts:
 
 ```text
-A. accept only an already-typed eligible projection
+AutomaticIdentityAssessment
+IdentityReviewEvent[]
+EffectiveIdentityDecision
 ```
 
-or:
+`AutomaticIdentityAssessment` stores the model output and evidence as they existed at assessment time. It is immutable/replayable.
 
-```text
-B. require identity assessments/eligibility as an explicit input
-```
+`IdentityReviewEvent` is append-only user/admin evidence. A correction appends a superseding event; it does not edit or delete the previous assessment or review.
 
-A shared-source `UNCERTAIN` or `NOT_USER` night must be structurally unable to enter source-specific baseline learning through an ordinary supported call path.
+`EffectiveIdentityDecision` is a derived projection that combines the immutable automatic assessment with the latest valid review chain and current eligibility policy.
+
+Therefore the automatic assessment does **not** contain a mutable `manualOverride` field, and downstream baseline/fusion code consumes the effective decision rather than raw automatic status.
 
 ### D-PID-ELIG — Downstream authority is explicit and separate from identity state
 
-Identity assessment produces explicit eligibility flags:
+Effective identity produces explicit eligibility flags:
 
 ```text
 display
@@ -289,11 +334,12 @@ passportLearning
 
 Default v1 policy:
 
-| Effective identity | Display | Recovery | Baseline learning | Positive passport learning |
+| Effective identity / attribution | Display | Recovery | Baseline learning | Positive passport learning |
 |---|---:|---:|---:|---:|
-| manual `USER` | yes | yes | yes | yes |
+| manual `USER` + exclusive/full-interval attestation | yes | yes | yes | yes under passport policy |
 | high-confidence automatic `USER` | yes | yes | yes after activation gate | initially conservative |
 | `UNCERTAIN` | yes, badged | no | no | no |
+| manual mixed/shared occupancy | yes, badged | no | no | no |
 | `NOT_USER` | audit/history or badged display | no | no | no |
 
 Raw observations remain preserved regardless of eligibility.
@@ -304,43 +350,45 @@ When a shared-source observation exists but the configured personal-device ancho
 
 ```text
 shared source present + anchor absent
-→ UNCERTAIN unless manually confirmed
+→ UNCERTAIN unless manually confirmed with sufficient attribution evidence
 ```
 
 The system must not infer `NOT_USER`, and physiological similarity to the user's baseline is not sufficient to infer `USER`.
 
-This codifies the fail-closed direction already adopted by the latest PR #240 `UNVERIFIED_OFF_WRIST` behaviour.
+This codifies the fail-closed direction already adopted by merged PR #240 `UNVERIFIED_OFF_WRIST` behaviour.
 
 ### D-PID-LEARN — Passport learning is stricter than same-day recovery use
 
-The passport must resist self-contamination.
+The passport must resist self-contamination and self-confirmation.
 
 Positive passport training evidence is limited to independently verified or stricter trusted-USER observations.
 
 Initial policy:
 
-- manual `USER` may update the positive passport corpus;
+- manual `USER` with exclusive/full-interval attribution may update the positive passport corpus;
 - robust central-core history may seed passport v0 under a documented bootstrap;
 - merely probable/uncertain records do not recursively train the model;
+- automatic USER self-training is disabled until a separately reviewed policy demonstrates that it does not create confirmation bias;
 - manual `NOT_USER` records may populate a negative evaluation/training corpus but never positive passport learning.
 
 The exact automatic passport-learning threshold is a later evidence decision.
 
-### D-PID-MANUAL — Suspicious-night review is append-only ground truth
+### D-PID-MANUAL — Suspicious-night review is append-only user-attested evidence
 
-When a night is `UNCERTAIN` and user action can change authority, the UI offers:
+When a night is `UNCERTAIN` and user action can change authority, the UI asks about attribution for the full tracked interval, for example:
 
 ```text
-It was me | Not me | Unsure
+Only me | Shared / mixed | Not me | Unsure
 ```
 
 Semantics:
 
-- `It was me` appends a manual `USER` review event;
-- `Not me` appends a manual `NOT_USER` review event;
-- `Unsure` preserves `UNCERTAIN` and never forces a guess.
+- `Only me` appends a `USER` + `EXCLUSIVE` review event;
+- `Shared / mixed` appends `UNCERTAIN` + `MIXED` and keeps the aggregate quarantined;
+- `Not me` appends `NOT_USER`;
+- `Unsure` preserves `UNCERTAIN` + `UNKNOWN`.
 
-The original automatic assessment remains immutable/replayable.
+A later correction appends a superseding event. The original automatic assessment and previous reviews remain immutable/replayable.
 
 User-facing wording uses “unverified” or “discrepant,” not “imposter” or “bad sensor,” because a technically correct measurement may simply belong to another sleeper.
 
@@ -360,24 +408,33 @@ Feature composition and acceptance thresholds are versioned by `policyVersion` a
 
 Current fixed `10/14 bpm` and `60 min` constants are provisional guards, not permanent calibrated identity thresholds.
 
-### D-PID-VERSION — Passport and identity policy are versioned and replayable
+### D-PID-EVAL — Activation evidence must be out-of-sample
 
-Every identity assessment records at least:
+The historical paired set may initialize a robust passport, but production threshold/model selection must not score a night with a passport fitted using that same night.
+
+For the current small historical set, use leave-one-night-out or chronological expanding-window replay. Full-sample v0 scores may be shown descriptively but must not be treated as unbiased acceptance/coverage evidence.
+
+This prevents optimistic self-scoring and makes the reject/coverage trade-off more credible before prospective labels accumulate.
+
+### D-PID-VERSION — Passport, feature schema and identity policy are versioned and replayable
+
+Every automatic identity assessment records at least:
 
 ```text
 source-night key
-provider
-transport
-identity status
+shared provider + transport
+automatic identity status
 identity score/tier
 reason codes
-eligibility
-passport version
+passport version (nullable before a usable passport exists)
 identity policy version
+feature schema version
 assessment timestamp
-observation bundle id/revision/source payload hash
-manual review linkage when present
+shared-source bundle id/revision/source-payload hash/lineage
+all anchor bundle ids/revisions/source-payload hashes/lineages
 ```
+
+Manual review events are linked separately and effective decision provenance records the review event used, if any.
 
 Passport versions are immutable snapshots or deterministically rebuildable from versioned training inputs.
 
@@ -385,7 +442,7 @@ Material device/provider/algorithm discontinuities create a new passport version
 
 ADR-0010 recommendation audit must be able to reconstruct why a shared-source observation was admitted, quarantined, or superseded by a fallback source at decision time.
 
-### D-PID-PRIVACY — Do not identify other household members
+### D-PID-PRIVACY — Minimize household profiling and treat the passport as highly sensitive derived data
 
 The target remains only:
 
@@ -395,7 +452,16 @@ USER | NOT_USER | UNCERTAIN
 
 The system does not classify named or relational household identities such as spouse, child, or guest.
 
-That information does not improve the current recovery-integrity objective and would expand privacy/data requirements unnecessarily.
+The passport is derived from health physiology and is explicitly used to confirm whether measurements belong to a person. Treat it as highly sensitive by design.
+
+Where GDPR applies, health data are special-category data, and physiological features processed for unique identification can meet the biometric-data definition. This ADR does not choose a legal basis, but it requires privacy/security design consistent with that sensitivity:
+
+- data minimization and purpose limitation;
+- user-scoped access control;
+- server-owned model/evidence state;
+- retention/deletion/export support;
+- encryption/pseudonymisation where appropriate;
+- no raw physiology, residual vectors, lineage identifiers or identity scores in general analytics/log labels.
 
 ### D-PID-SCOPE — Physiological Identity Passport is separate from the Athlete Performance Profile
 
@@ -427,7 +493,7 @@ UNVERIFIED_OFF_WRIST
 NO_SECONDARY_DATA
 ```
 
-The target canonical contract becomes ternary identity + independent availability/quality + explicit eligibility.
+The target canonical contract becomes ternary automatic identity + independent availability/quality/lineage + append-only review evidence + explicit effective eligibility.
 
 A migration adapter may retain the existing validator while PI work runs in shadow mode, but no new domain logic should treat `verifiedAthlete: boolean` or fixed RHR/timing thresholds as the permanent identity abstraction.
 
@@ -440,22 +506,27 @@ A migration adapter may retain the existing validator while PI work runs in shad
 - Makes ADR-0027's pre-baseline identity invariant structurally enforceable.
 - Reduces risk that wrong-person mattress observations poison longitudinal baselines.
 - Preserves genuine illness/recovery anomalies instead of treating all unusual physiology as identity failure.
+- Prevents mirrored/re-exported observations from creating false confidence.
 - Uses multiple available paired features rather than a single RHR discrepancy.
 - Learns the athlete's actual Garmin ↔ Eight Sleep relationship instead of inventing universal identity cutoffs.
 - Makes uncertainty explicit and cheap because Garmin normally remains available.
-- Creates prospective labelled evidence through minimal user review.
+- Makes manual correction auditable without rewriting the original model output.
+- Prevents a vague “I was there” confirmation from admitting mixed nightly aggregates.
+- Requires out-of-sample activation evidence rather than optimistic self-scoring.
 - Preserves raw observations for audit/replay independently of downstream authority.
 - Avoids unnecessary household-member profiling.
 - Generalizes to future shared scales, cuffs, mattresses, or household health sensors.
 
 ### Negative
 
-- Adds a new model, assessment, eligibility, persistence, and review layer.
+- Adds model, lineage, assessment, effective-decision, persistence, review, and eligibility layers.
 - Requires session pairing and cross-source feature extraction.
 - Requires passport version/rebuild lifecycle management.
+- Requires stronger audit provenance because a cross-source decision depends on more than one bundle.
 - Some genuine Eight Sleep nights will remain `UNCERTAIN` until enough evidence or manual review exists.
 - Initial automatic coverage is intentionally lower than an aggressive binary classifier.
 - Reliable automatic `NOT_USER` classification is deferred because negative labels are sparse.
+- The derived passport itself becomes sensitive identity/health data requiring deliberate privacy controls.
 
 ---
 
@@ -473,9 +544,25 @@ Rejected because one session can substantially contain another while still havin
 
 Rejected because physiological similarity is not identity proof; another household member can overlap the range while a genuine athlete can leave it.
 
+### Treat different transports as independent evidence
+
+Rejected because transport diversity may still carry the same upstream sensor measurement. Evidence independence is a provenance-lineage question.
+
 ### Leave pre-baseline filtering as a caller convention
 
 Rejected because an architectural invariant that the API permits callers to bypass is too fragile for stateful baseline learning.
+
+### Store manual override directly on the automatic assessment
+
+Rejected because it destroys the clean separation between immutable model output and later user evidence, complicating replay and correction history.
+
+### Let “It was me” override mixed-occupancy suspicion
+
+Rejected because mere presence does not prove the nightly aggregate contains only the athlete's physiology.
+
+### Evaluate historical nights using a passport fitted on all historical nights
+
+Rejected for activation decisions because the evaluated sample contributes to its own reference distribution and can make acceptance/coverage look better than it is.
 
 ### Identify specific family members
 
@@ -511,6 +598,7 @@ Canonical plan:
 Likely boundaries include conceptually:
 
 ```text
+identityLineage.ts
 identityFeatures.ts
 identityPassport.ts
 identityAttribution.ts
@@ -525,11 +613,11 @@ Recommended Firestore ownership:
 ```text
 users/{uid}/physiological_identity_passports/current
 users/{uid}/physiological_identity_passport_versions/{version}
-users/{uid}/health_identity_assessments/{nightKey_provider_transport}
+users/{uid}/health_identity_assessments/{assessmentId}
 users/{uid}/health_identity_review_events/{eventId}
 ```
 
-Paths remain governed by ADR-0002. Passport versions and automatic assessment evidence are server-owned. Client writes are limited to constrained user-scoped review events.
+Paths remain governed by ADR-0002. Passport versions, automatic assessments, and any materialized effective-decision state are server-owned. Client writes are limited to constrained user-scoped review submissions/events.
 
 This ADR intentionally does not select:
 
@@ -538,9 +626,10 @@ This ADR intentionally does not select:
 - calibrated acceptance thresholds;
 - automatic `NOT_USER` thresholds;
 - a supervised/one-class classifier family;
-- future epoch-level mixed-occupancy segmentation.
+- future epoch-level mixed-occupancy segmentation;
+- GDPR/legal basis for any future deployment.
 
-Those require PI replay and prospective evidence.
+Those require PI replay, prospective evidence, and deployment-specific review.
 
 ---
 
@@ -568,3 +657,7 @@ Those require PI replay and prospective evidence.
 - Eight Sleep. *The Eight Sleep Pod Heart Rate and Heart Rate Variability Accuracy*. 2023. https://www.eightsleep.com/blog/hrv-accuracy/
 - Takahashi K, Tanno Y, Ueno H. *Identification of People in a Household Using Ballistocardiography Signals Through Deep Learning*. Sensors. 2025. https://pubmed.ncbi.nlm.nih.gov/40292805/
 - Franc V, Prusa D, Voracek V. *Optimal Strategies for Reject Option Classifiers*. JMLR. 2023. https://www.jmlr.org/papers/v24/21-0048.html
+- Traub J, Bungert TJ, Lüth CT, et al. *Overcoming Common Flaws in the Evaluation of Selective Classification Systems*. 2024. https://arxiv.org/abs/2407.01032
+- Hennhöfer O, Preisach C. *Leave-One-Out-, Bootstrap- and Cross-Conformal Anomaly Detectors*. 2024. https://arxiv.org/abs/2402.16388
+- HL7 FHIR R4. *Provenance*. https://hl7.org/fhir/R4/provenance.html
+- Regulation (EU) 2016/679 (GDPR), Articles 4 and 9. https://eur-lex.europa.eu/eli/reg/2016/679/oj
