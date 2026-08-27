@@ -70,7 +70,7 @@ def _non_empty_string(value: object) -> str | None:
 
 
 def _identity_status(value: object) -> IdentityStatus | None:
-    return cast(IdentityStatus, value) if value in _IDENTITY_STATUSES else None
+    return cast(IdentityStatus, value) if isinstance(value, str) and value in _IDENTITY_STATUSES else None
 
 
 def _parse_timestamp(value: object) -> datetime | None:
@@ -273,24 +273,12 @@ def validate_automatic_identity_assessment(value: object) -> bool:
     )
 
 
-def _review_semantics_are_valid(event: Mapping[str, Any]) -> bool:
-    label = _identity_status(event.get("label"))
-    attestation = event.get("occupancyAttestation")
-    if label == "USER":
-        return attestation == "EXCLUSIVE"
-    if label == "NOT_USER":
-        return attestation == "UNKNOWN"
-    if label == "UNCERTAIN":
-        return attestation in {"MIXED", "UNKNOWN"}
-    return False
-
-
 def validate_identity_review_event(
     value: object,
     *,
     expected_assessment_id: str | None = None,
 ) -> bool:
-    """Validate a complete review event, including label/occupancy semantics."""
+    """Validate the complete review shape while preserving separate occupancy evidence."""
 
     if not isinstance(value, Mapping):
         return False
@@ -308,7 +296,6 @@ def validate_identity_review_event(
         or supersedes == event_id
         or _parse_timestamp(value.get("recordedAt")) is None
         or value.get("source") not in {"user_ui", "admin_replay"}
-        or not _review_semantics_are_valid(value)
     ):
         return False
     return True
