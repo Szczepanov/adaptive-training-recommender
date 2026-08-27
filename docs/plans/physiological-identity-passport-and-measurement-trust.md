@@ -175,7 +175,8 @@ export type IdentityReasonCode =
     | 'RESPIRATION_RELATION_DISCORDANT'
     | 'HRV_RELATION_CONCORDANT'
     | 'HRV_RELATION_DISCORDANT'
-    | 'MIXED_OCCUPANCY_SUSPECTED';
+    | 'MIXED_OCCUPANCY_SUSPECTED'
+    | 'SESSION_INTERVAL_INVALID';
 
 export interface ObservationBundleRef {
     id: string;
@@ -214,9 +215,10 @@ export type OccupancyAttestation = 'EXCLUSIVE' | 'MIXED' | 'UNKNOWN';
 export interface IdentityReviewEvent {
     id: string;
     assessmentId: string;
+    schemaVersion: number;
     label: IdentityStatus;
     occupancyAttestation: OccupancyAttestation;
-    supersedesReviewEventId?: string;
+    supersedesReviewEventId: string | null; // Firestore has no `undefined`; absence of a prior event is explicit `null`
     recordedAt: string; // server-authoritative ordering
     source: 'user_ui' | 'admin_replay';
 }
@@ -244,6 +246,8 @@ The automatic assessment must remain immutable for replay. A later review event 
 - baseline/fusion code consumes `EffectiveIdentityDecision`, never raw automatic status alone;
 - repeated user corrections remain append-only; a deterministic supersession rule derives the current effective review;
 - `passportVersion=null` is valid when assessment abstains because no mature passport exists.
+
+These two interfaces are the single canonical schema for identity records: the source analysis, ADR-0028, this plan, and every persisted-document example below must use `sourceNightKey` (not `logicalDate`) and the `IdentityReviewEvent` shape above verbatim, including `schemaVersion` and `supersedesReviewEventId: string | null`.
 
 ## Tests
 
@@ -279,6 +283,18 @@ durationDeltaMinutes  = duration(E) - duration(G)
 ```
 
 Do not rely on Jaccard alone. A long Eight Sleep session that starts hours before Garmin sleep may still have substantial overlap and should remain suspicious.
+
+### Interval validation before feature extraction
+
+`eightOverlapFraction` and `garminOverlapFraction` are undefined when `duration(E)` or `duration(G)` is zero. Before computing any fraction above:
+
+```text
+timestamps unparsable                  → reject pair
+duration(E) <= 0 (Ee <= Es)            → reject pair
+duration(G) <= 0 (Ge <= Gs)            → reject pair
+```
+
+A rejected pair emits `SESSION_INTERVAL_INVALID` and abstains (`UNCERTAIN`) rather than dividing by a zero or negative duration. This is a deterministic technical-quality rejection, independent of the anchor-eligibility checks below.
 
 ## Provenance-lineage independence
 
@@ -343,6 +359,8 @@ Cover:
 - timezone/UTC boundaries;
 - DST transition in `Europe/Warsaw`;
 - missing start/end;
+- zero-length Garmin or Eight Sleep interval rejects the pair with `SESSION_INTERVAL_INVALID` instead of dividing by zero;
+- reversed or unparsable interval timestamps reject the pair with `SESSION_INTERVAL_INVALID`;
 - multiple sleep sessions / naps;
 - deterministic pairing when multiple candidate sessions exist;
 - mirrored/re-exported source lineage;
@@ -503,6 +521,8 @@ This is the highest-value implementation change.
 
 `computeSourceMetricBaseline()` currently consumes all source bundles for a provider/transport regardless of identity. The current co-presence check happens later inside fusion.
 
+The same defect exists on the Python side: `run_multisource_audit()` (`src/garmin_sync/multisource_audit.py`) calls `validate_co_presence()` (`src/garmin_sync/presence_filter.py`) directly and admits a night to rolling baseline statistics from `verdict.verifiedAthlete`, bypassing whatever gate the TypeScript engine enforces.
+
 ## Target contract
 
 Baseline input must already be filtered by the **effective** identity decision, or the baseline calculator must explicitly require effective eligibility metadata.
@@ -528,7 +548,7 @@ computeSourceMetricBaseline({
 });
 ```
 
-Then all source baseline callers consume only identity-eligible history.
+Then all source baseline callers consume only identity-eligible history — including `run_multisource_audit()`, which must resolve `EffectiveIdentityDecision` (or an equivalent fail-closed Python-side projection) instead of calling `validate_co_presence()`/`verdict.verifiedAthlete` directly. PI9's minimum activation conditions apply to this CLI audit path as well as the TypeScript baseline path, so PI8 replay evidence reflects the same identity gate that governs production baseline learning.
 
 ## Non-negotiable invariant tests
 
@@ -608,7 +628,7 @@ The assessment stores the immutable automatic model output and **all** evidence 
 
 ```json
 {
-  "logicalDate": "2026-08-27",
+  "sourceNightKey": "2026-08-27",
   "sharedSource": { "provider": "eight_sleep", "transport": "google_health" },
   "automaticStatus": "UNCERTAIN",
   "identityScore": 0.73,
@@ -691,7 +711,9 @@ This makes the cross-source decision actually replayable. Referencing only the s
 
 Only interrupt the user when action can change data authority.
 
-Default copy:
+Copy is selected by the assessment's leading reason code — the discrepant-evidence wording below is only accurate when a Garmin record actually exists and disagreed. `ANCHOR_MISSING`/`ANCHOR_QUALITY_INSUFFICIENT` nights use different wording because no usable independent record was compared.
+
+Default copy (`SESSION_TIMING_DISCORDANT`, `RHR_RELATION_DISCORDANT`, `RESPIRATION_RELATION_DISCORDANT`, `HRV_RELATION_DISCORDANT`, or `MIXED_OCCUPANCY_SUSPECTED`):
 
 ```text
 Eight Sleep data not verified
@@ -703,6 +725,34 @@ Were these measurements yours for the full tracked sleep period?
 
 [ Only me ]  [ Shared / mixed ]  [ Not me ]  [ Unsure ]
 ```
+
+`ANCHOR_MISSING` copy:
+
+```text
+Eight Sleep data not verified
+
+We couldn't find a Garmin record to confirm tonight's Eight Sleep measurements
+were yours, so they were not used for recovery or baseline learning.
+
+Were these measurements yours for the full tracked sleep period?
+
+[ Only me ]  [ Shared / mixed ]  [ Not me ]  [ Unsure ]
+```
+
+`ANCHOR_QUALITY_INSUFFICIENT` copy:
+
+```text
+Eight Sleep data not verified
+
+Tonight's Garmin record wasn't complete enough to confirm tonight's Eight Sleep
+measurements were yours, so they were not used for recovery or baseline learning.
+
+Were these measurements yours for the full tracked sleep period?
+
+[ Only me ]  [ Shared / mixed ]  [ Not me ]  [ Unsure ]
+```
+
+Every variant preserves the same review question and response options; only the explanatory line changes.
 
 Progressive disclosure may show reason codes in user language:
 
@@ -721,10 +771,12 @@ Avoid:
 
 ### Review semantics
 
+Any review event that changes `EffectiveIdentityDecision` for a night already reflected in a materialized 7d/28d baseline is **not** optional to reconcile: invalidate and rebuild the affected source baseline (and any recommendation history derived from it), or enforce an equivalent versioned read barrier, before serving further recovery/recommendation decisions from that baseline. This applies whenever a review admits a previously-excluded night (`Only me`) or removes a previously-admitted night (`Shared / mixed`, `Not me`).
+
 `Only me`:
 - append `USER` + `EXCLUSIVE` review event;
 - recompute effective identity/eligibility;
-- optionally rebuild affected source baseline/recommendation history under explicit user action/policy;
+- require baseline/recommendation-history invalidation and rebuild (or a versioned read barrier) covering the newly admitted night — this is mandatory, not optional, per the rule above;
 - make it eligible for future passport learning only under the stricter passport-learning policy.
 
 `Shared / mixed`:
@@ -803,7 +855,7 @@ Production activation is a separate decision after PI8 evidence.
 
 ## Minimum activation conditions
 
-- identity gate is upstream of all shared-source baseline learning;
+- identity gate is upstream of all shared-source baseline learning, including the Python `run_multisource_audit()` / `validate_co_presence()` shadow-audit path, not only the TypeScript engine;
 - no known path can use an `UNCERTAIN`, `NOT_USER`, or mixed-occupancy Eight Sleep night in baseline/fusion;
 - automatic `USER` rules require technically eligible, provenance-independent anchor evidence;
 - automatic assessment and effective decision are separate/replayable;

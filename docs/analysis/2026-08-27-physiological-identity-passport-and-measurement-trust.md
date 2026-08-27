@@ -464,10 +464,12 @@ interface AutomaticIdentityAssessment {
 interface IdentityReviewEvent {
     id: string;
     assessmentId: string;
+    schemaVersion: number;
     label: IdentityStatus;
     occupancyAttestation: OccupancyAttestation;
-    supersedesReviewEventId?: string;
+    supersedesReviewEventId: string | null;
     recordedAt: string;
+    source: 'user_ui' | 'admin_replay';
 }
 
 interface EffectiveIdentityDecision {
