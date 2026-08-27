@@ -92,7 +92,7 @@ def test_mapper_normalizes_sleep_and_hrv():
     assert not any("step" in o.metric.lower() for o in batch.observations)
 
 
-def test_mapper_normalizes_real_google_health_v4_shape():
+def test_mapper_normalizes_real_google_health_v4_shape() -> None:
     """Regression test for the actual health.googleapis.com/v4 response shape, confirmed
     2026-08-27 against a live account (structure faithful, values/timestamps adjusted --
     see docs/plans/2026-08-27-real-google-health-ingestion.md). The v4 API does not carry a

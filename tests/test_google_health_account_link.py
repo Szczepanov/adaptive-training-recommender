@@ -348,3 +348,47 @@ def test_load_auth_manager_for_user_builds_manager_from_stored_tokens(monkeypatc
 
     assert manager.credentials is not None
     assert manager.credentials.refresh_token == "rt"
+
+
+def test_load_auth_manager_for_user_persists_rotated_refresh_token(monkeypatch: Any) -> None:
+    """Regression test: Google doesn't rotate the refresh_token on every access-token
+    refresh, but can. Without an on_refresh persistence hook, a linked user's stored token
+    object would never see a rotation, and a later process restart would reload the stale
+    refresh_token and eventually fail with invalid_grant. See
+    docs/plans/2026-08-27-real-google-health-ingestion.md."""
+    _FakeGcsTokenStore._blobs.clear()
+    monkeypatch.setattr(link_module, "GcsTokenStore", _FakeGcsTokenStore)
+
+    import garmin_sync.google_health_auth as auth_module
+
+    class _FakeRefreshResponse:
+        status_code = 200
+
+        def json(self) -> dict[str, Any]:
+            return {"access_token": "new-at", "expires_in": 3600, "refresh_token": "rotated-rt"}
+
+    monkeypatch.setattr(auth_module.requests, "post", lambda *a, **k: _FakeRefreshResponse())
+
+    db = _Db()
+    repo = GoogleHealthConnectionRepository(db=db)
+    tokens = GoogleHealthLinkTokens(
+        access_token="at",
+        refresh_token="original-rt",
+        token_type="Bearer",
+        scopes=["a"],
+        obtained_at="2026-08-27T00:00:00+00:00",
+    )
+    object_name = persist_tokens(bucket_name="bucket", uid="uid-1", tokens=tokens)
+    repo.save_connection(
+        "uid-1", health_user_id=None, granted_scopes=["a"], token_object=object_name
+    )
+
+    manager = repo.load_auth_manager_for_user(
+        "uid-1", client_id="cid", client_secret="secret", bucket_name="bucket"
+    )
+    manager.get_valid_access_token()  # expires_at=0.0 forces a refresh
+
+    reloaded = load_tokens(bucket_name="bucket", object_name=object_name)
+    assert reloaded is not None
+    assert reloaded["refresh_token"] == "rotated-rt"
+    assert reloaded["access_token"] == "new-at"

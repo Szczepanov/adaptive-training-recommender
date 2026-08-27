@@ -24,7 +24,7 @@
 | Telemetry Dimension | Metric / Result | Significance |
 |---|---|---|
 | **Coverage Overlap** | **42 nights (70.0%)** | 42 dual-monitored recovery nights available for multi-sensor comparison. |
-| **Garmin Direct Coverage** | **59 / 60 nights** | One pre-existing gap (2026-07-18) predates this session; otherwise full coverage. See §2 caveat. |
+| **Garmin-via-Google-Health Coverage** | **59 / 60 nights** | From `garmin_google_health` bundles specifically, not the direct-snapshot (`daily_recovery_snapshots`) audit — see §2 caveat. One pre-existing gap (2026-07-18) predates this session. |
 | **Eight Sleep Rolling Baseline (HRV)** | **Median = 57.5 ms, MAD = 9.17 ms** (N=42) | `MATURE` baseline (N ≥ 28). |
 | **Eight Sleep Rolling Baseline (Resp)** | **Median = 12.7 brpm, MAD = 0.31 brpm** (N=35) | `MATURE` baseline (N ≥ 28). |
 | **Cross-Source Sleep-Duration Agreement** | **Mean delta 43.5 min, correlation 0.613** | New in this run (not measurable before the sleep-mapper fix — see MS10's refreshed doc for the full per-metric equivalence breakdown). Moderate correlation, not near-identical — consistent with MS10's `TRANSFORMING` classification. |
@@ -56,17 +56,22 @@
 
 Reproduce with: `uv run python -m garmin_sync audit-multisource --start-date 2026-06-29 --end-date 2026-08-27`
 
-Note: "Garmin Direct Coverage" here is 59/60, not the original doc's claimed 60/60 — 2026-07-18
-has no `garmin_google_health` bundle in Firestore. This is a pre-existing gap unrelated to
-today's mapper fix or the tombstone incident (both of which are documented separately); direct
-Garmin (`daily_recovery_snapshots`) coverage for that date was not separately re-verified here.
+Note: the 59/60 figure above is **Garmin-via-Google-Health** coverage (from `garmin_google_health`
+bundles in `health_observation_days`), not direct-snapshot coverage — `run_multisource_audit`
+computes "Garmin Direct Only"/"Eight Sleep Only" from `daily_recovery_snapshots` for the actual
+audit logic (the 18-nights-Garmin-only figure above IS from that direct-snapshot source and is
+unaffected by this note), but this specific 59/60 total-nights figure is a `garmin_google_health`
+count, not a `daily_recovery_snapshots` one. 2026-07-18 has no `garmin_google_health` bundle in
+Firestore — a pre-existing gap unrelated to today's mapper fix or the tombstone incident (both
+documented separately); direct Garmin (`daily_recovery_snapshots`) coverage for that date was not
+separately re-verified here.
 
 ---
 
 ## 3. Scientific & Algorithmic Implications for MS15/MS17
 
-1. **Eight Sleep baselines are genuinely mature** — N=42 ≥ 28 for both HRV and respiration,
-   eligible for normalized deviation calculation without a synthetic warm-up phase.
+1. **Eight Sleep baselines are genuinely mature** — HRV at N=42 and respiration at N=35, both
+   ≥ 28, eligible for normalized deviation calculation without a synthetic warm-up phase.
 2. **Respiration precision is real** — 0.31 brpm MAD is tight, consistent with the original
    finding of superior sensor stability vs. wrist-based PPG artifacts.
 3. **Sleep-duration cross-source correlation (0.613) is moderate, not high** — this is new,
@@ -87,7 +92,9 @@ Garmin (`daily_recovery_snapshots`) coverage for that date was not separately re
 * **MS14**: Complete (`[x]`), now backed by a genuine post-fix re-run rather than a run taken
   while sleep ingestion was silently broken.
 * **MS15**: `multisourceFusion.ts` already exists (default-off); no change needed from this run.
-* **MS16/MS17**: still open — MS16 depends on real data as an input to its scenario replay (not
-  yet re-run against this refreshed dataset); MS17 additionally depends on the still-unconfirmed
-  CASA Tier 2 status. See
+* **MS16**: Complete (`[x]`) — turns out it never depended on this (or any) real dataset at all;
+  it's synthetic-scenario/invariant testing of the fusion logic (`multisourceComparison.test.ts`,
+  5/5 pass). See [MS16's refreshed doc](2026-08-27-multisource-simulation-comparison.md).
+* **MS17**: still open — depends on the CASA Tier 2 status, confirmed NOT done (not merely
+  unconfirmed). See
   [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md).

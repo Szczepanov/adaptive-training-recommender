@@ -7,14 +7,17 @@ request correlation IDs, exponential backoff, and non-sensitive logging.
 import logging
 import time
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import requests
 
 from .google_health_auth import GoogleHealthAuthManager
 
 logger = logging.getLogger(__name__)
+
+WARSAW_TZ = ZoneInfo("Europe/Warsaw")
 
 DEFAULT_BASE_URL = "https://health.googleapis.com/v4"
 MAX_RETRIES = 3
@@ -60,8 +63,20 @@ def _extract_point_time_range(pt: dict[str, Any]) -> tuple[datetime | None, date
             date_dict = (pt.get(key) or {}).get("date")
             if date_dict and isinstance(date_dict, dict) and "year" in date_dict:
                 try:
+                    # This is a calendar date, not a UTC instant -- the daily-summary types'
+                    # `date` field is the Warsaw-local logical date throughout this codebase
+                    # (see google_health_provider._extract_pt_date, which formats it directly
+                    # with no UTC conversion). Anchoring it to UTC midnight here instead of
+                    # Warsaw midnight could shift a near-midnight record across the requested
+                    # start_dt/end_dt window boundary by up to 2 hours, silently dropping it
+                    # from this coarse pre-filter before it ever reaches the provider's
+                    # correct per-record check. See
+                    # docs/plans/2026-08-27-real-google-health-ingestion.md.
                     day = datetime(
-                        date_dict["year"], date_dict["month"], date_dict["day"], tzinfo=UTC
+                        date_dict["year"],
+                        date_dict["month"],
+                        date_dict["day"],
+                        tzinfo=WARSAW_TZ,
                     )
                     return day, day
                 except (KeyError, ValueError, TypeError):

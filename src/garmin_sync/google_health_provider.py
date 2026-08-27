@@ -9,10 +9,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .canonical import ObservationBatch
-from .google_health_client import (
-    GoogleHealthClient,
-    GoogleHealthNotFoundError,
-)
+from .google_health_client import GoogleHealthClient
 from .google_health_mapper import (
     GoogleHealthMapper,
     derive_warsaw_logical_date,
@@ -77,41 +74,31 @@ class GoogleHealthProvider:
         end_time_iso = f"{logical_date_iso}T23:59:59Z"
 
         for dtype in self.data_types:
-            try:
-                cache_key = f"{dtype}:{previous_date_iso}:{logical_date_iso}"
-                if cache_key not in self._raw_points_cache:
-                    self._raw_points_cache[cache_key] = self.client.list_data_points(
-                        data_type=dtype,
-                        start_time_iso=start_time_iso,
-                        end_time_iso=end_time_iso,
-                    )
-
-                raw_pts = self._raw_points_cache[cache_key]
-                for pt in raw_pts:
-                    pt_date = _extract_pt_date(pt)
-                    if pt_date == logical_date_iso:
-                        all_points.append(pt)
-
-            except GoogleHealthNotFoundError as e:
-                # 404 for this data type is a legitimate "not available" signal -- safe to
-                # treat as this type having no data and continue with the others.
-                logger.warning(
-                    "Google Health data type '%s' not found for %s: %s",
-                    dtype,
-                    logical_date_iso,
-                    e,
+            # No exception from list_data_points is swallowed here, including a 404
+            # (GoogleHealthNotFoundError) -- deliberately, even though a 404 could plausibly
+            # mean "this data type isn't available for this account." That has never been
+            # directly observed live for this API (every real query this session returned
+            # 200, even with zero points), so treating it as safe-to-continue would be an
+            # unverified assumption about the API's error semantics. The cost of getting
+            # that assumption wrong is real: HealthObservationService._reconcile_missing_sources
+            # deletes previously stored bundles when a provider returns an empty batch, so
+            # any failure silently swallowed here risks tombstoning real data (confirmed live
+            # 2026-08-27 for a transient auth failure -- same mechanism). Every failure
+            # propagates instead, so the caller's error path (no reconciliation) is taken.
+            # See docs/plans/2026-08-27-real-google-health-ingestion.md.
+            cache_key = f"{dtype}:{previous_date_iso}:{logical_date_iso}"
+            if cache_key not in self._raw_points_cache:
+                self._raw_points_cache[cache_key] = self.client.list_data_points(
+                    data_type=dtype,
+                    start_time_iso=start_time_iso,
+                    end_time_iso=end_time_iso,
                 )
-            except Exception:
-                # Any other failure (auth expiry, rate limit, account-not-linked, network)
-                # is NOT evidence the source has no data -- it means we couldn't check.
-                # HealthObservationService._reconcile_missing_sources deletes previously
-                # stored bundles when a provider returns an empty batch, so silently
-                # swallowing this here would tombstone real data on a transient failure
-                # (confirmed live 2026-08-27: an access-token expiry mid-backfill deleted a
-                # same-day bundle this way). Let it propagate so the caller's error path
-                # (no reconciliation) is taken instead. See
-                # docs/plans/2026-08-27-real-google-health-ingestion.md.
-                raise
+
+            raw_pts = self._raw_points_cache[cache_key]
+            for pt in raw_pts:
+                pt_date = _extract_pt_date(pt)
+                if pt_date == logical_date_iso:
+                    all_points.append(pt)
 
         batch = self.mapper.normalize_data_points(all_points, target_logical_date=logical_date_iso)
         self._cache[logical_date_iso] = batch

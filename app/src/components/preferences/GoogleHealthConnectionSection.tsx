@@ -3,6 +3,7 @@ import { doc, onSnapshot } from 'firebase/firestore';
 import { getDb } from '../../firebase';
 import { googleHealthLinkService } from '../../services/googleHealthLinkService';
 import { getErrorMessage } from '../../utils/errors';
+import { getLocalDateString } from '../../utils/localDate';
 
 interface GoogleHealthConnection {
   status?: string;
@@ -103,7 +104,7 @@ export function GoogleHealthConnectionSection({ userId }: GoogleHealthConnection
 
       {!loadingConnection && isConnected && (
         <p className="preference-success-note">
-          Connected{connection?.linkedAt ? ` since ${new Date(connection.linkedAt).toLocaleDateString()}` : ''}.
+          Connected{connection?.linkedAt ? ` since ${getLocalDateString(new Date(connection.linkedAt))}` : ''}.
         </p>
       )}
 
