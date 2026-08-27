@@ -543,6 +543,33 @@ class FirestoreRecoveryRepository:
         doc = doc_ref.get()
         return doc.to_dict() if doc.exists else None
 
+    def delete_health_observation_day_bundle(
+        self,
+        logical_date: str,
+        provider: str,
+        transport: str,
+    ) -> bool:
+        """Delete a specific day-source bundle from Firestore, e.g. when a source that
+        was present in a prior sync is absent from the current authoritative batch and
+        must stop being queryable by fusion/audit code (D-MS reconciliation).
+
+        Returns True if a document existed and was deleted, False if there was nothing
+        to delete.
+        """
+        db = self._get_db()
+        doc_id = f"{logical_date}_{provider}_{transport}"
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("health_observation_days")
+            .document(doc_id)
+        )
+        existing_doc = doc_ref.get()
+        if not existing_doc.exists:
+            return False
+        doc_ref.delete()
+        return True
+
     def get_health_observation_bundles_in_range(
         self,
         start_date: str,

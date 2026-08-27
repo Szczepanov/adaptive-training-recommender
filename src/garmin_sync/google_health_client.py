@@ -7,7 +7,7 @@ request correlation IDs, exponential backoff, and non-sensitive logging.
 import logging
 import time
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import requests
@@ -19,6 +19,19 @@ logger = logging.getLogger(__name__)
 DEFAULT_BASE_URL = "https://health.googleapis.com/v4"
 MAX_RETRIES = 3
 INITIAL_BACKOFF_SECONDS = 1.0
+
+# AIP-160 filter field names for daily-summary data types (Google Health API v4).
+# These types expose a `{field}.date` filterable field (ISO 8601 date literal); see
+# https://developers.google.com/health/reference/rest/v4/users.dataTypes.dataPoints/list.
+# "sleep" is a session data type with an under-documented filter syntax for this API
+# surface -- left server-side-unfiltered here rather than guessing at a query that could
+# 400 every sleep request; it still gets the pageSize=25 cap and the client-side date
+# check below.
+DAILY_SUMMARY_FILTER_FIELDS: dict[str, str] = {
+    "daily-heart-rate-variability": "dailyHeartRateVariability",
+    "daily-resting-heart-rate": "dailyRestingHeartRate",
+    "daily-respiratory-rate": "dailyRespiratoryRate",
+}
 
 
 class GoogleHealthError(Exception):
@@ -91,12 +104,47 @@ class GoogleHealthClient:
 
         effective_page_size = min(page_size, 25) if data_type == "sleep" else page_size
 
+        # Build the server-side AIP-160 filter for daily-summary types so ingestion
+        # doesn't paginate through full account history on every call. end_dt is
+        # exclusive of its own calendar day, so widen it by one day to keep logical_date
+        # itself inside the range.
+        filter_field = DAILY_SUMMARY_FILTER_FIELDS.get(data_type)
+        filter_expr: str | None = None
+        if filter_field and start_dt and end_dt:
+            end_date_exclusive = (end_dt.date() + timedelta(days=1)).isoformat()
+            filter_expr = (
+                f'{filter_field}.date >= "{start_dt.date().isoformat()}" '
+                f'AND {filter_field}.date < "{end_date_exclusive}"'
+            )
+
         while True:
             params: dict[str, Any] = {"pageSize": effective_page_size}
+            if filter_expr:
+                params["filter"] = filter_expr
             if page_token:
                 params["pageToken"] = page_token
 
-            result = self._execute_request("GET", url, params=params)
+            try:
+                result = self._execute_request("GET", url, params=params)
+            except GoogleHealthError as exc:
+                # Only fall back for a plain rejection of the request itself (e.g. the
+                # API rejects this filter syntax), on the very first page, before any
+                # data has been collected. Auth/rate-limit/not-linked/not-found errors
+                # are unrelated to the filter and must still propagate.
+                if (
+                    type(exc) is GoogleHealthError
+                    and filter_expr
+                    and page_token is None
+                    and not data_points
+                ):
+                    logger.warning(
+                        "Google Health rejected server-side filter for data_type=%s; "
+                        "retrying without it (client-side date check still applies).",
+                        data_type,
+                    )
+                    filter_expr = None
+                    continue
+                raise
             points = result.get("dataPoints", [])
 
             for pt in points:

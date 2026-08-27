@@ -37,4 +37,28 @@ describe('multisourceComparison (MS16)', () => {
         expect(scenario?.effectiveSourceCandidate).toBe('garmin_garmin_direct');
         expect(scenario?.confidenceMultiplierCandidate).toBe(0.85);
     });
+
+    it('derives the off-policy baseline from a real Garmin-only fusion evaluation, not literals', () => {
+        const report = runMultisourceSimulationScenarios();
+
+        // Every scenario with a Garmin bundle present must report the real
+        // single-source effective source string, consistently, not a hand-picked one.
+        for (const s of report.scenarios) {
+            if (s.scenario === 'garmin_missing_overnight') {
+                expect(s.effectiveSourceOff).toBe('none'); // No Garmin bundle in this scenario
+            } else {
+                expect(s.effectiveSourceOff).toBe('garmin_garmin_direct');
+            }
+            expect(s.confidenceMultiplierOff).toBe(1.0);
+        }
+    });
+
+    it('verifies D-MS-STRAIN by running fused HRV evidence through the real strain computation', () => {
+        const report = runMultisourceSimulationScenarios();
+        const scenario = report.scenarios.find((s) => s.scenario === 'post_hard_session_recovery');
+
+        expect(scenario).toBeDefined();
+        expect(scenario?.invariantPassed).toBe(true);
+        expect(scenario?.invariantNotes).toContain('computeInternalResponseStrain');
+    });
 });

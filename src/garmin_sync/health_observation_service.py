@@ -62,10 +62,61 @@ class HealthObservationService:
         self.repository = repository
         self.archive_store = archive_store
         self.providers = providers or {}
+        # Last-observed set of (source) transports each registered provider actually
+        # produced observations under. Populated whenever a provider returns a non-empty
+        # batch; used to scope reconciliation when that same provider later returns an
+        # empty batch (see _reconcile_missing_sources).
+        self._provider_transports: dict[str, set[str]] = {}
 
     def register_provider(self, name: str, provider: RecoveryObservationProvider) -> None:
         """Register a recovery observation provider."""
         self.providers[name] = provider
+
+    def _reconcile_missing_sources(
+        self,
+        logical_date_iso: str,
+        provider_transports: set[str],
+        current_keys: set[tuple[str, str]],
+    ) -> list[str]:
+        """Delete previously stored day-source bundles whose (provider, transport) key
+        falls under this recovery provider's own transport(s) but is absent from the
+        batch just fetched -- e.g. Eight Sleep dropping out of a mixed Google Health
+        batch, or a provider returning zero observations after previously reporting
+        some. A stale bundle left in place would remain queryable by fusion/audit code
+        even though its source no longer confirms the reading.
+
+        Scoped strictly to `provider_transports` (this provider's own known transport
+        identities) so a stored bundle written by a *different* registered provider is
+        never touched just because this provider's batch didn't mention it.
+        """
+        if not provider_transports:
+            return []
+
+        stale_ids: list[str] = []
+        existing = self.repository.get_health_observation_bundles_in_range(
+            logical_date_iso, logical_date_iso
+        )
+        for doc in existing:
+            doc_provider = doc.get("provider")
+            doc_transport = doc.get("transport")
+            if not doc_provider or not doc_transport:
+                continue
+            key = (doc_provider, doc_transport)
+            if key[1] not in provider_transports or key in current_keys:
+                continue
+            if self.repository.delete_health_observation_day_bundle(
+                logical_date_iso, key[0], key[1]
+            ):
+                stale_ids.append(f"{key[0]}_{key[1]}")
+                logger.info(
+                    "Tombstoned stale health observation bundle %s_%s_%s: absent from "
+                    "current batch for transports %s.",
+                    logical_date_iso,
+                    key[0],
+                    key[1],
+                    sorted(provider_transports),
+                )
+        return stale_ids
 
     def sync_date(
         self,
@@ -86,7 +137,16 @@ class HealthObservationService:
                     logger.debug(
                         "No observations returned by %s for %s.", provider_name, logical_date_iso
                     )
-                    results[provider_name] = {"status": "empty", "observations": 0}
+                    reconciled = self._reconcile_missing_sources(
+                        logical_date_iso,
+                        provider_transports=self._provider_transports.get(provider_name, set()),
+                        current_keys=set(),
+                    )
+                    results[provider_name] = {
+                        "status": "empty",
+                        "observations": 0,
+                        "reconciledStale": reconciled,
+                    }
                     continue
 
                 # Group observations by (provider, transport) so that e.g. Eight Sleep and Garmin
@@ -95,6 +155,9 @@ class HealthObservationService:
                 for o in batch.observations:
                     key = (o.source.provider, o.source.transport)
                     grouped.setdefault(key, []).append(o)
+
+                current_transports = {transport for _, transport in grouped}
+                self._provider_transports[provider_name] = current_transports
 
                 # Archive raw health observations if archive store is configured
                 archive_ref = batch.raw_archive_ref
@@ -144,10 +207,17 @@ class HealthObservationService:
                         "revision": revision,
                     }
 
+                reconciled = self._reconcile_missing_sources(
+                    logical_date_iso,
+                    provider_transports=current_transports,
+                    current_keys=set(grouped.keys()),
+                )
+
                 results[provider_name] = {
                     "status": "success",
                     "sources": provider_results,
                     "totalObservations": len(batch.observations),
+                    "reconciledStale": reconciled,
                 }
 
             except Exception as e:

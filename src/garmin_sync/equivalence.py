@@ -19,6 +19,7 @@ from .canonical import (
     CanonicalHealthObservation,
     ObservationSource,
 )
+from .google_health_mapper import parse_iso_datetime
 
 # Tolerances for transport equivalence
 TOLERANCES: dict[str, float] = {
@@ -41,6 +42,11 @@ class MetricComparison:
     difference: float | None
     isWithinTolerance: bool
     status: str  # "MATCH", "DELTA", "MISSING_DIRECT", "MISSING_GOOGLE"
+    # "MATCHED", "MISMATCHED", or "NOT_EVALUATED" when either transport lacks
+    # observed_start/observed_end. Direct-Garmin snapshots (RawMetrics) never carry
+    # interval timestamps today, so this is NOT_EVALUATED whenever the direct side is
+    # involved -- an honest gap, not a silent pass.
+    timestampStatus: str = "NOT_EVALUATED"
 
 
 @dataclass
@@ -122,6 +128,24 @@ class TransportEquivalenceAnalyzer:
                 # Date alignment verification
                 dates_match = obs_direct.logical_date == obs_google.logical_date
 
+                # Timestamp alignment: only evaluated when both transports actually
+                # supply observed_start/observed_end. A mismatch here fails the
+                # comparison; a missing side is reported explicitly as NOT_EVALUATED
+                # rather than silently treated as a match.
+                if (
+                    obs_direct.observed_start is not None
+                    and obs_direct.observed_end is not None
+                    and obs_google.observed_start is not None
+                    and obs_google.observed_end is not None
+                ):
+                    timestamps_match = (
+                        obs_direct.observed_start == obs_google.observed_start
+                        and obs_direct.observed_end == obs_google.observed_end
+                    )
+                    timestamp_status = "MATCHED" if timestamps_match else "MISMATCHED"
+                else:
+                    timestamp_status = "NOT_EVALUATED"
+
                 try:
                     if isinstance(val_direct, (int, float, str)) and isinstance(
                         val_google, (int, float, str)
@@ -130,7 +154,7 @@ class TransportEquivalenceAnalyzer:
                         num_google = float(val_google)
                         diff = abs(num_direct - num_google)
                         tol = TOLERANCES.get(metric, 1e-3)
-                        within = (diff <= tol) and dates_match
+                        within = (diff <= tol) and dates_match and timestamp_status != "MISMATCHED"
                         if not within:
                             transforming_count += 1
 
@@ -142,12 +166,17 @@ class TransportEquivalenceAnalyzer:
                                 difference=diff,
                                 isWithinTolerance=within,
                                 status="MATCH" if within else "DELTA",
+                                timestampStatus=timestamp_status,
                             )
                         )
                     else:
                         raise ValueError("Non-numeric value")
                 except (ValueError, TypeError):
-                    match_nonnumeric = (val_direct == val_google) and dates_match
+                    match_nonnumeric = (
+                        (val_direct == val_google)
+                        and dates_match
+                        and timestamp_status != "MISMATCHED"
+                    )
                     if not match_nonnumeric:
                         transforming_count += 1
                     comparisons.append(
@@ -158,6 +187,7 @@ class TransportEquivalenceAnalyzer:
                             difference=None,
                             isWithinTolerance=match_nonnumeric,
                             status="MATCH" if match_nonnumeric else "DELTA",
+                            timestampStatus=timestamp_status,
                         )
                     )
 
@@ -178,7 +208,15 @@ class TransportEquivalenceAnalyzer:
 def snapshot_to_canonical_observations(
     snapshot: dict[str, Any],
 ) -> list[CanonicalHealthObservation]:
-    """Convert a daily_recovery_snapshots document into canonical health observations."""
+    """Convert a daily_recovery_snapshots document into canonical health observations.
+
+    observed_start/observed_end are always None here: this document's `raw` payload is
+    a `RawMetrics` projection (see models.py), which never captured sleep-session
+    interval timestamps for the direct-Garmin ingestion path. There is no field to read
+    them from, so leaving them None (rather than fabricating a value) is correct --
+    compare_date_observations reports timestamp equivalence as NOT_EVALUATED for these
+    observations instead of silently treating the missing side as a match.
+    """
     date_str = snapshot.get("date", "")
     raw = snapshot.get("raw", {}) or {}
     source = ObservationSource(
@@ -321,8 +359,8 @@ def bundle_to_canonical_observations(
                 value=raw.get("value"),
                 unit=raw.get("unit", ""),
                 source=source,
-                observed_start=None,
-                observed_end=None,
+                observed_start=parse_iso_datetime(raw.get("observedStart")),
+                observed_end=parse_iso_datetime(raw.get("observedEnd")),
                 logical_date=logical_date,
             )
         )
