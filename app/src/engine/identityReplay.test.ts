@@ -112,6 +112,35 @@ describe('runIdentityReplay (PI8, ADR-0028)', () => {
         }
     });
 
+    it('rejects duplicate sourceNightKey rows before they can collide or leak into chronological training', () => {
+        const first = ordinaryNight(0);
+        const duplicate = ordinaryNight(0, {
+            sharedBundleRef: ref({ id: 'duplicate-revision', revision: 2, sourcePayloadHash: 'sha256:duplicate' }),
+        });
+
+        expect(() =>
+            runIdentityReplay([first, duplicate], {
+                ...BASE_CONFIG,
+                method: 'chronologicalExpandingWindow',
+                minTrainingNights: 1,
+            }),
+        ).toThrow(/duplicate sourceNightKey/i);
+    });
+
+    it('validates replay config loaded from untyped JSON instead of silently choosing another method', () => {
+        const invalidMethod = {
+            ...BASE_CONFIG,
+            method: 'not-a-real-method',
+        } as unknown as IdentityReplayConfig;
+        expect(() => runIdentityReplay(buildOrdinaryHistory(2), invalidMethod)).toThrow(/unsupported replay method/i);
+        expect(() =>
+            runIdentityReplay([], {
+                ...BASE_CONFIG,
+                candidateMinUserScores: [0.5, 1.1],
+            }),
+        ).toThrow(/candidateMinUserScores/i);
+    });
+
     it('supports chronologicalExpandingWindow and abstains before minTrainingNights history exists', () => {
         const nights = buildOrdinaryHistory(20);
         const report = runIdentityReplay(nights, {
@@ -153,7 +182,7 @@ describe('runIdentityReplay (PI8, ADR-0028)', () => {
             transport: 'fitbit_direct',
             revision: 1,
             sourcePayloadHash: 'sha256:fitbit',
-            lineageKey: 'fitbit:device:athlete', // independent of the shared bundle's lineage
+            lineageKey: 'fitbit:device:athlete',
         };
         const night = ordinaryNight(0, { anchorBundleRefs: [mismatchedProviderAnchor] });
         const record = toPairedNightFeatureRecord(deriveNightFeatures(night), ANCHOR_POLICY);

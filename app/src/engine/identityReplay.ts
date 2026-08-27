@@ -89,6 +89,7 @@ export interface IdentityReplayNightFeatures {
     relation: PhysiologicalRelationFeatures;
 }
 
+/** Derives PI2 anchor, lineage, pairing, overlap, and physiological-relation features for one night. */
 export function deriveNightFeatures(input: IdentityReplayNightInput): IdentityReplayNightFeatures {
     const anchorEligibility = evaluateAnchorEligibility({
         present: input.anchorPresent,
@@ -222,6 +223,48 @@ const REPORT_LIMITATIONS: readonly string[] = [
     'Threshold sensitivity reports acceptance coverage only -- without real negative labels, false-acceptance/precision cannot be measured yet (see PI8 prospective evidence).',
 ];
 
+/**
+ * Validates invariants that TypeScript cannot enforce once the evidence CLI loads JSON. In
+ * particular, `sourceNightKey` must be unique because both PI3 replay primitives and the result
+ * maps use it as the night identity. Allowing duplicate rows would make a chronological replay
+ * train a later duplicate on the same logical night and would collapse result/passport lookups,
+ * violating P-PI-16.
+ */
+function assertReplayInputContract(
+    nights: readonly IdentityReplayNightInput[],
+    config: IdentityReplayConfig,
+): void {
+    const seenNightKeys = new Set<string>();
+    for (const night of nights) {
+        if (!night.sourceNightKey.trim()) {
+            throw new Error('runIdentityReplay: every replay row requires a non-empty sourceNightKey.');
+        }
+        if (seenNightKeys.has(night.sourceNightKey)) {
+            throw new Error(
+                `runIdentityReplay: duplicate sourceNightKey ${night.sourceNightKey}; ` +
+                    'export exactly one canonical shared-source row per logical night.',
+            );
+        }
+        seenNightKeys.add(night.sourceNightKey);
+    }
+
+    if (config.method !== 'leaveOneOut' && config.method !== 'chronologicalExpandingWindow') {
+        throw new Error(`runIdentityReplay: unsupported replay method ${String(config.method)}.`);
+    }
+    if (
+        config.minTrainingNights !== undefined &&
+        (!Number.isInteger(config.minTrainingNights) || config.minTrainingNights < 1)
+    ) {
+        throw new Error('runIdentityReplay: minTrainingNights must be a positive integer when provided.');
+    }
+    for (const minUserScore of config.candidateMinUserScores ?? []) {
+        if (!Number.isFinite(minUserScore) || minUserScore < 0 || minUserScore > 1) {
+            throw new Error('runIdentityReplay: candidateMinUserScores values must be finite numbers in [0, 1].');
+        }
+    }
+}
+
+/** Builds the exact PI4 evaluator input for one replay night and its out-of-sample passport. */
 function buildAttributionInput(
     features: IdentityReplayNightFeatures,
     passport: OutOfSampleReplayResult['passport'],
@@ -243,6 +286,7 @@ function buildAttributionInput(
     };
 }
 
+/** Counts automatic USER acceptances when only the policy's `minUserScore` threshold is changed. */
 function evaluateAtThreshold(
     inputs: readonly IdentityAttributionInput[],
     policy: IdentityAttributionPolicy,
@@ -253,17 +297,20 @@ function evaluateAtThreshold(
         .length;
 }
 
+/** Selects the raw shared-source value used by the before/after baseline comparison. */
 function rawMetricValue(input: IdentityReplayNightInput, metric: IdentityReplayBaselineMetric): number | null {
     if (metric === 'restingHeartRate') return input.sharedRestingHeartRate;
     if (metric === 'respirationRate') return input.sharedRespirationRate;
     return input.sharedHrv;
 }
 
+/** Computes the report's robust baseline summary for one finite-value vector. */
 function estimateFor(values: readonly number[]): IdentityReplayBaselineEstimate {
     const median = calculateMedian(values);
     return { n: values.length, median, mad: calculateMad(values, median) };
 }
 
+/** Compares a full-window shared-source baseline before identity gating and after USER-only gating. */
 function computeBaselineComparison(
     nightInputs: readonly IdentityReplayNightInput[],
     userNightKeys: ReadonlySet<string>,
@@ -290,12 +337,14 @@ function computeBaselineComparison(
 /**
  * Runs the full PI8 out-of-sample historical replay. `nights` need not be pre-sorted; this
  * function sorts by `sourceNightKey` before fitting so a `chronologicalExpandingWindow` replay
- * trains each night only on strictly earlier nights.
+ * trains each night only on strictly earlier nights. The input contract requires exactly one
+ * canonical row per `sourceNightKey`; duplicate logical nights fail closed before any fitting.
  */
 export function runIdentityReplay(
     nights: readonly IdentityReplayNightInput[],
     config: IdentityReplayConfig,
 ): IdentityReplayReport {
+    assertReplayInputContract(nights, config);
     const sortedInputs = [...nights].sort((a, b) => a.sourceNightKey.localeCompare(b.sourceNightKey));
     const featuresByNight = sortedInputs.map(deriveNightFeatures);
     const pairedRecords = featuresByNight.map((f) => toPairedNightFeatureRecord(f, config.anchorPolicy));
@@ -394,11 +443,13 @@ export function runIdentityReplay(
     };
 }
 
+/** Formats a baseline estimate compactly for the Markdown evidence table. */
 function formatEstimate(estimate: IdentityReplayBaselineEstimate): string {
     if (estimate.median === null) return `N=${estimate.n}, median=N/A`;
     return `N=${estimate.n}, median=${estimate.median.toFixed(2)}, MAD=${estimate.mad?.toFixed(2) ?? 'N/A'}`;
 }
 
+/** Renders the structured PI8 replay report as a reviewable Markdown evidence artifact. */
 export function renderIdentityReplayMarkdown(report: IdentityReplayReport): string {
     const lines = [
         '# Physiological identity passport -- historical out-of-sample replay',

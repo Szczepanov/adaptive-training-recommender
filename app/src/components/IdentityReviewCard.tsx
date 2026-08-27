@@ -132,7 +132,9 @@ interface IdentityReviewCardProps {
 /**
  * PI7 data-wired suspicious-night review surface. Looks back over a small window of recent
  * assessments for the most recent night whose automatic evaluator abstained for a reason the
- * user can actually confirm or deny, and lets them submit a review event.
+ * user can actually confirm or deny, and lets them submit a review event. Query-scope changes
+ * invalidate the active assessment immediately so an older in-flight write cannot update the
+ * local state for a newly selected night.
  */
 export function IdentityReviewCard({ userId, date, lookbackDays = 7 }: IdentityReviewCardProps) {
     const [candidate, setCandidate] = useState<EffectiveBundleIdentityProjection | null>(null);
@@ -146,7 +148,14 @@ export function IdentityReviewCard({ userId, date, lookbackDays = 7 }: IdentityR
 
     useEffect(() => {
         let cancelled = false;
+        // Invalidate the previous query scope before starting the async read. Without this, an
+        // older submit that resolves during the new fetch window can still see the previous
+        // assessment id as active and briefly write its label/event id into the new scope.
+        activeAssessmentIdRef.current = null;
         setLoaded(false);
+        setCandidate(null);
+        setExistingReviewLabel(null);
+        setLastReviewEventId(null);
         const startNightKey = addDaysToLocalDateString(date, -lookbackDays);
         identityPersistenceService
             .getEffectiveProjectionsInRange(userId, startNightKey, date)
@@ -162,13 +171,16 @@ export function IdentityReviewCard({ userId, date, lookbackDays = 7 }: IdentityR
             })
             .catch(() => {
                 if (!cancelled) {
+                    activeAssessmentIdRef.current = null;
                     setCandidate(null);
                     setExistingReviewLabel(null);
+                    setLastReviewEventId(null);
                     setLoaded(true);
                 }
             });
         return () => {
             cancelled = true;
+            activeAssessmentIdRef.current = null;
         };
     }, [userId, date, lookbackDays]);
 

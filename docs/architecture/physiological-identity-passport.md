@@ -148,7 +148,17 @@ reason codes are also shown in user language behind a native `<details>` disclos
 review choices (`Only me`, `Shared / mixed`, `Not me`, `Unsure`) write an append-only review event
 — "do not force a label" means the *label* recorded for `Unsure` stays `UNCERTAIN`/`UNKNOWN`, not
 that nothing is written; a durable event is what stops the same night from re-prompting on every
-later visit. A later correction supersedes the card's own prior submission rather than editing it.
+later visit.
+
+The card also treats query-scope changes (`userId`, date, lookback) as a hard UI boundary: it
+invalidates the active assessment ref before fetching the next range, so a review write that was
+already in flight for the old night cannot update the local label/event-id state of the newly
+selected night. If the athlete changes their answer while the same card is still open, the next
+submission supersedes the prior review event rather than editing it. On a later visit, an already
+manually-reviewed night is intentionally not re-prompted; this PR does **not** add a separate
+review-history editor for cross-session corrections. The persistence model supports superseding
+review events, but exposing an explicit historical-correction surface is separate UI work rather
+than silently re-opening old prompts.
 
 ## Historical out-of-sample replay (PI8)
 
@@ -166,10 +176,17 @@ npm run evidence:identity-replay -- \
 ```
 
 Input shape is `{ "nights": IdentityReplayNightInput[], "config": IdentityReplayConfig }` — see
-`identityReplay.ts` for the exact contracts. **No exporter exists yet** to turn the real 60-day
-Garmin+Eight Sleep history into that input shape; the harness has only been exercised against
-synthetic fixtures. Producing the actual historical evidence report — the input the PI9 activation
-decision needs — remains open work.
+`identityReplay.ts` for the exact contracts. The exporter must emit **exactly one canonical row per
+`sourceNightKey`**. Duplicate logical-night rows are rejected before replay because PI3's replay
+primitives and the report maps use `sourceNightKey` as the night identity; accepting duplicates
+would let chronological replay train on the same logical night and would collapse result/passport
+lookups, violating P-PI-16. Because the CLI loads JSON rather than typed TypeScript values,
+`runIdentityReplay()` also validates the replay method, `minTrainingNights`, and candidate
+`minUserScore` sweep bounds at runtime instead of silently interpreting malformed evidence input.
+
+**No exporter exists yet** to turn the real 60-day Garmin+Eight Sleep history into that input
+shape; the harness has only been exercised against synthetic fixtures. Producing the actual
+historical evidence report — the input the PI9 activation decision needs — remains open work.
 
 ## Replaying one night's identity decision
 
@@ -248,6 +265,9 @@ activation, per ADR-0028.
 - The MS16 simulation harness has not migrated off the legacy co-presence heuristic.
 - The real 60-day/42-night historical replay has not been run — no exporter exists.
 - Prospective suspicious-night labels have not begun accumulating (no real usage yet).
+- There is no review-history editor for reopening an already-reviewed night across sessions; the
+  append-only persistence contract supports supersession, but this PR exposes correction only while
+  the current card remains open.
 - Telemetry counters are designed but not emitted (no analytics pipeline, no active call path).
 - There is no operational passport-rebuild CLI and no `replay-identity-decision` CLI yet — both
   exist only as library functions today.
