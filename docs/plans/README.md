@@ -55,7 +55,9 @@ These implement the way forward in
 [`docs/analysis/2026-08-08-architecture-review.md`](../analysis/2026-08-08-architecture-review.md)
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.
 
-Phases 0–8 are **implemented**; Phase 9.0 and Phase 9 remain **In progress**.
+Phases 0–8 are **implemented**; Phase 9.0 and Phase 9 remain **In progress**. Phase 9.0's
+9.0.1 operational precondition closed 2026-08-27; the 9.0.7 evidence block's day 1 is
+2026-08-22.
 Among capability plans, Garmin per-activity telemetry (G) and Mobile UX/UI (UX) are
 **implemented**; Strength session logging (S) is **In progress (default-off)** with all
 numbered code delivered; Multidomain sessions (M) is **In progress** with M0–M5.3
@@ -113,7 +115,7 @@ all-`Ready` table became unusable.
 | 7A | [Weekly allocation & safe role reservations](./phase-7-weekly-allocation-and-role-reservations.md) | **Implemented** | none | none | resolves PR #17's healthy/fresh cycling role-coverage failure without recalibrating recovery |
 | 7B | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Implemented** | none | none | evidence-derived Evergreen dose packed into real capacity, while preserving structured and demand-derived event planning — not an original review finding |
 | 8 | [Externally-planned mode](./phase-8-externally-planned-mode.md) | **Implemented** | — | — | imports an externally-authored plan and narrows the engine to per-session adjudication plus weekly critique — not an original review finding |
-| 9.0 | [Shadow mode & decision journal](./phase-9-0-shadow-mode-and-decision-journal.md) | **In progress** | 9.0.1 (operational; 9.0.2-9.0.6 code is done) | — | runs the app against the athlete's existing AI loop for one block and records the disagreements — the first evidence in this repository from a real athlete rather than a synthetic corpus |
+| 9.0 | [Shadow mode & decision journal](./phase-9-0-shadow-mode-and-decision-journal.md) | **In progress** | 9.0.7 (run the block; 9.0.1-9.0.6 done, block day 1 is 2026-08-22) | — | runs the app against the athlete's existing AI loop for one block and records the disagreements — the first evidence in this repository from a real athlete rather than a synthetic corpus |
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | only 9.8 remains (9.1–9.7 done — 9.8 needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
 | AJ 5–6 | [AI judge calibration controls & reference audit](./ai-judge-phase-5-6-calibration-and-reference-audit.md) | **In progress** | none | none | evaluates the offline LLM judge against frozen controls and compares compatible reference runs without changing production policy or the committed planner baseline |
 | G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Implemented** | none | none | ingests per-activity power/HR time-in-zone, normalized power and lap averages; the measured zone-credit candidate remains off after an evidence-backed no-ship decision |
