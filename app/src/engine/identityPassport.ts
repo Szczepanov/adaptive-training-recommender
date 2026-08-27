@@ -455,12 +455,22 @@ export interface FitPassportParams {
 export function fitPassportFromNights(params: FitPassportParams): PhysiologicalIdentityPassport {
     const floors = params.scaleFloors ?? DEFAULT_IDENTITY_FEATURE_SCALE_FLOORS;
     const grouped = groupBySharedAndAnchor(params.nights);
+    const nightsBySharedProvider = new Map<string, PairedNightFeatureRecord[]>();
+    for (const night of params.nights) {
+        const existing = nightsBySharedProvider.get(night.sharedProvider);
+        if (existing) {
+            existing.push(night);
+        } else {
+            nightsBySharedProvider.set(night.sharedProvider, [night]);
+        }
+    }
 
     const sourceProfiles: Record<string, SourceProfile> = {};
     const crossSourceProfiles: Record<string, CrossSourceProfile> = {};
+    for (const [sharedProvider, providerNights] of nightsBySharedProvider) {
+        sourceProfiles[sharedProvider] = fitSourceProfile(providerNights, floors);
+    }
     for (const [key, groupNights] of grouped) {
-        const sharedProvider = groupNights[0].sharedProvider;
-        sourceProfiles[sharedProvider] = fitSourceProfile(groupNights, floors);
         crossSourceProfiles[key] = fitCrossSourceProfile(groupNights, floors);
     }
 
