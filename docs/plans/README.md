@@ -65,6 +65,12 @@ complete; Performance outcome validation (OV) is **In progress** with the engine
 stack through OV6.1 merged; Health anomaly alerting (HA) is **In progress** with HA0–HA5
 on `main` (HA5 shadow observability/replay merged via #171) and HA6.1–HA6.3 prospective
 outcome labels implemented via PR #174 (evidence-only, gated behind the shadow surface).
+Physiological identity passport & measurement trust (PI) is **Approved, in progress**:
+PI0–PI7 are implemented (the pairing/lineage/passport/evaluator/pre-baseline gate engine
+layer, persistence, and the suspicious-night review UI); PI8's historical replay harness is
+built but has not been run against real history yet; PI9's fusion migration is additive and
+its production activation decision is explicitly not made; PI10's architecture docs are
+written, its telemetry deferred to activation.
 
 For Multidomain delivery, the 2026-08-19 evidence-first cutline chain from
 [`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md),
@@ -126,9 +132,10 @@ all-`Ready` table became unusable.
 | HA | [Health anomaly and possible-illness alerting](./health-anomaly-and-illness-risk-alerting.md) | **In progress** | HA7 evidence & prospective accumulation | HA6.4 needs enough labelled personal history; HA7 needs real replay/prospective evidence; HA8/HA9 remain release-gated | explainable physiological-anomaly evidence with structured confounders; HA0–HA5 on `main` (HA5 via #171), HA6.1–HA6.3 prospective labels implemented in PR #174 |
 | SV | [Scientific validation & closed feedback loop](./scientific-validation-and-feedback-loop.md) | **In progress** | SV6 prospective calibration synthesis | SV6 needs multi-block real athlete history | evaluates signal marginal information value, window stability, collinearity, closed-loop telemetry, and counterfactual regret |
 | MS | [Multisource health & recovery ingestion](./multisource-health-and-recovery-ingestion.md) | **Approved** | MS0 | none | source-aware observation contract, Google Health ingestion, Eight Sleep export probing, and evidence-gated fusion (ADR-0027) |
+| PI | [Physiological identity passport & measurement trust](./physiological-identity-passport-and-measurement-trust.md) | **Approved** | PI9's activation decision needs real historical/prospective evidence this repository cannot produce alone | PI9 needs the PI8 real-data replay and PI7 prospective labels; PI10's telemetry needs an analytics pipeline that does not exist yet | provider-neutral identity-attribution/measurement-trust layer (ADR-0028) between shared-source observations and baseline/fusion logic; PI0-PI7 implemented, PI8/PI9/PI10 partial |
 
-Rows G, S, M, UX, OV, HA, SV, and MS are **not phases**. They are capability/surface plans whose work items are
-prefixed `G*`, `S*`, `M*`, `UX*`, `OV*`, `HA*`, `SV*`, `MS*` precisely so they cannot be mistaken for the `Phase 0`–`9`
+Rows G, S, M, UX, OV, HA, SV, MS, and PI are **not phases**. They are capability/surface plans whose work items are
+prefixed `G*`, `S*`, `M*`, `UX*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*` precisely so they cannot be mistaken for the `Phase 0`–`9`
 sequence; the `#` column carries that prefix rather than a phase number. For capability plans, an item
 with satisfied dependencies but an unmet usage trigger is **not** listed as startable. A transferred
 historical item (former M7) is likewise not listed under its old plan; only the canonical owner tracks it.

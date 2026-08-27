@@ -117,9 +117,9 @@ The central migration requirement is moving effective identity eligibility **ups
 | PI5 | Pre-baseline effective-eligibility gate | `[x]` | PI4 | blocks unverified Eight Sleep baseline learning |
 | PI6 | Persistence, review events, replay provenance and Firestore rules | `[x]` | PI1, PI4 | none |
 | PI7 | Suspicious-night review UI | `[x]` | PI6 | manual labels only |
-| PI8 | Historical out-of-sample replay + prospective label collection | `[~]` harness built, real-data run pending | PI4, PI6 | evidence only |
-| PI9 | Activation decision and replacement of `CoPresenceValidator` | `[~]` fusion migrated additively; activation decision not made (needs real evidence) | PI5, PI7, PI8 | production identity gate |
-| PI10 | Living architecture, telemetry, operations and regression suite | `[~]` architecture doc + runbook + privacy docs written; telemetry deferred to activation | PI9 | documentation/ops |
+| PI8 | Historical out-of-sample replay + prospective label collection | `[-]` harness built, real-data run pending | PI4, PI6 | evidence only |
+| PI9 | Activation decision and replacement of `CoPresenceValidator` | `[-]` fusion migrated additively; activation decision not made (needs real evidence) | PI5, PI7, PI8 | production identity gate |
+| PI10 | Living architecture, telemetry, operations and regression suite | `[-]` architecture doc + runbook + privacy docs written; telemetry deferred to activation | PI9 | documentation/ops |
 
 ---
 
