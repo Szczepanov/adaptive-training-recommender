@@ -92,6 +92,11 @@ export function evaluateMultisourceFusion(params: {
     }
 
     // Step 1: Secondary-source identity & session concordance validation (D-MS-IDENTITY, D-MS-PREBASE)
+    //
+    // PROVISIONAL (PI0/PI9, ADR-0028): PI5 now protects baseline accumulation upstream through
+    // explicit EffectiveIdentityDecision eligibility. This downstream call remains only as a
+    // legacy candidate-fusion compatibility guard; PI9 must replace it with the same effective
+    // decision projection rather than extend its fixed thresholds.
     let garminRhr: number | null = null;
     let eightSleepRhr: number | null = null;
     let garminSleepInterval: SleepSessionInterval | null = null;

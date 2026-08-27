@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Recommendation } from './models';
+import type { IdentityDecisionProvenance } from '../observations/identityModels';
 import { TEMPLATES } from './templates';
 import { POLICY_VERSION } from './policy';
 import { buildRecommendationAudit } from './provenance';
@@ -111,5 +112,44 @@ describe('recommendation provenance', () => {
 
         const audit = buildRecommendationAudit(recommendation, snapshot, '2026-08-07T09:00:00Z');
         expect(audit?.envelope.safetyRestrictedModalityCount).toBe(1);
+    });
+
+    it('carries compact identity evidence into the recommendation audit verbatim', () => {
+        const template = TEMPLATES.find(item => item.category === 'Rest');
+        if (!template) throw new Error('Test fixture requires a rest template');
+        const recommendation: Recommendation = {
+            template,
+            mode: 'recover',
+            rationale: 'Identity fallback.',
+            envelopes: {
+                safety: { clinicalFlagActive: false, restrictedModalities: [] },
+                plan: { maxAllowableTier: 'Rest', taperActive: false },
+            },
+            decisionTrace: { policyVersion: POLICY_VERSION, candidateScores: [], droppedContributorObjectives: [] },
+        };
+        const snapshot = buildTrainingHistorySnapshot(
+            '2026-08-07', 7,
+            { status: 'AVAILABLE', revision: 'activities-r1', data: [] },
+            { status: 'AVAILABLE', revision: 'recommendations-r1', data: [] },
+            '2026-08-07T08:00:00Z',
+        );
+        const identity: IdentityDecisionProvenance = {
+            identityAssessmentId: 'assessment-1',
+            automaticStatus: 'UNCERTAIN', effectiveStatus: 'UNCERTAIN', reviewEventId: null,
+            identityPolicyVersion: 'identity-v1-shadow', featureSchemaVersion: 'identity-features-v1',
+            passportVersion: '2026-08-07.1',
+            sharedBundleRef: {
+                id: 'shared', provider: 'shared_bed', transport: 'health_aggregator', revision: 2,
+                sourcePayloadHash: 'sha256:shared', lineageKey: 'shared-bed:side:a',
+            },
+            anchorBundleRefs: [],
+            selectedEffectiveSource: { provider: 'garmin', transport: 'garmin_direct' },
+            fallbackReason: 'ANCHOR_MISSING',
+        };
+
+        const audit = buildRecommendationAudit(
+            recommendation, snapshot, '2026-08-07T09:00:00Z', null, identity,
+        );
+        expect(audit?.identityDecision).toEqual(identity);
     });
 });

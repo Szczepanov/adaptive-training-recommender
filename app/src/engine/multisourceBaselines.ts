@@ -5,9 +5,19 @@
  * source/provider boundary to prevent device discontinuities from distorting baselines.
  * Evaluates baseline maturity state machines to ensure secondary sensors do not affect
  * confidence before reaching adequate maturity.
+ *
+ * PI5/ADR-0028: the public calculator requires an explicit effective-identity projection and
+ * filters it through `selectEligibleHealthObservationBundles()` before extracting any value.
+ * Configured shared sources therefore cannot enter an ordinary baseline call without exact
+ * bundle-revision evidence granting `baselineLearning`.
  */
 
 import type { BaselineMaturity, HealthObservationDayBundle } from '../observations/models';
+import {
+    selectEligibleHealthObservationBundles,
+    type EffectiveBundleIdentityProjection,
+    type IdentityEligibilityPolicy,
+} from './identityEligibility';
 
 export interface SourceMetricBaseline {
     metric: string;
@@ -66,22 +76,36 @@ export function evaluateBaselineMaturity(
     return 'MATURE';
 }
 
+export interface ComputeSourceMetricBaselineParams {
+    bundles: readonly HealthObservationDayBundle[];
+    userId: string;
+    effectiveIdentityProjections: readonly EffectiveBundleIdentityProjection[];
+    identityPolicy: IdentityEligibilityPolicy;
+    metric: string;
+    provider: string;
+    transport: string;
+    referenceDate: string;
+}
+
 export function computeSourceMetricBaseline(
-    bundles: readonly HealthObservationDayBundle[],
-    metric: string,
-    provider: string,
-    transport: string,
-    referenceDate: string,
+    params: ComputeSourceMetricBaselineParams,
 ): SourceMetricBaseline {
-    const relevantBundles = bundles.filter(
-        (b) => b.provider === provider && b.transport === transport,
+    const eligibleBundles = selectEligibleHealthObservationBundles({
+        bundles: params.bundles,
+        userId: params.userId,
+        effectiveIdentityProjections: params.effectiveIdentityProjections,
+        identityPolicy: params.identityPolicy,
+        requireEligibility: 'baselineLearning',
+    });
+    const relevantBundles = eligibleBundles.filter(
+        (b) => b.provider === params.provider && b.transport === params.transport,
     );
 
     // Extract numeric values mapped by logical date
     const dateValues: { date: string; value: number }[] = [];
     for (const bundle of relevantBundles) {
         for (const obs of bundle.observations) {
-            if (obs.metric === metric && typeof obs.value === 'number') {
+            if (obs.metric === params.metric && typeof obs.value === 'number') {
                 dateValues.push({ date: bundle.logicalDate, value: obs.value });
                 break; // 1 observation per metric per day bundle
             }
@@ -90,7 +114,7 @@ export function computeSourceMetricBaseline(
 
     dateValues.sort((a, b) => a.date.localeCompare(b.date));
 
-    const refTime = new Date(referenceDate).getTime();
+    const refTime = new Date(params.referenceDate).getTime();
     const window28Values: number[] = [];
     const window7Values: number[] = [];
     let latestDate: string | null = null;
@@ -112,12 +136,16 @@ export function computeSourceMetricBaseline(
     const median7d = calculateMedian(window7Values);
     const median28d = calculateMedian(window28Values);
     const mad28d = calculateMad(window28Values, median28d);
-    const maturity = evaluateBaselineMaturity(window28Values.length, latestDate, referenceDate);
+    const maturity = evaluateBaselineMaturity(
+        window28Values.length,
+        latestDate,
+        params.referenceDate,
+    );
 
     return {
-        metric,
-        provider,
-        transport,
+        metric: params.metric,
+        provider: params.provider,
+        transport: params.transport,
         count7d: window7Values.length,
         count28d: window28Values.length,
         median7d,

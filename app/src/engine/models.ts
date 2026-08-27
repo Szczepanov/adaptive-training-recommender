@@ -1,5 +1,6 @@
 import type { AthletePerformanceProfile, WorkoutPrescription } from '../workouts/models.ts';
 import type { SessionReferenceBinding } from '../sessions/models';
+import type { IdentityDecisionProvenance } from '../observations/identityModels';
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import type { SubjectiveBaseline } from './subjectiveBaseline';
 import type { DataConfidenceScore } from './dataConfidence';
@@ -1618,6 +1619,8 @@ export interface RecommendationAudit {
     /** Multidomain session bindings (M3.2 / ADR-0023 D-MSNAP). */
     primarySession?: SessionReferenceBinding;
     additionalSessions?: SessionReferenceBinding[];
+    /** Present once multisource evidence influenced the recommendation input (PI6/ADR-0028). */
+    identityDecision?: IdentityDecisionProvenance;
 }
 
 /** A compact, replayable record that a replacement occurrence, not catalog ranking,
