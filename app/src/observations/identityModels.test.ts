@@ -220,6 +220,43 @@ describe('identityModels (PI1, ADR-0028)', () => {
             // Order-independence: shuffling the input array must not change the resolved head.
             expect(findEffectiveReviewEvent([events[2], events[0], events[1]])?.id).toBe('r3');
         });
+
+        it('an orphaned review referencing a missing predecessor cannot override the automatic status', () => {
+            const orphan = makeReviewEvent({
+                id: 'review-2',
+                label: 'NOT_USER',
+                occupancyAttestation: 'UNKNOWN',
+                supersedesReviewEventId: 'missing',
+                recordedAt: '2026-08-27T09:00:00Z',
+            });
+
+            expect(findEffectiveReviewEvent([orphan])).toBeNull();
+            const decision = deriveEffectiveIdentityDecision(
+                makeAssessment({ automaticStatus: 'USER' }),
+                [orphan],
+            );
+            expect(decision.effectiveStatus).toBe('USER');
+            expect(decision.authority).toBe('AUTOMATIC');
+            expect(decision).not.toHaveProperty('reviewEventId');
+        });
+
+        it('a cyclic supersession chain cannot override the automatic status', () => {
+            const first = makeReviewEvent({
+                id: 'review-1',
+                supersedesReviewEventId: 'review-2',
+            });
+            const second = makeReviewEvent({
+                id: 'review-2',
+                supersedesReviewEventId: 'review-1',
+                recordedAt: '2026-08-27T09:00:00Z',
+            });
+
+            expect(findEffectiveReviewEvent([first, second])).toBeNull();
+            const decision = deriveEffectiveIdentityDecision(makeAssessment(), [first, second]);
+            expect(decision.effectiveStatus).toBe('UNCERTAIN');
+            expect(decision.authority).toBe('AUTOMATIC');
+            expect(decision).not.toHaveProperty('reviewEventId');
+        });
     });
 
     describe('eligibility mapping', () => {
