@@ -166,10 +166,21 @@ function compareReviewEventsByRecencyDesc(a: IdentityReviewEvent, b: IdentityRev
     return a.id < b.id ? 1 : -1;
 }
 
+function reviewEventSemanticsAreValid(event: IdentityReviewEvent): boolean {
+    if (event.schemaVersion !== 1 || !event.id || !event.assessmentId) return false;
+    if (!Number.isFinite(Date.parse(event.recordedAt))) return false;
+    if (event.supersedesReviewEventId === event.id) return false;
+    if (event.source !== 'user_ui' && event.source !== 'admin_replay') return false;
+    if (event.label === 'USER') return event.occupancyAttestation === 'EXCLUSIVE';
+    if (event.label === 'NOT_USER') return event.occupancyAttestation === 'UNKNOWN';
+    return event.occupancyAttestation === 'MIXED' || event.occupancyAttestation === 'UNKNOWN';
+}
+
 /**
  * Resolves the single currently-effective review event out of an append-only chain, following
- * `supersedesReviewEventId` links. An event is a "head" (current) when no other event in the
- * chain supersedes it. Returns `null` when no review events exist yet.
+ * `supersedesReviewEventId` links. Only a complete chain rooted at an unsuperseding event is
+ * admitted; orphaned, cyclic, duplicate-ID, non-monotonic, or semantically malformed events fail
+ * closed and cannot override the automatic assessment.
  */
 export function findEffectiveReviewEvent(
     reviewEvents: readonly IdentityReviewEvent[],
@@ -178,16 +189,43 @@ export function findEffectiveReviewEvent(
         return null;
     }
 
-    const supersededIds = new Set<string>();
+    const candidates = new Map<string, IdentityReviewEvent>();
+    const duplicateIds = new Set<string>();
     for (const event of reviewEvents) {
-        if (event.supersedesReviewEventId) {
-            supersededIds.add(event.supersedesReviewEventId);
-        }
+        if (!reviewEventSemanticsAreValid(event)) continue;
+        if (candidates.has(event.id)) duplicateIds.add(event.id);
+        candidates.set(event.id, event);
+    }
+    for (const duplicateId of duplicateIds) {
+        candidates.delete(duplicateId);
     }
 
-    const heads = reviewEvents.filter((event) => !supersededIds.has(event.id));
-    const candidates = heads.length > 0 ? heads : reviewEvents; // defensive fallback for a malformed/cyclic chain
-    return [...candidates].sort(compareReviewEventsByRecencyDesc)[0] ?? null;
+    const accepted = new Map<string, IdentityReviewEvent>();
+    for (const [id, event] of candidates) {
+        if (event.supersedesReviewEventId === null) accepted.set(id, event);
+    }
+
+    while (true) {
+        let added = false;
+        for (const [id, event] of candidates) {
+            if (accepted.has(id) || event.supersedesReviewEventId === null) continue;
+            const parent = accepted.get(event.supersedesReviewEventId);
+            if (!parent) continue;
+            if (Date.parse(event.recordedAt) >= Date.parse(parent.recordedAt)) {
+                accepted.set(id, event);
+                added = true;
+            }
+        }
+        if (!added) break;
+    }
+
+    if (accepted.size === 0) return null;
+    const supersededIds = new Set<string>();
+    for (const event of accepted.values()) {
+        if (event.supersedesReviewEventId !== null) supersededIds.add(event.supersedesReviewEventId);
+    }
+    const heads = [...accepted.values()].filter((event) => !supersededIds.has(event.id));
+    return heads.sort(compareReviewEventsByRecencyDesc)[0] ?? null;
 }
 
 /**
