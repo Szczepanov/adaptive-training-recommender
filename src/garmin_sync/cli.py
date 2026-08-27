@@ -696,6 +696,84 @@ def run_compare_transports_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
+def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Run multisource shadow audit between Garmin Direct and Eight Sleep (MS14)."
+    )
+    parser.add_argument("--days", type=int, default=60, help="Number of trailing days (default 60)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
+    parser.add_argument("--user-id", type=str, default=None, help="Application User ID")
+    parsed_args = parser.parse_args(args)
+
+    import os
+    from datetime import datetime, timedelta
+
+    from .dates import local_today
+    from .firestore_repository import FirestoreRecoveryRepository
+    from .multisource_audit import run_multisource_audit
+
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
+    try:
+        settings = load_settings()
+        repo = FirestoreRecoveryRepository(
+            user_id=settings.app_user_id,
+            collection_name=settings.firestore_recovery_collection,
+            db=None,
+            credentials_path=settings.firebase_credentials_path,
+        )
+
+        end_date_str = parsed_args.end_date or local_today().strftime("%Y-%m-%d")
+        if parsed_args.start_date:
+            start_date_str = parsed_args.start_date
+        else:
+            end_dt = datetime.strptime(end_date_str, "%Y-%m-%d")
+            start_date_str = (end_dt - timedelta(days=parsed_args.days - 1)).strftime("%Y-%m-%d")
+
+        print(
+            f"\nRunning multisource shadow audit for {settings.app_user_id}: {start_date_str} to {end_date_str}..."
+        )
+        report = run_multisource_audit(repo, start_date_str, end_date_str)
+
+        print("\n" + "=" * 80)
+        print("  MULTISOURCE SHADOW AUDIT REPORT (GARMIN DIRECT VS EIGHT SLEEP) — MS14")
+        print("=" * 80)
+        print(
+            f"  Date Range:                 {report.startDate} to {report.endDate} ({report.totalDays} days)"
+        )
+        both_pct = (
+            round(report.bothSourcesDays / report.totalDays * 100, 1)
+            if report.totalDays > 0
+            else 0.0
+        )
+        print(f"  Both Sources Available:     {report.bothSourcesDays} nights ({both_pct}%)")
+        print(f"  Garmin Direct Only:         {report.garminOnlyDays} nights")
+        print(f"  Eight Sleep Only:           {report.eightSleepOnlyDays} nights")
+        print(f"  Neither Source:             {report.neitherDays} nights")
+        print("-" * 80)
+        print("  CROSS-SOURCE AGREEMENT TELEMETRY:")
+        print(f"  Sleep Duration Mean Delta:  {report.sleepDurationMeanDiffMinutes} minutes")
+        print(
+            f"  Sleep Duration Correlation: {report.sleepDurationCorrelation if report.sleepDurationCorrelation is not None else 'N/A'}"
+        )
+        print("-" * 80)
+        print("  EIGHT SLEEP ROLLING BASELINE TELEMETRY:")
+        print(
+            f"  HRV RMSSD (N={report.eightSleepHrvCount}):           Median = {report.eightSleepHrvMedian} ms, MAD = {report.eightSleepHrvMad} ms"
+        )
+        print(
+            f"  Respiration Rate (N={report.eightSleepRespCount}):    Median = {report.eightSleepRespMedian} brpm, MAD = {report.eightSleepRespMad} brpm"
+        )
+        print("=" * 80 + "\n")
+        return 0
+
+    except Exception as error:
+        log_exception(logger, "audit multisource", error)
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Garmin Sync Pipeline CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -760,6 +838,15 @@ def main() -> int:
     compare_transports_parser.add_argument("--end-date", type=str, default=None)
     compare_transports_parser.add_argument("--user-id", type=str, default=None)
 
+    audit_multisource_parser = subparsers.add_parser(
+        "audit-multisource",
+        help="Run multisource shadow audit between Garmin Direct and Eight Sleep (MS14)",
+    )
+    audit_multisource_parser.add_argument("--days", type=int, default=60)
+    audit_multisource_parser.add_argument("--start-date", type=str, default=None)
+    audit_multisource_parser.add_argument("--end-date", type=str, default=None)
+    audit_multisource_parser.add_argument("--user-id", type=str, default=None)
+
     push_workout_parser = subparsers.add_parser("push-workout", help="Push one queued workout")
     push_workout_parser.add_argument("--date", type=str, default=None)
 
@@ -790,6 +877,8 @@ def main() -> int:
         return run_backfill_health_cmd(sys.argv[2:])
     if args.command == "compare-transports":
         return run_compare_transports_cmd(sys.argv[2:])
+    if args.command == "audit-multisource":
+        return run_audit_multisource_cmd(sys.argv[2:])
     if args.command == "audit":
         return run_audit_cmd(sys.argv[2:])
     if args.command == "rebuild":
