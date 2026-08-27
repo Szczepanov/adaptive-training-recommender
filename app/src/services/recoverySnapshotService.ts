@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DailyRecoverySnapshot } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
@@ -7,6 +7,38 @@ import { localDataService } from './localDataService';
 import { parseRecoverySnapshot } from '../persistence/parsers/decisionInputs';
 
 export class RecoverySnapshotService {
+    subscribeToSnapshot(
+        userId: string,
+        date: string,
+        onUpdate: (snapshot: DailyRecoverySnapshot | null) => void,
+        onError?: (err: Error) => void
+    ): () => void {
+        const documentPath = `users/${userId}/daily_recovery_snapshots/${date}`;
+        const scopedRef = doc(getDb(), 'users', userId, 'daily_recovery_snapshots', date);
+        return onSnapshot(
+            scopedRef,
+            (snap) => {
+                if (!snap.exists()) {
+                    onUpdate(null);
+                    return;
+                }
+                const parsed = parseRecoverySnapshot(snap.data(), documentPath, userId, date);
+                if (parsed.status === 'AVAILABLE') {
+                    onUpdate(parsed.data);
+                } else {
+                    onUpdate(null);
+                }
+            },
+            (error) => {
+                if (onError) {
+                    onError(error);
+                } else {
+                    console.error('[RecoverySnapshotService] Subscription error:', error);
+                }
+            }
+        );
+    }
+
     async getRecoverySnapshotState(userId: string, date: string): Promise<DataState<DailyRecoverySnapshot>> {
         const documentPath = `users/${userId}/daily_recovery_snapshots/${date}`;
         try {
