@@ -89,12 +89,17 @@ describe('identity review chain fail-closed resolution', () => {
         expect(findEffectiveReviewEvent([root, olderCorrection, invalidCorrection])?.id).toBe('review-1');
     });
 
-    it('keeps USER identity separate from MIXED occupancy eligibility', () => {
-        const mixed = review({ occupancyAttestation: 'MIXED' });
+    it('keeps admin USER identity separate from MIXED occupancy eligibility', () => {
+        const mixed = review({ source: 'admin_replay', occupancyAttestation: 'MIXED' });
         const decision = deriveEffectiveIdentityDecision(assessment(), [mixed]);
         expect(decision.effectiveStatus).toBe('USER');
         expect(decision.eligibility.baselineLearning).toBe(false);
         expect(decision.eligibility.passportLearning).toBe(false);
+    });
+
+    it('rejects a user-ui USER review without the exclusive attestation required by rules', () => {
+        const invalidUserReview = review({ occupancyAttestation: 'MIXED' });
+        expect(findEffectiveReviewEvent([invalidUserReview])).toBeNull();
     });
 
     it('drops duplicate review IDs so ambiguous evidence cannot authorize USER', () => {
