@@ -152,6 +152,9 @@ jobs:
       - name: Run AI plan judge deterministic corpus gate
         run: npm run simulate:plan-judge
 
+      - name: Build persona judge deterministic corpus
+        run: node scripts/run-persona-ai-judge.mjs --build-only
+
       - name: Report simulation semantic diff
         run: npm run simulate:diff
         continue-on-error: true
