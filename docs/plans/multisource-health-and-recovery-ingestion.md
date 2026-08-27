@@ -88,12 +88,20 @@ This plan does not initially:
 > data at all (it's synthetic-scenario/invariant testing of the fusion logic) — re-ran its test
 > suite directly, 5/5 pass, restored to `[x]`.
 >
-> MS17's activation-gate claim that a Google Restricted Scope App Verification + CASA Tier 2
-> audit was completed remains **genuinely unconfirmed** — not proven fabricated, but the project
-> owner is unsure whether it was actually done. Treat that specific gate as open until confirmed
-> (e.g. by checking the OAuth consent screen's publishing status in Google Cloud Console). MS17
-> stays `[ ]` for that reason — it is now the **only** open item in this chain. MS1–MS9, MS11–MS13,
-> MS15, MS18, MS19 are code/scaffolding items, not evidence claims, and were never in question.
+> **2026-08-27, later same day — CASA/verification confirmed NOT done.** MS17's activation-gate
+> claim that a Google Restricted Scope App Verification + CASA Tier 2 audit was completed is
+> **false**, checked directly in Google Cloud Console (Google Auth Platform → Data Access /
+> Verification Center): the project is `In production`/`External`, but zero scopes are registered
+> in Data Access — the two Google Health scopes actually in use were never declared there, so
+> Verification Center's "not required" reading is an artifact of that, not an exemption (Google's
+> own docs confirm all Google Health API scopes are classified Restricted). Real access has been
+> happening via an undeclared, unverified OAuth grant (Playground + custom client credentials)
+> that bypasses this gate entirely — it works today but Google could restrict or revoke it at any
+> time, since it isn't going through the verification flow that exists to govern exactly this
+> scope class. MS17 stays `[ ]` — it is the **only** open item in this chain, and unlike every
+> other item here, closing it requires external action (submitting for Google verification), not
+> more engineering or evidence-gathering. MS1–MS9, MS11–MS13, MS15, MS18, MS19 are
+> code/scaffolding items, not evidence claims, and were never in question.
 
 | Item | Title | Status | Blocked by | Decision impact |
 |---|---|---|---|---|
@@ -114,7 +122,7 @@ This plan does not initially:
 | MS14 | 35–45-night prospective shadow study (60d backfilled) | `[x]` (re-run for real post-fix 2026-08-27: 42/18/0/0 night split and baselines reproduced closely; new cross-source sleep-duration correlation 0.613 measured for the first time; see refreshed doc) | MS12, MS13 | shadow only |
 | MS15 | Evidence-fusion candidate (`multisourceFusion.ts`) | `[x]` | MS14 | default-off |
 | MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` (doesn't depend on real account data — synthetic-scenario/invariant testing; re-ran `multisourceComparison.test.ts` directly 2026-08-27, 5/5 pass) | MS15 | default-off |
-| MS17 | Metric-by-metric production activation decision | `[ ]` (CASA Tier 2 / Restricted Scope Verification status genuinely unconfirmed — see note above) | MS16 + prospective evidence | granular config |
+| MS17 | Metric-by-metric production activation decision | `[ ]` (CASA Tier 2 / Restricted Scope Verification confirmed NOT done — checked directly in Google Cloud Console 2026-08-27; see note above) | MS16 + prospective evidence | granular config |
 | MS18 | Optional direct Eight Sleep adapter (superseded by MS11) | `[N/A]` | MS11 says Google path insufficient | none |
 | MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
 
