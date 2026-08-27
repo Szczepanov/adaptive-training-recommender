@@ -2,18 +2,34 @@
   "schema": "adaptive-training-recommender/persona-plan-judge-baseline@1",
   "source": "artifacts/persona-plan-judge/latest/judge-scores.jsonl",
   "provenance": {
-    "corpusCommit": "3aed0692288919759b992df453dc0257e78f843f",
+    "corpusCommit": "7c5f3fcbc4f5e0bd800da5305919f629a5398cba",
     "corpusSchema": "adaptive-training-recommender/persona-plan-judge-corpus@1",
-    "corpusSha256": "65bd69270507aa52cde82a799d7b441dfb5919bb304c14c918bac9b05b27e4ed",
+    "corpusSha256": "0bea37bed7842f3706ac01ae534efa4aa334c3f371e33e08fae795899bc7178f",
     "familiesSha256": "3337013dbb1181be3dbec5f8e86e61ea51ab414660e16a161baf3d01e5c4b546",
     "promptSha256": "717f69132101352512c090c2c6c638732455f3883304e48abf5bbc7362954616",
     "judgeScoresSha256": "5660f9964ded54364ccd19c648c96c434ebe1a64e54a8445c8d4f48b4421e031",
-    "judgeModel": null,
-    "judgeProvider": null,
-    "analyzedAt": "2026-08-27T15:59:34.584Z",
-    "judgeSettings": null
+    "judgeModel": "hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+    "judgeProvider": "local",
+    "analyzedAt": "2026-08-27T18:33:52.657Z",
+    "judgeSettings": {
+      "model": "hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+      "provider": "local",
+      "samples": 5,
+      "baseSeed": 424242,
+      "seedStrategy": "derived",
+      "thinkingEnabled": true,
+      "concurrency": 1
+    }
   },
-  "judgeSettings": null,
+  "judgeSettings": {
+    "model": "hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
+    "provider": "local",
+    "samples": 5,
+    "baseSeed": 424242,
+    "seedStrategy": "derived",
+    "thinkingEnabled": true,
+    "concurrency": 1
+  },
   "familyCount": 3,
   "caseCount": 9,
   "personaFamilies": [
