@@ -1,6 +1,6 @@
 # ADR-0029: Client-visible provider connection status mirrors
 
-**Status:** Accepted  
+**Status:** Accepted
 **Date:** 2026-08-27
 
 ## Context
