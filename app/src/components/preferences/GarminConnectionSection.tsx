@@ -1,10 +1,24 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { signInWithCustomToken } from 'firebase/auth';
-import { getAuthInstance } from '../../firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { getAuthInstance, getDb } from '../../firebase';
 import { garminAuthService } from '../../services/garminAuthService';
 import { getErrorMessage } from '../../utils/errors';
+import { getLocalDateString } from '../../utils/localDate';
 
-export function GarminConnectionSection() {
+interface GarminConnection {
+  status?: string;
+  linkedAt?: string;
+}
+
+interface GarminConnectionSectionProps {
+  userId: string;
+}
+
+export function GarminConnectionSection({ userId }: GarminConnectionSectionProps) {
+  const [connection, setConnection] = useState<GarminConnection | null>(null);
+  const [loadingConnection, setLoadingConnection] = useState(true);
+  const [showForm, setShowForm] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [challengeId, setChallengeId] = useState<string | null>(null);
@@ -13,6 +27,20 @@ export function GarminConnectionSection() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  useEffect(() => {
+    const ref = doc(getDb(), 'users', userId, 'connections', 'garmin');
+    return onSnapshot(
+      ref,
+      (snap) => {
+        setConnection(snap.exists() ? (snap.data() as GarminConnection) : null);
+        setLoadingConnection(false);
+      },
+      () => setLoadingConnection(false),
+    );
+  }, [userId]);
+
+  const isConnected = connection?.status === 'active';
+
   const finish = async (customToken: string) => {
     // The backend only issues a token for the same Firebase UID when this form is used
     // from an authenticated session. Signing it in refreshes auth without changing owner.
@@ -20,6 +48,7 @@ export function GarminConnectionSection() {
     setSuccess(true);
     setChallengeId(null);
     setMfaCode('');
+    setShowForm(false);
   };
 
   const submit = async (event: React.FormEvent) => {
@@ -60,6 +89,8 @@ export function GarminConnectionSection() {
     }
   };
 
+  const formVisible = !loadingConnection && (!isConnected || showForm);
+
   return (
     <section className="preference-section">
       <h2>Garmin account</h2>
@@ -67,6 +98,20 @@ export function GarminConnectionSection() {
         Connect Garmin to this app account. Your password is used only for Garmin authentication;
         the app keeps the resulting refreshable session token, not the password.
       </p>
+
+      {!loadingConnection && isConnected && (
+        <p className="preference-success-note">
+          Connected{connection?.linkedAt ? ` since ${getLocalDateString(new Date(connection.linkedAt))}` : ''}.
+        </p>
+      )}
+
+      {!loadingConnection && isConnected && !showForm && (
+        <button type="button" className="auth-secondary-btn" onClick={() => setShowForm(true)}>
+          Reconnect Garmin
+        </button>
+      )}
+
+      {formVisible && (
       <form onSubmit={submit}>
         {challengeId ? (
           <div className="form-group">
@@ -122,7 +167,20 @@ export function GarminConnectionSection() {
             Restart login
           </button>
         )}
+        {isConnected && !challengeId && (
+          <button
+            type="button"
+            className="auth-secondary-btn"
+            onClick={() => {
+              setShowForm(false);
+              setError(null);
+            }}
+          >
+            Cancel
+          </button>
+        )}
       </form>
+      )}
     </section>
   );
 }
