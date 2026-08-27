@@ -81,9 +81,52 @@ service cloud.firestore {
         && drift.perMetricContributions.motivation is number && drift.perMetricContributions.motivation >= 0;
     }
 
-    function hasValidRecommendationAudit(audit) {
+    function hasMatchingIdentityReview(userId, identity) {
+      let reviewPath = /databases/$(database)/documents/users/$(userId)/health_identity_review_events/$(identity.reviewEventId);
+      let review = get(reviewPath).data;
+      return exists(reviewPath)
+        && review.assessmentId == identity.identityAssessmentId
+        && review.label == identity.effectiveStatus;
+    }
+
+    function hasValidIdentityDecisionProvenance(userId, identity) {
+      let selected = identity.selectedEffectiveSource;
+      let assessmentPath = /databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(identity.identityAssessmentId);
+      let assessment = get(assessmentPath).data;
+      return identity is map
+        && identity.keys().hasOnly(['identityAssessmentId', 'automaticStatus', 'effectiveStatus', 'reviewEventId', 'identityPolicyVersion', 'featureSchemaVersion', 'passportVersion', 'sharedBundleRef', 'anchorBundleRefs', 'selectedEffectiveSource', 'fallbackReason'])
+        && (
+          selected == null
+          || (
+            selected is map
+            && selected.keys().hasOnly(['provider', 'transport'])
+            && selected.provider is string
+            && selected.transport is string
+            && (
+              identity.effectiveStatus == 'USER'
+              || selected.provider != identity.sharedBundleRef.provider
+              || selected.transport != identity.sharedBundleRef.transport
+            )
+          )
+        )
+        && exists(assessmentPath)
+        && assessment.id == identity.identityAssessmentId
+        && assessment.automaticStatus == identity.automaticStatus
+        && assessment.policyVersion == identity.identityPolicyVersion
+        && assessment.featureSchemaVersion == identity.featureSchemaVersion
+        && assessment.passportVersion == identity.passportVersion
+        && assessment.sharedBundleRef == identity.sharedBundleRef
+        && assessment.anchorBundleRefs == identity.anchorBundleRefs
+        && (identity.fallbackReason == null || identity.fallbackReason in assessment.reasonCodes)
+        && (
+          (identity.reviewEventId == null && identity.effectiveStatus == assessment.automaticStatus)
+          || (identity.reviewEventId != null && hasMatchingIdentityReview(userId, identity))
+        );
+    }
+
+    function hasValidRecommendationAudit(userId, audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -127,7 +170,8 @@ service cloud.firestore {
           && audit.authoredOccurrence.occurrenceId is string && audit.authoredOccurrence.occurrenceId.size() <= 128
           && audit.authoredOccurrence.decision in ['proceed', 'scale']
         ))
-        && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift));
+        && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift))
+        && (!('identityDecision' in audit) || hasValidIdentityDecisionProvenance(userId, audit.identityDecision));
     }
 
     function hasValidRecommendation(userId, date) {
@@ -150,7 +194,7 @@ service cloud.firestore {
         && (!('primarySession' in request.resource.data) || hasValidSessionReferenceBinding(request.resource.data.primarySession))
         && (!('additionalSessions' in request.resource.data) || hasValidAdditionalSessions(request.resource.data.additionalSessions))
         && (request.resource.data.schemaVersion != 3
-          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(request.resource.data.recommendationAudit)));
+          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit)));
     }
 
     function schemaRatchets() {
@@ -1465,6 +1509,64 @@ service cloud.firestore {
     match /users/{userId}/competition_outcomes/{outcomeId} {
       allow read: if isOwner(userId);
       allow create: if hasValidCompetitionOutcome(userId, outcomeId);
+      allow update, delete: if false;
+    }
+
+    // --- PI6/ADR-0028: physiological identity passports and immutable assessments are
+    // server-managed. Clients may read their own evidence but cannot forge model output.
+    match /users/{userId}/physiological_identity_passports/{passportId} {
+      allow read: if isOwner(userId) && passportId == 'current';
+      allow write: if false;
+    }
+
+    match /users/{userId}/physiological_identity_passport_versions/{versionId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    match /users/{userId}/health_identity_assessments/{assessmentId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    function hasValidIdentityReviewEvent(userId, eventId) {
+      let data = request.resource.data;
+      let assessmentPath = /databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(data.assessmentId);
+      let supersededPath = /databases/$(database)/documents/users/$(userId)/health_identity_review_events/$(data.supersedesReviewEventId);
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'assessmentId', 'schemaVersion', 'label', 'occupancyAttestation', 'supersedesReviewEventId', 'recordedAt', 'source'])
+        && data.keys().hasAll(['id', 'assessmentId', 'schemaVersion', 'label', 'occupancyAttestation', 'supersedesReviewEventId', 'recordedAt', 'source'])
+        && data.id == eventId
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 160
+        && data.assessmentId is string && data.assessmentId.size() > 0 && data.assessmentId.size() <= 160
+        && data.schemaVersion == 1
+        && data.label in ['USER', 'NOT_USER', 'UNCERTAIN']
+        && data.occupancyAttestation in ['EXCLUSIVE', 'MIXED', 'UNKNOWN']
+        && data.recordedAt is timestamp
+        && data.recordedAt == request.time
+        && data.source == 'user_ui'
+        && exists(assessmentPath)
+        && (
+          (data.label == 'USER' && data.occupancyAttestation == 'EXCLUSIVE')
+          || (data.label == 'NOT_USER' && data.occupancyAttestation == 'UNKNOWN')
+          || (data.label == 'UNCERTAIN' && data.occupancyAttestation in ['MIXED', 'UNKNOWN'])
+        )
+        && (
+          data.supersedesReviewEventId == null
+          || (
+            data.supersedesReviewEventId is string
+            && data.supersedesReviewEventId.size() > 0
+            && data.supersedesReviewEventId != eventId
+            && exists(supersededPath)
+            && get(supersededPath).data.assessmentId == data.assessmentId
+            && data.recordedAt >= get(supersededPath).data.recordedAt
+          )
+        );
+    }
+
+    match /users/{userId}/health_identity_review_events/{eventId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidIdentityReviewEvent(userId, eventId);
       allow update, delete: if false;
     }
 

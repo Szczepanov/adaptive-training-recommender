@@ -4,6 +4,8 @@ import pytest
 
 from garmin_sync.identity_eligibility import (
     EffectiveIdentityDecisionProjection,
+    build_effective_identity_decision_index,
+    derive_effective_identity_decision_projection,
     health_observation_bundle_id,
     identity_bundle_key,
     is_bundle_baseline_eligible,
@@ -101,3 +103,89 @@ def test_projection_is_immutable() -> None:
     decision = _decision()
     with pytest.raises(FrozenInstanceError):
         decision.baseline_learning = False  # type: ignore[misc]
+
+
+def _assessment(**overrides: object) -> dict[str, object]:
+    value: dict[str, object] = {
+        "id": "assessment-1",
+        "sourceNightKey": "2026-08-27",
+        "sharedSource": {"provider": "shared_bed", "transport": "health_aggregator"},
+        "automaticStatus": "UNCERTAIN",
+        "reasonCodes": ["SESSION_TIMING_DISCORDANT"],
+        "sharedBundleRef": {
+            "id": "2026-08-27_shared_bed_health_aggregator",
+            "provider": "shared_bed",
+            "transport": "health_aggregator",
+            "revision": 2,
+            "sourcePayloadHash": "sha256:shared",
+        },
+    }
+    value.update(overrides)
+    return value
+
+
+def _review(**overrides: object) -> dict[str, object]:
+    value: dict[str, object] = {
+        "id": "review-1",
+        "assessmentId": "assessment-1",
+        "schemaVersion": 1,
+        "label": "USER",
+        "occupancyAttestation": "EXCLUSIVE",
+        "supersedesReviewEventId": None,
+        "recordedAt": "2026-08-27T08:00:00.000Z",
+    }
+    value.update(overrides)
+    return value
+
+
+def test_persisted_review_correction_derives_effective_projection_without_mutation() -> None:
+    assessment = _assessment()
+    original = _review()
+    correction = _review(
+        id="review-2",
+        label="NOT_USER",
+        occupancyAttestation="UNKNOWN",
+        supersedesReviewEventId="review-1",
+        recordedAt="2026-08-27T09:00:00.000Z",
+    )
+
+    projection = derive_effective_identity_decision_projection(assessment, [correction, original])
+
+    assert projection is not None
+    assert projection.automatic_status == "UNCERTAIN"
+    assert projection.effective_status == "NOT_USER"
+    assert projection.review_event_id == "review-2"
+    assert projection.baseline_learning is False
+    assert assessment["automaticStatus"] == "UNCERTAIN"
+
+
+def test_orphan_or_non_monotonic_review_cannot_change_effective_identity() -> None:
+    assessment = _assessment(automaticStatus="USER")
+    invalid = _review(
+        id="review-2",
+        label="NOT_USER",
+        occupancyAttestation="UNKNOWN",
+        supersedesReviewEventId="missing",
+        recordedAt="2026-08-27T09:00:00.000Z",
+    )
+    projection = derive_effective_identity_decision_projection(assessment, [invalid])
+    assert projection is not None
+    assert projection.effective_status == "USER"
+    assert projection.review_event_id is None
+    assert projection.baseline_learning is True
+
+
+def test_mixed_occupancy_requires_explicit_exclusive_user_attestation() -> None:
+    assessment = _assessment(automaticStatus="USER", reasonCodes=["MIXED_OCCUPANCY_SUSPECTED"])
+    automatic = derive_effective_identity_decision_projection(assessment, [])
+    reviewed = derive_effective_identity_decision_projection(assessment, [_review()])
+    assert automatic is not None and automatic.baseline_learning is False
+    assert reviewed is not None and reviewed.baseline_learning is True
+
+
+def test_duplicate_assessments_for_one_bundle_are_omitted_from_index() -> None:
+    duplicate = _assessment(id="assessment-2")
+    index = build_effective_identity_decision_index(
+        [_assessment(), duplicate], {"assessment-1": [], "assessment-2": []}
+    )
+    assert index == {}

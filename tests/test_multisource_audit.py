@@ -82,6 +82,7 @@ def test_run_multisource_audit_missing_identity_projection_fails_closed() -> Non
             ],
         }
     ]
+    mock_repo.get_effective_identity_decision_projections_in_range.return_value = {}
 
     report = run_multisource_audit(mock_repo, "2026-08-25", "2026-08-25")
 
@@ -91,3 +92,16 @@ def test_run_multisource_audit_missing_identity_projection_fails_closed() -> Non
     assert report.eightSleepIdentityExcludedDays == 1
     assert report.dailyComparisons[0]["effectiveIdentityStatus"] == "UNCERTAIN"
     assert report.dailyComparisons[0]["identityBaselineEligible"] is False
+
+
+def test_run_multisource_audit_loads_persisted_effective_decisions_by_default() -> None:
+    mock_repo = MagicMock()
+    mock_repo.get_historical_snapshots.return_value = {}
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+    mock_repo.get_effective_identity_decision_projections_in_range.return_value = {}
+
+    run_multisource_audit(mock_repo, "2026-08-25", "2026-08-27")
+
+    mock_repo.get_effective_identity_decision_projections_in_range.assert_called_once_with(
+        "2026-08-25", "2026-08-27"
+    )

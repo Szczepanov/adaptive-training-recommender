@@ -124,6 +124,21 @@ export interface EffectiveIdentityDecision {
     reviewEventId?: string;
 }
 
+/** Compact ADR-0010/ADR-0028 identity evidence retained by a recommendation audit. */
+export interface IdentityDecisionProvenance {
+    identityAssessmentId: string;
+    automaticStatus: IdentityStatus;
+    effectiveStatus: IdentityStatus;
+    reviewEventId: string | null;
+    identityPolicyVersion: string;
+    featureSchemaVersion: string;
+    passportVersion: string | null;
+    sharedBundleRef: ObservationBundleRef;
+    anchorBundleRefs: readonly ObservationBundleRef[];
+    selectedEffectiveSource: { provider: string; transport: string } | null;
+    fallbackReason: IdentityReasonCode | null;
+}
+
 /**
  * Automatic assessment must remain replay-immutable. Freezes the top-level object and every
  * nested array/object reachable from it so a later review event cannot accidentally mutate

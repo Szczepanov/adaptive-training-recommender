@@ -94,7 +94,13 @@ def run_multisource_audit(
     Missing effective-identity projections fail closed for baseline admission. The raw bundle
     remains available to descriptive coverage/session-delta telemetry.
     """
-    identity_decisions = effective_identity_decisions or {}
+    identity_decisions = (
+        repository.get_effective_identity_decision_projections_in_range(
+            start_date_iso, end_date_iso
+        )
+        if effective_identity_decisions is None
+        else effective_identity_decisions
+    )
     # 1. Fetch Garmin Direct snapshots
     garmin_snaps = repository.get_historical_snapshots(start_date_iso, end_date_iso)
 

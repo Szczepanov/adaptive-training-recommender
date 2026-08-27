@@ -189,6 +189,26 @@ export interface PhysiologicalIdentityPassport {
     calibration: PassportCalibrationSummary;
 }
 
+/** Server-owned online pointer/materialized current passport (PI6). */
+export interface PhysiologicalIdentityPassportCurrent extends PhysiologicalIdentityPassport {
+    updatedAt: string;
+}
+
+/**
+ * Immutable passport snapshot. The date window + configured source profiles form the bounded
+ * replay query contract; `trainingSetHash` binds the exact ordered observation-ref set without
+ * growing a Firestore array indefinitely.
+ */
+export interface PhysiologicalIdentityPassportVersion extends PhysiologicalIdentityPassport {
+    trainingSetHash: string;
+    trainingObservationCount: number;
+    trainingWindowStart: string;
+    trainingWindowEnd: string;
+    previousVersion: string | null;
+    changeReason: PassportEraChangeReason;
+    algorithmVersion: string;
+}
+
 export function crossSourceProfileKey(
     sharedProvider: string,
     anchorProvider: string,
