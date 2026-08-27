@@ -38,7 +38,10 @@ function assessment(overrides: Partial<AutomaticIdentityAssessment> = {}): Autom
     };
 }
 
-function projection(overrides: Partial<AutomaticIdentityAssessment> = {}): EffectiveBundleIdentityProjection {
+function projection(
+    overrides: Partial<AutomaticIdentityAssessment> = {},
+    decisionOverrides: Partial<EffectiveBundleIdentityProjection['decision']> = {},
+): EffectiveBundleIdentityProjection {
     const a = assessment(overrides);
     return {
         assessment: a,
@@ -47,6 +50,7 @@ function projection(overrides: Partial<AutomaticIdentityAssessment> = {}): Effec
             effectiveStatus: a.automaticStatus,
             eligibility: { display: true, recovery: false, baselineLearning: false, passportLearning: false },
             authority: 'AUTOMATIC',
+            ...decisionOverrides,
         },
     };
 }
@@ -111,6 +115,27 @@ describe('selectMostRecentSuspiciousNightForReview (PI7, ADR-0028)', () => {
         const notCandidate = projection({ sourceNightKey: '2026-08-21', reasonCodes: ['INSUFFICIENT_PASSPORT_HISTORY'] });
         const result = selectMostRecentSuspiciousNightForReview([older, newer, notCandidate]);
         expect(result?.assessment.sourceNightKey).toBe('2026-08-20');
+    });
+
+    it('never re-selects a night that already has an effective manual review, even though its frozen automaticStatus/reasonCodes still look like a trigger', () => {
+        // The automatic assessment is immutable -- automaticStatus stays 'UNCERTAIN' and
+        // reasonCodes keep the same trigger code forever, even after a review answers it.
+        // Only decision.authority distinguishes "already asked and answered" from "still open".
+        const reviewed = projection(
+            { sourceNightKey: '2026-08-20', reasonCodes: ['ANCHOR_MISSING'] },
+            { authority: 'MANUAL_REVIEW', effectiveStatus: 'USER', reviewEventId: 'review-1' },
+        );
+        expect(selectMostRecentSuspiciousNightForReview([reviewed])).toBeNull();
+    });
+
+    it('still surfaces an older open night when a newer one was already reviewed', () => {
+        const stillOpen = projection({ sourceNightKey: '2026-08-18', reasonCodes: ['RHR_RELATION_DISCORDANT'] });
+        const alreadyReviewed = projection(
+            { sourceNightKey: '2026-08-20', reasonCodes: ['ANCHOR_MISSING'] },
+            { authority: 'MANUAL_REVIEW', effectiveStatus: 'NOT_USER', reviewEventId: 'review-2' },
+        );
+        const result = selectMostRecentSuspiciousNightForReview([stillOpen, alreadyReviewed]);
+        expect(result?.assessment.sourceNightKey).toBe('2026-08-18');
     });
 });
 

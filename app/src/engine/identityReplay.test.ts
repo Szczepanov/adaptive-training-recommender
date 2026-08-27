@@ -2,8 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { ObservationBundleRef } from '../observations/identityModels';
 import type { SessionInterval } from './identityFeatures';
 import {
+    deriveNightFeatures,
     runIdentityReplay,
     renderIdentityReplayMarkdown,
+    toPairedNightFeatureRecord,
     type IdentityReplayConfig,
     type IdentityReplayNightInput,
 } from './identityReplay';
@@ -137,6 +139,42 @@ describe('runIdentityReplay (PI8, ADR-0028)', () => {
         expect(missingAnchorNight?.automaticStatus).toBe('UNCERTAIN');
         expect(missingAnchorNight?.reasonCodes).toContain('ANCHOR_MISSING');
         expect(report.lineageOrAnchorQualityAbstentionCount).toBeGreaterThanOrEqual(1);
+    });
+
+    it('toPairedNightFeatureRecord only treats a night as lineage-independent for the configured anchor policy, not for any independent ref of any provider', () => {
+        // A genuinely independent anchor (different lineage from the shared bundle) but from a
+        // provider/transport that does NOT match config.anchorPolicy must not be treated as
+        // corroborating evidence for *this* anchor policy's passport fit -- otherwise it would
+        // silently join crossSourceProfiles[key]'s median/MAD/IQR fit under the wrong anchor
+        // identity and skew every other night's out-of-sample scoring against it.
+        const mismatchedProviderAnchor = {
+            id: 'other-wearable',
+            provider: 'fitbit',
+            transport: 'fitbit_direct',
+            revision: 1,
+            sourcePayloadHash: 'sha256:fitbit',
+            lineageKey: 'fitbit:device:athlete', // independent of the shared bundle's lineage
+        };
+        const night = ordinaryNight(0, { anchorBundleRefs: [mismatchedProviderAnchor] });
+        const record = toPairedNightFeatureRecord(deriveNightFeatures(night), ANCHOR_POLICY);
+
+        expect(record.lineageIndependent).toBe(false);
+    });
+
+    it('toPairedNightFeatureRecord treats a night as lineage-independent when the matching-policy anchor is present alongside an unrelated one', () => {
+        const matchingAnchor = anchorRef({ id: 'garmin-anchor' });
+        const unrelatedAnchor = {
+            id: 'other-wearable',
+            provider: 'fitbit',
+            transport: 'fitbit_direct',
+            revision: 1,
+            sourcePayloadHash: 'sha256:fitbit',
+            lineageKey: 'fitbit:device:athlete',
+        };
+        const night = ordinaryNight(0, { anchorBundleRefs: [matchingAnchor, unrelatedAnchor] });
+        const record = toPairedNightFeatureRecord(deriveNightFeatures(night), ANCHOR_POLICY);
+
+        expect(record.lineageIndependent).toBe(true);
     });
 
     it('counts dependent-lineage evidence as an abstention, not corroboration', () => {

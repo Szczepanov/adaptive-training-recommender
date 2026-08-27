@@ -475,5 +475,37 @@ describe('multisourceFusion (MS15)', () => {
             expect(gatedHrv.agreementStatus).toBe('SINGLE_SOURCE');
             expect(gatedHrv.effectiveSource).toBe('garmin_garmin_direct');
         });
+
+        it('resolves userId from the bundles when the identity gate is used without an explicit userId (single-user convenience)', () => {
+            const result = evaluateMultisourceFusion({
+                logicalDate: '2026-08-27',
+                // userId intentionally omitted -- bundles below all belong to the same user.
+                policy: 'candidate-v1',
+                bundles: [garminBundle, discordantEightSleepBundle],
+                baselines: [matureGarminHrvBaseline, matureEightSleepHrvBaseline],
+                effectiveIdentityProjections: [identityProjectionFor(discordantEightSleepBundle)],
+            });
+
+            expect(result.identityGateApplied).toBe(true);
+            expect(result.fusedMetrics['hrv_rmssd_ms'].contributors.some((c) => c.provider === 'eight_sleep')).toBe(true);
+        });
+
+        it('throws instead of silently guessing a user when the identity gate is used on multi-user bundles without an explicit userId', () => {
+            const otherUserGarminBundle: HealthObservationDayBundle = {
+                ...garminBundle,
+                userId: 'user_2',
+            };
+
+            expect(() =>
+                evaluateMultisourceFusion({
+                    logicalDate: '2026-08-27',
+                    // userId intentionally omitted -- bundles below span two different users.
+                    policy: 'candidate-v1',
+                    bundles: [garminBundle, discordantEightSleepBundle, otherUserGarminBundle],
+                    baselines: [matureGarminHrvBaseline, matureEightSleepHrvBaseline],
+                    effectiveIdentityProjections: [identityProjectionFor(discordantEightSleepBundle)],
+                }),
+            ).toThrow(/requires an explicit `userId`/);
+        });
     });
 });

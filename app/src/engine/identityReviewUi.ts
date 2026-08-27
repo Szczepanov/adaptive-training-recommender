@@ -62,11 +62,19 @@ export function identityReviewCopyVariant(
 /**
  * Selects the single most recent suspicious night worth surfacing, if any. Mirrors the existing
  * HA6 "one card, most recent candidate" pattern rather than an open-ended review inbox.
+ *
+ * `needsSuspiciousNightReview` alone is not enough here: it only inspects the immutable
+ * automatic assessment, which never changes once a review event exists. A night that already has
+ * an effective manual review (`decision.authority === 'MANUAL_REVIEW'`) must not be re-selected --
+ * that question has already been asked and answered (see `needsSuspiciousNightReview`'s doc
+ * comment) -- regardless of what its frozen `automaticStatus`/`reasonCodes` still say.
  */
 export function selectMostRecentSuspiciousNightForReview(
     projections: readonly EffectiveBundleIdentityProjection[],
 ): EffectiveBundleIdentityProjection | null {
-    const candidates = projections.filter((p) => needsSuspiciousNightReview(p.assessment));
+    const candidates = projections.filter(
+        (p) => p.decision.authority === 'AUTOMATIC' && needsSuspiciousNightReview(p.assessment),
+    );
     if (candidates.length === 0) return null;
     return candidates.reduce((latest, candidate) =>
         candidate.assessment.sourceNightKey > latest.assessment.sourceNightKey ? candidate : latest,

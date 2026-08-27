@@ -79,7 +79,8 @@ export interface IdentityReplayNightInput {
     sharedSleepDurationMinutes: number | null;
 }
 
-interface IdentityReplayNightFeatures {
+/** Exported alongside `deriveNightFeatures`/`toPairedNightFeatureRecord` for direct unit testing. */
+export interface IdentityReplayNightFeatures {
     input: IdentityReplayNightInput;
     anchorEligibility: AnchorEligibilityResult;
     lineageEvaluation: AnchorLineageEvaluation;
@@ -88,7 +89,7 @@ interface IdentityReplayNightFeatures {
     relation: PhysiologicalRelationFeatures;
 }
 
-function deriveNightFeatures(input: IdentityReplayNightInput): IdentityReplayNightFeatures {
+export function deriveNightFeatures(input: IdentityReplayNightInput): IdentityReplayNightFeatures {
     const anchorEligibility = evaluateAnchorEligibility({
         present: input.anchorPresent,
         technicallyEligible: input.anchorTechnicallyEligible,
@@ -113,17 +114,26 @@ function deriveNightFeatures(input: IdentityReplayNightInput): IdentityReplayNig
     };
 }
 
-function toPairedNightFeatureRecord(
+/** Exported for direct unit testing of the anchor-policy-match guard described above. */
+export function toPairedNightFeatureRecord(
     features: IdentityReplayNightFeatures,
     anchorPolicy: AnchorPolicy,
 ): PairedNightFeatureRecord {
     const { input } = features;
+    // A night is only lineage-independent *for this configured anchor policy* when one of its
+    // independent refs actually matches anchorPolicy's provider/transport -- mirroring
+    // identityAttribution.ts's hasConfiguredIndependentAnchor guard. Checking only "any
+    // independent ref exists" would let a night whose sole independent anchor is a *different*
+    // provider/transport contaminate this policy's fitted crossSourceProfile (PI9 review finding).
+    const hasConfiguredIndependentAnchor = features.lineageEvaluation.independentAnchorRefs.some(
+        (ref) => ref.provider === anchorPolicy.primaryProvider && ref.transport === anchorPolicy.primaryTransport,
+    );
     return {
         sourceNightKey: input.sourceNightKey,
         sharedProvider: input.sharedBundleRef.provider,
         anchorProvider: anchorPolicy.primaryProvider,
         anchorTransport: anchorPolicy.primaryTransport,
-        lineageIndependent: features.lineageEvaluation.independentAnchorRefs.length > 0,
+        lineageIndependent: hasConfiguredIndependentAnchor,
         anchorEligible: features.anchorEligibility.eligible,
         sharedRestingHeartRate: input.sharedRestingHeartRate,
         sharedRespirationRate: input.sharedRespirationRate,

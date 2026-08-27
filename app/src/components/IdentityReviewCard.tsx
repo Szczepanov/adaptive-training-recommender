@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { AutomaticIdentityAssessment, IdentityReviewEvent } from '../observations/identityModels';
 import type { EffectiveBundleIdentityProjection } from '../engine/identityEligibility';
 import {
@@ -136,6 +136,10 @@ export function IdentityReviewCard({ userId, date, lookbackDays = 7 }: IdentityR
     const [existingReviewLabel, setExistingReviewLabel] = useState<IdentityReviewEvent['label'] | null>(null);
     const [lastReviewEventId, setLastReviewEventId] = useState<string | null>(null);
     const [loaded, setLoaded] = useState(false);
+    // Tracks which assessment the currently-displayed form belongs to, so a review submission
+    // that is still in flight when the user navigates to a different night (re-running the effect
+    // below) cannot land its setExistingReviewLabel/setLastReviewEventId against the wrong night.
+    const activeAssessmentIdRef = useRef<string | null>(null);
 
     useEffect(() => {
         let cancelled = false;
@@ -147,6 +151,7 @@ export function IdentityReviewCard({ userId, date, lookbackDays = 7 }: IdentityR
                 if (cancelled) return;
                 const selected = selectMostRecentSuspiciousNightForReview(projections);
                 setCandidate(selected);
+                activeAssessmentIdRef.current = selected?.assessment.id ?? null;
                 const priorReview = selected?.decision.authority === 'MANUAL_REVIEW' ? selected.decision : null;
                 setExistingReviewLabel(priorReview?.effectiveStatus ?? null);
                 setLastReviewEventId(priorReview?.reviewEventId ?? null);
@@ -172,16 +177,20 @@ export function IdentityReviewCard({ userId, date, lookbackDays = 7 }: IdentityR
                 assessment={candidate.assessment}
                 existingReviewLabel={existingReviewLabel}
                 onSubmit={async (choice) => {
+                    const submittedAssessmentId = candidate.assessment.id;
                     const fields = identityReviewEventFields(choice);
-                    const eventId = `${candidate.assessment.id}:${crypto.randomUUID()}`;
+                    const eventId = `${submittedAssessmentId}:${crypto.randomUUID()}`;
                     await identityPersistenceService.submitUserReview({
                         userId,
                         id: eventId,
-                        assessmentId: candidate.assessment.id,
+                        assessmentId: submittedAssessmentId,
                         label: fields.label,
                         occupancyAttestation: fields.occupancyAttestation,
                         supersedesReviewEventId: lastReviewEventId,
                     });
+                    // The user may have navigated to a different night while this write was in
+                    // flight; only apply the result if this form's night is still the active one.
+                    if (activeAssessmentIdRef.current !== submittedAssessmentId) return;
                     setExistingReviewLabel(fields.label);
                     setLastReviewEventId(eventId);
                 }}

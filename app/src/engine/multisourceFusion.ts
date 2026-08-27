@@ -38,6 +38,22 @@ const DEFAULT_FUSION_IDENTITY_POLICY: IdentityEligibilityPolicy = {
     identityRequiredSources: [{ provider: 'eight_sleep', transport: 'google_health' }],
 };
 
+/**
+ * Resolves the single user id the identity gate should scope to when the caller did not pass an
+ * explicit `userId`. Fails loudly on a genuinely ambiguous multi-user bundle set rather than
+ * silently picking one -- see the PI9 code-review finding this guards against.
+ */
+function resolveSingleUserId(bundles: readonly HealthObservationDayBundle[]): string {
+    const distinctUserIds = new Set(bundles.map((bundle) => bundle.userId));
+    if (distinctUserIds.size > 1) {
+        throw new Error(
+            'evaluateMultisourceFusion: effectiveIdentityProjections requires an explicit `userId` ' +
+                'when `bundles` spans more than one user for this logicalDate.',
+        );
+    }
+    return bundles[0]?.userId ?? '';
+}
+
 export type MultisourceFusionPolicy = 'off' | 'candidate-v1';
 
 export interface MultisourceMetricActivationConfig {
@@ -178,11 +194,13 @@ export function evaluateMultisourceFusion(params: {
     const validDayBundles = identityGateApplied
         ? selectEligibleHealthObservationBundles({
               bundles: rawDayBundles,
-              // Fusion is inherently a single-user-per-call computation (rawDayBundles is already
-              // scoped to `logicalDate`/`userId` above); fall back to the bundles' own userId when
-              // the caller only started passing identity evidence and has not yet also threaded
-              // `userId` through every call site.
-              userId: userId ?? rawDayBundles[0]?.userId ?? '',
+              // Fusion is inherently a single-user-per-call computation, but when the caller
+              // supplies identity evidence without also passing `userId`, `rawDayBundles` above
+              // was only scoped by `logicalDate` -- it could still contain more than one user's
+              // bundles. Guessing an arbitrary one (e.g. the first by array order) would silently
+              // drop every other user's data with no error, so require an explicit `userId`
+              // whenever that ambiguity is real rather than resolve it by array order.
+              userId: userId ?? resolveSingleUserId(rawDayBundles),
               effectiveIdentityProjections: params.effectiveIdentityProjections ?? [],
               identityPolicy: params.identityPolicy ?? DEFAULT_FUSION_IDENTITY_POLICY,
               requireEligibility: 'recovery',
