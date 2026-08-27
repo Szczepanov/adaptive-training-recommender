@@ -122,6 +122,19 @@ Google Health API (v4) / REST Data Points
 3. **Step Count Semantics (`D-MS-STEPS`)**: Aggregator step counts from Google Health are strictly ignored to prevent double-counting structured training fatigue.
 4. **Instant Maturity via Backfill**: Historical data is backfilled via `uv run python -m garmin_sync backfill-health --days 60 --token <TOKEN>`, immediately seeding 28-day mature baselines.
 
+### Identity gate location (ADR-0028)
+
+A shared source like Eight Sleep sits between "day-source bundle exists" and "source-specific
+baseline accumulation" above. Before any shared-source bundle can enter
+`computeSourceMetricBaseline()` (TypeScript) or `run_multisource_audit()`'s baseline path
+(Python), it must resolve to an effective `USER` identity decision via
+`selectEligibleHealthObservationBundles()` / `src/garmin_sync/identity_eligibility.py` — both
+fail closed on a missing or ambiguous decision. See
+[**Physiological Identity Passport & Measurement Trust**](./physiological-identity-passport.md)
+for the full pipeline (pairing, lineage, the versioned passport, the ternary evaluator, and the
+review UI that produces manual corrections); this is currently shadow/engine-layer only — no
+recommendation path consumes gated shared-source output yet.
+
 ---
 
 ## 📁 Source Code Organization

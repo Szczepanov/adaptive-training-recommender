@@ -79,6 +79,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0025: Physiological Anomaly and Possible-Illness Signals**](./adr/0025-physiological-anomaly-and-possible-illness-signals.md) — *Accepted.* Defines a separate health-anomaly capability, independent of training strain, using respiration/RHR/HRV to detect pre-symptomatic patterns.
 * [**ADR-0026: Wearable Telemetry Enrichment Boundaries and Ownership**](./adr/0026-wearable-telemetry-enrichment-boundaries.md) — *Accepted.* Separates date-bound recovery data (including SpO2/skin-temperature), current Garmin performance/profile/gear imports, per-activity enrichment (including running dynamics), and replay ownership; a gait-asymmetry alert, an interactive sleep-stage chart, and a generic gear-retirement rule remain explicitly deferred.
 * [**ADR-0027: Source-Aware Multisource Health Observations**](./adr/0027-source-aware-multisource-health-observations.md) — *Accepted.* Provenance-separated provider and transport dimensions, day-source observation bundling, source-specific baselines with maturity lifecycle, no arithmetic cross-sensor averaging, step count provenance locking, and evidence-gated fusion.
+* [**ADR-0028: Physiological Identity Attribution and Measurement Trust**](./adr/0028-physiological-identity-attribution-and-measurement-trust.md) — *Accepted.* Provider-neutral identity-attribution and measurement-trust layer between raw/source-aware health observations and downstream baseline/fusion logic; ternary `USER | NOT_USER | UNCERTAIN` evaluator with abstention, versioned passport, append-only manual review, and a pre-baseline effective-eligibility gate.
 
 ---
 
@@ -144,6 +145,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Health anomaly and possible-illness alerting**](./plans/health-anomaly-and-illness-risk-alerting.md) — *In progress.* Explainable physiological-anomaly evidence with structured confounders; HA0–HA5 on `main` (HA5 via #171), HA6.1–HA6.3 prospective outcome labels implemented.
 * [**Health anomaly causality & canonicalization cleanup**](./plans/health-anomaly-causality-cleanup.md) — *Implemented.* Shared health-context defaults, temporal causality, and adverse physiology persistence under explanatory context.
 * [**Multisource Health & Recovery Ingestion**](./plans/multisource-health-and-recovery-ingestion.md) — *Approved (MS0 ready).* Source-aware observation contract, Google Health raw ingestion, Eight Sleep export probing, transport-equivalence testing, and evidence-gated recovery fusion (ADR-0027).
+* [**Physiological Identity Passport & Measurement Trust**](./plans/physiological-identity-passport-and-measurement-trust.md) — *Approved, in progress (PI0–PI7 done, PI8/PI9/PI10 partial).* Provider-neutral identity-attribution/measurement-trust layer (ADR-0028) between shared-source observations and baseline/fusion logic; a production activation decision remains explicitly open pending real historical/prospective evidence.
 
 ---
 
@@ -154,6 +156,7 @@ In-depth technical design documents covering system subsystems:
 * [**Recommendation Engine**](./architecture/recommendation-engine.md) — The two selection paths, module map, self-normalised strain scoring, `train`/`modify`/`recover` modes, candidate ranking, and the authority ordering.
 * [**Performance Outcome Evidence**](./architecture/performance-outcome-evidence.md) — Current OV0–OV2 evidence architecture: bounded metric/protocol contracts, deterministic comparison series, append-only observation corrections, assessment/competition records, manual adapter and Firestore enforcement, with no selection authority.
 * [**Health Anomaly Shadow Architecture**](./architecture/health-anomaly-shadow.md) — Evaluator boundary, fail-closed runtime selection, episode continuity, immutable assessment revisions, and prospective outcome capture.
+* [**Physiological Identity Passport & Measurement Trust**](./architecture/physiological-identity-passport.md) — Shared-source identity-attribution pipeline (pairing/lineage/features, versioned passport, ternary evaluator, pre-baseline gate, review UI, historical replay), all shadow/engine-layer only pending a production activation decision.
 * [**Garmin Gear Mileage Tracking**](./garmin-gear-tracking.md) — Gear inventory import, mileage enrichment, failure semantics, and Firestore layout for `users/{userId}/gear/{gearPk}`.
 * [**Workout Library Architecture**](./workout-library.md) — Multi-layered workout definitions, variants, and September race event plan contract.
 * [**External Plan Import Schema**](./external-plan-schema.md) — *Implemented.* JSON contract for importing an externally-authored plan, plus the placement/revision scheduling model.
