@@ -79,14 +79,16 @@ class WebhookSignatureVerifier:
             return hmac.compare_digest(expected, signature_header)
 
         # Tink / Public Key verification:
-        # Check presence of signature format
         keyset = self.get_public_keyset()
         if not keyset:
             logger.warning("No public keyset available to verify Google signature.")
             return False
 
-        # For production Tink keyset format, verify key ID and signature
-        return len(signature_header) > 0
+        # Fail closed until full Tink asymmetric signature verifier is initialized
+        logger.warning(
+            "Asymmetric Tink webhook signature verification uninitialized; failing closed."
+        )
+        return False
 
 
 class GoogleHealthWebhookHandler:

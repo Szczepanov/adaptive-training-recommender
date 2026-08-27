@@ -2,7 +2,7 @@
 
 **Date**: 2026-08-27
 **Dataset**: 59 overlapping calendar days (2026-06-29 to 2026-08-27)
-**Subject**: Live production athlete profile (`users/9fp9JuWSecVo1DRqv8cXzz8ucNI2`)
+**Subject**: Live production athlete profile (`Subject-A` / primary athlete profile)
 **Objective**: Evaluate whether the Google Health transport route provides an equivalent, transforming, or incomplete substitute for direct Garmin Connect ingestion.
 
 ---

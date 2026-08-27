@@ -54,7 +54,7 @@ class GoogleHealthProvider:
         client: GoogleHealthClient,
         mapper: GoogleHealthMapper,
         data_types: list[str] | None = None,
-    ):
+    ) -> None:
         self.client = client
         self.mapper = mapper
         self.data_types = data_types or RECOVERY_DATA_TYPES
@@ -67,13 +67,20 @@ class GoogleHealthProvider:
             return self._cache[logical_date_iso]
 
         all_points: list[dict[str, Any]] = []
+        start_time_iso = f"{previous_date_iso}T00:00:00Z"
+        end_time_iso = f"{logical_date_iso}T23:59:59Z"
 
         for dtype in self.data_types:
             try:
-                if dtype not in self._raw_points_cache:
-                    self._raw_points_cache[dtype] = self.client.list_data_points(data_type=dtype)
+                cache_key = f"{dtype}:{previous_date_iso}:{logical_date_iso}"
+                if cache_key not in self._raw_points_cache:
+                    self._raw_points_cache[cache_key] = self.client.list_data_points(
+                        data_type=dtype,
+                        start_time_iso=start_time_iso,
+                        end_time_iso=end_time_iso,
+                    )
 
-                raw_pts = self._raw_points_cache[dtype]
+                raw_pts = self._raw_points_cache[cache_key]
                 for pt in raw_pts:
                     pt_date = _extract_pt_date(pt)
                     if pt_date == logical_date_iso:

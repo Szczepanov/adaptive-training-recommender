@@ -54,7 +54,7 @@ class GoogleHealthClient:
         base_url: str = DEFAULT_BASE_URL,
         session: requests.Session | None = None,
         max_retries: int = MAX_RETRIES,
-    ):
+    ) -> None:
         self.auth_manager = auth_manager
         self.base_url = base_url.rstrip("/")
         self.session = session or requests.Session()
@@ -62,7 +62,7 @@ class GoogleHealthClient:
 
     def get_identity(self) -> dict[str, Any]:
         """Fetch the Google Health user identity."""
-        url = f"{self.base_url}/users/me"
+        url = f"{self.base_url}/users/me/identity"
         return self._execute_request("GET", url)
 
     def list_data_points(
@@ -89,8 +89,10 @@ class GoogleHealthClient:
             datetime.fromisoformat(end_time_iso.replace("Z", "+00:00")) if end_time_iso else None
         )
 
+        effective_page_size = min(page_size, 25) if data_type == "sleep" else page_size
+
         while True:
-            params: dict[str, Any] = {"pageSize": page_size}
+            params: dict[str, Any] = {"pageSize": effective_page_size}
             if page_token:
                 params["pageToken"] = page_token
 

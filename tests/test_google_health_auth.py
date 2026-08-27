@@ -7,7 +7,7 @@ from garmin_sync.google_health_auth import (
 )
 
 
-def test_auth_manager_valid_token_no_refresh():
+def test_auth_manager_valid_token_no_refresh() -> None:
     creds = GoogleHealthTokenCredentials(
         access_token="valid_token",
         refresh_token="ref_token",
@@ -19,7 +19,7 @@ def test_auth_manager_valid_token_no_refresh():
 
 
 @patch("requests.post")
-def test_auth_manager_refresh_when_expired(mock_post):
+def test_auth_manager_refresh_when_expired(mock_post) -> None:
     mock_post.return_value.status_code = 200
     mock_post.return_value.json.return_value = {
         "access_token": "new_access_token",

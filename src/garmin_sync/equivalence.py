@@ -67,11 +67,11 @@ class TransportEquivalenceAnalyzer:
         google_observations: list[CanonicalHealthObservation],
     ) -> DateEquivalenceResult:
         """Compare observation sets for one logical date."""
-        direct_map: dict[str, Any] = {
-            o.metric: o.value for o in direct_observations if not isinstance(o.value, dict)
+        direct_map: dict[str, CanonicalHealthObservation] = {
+            o.metric: o for o in direct_observations if not isinstance(o.value, dict)
         }
-        google_garmin_map: dict[str, Any] = {
-            o.metric: o.value
+        google_garmin_map: dict[str, CanonicalHealthObservation] = {
+            o.metric: o
             for o in google_observations
             if o.source.provider == "garmin" and not isinstance(o.value, dict)
         }
@@ -83,54 +83,71 @@ class TransportEquivalenceAnalyzer:
         transforming_count = 0
 
         for metric in all_metrics:
-            val_direct = direct_map.get(metric)
-            val_google = google_garmin_map.get(metric)
+            obs_direct = direct_map.get(metric)
+            obs_google = google_garmin_map.get(metric)
 
-            if val_direct is None:
+            if obs_direct is None and obs_google is not None:
+                g_val = (
+                    float(obs_google.value) if isinstance(obs_google.value, (int, float)) else None
+                )
                 comparisons.append(
                     MetricComparison(
                         metric=metric,
                         directValue=None,
-                        googleValue=val_google,
+                        googleValue=g_val,
                         difference=None,
                         isWithinTolerance=False,
                         status="MISSING_DIRECT",
                     )
                 )
-            elif val_google is None:
+            elif obs_google is None and obs_direct is not None:
                 missing_google_count += 1
+                d_val = (
+                    float(obs_direct.value) if isinstance(obs_direct.value, (int, float)) else None
+                )
                 comparisons.append(
                     MetricComparison(
                         metric=metric,
-                        directValue=val_direct,
+                        directValue=d_val,
                         googleValue=None,
                         difference=None,
                         isWithinTolerance=False,
                         status="MISSING_GOOGLE",
                     )
                 )
-            else:
-                try:
-                    num_direct = float(val_direct)
-                    num_google = float(val_google)
-                    diff = abs(num_direct - num_google)
-                    tol = TOLERANCES.get(metric, 1e-3)
-                    within = diff <= tol
-                    if not within:
-                        transforming_count += 1
+            elif obs_direct is not None and obs_google is not None:
+                val_direct = obs_direct.value
+                val_google = obs_google.value
 
-                    comparisons.append(
-                        MetricComparison(
-                            metric=metric,
-                            directValue=num_direct,
-                            googleValue=num_google,
-                            difference=diff,
-                            isWithinTolerance=within,
-                            status="MATCH" if within else "DELTA",
+                # Date alignment verification
+                dates_match = obs_direct.logical_date == obs_google.logical_date
+
+                try:
+                    if isinstance(val_direct, (int, float, str)) and isinstance(
+                        val_google, (int, float, str)
+                    ):
+                        num_direct = float(val_direct)
+                        num_google = float(val_google)
+                        diff = abs(num_direct - num_google)
+                        tol = TOLERANCES.get(metric, 1e-3)
+                        within = (diff <= tol) and dates_match
+                        if not within:
+                            transforming_count += 1
+
+                        comparisons.append(
+                            MetricComparison(
+                                metric=metric,
+                                directValue=num_direct,
+                                googleValue=num_google,
+                                difference=diff,
+                                isWithinTolerance=within,
+                                status="MATCH" if within else "DELTA",
+                            )
                         )
-                    )
+                    else:
+                        raise ValueError("Non-numeric value")
                 except (ValueError, TypeError):
-                    match_nonnumeric = val_direct == val_google
+                    match_nonnumeric = (val_direct == val_google) and dates_match
                     if not match_nonnumeric:
                         transforming_count += 1
                     comparisons.append(

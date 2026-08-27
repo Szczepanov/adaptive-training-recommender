@@ -6,7 +6,7 @@ from garmin_sync.webhook_receiver import (
 )
 
 
-def test_webhook_receiver_hmac_verification():
+def test_webhook_receiver_hmac_verification() -> None:
     secret = "test_webhook_secret"
     verifier = WebhookSignatureVerifier(static_shared_secret=secret)
     events_received = []
@@ -42,3 +42,15 @@ def test_webhook_receiver_hmac_verification():
     assert events_received[0].healthUserId == "user_123"
     assert events_received[0].dataType == "sleep"
     assert events_received[0].operation == "UPSERT"
+
+
+def test_webhook_receiver_no_shared_secret_fails_closed() -> None:
+    # Verifier with no shared secret configured must reject any header
+    verifier = WebhookSignatureVerifier(static_shared_secret=None)
+    handler = GoogleHealthWebhookHandler(verifier=verifier)
+
+    payload = json.dumps({"healthUserId": "user_123", "dataType": "sleep"}).encode("utf-8")
+
+    status, body = handler.handle_request(payload, "forged_signature_header")
+    assert status == 401
+    assert body == {"error": "Invalid signature"}

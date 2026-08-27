@@ -92,6 +92,10 @@ class ObservationBatch:
     normalizer_version: int = 1
     revision: int = 1
 
+    def __post_init__(self) -> None:
+        if not self.source_payload_hash:
+            raise ValueError("ObservationBatch requires a non-empty source_payload_hash.")
+
 
 @dataclass
 class CanonicalStress:

@@ -9,7 +9,7 @@ from garmin_sync.google_health_client import (
 )
 
 
-def test_google_health_client_list_data_points_pagination():
+def test_google_health_client_list_data_points_pagination() -> None:
     mock_auth = MagicMock(spec=GoogleHealthAuthManager)
     mock_auth.get_valid_access_token.return_value = "mock_token"
 
@@ -40,7 +40,7 @@ def test_google_health_client_list_data_points_pagination():
     assert mock_session.request.call_count == 2
 
 
-def test_google_health_client_auth_error():
+def test_google_health_client_auth_error() -> None:
     mock_auth = MagicMock(spec=GoogleHealthAuthManager)
     mock_auth.get_valid_access_token.return_value = "mock_token"
 

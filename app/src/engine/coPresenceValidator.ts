@@ -92,9 +92,9 @@ export function validateCoPresence(params: {
     }
 
     return {
-        verifiedAthlete: true,
-        status: 'VERIFIED',
-        reason: 'Eight Sleep present without conflicting physiological signals.',
+        verifiedAthlete: false,
+        status: 'UNVERIFIED_OFF_WRIST',
+        reason: 'Eight Sleep data cannot be verified without Garmin RHR or a historical baseline.',
         garminRhr: null,
         eightSleepRhr,
         rhrDelta: null,

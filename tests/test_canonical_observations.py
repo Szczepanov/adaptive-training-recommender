@@ -10,7 +10,7 @@ from garmin_sync.canonical import (
 )
 
 
-def test_observation_source_validation():
+def test_observation_source_validation() -> None:
     with pytest.raises(ValueError, match="provider"):
         ObservationSource(provider="", transport="garmin_direct")
 
@@ -27,7 +27,7 @@ def test_observation_source_validation():
     assert src.origin_application == "com.garmin.android.apps.connectmobile"
 
 
-def test_canonical_health_observation_validation():
+def test_canonical_health_observation_validation() -> None:
     src = ObservationSource(provider="garmin", transport="garmin_direct")
 
     with pytest.raises(ValueError, match="metric name"):
@@ -67,8 +67,12 @@ def test_canonical_health_observation_validation():
     assert obs.logical_date == "2026-08-27"
 
 
-def test_observation_batch():
-    batch = ObservationBatch(logical_date="2026-08-27")
+def test_observation_batch() -> None:
+    with pytest.raises(ValueError, match="source_payload_hash"):
+        ObservationBatch(logical_date="2026-08-27")
+
+    batch = ObservationBatch(logical_date="2026-08-27", source_payload_hash="sha256:abc1234")
     assert batch.logical_date == "2026-08-27"
     assert len(batch.observations) == 0
     assert batch.revision == 1
+    assert batch.source_payload_hash == "sha256:abc1234"

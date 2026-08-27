@@ -157,7 +157,7 @@ class GoogleHealthMapper:
         # Check sub-object date dictionaries e.g. {"year": 2026, "month": 8, "day": 17}
         date_dict = None
         for key in ("dailyHeartRateVariability", "dailyRestingHeartRate", "dailyRespiratoryRate"):
-            sub_d = point.get(key, {}).get("date")
+            sub_d = (point.get(key) or {}).get("date")
             if sub_d and isinstance(sub_d, dict) and "year" in sub_d:
                 date_dict = sub_d
                 break

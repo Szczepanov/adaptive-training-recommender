@@ -56,6 +56,7 @@ export interface MultisourceFusionResult {
 
 export function evaluateMultisourceFusion(params: {
     logicalDate: string;
+    userId?: string;
     policy?: MultisourceFusionPolicy;
     metricActivation?: Partial<MultisourceMetricActivationConfig>;
     athleteRhr28dMedian?: number | null;
@@ -68,9 +69,12 @@ export function evaluateMultisourceFusion(params: {
         ...DEFAULT_METRIC_ACTIVATION_CONFIG,
         ...(params.metricActivation || {}),
     };
-    const { logicalDate, bundles, baselines } = params;
+    const { logicalDate, bundles, baselines, userId } = params;
 
-    const rawDayBundles = bundles.filter((b) => b.logicalDate === logicalDate);
+    // Enforce single-user isolation: filter by date and userId (or verify single user)
+    const rawDayBundles = userId
+        ? bundles.filter((b) => b.logicalDate === logicalDate && b.userId === userId)
+        : bundles.filter((b) => b.logicalDate === logicalDate);
 
     // If policy is off, return baseline un-fused structure
     if (policy === 'off') {

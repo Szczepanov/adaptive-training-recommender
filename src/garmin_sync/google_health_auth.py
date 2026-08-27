@@ -61,7 +61,7 @@ class GoogleHealthAuthManager:
         client_id: str,
         client_secret: str,
         credentials: GoogleHealthTokenCredentials | None = None,
-    ):
+    ) -> None:
         if not client_id or not client_secret:
             raise ValueError(
                 "GoogleHealthAuthManager requires non-empty client_id and client_secret."

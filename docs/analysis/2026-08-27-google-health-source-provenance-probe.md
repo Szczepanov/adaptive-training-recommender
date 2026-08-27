@@ -10,7 +10,7 @@
 
 ## 1. Executive Summary & Core Findings
 
-Empirical inspection against the real Google Health account (`mdszczepanski@gmail.com`) using the `probe-health` runner produced the following conclusive findings:
+Empirical inspection against the real Google Health account (`Subject-A` / primary athlete account) using the `probe-health` runner produced the following conclusive findings:
 
 ```text
 ===========================================================================

@@ -61,4 +61,16 @@ describe('coPresenceValidator (ADR-0027)', () => {
         expect(result.verifiedAthlete).toBe(true);
         expect(result.status).toBe('NO_SECONDARY_DATA');
     });
+
+    it('returns unverified when watch is off-wrist and no historical baseline exists', () => {
+        const result = validateCoPresence({
+            garminRhr: null,
+            eightSleepRhr: 45,
+            athleteRhr28dMedian: null,
+        });
+
+        expect(result.verifiedAthlete).toBe(false);
+        expect(result.status).toBe('UNVERIFIED_OFF_WRIST');
+        expect(result.reason).toContain('cannot be verified without Garmin RHR or a historical baseline');
+    });
 });

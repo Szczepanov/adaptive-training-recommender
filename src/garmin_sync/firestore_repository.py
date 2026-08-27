@@ -463,35 +463,67 @@ class FirestoreRecoveryRepository:
             .document(doc_id)
         )
 
-        existing_doc = doc_ref.get()
         now_iso = datetime.now(timezone.utc).isoformat()
-        current_rev = 1
+        transaction = getattr(db, "transaction", None)
 
-        if existing_doc.exists:
-            data = existing_doc.to_dict() or {}
-            existing_hash = data.get("sourcePayloadHash")
-            current_rev = data.get("revision", 1)
-            if existing_hash == bundle.sourcePayloadHash:
-                logger.debug(
-                    "Health observation bundle %s already up to date at revision %d.",
-                    doc_id,
-                    current_rev,
-                )
-                return False, current_rev
-            current_rev += 1
+        if callable(transaction) and firestore is not None:
 
-        bundle.revision = current_rev
-        bundle.ingestedAt = now_iso
-        bundle.effectiveAt = now_iso
+            @firestore.transactional
+            def _update_in_txn(txn: Any) -> tuple[bool, int]:
+                existing_doc = doc_ref.get(transaction=txn)
+                current_rev = 1
+                if existing_doc.exists:
+                    data = existing_doc.to_dict() or {}
+                    existing_hash = data.get("sourcePayloadHash")
+                    current_rev = data.get("revision", 1)
+                    if existing_hash == bundle.sourcePayloadHash:
+                        return False, current_rev
+                    current_rev += 1
 
-        doc_ref.set(bundle.to_dict())
-        logger.info(
-            "Saved health observation bundle %s for user=<UID-redacted> at revision %d (%d observations).",
-            doc_id,
-            current_rev,
-            len(bundle.observations),
-        )
-        return True, current_rev
+                bundle.revision = current_rev
+                bundle.ingestedAt = now_iso
+                bundle.effectiveAt = now_iso
+                txn.set(doc_ref, bundle.to_dict())
+                return True, current_rev
+
+            txn = db.transaction()
+            changed, current_rev = _update_in_txn(txn)
+        else:
+            existing_doc = doc_ref.get()
+            current_rev = 1
+            if existing_doc.exists:
+                data = existing_doc.to_dict() or {}
+                existing_hash = data.get("sourcePayloadHash")
+                current_rev = data.get("revision", 1)
+                if existing_hash == bundle.sourcePayloadHash:
+                    logger.debug(
+                        "Health observation bundle %s already up to date at revision %d.",
+                        doc_id,
+                        current_rev,
+                    )
+                    return False, current_rev
+                current_rev += 1
+
+            bundle.revision = current_rev
+            bundle.ingestedAt = now_iso
+            bundle.effectiveAt = now_iso
+            doc_ref.set(bundle.to_dict())
+            changed = True
+
+        if changed:
+            logger.info(
+                "Saved health observation bundle %s for user=<UID-redacted> at revision %d (%d observations).",
+                doc_id,
+                current_rev,
+                len(bundle.observations),
+            )
+        else:
+            logger.debug(
+                "Health observation bundle %s already up to date at revision %d.",
+                doc_id,
+                current_rev,
+            )
+        return changed, current_rev
 
     def get_health_observation_day_bundle(
         self,

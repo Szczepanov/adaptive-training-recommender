@@ -183,11 +183,14 @@ def run_multisource_audit(
     mean_sleep_diff = sum(sleep_diffs) / len(sleep_diffs) if sleep_diffs else 0.0
     sleep_corr = _calc_correlation(garmin_sleep_mins, eight_sleep_mins)
 
-    hrv_median = _calc_median(eight_hrv_vals)
-    hrv_mad = _calc_mad(eight_hrv_vals, hrv_median)
+    # 28-day rolling window baseline statistics (using latest 28 eligible daily samples)
+    recent_hrv = eight_hrv_vals[-28:] if len(eight_hrv_vals) >= 28 else eight_hrv_vals
+    hrv_median = _calc_median(recent_hrv)
+    hrv_mad = _calc_mad(recent_hrv, hrv_median)
 
-    resp_median = _calc_median(eight_resp_vals)
-    resp_mad = _calc_mad(eight_resp_vals, resp_median)
+    recent_resp = eight_resp_vals[-28:] if len(eight_resp_vals) >= 28 else eight_resp_vals
+    resp_median = _calc_median(recent_resp)
+    resp_mad = _calc_mad(recent_resp, resp_median)
 
     return MultisourceAuditReport(
         startDate=start_date_iso,

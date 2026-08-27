@@ -96,6 +96,29 @@ class HealthObservationService:
                     key = (o.source.provider, o.source.transport)
                     grouped.setdefault(key, []).append(o)
 
+                # Archive raw health observations if archive store is configured
+                archive_ref = batch.raw_archive_ref
+                if hasattr(self.archive_store, "archive_health"):
+                    import dataclasses
+
+                    from .archive import HealthArchiveRecord
+
+                    try:
+                        archive_rec = HealthArchiveRecord(
+                            user_id=self.user_id,
+                            provider=provider_name,
+                            transport="bundle",
+                            logical_date=logical_date_iso,
+                            payload=[dataclasses.asdict(o) for o in batch.observations],
+                            revision=batch.revision,
+                            normalizer_version=batch.normalizer_version,
+                        )
+                        stored_ref = self.archive_store.archive_health(archive_rec)
+                        if stored_ref:
+                            archive_ref = stored_ref
+                    except Exception as arch_err:
+                        logger.warning("Failed to archive raw health observations: %s", arch_err)
+
                 provider_results: dict[str, Any] = {}
                 for (obs_provider, obs_transport), source_obs in grouped.items():
                     dtos = [observation_to_dto(self.user_id, o) for o in source_obs]
@@ -107,7 +130,7 @@ class HealthObservationService:
                         transport=obs_transport,
                         observations=dtos,
                         sourcePayloadHash=batch.source_payload_hash,
-                        rawArchiveRef=batch.raw_archive_ref,
+                        rawArchiveRef=archive_ref,
                         schemaVersion=batch.schema_version,
                         normalizerVersion=batch.normalizer_version,
                         revision=batch.revision,

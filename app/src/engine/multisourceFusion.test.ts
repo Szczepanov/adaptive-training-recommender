@@ -267,6 +267,7 @@ describe('multisourceFusion (MS15)', () => {
         const res1 = evaluateMultisourceFusion({
             logicalDate: '2026-08-27',
             policy: 'candidate-v1',
+            athleteRhr28dMedian: 45,
             metricActivation: { hrv: false, restingHeartRate: true },
             bundles: [eightSleepBundle],
             baselines: [matureEightSleepHrvBaseline, matureEightSleepRhrBaseline],

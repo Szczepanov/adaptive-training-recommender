@@ -54,7 +54,11 @@ def validate_co_presence(
     garmin_rhr: float | None = None
     if garmin_snapshot:
         raw = garmin_snapshot.get("raw", {}) or {}
-        rhr = raw.get("restingHr") or garmin_snapshot.get("restingHeartRate")
+        rhr = (
+            raw.get("restingHr")
+            or garmin_snapshot.get("restingHeartRate")
+            or garmin_snapshot.get("resting_heart_rate")
+        )
         if isinstance(rhr, (int, float)):
             garmin_rhr = float(rhr)
 
@@ -101,20 +105,29 @@ def validate_co_presence(
                     rhrDelta=baseline_delta,
                 )
 
+            return PresenceValidationVerdict(
+                verifiedAthlete=True,
+                imposterConfidence="UNVERIFIED_OFF_WRIST",
+                reason="Watch off-wrist overnight; Eight Sleep RHR matches historical baseline expectations.",
+                garminRhr=None,
+                eightSleepRhr=eight_rhr,
+                rhrDelta=baseline_delta,
+            )
+
         return PresenceValidationVerdict(
-            verifiedAthlete=True,
+            verifiedAthlete=False,
             imposterConfidence="UNVERIFIED_OFF_WRIST",
-            reason="Watch off-wrist overnight; Eight Sleep RHR matches historical baseline expectations.",
+            reason="Watch off-wrist overnight; Eight Sleep data cannot be verified without Garmin RHR or a historical baseline.",
             garminRhr=None,
             eightSleepRhr=eight_rhr,
             rhrDelta=None,
         )
 
-    # Default fallback
+    # Default fallback: Eight sleep has no RHR or no baseline
     return PresenceValidationVerdict(
-        verifiedAthlete=True,
-        imposterConfidence="VERIFIED",
-        reason="Eight Sleep present without conflicting physiological signals.",
+        verifiedAthlete=False,
+        imposterConfidence="UNVERIFIED_OFF_WRIST",
+        reason="Eight Sleep data cannot be verified without resting heart rate or historical baseline.",
         garminRhr=garmin_rhr,
         eightSleepRhr=eight_rhr,
         rhrDelta=None,
