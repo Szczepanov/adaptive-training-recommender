@@ -1,7 +1,7 @@
 # Phase 9.0: Shadow mode and the decision journal
 
-* **Status:** In progress. 9.0.2-9.0.6 (code) are complete; 9.0.1 (operational) is outstanding, and 9.0.7/9.0.8 wait on it.
-* **Blocked by:** nothing in code. 9.0.1 (unattended ingestion) is an operational precondition.
+* **Status:** In progress. 9.0.1-9.0.6 are complete; 9.0.7 (run the block) is startable now.
+* **Blocked by:** nothing. 9.0.1's unattended-ingestion precondition closed 2026-08-27.
 * **Unlocks:** a decision on whether to retire the manual AI daily loop, and a real subjective corpus for [Phase 9](./phase-9-subjective-baselines.md) 9.5.
 * **Source analysis:** [2026-08-16 manual loop vs app adjudication](../analysis/2026-08-16-manual-loop-vs-app-adjudication.md)
 * **Decisions:** none new. See "Why this needs no ADR" below.
@@ -32,7 +32,7 @@ The code in this phase collects evidence; it does not change recommendation poli
 
 ## Work items
 
-### 9.0.1 Unattended ingestion `[ ]`
+### 9.0.1 Unattended ingestion `[x]`
 
 Operational, not code:
 
@@ -41,6 +41,12 @@ Operational, not code:
 3. Run `uv run python -m garmin_sync audit` over the pre-block/backfill window and record the coverage result. Record the deployed scheduler expression and staleness setting with the operational evidence so the block can be reproduced.
 
 **Done when.** Seven consecutive days land unattended under the documented polling schedule and the audit reports no gap in the backfilled window. A gap discovered mid-block is a confound, not a data point.
+
+**Closed 2026-08-27.** `garmin-sync-morning-poll` (`*/15 5-9 * * *`, `Europe/Warsaw`, no `--force`) has been live against the deployed `garmin-sync` Cloud Run Job since 2026-08-18. `uv run python -m garmin_sync audit --days 7` over 2026-08-21 → 2026-08-27 reports 7/7 snapshots present, 0 missing — the literal gate text above is satisfied.
+
+Recorded honestly rather than silently: the Cloud Run execution history for 2026-08-21 shows every scheduled tick from 03:00–06:00 UTC failed (`NonZeroExitCode`), coinciding with that day's deploy (#171/#173). It self-recovered at 06:03 UTC, well inside the 05:00–09:45 Warsaw polling window, and the day's snapshot landed through the unattended path itself — not a manual backfill. So this is *seven days with complete, unattended-path data*, not *seven days with zero pipeline incidents*; one of the seven needed a same-morning self-heal rather than running clean. Treat 2026-08-21 as a recovered incident, not a confirmed-clean day, if a future reader needs that distinction (e.g. re-litigating 9.0.7 agreement against incident days). The two duplicate Cloud Scheduler jobs found during this check (`garmin-sync-daily` + `garmin-sync-morning-poll`, identical schedule/target since 08-27) are a separate cleanup item, not a data-quality issue — both fired without gaps.
+
+**Block day 1: 2026-08-22** (the day after the last recovered incident). Check-ins/journal entries from that date onward may count toward 9.0.7's volume gates.
 
 ---
 
@@ -237,13 +243,13 @@ Then choose one:
 
 | # | Task | Status | Blocked by |
 |---|---|:--:|---|
-| 9.0.1 | Unattended ingestion | `[ ]` | — |
+| 9.0.1 | Unattended ingestion | `[x]` | — |
 | 9.0.2 | Journal model, validation, storage | `[x]` | — |
 | 9.0.3 | Journal entry UI | `[x]` | 9.0.2 |
 | 9.0.4 | Agreement classification | `[x]` | 9.0.2 |
 | 9.0.5 | Export | `[x]` | 9.0.2, 9.0.4 |
 | 9.0.6 | Journal-cannot-reach-engine guard | `[x]` | 9.0.2 |
-| 9.0.7 | Run the block | `[ ]` | 9.0.1, 9.0.3, 9.0.6 |
+| 9.0.7 | Run the block | `[ ]` | — |
 | 9.0.8 | Readout and decision | `[ ]` | 9.0.7 |
 
-9.0.1 and 9.0.2 were independently startable; code work through 9.0.6 is now complete. The operational ingestion check remains the critical path before any shadow-block evidence should be considered valid.
+All preconditions through 9.0.6 are complete. 9.0.7 is startable now; block day 1 is 2026-08-22 (see 9.0.1 evidence note above).
