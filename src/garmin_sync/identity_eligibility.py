@@ -12,10 +12,40 @@ physiology.
 
 from dataclasses import dataclass
 from datetime import datetime
+import math
+import re
 from typing import Any, Literal, Mapping, Sequence, TypeAlias, cast
 
 IdentityStatus: TypeAlias = Literal["USER", "NOT_USER", "UNCERTAIN"]
 IdentityBundleKey: TypeAlias = tuple[str, str, str]
+
+_IDENTITY_STATUSES = {"USER", "NOT_USER", "UNCERTAIN"}
+_IDENTITY_CONFIDENCE_TIERS = {"HIGH", "MODERATE", "LOW", "NONE"}
+_IDENTITY_REASON_CODES = {
+    "ANCHOR_MISSING",
+    "ANCHOR_QUALITY_INSUFFICIENT",
+    "EVIDENCE_LINEAGE_DEPENDENT",
+    "INSUFFICIENT_PASSPORT_HISTORY",
+    "MULTIPLE_PAIRING_CANDIDATES",
+    "SESSION_TIMING_CONCORDANT",
+    "SESSION_TIMING_DISCORDANT",
+    "RHR_RELATION_CONCORDANT",
+    "RHR_RELATION_DISCORDANT",
+    "RESPIRATION_RELATION_CONCORDANT",
+    "RESPIRATION_RELATION_DISCORDANT",
+    "HRV_RELATION_CONCORDANT",
+    "HRV_RELATION_DISCORDANT",
+    "MIXED_OCCUPANCY_SUSPECTED",
+    "SESSION_INTERVAL_INVALID",
+}
+_PASSPORT_CHANGE_REASONS = {
+    "GARMIN_DEVICE_OR_ALGORITHM_CHANGE",
+    "EIGHT_SLEEP_ALGORITHM_OR_API_CHANGE",
+    "GOOGLE_HEALTH_MAPPING_CHANGE",
+    "MEASUREMENT_SYSTEM_SHIFT_CONFIRMED_BY_REPLAY",
+    "INITIAL_BOOTSTRAP",
+    "OTHER",
+}
 
 
 @dataclass(frozen=True)
@@ -40,7 +70,7 @@ def _non_empty_string(value: object) -> str | None:
 
 
 def _identity_status(value: object) -> IdentityStatus | None:
-    return cast(IdentityStatus, value) if value in {"USER", "NOT_USER", "UNCERTAIN"} else None
+    return cast(IdentityStatus, value) if value in _IDENTITY_STATUSES else None
 
 
 def _parse_timestamp(value: object) -> datetime | None:
@@ -53,6 +83,196 @@ def _parse_timestamp(value: object) -> datetime | None:
         return None
 
 
+def _is_int(value: object, *, minimum: int = 0) -> bool:
+    return isinstance(value, int) and not isinstance(value, bool) and value >= minimum
+
+
+def _is_finite_or_none(value: object) -> bool:
+    if value is None:
+        return True
+    return isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value)
+
+
+def validate_identity_bundle_ref(value: object) -> bool:
+    """Return whether a persisted observation reference has complete replay metadata."""
+
+    if not isinstance(value, Mapping):
+        return False
+    return bool(
+        _non_empty_string(value.get("id"))
+        and _non_empty_string(value.get("provider"))
+        and _non_empty_string(value.get("transport"))
+        and _is_int(value.get("revision"), minimum=1)
+        and _non_empty_string(value.get("sourcePayloadHash"))
+        and _non_empty_string(value.get("lineageKey"))
+    )
+
+
+def _validate_scalar_estimate(value: object) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    return bool(
+        _is_finite_or_none(value.get("median"))
+        and _is_finite_or_none(value.get("mad"))
+        and _is_finite_or_none(value.get("iqr"))
+        and _is_int(value.get("n"))
+    )
+
+
+def _validate_location_estimate(value: object) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    return bool(
+        _is_finite_or_none(value.get("median"))
+        and _is_finite_or_none(value.get("mad"))
+        and _is_int(value.get("n"))
+    )
+
+
+def _validate_ratio_estimate(value: object) -> bool:
+    if not isinstance(value, Mapping):
+        return False
+    return bool(
+        _is_finite_or_none(value.get("median"))
+        and _is_finite_or_none(value.get("iqr"))
+        and _is_int(value.get("n"))
+    )
+
+
+def _validate_passport_core(value: object) -> bool:
+    if not isinstance(value, Mapping) or value.get("schemaVersion") != 1:
+        return False
+    for field in ("passportVersion", "createdAt", "policyVersion", "featureSchemaVersion"):
+        if _non_empty_string(value.get(field)) is None:
+            return False
+
+    anchor_policy = value.get("anchorPolicy")
+    if not isinstance(anchor_policy, Mapping):
+        return False
+    if not all(
+        _non_empty_string(anchor_policy.get(field)) is not None
+        for field in ("primaryProvider", "primaryTransport", "role")
+    ) or not isinstance(anchor_policy.get("requireIndependentLineage"), bool):
+        return False
+
+    source_profiles = value.get("sourceProfiles")
+    cross_source_profiles = value.get("crossSourceProfiles")
+    if not isinstance(source_profiles, Mapping) or not isinstance(cross_source_profiles, Mapping):
+        return False
+    for profile in source_profiles.values():
+        if not isinstance(profile, Mapping) or not _is_int(profile.get("trustedNightCount")):
+            return False
+        if not all(
+            _validate_scalar_estimate(profile.get(field))
+            for field in ("restingHeartRate", "respirationRate", "logHrv")
+        ):
+            return False
+        if not all(
+            _validate_location_estimate(profile.get(field))
+            for field in ("sleepStartMinutesLocal", "sleepDurationMinutes")
+        ):
+            return False
+    for profile in cross_source_profiles.values():
+        if not isinstance(profile, Mapping):
+            return False
+        if not all(
+            _validate_scalar_estimate(profile.get(field))
+            for field in ("rhrResidual", "respirationResidual", "hrvLogResidual")
+        ):
+            return False
+        if not all(
+            _validate_location_estimate(profile.get(field))
+            for field in ("startDeltaMinutes", "endDeltaMinutes", "durationDeltaMinutes")
+        ) or not _validate_ratio_estimate(profile.get("sessionJaccard")):
+            return False
+
+    calibration = value.get("calibration")
+    if not isinstance(calibration, Mapping):
+        return False
+    if not all(
+        _is_int(calibration.get(field))
+        for field in (
+            "manualUserCount",
+            "manualNotUserCount",
+            "mixedOccupancyCount",
+            "uncertainCount",
+        )
+    ):
+        return False
+    for field in ("shadowWindowStart", "shadowWindowEnd"):
+        window = calibration.get(field)
+        if window is not None and _non_empty_string(window) is None:
+            return False
+    return True
+
+
+def validate_identity_passport_current(value: object) -> bool:
+    """Validate the complete materialized-current passport schema before persistence."""
+
+    return bool(
+        _validate_passport_core(value)
+        and isinstance(value, Mapping)
+        and _non_empty_string(value.get("updatedAt"))
+    )
+
+
+def validate_identity_passport_version(value: object) -> bool:
+    """Validate the complete immutable passport-version schema before persistence."""
+
+    if not _validate_passport_core(value) or not isinstance(value, Mapping):
+        return False
+    training_set_hash = value.get("trainingSetHash")
+    previous_version = value.get("previousVersion")
+    return bool(
+        isinstance(training_set_hash, str)
+        and re.fullmatch(r"[0-9a-f]{64}", training_set_hash)
+        and _is_int(value.get("trainingObservationCount"))
+        and _non_empty_string(value.get("trainingWindowStart"))
+        and _non_empty_string(value.get("trainingWindowEnd"))
+        and (previous_version is None or _non_empty_string(previous_version))
+        and value.get("changeReason") in _PASSPORT_CHANGE_REASONS
+        and _non_empty_string(value.get("algorithmVersion"))
+    )
+
+
+def validate_automatic_identity_assessment(value: object) -> bool:
+    """Validate the complete immutable automatic-assessment contract."""
+
+    if not isinstance(value, Mapping):
+        return False
+    identity_score = value.get("identityScore")
+    shared_source = value.get("sharedSource")
+    shared_ref = value.get("sharedBundleRef")
+    anchor_refs = value.get("anchorBundleRefs")
+    reason_codes = value.get("reasonCodes")
+    passport_version = value.get("passportVersion")
+    if (
+        _non_empty_string(value.get("id")) is None
+        or _non_empty_string(value.get("sourceNightKey")) is None
+        or not isinstance(shared_source, Mapping)
+        or _non_empty_string(shared_source.get("provider")) is None
+        or _non_empty_string(shared_source.get("transport")) is None
+        or _identity_status(value.get("automaticStatus")) is None
+        or not _is_finite_or_none(identity_score)
+        or value.get("confidenceTier") not in _IDENTITY_CONFIDENCE_TIERS
+        or not isinstance(reason_codes, list)
+        or not all(code in _IDENTITY_REASON_CODES for code in reason_codes)
+        or (passport_version is not None and _non_empty_string(passport_version) is None)
+        or _non_empty_string(value.get("policyVersion")) is None
+        or _non_empty_string(value.get("featureSchemaVersion")) is None
+        or _non_empty_string(value.get("assessedAt")) is None
+        or not validate_identity_bundle_ref(shared_ref)
+        or not isinstance(anchor_refs, list)
+        or not all(validate_identity_bundle_ref(ref) for ref in anchor_refs)
+    ):
+        return False
+    assert isinstance(shared_ref, Mapping)
+    return bool(
+        shared_ref.get("provider") == shared_source.get("provider")
+        and shared_ref.get("transport") == shared_source.get("transport")
+    )
+
+
 def _review_semantics_are_valid(event: Mapping[str, Any]) -> bool:
     label = _identity_status(event.get("label"))
     attestation = event.get("occupancyAttestation")
@@ -63,6 +283,35 @@ def _review_semantics_are_valid(event: Mapping[str, Any]) -> bool:
     if label == "UNCERTAIN":
         return attestation in {"MIXED", "UNKNOWN"}
     return False
+
+
+def validate_identity_review_event(
+    value: object,
+    *,
+    expected_assessment_id: str | None = None,
+) -> bool:
+    """Validate a complete review event, including label/occupancy semantics."""
+
+    if not isinstance(value, Mapping):
+        return False
+    event_id = _non_empty_string(value.get("id"))
+    assessment_id = _non_empty_string(value.get("assessmentId"))
+    supersedes = value.get("supersedesReviewEventId")
+    if (
+        event_id is None
+        or assessment_id is None
+        or (expected_assessment_id is not None and assessment_id != expected_assessment_id)
+        or value.get("schemaVersion") != 1
+        or _identity_status(value.get("label")) is None
+        or value.get("occupancyAttestation") not in {"EXCLUSIVE", "MIXED", "UNKNOWN"}
+        or (supersedes is not None and _non_empty_string(supersedes) is None)
+        or supersedes == event_id
+        or _parse_timestamp(value.get("recordedAt")) is None
+        or value.get("source") not in {"user_ui", "admin_replay"}
+        or not _review_semantics_are_valid(value)
+    ):
+        return False
+    return True
 
 
 def _effective_review_event(
@@ -80,12 +329,9 @@ def _effective_review_event(
     duplicate_ids: set[str] = set()
     for event in review_events:
         event_id = _non_empty_string(event.get("id"))
-        if (
-            event_id is None
-            or event.get("assessmentId") != assessment_id
-            or event.get("schemaVersion") != 1
-            or _parse_timestamp(event.get("recordedAt")) is None
-            or not _review_semantics_are_valid(event)
+        if event_id is None or not validate_identity_review_event(
+            event,
+            expected_assessment_id=assessment_id,
         ):
             continue
         if event_id in candidates:
@@ -141,6 +387,8 @@ def derive_effective_identity_decision_projection(
 ) -> EffectiveIdentityDecisionProjection | None:
     """Derive the replay-safe baseline projection without mutating persisted records."""
 
+    if not validate_automatic_identity_assessment(assessment):
+        return None
     assessment_id = _non_empty_string(assessment.get("id"))
     source_night_key = _non_empty_string(assessment.get("sourceNightKey"))
     automatic_status = _identity_status(assessment.get("automaticStatus"))
@@ -166,9 +414,7 @@ def derive_effective_identity_decision_projection(
         or source_payload_hash is None
         or shared_ref.get("provider") != provider
         or shared_ref.get("transport") != transport
-        or not isinstance(revision, int)
-        or isinstance(revision, bool)
-        or revision < 1
+        or not _is_int(revision, minimum=1)
     ):
         return None
 
@@ -193,7 +439,7 @@ def derive_effective_identity_decision_projection(
         provider=provider,
         transport=transport,
         bundle_id=bundle_id,
-        bundle_revision=revision,
+        bundle_revision=cast(int, revision),
         source_payload_hash=source_payload_hash,
         effective_status=effective_status,
         baseline_learning=baseline_learning,
@@ -280,6 +526,7 @@ def resolve_bundle_identity_projection(
         and decision.transport == key[2]
         and decision.bundle_id == bundle_id
         and isinstance(revision, int)
+        and not isinstance(revision, bool)
         and decision.bundle_revision == revision
         and isinstance(source_payload_hash, str)
         and decision.source_payload_hash == source_payload_hash
