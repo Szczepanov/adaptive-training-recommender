@@ -83,7 +83,7 @@ def validate_co_presence(
     max_rhr_delta_bpm: float = 10.0,
     max_unverified_rhr_delta_bpm: float = 14.0,
 ) -> PresenceValidationVerdict:
-    """Validate whether the Eight Sleep payload corresponds to the genuine athlete.
+    """Evaluate provisional co-presence concordance for the Eight Sleep payload.
 
     PROVISIONAL (PI0, ADR-0028) -- see module doc comment above. Do not present this output as a
     validated identity determination.
