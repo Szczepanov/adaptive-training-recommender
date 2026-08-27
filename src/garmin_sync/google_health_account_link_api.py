@@ -20,6 +20,7 @@ from typing import Any
 from firebase_admin import auth as firebase_auth
 
 from .error_reporting import log_exception, sanitize_text
+from .firestore_repository import init_firestore_client
 from .google_health_account_link import (
     GoogleHealthConnectionRepository,
     GoogleHealthLinkError,
@@ -275,6 +276,13 @@ class GoogleHealthAccountLinkHandler(BaseHTTPRequestHandler):
 
 def main() -> int:
     port = int(os.getenv("PORT", "8080"))
+    # Initialize the default Firebase Admin app before serving. firebase_auth.verify_id_token
+    # (called from _verified_uid on every start-link request) requires it directly, and it
+    # would otherwise only get initialized lazily the first time Firestore is touched --
+    # which happens *after* auth verification in _handle_start_link, not before. Fail at
+    # startup rather than have the first real request hit "The default Firebase app does
+    # not exist" (mirrors account_link_api.py's eager _service() call for the same reason).
+    init_firestore_client()
     server = ThreadingHTTPServer(("0.0.0.0", port), GoogleHealthAccountLinkHandler)
     logger.info("Google Health account-link service listening on port %d", port)
     try:

@@ -37,6 +37,13 @@
 
 In accordance with ADR-0027, multi-source ingestion is activated on a **strict, granular, metric-by-metric basis** rather than a single coarse provider switch. Every metric must pass 6 verification gates (coverage, semantics, baseline stability, incremental value, zero load distortion, and rollback safety).
 
+> **Read `ACTIVE`/`Approved` below as "approved for the candidate config default," not "currently
+> running in production."** `MULTISOURCE_FUSION_POLICY` defaults to `'off'`, and
+> `evaluateMultisourceFusion` (the only place that reads this matrix) is called only from its own
+> unit test and the simulation harness — never from the production recommendation path. See the
+> correction notice above for why this matrix's specific verdicts (and the CASA gate in
+> particular) shouldn't be trusted as evidence of a real activation decision either.
+
 | Biometric Stream | Canonical Metric ID | Status | Baseline Parameters ($N=42$) | Production Role & Verification Verdict |
 |---|---|---|---|---|
 | **HRV RMSSD** | `hrv_rmssd_ms` | **`ACTIVE`** | Median 57.3 ms, MAD 8.55 ms | **Approved**. Provides night-to-night parasympathetic tracking and primary fallback when watch is off-wrist. |

@@ -53,10 +53,11 @@ What genuinely remains open:
    sleep stages, correct provider attribution, correct logical dates.
 4. **Real 7-day `backfill-health` run completed** against the real account with the fixed
    pipeline — 7 dates, 48 observations, all saved at Firestore revision 2 (revision 1 pre-existed).
-5. **New bug found, not yet fixed:** raw-archive writes to GCS fail for every Google Health
-   backfill date — `Invalid archive endpoint; only safe object-name segments are allowed`.
-   Firestore observation saves succeed independently, so no data is lost, but MS7's raw-archive
-   contract isn't currently satisfied for this provider. Follow-up.
+5. **New bug found, fixed later the same session (see the incident section below):**
+   raw-archive writes to GCS failed for every Google Health backfill date —
+   `Invalid archive endpoint; only safe object-name segments are allowed`. Firestore observation
+   saves succeeded independently, so no data was lost while this was broken. Fixed and verified
+   live against real GCS.
 6. **Known remaining limitation, not fixed:** the server-side AIP-160 filter for the three
    daily-summary types is rejected by the live API (`400 INVALID_DATA_POINT_FILTER`, "Restriction
    member path segment ... does not match any data type"). Falls back to unfiltered + the
@@ -69,7 +70,7 @@ What genuinely remains open:
    HRV or respiration to Health Connect at all, per the probe's own source matrix — that looks
    like a genuine transport gap, not a bug).
 
-## Incident: transient auth failure deleted 46 real bundles, then fixed (2026-08-27)
+## Incident: transient auth failure deleted 44 real bundles, then fixed (2026-08-27)
 
 While re-running the full 2026-06-29→2026-08-27 backfill with the sleep-mapper fix applied, the
 `GOOGLE_HEALTH_ACCESS_TOKEN` in `.env` expired partway through the run (~9 minutes in, around
@@ -84,7 +85,7 @@ including auth errors, and silently continued, so a date that 401'd on all four 
 cannot distinguish "the source genuinely has no data this run" from "we couldn't check" — an empty
 batch triggers `_reconcile_missing_sources`, which **deletes** any previously stored bundle whose
 (provider, transport) doesn't appear in the current (empty) batch. Result: **every date from
-2026-07-31 through 2026-08-27 (46 bundles, both `garmin_google_health` and
+2026-07-31 through 2026-08-27 (44 bundles, both `garmin_google_health` and
 `eight_sleep_google_health` where applicable) was deleted** — a transient token expiry cascaded
 into real data loss for the most recent ~4 weeks.
 
@@ -94,19 +95,27 @@ Two fixes landed together:
    `client_id`/`client_secret`/`refresh_token` are all available, instead of a static access
    token that can't renew itself. `expires_at` is forced to `0.0` on that path so it always
    refreshes once up front rather than trusting a possibly-already-stale token value.
-2. `google_health_provider.py` — `fetch_observations` now only swallows `GoogleHealthNotFoundError`
-   (a legitimate "this data type isn't available" signal) per data type; every other exception
-   (auth, rate limit, account-not-linked, network) propagates instead of being silently absorbed
-   into an empty batch. `HealthObservationService.sync_date`'s existing error path already skips
-   reconciliation on a raised exception, so this alone prevents the tombstone cascade even if a
-   future credential problem recurs.
+2. `google_health_provider.py` — `fetch_observations` no longer swallows *any* exception from
+   `list_data_points`, including a 404 (`GoogleHealthNotFoundError`). An earlier version of this
+   fix only swallowed 404s specifically, reasoning that "data type not found" is a legitimate
+   "not available" signal safe to treat as empty — but that was never actually observed live for
+   this API (every real query this session returned 200, even with zero points), so it was an
+   unverified assumption carrying the same tombstone risk as the auth-failure case. Every failure
+   now propagates, full stop, so the caller's error path (no reconciliation) is always taken.
 
-Recovery: re-ran `backfill-health --start-date 2026-07-31 --end-date 2026-08-27` with both fixes
-in place — 0 auth errors, 0 tombstones, 44/44 bundles restored. Verified directly against
-Firestore afterward: `garmin_google_health` covers 59/60 days in the full range (the one gap,
-2026-07-18, pre-dates this incident and this session entirely — a genuine pre-existing sync gap,
-not something this incident caused); `eight_sleep_google_health` covers 2026-06-29 through
-2026-08-17 (42 days), consistent with the real ~10-day Eight Sleep gap noted earlier in this doc.
+Recovery: re-ran `backfill-health --start-date 2026-07-31 --end-date 2026-08-27` with the auth
+fix in place — 0 auth errors, 0 tombstones, **44/44 bundles restored** (the real tombstoned count
+was 44 — 28 `garmin_google_health` + 16 `eight_sleep_google_health` — not the 46 originally
+reported here; that overcounted by assuming Eight Sleep was tombstoned for 2026-07-31 and
+2026-08-01 too, but the incident log confirms only `garmin_google_health` was tombstoned for
+those two dates — `eight_sleep_google_health` never existed for them, a genuine pre-existing gap
+unrelated to this incident, confirmed by their absence from the "Tombstoned" log lines entirely).
+**Full recovery, zero net data loss.** Verified directly against Firestore afterward:
+`garmin_google_health` covers 59/60 days in the full range (the one gap, 2026-07-18, pre-dates
+this incident and this session entirely); `eight_sleep_google_health` covers 42 days
+(2026-06-29 → 2026-08-17, with a few pre-existing gap nights inside that range including
+2026-07-31/08-01), consistent with the real ~10-day Eight Sleep gap after 08-17 noted earlier in
+this doc.
 
 Separately fixed in the same pass: `archive_health()` in both `LocalRawArchiveStore` and
 `GcsRawArchiveStore` built a path segment `"health/{provider}_{transport}"` containing a `/`,
@@ -129,8 +138,10 @@ Done and written up in
 - §11 Raw vs. `:reconcile` — reconciled points carry no `dataSource` at all, confirming raw
   `list` is the only viable source for provenance-aware ingestion.
 - §12 Latency — approximated from real sleep-stage `createTime` vs. session `endTime`: samples
-  ranged ~1 min to ~6.5 hours (mean ≈119 min). Wide enough spread that a repair-sync/backfill
-  lookback is necessary, not a same-day poll.
+  ranged ~1 min to ~6.5 hours (mean ≈119 min). This measures only the device-to-Health-Connect
+  recording leg, not Google Health API availability (no paired API-observation timestamps were
+  captured) — the spread supports a repair-sync/backfill lookback being prudent, not the stronger
+  claim that same-morning API availability is unreliable.
 - §13 Date/time semantics — `startUtcOffset`/`endUtcOffset` consistently `7200s` (Warsaw CEST);
   `derive_warsaw_logical_date()` verified correct on a real record. DST transition not tested
   (none occurred in the sampled window — deliberately not simulated).
@@ -234,10 +245,15 @@ mean:
 
 ## Verification
 
-- `uv run pytest` (85 passed), `uv run ruff check .` clean, `uv run mypy` clean on touched files,
-  `cd app && npx tsc --noEmit` clean, `multisourceFusion.test.ts` (7/7).
+- `uv run pytest`, `uv run ruff check .`, `uv run mypy src/garmin_sync` clean throughout this
+  session's edits (test count grew as new modules were added — see the PR description for the
+  final count rather than a snapshot here that will go stale).
+- `cd app && npx tsc --noEmit` clean; `npx vitest run src/engine/simulation/multisourceFusion.test.ts`
+  (MS15, 7/7 pass) and `npx vitest run src/engine/simulation/multisourceComparison.test.ts` (MS16,
+  5/5 pass) — two distinct suites for two distinct MS items, not one result covering both.
 - Live: `probe-health` reproduces original MS0 figures exactly; a 3-day `list_data_points` window
   returns 4 (not 633) sleep points; `backfill-health --days 7` completed and saved 48 observations
-  across 7 dates at Firestore revision 2.
+  across 7 dates at Firestore revision 2; the tombstone-incident restore (`--start-date 2026-07-31
+  --end-date 2026-08-27`) landed at 44/44 bundles restored, 0 auth errors, 0 tombstones.
 - `MULTISOURCE_FUSION_POLICY` stays `'off'` throughout; `evaluateMultisourceFusion` remains
   uncalled from the production recommendation path.

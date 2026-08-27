@@ -81,8 +81,9 @@ Reproduce with: `uv run python -m garmin_sync compare-transports --start-date 20
    between Garmin's own algorithm and however Health Connect's schema represents the same
    session, not as one transport losing data the other has.
 4. **Dual-source architecture remains the right call** — Garmin Direct stays necessary for HRV,
-   respiration, and steps; Eight Sleep (via Google Health) remains the only source for those same
-   metrics on nights the Garmin watch isn't worn.
+   respiration, and steps (steps are Garmin-direct-only regardless, per `D-MS-STEPS`/P9 — Eight
+   Sleep, a bed sensor, has no step data to offer). Eight Sleep (via Google Health) remains the
+   only source for HRV and respiration specifically on nights the Garmin watch isn't worn.
 
 ---
 

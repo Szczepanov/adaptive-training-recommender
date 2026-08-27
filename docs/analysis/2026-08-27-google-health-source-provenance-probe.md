@@ -37,6 +37,14 @@ daily-respiratory-rate       287      NO         YES          none
 ===========================================================================
 ```
 
+Counts above (including the 287 `daily-respiratory-rate` points) come from the **unfiltered
+full-account-history** result — the date-range filter was confirmed non-functional at probe time
+(see [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md)),
+so this is not a "recent" window. The `com.eightsleep.eight` source attribution itself is real —
+package-name provenance detection doesn't depend on the date filter — but §2's respiration-field-shape
+caveat still applies: provenance being confirmed here doesn't mean the individual field values were
+successfully parsed or verified.
+
 ### Key Architectural Answers:
 1. **Eight Sleep Status (`FULL_PASS`)**: Eight Sleep Android app actively exports all 4 key physiological recovery metrics to Google Health under package identity `com.eightsleep.eight`.
 2. **Eight Sleep Path Decision (MS11)**: **Resolved in favor of Google Health path**. There is no need for a reverse-engineered direct API scraper for Eight Sleep (`MS18` unnecessary). Google Health provides official, structured, high-fidelity Eight Sleep recovery data.
@@ -116,15 +124,21 @@ this remains an open, lower-priority follow-up rather than a completed check.
 
 ## 7. Latency (runbook §12)
 
-Approximated Garmin's Health-Connect-to-Google-Health-API sync latency using each sleep record's
-stage `createTime` minus the sleep session's own `endTime`, for the 8 most recent real sleep
-records: samples (minutes) were **1.0, 15.3, 18.3, 19.6, 40.3, 176.2, 288.5, 389.8** — mean ≈119
-minutes, but with wide spread (roughly 1 minute to ~6.5 hours). This is a rough proxy (stage
-`createTime` isn't necessarily the moment the API became queryable, just when Health Connect
-recorded the stage), but the spread alone is a real, useful signal: **latency is not reliably fast
-enough to assume same-morning availability for a recommendation** — a repair-sync/backfill lookback
-window is necessary, not just a same-day poll. No Eight Sleep-side latency sample was available
-(no recent Eight Sleep records in the windows queried — see §2's note on unconfirmed respiration).
+Approximated a **device-to-Health-Connect recording delay** (not API availability — see caveat
+below) using each sleep record's stage `createTime` minus the sleep session's own `endTime`, for
+the 8 most recent real sleep records: samples (minutes) were **1.0, 15.3, 18.3, 19.6, 40.3, 176.2,
+288.5, 389.8** — mean ≈119 minutes, wide spread (roughly 1 minute to ~6.5 hours).
+
+**This measures only the first of two latency legs** (device/app → Health Connect); it says
+nothing about the second leg (Health Connect → queryable via the Google Health REST API), since
+no paired timestamp for "when a request against this record first succeeded" was captured. The
+spread itself is real and worth having, but the operational conclusion it can actually support is
+narrower than "same-morning availability is unreliable" — that specific claim needs paired
+API-observation timestamps this probe didn't collect. What the measured spread *does* support:
+Health Connect recording itself is not instantaneous relative to the sleep session ending, so a
+repair-sync/backfill lookback window is prudent regardless of what the second leg turns out to
+add. No Eight Sleep-side latency sample was available (no recent Eight Sleep records in the
+windows queried — see §2's note on unconfirmed respiration).
 
 ## 8. Date/time semantics (runbook §13)
 
@@ -177,7 +191,7 @@ Health Connect's full category list).
 - date semantics understood — ✅ (§8), DST transition intentionally left unverified
 - duplicate/revision behavior understood enough for MS2 — partial (§6); real device-resync
   behavior remains untested
-- latency measured — ✅ (§7), wide variance, repair-sync lookback confirmed necessary
+- latency measured — ✅ (§7), device-to-Health-Connect leg only; API-availability leg unmeasured
 - sanitized evidence published — ✅ this document
 - MS plan updated accordingly — ✅ (parent plan's task board)
 

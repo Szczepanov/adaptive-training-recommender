@@ -89,6 +89,10 @@ env:
   # it will see Google's "unverified app" warning until verification completes.
   GOOGLE_HEALTH_REDIRECT_URI: https://${{ secrets.GCP_PROJECT_ID }}.web.app/api/google-health/callback
   APP_BASE_URL: https://${{ secrets.GCP_PROJECT_ID }}.web.app
+  # `secrets` is not a valid context in a step-level `if:` (actionlint-confirmed, and per
+  # GitHub's own context-availability docs) -- resolve the gate once here, at the only level
+  # where `secrets` is usable outside a step body, and reference `env.*` in the step `if:`s.
+  GOOGLE_HEALTH_LINKING_ENABLED: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID != '' && secrets.GOOGLE_HEALTH_CLIENT_SECRET != '' }}
 
 jobs:
   deploy:
@@ -143,7 +147,7 @@ jobs:
             --allow-unauthenticated
 
       - name: Deploy Google Health account linker
-        if: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID != '' && secrets.GOOGLE_HEALTH_CLIENT_SECRET != '' }}
+        if: env.GOOGLE_HEALTH_LINKING_ENABLED == 'true'
         env:
           GOOGLE_HEALTH_CLIENT_ID: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID }}
           GOOGLE_HEALTH_CLIENT_SECRET: ${{ secrets.GOOGLE_HEALTH_CLIENT_SECRET }}
@@ -171,7 +175,7 @@ jobs:
             --allow-unauthenticated
 
       - name: Smoke test google-health-account-link service health
-        if: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID != '' && secrets.GOOGLE_HEALTH_CLIENT_SECRET != '' }}
+        if: env.GOOGLE_HEALTH_LINKING_ENABLED == 'true'
         run: |
           SERVICE_URL="$(gcloud run services describe google-health-account-link \
             --region="${REGION}" --format='value(status.url)')"

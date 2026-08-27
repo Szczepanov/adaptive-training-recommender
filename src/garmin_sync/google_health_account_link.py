@@ -25,6 +25,7 @@ import logging
 import secrets
 import tempfile
 import time
+import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -77,7 +78,7 @@ class GoogleHealthLinkStateStore:
     constraint.
     """
 
-    def __init__(self, db: Any = None):
+    def __init__(self, db: Any = None) -> None:
         self.db = db or init_firestore_client()
 
     def create(self, uid: str) -> str:
@@ -138,7 +139,7 @@ def build_authorize_url(
         "prompt": "consent",
         "state": state,
     }
-    query = "&".join(f"{k}={requests.utils.quote(v, safe='')}" for k, v in params.items())
+    query = urllib.parse.urlencode(params, quote_via=urllib.parse.quote, safe="")
     return f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
 
 
@@ -183,6 +184,14 @@ def exchange_code_for_tokens(
     )
 
 
+def _write_token_blob(*, bucket_name: str, object_name: str, payload: dict[str, Any]) -> bool:
+    store = GcsTokenStore(bucket_name, object_name)
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp_path = Path(tmp_dir) / "google_health_tokens.json"
+        tmp_path.write_text(json.dumps(payload))
+        return store.persist(tmp_path)
+
+
 def persist_tokens(
     *,
     bucket_name: str,
@@ -192,25 +201,48 @@ def persist_tokens(
     """Upload the token pair to GCS; returns the object name (never the token itself) for
     storage in Firestore, mirroring Garmin's tokenObject pattern (account_link.py)."""
     object_name = f"google-health/users/{uid}/google_health_tokens-{secrets.token_hex(8)}.json"
-    store = GcsTokenStore(bucket_name, object_name)
-
-    with tempfile.TemporaryDirectory() as tmp_dir:
-        tmp_path = Path(tmp_dir) / "google_health_tokens.json"
-        tmp_path.write_text(
-            json.dumps(
-                {
-                    "access_token": tokens.access_token,
-                    "refresh_token": tokens.refresh_token,
-                    "token_type": tokens.token_type,
-                    "scopes": tokens.scopes,
-                    "obtained_at": tokens.obtained_at,
-                }
-            )
-        )
-        if not store.persist(tmp_path):
-            raise GoogleHealthLinkError("Failed to persist Google Health tokens to storage.")
-
+    ok = _write_token_blob(
+        bucket_name=bucket_name,
+        object_name=object_name,
+        payload={
+            "access_token": tokens.access_token,
+            "refresh_token": tokens.refresh_token,
+            "token_type": tokens.token_type,
+            "scopes": tokens.scopes,
+            "obtained_at": tokens.obtained_at,
+        },
+    )
+    if not ok:
+        raise GoogleHealthLinkError("Failed to persist Google Health tokens to storage.")
     return object_name
+
+
+def _overwrite_tokens(
+    *,
+    bucket_name: str,
+    object_name: str,
+    credentials: GoogleHealthTokenCredentials,
+) -> None:
+    """Overwrite an existing linked-user token object in place after a refresh -- see
+    load_auth_manager_for_user's on_refresh callback. Best-effort: logs rather than raises,
+    since this runs mid-request after the caller already has a usable access token."""
+    ok = _write_token_blob(
+        bucket_name=bucket_name,
+        object_name=object_name,
+        payload={
+            "access_token": credentials.access_token,
+            "refresh_token": credentials.refresh_token,
+            "token_type": credentials.token_type,
+            "scopes": credentials.scopes,
+            "obtained_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    if not ok:
+        logger.warning(
+            "Failed to persist refreshed Google Health tokens to gs://%s/%s",
+            bucket_name,
+            object_name,
+        )
 
 
 def load_tokens(*, bucket_name: str, object_name: str) -> dict[str, Any] | None:
@@ -226,7 +258,7 @@ class GoogleHealthConnectionRepository:
     """Per-user Google Health connection status + multi-user discovery for operator-
     triggered syncs (mirrors GarminConnectionRepository.list_active_connections)."""
 
-    def __init__(self, db: Any = None, credentials_path: str | None = None):
+    def __init__(self, db: Any = None, credentials_path: str | None = None) -> None:
         self.db = db or init_firestore_client()
         self.credentials_path = credentials_path
 
@@ -305,6 +337,22 @@ class GoogleHealthConnectionRepository:
             refresh_token=stored["refresh_token"],
             expires_at=0.0,  # force a refresh on first use rather than trusting a stale value
         )
+
+        def _persist_refreshed(refreshed: GoogleHealthTokenCredentials) -> None:
+            # Overwrite the same object (not a new one) -- Google doesn't rotate the
+            # refresh_token on every access-token refresh, but can. Without this, a caller
+            # relying only on the token loaded above would eventually hit invalid_grant after
+            # an unseen rotation. Same object name means no Firestore tokenObject update is
+            # needed. Best-effort by design (see GoogleHealthAuthManager.on_refresh): this
+            # runs mid-request, so a storage hiccup here shouldn't fail a request that already
+            # has a good access token in hand.
+            _overwrite_tokens(
+                bucket_name=bucket_name, object_name=str(token_object), credentials=refreshed
+            )
+
         return GoogleHealthAuthManager(
-            client_id=client_id, client_secret=client_secret, credentials=creds
+            client_id=client_id,
+            client_secret=client_secret,
+            credentials=creds,
+            on_refresh=_persist_refreshed,
         )

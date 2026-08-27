@@ -514,6 +514,13 @@ def run_probe_health_cmd(args: list[str] | None = None) -> int:
     )
     parser.add_argument("--start-time", type=str, default=None, help="Start ISO timestamp")
     parser.add_argument("--end-time", type=str, default=None, help="End ISO timestamp")
+    parser.add_argument(
+        "--user-id",
+        type=str,
+        default=None,
+        help="Linked app user ID -- probe using their stored Google Health credentials "
+        "(requires GOOGLE_HEALTH_TOKEN_BUCKET) instead of the operator's own .env token",
+    )
     parsed_args = parser.parse_args(args)
 
     from .google_health_client import GoogleHealthClient
