@@ -8,7 +8,11 @@
  */
 
 import type { HealthObservationDayBundle } from '../observations/models';
-import { validateCoPresence, type CoPresenceValidationResult } from './coPresenceValidator';
+import {
+    validateCoPresence,
+    type CoPresenceValidationResult,
+    type SleepSessionInterval,
+} from './coPresenceValidator';
 import type { CrossSourceAgreementTelemetry } from './crossSourceTelemetry';
 import type { SourceMetricBaseline } from './multisourceBaselines';
 
@@ -87,9 +91,11 @@ export function evaluateMultisourceFusion(params: {
         };
     }
 
-    // Step 1: Co-presence and Imposter Validation
+    // Step 1: Secondary-source identity & session concordance validation (D-MS-IDENTITY, D-MS-PREBASE)
     let garminRhr: number | null = null;
     let eightSleepRhr: number | null = null;
+    let garminSleepInterval: SleepSessionInterval | null = null;
+    let eightSleepInterval: SleepSessionInterval | null = null;
 
     for (const bundle of rawDayBundles) {
         for (const obs of bundle.observations) {
@@ -100,6 +106,13 @@ export function evaluateMultisourceFusion(params: {
                     eightSleepRhr = obs.value;
                 }
             }
+            if (obs.metric === 'sleep_duration_seconds' && obs.observedStart && obs.observedEnd) {
+                if (bundle.provider === 'garmin') {
+                    garminSleepInterval = { startIso: obs.observedStart, endIso: obs.observedEnd };
+                } else if (bundle.provider === 'eight_sleep') {
+                    eightSleepInterval = { startIso: obs.observedStart, endIso: obs.observedEnd };
+                }
+            }
         }
     }
 
@@ -107,12 +120,19 @@ export function evaluateMultisourceFusion(params: {
         garminRhr,
         eightSleepRhr,
         athleteRhr28dMedian: params.athleteRhr28dMedian,
+        garminSleepInterval,
+        eightSleepInterval,
     });
 
-    // Step 2: Filter day bundles (discard Eight Sleep if imposter detected)
+    // Step 2: Filter day bundles (discard Eight Sleep if discordant/mismatched per D-MS-IDENTITY)
     const validDayBundles = rawDayBundles.filter((b) => {
-        if (b.provider === 'eight_sleep' && !coPresenceVerdict.verifiedAthlete) {
-            return false; // Discard imposter guest data
+        if (b.provider === 'eight_sleep') {
+            if (
+                coPresenceVerdict.status === 'DISCORDANT_SECONDARY' ||
+                coPresenceVerdict.status === 'IMPOSTER_REJECTED'
+            ) {
+                return false; // Quarantined from fusion & baselines
+            }
         }
         return true;
     });

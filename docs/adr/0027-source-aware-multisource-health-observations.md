@@ -249,6 +249,46 @@ secondary source unavailable
 
 No neutral/fabricated values are substituted for missing measurements.
 
+### D-MS-IDENTITY — Realistic evidence boundary for secondary-source identity & concordance
+
+Google Health exposes aggregated nightly summaries and sleep sessions, not raw ballistocardiography (BCG)
+vibration waveforms or high-frequency epoch features. While academic BCG literature shows that household-level
+identity can be feasible from raw bed vibration signals, scalar nightly averages from a third-party aggregator
+cannot support biometric authentication.
+
+Therefore, the pipeline must not pretend to be a biometric authentication model or hard-code arbitrary scalar
+cutoffs (e.g. 8 bpm RHR) that conflate extreme physiological stress/illness with wrong-person identity mismatch.
+
+Instead, secondary-source (Eight Sleep) eligibility is evaluated using:
+1. **Sleep session temporal concordance**: Overlap between the Garmin sleep interval and Eight Sleep session window
+   (`garminSleepStartIso`/`EndIso` vs `eightSleepStartIso`/`EndIso`).
+2. **Paired physiological plausibility bounds**: Cross-sensor delta relative to longitudinal dispersion bounds,
+   classifying nights into `CONCORDANT`, `DISCORDANT_SECONDARY`, `UNVERIFIED_OFF_WRIST`, or `NO_SECONDARY_DATA`.
+3. **Off-wrist quarantine**: When the Garmin watch is off-wrist overnight, Eight Sleep summaries cannot be
+   unconditionally authenticated as the primary athlete and must be quarantined from mutating athlete baselines.
+
+### D-MS-PREBASE — Identity and concordance gating is a strict pre-baseline invariant
+
+To prevent corrupted or wrong-occupant mattress nights from polluting the very 28-day baseline distributions
+used to judge future identity and recovery, identity gating must precede baseline computation.
+
+The execution sequence is strictly ordered:
+
+```text
+Raw Observation Ingestion
+    ↓
+Provenance Verification & Payload Hashing (D-MS-ORIGIN, ADR-0005)
+    ↓
+Identity & Session Concordance Gating (D-MS-IDENTITY)
+    ↓ (Only CONCORDANT / Verified data admitted)
+Source-Specific 28-Day Baseline Accumulation (D-MS-BASE, D-MS-PREBASE)
+    ↓
+Engine Multi-Source Evidence Fusion & Readiness (D-MS-DIM, D-MS-EVID)
+```
+
+Unverified off-wrist nights and discordant secondary observations are quarantined before baseline accumulation,
+guaranteeing that 28-day baseline statistics (`median28d`, `mad28d`) reflect only authenticated athlete physiology.
+
 ### D-MS-EVID — Observation authority precedes recommendation authority
 
 Adding a new source does not give that source recommendation authority.
@@ -259,6 +299,7 @@ Promotion sequence:
 ingest
 → archive/persist
 → verify semantics/provenance
+→ identity & concordance gate (D-MS-PREBASE)
 → establish source-specific baseline
 → prospective shadow observation
 → replay/simulation

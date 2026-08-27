@@ -610,7 +610,9 @@ Do not change the engine yet.
 
 Compute source-scoped 7d/28d location/variability using ADR-0024 estimator rules.
 
-Example identity:
+### Strict Pre-Baseline Invariant (`D-MS-PREBASE`)
+
+Raw observations must pass identity and session concordance validation (`D-MS-IDENTITY`) before being admitted into longitudinal baselines. Unverified off-wrist nights and discordant secondary observations are quarantined from baseline accumulation, ensuring 28-day baseline distributions (`median28d`, `mad28d`) reflect authenticated athlete physiology only.
 
 ## Baseline Maturity State Machine
 

@@ -14,6 +14,7 @@ from .canonical import (
     METRIC_SLEEP_DURATION_SECONDS,
 )
 from .firestore_repository import FirestoreRecoveryRepository
+from .presence_filter import validate_co_presence
 
 
 @dataclass
@@ -144,6 +145,10 @@ def run_multisource_audit(
         eight_resp = None
 
         if bundle:
+            # D-MS-PREBASE: Gating check before baseline accumulation
+            verdict = validate_co_presence(snap, bundle)
+            admitted_to_baseline = verdict.verifiedAthlete
+
             for obs in bundle.get("observations", []):
                 metric = obs.get("metric")
                 val = obs.get("value")
@@ -152,13 +157,15 @@ def run_multisource_audit(
                         eight_sleep = float(val) / 60.0
                     elif metric == METRIC_HRV_RMSSD_MS:
                         eight_hrv = float(val)
-                        eight_hrv_vals.append(eight_hrv)
+                        if admitted_to_baseline:
+                            eight_hrv_vals.append(eight_hrv)
                     elif (
                         metric == METRIC_DAILY_RESPIRATION_RATE_BRPM
                         or metric == "respiration_rate_brpm"
                     ):
                         eight_resp = float(val)
-                        eight_resp_vals.append(eight_resp)
+                        if admitted_to_baseline:
+                            eight_resp_vals.append(eight_resp)
 
         sleep_delta = None
         if garmin_sleep is not None and eight_sleep is not None:

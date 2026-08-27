@@ -320,9 +320,9 @@ describe('multisourceFusion (MS15)', () => {
             baselines: [matureGarminHrvBaseline, matureEightSleepHrvBaseline],
         });
 
-        // Co-presence should detect imposter and discard Eight Sleep
+        // Co-presence should detect divergence and quarantine Eight Sleep
         expect(result.coPresenceVerdict?.verifiedAthlete).toBe(false);
-        expect(result.coPresenceVerdict?.status).toBe('IMPOSTER_REJECTED');
+        expect(result.coPresenceVerdict?.status).toBe('DISCORDANT_SECONDARY');
 
         // HRV evidence should fall back 100% to Garmin Direct single source
         const hrv = result.fusedMetrics['hrv_rmssd_ms'];

@@ -8,7 +8,7 @@ from garmin_sync.multisource_audit import (
 )
 
 
-def test_audit_math_helpers():
+def test_audit_math_helpers() -> None:
     vals = [10.0, 20.0, 30.0, 40.0, 50.0]
     assert _calc_median(vals) == 30.0
     assert _calc_mad(vals, 30.0) is not None
@@ -18,10 +18,10 @@ def test_audit_math_helpers():
     assert round(_calc_correlation(xs, ys), 2) == 1.0
 
 
-def test_run_multisource_audit_mocked():
+def test_run_multisource_audit_mocked() -> None:
     mock_repo = MagicMock()
     mock_repo.get_historical_snapshots.return_value = {
-        "2026-08-25": {"date": "2026-08-25", "raw": {"sleepDurationSec": 28800}}
+        "2026-08-25": {"date": "2026-08-25", "raw": {"sleepDurationSec": 28800, "restingHr": 45.0}}
     }
     mock_repo.get_health_observation_bundles_in_range.return_value = [
         {
@@ -30,6 +30,7 @@ def test_run_multisource_audit_mocked():
             "transport": "google_health",
             "observations": [
                 {"metric": "sleep_duration_seconds", "value": 28800},
+                {"metric": "daily_resting_heart_rate_bpm", "value": 45.0},
                 {"metric": "hrv_rmssd_ms", "value": 60.0},
                 {"metric": "respiration_rate_brpm", "value": 13.0},
             ],
