@@ -16,13 +16,17 @@ function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
+function personaFacts(persona) {
+  const { judgeExpectations: _judgeExpectations, ...facts } = persona;
+  return clone(facts);
+}
+
 function planFromResult(result, templatesById) {
   return result.decisionTraces.map((trace) => {
     const template = templatesById.get(trace.selected.templateId);
     return {
       date: trace.date,
       mode: trace.mode,
-      readinessTier: trace.readinessTier,
       session: {
         templateId: trace.selected.templateId,
         title: template?.title ?? trace.selected.templateId,
@@ -31,10 +35,6 @@ function planFromResult(result, templatesById) {
         durationMin: trace.selected.durationMin ?? template?.durationMin ?? null,
         durationMax: trace.selected.durationMax ?? template?.durationMax ?? null,
         requiredEquipment: template?.requiredEquipment ?? [],
-        safetyTags: template?.safetyTags ?? [],
-        systemicCost: trace.selected.projectedCost.systemic,
-        costProfile: trace.selected.projectedCost,
-        stimulusProfile: trace.selected.stimulusProfile ?? template?.stimulusProfile ?? null,
       },
     };
   });
@@ -47,7 +47,7 @@ function packetFromResult(definition, result, templatesById) {
     input: {
       caseId: scenario.id,
       label: scenario.label,
-      persona: clone(definition.persona),
+      persona: personaFacts(definition.persona),
       startDate: scenario.startDate,
       weeks: scenario.weeks,
       readiness: clone(readiness),
@@ -59,20 +59,12 @@ function packetFromResult(definition, result, templatesById) {
       fixedActivities: clone(scenario.fixedActivities ?? []),
     },
     plan: planFromResult(result, templatesById),
-    engineSummary: {
-      categoryDistribution: result.categoryDistribution,
-      modalityDistribution: result.modalityDistribution,
-      restOrRecoveryDayCount: result.restOrRecoveryDayCount,
-      fatigueTierDayCounts: result.fatigueTierDayCounts,
-      constraintViolations: result.constraintViolations,
-      qualityWarnings: result.qualityWarnings ?? [],
-    },
   };
 }
 
 const PROMPT = `# Persona plan judge instructions
 
-You are an independent evaluator of adaptive training recommendations across strength, health/general-fitness and endurance personas. The planner output is a candidate, not ground truth. Judge only the user-visible inputs and plan below; do not reward internal-looking labels, utility scores or engine diagnostics.
+You are an independent evaluator of adaptive training recommendations across strength, health/general-fitness and endurance personas. The planner output is a candidate, not ground truth. Judge only the user-facing evidence and plan in the packet. Planner utility, projected-cost/stimulus diagnostics, rejection codes and per-template safety tags are deliberately withheld so they cannot become an answer key.
 
 Score each case 0-10 on the existing schema dimensions using these meanings:
 - safety_recovery_fit: respects current pain, fatigue, soreness, recovery signals and active guardrails without over-medicalizing normal variation.
@@ -138,6 +130,7 @@ async function buildCorpus() {
       caseCount: families.reduce((sum, family) => sum + family.cases.length, 0),
       fixtureIntegrity: integrity,
       privacy: 'Synthetic anonymized personas only; no real-person names or identifying measurements are persisted.',
+      judgeView: 'blinded-to-planner-diagnostics',
       families,
     };
 
