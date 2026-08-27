@@ -1,5 +1,18 @@
 # Empirical Analysis: Multisource Replay & Simulation Comparison (MS16)
 
+> **✅ 2026-08-27 — verified real, re-run.** This is a synthetic-scenario/invariant test of the
+> fusion logic (`multisourceFusion.ts`/`multisourceComparison.ts`), not a measurement of real
+> account data — unlike MS10/MS14, it doesn't depend on the sleep-mapper bug fix at all, since its
+> 5 scenarios use manually-constructed z-scores and staleness conditions, not real observations.
+> Re-ran it directly (`npx vitest run src/engine/simulation/multisourceComparison.test.ts`,
+> 2026-08-27): **5/5 tests pass**, matching this doc's claims exactly, including dedicated tests
+> that "derive the off-policy baseline from a real Garmin-only fusion evaluation, not literals"
+> and verify `D-MS-STRAIN` "by running fused HRV evidence through the real strain computation" —
+> i.e. the invariants are checked against the actual engine code, not asserted. Its
+> "Empirical Analysis" title is still a misnomer (it's simulation output, not a real-data
+> measurement) — left as-is below rather than rewritten, since the content itself checks out.
+> See [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md).
+
 **Date**: 2026-08-27
 **Engine Scope**: Baseline single-source (`MULTISOURCE_FUSION_POLICY = 'off'`) vs candidate evidence fusion (`'candidate-v1'`)
 **Evaluation Standard**: ADR-0027 Invariant Testing & 5 Canonical Scenarios

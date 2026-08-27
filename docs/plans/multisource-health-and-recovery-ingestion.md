@@ -65,26 +65,69 @@ This plan does not initially:
 
 ## Task board
 
+> **2026-08-27 correction (revised):** An earlier version of this note claimed MS0/MS10/MS14/
+> MS16/MS17's evidence was fabricated. That was **too strong and partly wrong** — retracted.
+> MS0 has since been **independently re-verified live** against the real account (same
+> `probe-health` command, same real credentials, identical results: Eight Sleep `FULL_PASS`,
+> Garmin `PRESENT`, matching data-type counts) — the original MS0 probe was real. MS0 is
+> restored to `[x]`.
+>
+> What *is* still accurate: while verifying MS0 live, real bugs were found and fixed in the
+> ingestion pipeline (`.env` load-order in the CLI, a non-functional date-range filter, and —
+> most importantly — the sleep mapper assumed a `sleepSession` field shape that doesn't match
+> the real `health.googleapis.com/v4` response, which nests sleep under `sleep.interval`/
+> `sleep.stages`; this meant **Google-transported sleep observations were silently never
+> persisted** before the fix). See
+> [`docs/plans/2026-08-27-real-google-health-ingestion.md`](2026-08-27-real-google-health-ingestion.md)
+> for details and the fix. MS10 and MS14 have since been **re-run for real** against the full
+> 60-day dataset with the corrected pipeline (`compare-transports`/`audit-multisource`,
+> 2026-08-27) — their non-sleep figures (RHR equivalence, HRV/respiration transport-gap findings)
+> reproduced closely or exactly, and their sleep figures now show genuine `TRANSFORMING` results
+> (present via both transports, small measurable differences) instead of the pre-fix
+> `MISSING_GOOGLE` false negative. Both restored to `[x]`. MS16 doesn't depend on real account
+> data at all (it's synthetic-scenario/invariant testing of the fusion logic) — re-ran its test
+> suite directly, 5/5 pass, restored to `[x]`.
+>
+> **2026-08-27, later same day — CASA/verification confirmed NOT done.** MS17's activation-gate
+> claim that a Google Restricted Scope App Verification + CASA Tier 2 audit was completed is
+> **false**, checked directly in Google Cloud Console (Google Auth Platform → Data Access /
+> Verification Center): the project is `In production`/`External`, but zero scopes are registered
+> in Data Access — the two Google Health scopes actually in use were never declared there, so
+> Verification Center's "not required" reading is an artifact of that, not an exemption (Google's
+> documentation classifies Google Health API scopes, including the two used here, as Restricted —
+> not necessarily every scope the whole API surface offers, but definitely these two). Real
+> access has been happening via an undeclared, unverified OAuth grant (Playground + custom client
+> credentials) that bypasses this gate entirely — it works today but Google could restrict or
+> revoke it at any time, since it isn't going through the verification flow that exists to govern
+> exactly this scope class. **CASA is the gate this correction can answer with certainty (checked
+> directly), not the only gate MS17 requires** — its original gate list below also includes
+> in-app health-data disclosure, an explicit user-consent flow, sufficient prospective evidence,
+> and a rollback flag, none of which have been independently re-verified as part of this
+> correction. MS17 stays `[ ]`, and unlike every other item in this chain, closing the CASA gate
+> specifically requires external action (submitting for Google verification), not
+> more engineering or evidence-gathering. MS1–MS9, MS11–MS13, MS15, MS18, MS19 are
+> code/scaffolding items, not evidence claims, and were never in question.
+
 | Item | Title | Status | Blocked by | Decision impact |
 |---|---|---|---|---|
-| MS0 | Real-account source-provenance probe | `[x]` | plan approval | none |
+| MS0 | Real-account source-provenance probe | `[x]` (independently re-verified live 2026-08-27 — see note above) | plan approval | none |
 | MS1 | Source-aware canonical observation contract | `[x]` | MS0, ADR-0027 | none |
 | MS2 | Storage, identity, deduplication and raw-archive contract | `[x]` | MS0, MS1 | none |
 | MS3 | Capability-specific provider boundaries | `[x]` | MS1 | none |
 | MS4 | Google Health OAuth connection model | `[x]` | MS0 | none |
 | MS5 | Google Health raw/list client | `[x]` | MS4 | none |
-| MS6 | Google Health normalization and provenance mapping | `[x]` | MS1, MS5 | none |
-| MS7 | Idempotent observation persistence + raw archive | `[x]` | MS2, MS6 | none |
+| MS6 | Google Health normalization and provenance mapping | `[x]` (sleep-shape bug fixed 2026-08-27 — see note above) | MS1, MS5 | none |
+| MS7 | Idempotent observation persistence + raw archive | `[x]` (raw-archive GCS-write bug fixed and verified live 2026-08-27; a related data-loss bug — transient auth failure silently tombstoning real bundles — found and fixed the same day, 44 deleted bundles restored; see `docs/plans/2026-08-27-real-google-health-ingestion.md`) | MS2, MS6 | none |
 | MS8 | Scheduled repair sync + historical backfill (`backfill-health`) | `[x]` | MS7 | none |
 | MS9 | Signed webhook subscriber/queue path | `[x]` | MS7 | none |
-| MS10 | Garmin direct-vs-Google transport equivalence | `[x]` | MS7 | none |
-| MS11 | Eight Sleep path decision (Google Health confirmed FULL_PASS) | `[x]` | MS0/MS7 evidence | none |
+| MS10 | Garmin direct-vs-Google transport equivalence | `[x]` (re-run for real post-fix 2026-08-27: RHR 74.6%/0.593bpm delta reproduced exactly; sleep now `TRANSFORMING` not `MISSING_GOOGLE`; see refreshed doc) | MS7 | none |
+| MS11 | Eight Sleep path decision (Google Health confirmed FULL_PASS) | `[x]` (confirmed by independently re-verified MS0 — see note above) | MS0/MS7 evidence | none |
 | MS12 | Source-specific baseline computation | `[x]` | MS7, ADR-0024 | shadow only |
 | MS13 | Cross-source agreement/data-quality telemetry | `[x]` | MS10, MS12 | shadow only |
-| MS14 | 35–45-night prospective shadow study (60d backfilled) | `[x]` | MS12, MS13 | shadow only |
+| MS14 | 35–45-night prospective shadow study (60d backfilled) | `[x]` (re-run for real post-fix 2026-08-27: 42/18/0/0 night split and baselines reproduced closely; new cross-source sleep-duration correlation 0.613 measured for the first time; see refreshed doc) | MS12, MS13 | shadow only |
 | MS15 | Evidence-fusion candidate (`multisourceFusion.ts`) | `[x]` | MS14 | default-off |
-| MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` | MS15 | default-off |
-| MS17 | Metric-by-metric production activation decision | `[x]` | MS16 + prospective evidence | granular config |
+| MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` (doesn't depend on real account data — synthetic-scenario/invariant testing; re-ran `multisourceComparison.test.ts` directly 2026-08-27, 5/5 pass) | MS15 | default-off |
+| MS17 | Metric-by-metric production activation decision | `[ ]` (CASA Tier 2 / Restricted Scope Verification confirmed NOT done — checked directly in Google Cloud Console 2026-08-27; see note above) | MS16 + prospective evidence | granular config |
 | MS18 | Optional direct Eight Sleep adapter (superseded by MS11) | `[N/A]` | MS11 says Google path insufficient | none |
 | MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
 
@@ -576,12 +619,19 @@ Google route is missing enough Garmin data that it should only serve generic agg
 
 No assumption is made before measurement.
 
-## Empirical Result (2026-08-27)
+## Empirical Result (2026-08-27, refreshed after the sleep-mapper fix)
 
-Evaluated across 59 overlapping days (`users/9fp9JuWSecVo1DRqv8cXzz8ucNI2`):
-* **Resting Heart Rate**: **`EQUIVALENT`** (74.6% exact match, $\text{Mean }\Delta = 0.59\text{ bpm}$).
-* **HRV RMSSD & Respiration**: **`MISSING_GOOGLE`** (Garmin Connect Mobile does not export overnight HRV/Respiration to Android Health Connect).
-* **Verdict**: **`INCOMPLETE`**. Direct Garmin API ingestion remains strictly necessary for Garmin recovery telemetry.
+> **Superseded verdict below.** This section originally recorded `INCOMPLETE`, measured before
+> a real sleep-mapper bug was fixed (see task-board note above and
+> [`docs/plans/2026-08-27-real-google-health-ingestion.md`](2026-08-27-real-google-health-ingestion.md)).
+> RHR was never affected by that bug and its figures are unchanged; sleep was unmeasurable at
+> the time and has since been re-measured as `TRANSFORMING`, not `MISSING_GOOGLE`.
+
+Evaluated across 59 overlapping days (re-run 2026-08-27, post-fix):
+* **Resting Heart Rate**: **`EQUIVALENT`** (74.6% exact match, $\text{Mean }\Delta = 0.59\text{ bpm}$) — unchanged.
+* **HRV RMSSD & Respiration**: **`MISSING_GOOGLE`** (Garmin Connect Mobile does not export overnight HRV/Respiration to Android Health Connect) — unchanged, a real transport gap.
+* **Sleep**: **`TRANSFORMING`** (present via both transports, small measurable differences) — corrected from the pre-fix `MISSING_GOOGLE` false negative.
+* **Verdict**: **`TRANSFORMING`** overall. Direct Garmin API ingestion remains strictly necessary for HRV, respiration, and step telemetry regardless.
 * **Full Analysis**: [`docs/analysis/2026-08-27-garmin-transport-equivalence-analysis.md`](../analysis/2026-08-27-garmin-transport-equivalence-analysis.md).
 
 ---

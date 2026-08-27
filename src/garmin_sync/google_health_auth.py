@@ -7,6 +7,7 @@ conditions, and user connection metadata in Firestore without logging or leaking
 import logging
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from typing import Any
 
@@ -61,6 +62,7 @@ class GoogleHealthAuthManager:
         client_id: str,
         client_secret: str,
         credentials: GoogleHealthTokenCredentials | None = None,
+        on_refresh: Callable[[GoogleHealthTokenCredentials], None] | None = None,
     ) -> None:
         if not client_id or not client_secret:
             raise ValueError(
@@ -69,6 +71,14 @@ class GoogleHealthAuthManager:
         self.client_id = client_id
         self.client_secret = client_secret
         self.credentials = credentials
+        # Optional hook invoked after a successful refresh with the updated credentials, so
+        # a caller managing durable storage (e.g. a linked user's GCS token object) can
+        # persist a rotated refresh_token. Google doesn't rotate it on every access-token
+        # refresh, but can; without this, a caller relying only on the originally-loaded
+        # refresh_token would eventually hit invalid_grant after a rotation it never saw.
+        # Best-effort: a persistence failure here logs and continues rather than failing the
+        # request that's already holding a perfectly good, freshly-refreshed access token.
+        self.on_refresh = on_refresh
         self._lock = threading.Lock()
 
     def get_valid_access_token(self) -> str:
@@ -110,6 +120,12 @@ class GoogleHealthAuthManager:
             self.credentials.refresh_token = data["refresh_token"]
 
         logger.info("Google Health access token refreshed successfully.")
+
+        if self.on_refresh:
+            try:
+                self.on_refresh(self.credentials)
+            except Exception as e:
+                logger.warning("on_refresh persistence callback failed: %s", e)
 
     def revoke(self) -> bool:
         """Revoke the current refresh token."""

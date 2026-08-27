@@ -90,3 +90,86 @@ def test_mapper_normalizes_sleep_and_hrv():
     # Verify no steps in observations (D-MS-STEPS / P9)
     assert not any(o.source.source_record_id == "rec_steps_1" for o in batch.observations)
     assert not any("step" in o.metric.lower() for o in batch.observations)
+
+
+def test_mapper_normalizes_real_google_health_v4_shape() -> None:
+    """Regression test for the actual health.googleapis.com/v4 response shape, confirmed
+    2026-08-27 against a live account (structure faithful, values/timestamps adjusted --
+    see docs/plans/2026-08-27-real-google-health-ingestion.md). The v4 API does not carry a
+    flat dataTypeName/startTime/endTime/value on each point the way MS6's original synthetic
+    fixtures assumed; sleep nests under sleep.interval/sleep.stages and daily summaries nest
+    under a {dailyX: {date: {year,month,day}, ...}} object, with the type only recoverable
+    from the point's `name` resource path.
+    """
+    mapper = GoogleHealthMapper(user_id="test_user")
+    raw_points = [
+        {
+            "name": "users/1234567890/dataTypes/sleep/dataPoints/9876543210",
+            "dataSource": {
+                "recordingMethod": "PASSIVELY_MEASURED",
+                "device": {"formFactor": "WATCH"},
+                "application": {"packageName": "com.garmin.android.apps.connectmobile"},
+                "platform": "HEALTH_CONNECT",
+            },
+            "sleep": {
+                "interval": {
+                    "startTime": "2026-08-20T22:00:00Z",
+                    "endTime": "2026-08-21T05:00:00Z",
+                },
+                "type": "STAGES",
+                "stages": [
+                    {
+                        "startTime": "2026-08-20T22:00:00Z",
+                        "endTime": "2026-08-20T22:30:00Z",
+                        "type": "LIGHT",
+                    },
+                    {
+                        "startTime": "2026-08-20T22:30:00Z",
+                        "endTime": "2026-08-20T23:00:00Z",
+                        "type": "DEEP",
+                    },
+                    {
+                        "startTime": "2026-08-20T23:00:00Z",
+                        "endTime": "2026-08-20T23:10:00Z",
+                        "type": "AWAKE",
+                    },
+                    {
+                        "startTime": "2026-08-20T23:10:00Z",
+                        "endTime": "2026-08-21T05:00:00Z",
+                        "type": "REM",
+                    },
+                ],
+            },
+        },
+        {
+            "name": "users/1234567890/dataTypes/daily-heart-rate-variability/dataPoints/111",
+            "dataSource": {
+                "recordingMethod": "MANUAL",
+                "device": {},
+                "application": {"packageName": "com.eightsleep.eight"},
+                "platform": "HEALTH_CONNECT",
+            },
+            "dailyHeartRateVariability": {
+                "date": {"year": 2026, "month": 8, "day": 21},
+                "averageHeartRateVariabilityMilliseconds": 57.3,
+                "deepSleepRootMeanSquareOfSuccessiveDifferencesMilliseconds": 57.3,
+            },
+        },
+    ]
+
+    batch = mapper.normalize_data_points(raw_points, target_logical_date="2026-08-21")
+    metrics = {o.metric: o for o in batch.observations}
+
+    assert METRIC_SLEEP_SESSION in metrics
+    sleep_val = metrics[METRIC_SLEEP_SESSION].value
+    assert sleep_val["deepSeconds"] == 30 * 60
+    assert sleep_val["lightSeconds"] == 30 * 60
+    assert sleep_val["awakeSeconds"] == 10 * 60
+    assert sleep_val["remSeconds"] == (5 * 3600 + 50 * 60)
+    assert metrics[METRIC_SLEEP_SESSION].source.provider == "garmin"
+    assert metrics[METRIC_SLEEP_SESSION].logical_date == "2026-08-21"
+
+    assert METRIC_HRV_RMSSD_MS in metrics
+    assert metrics[METRIC_HRV_RMSSD_MS].value == 57.3
+    assert metrics[METRIC_HRV_RMSSD_MS].source.provider == "eight_sleep"
+    assert metrics[METRIC_HRV_RMSSD_MS].logical_date == "2026-08-21"

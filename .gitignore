@@ -212,6 +212,8 @@ firebase-service-account.json
 .garmin_tokens/
 garmin_tokens.json
 .garmin_archive/
+.google_health_tokens/
+google_health_tokens.json
 cloud-run-job.env.yaml
 sleep_daily_sample.json
 hrv_range_sample.json

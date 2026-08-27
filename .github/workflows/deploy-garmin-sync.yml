@@ -46,6 +46,10 @@ on:
         required: true
       GCP_DEPLOYER_SA_EMAIL:
         required: true
+      GOOGLE_HEALTH_CLIENT_ID:
+        required: false
+      GOOGLE_HEALTH_CLIENT_SECRET:
+        required: false
 
 permissions:
   contents: read
@@ -79,6 +83,16 @@ env:
   SCHEDULER_SA_EMAIL: garmin-scheduler-invoker@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   TOKEN_BUCKET: ${{ secrets.GCP_PROJECT_ID }}-garmin-tokens
   IMAGE_TAG: ${{ inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/garmin-sync/garmin-sync:${{ github.sha }}
+  # Google Health scopes are Restricted -- CASA/Restricted Scope verification is NOT done
+  # (see docs/plans/2026-08-27-real-google-health-ingestion.md). This deploy step is safe to
+  # run regardless (it just stands the linking service up), but every user who links through
+  # it will see Google's "unverified app" warning until verification completes.
+  GOOGLE_HEALTH_REDIRECT_URI: https://${{ secrets.GCP_PROJECT_ID }}.web.app/api/google-health/callback
+  APP_BASE_URL: https://${{ secrets.GCP_PROJECT_ID }}.web.app
+  # `secrets` is not a valid context in a step-level `if:` (actionlint-confirmed, and per
+  # GitHub's own context-availability docs) -- resolve the gate once here, at the only level
+  # where `secrets` is usable outside a step body, and reference `env.*` in the step `if:`s.
+  GOOGLE_HEALTH_LINKING_ENABLED: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID != '' && secrets.GOOGLE_HEALTH_CLIENT_SECRET != '' }}
 
 jobs:
   deploy:
@@ -131,6 +145,46 @@ jobs:
             --port=8080 --timeout=300 --concurrency=10 \
             --min-instances=0 --max-instances=1 \
             --allow-unauthenticated
+
+      - name: Deploy Google Health account linker
+        if: env.GOOGLE_HEALTH_LINKING_ENABLED == 'true'
+        env:
+          GOOGLE_HEALTH_CLIENT_ID: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID }}
+          GOOGLE_HEALTH_CLIENT_SECRET: ${{ secrets.GOOGLE_HEALTH_CLIENT_SECRET }}
+        run: |
+          # Deliberately a SEPARATE service from garmin-account-link, with normal
+          # max-instances (no MFA-style in-memory session to pin to one instance) -- see
+          # docs/plans/2026-08-27-real-google-health-ingestion.md's plan for why. The token
+          # bucket is shared with Garmin's (google-health/ prefix keeps objects separated;
+          # google_health_account_link.py never writes into Garmin's garmin/ prefix).
+          cat > cloud-run-google-health.env.yaml <<EOF
+          GOOGLE_HEALTH_CLIENT_ID: "${GOOGLE_HEALTH_CLIENT_ID}"
+          GOOGLE_HEALTH_CLIENT_SECRET: "${GOOGLE_HEALTH_CLIENT_SECRET}"
+          GOOGLE_HEALTH_REDIRECT_URI: "${GOOGLE_HEALTH_REDIRECT_URI}"
+          GOOGLE_HEALTH_TOKEN_BUCKET: "${TOKEN_BUCKET}"
+          APP_BASE_URL: "${APP_BASE_URL}"
+          GCP_PROJECT_ID: "${GCP_PROJECT}"
+          EOF
+          gcloud run deploy google-health-account-link \
+            --image="${IMAGE_TAG}" --region="${REGION}" \
+            --service-account="${JOB_SA_EMAIL}" \
+            --env-vars-file=cloud-run-google-health.env.yaml \
+            --command=python --args=-m,garmin_sync.google_health_account_link_api \
+            --port=8080 --timeout=300 --concurrency=80 \
+            --min-instances=0 --max-instances=10 \
+            --allow-unauthenticated
+
+      - name: Smoke test google-health-account-link service health
+        if: env.GOOGLE_HEALTH_LINKING_ENABLED == 'true'
+        run: |
+          SERVICE_URL="$(gcloud run services describe google-health-account-link \
+            --region="${REGION}" --format='value(status.url)')"
+          if [ -z "${SERVICE_URL}" ]; then
+            echo "Cloud Run did not return a URL for google-health-account-link." >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
+            "${SERVICE_URL}/health"
 
       - name: Deploy token-only Cloud Run Jobs
         run: |

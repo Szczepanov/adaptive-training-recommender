@@ -1,5 +1,31 @@
 # Formal Decision Record: Multisource Metric-by-Metric Production Activation (MS17)
 
+> **❌ 2026-08-27 — CASA/verification confirmed NOT done.** This doc claims a completed "Google
+> Cloud Restricted Scope App Verification & CASA Tier 2 security assessment." That is false,
+> definitively (not just unconfirmed as an earlier revision of this note said). Checked directly
+> in Google Cloud Console (Google Auth Platform → Data Access, and Verification Center,
+> 2026-08-27): the project is `In production`/`External`, but **zero scopes are registered** in
+> Data Access — the Google Health scopes actually used all session
+> (`googlehealth.sleep.readonly`, `googlehealth.health_metrics_and_measurements.readonly`) were
+> never declared there. Verification Center reports "not required" only because nothing is
+> declared, not because the scopes are exempt — Google's own docs confirm all Google Health API
+> scopes are classified **Restricted**, which requires a privacy/security review (CASA Tier 2) for
+> production use. **Real access has been happening via an undeclared, unverified grant** (OAuth
+> Playground with custom client credentials, bypassing Console's declared-scope gate) — this has
+> worked so far but carries a real risk: Google could restrict or revoke it at any time, since it
+> isn't going through the verification flow that exists specifically to govern this scope class.
+> This gate is not merely unmet — it hasn't been started.
+>
+> Separately, and regardless of the CASA question: this doc's metric figures depend on MS10/MS14,
+> both of which have since been re-derived for real (2026-08-27) after a real sleep-mapper bug fix
+> — see the refreshed [MS10](2026-08-27-garmin-transport-equivalence-analysis.md) and
+> [MS14](2026-08-27-multisource-shadow-study.md) docs. It was also internally inconsistent with
+> the code it describes (`sleepStages: false` here vs. `true` in `multisourceFusion.ts` at the
+> time — code now matches this doc's stated shadow-only intent). Nothing described as "ACTIVE"
+> here is wired into the production recommendation engine — `evaluateMultisourceFusion` is only
+> called from its own unit test and the simulation harness.
+> See [`docs/plans/2026-08-27-real-google-health-ingestion.md`](../plans/2026-08-27-real-google-health-ingestion.md).
+
 **Date**: 2026-08-27
 **Decision Authority**: Multisource Ingestion Architecture (ADR-0027)
 **Evaluated Systems**: Garmin Connect Direct (`garmin_direct`) + Eight Sleep via Google Health (`google_health`)
@@ -10,6 +36,13 @@
 ## 1. Executive Summary & Production Activation Matrix
 
 In accordance with ADR-0027, multi-source ingestion is activated on a **strict, granular, metric-by-metric basis** rather than a single coarse provider switch. Every metric must pass 6 verification gates (coverage, semantics, baseline stability, incremental value, zero load distortion, and rollback safety).
+
+> **Read `ACTIVE`/`Approved` below as "approved for the candidate config default," not "currently
+> running in production."** `MULTISOURCE_FUSION_POLICY` defaults to `'off'`, and
+> `evaluateMultisourceFusion` (the only place that reads this matrix) is called only from its own
+> unit test and the simulation harness — never from the production recommendation path. See the
+> correction notice above for why this matrix's specific verdicts (and the CASA gate in
+> particular) shouldn't be trusted as evidence of a real activation decision either.
 
 | Biometric Stream | Canonical Metric ID | Status | Baseline Parameters ($N=42$) | Production Role & Verification Verdict |
 |---|---|---|---|---|
