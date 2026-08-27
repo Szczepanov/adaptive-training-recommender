@@ -95,3 +95,52 @@ def test_co_presence_top_level_resting_heart_rate_key() -> None:
     assert verdict.verifiedAthlete is True
     assert verdict.concordanceStatus == "CONCORDANT"
     assert verdict.rhrDelta == 1.0
+
+
+# PI0 regression: a physiological anomaly alone cannot prove another person (ADR-0028 P-PI-8).
+
+
+def test_co_presence_extreme_divergence_is_not_an_identity_fraud_claim() -> None:
+    # A large delta is physiologically consistent with genuine illness/overreach and must not be
+    # reported as a confirmed determination that someone else used the device.
+    garmin_snap = {"raw": {"restingHr": 43}}
+    eight_bundle = {"observations": [{"metric": "daily_resting_heart_rate_bpm", "value": 95.0}]}
+
+    verdict = validate_co_presence(garmin_snap, eight_bundle, athlete_rhr_28d_median=44.0)
+    assert verdict.verifiedAthlete is False
+    assert verdict.concordanceStatus == "DISCORDANT_SECONDARY"
+    lowered = verdict.reason.lower()
+    assert "imposter" not in lowered
+    assert "another person" not in lowered
+    assert "fraud" not in lowered
+    assert "quarantined" in lowered
+
+
+def test_co_presence_status_vocabulary_has_no_confirmed_identity_verdict() -> None:
+    # The provisional concordanceStatus vocabulary is a quarantine/concordance signal, not an
+    # identity classifier: it must never surface a definitive "NOT_USER"/"USER" determination.
+    # (The ternary USER | NOT_USER | UNCERTAIN model belongs to ADR-0028/PI1+.)
+    known_statuses = {
+        "CONCORDANT",
+        "DISCORDANT_SECONDARY",
+        "UNVERIFIED_OFF_WRIST",
+        "NO_SECONDARY_DATA",
+    }
+    assert "NOT_USER" not in known_statuses
+    assert "USER" not in known_statuses
+
+
+def test_co_presence_quarantines_equally_regardless_of_divergence_magnitude() -> None:
+    garmin_snap = {"raw": {"restingHr": 43}}
+    moderate_bundle = {"observations": [{"metric": "daily_resting_heart_rate_bpm", "value": 60.0}]}
+    extreme_bundle = {"observations": [{"metric": "daily_resting_heart_rate_bpm", "value": 150.0}]}
+
+    moderate = validate_co_presence(garmin_snap, moderate_bundle, athlete_rhr_28d_median=44.0)
+    extreme = validate_co_presence(garmin_snap, extreme_bundle, athlete_rhr_28d_median=44.0)
+
+    # Both are quarantined identically; the heuristic has no mechanism to escalate a bigger
+    # anomaly into a stronger identity claim.
+    assert moderate.concordanceStatus == "DISCORDANT_SECONDARY"
+    assert extreme.concordanceStatus == "DISCORDANT_SECONDARY"
+    assert moderate.verifiedAthlete is False
+    assert extreme.verifiedAthlete is False

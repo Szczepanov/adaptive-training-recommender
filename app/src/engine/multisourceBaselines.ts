@@ -5,6 +5,12 @@
  * source/provider boundary to prevent device discontinuities from distorting baselines.
  * Evaluates baseline maturity state machines to ensure secondary sensors do not affect
  * confidence before reaching adequate maturity.
+ *
+ * KNOWN GAP (PI0/PI5, ADR-0028): `computeSourceMetricBaseline()` currently consumes all source
+ * bundles for a provider/transport regardless of identity attribution -- the co-presence check
+ * in multisourceFusion.ts runs later, downstream of this calculator. This is the "current defect"
+ * PI5 (Pre-baseline effective-eligibility gate) fixes by requiring effective identity eligibility
+ * metadata as an input here. Do not treat the current behavior as identity-safe.
  */
 
 import type { BaselineMaturity, HealthObservationDayBundle } from '../observations/models';

@@ -92,6 +92,13 @@ export function evaluateMultisourceFusion(params: {
     }
 
     // Step 1: Secondary-source identity & session concordance validation (D-MS-IDENTITY, D-MS-PREBASE)
+    //
+    // PROVISIONAL (PI0, ADR-0028): this call site is the current, temporary identity gate and it
+    // runs downstream, inside fusion -- it does NOT satisfy the pre-baseline ordering requirement
+    // (`computeSourceMetricBaseline()` still consumes bundles independently of this verdict; see
+    // multisourceBaselines.ts and PI5). Once the Physiological Identity Passport gate lands
+    // (PI4/PI5), effective identity eligibility must be resolved upstream of both baseline
+    // learning and this fusion step, and this call site should be replaced, not extended.
     let garminRhr: number | null = null;
     let eightSleepRhr: number | null = null;
     let garminSleepInterval: SleepSessionInterval | null = null;

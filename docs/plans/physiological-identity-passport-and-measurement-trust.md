@@ -109,7 +109,7 @@ The central migration requirement is moving effective identity eligibility **ups
 
 | Item | Title | Status | Blocked by | Decision impact |
 |---|---|---|---|---|
-| PI0 | Freeze current co-presence heuristic as provisional | `[ ]` | ADR-0028 | prevents accidental promotion |
+| PI0 | Freeze current co-presence heuristic as provisional | `[x]` | ADR-0028 | prevents accidental promotion |
 | PI1 | Identity, eligibility, evidence and review contracts | `[ ]` | PI0 | none |
 | PI2 | Cross-source pairing, lineage and feature extraction | `[ ]` | PI1 | none |
 | PI3 | Versioned Physiological Identity Passport model + bootstrap | `[ ]` | PI2 | shadow only |

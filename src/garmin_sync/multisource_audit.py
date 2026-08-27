@@ -2,6 +2,13 @@
 
 Analyzes multi-provider coverage, baseline stability, and cross-source telemetry
 (Garmin Direct vs Eight Sleep) across empirical historical datasets.
+
+KNOWN GAP (PI0/PI5/PI9, ADR-0028): `run_multisource_audit()` gates rolling baseline admission on
+`validate_co_presence()` / `verdict.verifiedAthlete` directly -- the same provisional heuristic
+used in the TypeScript engine (see presence_filter.py). PI5 and PI9 require this CLI audit path to
+resolve `EffectiveIdentityDecision` (or an equivalent fail-closed Python-side projection) instead,
+so shadow-replay evidence reflects the same identity gate that will govern production baseline
+learning. Do not treat the current admission logic here as identity-safe.
 """
 
 import math
@@ -145,7 +152,8 @@ def run_multisource_audit(
         eight_resp = None
 
         if bundle:
-            # D-MS-PREBASE: Gating check before baseline accumulation
+            # D-MS-PREBASE: Gating check before baseline accumulation.
+            # PROVISIONAL (PI0/PI5, ADR-0028): see module doc comment above.
             verdict = validate_co_presence(snap, bundle)
             admitted_to_baseline = verdict.verifiedAthlete
 

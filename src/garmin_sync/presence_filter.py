@@ -1,5 +1,20 @@
 """Secondary-source identity and session concordance filter (ADR-0027 D-MS-IDENTITY, D-MS-PREBASE).
 
+PROVISIONAL / LEGACY COMPATIBILITY LOGIC (PI0, ADR-0028). This module is a temporary scalar
+heuristic (fixed session-overlap and RHR-delta bounds), not a validated biometric identity
+classifier. The `60 min` / `10 bpm` / `14 bpm` defaults are unvalidated safety guards carried
+over from PR #240 and must not be described as validated identity thresholds.
+
+It will be superseded by the ternary Physiological Identity Passport gate (`USER | NOT_USER |
+UNCERTAIN`, see ADR-0028 and
+docs/plans/physiological-identity-passport-and-measurement-trust.md, tasks PI1-PI9), which sits
+upstream of rolling baseline accumulation. `verified_athlete: bool` and `imposterConfidence` are
+legacy vocabulary; new code must not depend on them as permanent domain contracts.
+
+A physiological anomaly alone (e.g. illness driving up RHR) is NOT proof that another person used
+the shared device -- this module deliberately never asserts that; see
+`tests/test_presence_filter.py` for the regression test documenting this (ADR-0028 P-PI-8).
+
 Protects athlete baselines and engine readiness from being corrupted when a family member
 sleeps on the athlete's Eight Sleep mattress, or when the athlete sleeps away from the mattress (travel).
 """
@@ -13,6 +28,13 @@ from .canonical import METRIC_DAILY_RESTING_HEART_RATE_BPM
 
 @dataclass
 class PresenceValidationVerdict:
+    """Provisional quarantine/concordance verdict (PI0) -- intentionally NOT an identity verdict.
+
+    `verifiedAthlete` and `concordanceStatus` never assert who used the device, only whether the
+    secondary record is concordant enough to trust. Superseded by `EffectiveIdentityDecision`
+    (PI1) once it lands.
+    """
+
     verifiedAthlete: bool
     concordanceStatus: (
         str  # "CONCORDANT" | "DISCORDANT_SECONDARY" | "UNVERIFIED_OFF_WRIST" | "NO_SECONDARY_DATA"
@@ -25,7 +47,11 @@ class PresenceValidationVerdict:
 
     @property
     def imposterConfidence(self) -> str:
-        """Backwards compatibility alias for concordanceStatus."""
+        """Backwards compatibility alias for concordanceStatus.
+
+        @deprecated legacy alias (PI0); `IMPOSTER_REJECTED` is not a confirmed identity-fraud
+        determination -- it only means the secondary record was quarantined from baseline/fusion.
+        """
         if self.concordanceStatus == "CONCORDANT":
             return "VERIFIED"
         if self.concordanceStatus == "DISCORDANT_SECONDARY":
@@ -57,7 +83,11 @@ def validate_co_presence(
     max_rhr_delta_bpm: float = 10.0,
     max_unverified_rhr_delta_bpm: float = 14.0,
 ) -> PresenceValidationVerdict:
-    """Validate whether the Eight Sleep payload corresponds to the genuine athlete."""
+    """Validate whether the Eight Sleep payload corresponds to the genuine athlete.
+
+    PROVISIONAL (PI0, ADR-0028) -- see module doc comment above. Do not present this output as a
+    validated identity determination.
+    """
     if not eight_sleep_bundle:
         return PresenceValidationVerdict(
             verifiedAthlete=True,
