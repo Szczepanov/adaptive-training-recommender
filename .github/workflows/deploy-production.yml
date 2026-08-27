@@ -77,6 +77,11 @@ jobs:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       GCP_DEPLOYER_SA_EMAIL: ${{ secrets.GCP_DEPLOYER_SA_EMAIL }}
+      # Optional: only set once the project owner has created a GitHub secret for these.
+      # google-health-account-link deploys only when both are present (see
+      # deploy-garmin-sync.yml's "Deploy Google Health account linker" step condition).
+      GOOGLE_HEALTH_CLIENT_ID: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID }}
+      GOOGLE_HEALTH_CLIENT_SECRET: ${{ secrets.GOOGLE_HEALTH_CLIENT_SECRET }}
 
   deploy-indexes:
     name: Deploy Firestore indexes

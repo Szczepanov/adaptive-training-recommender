@@ -400,6 +400,34 @@ def _resolve_google_health_auth_manager(
     client_secret = parsed_args.client_secret or os.environ.get("GOOGLE_HEALTH_CLIENT_SECRET")
     refresh_token = parsed_args.refresh_token or os.environ.get("GOOGLE_HEALTH_REFRESH_TOKEN")
 
+    # A --user-id with no explicit --token/--refresh-token flag means "use this linked
+    # user's own stored credentials" (see google_health_account_link.py /
+    # docs/plans/2026-08-27-real-google-health-ingestion.md's "operator manually triggers a
+    # sync per linked user" path) rather than the single operator's own .env credentials.
+    user_id = getattr(parsed_args, "user_id", None)
+    bucket_name = os.environ.get("GOOGLE_HEALTH_TOKEN_BUCKET")
+    if (
+        user_id
+        and not parsed_args.token
+        and not parsed_args.refresh_token
+        and client_id
+        and client_secret
+        and bucket_name
+    ):
+        from .google_health_account_link import GoogleHealthConnectionRepository
+        from .google_health_account_link import GoogleHealthLinkError as _LinkError
+
+        try:
+            manager = GoogleHealthConnectionRepository().load_auth_manager_for_user(
+                user_id,
+                client_id=client_id,
+                client_secret=client_secret,
+                bucket_name=bucket_name,
+            )
+            return manager, None
+        except _LinkError as exc:
+            return None, str(exc)
+
     if not token and not (client_id and client_secret and refresh_token):
         return None, "No Google Health credentials or access token were provided."
 
@@ -838,6 +866,13 @@ def main() -> int:
     probe_health_parser.add_argument("--refresh-token", type=str, default=None)
     probe_health_parser.add_argument("--start-time", type=str, default=None)
     probe_health_parser.add_argument("--end-time", type=str, default=None)
+    probe_health_parser.add_argument(
+        "--user-id",
+        type=str,
+        default=None,
+        help="Linked app user ID -- probe using their stored Google Health credentials "
+        "(requires GOOGLE_HEALTH_TOKEN_BUCKET) instead of the operator's own .env token",
+    )
 
     compare_transports_parser = subparsers.add_parser(
         "compare-transports",
