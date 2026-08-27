@@ -105,6 +105,9 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-21 Performance outcome validation**](./analysis/2026-08-21-performance-outcome-validation.md) — Closes the recommendation → adaptation loop: the repeated-testing usage trigger formerly recorded under M7 has fired, and OV is the dedicated evidence-only outcome/progress/block-report implementation plan rather than a parallel M task family.
 * [**2026-08-21 Physiological anomaly and illness-risk research**](./analysis/2026-08-21-physiological-anomaly-and-illness-risk-research.md) — Evidence-backed research into respiratory rate, RHR, HRV, and confounder modelling for health anomaly alerting.
 * [**2026-08-21 Post-HA-D plan reconciliation**](./analysis/2026-08-21-post-ha-d-plan-reconciliation.md) — Status audit of executable tasks across HA, OV, S, and Multidomain following PR #171.
+* [**2026-08-26 Architecture and maintainability review**](./analysis/2026-08-26-architecture-and-maintainability-review.md) — Architectural integrity, policy boundaries, and schema evolution audit across the backend, frontend, and rules layer.
+* [**2026-08-26 Scientific and recommendation-quality validation**](./analysis/2026-08-26-scientific-and-recommendation-quality-validation.md) — Point-in-time analysis of physiological/mathematical validity of signals, baseline sensitivity, and closed-loop feedback design.
+* [**2026-08-26 Scientific validation PR review hardening**](./analysis/2026-08-26-scientific-validation-review-hardening.md) — Review corrections for the SV1–SV3 evidence-sidecar implementation.
 * [**Phase 9.4 Subjective history integration**](./analysis/phase-9-4-subjective-history-integration.md) — Integration analysis for composition-boundary range reads and data-quality handling.
 
 ---
