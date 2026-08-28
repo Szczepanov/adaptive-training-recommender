@@ -5,6 +5,7 @@ from garmin_sync.multisource_audit import (
     _calc_correlation,
     _calc_mad,
     _calc_median,
+    _calc_percentile,
     run_multisource_audit,
 )
 
@@ -17,6 +18,60 @@ def test_audit_math_helpers() -> None:
     xs = [1.0, 2.0, 3.0, 4.0, 5.0]
     ys = [2.0, 4.0, 6.0, 8.0, 10.0]
     assert round(_calc_correlation(xs, ys), 2) == 1.0
+
+
+def test_calc_percentile() -> None:
+    assert _calc_percentile([], 0.9) is None
+    vals = [10.0, 20.0, 30.0, 40.0, 50.0]
+    assert _calc_percentile(vals, 0.9) == 50.0
+    assert _calc_percentile(vals, 0.0) == 10.0
+
+
+def test_sleep_duration_median_reveals_outlier_skew_hidden_by_mean() -> None:
+    """Regression for the real finding (2026-08-28, 180-night production comparison): mean
+    54.3min vs median 26.8min, because a minority of nights (18/154, 12%) exceeded 120min
+    disagreement. A reader seeing only the mean would wrongly conclude "typical" nights
+    disagree by ~54min when most actually disagree by roughly half that."""
+    mock_repo = MagicMock()
+
+    # 9 "typical" nights at a small, consistent delta, plus 1 extreme-outlier night --
+    # mirrors the real shape (most nights close, a minority wildly off) without needing the
+    # real 154-night dataset.
+    garmin_snaps = {}
+    eight_bundles = []
+    typical_delta_sec = 20 * 60  # 20 minutes -- close to the real ~26.8min median
+    outlier_delta_sec = 200 * 60  # 200 minutes -- well past the >120min threshold
+    base_garmin_sec = 28800  # 8h
+    for i in range(1, 11):
+        date_str = f"2026-08-{i:02d}"
+        delta_sec = outlier_delta_sec if i == 10 else typical_delta_sec
+        garmin_snaps[date_str] = {"date": date_str, "raw": {"sleepDurationSec": base_garmin_sec}}
+        eight_bundles.append(
+            {
+                "logicalDate": date_str,
+                "provider": "eight_sleep",
+                "transport": "eight_sleep_direct",
+                "observations": [
+                    {"metric": "sleep_duration_seconds", "value": base_garmin_sec - delta_sec},
+                ],
+            }
+        )
+
+    mock_repo.get_historical_snapshots.return_value = garmin_snaps
+    mock_repo.get_health_observation_bundles_in_range.return_value = eight_bundles
+
+    report = run_multisource_audit(
+        mock_repo, "2026-08-01", "2026-08-10", {}, eight_sleep_transport="eight_sleep_direct"
+    )
+
+    assert report.sleepDurationPairedNights == 10
+    # Mean is pulled up by the one outlier night (38.0 = (9*20 + 200) / 10); median reflects
+    # the other 9's true typical value (20.0) untouched by the outlier -- exactly the gap
+    # that made the mean alone misleading in the real 180-night data.
+    assert report.sleepDurationMeanDiffMinutes == 38.0
+    assert report.sleepDurationMedianDiffMinutes == 20.0
+    assert report.sleepDurationOver120MinCount == 1
+    assert report.sleepDurationOver60MinCount == 1
 
 
 def test_run_multisource_audit_mocked() -> None:

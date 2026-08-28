@@ -39,6 +39,20 @@ class MultisourceAuditReport:
     eightSleepOnlyDays: int
     neitherDays: int
     sleepDurationMeanDiffMinutes: float
+    # The mean is heavily skewed by a real minority of extreme-disagreement nights --
+    # confirmed empirically 2026-08-28 on a real 180-night window: mean 54.3min vs median
+    # 26.8min (roughly half), with 18/154 nights (12%) exceeding 120min. A reader seeing only
+    # the mean would conclude "typical" agreement is far worse than most nights actually show.
+    # These fields make that shape visible instead of collapsing it into one number.
+    sleepDurationMedianDiffMinutes: float | None
+    sleepDurationP90DiffMinutes: float | None
+    # Denominator for the two counts below -- NOT the same as bothSourcesDays, which counts
+    # dates where both sources have *any* bundle/snapshot at all; this counts only dates
+    # where both actually had a parseable sleep_duration value (a date could have both a
+    # snapshot and a bundle but lack a duration field on one side).
+    sleepDurationPairedNights: int
+    sleepDurationOver60MinCount: int
+    sleepDurationOver120MinCount: int
     sleepDurationCorrelation: float | None
     eightSleepHrvCount: int
     eightSleepHrvMedian: float | None
@@ -77,6 +91,17 @@ def _calc_mad(values: list[float], median: float | None) -> float | None:
     devs = [abs(v - median) for v in values]
     raw_mad = _calc_median(devs)
     return raw_mad * 1.4826 if raw_mad is not None else None
+
+
+def _calc_percentile(values: list[float], pct: float) -> float | None:
+    """Nearest-rank percentile (0.0-1.0). No interpolation -- matches the diagnostic used to
+    surface the mean/median gap in the first place, and keeps the value an actually-observed
+    sample rather than an interpolated one."""
+    if not values:
+        return None
+    sorted_v = sorted(values)
+    idx = min(int(len(sorted_v) * pct), len(sorted_v) - 1)
+    return sorted_v[idx]
 
 
 def _calc_correlation(xs: list[float], ys: list[float]) -> float | None:
@@ -297,6 +322,10 @@ def run_multisource_audit(
         )
 
     mean_sleep_diff = sum(sleep_diffs) / len(sleep_diffs) if sleep_diffs else 0.0
+    median_sleep_diff = _calc_median(sleep_diffs)
+    p90_sleep_diff = _calc_percentile(sleep_diffs, 0.9)
+    over_60_count = sum(1 for x in sleep_diffs if x > 60)
+    over_120_count = sum(1 for x in sleep_diffs if x > 120)
     sleep_corr = _calc_correlation(garmin_sleep_mins, eight_sleep_mins)
 
     # 28-day rolling window baseline statistics (using latest 28 eligible daily samples)
@@ -318,6 +347,15 @@ def run_multisource_audit(
         eightSleepOnlyDays=eight_only_count,
         neitherDays=neither_count,
         sleepDurationMeanDiffMinutes=round(mean_sleep_diff, 1),
+        sleepDurationMedianDiffMinutes=round(median_sleep_diff, 1)
+        if median_sleep_diff is not None
+        else None,
+        sleepDurationP90DiffMinutes=round(p90_sleep_diff, 1)
+        if p90_sleep_diff is not None
+        else None,
+        sleepDurationPairedNights=len(sleep_diffs),
+        sleepDurationOver60MinCount=over_60_count,
+        sleepDurationOver120MinCount=over_120_count,
         sleepDurationCorrelation=round(sleep_corr, 3) if sleep_corr is not None else None,
         eightSleepHrvCount=len(eight_hrv_vals),
         eightSleepHrvMedian=round(hrv_median, 1) if hrv_median is not None else None,

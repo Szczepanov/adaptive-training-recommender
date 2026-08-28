@@ -811,7 +811,27 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
         print(f"  Neither Source:             {report.neitherDays} nights")
         print("-" * 80)
         print("  CROSS-SOURCE AGREEMENT TELEMETRY:")
-        print(f"  Sleep Duration Mean Delta:  {report.sleepDurationMeanDiffMinutes} minutes")
+        print(f"  Sleep Duration Mean Delta:   {report.sleepDurationMeanDiffMinutes} minutes")
+        # The mean alone is misleading here -- it's heavily skewed by a real minority of
+        # extreme-disagreement nights. Median shows what a typical night actually looks like.
+        median_disp = (
+            report.sleepDurationMedianDiffMinutes
+            if report.sleepDurationMedianDiffMinutes is not None
+            else "N/A"
+        )
+        p90_disp = (
+            report.sleepDurationP90DiffMinutes
+            if report.sleepDurationP90DiffMinutes is not None
+            else "N/A"
+        )
+        print(f"  Sleep Duration Median Delta: {median_disp} minutes (typical night)")
+        print(f"  Sleep Duration P90 Delta:    {p90_disp} minutes (worst 10% of nights)")
+        print(
+            f"  Nights >60min disagreement:  {report.sleepDurationOver60MinCount}/{report.sleepDurationPairedNights}"
+        )
+        print(
+            f"  Nights >120min disagreement: {report.sleepDurationOver120MinCount}/{report.sleepDurationPairedNights}"
+        )
         print(
             f"  Sleep Duration Correlation: {report.sleepDurationCorrelation if report.sleepDurationCorrelation is not None else 'N/A'}"
         )
