@@ -751,6 +751,18 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
     parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
     parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
     parser.add_argument("--user-id", type=str, default=None, help="Application User ID")
+    parser.add_argument(
+        "--eight-sleep-transport",
+        type=str,
+        default="google_health",
+        choices=["google_health", "eight_sleep_direct"],
+        help=(
+            "Which Eight Sleep transport to compare Garmin Direct against (default "
+            "google_health, MS14's original scope). eight_sleep_direct removes Google "
+            "Health from both sides of the comparison entirely -- the cleanest read on "
+            "genuine cross-device agreement between Garmin and Eight Sleep."
+        ),
+    )
     parsed_args = parser.parse_args(args)
 
     from .firestore_repository import FirestoreRecoveryRepository
@@ -771,12 +783,19 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
         start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=60)
 
         print(
-            f"\nRunning multisource shadow audit for {settings.app_user_id}: {start_date_str} to {end_date_str}..."
+            f"\nRunning multisource shadow audit for {settings.app_user_id}: {start_date_str} to {end_date_str} "
+            f"(Eight Sleep transport: {parsed_args.eight_sleep_transport})..."
         )
-        report = run_multisource_audit(repo, start_date_str, end_date_str)
+        report = run_multisource_audit(
+            repo,
+            start_date_str,
+            end_date_str,
+            eight_sleep_transport=parsed_args.eight_sleep_transport,
+        )
 
         print("\n" + "=" * 80)
         print("  MULTISOURCE SHADOW AUDIT REPORT (GARMIN DIRECT VS EIGHT SLEEP) — MS14")
+        print(f"  Eight Sleep transport: {report.eightSleepTransport}")
         print("=" * 80)
         print(
             f"  Date Range:                 {report.startDate} to {report.endDate} ({report.totalDays} days)"

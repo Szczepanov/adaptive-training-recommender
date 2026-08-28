@@ -32,6 +32,7 @@ from .identity_eligibility import (
 class MultisourceAuditReport:
     startDate: str
     endDate: str
+    eightSleepTransport: str
     totalDays: int
     bothSourcesDays: int
     garminOnlyDays: int
@@ -123,8 +124,19 @@ def run_multisource_audit(
     end_date_iso: str,
     effective_identity_decisions: Mapping[IdentityBundleKey, EffectiveIdentityDecisionProjection]
     | None = None,
+    eight_sleep_transport: str = "google_health",
 ) -> MultisourceAuditReport:
     """Run empirical shadow audit between Garmin Direct and Eight Sleep.
+
+    Two independent devices/sensors, not a transport-fidelity check like MS10/ES9's
+    TransportEquivalenceAnalyzer -- correlation and mean delta are the right comparison here
+    (D-MS-NOAVG: cross-device raw values are not expected to match exactly, so this
+    deliberately doesn't tolerance-match them the way the same-device transport comparators
+    do). `eight_sleep_transport` defaults to "google_health" (this audit's original MS14
+    scope, predating the direct connector); pass "eight_sleep_direct" to compare against
+    Garmin Direct with Google Health removed from both sides of the comparison entirely --
+    the cleanest read on genuine cross-device agreement, free of any Google Health mapping
+    confound (see the ES9 sleep-duration mapper fix in google_health_mapper.py).
 
     Missing effective-identity projections fail closed for baseline admission. The raw bundle
     remains available to descriptive coverage/session-delta telemetry.
@@ -144,7 +156,7 @@ def run_multisource_audit(
         start_date_iso,
         end_date_iso,
         provider="eight_sleep",
-        transport="google_health",
+        transport=eight_sleep_transport,
     )
 
     eight_map: dict[str, dict[str, Any]] = {
@@ -299,6 +311,7 @@ def run_multisource_audit(
     return MultisourceAuditReport(
         startDate=start_date_iso,
         endDate=end_date_iso,
+        eightSleepTransport=eight_sleep_transport,
         totalDays=len(all_dates),
         bothSourcesDays=both_count,
         garminOnlyDays=garmin_only_count,

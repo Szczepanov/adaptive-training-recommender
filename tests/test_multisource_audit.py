@@ -75,6 +75,40 @@ def test_run_multisource_audit_mocked() -> None:
     assert report.dailyComparisons[0]["eightSleepTimingAvailable"] is False
 
 
+def test_run_multisource_audit_eight_sleep_transport_defaults_to_google_health() -> None:
+    """Back-compat: MS14's original scope (predating the direct connector) must be preserved
+    when the new eight_sleep_transport param is omitted."""
+    mock_repo = MagicMock()
+    mock_repo.get_historical_snapshots.return_value = {}
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+
+    report = run_multisource_audit(mock_repo, "2026-08-25", "2026-08-25", {})
+
+    mock_repo.get_health_observation_bundles_in_range.assert_called_once_with(
+        "2026-08-25", "2026-08-25", provider="eight_sleep", transport="google_health"
+    )
+    assert report.eightSleepTransport == "google_health"
+
+
+def test_run_multisource_audit_eight_sleep_transport_can_target_direct_connector() -> None:
+    """The genuinely most valuable cross-device comparison (Garmin Direct vs Eight Sleep
+    Direct, both bypassing Google Health entirely) is reachable by passing
+    eight_sleep_transport="eight_sleep_direct" -- confirm it's actually threaded through to
+    the repository query, not silently ignored."""
+    mock_repo = MagicMock()
+    mock_repo.get_historical_snapshots.return_value = {}
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+
+    report = run_multisource_audit(
+        mock_repo, "2026-08-25", "2026-08-25", {}, eight_sleep_transport="eight_sleep_direct"
+    )
+
+    mock_repo.get_health_observation_bundles_in_range.assert_called_once_with(
+        "2026-08-25", "2026-08-25", provider="eight_sleep", transport="eight_sleep_direct"
+    )
+    assert report.eightSleepTransport == "eight_sleep_direct"
+
+
 def test_run_multisource_audit_sleep_timing_available_for_both_sources() -> None:
     mock_repo = MagicMock()
     mock_repo.get_historical_snapshots.return_value = {
