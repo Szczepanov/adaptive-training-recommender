@@ -151,6 +151,80 @@ describe('training-history persistence parsers', () => {
         expect(parsed.data.laps).toBeUndefined();
     });
 
+    it('preserves valid strength exercise sets and training effect metadata', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            type: 'strength_training',
+            primaryBenefit: 'TEMPO',
+            trainingEffectLabel: 'AEROBIC_BASE',
+            epoc: 42,
+            recoveryTimeHours: 24,
+            exerciseSets: [
+                {
+                    setOrder: 0,
+                    setType: 'warmup',
+                    repetitionCount: 10,
+                    weightKg: 20,
+                    exerciseCategory: 'bench_press',
+                    exerciseName: 'barbell_bench_press',
+                    durationSeconds: 30,
+                    restDurationSeconds: 60,
+                },
+                {
+                    setOrder: 1,
+                    setType: 'active',
+                    repetitionCount: 5,
+                    weightKg: 80,
+                    exerciseName: 'bench_press',
+                },
+            ],
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed).toMatchObject({
+            status: 'AVAILABLE',
+            data: {
+                activityId: 'a-1',
+                primaryBenefit: 'TEMPO',
+                trainingEffectLabel: 'AEROBIC_BASE',
+                epoc: 42,
+                recoveryTimeHours: 24,
+                exerciseSets: [
+                    {
+                        setOrder: 0,
+                        setType: 'warmup',
+                        repetitionCount: 10,
+                        weightKg: 20,
+                        exerciseCategory: 'bench_press',
+                        exerciseName: 'barbell_bench_press',
+                        durationSeconds: 30,
+                        restDurationSeconds: 60,
+                    },
+                    {
+                        setOrder: 1,
+                        setType: 'active',
+                        repetitionCount: 5,
+                        weightKg: 80,
+                        exerciseName: 'bench_press',
+                    },
+                ],
+            },
+        });
+    });
+
+    it('drops corrupt exercise sets while preserving the base activity', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            type: 'strength_training',
+            exerciseSets: [
+                { setOrder: 'not-a-number' },
+            ],
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { activityId: 'a-1' } });
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+        expect(parsed.data.exerciseSets).toBeUndefined();
+    });
+
     it('parses supported recommendation schemas and rejects future ones', () => {
         expect(parseDailyRecommendation(recommendation, 'users/u1/daily_recommendations/2026-08-06')).toMatchObject({ status: 'AVAILABLE', data: { date: '2026-08-06' } });
         expect(parseDailyRecommendation({ ...recommendation, schemaVersion: 3 }, 'users/u1/daily_recommendations/2026-08-06'))

@@ -1195,3 +1195,24 @@ class GarminSyncService:
             )
 
         finish(self.repository.db.transaction())
+
+    def export_activities_json(self, start_date_iso: str, end_date_iso: str) -> dict[str, Any]:
+        """Export normalized activities with detailed telemetry in date range."""
+        activities = self.repository.get_activities_in_range(start_date_iso, end_date_iso)
+        return {
+            "schemaVersion": "recent_activities_bundle_v1",
+            "metadata": {
+                "exportedAt": datetime.now(timezone.utc).isoformat(),
+                "format": "recent_activities_bundle_v1",
+                "userId": self.settings.app_user_id,
+                "dateRange": {
+                    "startDateInclusive": start_date_iso,
+                    "throughDateInclusive": end_date_iso,
+                },
+                "totalActivities": len(activities),
+            },
+            "activities": sorted(
+                activities,
+                key=lambda a: (str(a.get("date", "")), str(a.get("activityId", ""))),
+            ),
+        }
