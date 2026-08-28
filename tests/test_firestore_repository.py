@@ -3,6 +3,44 @@ from unittest.mock import MagicMock
 import pytest
 
 from garmin_sync.firestore_repository import FirestoreRecoveryRepository
+from garmin_sync.models import HealthObservationDayBundle
+
+
+def _make_bundle(
+    *, source_payload_hash: str, normalizer_version: int
+) -> HealthObservationDayBundle:
+    return HealthObservationDayBundle(
+        userId="real_uid_456",
+        logicalDate="2026-08-28",
+        provider="eight_sleep",
+        transport="eight_sleep_direct",
+        observations=[],
+        sourcePayloadHash=source_payload_hash,
+        normalizerVersion=normalizer_version,
+    )
+
+
+def _mock_repo_with_existing_doc(
+    *, existing_hash: str, existing_normalizer_version: int, existing_rev: int
+):
+    """Forces the non-transactional fallback path (db.transaction = None) -- simpler and
+    sufficient to exercise the dedup decision itself without fighting
+    @firestore.transactional's expectations of a real Transaction object."""
+    mock_db = MagicMock()
+    mock_db.transaction = None
+    doc_ref = MagicMock()
+    doc_snap = MagicMock()
+    doc_snap.exists = True
+    doc_snap.to_dict.return_value = {
+        "sourcePayloadHash": existing_hash,
+        "normalizerVersion": existing_normalizer_version,
+        "revision": existing_rev,
+    }
+    doc_ref.get.return_value = doc_snap
+    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    return repo, doc_ref
 
 
 def test_firestore_repository_rejects_default_user():
@@ -213,3 +251,46 @@ def test_is_fresh_incomplete_snapshot_short_cooldown(monkeypatch):
     assert (
         repo.is_fresh("2026-08-19", staleness_minutes=60, incomplete_staleness_minutes=5) is False
     )
+
+
+def test_save_health_observation_day_bundle_skips_when_hash_and_version_unchanged():
+    repo, doc_ref = _mock_repo_with_existing_doc(
+        existing_hash="sha256:abc", existing_normalizer_version=2, existing_rev=3
+    )
+    bundle = _make_bundle(source_payload_hash="sha256:abc", normalizer_version=2)
+
+    changed, revision = repo.save_health_observation_day_bundle(bundle)
+
+    assert (changed, revision) == (False, 3)
+    doc_ref.set.assert_not_called()
+
+
+def test_save_health_observation_day_bundle_persists_when_normalizer_version_bumped():
+    """Regression: a mapper logic change (e.g. eight_sleep_mapper.py's ES-EXT extraction)
+    must actually get re-persisted for already-fetched dates, even though the underlying
+    raw payload -- and therefore sourcePayloadHash -- is unchanged. Before this fix, the
+    dedup check only compared sourcePayloadHash, so a richer mapper output for the exact
+    same upstream response was silently never written (confirmed against real data:
+    'Day Bundles Saved: 0' despite genuinely new observations being computed)."""
+    repo, doc_ref = _mock_repo_with_existing_doc(
+        existing_hash="sha256:abc", existing_normalizer_version=1, existing_rev=3
+    )
+    bundle = _make_bundle(source_payload_hash="sha256:abc", normalizer_version=2)
+
+    changed, revision = repo.save_health_observation_day_bundle(bundle)
+
+    assert (changed, revision) == (True, 4)
+    doc_ref.set.assert_called_once()
+
+
+def test_save_health_observation_day_bundle_persists_when_hash_changed_regardless_of_version():
+    """The original behavior (payload actually changed) must still work unchanged."""
+    repo, doc_ref = _mock_repo_with_existing_doc(
+        existing_hash="sha256:old", existing_normalizer_version=2, existing_rev=3
+    )
+    bundle = _make_bundle(source_payload_hash="sha256:new", normalizer_version=2)
+
+    changed, revision = repo.save_health_observation_day_bundle(bundle)
+
+    assert (changed, revision) == (True, 4)
+    doc_ref.set.assert_called_once()
