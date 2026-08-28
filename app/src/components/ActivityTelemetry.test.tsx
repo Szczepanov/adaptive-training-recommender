@@ -127,4 +127,20 @@ describe('ActivityTelemetry', () => {
     expect(html).toContain('35s');
     expect(html).toContain('90s rest');
   });
+
+  it('renders Copy JSON button and capability badges for detailed telemetry', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{
+      status: 'AVAILABLE', revision: null, data: [{
+        ...base,
+        powerInZones: [{ zoneNumber: 2, secondsInZone: 1200, lowBoundary: 150 }],
+        hrInZones: [{ zoneNumber: 3, secondsInZone: 600, lowBoundary: 140 }],
+        laps: [{ lapIndex: 1, durationSeconds: 1800 }],
+      }],
+    }} />);
+    expect(html).toContain('btn-copy-activity-json');
+    expect(html).toContain('Copy JSON');
+    expect(html).toContain('⚡ Power');
+    expect(html).toContain('❤️ HR Zones');
+    expect(html).toContain('⏱️ Laps');
+  });
 });

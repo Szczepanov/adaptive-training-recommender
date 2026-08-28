@@ -134,6 +134,41 @@ function parseRunningDynamics(value: unknown, activityType: string): RunningDyna
     return Object.keys(parsed).length > 0 ? parsed : undefined;
 }
 
+function parseExerciseSets(value: unknown): NormalizedGarminActivity['exerciseSets'] | undefined {
+    if (!Array.isArray(value)) return undefined;
+    const parsed = value.map((entry) => {
+        if (!isObject(entry)) return undefined;
+        const setOrder = typeof entry.setOrder === 'number' && Number.isInteger(entry.setOrder) && entry.setOrder >= 0 ? entry.setOrder : undefined;
+        if (setOrder === undefined) return undefined;
+        const setType = typeof entry.setType === 'string' ? entry.setType : undefined;
+        const repetitionCount = typeof entry.repetitionCount === 'number' && Number.isFinite(entry.repetitionCount) && entry.repetitionCount >= 0 ? entry.repetitionCount : undefined;
+        const weightKg = typeof entry.weightKg === 'number' && Number.isFinite(entry.weightKg) && entry.weightKg >= 0 ? entry.weightKg : undefined;
+        const exerciseCategory = typeof entry.exerciseCategory === 'string' ? entry.exerciseCategory : undefined;
+        const exerciseName = typeof entry.exerciseName === 'string' ? entry.exerciseName : undefined;
+        const durationSeconds = typeof entry.durationSeconds === 'number' && Number.isFinite(entry.durationSeconds) && entry.durationSeconds >= 0 ? entry.durationSeconds : undefined;
+        const restDurationSeconds = typeof entry.restDurationSeconds === 'number' && Number.isFinite(entry.restDurationSeconds) && entry.restDurationSeconds >= 0 ? entry.restDurationSeconds : undefined;
+        return {
+            setOrder,
+            ...(setType !== undefined ? { setType } : {}),
+            ...(repetitionCount !== undefined ? { repetitionCount } : {}),
+            ...(weightKg !== undefined ? { weightKg } : {}),
+            ...(exerciseCategory !== undefined ? { exerciseCategory } : {}),
+            ...(exerciseName !== undefined ? { exerciseName } : {}),
+            ...(durationSeconds !== undefined ? { durationSeconds } : {}),
+            ...(restDurationSeconds !== undefined ? { restDurationSeconds } : {}),
+        };
+    });
+    return parsed.every((entry) => entry !== undefined)
+        ? parsed as NonNullable<NormalizedGarminActivity['exerciseSets']>
+        : undefined;
+}
+
+function parseOptionalString(value: unknown): string | null | undefined {
+    if (value === undefined) return undefined;
+    if (value === null) return null;
+    return typeof value === 'string' ? value : undefined;
+}
+
 function isShadowVerdict(value: unknown): value is ShadowVerdict {
     return typeof value === 'string' && (SHADOW_VERDICTS as readonly string[]).includes(value);
 }
@@ -174,6 +209,11 @@ export function parseNormalizedGarminActivity(
     const variabilityIndex = telemetryNumber(raw.variabilityIndex);
     const laps = parseLaps(raw.laps);
     const runningDynamics = parseRunningDynamics(raw.runningDynamics, raw.type);
+    const primaryBenefit = parseOptionalString(raw.primaryBenefit);
+    const trainingEffectLabel = parseOptionalString(raw.trainingEffectLabel);
+    const epoc = optionalNonNegativeNumber(raw.epoc);
+    const recoveryTimeHours = optionalNonNegativeNumber(raw.recoveryTimeHours);
+    const exerciseSets = parseExerciseSets(raw.exerciseSets);
 
     return {
         status: 'AVAILABLE',
@@ -187,6 +227,10 @@ export function parseNormalizedGarminActivity(
             averageHr: averageHr ?? null,
             activityTrainingLoad: activityTrainingLoad ?? null,
             intensityTag: raw.intensityTag,
+            ...(primaryBenefit !== undefined ? { primaryBenefit } : {}),
+            ...(trainingEffectLabel !== undefined ? { trainingEffectLabel } : {}),
+            ...(epoc !== undefined ? { epoc } : {}),
+            ...(recoveryTimeHours !== undefined ? { recoveryTimeHours } : {}),
             ...(powerInZones !== undefined ? { powerInZones } : {}),
             ...(hrInZones !== undefined ? { hrInZones } : {}),
             ...(normalizedPower !== undefined ? { normalizedPower } : {}),
@@ -194,6 +238,7 @@ export function parseNormalizedGarminActivity(
             ...(variabilityIndex !== undefined ? { variabilityIndex } : {}),
             ...(laps !== undefined ? { laps } : {}),
             ...(runningDynamics !== undefined ? { runningDynamics } : {}),
+            ...(exerciseSets !== undefined ? { exerciseSets } : {}),
             ...(typeof raw.syncRunId === 'string' ? { syncRunId: raw.syncRunId } : {}),
             ...(typeof raw.syncedAt === 'string' ? { syncedAt: raw.syncedAt } : {}),
         },

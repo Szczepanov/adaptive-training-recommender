@@ -47,10 +47,11 @@ def _chmod_secure(path: Path, mode: int) -> None:
             pass
 
     # Fallback if fchmod/O_NOFOLLOW isn't supported and symlinks exist
-    if path.is_symlink():
-        logger.debug(f"Refusing to chmod symlink '{path}' directly.")
-        return
-    os.chmod(path, mode)
+    logger.warning(
+        f"Secure file permission setting (fchmod/O_NOFOLLOW) is not supported on this platform. "
+        f"Skipping chmod for '{path}' to avoid TOCTOU vulnerability."
+    )
+    return
 
 
 def _set_secure_permissions(file_path: Path) -> None:
