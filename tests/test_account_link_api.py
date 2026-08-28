@@ -3,8 +3,14 @@ from __future__ import annotations
 from http import HTTPStatus
 from typing import Any
 
+import pytest
+
 import garmin_sync.account_link_api as account_link_api
-from garmin_sync.account_link_api import GarminAccountLinkHandler, LoginRateLimiter
+from garmin_sync.account_link_api import (
+    GarminAccountLinkHandler,
+    GarminConnectAuthenticationError,
+    LoginRateLimiter,
+)
 
 
 def _handler_with_forwarded_for(value: str) -> GarminAccountLinkHandler:
@@ -95,3 +101,37 @@ def test_handle_login_enforces_per_account_rate_limiting(monkeypatch: Any) -> No
     assert len(captured_errors) == 1
     assert captured_errors[0]["status"] == HTTPStatus.TOO_MANY_REQUESTS
     assert captured_errors[0]["error_code"] == "garmin_link.rate_limited"
+
+
+def test_verified_uid_raises_authentication_error_on_verify_id_token_exception(
+    monkeypatch: Any,
+) -> None:
+    def mock_verify_id_token(token: str) -> dict[str, Any]:
+        raise Exception("Firebase verification failed")
+
+    monkeypatch.setattr(account_link_api.firebase_auth, "verify_id_token", mock_verify_id_token)
+
+    with pytest.raises(
+        GarminConnectAuthenticationError, match="App session is invalid or expired."
+    ):
+        account_link_api._verified_uid("Bearer any-token")  # noqa: SLF001
+
+
+def test_log_message_redacts_query_parameters(monkeypatch: Any) -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.client_address = ("127.0.0.1", 12345)
+    handler.path = "/api/garmin/login?token=secret123"
+
+    captured_logs: list[str] = []
+
+    def mock_info(msg: str, *args: Any) -> None:
+        captured_logs.append(msg % args)
+
+    monkeypatch.setattr(account_link_api.logger, "info", mock_info)
+
+    handler.log_message("GET %s HTTP/1.1", handler.path)
+
+    assert len(captured_logs) == 1
+    log = captured_logs[0]
+    assert "/api/garmin/login" in log
+    assert "secret123" not in log

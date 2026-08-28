@@ -17,7 +17,6 @@ import { trainingSettingsService } from '../services/trainingSettingsService';
 import { adaptNormalizedExecutionToStrengthSession } from '../sessions/legacyStrengthAdapter';
 import { getLocalDateString } from '../utils/localDate';
 import { sessionDefinitionService } from '../services/sessionDefinitionService';
-import { hashSessionDefinition } from '../sessions/sessionDefinitionHash';
 import { playRestCompleteSound } from '../utils/audioFeedback';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { resolveEffectiveSession } from '../sessions/choiceResolution';
@@ -84,6 +83,26 @@ export interface UseSessionRunnerResult {
     saveAsNewTemplate: (title: string, summary?: string) => Promise<string>;
     completeSession: (payload?: SessionCompletionPayload) => Promise<void>;
     abandonSession: (notes?: string) => Promise<void>;
+}
+
+/**
+ * A reusable template starts from the raw working definition, not the choice-resolved view.
+ * Exercise swaps intentionally change that raw definition; one-off athlete choices remain
+ * execution evidence and must not be folded into a template that still offers those choices.
+ */
+export function createCustomTemplateDefinition(
+    source: SessionDefinition,
+    templateId: string,
+    title: string,
+    summary?: string,
+): SessionDefinition {
+    return {
+        ...source,
+        id: templateId,
+        revision: 1,
+        title: title.trim().length > 0 ? title.trim() : source.title,
+        ...(summary !== undefined ? { summary } : {}),
+    };
 }
 
 export function useSessionRunner(userId: string, fixtures: readonly SessionDefinition[] = []): UseSessionRunnerResult {
@@ -465,19 +484,12 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     }, []);
 
     const saveAsNewTemplate = useCallback(async (title: string, summary?: string): Promise<string> => {
-        if (!definition) throw new Error('No active session definition to save.');
-        const templateId = `custom-session-${Date.now()}`;
-        const newDef: SessionDefinition = {
-            ...definition,
-            id: templateId,
-            revision: 1,
-            title: title.trim().length > 0 ? title.trim() : definition.title,
-            ...(summary !== undefined ? { summary } : {}),
-        };
-        const contentHash = await hashSessionDefinition(newDef);
-        await sessionDefinitionService.saveDefinitionRevision(userId, newDef, contentHash);
-        return templateId;
-    }, [definition, userId]);
+        if (!rawDefinition) throw new Error('No active session definition to save.');
+        const templateId = `custom-session-${crypto.randomUUID()}`;
+        const newDef = createCustomTemplateDefinition(rawDefinition, templateId, title, summary);
+        const saved = await sessionDefinitionService.saveDefinitionRevision(userId, newDef);
+        return saved.header.definitionId;
+    }, [rawDefinition, userId]);
 
     const completeSession = useCallback(async (payload?: SessionCompletionPayload) => {
         if (!execution || execution.state !== 'in_progress') return;

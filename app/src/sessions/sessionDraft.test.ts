@@ -8,7 +8,28 @@ import {
     duplicateDraftBlock,
     duplicateDraftStep,
     moveDraftItem,
+    withResolvedSummary,
 } from './sessionDraft';
+
+describe('withResolvedSummary', () => {
+    it('removes an inherited summary when the authored field is cleared', () => {
+        // Mirrors a `...baseDefinition` spread ahead of this call in ManualSessionBuilder:
+        // a revision being edited can already carry a summary from the saved definition.
+        const definition = { title: 'Custom workout', summary: 'Old summary from a saved revision' };
+
+        const result = withResolvedSummary(definition, '   ');
+
+        expect('summary' in result).toBe(false);
+    });
+
+    it('sets the trimmed authored summary when provided', () => {
+        const definition: { title: string; summary?: string } = { title: 'Custom workout' };
+
+        const result = withResolvedSummary(definition, '  Heavy squat day  ');
+
+        expect(result.summary).toBe('Heavy squat day');
+    });
+});
 
 describe('manual session draft operations', () => {
     it('reorders blocks and steps without changing their identities', () => {

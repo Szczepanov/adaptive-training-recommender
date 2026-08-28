@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 
 from garmin_sync.garmin_provider import (
     GarminProviderAdapter,
+    RawGarminTelemetry,
     canonicalize_activities,
     canonicalize_activity_detail,
     canonicalize_from_raw,
@@ -135,11 +136,13 @@ def test_canonicalize_from_raw_using_fixtures():
     stats_fallback = {"totalSteps": 8420, "restingHeartRate": 51}
 
     canonical = canonicalize_from_raw(
-        stats_today=stats,
-        stats_fallback=stats_fallback,
-        sleep_today=sleep,
-        sleep_fallback=None,
-        hrv_today=hrv,
+        telemetry=RawGarminTelemetry(
+            stats_today=stats,
+            stats_fallback=stats_fallback,
+            sleep_today=sleep,
+            sleep_fallback=None,
+            hrv_today=hrv,
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
     )
@@ -163,11 +166,13 @@ def test_canonicalize_from_raw_fallback_consistency():
     hrv_today = {"hrvSummary": {"lastNightAvg": 62, "status": "BALANCED"}}
 
     canonical = canonicalize_from_raw(
-        stats_today=stats_today,
-        stats_fallback=stats_fallback,
-        sleep_today=sleep_today,
-        sleep_fallback=sleep_fallback,
-        hrv_today=hrv_today,
+        telemetry=RawGarminTelemetry(
+            stats_today=stats_today,
+            stats_fallback=stats_fallback,
+            sleep_today=sleep_today,
+            sleep_fallback=sleep_fallback,
+            hrv_today=hrv_today,
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
     )
@@ -288,69 +293,19 @@ def test_canonicalize_from_raw_prefers_precise_respiration_average_when_availabl
     respiration_today = {"respirationValuesArray": _respiration_array(40)}
 
     canonical = canonicalize_from_raw(
-        stats_today={},
-        stats_fallback=None,
-        sleep_today=sleep_today,
-        sleep_fallback=None,
-        hrv_today={},
+        telemetry=RawGarminTelemetry(
+            stats_today={},
+            stats_fallback=None,
+            sleep_today=sleep_today,
+            sleep_fallback=None,
+            hrv_today={},
+            respiration_today=respiration_today,
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
-        respiration_today=respiration_today,
     )
 
     assert canonical.respiration_rate_brpm == 12.5  # precise, not the coarse 12
-    # 0 ms -> epoch; 5,000,000 ms -> 1970-01-01T01:23:20Z.
-    assert canonical.sleep_start_gmt_iso == "1970-01-01T00:00:00+00:00"
-    assert canonical.sleep_end_gmt_iso == "1970-01-01T01:23:20+00:00"
-
-
-def test_canonicalize_from_raw_sleep_timing_follows_selected_fallback_record():
-    """sleep_start_gmt_iso/sleep_end_gmt_iso must be derived from selected_sleep (whichever
-    record sleep_score/sleep_date actually came from), not only sleep_today -- otherwise a
-    fallback (D-1) day would silently get no session timing even though its own raw record
-    has real timestamps, since the respiration-precision codepath's sleep_start_gmt_ms is
-    never computed at all on the fallback branch (garmin_provider.py's `if not
-    used_sleep_fallback:` guard)."""
-    sleep_fallback = {
-        "dailySleepDTO": {
-            "sleepScores": {"overall": {"value": 78}},
-            "sleepTimeSeconds": 28800,
-            "sleepStartTimestampGMT": 0,
-            "sleepEndTimestampGMT": 5_000_000,
-        }
-    }
-
-    canonical = canonicalize_from_raw(
-        stats_today={},
-        stats_fallback=None,
-        sleep_today={},
-        sleep_fallback=sleep_fallback,
-        hrv_today={},
-        target_date_iso="2026-08-06",
-        yesterday_iso="2026-08-05",
-    )
-
-    assert canonical.sleep_start_gmt_iso == "1970-01-01T00:00:00+00:00"
-    assert canonical.sleep_end_gmt_iso == "1970-01-01T01:23:20+00:00"
-
-
-def test_canonicalize_from_raw_no_sleep_timing_when_absent():
-    sleep_today = {
-        "dailySleepDTO": {"sleepScores": {"overall": {"value": 82}}, "sleepTimeSeconds": 27000}
-    }
-
-    canonical = canonicalize_from_raw(
-        stats_today={},
-        stats_fallback=None,
-        sleep_today=sleep_today,
-        sleep_fallback=None,
-        hrv_today={},
-        target_date_iso="2026-08-06",
-        yesterday_iso="2026-08-05",
-    )
-
-    assert canonical.sleep_start_gmt_iso is None
-    assert canonical.sleep_end_gmt_iso is None
 
 
 def test_canonicalize_from_raw_falls_back_to_sleep_dto_respiration_without_interval_data():
@@ -363,11 +318,13 @@ def test_canonicalize_from_raw_falls_back_to_sleep_dto_respiration_without_inter
     }
 
     canonical = canonicalize_from_raw(
-        stats_today={},
-        stats_fallback=None,
-        sleep_today=sleep_today,
-        sleep_fallback=None,
-        hrv_today={},
+        telemetry=RawGarminTelemetry(
+            stats_today={},
+            stats_fallback=None,
+            sleep_today=sleep_today,
+            sleep_fallback=None,
+            hrv_today={},
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
     )
@@ -390,17 +347,78 @@ def test_canonicalize_from_raw_skips_precise_respiration_on_sleep_fallback_day()
     respiration_today = {"respirationValuesArray": _respiration_array(40)}
 
     canonical = canonicalize_from_raw(
-        stats_today={},
-        stats_fallback=None,
-        sleep_today={},
-        sleep_fallback=sleep_fallback,
-        hrv_today={},
+        telemetry=RawGarminTelemetry(
+            stats_today={},
+            stats_fallback=None,
+            sleep_today={},
+            sleep_fallback=sleep_fallback,
+            hrv_today={},
+            respiration_today=respiration_today,
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
-        respiration_today=respiration_today,
     )
 
     assert canonical.respiration_rate_brpm == 13
+    # Sleep-session timing is captured from whichever sleep record was actually selected
+    # (the D-1 fallback here) -- independent of, and unlike, the respiration-precision
+    # window above, which deliberately does NOT apply on a fallback day.
+    from datetime import datetime, timezone
+
+    assert canonical.sleep_session_start == datetime(1970, 1, 1, tzinfo=timezone.utc)
+    assert canonical.sleep_session_end == datetime(1970, 1, 1, 1, 23, 20, tzinfo=timezone.utc)
+
+
+def test_canonicalize_from_raw_captures_sleep_session_timing_on_target_date():
+    from datetime import datetime, timezone
+
+    sleep_today = {
+        "dailySleepDTO": {
+            "sleepScores": {"overall": {"value": 82}},
+            "sleepTimeSeconds": 27000,
+            "sleepStartTimestampGMT": 0,
+            "sleepEndTimestampGMT": 5_000_000,
+        }
+    }
+
+    canonical = canonicalize_from_raw(
+        telemetry=RawGarminTelemetry(
+            stats_today={},
+            stats_fallback=None,
+            sleep_today=sleep_today,
+            sleep_fallback=None,
+            hrv_today={},
+        ),
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+    )
+
+    assert canonical.sleep_session_start == datetime(1970, 1, 1, tzinfo=timezone.utc)
+    assert canonical.sleep_session_end == datetime(1970, 1, 1, 1, 23, 20, tzinfo=timezone.utc)
+
+
+def test_canonicalize_from_raw_sleep_session_timing_none_when_absent():
+    sleep_today = {
+        "dailySleepDTO": {
+            "sleepScores": {"overall": {"value": 82}},
+            "sleepTimeSeconds": 27000,
+        }
+    }
+
+    canonical = canonicalize_from_raw(
+        telemetry=RawGarminTelemetry(
+            stats_today={},
+            stats_fallback=None,
+            sleep_today=sleep_today,
+            sleep_fallback=None,
+            hrv_today={},
+        ),
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+    )
+
+    assert canonical.sleep_session_start is None
+    assert canonical.sleep_session_end is None
 
 
 def test_canonicalize_activities_maps_fields_and_intensity():
@@ -627,17 +645,19 @@ def test_canonicalize_from_raw_populates_stress_body_battery_readiness_status():
         training_status = json.load(f)
 
     canonical = canonicalize_from_raw(
-        stats_today=stats,
-        stats_fallback=None,
-        sleep_today=sleep,
-        sleep_fallback=None,
-        hrv_today=hrv,
+        telemetry=RawGarminTelemetry(
+            stats_today=stats,
+            stats_fallback=None,
+            sleep_today=sleep,
+            sleep_fallback=None,
+            hrv_today=hrv,
+            stress_today=stress,
+            body_battery_today=body_battery,
+            training_readiness_today=training_readiness,
+            training_status_today=training_status,
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
-        stress_today=stress,
-        body_battery_today=body_battery,
-        training_readiness_today=training_readiness,
-        training_status_today=training_status,
     )
 
     assert canonical.stress is not None
@@ -677,14 +697,16 @@ def test_canonicalize_from_raw_uses_precise_respiration_fixture_over_sleep_dto_a
         respiration = json.load(f)
 
     canonical = canonicalize_from_raw(
-        stats_today=stats,
-        stats_fallback=None,
-        sleep_today=sleep,
-        sleep_fallback=None,
-        hrv_today=hrv,
+        telemetry=RawGarminTelemetry(
+            stats_today=stats,
+            stats_fallback=None,
+            sleep_today=sleep,
+            sleep_fallback=None,
+            hrv_today=hrv,
+            respiration_today=respiration,
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
-        respiration_today=respiration,
     )
 
     assert canonical.respiration_rate_brpm == 12.2  # not sleep.json's coarser 14.5
@@ -697,11 +719,13 @@ def test_canonicalize_from_raw_enrichment_fields_absent_when_not_provided():
         stats = json.load(f)
 
     canonical = canonicalize_from_raw(
-        stats_today=stats,
-        stats_fallback=None,
-        sleep_today={},
-        sleep_fallback=None,
-        hrv_today={},
+        telemetry=RawGarminTelemetry(
+            stats_today=stats,
+            stats_fallback=None,
+            sleep_today={},
+            sleep_fallback=None,
+            hrv_today={},
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
     )
@@ -740,14 +764,16 @@ def test_canonicalize_from_raw_populates_heart_rate_zones_from_default_sport():
         zones = json.load(f)
 
     canonical = canonicalize_from_raw(
-        stats_today=stats,
-        stats_fallback=None,
-        sleep_today=sleep,
-        sleep_fallback=None,
-        hrv_today=hrv,
+        telemetry=RawGarminTelemetry(
+            stats_today=stats,
+            stats_fallback=None,
+            sleep_today=sleep,
+            sleep_fallback=None,
+            hrv_today=hrv,
+            heart_rate_zones=zones,
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
-        heart_rate_zones=zones,
     )
 
     assert canonical.heart_rate_zones is not None
@@ -797,11 +823,13 @@ def test_canonicalize_from_raw_heart_rate_zones_absent_when_not_provided():
         stats = json.load(f)
 
     canonical = canonicalize_from_raw(
-        stats_today=stats,
-        stats_fallback=None,
-        sleep_today={},
-        sleep_fallback=None,
-        hrv_today={},
+        telemetry=RawGarminTelemetry(
+            stats_today=stats,
+            stats_fallback=None,
+            sleep_today={},
+            sleep_fallback=None,
+            hrv_today={},
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
     )
@@ -1024,11 +1052,13 @@ def test_canonicalize_activities_extracts_training_effect_and_recovery():
 def test_canonicalize_from_raw_extracts_daily_recovery_time():
     stats = {"recoveryTime": 18, "restingHeartRate": 52}
     canonical = canonicalize_from_raw(
-        stats_today=stats,
-        stats_fallback=None,
-        sleep_today=None,
-        sleep_fallback=None,
-        hrv_today=None,
+        telemetry=RawGarminTelemetry(
+            stats_today=stats,
+            stats_fallback=None,
+            sleep_today=None,
+            sleep_fallback=None,
+            hrv_today=None,
+        ),
         target_date_iso="2026-08-23",
         yesterday_iso="2026-08-22",
     )

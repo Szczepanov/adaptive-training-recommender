@@ -19,6 +19,8 @@ class AuditReport:
     snapshots_present: int
     missing_snapshots: list[str]
     sleep_available: int
+    sleep_timing_available: int
+    sleep_missing_timing_dates: list[str]
     hrv_available: int
     rhr_available: int
     spo2_available: int
@@ -50,6 +52,8 @@ def run_audit(
 
     missing_snapshots: list[str] = []
     sleep_available = 0
+    sleep_timing_available = 0
+    sleep_missing_timing_dates: list[str] = []
     hrv_available = 0
     rhr_available = 0
     spo2_available = 0
@@ -80,8 +84,16 @@ def run_audit(
             missing_snapshots.append(date_iso)
             continue
         dq = snapshot.get("dataQuality", {})
-        if dq.get("sleepScoreAvailable"):
+        sleep_scored = bool(dq.get("sleepScoreAvailable"))
+        if sleep_scored:
             sleep_available += 1
+        if dq.get("sleepTimingAvailable"):
+            sleep_timing_available += 1
+        elif sleep_scored:
+            # A night with sleep data (score/duration) but no captured start/end
+            # timestamp -- the specific "sleep present, timing missing" gap this check
+            # exists to surface, distinct from a night with no sleep data at all.
+            sleep_missing_timing_dates.append(date_iso)
         if dq.get("hrvAvailable"):
             hrv_available += 1
         if dq.get("restingHrAvailable"):
@@ -110,6 +122,8 @@ def run_audit(
         snapshots_present=len(expected_dates) - len(missing_snapshots),
         missing_snapshots=missing_snapshots,
         sleep_available=sleep_available,
+        sleep_timing_available=sleep_timing_available,
+        sleep_missing_timing_dates=sleep_missing_timing_dates,
         hrv_available=hrv_available,
         rhr_available=rhr_available,
         spo2_available=spo2_available,
@@ -129,6 +143,8 @@ def format_report(report: AuditReport) -> str:
         f"Snapshots present:           {report.snapshots_present}",
         f"Missing snapshots:           {len(report.missing_snapshots)}",
         f"Sleep available:             {report.sleep_available}",
+        f"Sleep timing available:      {report.sleep_timing_available}",
+        f"Sleep missing timestamps:    {len(report.sleep_missing_timing_dates)}",
         f"HRV available:                {report.hrv_available}",
         f"RHR available:                {report.rhr_available}",
         f"SpO2 available:               {report.spo2_available}",
@@ -148,4 +164,12 @@ def format_report(report: AuditReport) -> str:
             else ""
         )
         lines.append(f"\nMissing dates: {preview}{more}")
+    if report.sleep_missing_timing_dates:
+        preview = ", ".join(report.sleep_missing_timing_dates[:10])
+        more = (
+            f" (+{len(report.sleep_missing_timing_dates) - 10} more)"
+            if len(report.sleep_missing_timing_dates) > 10
+            else ""
+        )
+        lines.append(f"\nSleep present but timestamps missing: {preview}{more}")
     return "\n".join(lines)

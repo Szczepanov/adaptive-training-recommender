@@ -128,7 +128,7 @@ This plan does not initially:
 | MS15 | Evidence-fusion candidate (`multisourceFusion.ts`) | `[x]` | MS14 | default-off |
 | MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` (doesn't depend on real account data — synthetic-scenario/invariant testing; re-ran `multisourceComparison.test.ts` directly 2026-08-27, 5/5 pass) | MS15 | default-off |
 | MS17 | Metric-by-metric production activation decision | `[ ]` (CASA Tier 2 / Restricted Scope Verification confirmed NOT done — checked directly in Google Cloud Console 2026-08-27; see note above) | MS16 + prospective evidence | granular config |
-| MS18 | Optional direct Eight Sleep adapter (superseded by MS11) | `[N/A]` | MS11 says Google path insufficient | none |
+| MS18 | Optional direct Eight Sleep adapter | `[x]` (implemented via PR #275 / [ES plan](./eight-sleep-direct-recovery-ingestion.md) & ADR-0030) | MS11 | none |
 | MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
 
 ---

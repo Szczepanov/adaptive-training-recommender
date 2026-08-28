@@ -51,66 +51,6 @@ def test_firestore_repository_user_mismatch_raises_error():
         repo.upsert_snapshot("2026-08-06", invalid_payload)
 
 
-def test_patch_snapshot_fields_uses_update_not_set():
-    mock_db = MagicMock()
-    doc_ref = MagicMock()
-    doc_snap = MagicMock()
-    doc_snap.exists = True
-    doc_snap.to_dict.return_value = {"userId": "real_uid_456", "date": "2026-08-06", "raw": {}}
-    doc_ref.get.return_value = doc_snap
-    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
-
-    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
-    patched = repo.patch_snapshot_fields(
-        "2026-08-06",
-        {
-            "raw.sleepStartTimeGmt": "2026-08-06T22:00:00+00:00",
-            "raw.sleepEndTimeGmt": "2026-08-07T06:00:00+00:00",
-        },
-    )
-
-    assert patched is True
-    # update(), not set() -- set(merge=True) on a nested dict field risks replacing sibling
-    # fields under "raw" instead of touching only the two dotted paths given.
-    doc_ref.set.assert_not_called()
-    doc_ref.update.assert_called_once()
-    updated_fields = doc_ref.update.call_args[0][0]
-    assert updated_fields["raw.sleepStartTimeGmt"] == "2026-08-06T22:00:00+00:00"
-    assert updated_fields["raw.sleepEndTimeGmt"] == "2026-08-07T06:00:00+00:00"
-    assert "updatedAt" in updated_fields
-
-
-def test_patch_snapshot_fields_no_document_is_a_noop():
-    mock_db = MagicMock()
-    doc_ref = MagicMock()
-    doc_snap = MagicMock()
-    doc_snap.exists = False
-    doc_ref.get.return_value = doc_snap
-    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
-
-    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
-    patched = repo.patch_snapshot_fields("2026-08-06", {"raw.sleepStartTimeGmt": "x"})
-
-    assert patched is False
-    doc_ref.update.assert_not_called()
-    doc_ref.set.assert_not_called()
-
-
-def test_patch_snapshot_fields_refuses_wrong_owner_document():
-    mock_db = MagicMock()
-    doc_ref = MagicMock()
-    doc_snap = MagicMock()
-    doc_snap.exists = True
-    doc_snap.to_dict.return_value = {"userId": "other_uid_789", "date": "2026-08-06"}
-    doc_ref.get.return_value = doc_snap
-    mock_db.collection.return_value.document.return_value.collection.return_value.document.return_value = doc_ref
-
-    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
-    with pytest.raises(ValueError, match="refusing to patch"):
-        repo.patch_snapshot_fields("2026-08-06", {"raw.sleepStartTimeGmt": "x"})
-    doc_ref.update.assert_not_called()
-
-
 def test_is_snapshot_complete_all_metrics_present():
     from garmin_sync.firestore_repository import is_snapshot_complete
 

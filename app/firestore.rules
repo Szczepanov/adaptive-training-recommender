@@ -705,19 +705,24 @@ service cloud.firestore {
     function hasValidSessionDefinitionHeader(userId, definitionId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'definitionId', 'title', 'latestRevision', 'dominantModality', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'definitionId', 'title', 'latestRevision', 'dominantModality', 'status', 'archivedAt', 'createdAt', 'updatedAt'])
         && data.keys().hasAll(['userId', 'definitionId', 'title', 'latestRevision', 'createdAt', 'updatedAt'])
         && data.definitionId == definitionId
         && data.title is string && data.title.size() > 0 && data.title.size() <= 200
         && data.latestRevision is int && data.latestRevision >= 1
         && (!('dominantModality' in data) || data.dominantModality is string)
+        && (!('status' in data) || data.status in ['active', 'archived'])
+        && (!('archivedAt' in data) || data.archivedAt is string)
+        && (!('archivedAt' in data) || 'status' in data)
+        && (!('status' in data) || data.status != 'archived' || data.archivedAt is string)
+        && (!('status' in data) || data.status != 'active' || !('archivedAt' in data))
         && data.createdAt is string && data.updatedAt is string;
     }
 
     function hasValidSessionDefinitionRevision(userId, definitionId, revId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'definitionId', 'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'blocks', 'contentHash', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'definitionId', 'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'companionSessions', 'blocks', 'contentHash', 'createdAt'])
         && data.keys().hasAll(['userId', 'definitionId', 'id', 'revision', 'schemaVersion', 'title', 'intent', 'contentHash', 'blocks', 'createdAt'])
         && data.definitionId == definitionId
         && data.id == definitionId
@@ -725,6 +730,7 @@ service cloud.firestore {
         && data.schemaVersion == 1
         && data.contentHash is string && data.contentHash.size() > 0
         && data.intent in ['training', 'testing', 'competition', 'rehab_return', 'recovery', 'skill_technical']
+        && (!('companionSessions' in data) || data.companionSessions is list)
         && data.blocks is list;
     }
 

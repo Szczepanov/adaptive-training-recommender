@@ -15,14 +15,15 @@ One real, honest gap this module does not paper over:
   Only `sourcePayloadHash` and `revision` are read from the real bundle document, since those two
   fields genuinely are written by `save_health_observation_day_bundle`.
 
-`garminSessions` is populated from `raw.sleepStartTimeGmt`/`sleepEndTimeGmt` (models.py's
+`garminSessions` is populated from `raw.sleepSessionStart`/`sleepSessionEnd` (models.py's
 `RawMetrics`), Garmin's own `dailySleepDTO.sleepStartTimestampGMT`/`sleepEndTimestampGMT` --
 previously parsed in-process (garmin_provider.py's `_sleep_window_gmt_ms`) only to feed a
 respiration-window average, then discarded, so every real night's replay input had
 `garminSessions: []` until that plumbing gap was closed. Historical nights synced before that fix
-still have no session timing until backfilled (see `scripts/backfill_garmin_sleep_timing.py`);
-`garminSessions` is `[]` for those exactly as before, which is accurate for them, not a synthesized
-placeholder.
+still have no session timing until re-derived (run `rebuild --start-date ... --end-date ...`,
+which already replays every archived raw payload through the same canonicalization path -- no
+bespoke backfill script needed); `garminSessions` is `[]` for those exactly as before, which is
+accurate for them, not a synthesized placeholder.
 """
 
 from __future__ import annotations
@@ -80,8 +81,8 @@ def _anchor_bundle_ref(app_user_id: str, date: str, raw: dict[str, Any]) -> dict
                 "hrvOvernightAvg": raw.get("hrvOvernightAvg"),
                 "respirationAvg": raw.get("respirationAvg"),
                 "sleepDurationSec": raw.get("sleepDurationSec"),
-                "sleepStartTimeGmt": raw.get("sleepStartTimeGmt"),
-                "sleepEndTimeGmt": raw.get("sleepEndTimeGmt"),
+                "sleepSessionStart": raw.get("sleepSessionStart"),
+                "sleepSessionEnd": raw.get("sleepSessionEnd"),
             }
         ),
         "lineageKey": f"{ANCHOR_TRANSPORT}:{app_user_id}",
@@ -205,8 +206,8 @@ def export_identity_replay_input(
         garmin_rhr = raw.get("restingHr")
         garmin_hrv = raw.get("hrvOvernightAvg")
         garmin_resp = raw.get("respirationAvg")
-        garmin_sleep_start = raw.get("sleepStartTimeGmt")
-        garmin_sleep_end = raw.get("sleepEndTimeGmt")
+        garmin_sleep_start = raw.get("sleepSessionStart")
+        garmin_sleep_end = raw.get("sleepSessionEnd")
 
         nights.append(
             {

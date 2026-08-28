@@ -306,8 +306,12 @@ def _build_raw_metrics(
     return RawMetrics(
         sleepScore=canonical.sleep_score,
         sleepDurationSec=canonical.sleep_duration_seconds,
-        sleepStartTimeGmt=canonical.sleep_start_gmt_iso,
-        sleepEndTimeGmt=canonical.sleep_end_gmt_iso,
+        sleepSessionStart=canonical.sleep_session_start.isoformat()
+        if canonical.sleep_session_start is not None
+        else None,
+        sleepSessionEnd=canonical.sleep_session_end.isoformat()
+        if canonical.sleep_session_end is not None
+        else None,
         deepSleepSec=canonical.deep_sleep_seconds,
         remSleepSec=canonical.rem_sleep_seconds,
         lightSleepSec=canonical.light_sleep_seconds,
@@ -357,6 +361,8 @@ def _build_data_quality(
     )
     return DataQuality(
         sleepScoreAvailable=canonical.sleep_score is not None,
+        sleepTimingAvailable=canonical.sleep_session_start is not None
+        and canonical.sleep_session_end is not None,
         restingHrAvailable=canonical.resting_heart_rate_bpm is not None,
         hrvAvailable=canonical.hrv_overnight_avg_ms is not None,
         baseline7dReady=derived_metrics.restingHr7dAvg is not None,

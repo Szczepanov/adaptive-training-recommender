@@ -210,12 +210,13 @@ def snapshot_to_canonical_observations(
 ) -> list[CanonicalHealthObservation]:
     """Convert a daily_recovery_snapshots document into canonical health observations.
 
-    observed_start/observed_end are always None here: this document's `raw` payload is
-    a `RawMetrics` projection (see models.py), which never captured sleep-session
-    interval timestamps for the direct-Garmin ingestion path. There is no field to read
-    them from, so leaving them None (rather than fabricating a value) is correct --
-    compare_date_observations reports timestamp equivalence as NOT_EVALUATED for these
-    observations instead of silently treating the missing side as a match.
+    observed_start/observed_end are populated for the sleep observation from
+    `raw.sleepSessionStart`/`sleepSessionEnd` (see models.py RawMetrics) when the
+    direct-Garmin ingestion path captured a sleep-session timing window; they're None
+    for older snapshots synced before that field existed, or for any night where
+    Garmin's raw sleep payload didn't include a timing window. compare_date_observations
+    reports timestamp equivalence as NOT_EVALUATED for these observations instead of
+    silently treating the missing side as a match.
     """
     date_str = snapshot.get("date", "")
     raw = snapshot.get("raw", {}) or {}
@@ -224,6 +225,8 @@ def snapshot_to_canonical_observations(
         transport="direct",
         origin_application="com.garmin.connect",
     )
+    sleep_session_start = parse_iso_datetime(raw.get("sleepSessionStart"))
+    sleep_session_end = parse_iso_datetime(raw.get("sleepSessionEnd"))
     obs: list[CanonicalHealthObservation] = []
 
     # Resting Heart Rate
@@ -259,8 +262,8 @@ def snapshot_to_canonical_observations(
                 value=float(sleep_sec),
                 unit="seconds",
                 source=source,
-                observed_start=None,
-                observed_end=None,
+                observed_start=sleep_session_start,
+                observed_end=sleep_session_end,
                 logical_date=date_str,
             )
         )

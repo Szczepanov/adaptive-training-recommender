@@ -17,6 +17,7 @@ from .canonical import (
     METRIC_DAILY_RESPIRATION_RATE_BRPM,
     METRIC_HRV_RMSSD_MS,
     METRIC_SLEEP_DURATION_SECONDS,
+    METRIC_SLEEP_SESSION,
 )
 from .firestore_repository import FirestoreRecoveryRepository
 from .identity_eligibility import (
@@ -46,6 +47,15 @@ class MultisourceAuditReport:
     eightSleepRespMad: float | None
     eightSleepIdentityEligibleDays: int
     eightSleepIdentityExcludedDays: int
+    # Sleep-session timing coverage per source (D-EIGHT-SLEEP-INGEST): counted only over
+    # nights where that source has sleep data at all, so a source with no sleep record
+    # that night doesn't get counted as a "missing timestamp" day. Any future provider
+    # follows the same pattern -- see _bundle_sleep_timing_available, which works off the
+    # provider-neutral health_observation_days bundle shape.
+    garminSleepTimingDays: int
+    garminSleepMissingTimingDates: list[str]
+    eightSleepSleepTimingDays: int
+    eightSleepMissingTimingDates: list[str]
     dailyComparisons: list[dict[str, Any]] = field(default_factory=list)
 
 
@@ -80,6 +90,31 @@ def _calc_correlation(xs: list[float], ys: list[float]) -> float | None:
     if var_x <= 0 or var_y <= 0:
         return None
     return cov / math.sqrt(var_x * var_y)
+
+
+def _garmin_sleep_timing_available(snap: dict[str, Any] | None) -> bool:
+    """True when the Garmin daily_recovery_snapshots document has both ends of the
+    sleep-session window (RawMetrics.sleepSessionStart/End -- see mapper.py)."""
+    if not snap:
+        return False
+    raw = snap.get("raw", {}) or {}
+    return bool(raw.get("sleepSessionStart")) and bool(raw.get("sleepSessionEnd"))
+
+
+def _bundle_sleep_timing_available(bundle: dict[str, Any] | None) -> bool:
+    """True when a health_observation_days bundle carries a sleep observation with both
+    observedStart and observedEnd set. Provider-neutral -- works for eight_sleep today
+    and any future provider that publishes to health_observation_days the same way."""
+    if not bundle:
+        return False
+    for obs in bundle.get("observations", []):
+        if (
+            obs.get("metric") in (METRIC_SLEEP_DURATION_SECONDS, METRIC_SLEEP_SESSION)
+            and obs.get("observedStart")
+            and obs.get("observedEnd")
+        ):
+            return True
+    return False
 
 
 def run_multisource_audit(
@@ -141,6 +176,11 @@ def run_multisource_audit(
     eight_resp_vals: list[float] = []
     identity_eligible_days = 0
     identity_excluded_days = 0
+
+    garmin_sleep_timing_days = 0
+    garmin_missing_timing_dates: list[str] = []
+    eight_sleep_timing_days = 0
+    eight_missing_timing_dates: list[str] = []
 
     daily_comparisons: list[dict[str, Any]] = []
 
@@ -210,6 +250,23 @@ def run_multisource_audit(
             eight_sleep_mins.append(eight_sleep)
             sleep_diffs.append(sleep_delta)
 
+        # Timing coverage per source, only over nights that source actually has sleep
+        # data for -- a source with no sleep record that night is a coverage gap
+        # (garminOnlyDays/eightSleepOnlyDays/neitherDays above), not a missing-timestamp bug.
+        garmin_timing_ok = _garmin_sleep_timing_available(snap)
+        if garmin_sleep is not None:
+            if garmin_timing_ok:
+                garmin_sleep_timing_days += 1
+            else:
+                garmin_missing_timing_dates.append(d)
+
+        eight_timing_ok = _bundle_sleep_timing_available(bundle)
+        if eight_sleep is not None:
+            if eight_timing_ok:
+                eight_sleep_timing_days += 1
+            else:
+                eight_missing_timing_dates.append(d)
+
         daily_comparisons.append(
             {
                 "date": d,
@@ -218,6 +275,8 @@ def run_multisource_audit(
                 "garminSleepMinutes": round(garmin_sleep, 1) if garmin_sleep else None,
                 "eightSleepMinutes": round(eight_sleep, 1) if eight_sleep else None,
                 "sleepDeltaMinutes": round(sleep_delta, 1) if sleep_delta is not None else None,
+                "garminSleepTimingAvailable": garmin_timing_ok if snap else None,
+                "eightSleepTimingAvailable": eight_timing_ok if bundle else None,
                 "eightSleepHrv": round(eight_hrv, 1) if eight_hrv else None,
                 "eightSleepRespiration": round(eight_resp, 1) if eight_resp else None,
                 "effectiveIdentityStatus": effective_identity_status if bundle else None,
@@ -255,5 +314,9 @@ def run_multisource_audit(
         eightSleepRespMad=round(resp_mad, 2) if resp_mad is not None else None,
         eightSleepIdentityEligibleDays=identity_eligible_days,
         eightSleepIdentityExcludedDays=identity_excluded_days,
+        garminSleepTimingDays=garmin_sleep_timing_days,
+        garminSleepMissingTimingDates=garmin_missing_timing_dates,
+        eightSleepSleepTimingDays=eight_sleep_timing_days,
+        eightSleepMissingTimingDates=eight_missing_timing_dates,
         dailyComparisons=daily_comparisons,
     )

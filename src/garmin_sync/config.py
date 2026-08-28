@@ -32,6 +32,13 @@ class Settings:
     garmin_archive_local_dir: str = ".garmin_archive"
     garmin_archive_prefix: str = "raw/garmin"
     garmin_activity_detail_enabled: bool = False
+    # Jittered pacing between per-date live Garmin fetches during backfill (D-BACKFILL-RATE-LIMIT):
+    # each date that isn't skipped as already-synced sleeps a random duration in this range before
+    # the next one, so a wide --days range doesn't hammer Garmin with dozens of back-to-back
+    # requests. Defaults to 0/0 here (no delay) so tests constructing Settings directly stay fast;
+    # _load_base_settings below gives the real CLI path a non-zero default.
+    garmin_backfill_delay_min_seconds: float = 0.0
+    garmin_backfill_delay_max_seconds: float = 0.0
 
     def resolved_archive_bucket(self) -> str | None:
         return self.garmin_archive_bucket or self.garmin_token_bucket
@@ -58,6 +65,17 @@ class Settings:
             raise ValueError(
                 "Configuration error: GARMIN_TOKEN_BUCKET is required when "
                 "GARMIN_TOKEN_STORE is 'gcs'."
+            )
+
+        if self.garmin_backfill_delay_min_seconds < 0 or self.garmin_backfill_delay_max_seconds < 0:
+            raise ValueError(
+                "Configuration error: GARMIN_BACKFILL_DELAY_MIN_SECONDS / "
+                "GARMIN_BACKFILL_DELAY_MAX_SECONDS must not be negative."
+            )
+        if self.garmin_backfill_delay_min_seconds > self.garmin_backfill_delay_max_seconds:
+            raise ValueError(
+                "Configuration error: GARMIN_BACKFILL_DELAY_MIN_SECONDS must not exceed "
+                "GARMIN_BACKFILL_DELAY_MAX_SECONDS."
             )
 
         if self.garmin_archive_enabled and self.garmin_archive_store.lower() == "gcs":
@@ -104,6 +122,10 @@ def _load_base_settings(user_id: str) -> Settings:
         "1",
         "yes",
     )
+    # Real backfill runs default to a jittered 1.5-4s pace between live Garmin fetches (see
+    # Settings.garmin_backfill_delay_min/max_seconds); set both to 0 via env to disable.
+    backfill_delay_min = float(os.getenv("GARMIN_BACKFILL_DELAY_MIN_SECONDS", "1.5"))
+    backfill_delay_max = float(os.getenv("GARMIN_BACKFILL_DELAY_MAX_SECONDS", "4.0"))
 
     return Settings(
         app_user_id=user_id,
@@ -131,6 +153,8 @@ def _load_base_settings(user_id: str) -> Settings:
         garmin_archive_local_dir=archive_local_dir,
         garmin_archive_prefix=archive_prefix,
         garmin_activity_detail_enabled=activity_detail_enabled,
+        garmin_backfill_delay_min_seconds=backfill_delay_min,
+        garmin_backfill_delay_max_seconds=backfill_delay_max,
     )
 
 

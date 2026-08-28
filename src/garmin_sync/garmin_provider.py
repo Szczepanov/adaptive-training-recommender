@@ -5,6 +5,7 @@ recommendation engine) operates on canonical.py types only."""
 
 import logging
 import math
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Callable, TypeVar
 
@@ -158,14 +159,15 @@ def _sleep_window_gmt_ms(
     )
 
 
-def _epoch_ms_to_utc_iso(epoch_ms: int | float | None) -> str | None:
-    """Converts a Garmin *TimestampGMT epoch-ms value to an ISO 8601 UTC string, or None
-    if absent/malformed. GMT here is Garmin's own naming for UTC (confirmed by the field
-    already being treated as UTC everywhere else it's used, e.g. average_sleep_respiration_from_intervals's
-    direct comparison against respiration reading timestamps)."""
-    if not isinstance(epoch_ms, (int, float)):
+def _epoch_ms_to_utc_datetime(epoch_ms: int | float | None) -> datetime | None:
+    """Convert a GMT epoch-ms timestamp (as Garmin reports sleepStart/EndTimestampGMT)
+    to a timezone-aware UTC datetime, or None for missing/malformed input."""
+    if epoch_ms is None:
         return None
-    return datetime.fromtimestamp(epoch_ms / 1000.0, tz=timezone.utc).isoformat()
+    try:
+        return datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError, TypeError):
+        return None
 
 
 # A cluster of readings from only part of the night (e.g. a sync gap, or the device
@@ -1091,45 +1093,52 @@ def extract_gear_items(raw_gear: Any) -> list[CanonicalGearItem]:
     return items
 
 
+@dataclass(frozen=True)
+class RawGarminTelemetry:
+    """Groups raw Garmin telemetry payloads to avoid excessively long parameter lists."""
+
+    stats_today: dict[str, Any]
+    stats_fallback: dict[str, Any] | None
+    sleep_today: dict[str, Any] | None
+    sleep_fallback: dict[str, Any] | None
+    hrv_today: dict[str, Any] | None
+    stress_today: dict[str, Any] | None = None
+    body_battery_today: list[dict[str, Any]] | None = None
+    training_readiness_today: list[dict[str, Any]] | None = None
+    training_status_today: dict[str, Any] | None = None
+    heart_rate_zones: list[dict[str, Any]] | None = None
+    respiration_today: dict[str, Any] | None = None
+    body_composition_today: dict[str, Any] | list[dict[str, Any]] | None = None
+    spo2_today: dict[str, Any] | None = None
+
+
 def canonicalize_from_raw(
-    stats_today: dict[str, Any],
-    stats_fallback: dict[str, Any] | None,
-    sleep_today: dict[str, Any] | None,
-    sleep_fallback: dict[str, Any] | None,
-    hrv_today: dict[str, Any] | None,
+    telemetry: RawGarminTelemetry,
     target_date_iso: str,
     yesterday_iso: str,
-    stress_today: dict[str, Any] | None = None,
-    body_battery_today: list[dict[str, Any]] | None = None,
-    training_readiness_today: list[dict[str, Any]] | None = None,
-    training_status_today: dict[str, Any] | None = None,
-    heart_rate_zones: list[dict[str, Any]] | None = None,
-    respiration_today: dict[str, Any] | None = None,
-    body_composition_today: dict[str, Any] | list[dict[str, Any]] | None = None,
-    spo2_today: dict[str, Any] | None = None,
 ) -> CanonicalDailyMetrics:
     """Pure Garmin-shape parsing + fallback logic, producing a provider-neutral
     CanonicalDailyMetrics. Shared by GarminProviderAdapter.fetch_daily_metrics (live
     fetch) and service.rebuild() (archive replay) so both paths can never drift from
     each other -- same guarantee normalize_current_metrics gave the pre-canonical code."""
     # RHR & waking Body Battery
-    rhr = stats_today.get("restingHeartRate")
+    rhr = telemetry.stats_today.get("restingHeartRate")
     rhr_date = target_date_iso
-    if rhr is None and stats_fallback:
-        rhr = stats_fallback.get("restingHeartRate")
+    if rhr is None and telemetry.stats_fallback:
+        rhr = telemetry.stats_fallback.get("restingHeartRate")
         rhr_date = yesterday_iso
 
-    bb_wake = stats_today.get("bodyBatteryAtWakeTime")
+    bb_wake = telemetry.stats_today.get("bodyBatteryAtWakeTime")
     bb_wake_date = target_date_iso
-    if bb_wake is None and stats_fallback:
-        bb_wake = stats_fallback.get("bodyBatteryAtWakeTime")
+    if bb_wake is None and telemetry.stats_fallback:
+        bb_wake = telemetry.stats_fallback.get("bodyBatteryAtWakeTime")
         bb_wake_date = yesterday_iso
 
     # Steps semantics: use D-1 completed day steps
     steps_date = yesterday_iso
-    total_steps = stats_fallback.get("totalSteps") if stats_fallback else None
+    total_steps = telemetry.stats_fallback.get("totalSteps") if telemetry.stats_fallback else None
     if total_steps is None:
-        total_steps = stats_today.get("totalSteps")
+        total_steps = telemetry.stats_today.get("totalSteps")
         steps_date = target_date_iso
 
     # Sleep
@@ -1142,10 +1151,10 @@ def canonicalize_from_raw(
         light_sec,
         awake_sec,
         restless_count,
-    ) = extract_sleep_metrics(sleep_today)
+    ) = extract_sleep_metrics(telemetry.sleep_today)
     sleep_date = target_date_iso
     used_sleep_fallback = False
-    if sleep_score is None and sleep_fallback:
+    if sleep_score is None and telemetry.sleep_fallback:
         (
             fb_score,
             fb_sec,
@@ -1155,7 +1164,7 @@ def canonicalize_from_raw(
             fb_light,
             fb_awake,
             fb_restless,
-        ) = extract_sleep_metrics(sleep_fallback)
+        ) = extract_sleep_metrics(telemetry.sleep_fallback)
         if fb_score is not None:
             sleep_score, sleep_sec, avg_resp = fb_score, fb_sec, fb_resp
             deep_sec, rem_sec, light_sec, awake_sec, restless_count = (
@@ -1170,44 +1179,49 @@ def canonicalize_from_raw(
 
     # Prefer a precise average computed from the dedicated respiration endpoint's raw
     # per-interval readings over dailySleepDTO's own (coarser) summary value -- see
-    # average_sleep_respiration_from_intervals. Only attempted against sleep_today's own
-    # window: respiration_today is fetched for target_date_iso, so it has no
-    # correspondence to sleep_fallback's (D-1) window.
+    # average_sleep_respiration_from_intervals. Only attempted against telemetry.sleep_today's own
+    # window: telemetry.respiration_today is fetched for target_date_iso, so it has no
+    # correspondence to telemetry.sleep_fallback's (D-1) window.
     if not used_sleep_fallback:
-        sleep_start_gmt_ms, sleep_end_gmt_ms = _sleep_window_gmt_ms(sleep_today or {})
+        sleep_start_gmt_ms, sleep_end_gmt_ms = _sleep_window_gmt_ms(telemetry.sleep_today or {})
         precise_avg_resp = average_sleep_respiration_from_intervals(
-            respiration_today, sleep_start_gmt_ms, sleep_end_gmt_ms
+            telemetry.respiration_today, sleep_start_gmt_ms, sleep_end_gmt_ms
         )
         if precise_avg_resp is not None:
             avg_resp = precise_avg_resp
 
     # HRV
-    hrv_summary = hrv_today.get("hrvSummary", {}) if hrv_today else {}
+    hrv_summary = telemetry.hrv_today.get("hrvSummary", {}) if telemetry.hrv_today else {}
     hrv_last = hrv_summary.get("lastNightAvg")
     hrv_status = hrv_summary.get("status")
     hrv_date = target_date_iso if hrv_last is not None else None
 
     # Weight / Body Composition
-    weight_kg, body_fat_pct, weight_date = extract_body_composition(body_composition_today)
+    weight_kg, body_fat_pct, weight_date = extract_body_composition(
+        telemetry.body_composition_today
+    )
     if weight_kg is not None and weight_date is None:
         weight_date = target_date_iso
 
     # Overnight metrics must follow the same selected sleep record. If target-date sleep
     # is unavailable and D-1 is selected, combining target-date Pulse Ox with D-1 sleep
     # fields would create a single CanonicalSpo2 containing values from two dates.
-    selected_sleep = sleep_fallback if used_sleep_fallback else sleep_today
-    canonical_spo2 = extract_spo2(None if used_sleep_fallback else spo2_today, selected_sleep)
+    selected_sleep = telemetry.sleep_fallback if used_sleep_fallback else telemetry.sleep_today
+    canonical_spo2 = extract_spo2(
+        None if used_sleep_fallback else telemetry.spo2_today, selected_sleep
+    )
     skin_temp_dev = extract_skin_temp_deviation(selected_sleep)
 
-    daily_rec_hours = _daily_recovery_time_hours(training_readiness_today, stats_today)
+    # Sleep-session timing, from whichever sleep record was actually selected above (D-1
+    # fallback included) -- independent of the respiration-precision window, which is only
+    # ever computed against telemetry.sleep_today (see the comment above that call).
+    session_start_ms, session_end_ms = _sleep_window_gmt_ms(selected_sleep or {})
+    sleep_session_start = _epoch_ms_to_utc_datetime(session_start_ms)
+    sleep_session_end = _epoch_ms_to_utc_datetime(session_end_ms)
 
-    # Derived from whichever record selected_sleep actually resolved to (fallback or
-    # today), matching the "must follow the same selected sleep record" rule above --
-    # not the sleep_today-only sleep_start_gmt_ms computed earlier for the respiration
-    # window average, which is unset when the fallback record is used.
-    selected_sleep_start_ms, selected_sleep_end_ms = _sleep_window_gmt_ms(selected_sleep or {})
-    sleep_start_gmt_iso = _epoch_ms_to_utc_iso(selected_sleep_start_ms)
-    sleep_end_gmt_iso = _epoch_ms_to_utc_iso(selected_sleep_end_ms)
+    daily_rec_hours = _daily_recovery_time_hours(
+        telemetry.training_readiness_today, telemetry.stats_today
+    )
 
     return CanonicalDailyMetrics(
         date=target_date_iso,
@@ -1219,8 +1233,8 @@ def canonicalize_from_raw(
         sleep_score=sleep_score,
         sleep_duration_seconds=sleep_sec,
         sleep_date=sleep_date if sleep_score is not None else None,
-        sleep_start_gmt_iso=sleep_start_gmt_iso,
-        sleep_end_gmt_iso=sleep_end_gmt_iso,
+        sleep_session_start=sleep_session_start,
+        sleep_session_end=sleep_session_end,
         deep_sleep_seconds=deep_sec,
         rem_sleep_seconds=rem_sec,
         light_sleep_seconds=light_sec,
@@ -1234,11 +1248,11 @@ def canonicalize_from_raw(
         weight_kg=weight_kg,
         body_fat_pct=body_fat_pct,
         weight_date=weight_date,
-        stress=_canonicalize_stress(stress_today),
-        body_battery=_canonicalize_body_battery(body_battery_today),
-        training_readiness=_canonicalize_training_readiness(training_readiness_today),
-        training_status=_canonicalize_training_status(training_status_today),
-        heart_rate_zones=_canonicalize_heart_rate_zones(heart_rate_zones),
+        stress=_canonicalize_stress(telemetry.stress_today),
+        body_battery=_canonicalize_body_battery(telemetry.body_battery_today),
+        training_readiness=_canonicalize_training_readiness(telemetry.training_readiness_today),
+        training_status=_canonicalize_training_status(telemetry.training_status_today),
+        heart_rate_zones=_canonicalize_heart_rate_zones(telemetry.heart_rate_zones),
         spo2=canonical_spo2,
         skin_temp_deviation_celsius=skin_temp_dev,
         recovery_time_hours=daily_rec_hours,
@@ -1510,14 +1524,12 @@ class GarminProviderAdapter:
             fatal_exceptions=(AttributeError,),
         )
 
-        canonical = canonicalize_from_raw(
+        telemetry = RawGarminTelemetry(
             stats_today=stats_today,
             stats_fallback=stats_fallback,
             sleep_today=sleep_today,
             sleep_fallback=sleep_fallback,
             hrv_today=hrv_today,
-            target_date_iso=target_date_iso,
-            yesterday_iso=yesterday_iso,
             stress_today=stress_today,
             body_battery_today=body_battery_today,
             training_readiness_today=training_readiness_today,
@@ -1526,6 +1538,12 @@ class GarminProviderAdapter:
             respiration_today=respiration_today,
             body_composition_today=body_comp_today,
             spo2_today=spo2_today,
+        )
+
+        canonical = canonicalize_from_raw(
+            telemetry=telemetry,
+            target_date_iso=target_date_iso,
+            yesterday_iso=yesterday_iso,
         )
 
         raw_payloads: dict[str, Any] = {

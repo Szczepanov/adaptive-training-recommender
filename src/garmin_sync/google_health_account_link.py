@@ -97,23 +97,45 @@ class GoogleHealthLinkStateStore:
         """
         if not state:
             raise GoogleHealthLinkStateInvalidError("Missing state parameter.")
+        # Log only a short, non-reversible fingerprint of the state token -- never the token
+        # itself, which is a bearer credential for this flow (see the request-log comment in
+        # google_health_account_link_api.py making the same call for the callback URL).
+        state_fingerprint = f"{state[:6]}...({len(state)} chars)"
         doc_ref = self.db.collection("googleHealthLinkState").document(state)
         snapshot = doc_ref.get()
         if not snapshot.exists:
+            logger.warning(
+                "Google Health link state %s: no matching document found (never created, "
+                "already consumed by a prior callback, or a stale/duplicate replay).",
+                state_fingerprint,
+            )
             raise GoogleHealthLinkStateInvalidError("Link request is invalid or already used.")
         data = snapshot.to_dict() or {}
         doc_ref.delete()
 
         created_at = data.get("createdAt")
-        if (
-            not isinstance(created_at, (int, float))
-            or (time.time() - created_at) > _STATE_TTL_SECONDS
-        ):
+        age_seconds = time.time() - created_at if isinstance(created_at, (int, float)) else None
+        if age_seconds is None or age_seconds > _STATE_TTL_SECONDS:
+            logger.warning(
+                "Google Health link state %s: expired (age=%s, ttl=%ss).",
+                state_fingerprint,
+                round(age_seconds, 1) if age_seconds is not None else "unknown",
+                _STATE_TTL_SECONDS,
+            )
             raise GoogleHealthLinkStateInvalidError("Link request expired. Start linking again.")
 
         uid = data.get("uid")
         if not uid or not isinstance(uid, str):
+            logger.warning(
+                "Google Health link state %s: document has no valid uid field.", state_fingerprint
+            )
             raise GoogleHealthLinkStateInvalidError("Link request has no associated user.")
+        logger.info(
+            "Google Health link state %s: consumed for uid=%s (age=%.1fs).",
+            state_fingerprint,
+            uid,
+            age_seconds,
+        )
         return uid
 
 

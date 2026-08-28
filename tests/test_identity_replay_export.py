@@ -75,7 +75,7 @@ def test_export_paired_night_with_anchor_present() -> None:
     # Lineage keys must differ so isLineageIndependent (TS side) treats the anchor as independent.
     assert anchor_ref["lineageKey"] != shared_ref["lineageKey"]
 
-    # This fixture's raw snapshot has no sleepStartTimeGmt/sleepEndTimeGmt (e.g. a night
+    # This fixture's raw snapshot has no sleepSessionStart/sleepSessionEnd (e.g. a night
     # synced before the sleep-timing plumbing fix) -- see
     # test_export_garmin_session_populated_when_raw_has_sleep_timing for the positive case.
     assert night["garminSessions"] == []
@@ -145,8 +145,8 @@ def test_export_garmin_session_populated_when_raw_has_sleep_timing() -> None:
     repo = MagicMock()
     without_timing = _complete_garmin_snapshot("2026-08-06")
     with_timing = _complete_garmin_snapshot("2026-08-07")
-    with_timing["raw"]["sleepStartTimeGmt"] = "2026-08-07T22:10:00+00:00"
-    with_timing["raw"]["sleepEndTimeGmt"] = "2026-08-08T06:00:00+00:00"
+    with_timing["raw"]["sleepSessionStart"] = "2026-08-07T22:10:00+00:00"
+    with_timing["raw"]["sleepSessionEnd"] = "2026-08-08T06:00:00+00:00"
     repo.get_historical_snapshots.return_value = {
         "2026-08-06": without_timing,
         "2026-08-07": with_timing,
