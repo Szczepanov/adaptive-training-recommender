@@ -48,6 +48,38 @@ METRIC_WAKEUP_TIME_CONSISTENCY = "wakeup_time_consistency"
 METRIC_SLEEP_START_TIME_CONSISTENCY = "sleep_start_time_consistency"
 METRIC_BEDTIME_CONSISTENCY = "bedtime_consistency"
 
+# performanceWindows.performanceWindowStats: Eight Sleep's own precomputed PERSONAL
+# BASELINES (not tonight's reading -- the rolling-history comparison point), confirmed
+# present via a real probe (2026-08-28) whenever performanceWindows.isAvailable. Distinct
+# from METRIC_SLEEP_BASELINE_DURATION_SECONDS (sourced from sleepQualityScore.sleepDebt,
+# a different subsystem) -- kept separate rather than assumed identical.
+METRIC_BEDTIME_BASELINE_TIME = "bedtime_baseline_time"
+METRIC_SLEEP_START_BASELINE_TIME = "sleep_start_baseline_time"
+METRIC_SLEEP_END_BASELINE_TIME = "sleep_end_baseline_time"
+METRIC_SLEEP_MIDPOINT_BASELINE_TIME = "sleep_midpoint_baseline_time"
+METRIC_WASO_BASELINE_SECONDS = "waso_baseline_seconds"
+METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS = "total_sleep_time_baseline_seconds"
+METRIC_DEEP_SLEEP_BASELINE_SECONDS = "deep_sleep_baseline_seconds"
+
+# sleepQualityScore.<metric>.inclusive7DayAverage: Eight Sleep's own rolling 7-day personal
+# average per metric -- the single highest-value sub-field of each scored object (over
+# .average/.upperRange/.lowerRange/.stdDev, deliberately not extracted here to bound mapper
+# complexity; revisit if a concrete use for the fuller range emerges).
+METRIC_HRV_7DAY_AVG_MS = "hrv_rmssd_ms_7day_avg"
+METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM = "sleep_respiration_rate_7day_avg_brpm"
+METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM = "sleeping_heart_rate_bpm_7day_avg"
+METRIC_SLEEP_WASO_7DAY_AVG_SECONDS = "sleep_waso_seconds_7day_avg"
+METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS = "sleep_duration_seconds_7day_avg"
+METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS = "sleep_stage_deep_seconds_7day_avg"
+METRIC_SLEEP_STAGE_REM_7DAY_AVG_SECONDS = "sleep_stage_rem_seconds_7day_avg"
+METRIC_SNORE_DURATION_7DAY_AVG_SECONDS = "snore_duration_seconds_7day_avg"
+METRIC_HEAVY_SNORE_DURATION_7DAY_AVG_SECONDS = "heavy_snore_duration_seconds_7day_avg"
+
+# User-applied night tags (e.g. potential illness/travel/alcohol labels, if ever populated
+# in the Eight Sleep app) -- structured value like sleep_respiration_summary, only emitted
+# when the list is actually non-empty.
+METRIC_SLEEP_TAGS = "sleep_tags"
+
 STANDARD_OBSERVATION_METRICS = {
     METRIC_SLEEP_SESSION,
     METRIC_SLEEP_DURATION_SECONDS,
@@ -81,6 +113,23 @@ EIGHT_SLEEP_EXTENDED_METRICS = {
     METRIC_WAKEUP_TIME_CONSISTENCY,
     METRIC_SLEEP_START_TIME_CONSISTENCY,
     METRIC_BEDTIME_CONSISTENCY,
+    METRIC_BEDTIME_BASELINE_TIME,
+    METRIC_SLEEP_START_BASELINE_TIME,
+    METRIC_SLEEP_END_BASELINE_TIME,
+    METRIC_SLEEP_MIDPOINT_BASELINE_TIME,
+    METRIC_WASO_BASELINE_SECONDS,
+    METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS,
+    METRIC_DEEP_SLEEP_BASELINE_SECONDS,
+    METRIC_HRV_7DAY_AVG_MS,
+    METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM,
+    METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM,
+    METRIC_SLEEP_WASO_7DAY_AVG_SECONDS,
+    METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS,
+    METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS,
+    METRIC_SLEEP_STAGE_REM_7DAY_AVG_SECONDS,
+    METRIC_SNORE_DURATION_7DAY_AVG_SECONDS,
+    METRIC_HEAVY_SNORE_DURATION_7DAY_AVG_SECONDS,
+    METRIC_SLEEP_TAGS,
 }
 
 

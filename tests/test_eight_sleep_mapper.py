@@ -1,27 +1,43 @@
 import pytest
 
 from garmin_sync.canonical import (
+    METRIC_BEDTIME_BASELINE_TIME,
     METRIC_BEDTIME_CONSISTENCY,
     METRIC_CHRONOTYPE_CLASS,
     METRIC_DAILY_RESTING_HEART_RATE_BPM,
+    METRIC_DEEP_SLEEP_BASELINE_SECONDS,
+    METRIC_HEAVY_SNORE_DURATION_7DAY_AVG_SECONDS,
     METRIC_HEAVY_SNORE_DURATION_SECONDS,
     METRIC_HEAVY_SNORE_PERCENT,
+    METRIC_HRV_7DAY_AVG_MS,
     METRIC_HRV_RMSSD_MS,
     METRIC_SLEEP_BASELINE_DURATION_SECONDS,
     METRIC_SLEEP_DEBT_SECONDS,
+    METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS,
+    METRIC_SLEEP_END_BASELINE_TIME,
     METRIC_SLEEP_LATENCY_ASLEEP_SECONDS,
     METRIC_SLEEP_LATENCY_OUT_SECONDS,
+    METRIC_SLEEP_MIDPOINT_BASELINE_TIME,
+    METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM,
     METRIC_SLEEP_RESPIRATION_SUMMARY,
     METRIC_SLEEP_STAGE_AWAKE_SECONDS,
+    METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS,
+    METRIC_SLEEP_START_BASELINE_TIME,
     METRIC_SLEEP_START_TIME_CONSISTENCY,
+    METRIC_SLEEP_TAGS,
+    METRIC_SLEEP_WASO_7DAY_AVG_SECONDS,
     METRIC_SLEEP_WASO_SECONDS,
+    METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM,
     METRIC_SLEEPING_HEART_RATE_BPM,
+    METRIC_SNORE_DURATION_7DAY_AVG_SECONDS,
     METRIC_SNORE_DURATION_SECONDS,
     METRIC_SNORE_MITIGATION_EVENTS_COUNT,
     METRIC_SNORE_PERCENT,
     METRIC_SOCIAL_JETLAG_SECONDS,
     METRIC_TOSS_AND_TURN_COUNT,
+    METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS,
     METRIC_WAKEUP_TIME_CONSISTENCY,
+    METRIC_WASO_BASELINE_SECONDS,
 )
 from garmin_sync.eight_sleep_client import EightSleepSchemaError
 from garmin_sync.eight_sleep_mapper import map_trends_to_observation_batch
@@ -123,6 +139,153 @@ def test_extended_fields_extracted_when_present() -> None:
     assert m[METRIC_TOSS_AND_TURN_COUNT].value == 12
     assert m[METRIC_SOCIAL_JETLAG_SECONDS].value == 900
     assert m[METRIC_CHRONOTYPE_CLASS].value == "early"
+
+
+def test_batch_2_extended_fields_extracted_when_present() -> None:
+    """ES-EXT-2: performanceWindowStats personal baselines, per-metric inclusive7DayAverage
+    rolling baselines, and night tags -- confirmed present via a real probe (2026-08-28) and
+    still not extracted after the first ES-EXT batch."""
+    p = {
+        "days": [
+            {
+                "day": "2026-08-28",
+                "presenceStart": "2026-08-27T21:00:00+02:00",
+                "presenceDuration": 30600,
+                "sleepStart": "2026-08-27T21:05:00+02:00",
+                "sleepEnd": "2026-08-28T05:50:00+02:00",
+                "sleepDuration": 28800,
+                "lightDuration": 14400,
+                "deepDuration": 7200,
+                "remDuration": 7200,
+                "snoreDuration": 300,
+                "heavySnoreDuration": 60,
+                "tags": ["travel"],
+                "sleepQualityScore": {
+                    "hrv": {"current": 67.0, "inclusive7DayAverage": 64.2},
+                    "respiratoryRate": {"current": 13.4, "inclusive7DayAverage": 13.1},
+                    "heartRate": {"current": 43.0, "inclusive7DayAverage": 44.5},
+                    "waso": {"current": 420.0, "inclusive7DayAverage": 390.0},
+                    "sleepDurationSeconds": {"inclusive7DayAverage": 27600.0},
+                    "deep": {"inclusive7DayAverage": 6900.0},
+                    "rem": {"inclusive7DayAverage": 6600.0},
+                    "snoringDurationSeconds": {"inclusive7DayAverage": 250.0},
+                    "heavySnoringDurationSeconds": {"inclusive7DayAverage": 40.0},
+                },
+                "performanceWindows": {
+                    "performanceWindowStats": {
+                        "bedtimeBaseline": "22:15:00",
+                        "sleepStartBaseline": "22:30:00",
+                        "sleepEndBaseline": "06:10:00",
+                        "sleepMidpointBaseline": "02:20:00",
+                        "wasoBaseline": 400.0,
+                        "totalSleepTimeSecondsBaseline": 27900.0,
+                        "deepSleepSecondsBaseline": 7000.0,
+                    }
+                },
+            }
+        ]
+    }
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+
+    assert m[METRIC_BEDTIME_BASELINE_TIME].value == "22:15:00"
+    assert m[METRIC_SLEEP_START_BASELINE_TIME].value == "22:30:00"
+    assert m[METRIC_SLEEP_END_BASELINE_TIME].value == "06:10:00"
+    assert m[METRIC_SLEEP_MIDPOINT_BASELINE_TIME].value == "02:20:00"
+    assert m[METRIC_WASO_BASELINE_SECONDS].value == 400
+    assert m[METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS].value == 27900
+    assert m[METRIC_DEEP_SLEEP_BASELINE_SECONDS].value == 7000
+
+    assert m[METRIC_HRV_7DAY_AVG_MS].value == 64.2
+    assert m[METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM].value == 13.1
+    assert m[METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM].value == 44.5
+    assert m[METRIC_SLEEP_WASO_7DAY_AVG_SECONDS].value == 390
+    assert m[METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS].value == 27600
+    assert m[METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS].value == 6900
+    assert m[METRIC_SNORE_DURATION_7DAY_AVG_SECONDS].value == 250
+    assert m[METRIC_HEAVY_SNORE_DURATION_7DAY_AVG_SECONDS].value == 40
+
+    assert m[METRIC_SLEEP_TAGS].value == {"tags": ["travel"]}
+
+    # sleepStart/sleepEnd, not presence bounds, must be the actual observed window now.
+    sleep_obs = m[METRIC_SLEEP_WASO_SECONDS]
+    assert sleep_obs.observed_start.isoformat() == "2026-08-27T21:05:00+02:00"
+    assert sleep_obs.observed_end.isoformat() == "2026-08-28T05:50:00+02:00"
+
+
+def test_start_end_fall_back_to_presence_when_sleep_start_end_absent() -> None:
+    """Backward compat: an older/degraded response shape without sleepStart/sleepEnd must
+    still use presence bounds, exactly as before this change."""
+    p = {
+        "days": [
+            {
+                "day": "2026-08-28",
+                "presenceStart": "2026-08-27T21:00:00+02:00",
+                "presenceDuration": 30600,
+                "sleepDuration": 28800,
+                "lightDuration": 14400,
+                "deepDuration": 7200,
+                "remDuration": 7200,
+                "sleepQualityScore": {"hrv": {"current": 67.0}},
+            }
+        ]
+    }
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    hrv_obs = m[METRIC_HRV_RMSSD_MS]
+    assert hrv_obs.observed_start.isoformat() == "2026-08-27T21:00:00+02:00"
+    # presence end = presenceStart + presenceDuration (30600s = 8h30m)
+    assert hrv_obs.observed_end.isoformat() == "2026-08-28T05:30:00+02:00"
+
+
+def test_incomplete_flag_recorded_in_quality() -> None:
+    p = {
+        "days": [
+            {
+                "day": "2026-08-28",
+                "presenceStart": "2026-08-27T21:00:00+02:00",
+                "presenceDuration": 30600,
+                "sleepDuration": 28800,
+                "lightDuration": 14400,
+                "deepDuration": 7200,
+                "remDuration": 7200,
+                "incomplete": True,
+                "sleepQualityScore": {"hrv": {"current": 67.0}},
+            }
+        ]
+    }
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    assert m[METRIC_HRV_RMSSD_MS].quality["incomplete"] is True
+
+
+def test_batch_2_fields_absent_when_not_present() -> None:
+    """Backward compat: a response with none of the batch-2 fields must not error and must
+    not synthesize any of them, including an empty tags list not producing an observation."""
+    p = {
+        "days": [
+            {
+                "day": "2026-08-28",
+                "presenceStart": "2026-08-27T21:00:00+02:00",
+                "presenceDuration": 30600,
+                "sleepDuration": 28800,
+                "lightDuration": 14400,
+                "deepDuration": 7200,
+                "remDuration": 7200,
+                "tags": [],
+                "sleepQualityScore": {"hrv": {"current": 67.0}},
+            }
+        ]
+    }
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    for extended_metric in (
+        METRIC_BEDTIME_BASELINE_TIME,
+        METRIC_WASO_BASELINE_SECONDS,
+        METRIC_HRV_7DAY_AVG_MS,
+        METRIC_SLEEP_TAGS,
+    ):
+        assert extended_metric not in m
 
 
 def test_sleep_debt_can_be_negative_on_a_surplus_night() -> None:
