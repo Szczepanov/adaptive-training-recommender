@@ -225,5 +225,9 @@ node_modules/
 # Synthetic evidence reports (scripts/respiration_baseline_evidence.py) -- regenerate
 # on demand, matching app/.gitignore's precedent for the TS-side simulation reports.
 artifacts/respiration-baseline-evidence/
+
+# Real per-night PI8 identity-replay export + generated reports contain real user health data
+# (RHR/HRV/respiration/sleep timing) -- CLAUDE.md: never commit raw health JSON logs. Regenerate
+# on demand via `export-identity-replay` + `npm run evidence:identity-replay`.
 artifacts/identity-replay/
 artifacts/identity-replay-reports/

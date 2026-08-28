@@ -852,6 +852,69 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
+def run_export_identity_replay_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Export real Garmin Direct + Eight Sleep data as identityReplay.ts's input shape (PI8)."
+    )
+    parser.add_argument("--days", type=int, default=60, help="Number of trailing days (default 60)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
+    parser.add_argument("--user-id", type=str, default=None, help="Application User ID")
+    parser.add_argument(
+        "--output",
+        type=str,
+        default="artifacts/identity-replay/replay-input.json",
+        help="Output JSON path",
+    )
+    parsed_args = parser.parse_args(args)
+
+    import json
+    from pathlib import Path
+
+    from .firestore_repository import FirestoreRecoveryRepository
+    from .identity_replay_export import export_identity_replay_input
+
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
+    try:
+        settings = load_settings()
+        repo = FirestoreRecoveryRepository(
+            user_id=settings.app_user_id,
+            collection_name=settings.firestore_recovery_collection,
+            db=None,
+            credentials_path=settings.firebase_credentials_path,
+        )
+
+        start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=60)
+
+        print(
+            f"\nExporting identity replay input for {settings.app_user_id}: {start_date_str} to {end_date_str}..."
+        )
+        result = export_identity_replay_input(
+            repo, start_date_str, end_date_str, settings.app_user_id
+        )
+
+        output_path = Path(parsed_args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(result.to_dict(), indent=2) + "\n", encoding="utf-8")
+
+        print("\n" + "=" * 80)
+        print("  IDENTITY REPLAY EXPORT (PI8)")
+        print("=" * 80)
+        print(f"  Date Range:                 {start_date_str} to {end_date_str}")
+        print(f"  Paired Nights (shared bundle present): {result.pairedNightCount}")
+        print(f"  Anchor (Garmin Direct) Present:        {result.anchorPresentCount}")
+        print(f"  Anchor (Garmin Direct) Missing:        {result.anchorMissingCount}")
+        print(f"  Output:                     {output_path}")
+        print("=" * 80 + "\n")
+        return 0
+
+    except Exception as error:
+        log_exception(logger, "export identity replay", error)
+        return 1
+
+
 def run_export_activities_cmd(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Export recent activity telemetry to JSON for AI agent planning."
@@ -1009,6 +1072,18 @@ def main() -> int:
     audit_multisource_parser.add_argument("--end-date", type=str, default=None)
     audit_multisource_parser.add_argument("--user-id", type=str, default=None)
 
+    export_identity_replay_parser = subparsers.add_parser(
+        "export-identity-replay",
+        help="Export real Garmin Direct + Eight Sleep data as identityReplay.ts's input shape (PI8)",
+    )
+    export_identity_replay_parser.add_argument("--days", type=int, default=60)
+    export_identity_replay_parser.add_argument("--start-date", type=str, default=None)
+    export_identity_replay_parser.add_argument("--end-date", type=str, default=None)
+    export_identity_replay_parser.add_argument("--user-id", type=str, default=None)
+    export_identity_replay_parser.add_argument(
+        "--output", type=str, default="artifacts/identity-replay/replay-input.json"
+    )
+
     push_workout_parser = subparsers.add_parser("push-workout", help="Push one queued workout")
     push_workout_parser.add_argument("--date", type=str, default=None)
 
@@ -1043,6 +1118,8 @@ def main() -> int:
         return run_compare_transports_cmd(sys.argv[2:])
     if args.command == "audit-multisource":
         return run_audit_multisource_cmd(sys.argv[2:])
+    if args.command == "export-identity-replay":
+        return run_export_identity_replay_cmd(sys.argv[2:])
     if args.command == "audit":
         return run_audit_cmd(sys.argv[2:])
     if args.command == "rebuild":

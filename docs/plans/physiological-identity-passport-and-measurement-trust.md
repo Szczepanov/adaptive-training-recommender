@@ -117,7 +117,7 @@ The central migration requirement is moving effective identity eligibility **ups
 | PI5 | Pre-baseline effective-eligibility gate | `[x]` | PI4 | blocks unverified Eight Sleep baseline learning |
 | PI6 | Persistence, review events, replay provenance and Firestore rules | `[x]` | PI1, PI4 | none |
 | PI7 | Suspicious-night review UI | `[x]` | PI6 | manual labels only |
-| PI8 | Historical out-of-sample replay + prospective label collection | `[-]` harness built, real-data run pending | PI4, PI6 | evidence only |
+| PI8 | Historical out-of-sample replay + prospective label collection | `[-]` real-data exporter built, real 41-night replay run and published (0% automatic USER coverage — structural, see evidence doc); prospective label collection (real user reviews over time) still not started | PI4, PI6 | evidence only |
 | PI9 | Activation decision and replacement of `CoPresenceValidator` | `[-]` fusion migrated additively; activation decision not made (needs real evidence) | PI5, PI7, PI8 | production identity gate |
 | PI10 | Living architecture, telemetry, operations and regression suite | `[-]` architecture doc + runbook + privacy docs written; telemetry deferred to activation | PI9 | documentation/ops |
 
@@ -822,23 +822,37 @@ If the user later corrects a review, append a superseding event instead of editi
 
 # PI8 — Historical out-of-sample shadow replay + prospective label collection
 
-## Status (2026-08-27)
+## Status (2026-08-28)
 
 The replay **harness** is implemented and unit-tested: [`identityReplay.ts`](../../app/src/engine/identityReplay.ts)
 composes PI2 pairing/lineage/feature extraction, PI3's existing `leaveOneNightOutReplay`/
 `chronologicalExpandingWindowReplay`, and PI4's evaluator into `runIdentityReplay()`, producing
 every report field below except fusion-output deltas (not yet wired — would additionally require
 driving `multisourceFusion.ts` per gated/ungated night). [`identity-replay-evidence.mjs`](../../app/scripts/identity-replay-evidence.mjs)
-(`npm run evidence:identity-replay -- --input <replay.json>`) is the CLI entry point, mirroring
-`health-anomaly-evidence.mjs`'s pattern; it has been smoke-tested against a synthetic fixture end
-to end (JSON/Markdown reports generated correctly).
+(`npm run evidence:identity-replay -- --input <replay.json>`) is the CLI entry point.
 
-**Not yet done:** running this against the real 60-day/42-paired-night history and publishing the
-resulting evidence doc. That requires exporting real Garmin + Eight Sleep per-night bundle data
-(session intervals, RHR/respiration/HRV, bundle refs) as `identityReplay.ts`'s input shape — no
-such exporter exists yet (unlike `audit-multisource`, which only checks pre-existing identity
-projections rather than deriving out-of-sample ones). Building that exporter and running/reviewing
-the real replay is the remaining work before this item can be marked done.
+**Now done (2026-08-28):** a real-data exporter,
+[`identity_replay_export.py`](../../src/garmin_sync/identity_replay_export.py) (CLI:
+`uv run python -m garmin_sync export-identity-replay`), converts real Garmin Direct +
+Eight Sleep-via-Google-Health Firestore data into `identityReplay.ts`'s exact input shape and has
+been run against the real linked account: **41 real paired nights** (2026-06-30 to 2026-08-17;
+Eight Sleep data stops after 2026-08-17 in this account, a pre-existing gap — not 42, the plan's
+earlier working estimate from a differently-scoped count). Both `leaveOneOut` and
+`chronologicalExpandingWindow` methods were run and published:
+[`docs/analysis/2026-08-28-identity-passport-replay-evidence.md`](../analysis/2026-08-28-identity-passport-replay-evidence.md).
+
+**Headline real-data finding:** automatic USER coverage is **0/41 (0%)**, both methods, for a
+structural reason traced to real code — Garmin Direct (`daily_recovery_snapshots`) carries no
+sleep session interval timestamps at all (a gap already documented in `equivalence.py`), so
+`identityAttribution.ts`'s session-timing precondition (`overlap === null` → hard
+`SESSION_TIMING_DISCORDANT`; `groupEvidence.has('SESSION_TIMING')` required for automatic `USER`)
+can never be satisfied for this anchor policy against real data, independent of how strong the
+real RHR/HRV/respiration concordance is. See the evidence doc's §6 for the resulting open
+design question (not decided here).
+
+**Still not done:** prospective label collection (real user reviews on `UNCERTAIN` nights over
+time) — this requires actual account usage over a real time horizon and cannot be produced in one
+session.
 
 ## Historical replay
 
@@ -894,15 +908,16 @@ Because selective classifiers explicitly trade coverage for accepted-case risk, 
 
 ## Status (2026-08-27)
 
-**The activation decision itself is explicitly NOT made.** It cannot be made from this repository
-alone: several minimum activation conditions below (the reviewed 42-night shadow replay, and
-prospective suspicious-night labels) require real evidence gathered from actual account usage over
-time, which this session does not have authorization or ability to produce truthfully (see PI8's
-status note on the missing real-data exporter). Claiming activation-readiness without that
-evidence would repeat exactly the kind of unverified-evidence mistake this project has already
-had to correct once (see the multisource shadow study's fabrication correction). The rollout
-therefore remains at Stage 1 (shadow only) / Stage 2 (baseline protection is code-complete but
-unactivated) per the Rollout strategy section below.
+**The activation decision itself is explicitly NOT made.** The real 41-night out-of-sample replay
+now exists (PI8, 2026-08-28) and shows 0% automatic USER coverage for a structural reason (no
+Garmin Direct session-interval data — see PI8's status note), which is itself evidence against
+activating on the current anchor policy as-is, not evidence for it. Prospective suspicious-night
+labels (real user reviews over time) still don't exist and cannot be produced in one session.
+Claiming activation-readiness without that evidence would repeat exactly the kind of
+unverified-evidence mistake this project has already had to correct once (see the multisource
+shadow study's fabrication correction). The rollout therefore remains at Stage 1 (shadow only) /
+Stage 2 (baseline protection is code-complete but unactivated) per the Rollout strategy section
+below.
 
 What **is** done, code-side, toward the "replacement of `CoPresenceValidator`" half of this item:
 
