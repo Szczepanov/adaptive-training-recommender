@@ -95,3 +95,23 @@ def test_handle_login_enforces_per_account_rate_limiting(monkeypatch: Any) -> No
     assert len(captured_errors) == 1
     assert captured_errors[0]["status"] == HTTPStatus.TOO_MANY_REQUESTS
     assert captured_errors[0]["error_code"] == "garmin_link.rate_limited"
+
+
+def test_log_message_redacts_query_parameters(monkeypatch: Any) -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.client_address = ("127.0.0.1", 12345)
+    handler.path = "/api/garmin/login?token=secret123"
+
+    captured_logs: list[str] = []
+
+    def mock_info(msg: str, *args: Any) -> None:
+        captured_logs.append(msg % args)
+
+    monkeypatch.setattr(account_link_api.logger, "info", mock_info)
+
+    handler.log_message("GET %s HTTP/1.1", handler.path)
+
+    assert len(captured_logs) == 1
+    log = captured_logs[0]
+    assert "/api/garmin/login" in log
+    assert "secret123" not in log
