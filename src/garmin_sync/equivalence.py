@@ -93,6 +93,7 @@ class TransportEquivalenceAnalyzer:
 
         missing_google_count = 0
         transforming_count = 0
+        paired_metric_count = 0
 
         for metric in all_metrics:
             obs_direct = direct_map.get(metric)
@@ -128,6 +129,7 @@ class TransportEquivalenceAnalyzer:
                     )
                 )
             elif obs_direct is not None and obs_google is not None:
+                paired_metric_count += 1
                 val_direct = obs_direct.value
                 val_google = obs_google.value
 
@@ -197,7 +199,17 @@ class TransportEquivalenceAnalyzer:
                         )
                     )
 
-        if missing_google_count > len(all_metrics) // 2:
+        # A date with metrics on both sides but zero of them actually paired up (e.g. the
+        # direct transport only ever supplies sleeping_heart_rate_bpm while Google Health
+        # only ever supplies sleep_session for the same provider -- a real gap for Eight
+        # Sleep, where the two transports' metric surfaces barely overlap) previously fell
+        # through to EQUIVALENT: missing_google_count/transforming_count are both computed
+        # only from metrics that were actually evaluated one way or another, so zero paired
+        # metrics left both at a value too low to trip either branch. Fail closed instead --
+        # zero real cross-transport evidence is not equivalence.
+        if paired_metric_count == 0:
+            classification = "INCOMPLETE"
+        elif missing_google_count > len(all_metrics) // 2:
             classification = "INCOMPLETE"
         elif transforming_count > 0:
             classification = "TRANSFORMING"

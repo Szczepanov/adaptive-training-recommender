@@ -371,7 +371,7 @@ will be dropped on that first run.
    | `GARMIN_PASSWORD` | your Garmin Connect password |
    | `GARMIN_TOTP_SECRET` | optional -- see Bootstrap section below |
    | `GOOGLE_HEALTH_CLIENT_ID` / `GOOGLE_HEALTH_CLIENT_SECRET` | optional -- deploys `google-health-account-link` only when both are set |
-   | `EIGHT_SLEEP_EMAIL` / `EIGHT_SLEEP_PASSWORD` / `EIGHT_SLEEP_CLIENT_ID` / `EIGHT_SLEEP_CLIENT_SECRET` | optional -- deploys `eight-sleep-direct-sync` only when all four are set (see below) |
+   | `EIGHT_SLEEP_EMAIL` / `EIGHT_SLEEP_PASSWORD` / `EIGHT_SLEEP_CLIENT_ID` / `EIGHT_SLEEP_CLIENT_SECRET` | optional -- deploys `eight-sleep-direct-sync` plus its daily Scheduler job only when all four (and the `APP_USER_ID` above) are set (see below) |
 
 ### Deploy
 
@@ -412,28 +412,44 @@ actually logs in and pulls data end to end.
 Run **Deploy Garmin Sync** again -- it rebuilds the image and redeploys all three Jobs
 (`gcloud run jobs deploy` upserts) without touching anything already configured.
 
-### Optional: `eight-sleep-direct-sync` (ES9)
+### Optional: `eight-sleep-direct-sync` (ES9, daily-scheduled)
 
-If (and only if) `EIGHT_SLEEP_EMAIL`, `EIGHT_SLEEP_PASSWORD`, `EIGHT_SLEEP_CLIENT_ID`, and
-`EIGHT_SLEEP_CLIENT_SECRET` are all set as repo secrets, **Deploy Garmin Sync** also deploys a
-fourth Job, `eight-sleep-direct-sync`, running `backfill-eight-sleep-direct` by default with
-`EIGHT_SLEEP_DIRECT_ENABLED=true` baked into its own env file
-(`docs/plans/eight-sleep-direct-recovery-ingestion.md`, ADR-0030).
+If (and only if) `EIGHT_SLEEP_EMAIL`, `EIGHT_SLEEP_PASSWORD`, `EIGHT_SLEEP_CLIENT_ID`,
+`EIGHT_SLEEP_CLIENT_SECRET`, and `APP_USER_ID` are all set as repo secrets, **Deploy Garmin
+Sync** also deploys a fourth Job, `eight-sleep-direct-sync`, plus a fourth Cloud Scheduler
+job, `eight-sleep-direct-sync-daily` (`0 8 * * *` Europe/Warsaw -- once a day, not a polling
+window: there's no cheap Firestore freshness pre-check here the way `sync_daily` has, so
+every tick is a real Eight Sleep API call).
 
-Unlike the other three Jobs, **this one is not on any Cloud Scheduler job** -- ES is still an
-evidence-gathering, default-off shadow evaluation, not committed production automation.
-Invoke it by hand while building an ES9 comparison window:
+`APP_USER_ID` is required for this one Job specifically -- unlike the three multi-tenant
+Garmin Jobs above (which discover linked users from Firestore at runtime and deliberately
+carry no static user ID), Eight Sleep direct authenticates as exactly one fixed account (no
+self-service linking flow exists for it), so its observations need exactly one fixed user to
+persist under.
+
+The Job's baked-in default is `backfill-eight-sleep-direct --days=7` -- a small trailing
+window sized for a **daily** run (catches late corrections within the past week without
+repeating a full historical fetch every tick; each tick is roughly 7 Eight Sleep API calls,
+not one). This still only ever writes to the shadow `health_observation_days` collection --
+`EIGHT_SLEEP_DIRECT_ENABLED` stays production-inert; nothing here changes recommendation
+behavior.
+
+For a one-off larger backfill (e.g. bootstrapping history the first time, or before running
+the comparator) or to run the comparator itself, override `--args` at execution time --
+matching ranges so the comparison covers what was actually backfilled:
 
 ```bash
-# Persist a batch of direct-Eight-Sleep observations (defaults to the trailing 56 days)
-gcloud run jobs execute eight-sleep-direct-sync --region=${REGION} --wait
+# One-time: backfill 60 trailing days to match compare-eight-sleep-transports's own 60-day
+# default below, rather than waiting ~60 daily 7-day ticks to reach the same coverage
+gcloud run jobs execute eight-sleep-direct-sync --region=${REGION} \
+  --args=backfill-eight-sleep-direct,--days=60 --wait
 
-# Then compare against the pre-existing Google Health Eight Sleep path over the same range --
-# --args overrides the Job's baked-in default for just this execution
+# Compare against the pre-existing Google Health Eight Sleep path over the same range
 gcloud run jobs execute eight-sleep-direct-sync --region=${REGION} \
   --args=compare-eight-sleep-transports,--days=60 --wait
 ```
 
-Repeat the first command every few days (or daily) to accumulate real overlap before running
-the comparison. `gcloud run jobs logs read eight-sleep-direct-sync --region=${REGION}` shows
-each run's output.
+`gcloud run jobs logs read eight-sleep-direct-sync --region=${REGION}` shows each run's
+output (daily-scheduled or manual). Cloud Scheduler's free tier is 3 jobs per billing account
+(see the note in step 6 above) -- this fourth scheduled job means a billing account without
+spare free-tier headroom incurs Scheduler's per-job charge on top of the three Garmin ones.

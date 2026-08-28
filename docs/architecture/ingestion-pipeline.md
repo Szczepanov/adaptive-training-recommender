@@ -136,9 +136,11 @@ registration: `backfill-eight-sleep-direct` persists to
 `health_observation_days/{date}_eight_sleep_eight_sleep_direct`, and
 `compare-eight-sleep-transports` (ES9) diffs those bundles against the pre-existing
 `eight_sleep`/`google_health` ones via a generalized `TransportEquivalenceAnalyzer`
-(`expected_provider` param, `equivalence.py`) shared with MS10's Garmin comparison. Neither
-command is on a Cloud Scheduler job — real invocation still requires
-`EIGHT_SLEEP_DIRECT_ENABLED` and runtime secrets provisioned by hand (see
+(`expected_provider` param, `equivalence.py`) shared with MS10's Garmin comparison.
+`backfill-eight-sleep-direct` runs daily via a dedicated Cloud Scheduler job once deployed
+(a bounded 7-day trailing window per tick); `compare-eight-sleep-transports` is run on demand,
+not scheduled. Both still require `EIGHT_SLEEP_DIRECT_ENABLED` and runtime secrets
+provisioned before anything real happens (see
 [`docs/plans/eight-sleep-direct-recovery-ingestion.md`](../plans/eight-sleep-direct-recovery-ingestion.md)).
 
 ### Identity gate location (ADR-0028)

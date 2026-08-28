@@ -2,9 +2,10 @@
 
 * **Status:** `In progress (default-off)`
 * **Date:** 2026-08-28
-* **Blocked by:** ES9's tooling is implemented; it now needs a real accumulation window
-  (repeated `backfill-eight-sleep-direct` runs overlapping Google Health's existing Eight
-  Sleep data). ES10 needs that plus prospective evidence and a separate activation review.
+* **Blocked by:** ES9's tooling is implemented and its daily backfill is scheduled (once the
+  five `EIGHT_SLEEP_*`/`APP_USER_ID` secrets are deployed) — it now just needs the
+  accumulation window to elapse before `compare-eight-sleep-transports` is meaningful. ES10
+  needs that plus prospective evidence and a separate activation review.
 * **Decision authority:** none.
 * **Governing ADRs:** ADR-0027 and proposed ADR-0030.
 
@@ -22,7 +23,7 @@ Replace unreliable Google Health transport for Eight Sleep with a repository-own
 | ES6 | Sanitized local probe | implemented |
 | ES7 | Unit tests | implemented |
 | ES8 | Provision secrets + run real-account probe | implemented — real-account probe ran 2026-08-28, authenticated and returned 9 real observations (`hrv_rmssd_ms`, `sleep_stage_*`, `sleeping_heart_rate_bpm`, etc.) across a 3-day window |
-| ES9 | Shadow direct-vs-Google comparison | implemented — persistence path (`backfill-eight-sleep-direct`) and comparator (`compare-eight-sleep-transports`, reusing MS10's generalized `TransportEquivalenceAnalyzer`) landed; real accumulation window not yet run |
+| ES9 | Shadow direct-vs-Google comparison | implemented — persistence path (`backfill-eight-sleep-direct`, daily-scheduled) and comparator (`compare-eight-sleep-transports`, reusing MS10's generalized `TransportEquivalenceAnalyzer`) landed; real accumulation window not yet elapsed |
 | ES10 | Baseline/fusion activation decision | blocked by ES9's accumulated evidence |
 
 Runtime config: `EIGHT_SLEEP_DIRECT_ENABLED=false`, `EIGHT_SLEEP_EMAIL`, `EIGHT_SLEEP_PASSWORD`, `EIGHT_SLEEP_CLIENT_ID`, `EIGHT_SLEEP_CLIENT_SECRET`, optional `EIGHT_SLEEP_USER_ID`, timezone/retry/timeout overrides. Do not commit values.
@@ -48,11 +49,18 @@ Both commands are read-only with respect to production behavior — they only ev
 the shadow `health_observation_days` collection, never `daily_recovery_snapshots`, and
 `EIGHT_SLEEP_DIRECT_ENABLED` stays `false` by default.
 
-Neither command is on any Cloud Scheduler job. To build a real comparison window: run
-`backfill-eight-sleep-direct` repeatedly (a few times over a week or two is enough for a
-first read), then `compare-eight-sleep-transports` over the same range. See
-[`docs/ops/cloud-run-deployment.md`](../ops/cloud-run-deployment.md) for how to invoke this
-manually against the deployed Cloud Run Job once `EIGHT_SLEEP_*` secrets are wired through
-CI, or run locally via `uv run python -m garmin_sync backfill-eight-sleep-direct`.
+`backfill-eight-sleep-direct` runs once daily via a Cloud Scheduler job
+(`eight-sleep-direct-sync-daily`, `0 8 * * *` Europe/Warsaw) once `EIGHT_SLEEP_EMAIL`,
+`EIGHT_SLEEP_PASSWORD`, `EIGHT_SLEEP_CLIENT_ID`, `EIGHT_SLEEP_CLIENT_SECRET`, and
+`APP_USER_ID` are all set as repo secrets — deliberately a fixed daily tick, not a polling
+window like the Garmin Jobs, since there's no cheap freshness pre-check here and every tick
+is a real Eight Sleep API call. Each tick uses a bounded 7-day trailing window sized for
+daily incremental runs, not the historical-backfill default. This still only ever writes to
+the shadow `health_observation_days` collection; `EIGHT_SLEEP_DIRECT_ENABLED` stays
+production-inert. `compare-eight-sleep-transports` is not scheduled — it's a cheap,
+idempotent report over whatever has already accumulated, run on demand. See
+[`docs/ops/cloud-run-deployment.md`](../ops/cloud-run-deployment.md) for the one-time larger
+backfill and comparison commands, or run either locally via
+`uv run python -m garmin_sync backfill-eight-sleep-direct`.
 
 Promotion requires stable real-account auth/schema, source-specific baseline maturity, better reliability than Google Health, replay/prospective evidence and a separate activation review. Rollback is simply `EIGHT_SLEEP_DIRECT_ENABLED=false`; Garmin/recommendation behavior is unchanged.

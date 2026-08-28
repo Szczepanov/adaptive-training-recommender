@@ -72,6 +72,53 @@ def test_analyzer_expected_provider_filters_by_provider_not_hardcoded_garmin():
     assert result2.classification == "EQUIVALENT"
 
 
+def test_analyzer_zero_paired_metrics_fails_closed_to_incomplete():
+    """Regression: a date where both sides have data but their metric sets are disjoint (no
+    metric present on both transports) must not be reported EQUIVALENT -- there is zero real
+    cross-transport evidence for that date. This is the realistic Eight Sleep case: the direct
+    transport supplies sleeping_heart_rate_bpm/sleep_respiration_summary that Google Health's
+    REST Data Points surface never carries for eight_sleep."""
+    now = datetime.now(timezone.utc)
+    direct_src = ObservationSource(provider="eight_sleep", transport="eight_sleep_direct")
+    google_src = ObservationSource(provider="eight_sleep", transport="google_health")
+
+    direct_obs = [
+        CanonicalHealthObservation(
+            metric=METRIC_SLEEPING_HEART_RATE_BPM,
+            value=52.0,
+            unit="bpm",
+            source=direct_src,
+            observed_start=now,
+            observed_end=now,
+            logical_date="2026-08-27",
+        )
+    ]
+    google_obs = [
+        CanonicalHealthObservation(
+            metric="sleep_session",
+            value="sleep",
+            unit=None,
+            source=google_src,
+            observed_start=now,
+            observed_end=now,
+            logical_date="2026-08-27",
+        )
+    ]
+
+    analyzer = TransportEquivalenceAnalyzer(expected_provider="eight_sleep")
+    result = analyzer.compare_date_observations("2026-08-27", direct_obs, google_obs)
+    assert len(result.comparisons) == 2  # one MISSING_GOOGLE, one MISSING_DIRECT
+    assert result.classification == "INCOMPLETE"
+
+
+def test_analyzer_empty_both_sides_fails_closed_to_incomplete():
+    """Regression: no observations on either side at all must not default to EQUIVALENT."""
+    analyzer = TransportEquivalenceAnalyzer(expected_provider="eight_sleep")
+    result = analyzer.compare_date_observations("2026-08-27", [], [])
+    assert result.comparisons == []
+    assert result.classification == "INCOMPLETE"
+
+
 def test_default_analyzer_still_scopes_to_garmin():
     """Back-compat: the default constructor must keep MS10's original garmin-only scope."""
     analyzer = TransportEquivalenceAnalyzer()
