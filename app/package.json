@@ -65,6 +65,7 @@
     "simulate:fatigue-fusion": "node scripts/simulate-fatigue-fusion.mjs",
     "simulate:subjective-drift": "node scripts/simulate-subjective-drift.mjs",
     "evidence:health-anomaly": "node scripts/health-anomaly-evidence.mjs",
+    "evidence:identity-replay": "node scripts/identity-replay-evidence.mjs",
     "measure:garmin-zone-credit": "node scripts/measure-garmin-zone-credit.mjs",
     "simulate:diff": "node scripts/simulate-diff.mjs",
     "simulate:update-baseline": "node scripts/simulate-update-baseline.mjs",

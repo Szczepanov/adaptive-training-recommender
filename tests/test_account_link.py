@@ -513,6 +513,16 @@ def test_commit_link_returns_exactly_the_tokenObject_it_overwrote(monkeypatch: A
     assert connection is not None
     assert connection["tokenObject"] == "garmin/users/uid-1/garmin_tokens-ccc.json"
 
+    # commit_link also mirrors non-secret status onto users/{uid}/connections/garmin so the
+    # frontend can read its own connection state without server-only garminConnections access.
+    client_status = (
+        db.collection("users").document("uid-1").collection("connections").document("garmin").data
+    )
+    assert client_status is not None
+    assert client_status["status"] == "active"
+    assert "tokenObject" not in client_status
+    assert "identityDigest" not in client_status
+
 
 def test_finalize_queues_initial_backfill_request(
     monkeypatch: Any,

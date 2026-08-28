@@ -26,6 +26,7 @@ const TrainingSettings = lazy(() => import('./components/TrainingSettings').then
 const Preferences = lazy(() => import('./components/Preferences').then(m => ({ default: m.Preferences })));
 const DataView = lazy(() => import('./components/DataView').then(m => ({ default: m.DataView })));
 const HealthAnomalyShadowPanel = lazy(() => import('./components/HealthAnomalyShadowPanel').then(m => ({ default: m.HealthAnomalyShadowPanel })));
+const IdentityReviewCard = lazy(() => import('./components/IdentityReviewCard').then(m => ({ default: m.IdentityReviewCard })));
 const PlanView = lazy(() => import('./components/PlanView').then(m => ({ default: m.PlanView })));
 const StrengthOverloadHistory = lazy(() => import('./components/StrengthOverloadHistory').then(m => ({ default: m.StrengthOverloadHistory })));
 const SessionRunner = lazy(() => import('./components/session/SessionRunner').then(m => ({ default: m.SessionRunner })));
@@ -342,6 +343,9 @@ function App() {
                   decisionInput={decisionInput}
                   liveRevision={healthAnomalyShadowRevision}
                 />
+              )}
+              {decisionInput && (
+                <IdentityReviewCard userId={userId!} date={decisionInput.date} />
               )}
             </>
           )}

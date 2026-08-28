@@ -1,0 +1,29 @@
+.identity-review-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.identity-review-actions button {
+  min-height: 44px;
+  font: inherit;
+}
+
+.identity-review-why {
+  margin-top: 12px;
+}
+
+.identity-review-why summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  font: inherit;
+  cursor: pointer;
+}
+
+.identity-review-why ul {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}

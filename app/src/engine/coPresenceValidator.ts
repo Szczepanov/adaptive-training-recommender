@@ -8,13 +8,16 @@
  * unvalidated safety guards carried over from PR #240, not thresholds derived from labelled
  * evidence. Do not describe them as validated identity thresholds in docs, copy, or telemetry.
  *
- * It will be superseded by the ternary Physiological Identity Passport gate
- * (`USER | NOT_USER | UNCERTAIN`, see ADR-0028 and
+ * It is superseded by the ternary Physiological Identity Passport gate (`USER | NOT_USER |
+ * UNCERTAIN`, see ADR-0028 and
  * ../../../docs/plans/physiological-identity-passport-and-measurement-trust.md, tasks PI1-PI9).
- * PI5's effective-eligibility gate now sits upstream of `computeSourceMetricBaseline()`; this
- * validator remains only inside the candidate fusion compatibility path until PI9 replaces it.
- * `verifiedAthlete: boolean` and the `IMPOSTER_REJECTED` status are legacy vocabulary — new code
- * must not depend on them as permanent domain contracts. Prefer `EffectiveIdentityDecision`.
+ * PI5's effective-eligibility gate sits upstream of `computeSourceMetricBaseline()`. As of PI9,
+ * `multisourceFusion.ts`'s candidate-fusion path also accepts real `EffectiveIdentityDecision`
+ * evidence and treats it as authoritative over this heuristic when supplied
+ * (`identityGateApplied: true` on its result) — this module remains only as the *default
+ * fallback* for callers that have not yet migrated (currently: the MS16 simulation/replay
+ * harness). `verifiedAthlete: boolean` and the `IMPOSTER_REJECTED` status are legacy vocabulary —
+ * new code must not depend on them as permanent domain contracts. Prefer `EffectiveIdentityDecision`.
  *
  * A physiological anomaly alone (e.g. illness driving up RHR) is NOT proof that another person
  * used the shared device — it is deliberately impossible for this heuristic to assert that; see
