@@ -885,6 +885,80 @@ def run_export_identity_replay_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
+def run_backfill_garmin_sleep_timing_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description=(
+            "Retroactively patch sleepStartTimeGmt/sleepEndTimeGmt onto existing "
+            "daily_recovery_snapshots documents from the already-archived raw Garmin sleep "
+            "payload -- no re-fetch from Garmin's live API."
+        )
+    )
+    parser.add_argument("--days", type=int, default=60, help="Number of trailing days (default 60)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
+    parser.add_argument("--user-id", type=str, default=None, help="Application User ID")
+    parser.add_argument(
+        "--overwrite-existing",
+        action="store_true",
+        help="Re-patch dates that already have sleepStartTimeGmt/sleepEndTimeGmt (default: skip them)",
+    )
+    parsed_args = parser.parse_args(args)
+
+    from .archive import create_archive_store
+    from .firestore_repository import FirestoreRecoveryRepository
+    from .garmin_sleep_timing_backfill import patch_sleep_timing_for_range
+
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
+    try:
+        settings = load_settings()
+        repo = FirestoreRecoveryRepository(
+            user_id=settings.app_user_id,
+            collection_name=settings.firestore_recovery_collection,
+            db=None,
+            credentials_path=settings.firebase_credentials_path,
+        )
+        archive = create_archive_store(
+            enabled=settings.garmin_archive_enabled,
+            store_type=settings.garmin_archive_store,
+            local_dir=settings.garmin_archive_local_dir,
+            bucket_name=settings.resolved_archive_bucket(),
+            prefix=settings.garmin_archive_prefix,
+        )
+
+        start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=60)
+
+        print(
+            f"\nBackfilling Garmin sleep session timing for {settings.app_user_id}: "
+            f"{start_date_str} to {end_date_str}..."
+        )
+        result = patch_sleep_timing_for_range(
+            repo,
+            archive,
+            start_date_str,
+            end_date_str,
+            overwrite_existing=parsed_args.overwrite_existing,
+        )
+
+        print("\n" + "=" * 70)
+        print("  GARMIN SLEEP TIMING BACKFILL")
+        print("=" * 70)
+        print(f"  Dates Checked:              {result.datesChecked}")
+        print(f"  Dates Patched:              {result.datesPatched}")
+        print(f"  Skipped (already present):  {result.datesSkippedAlreadyPresent}")
+        print(f"  Skipped (no archive):       {result.datesSkippedNoArchive}")
+        print(f"  Skipped (no timestamps):    {result.datesSkippedNoTimestamps}")
+        if result.patchedDates:
+            print(f"  Patched dates: {', '.join(result.patchedDates)}")
+        print("=" * 70 + "\n")
+        return 0
+
+    except Exception as error:
+        log_exception(logger, "backfill garmin sleep timing", error)
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Garmin Sync Pipeline CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -977,6 +1051,16 @@ def main() -> int:
         "--output", type=str, default="artifacts/identity-replay/replay-input.json"
     )
 
+    backfill_sleep_timing_parser = subparsers.add_parser(
+        "backfill-garmin-sleep-timing",
+        help="Retroactively patch sleepStartTimeGmt/sleepEndTimeGmt from the archived raw sleep payload",
+    )
+    backfill_sleep_timing_parser.add_argument("--days", type=int, default=60)
+    backfill_sleep_timing_parser.add_argument("--start-date", type=str, default=None)
+    backfill_sleep_timing_parser.add_argument("--end-date", type=str, default=None)
+    backfill_sleep_timing_parser.add_argument("--user-id", type=str, default=None)
+    backfill_sleep_timing_parser.add_argument("--overwrite-existing", action="store_true")
+
     push_workout_parser = subparsers.add_parser("push-workout", help="Push one queued workout")
     push_workout_parser.add_argument("--date", type=str, default=None)
 
@@ -1011,6 +1095,8 @@ def main() -> int:
         return run_audit_multisource_cmd(sys.argv[2:])
     if args.command == "export-identity-replay":
         return run_export_identity_replay_cmd(sys.argv[2:])
+    if args.command == "backfill-garmin-sleep-timing":
+        return run_backfill_garmin_sleep_timing_cmd(sys.argv[2:])
     if args.command == "audit":
         return run_audit_cmd(sys.argv[2:])
     if args.command == "rebuild":

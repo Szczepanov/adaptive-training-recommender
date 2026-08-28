@@ -6,18 +6,23 @@ the exact `{"nights": IdentityReplayNightInput[], "config": IdentityReplayConfig
 `app/src/engine/identityReplay.ts`'s `runIdentityReplay` (via `identity-replay-evidence.mjs`)
 consumes.
 
-Two real, honest gaps this module does not paper over:
+One real, honest gap this module does not paper over:
 
-- Garmin Direct snapshots carry no sleep session interval timestamps (confirmed at
-  `equivalence.py`'s `MetricComparison.timestampStatus` docstring: "Direct-Garmin snapshots
-  (RawMetrics) never carry interval timestamps today"). Every exported night's `garminSessions`
-  is therefore `[]` -- real absence of evidence, not a synthesized placeholder.
 - Neither `HealthObservationDayBundle` (models.py) nor any real Firestore write path sets `id` or
   `lineageKey` on a bundle document (`identity_eligibility.py` only ever reads `lineageKey`, never
   writes it -- confirmed by repo-wide grep). Both `ObservationBundleRef`s this module builds are
   therefore synthesized, constant-per-user-per-source values, not read verbatim from Firestore.
   Only `sourcePayloadHash` and `revision` are read from the real bundle document, since those two
   fields genuinely are written by `save_health_observation_day_bundle`.
+
+`garminSessions` is populated from `raw.sleepStartTimeGmt`/`sleepEndTimeGmt` (models.py's
+`RawMetrics`), Garmin's own `dailySleepDTO.sleepStartTimestampGMT`/`sleepEndTimestampGMT` --
+previously parsed in-process (garmin_provider.py's `_sleep_window_gmt_ms`) only to feed a
+respiration-window average, then discarded, so every real night's replay input had
+`garminSessions: []` until that plumbing gap was closed. Historical nights synced before that fix
+still have no session timing until backfilled (see `scripts/backfill_garmin_sleep_timing.py`);
+`garminSessions` is `[]` for those exactly as before, which is accurate for them, not a synthesized
+placeholder.
 """
 
 from __future__ import annotations
@@ -75,6 +80,8 @@ def _anchor_bundle_ref(app_user_id: str, date: str, raw: dict[str, Any]) -> dict
                 "hrvOvernightAvg": raw.get("hrvOvernightAvg"),
                 "respirationAvg": raw.get("respirationAvg"),
                 "sleepDurationSec": raw.get("sleepDurationSec"),
+                "sleepStartTimeGmt": raw.get("sleepStartTimeGmt"),
+                "sleepEndTimeGmt": raw.get("sleepEndTimeGmt"),
             }
         ),
         "lineageKey": f"{ANCHOR_TRANSPORT}:{app_user_id}",
@@ -198,6 +205,8 @@ def export_identity_replay_input(
         garmin_rhr = raw.get("restingHr")
         garmin_hrv = raw.get("hrvOvernightAvg")
         garmin_resp = raw.get("respirationAvg")
+        garmin_sleep_start = raw.get("sleepStartTimeGmt")
+        garmin_sleep_end = raw.get("sleepEndTimeGmt")
 
         nights.append(
             {
@@ -206,7 +215,11 @@ def export_identity_replay_input(
                 "anchorBundleRefs": anchor_bundle_refs,
                 "anchorPresent": anchor_present,
                 "anchorTechnicallyEligible": anchor_technically_eligible,
-                "garminSessions": [],
+                "garminSessions": (
+                    [{"startIso": garmin_sleep_start, "endIso": garmin_sleep_end}]
+                    if garmin_sleep_start and garmin_sleep_end
+                    else []
+                ),
                 "eightSleepSessions": (
                     [{"startIso": sleep_obs["observedStart"], "endIso": sleep_obs["observedEnd"]}]
                     if sleep_obs is not None and sleep_obs.get("observedEnd")

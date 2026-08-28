@@ -299,6 +299,58 @@ def test_canonicalize_from_raw_prefers_precise_respiration_average_when_availabl
     )
 
     assert canonical.respiration_rate_brpm == 12.5  # precise, not the coarse 12
+    # 0 ms -> epoch; 5,000,000 ms -> 1970-01-01T01:23:20Z.
+    assert canonical.sleep_start_gmt_iso == "1970-01-01T00:00:00+00:00"
+    assert canonical.sleep_end_gmt_iso == "1970-01-01T01:23:20+00:00"
+
+
+def test_canonicalize_from_raw_sleep_timing_follows_selected_fallback_record():
+    """sleep_start_gmt_iso/sleep_end_gmt_iso must be derived from selected_sleep (whichever
+    record sleep_score/sleep_date actually came from), not only sleep_today -- otherwise a
+    fallback (D-1) day would silently get no session timing even though its own raw record
+    has real timestamps, since the respiration-precision codepath's sleep_start_gmt_ms is
+    never computed at all on the fallback branch (garmin_provider.py's `if not
+    used_sleep_fallback:` guard)."""
+    sleep_fallback = {
+        "dailySleepDTO": {
+            "sleepScores": {"overall": {"value": 78}},
+            "sleepTimeSeconds": 28800,
+            "sleepStartTimestampGMT": 0,
+            "sleepEndTimestampGMT": 5_000_000,
+        }
+    }
+
+    canonical = canonicalize_from_raw(
+        stats_today={},
+        stats_fallback=None,
+        sleep_today={},
+        sleep_fallback=sleep_fallback,
+        hrv_today={},
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+    )
+
+    assert canonical.sleep_start_gmt_iso == "1970-01-01T00:00:00+00:00"
+    assert canonical.sleep_end_gmt_iso == "1970-01-01T01:23:20+00:00"
+
+
+def test_canonicalize_from_raw_no_sleep_timing_when_absent():
+    sleep_today = {
+        "dailySleepDTO": {"sleepScores": {"overall": {"value": 82}}, "sleepTimeSeconds": 27000}
+    }
+
+    canonical = canonicalize_from_raw(
+        stats_today={},
+        stats_fallback=None,
+        sleep_today=sleep_today,
+        sleep_fallback=None,
+        hrv_today={},
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+    )
+
+    assert canonical.sleep_start_gmt_iso is None
+    assert canonical.sleep_end_gmt_iso is None
 
 
 def test_canonicalize_from_raw_falls_back_to_sleep_dto_respiration_without_interval_data():

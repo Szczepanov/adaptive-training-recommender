@@ -158,6 +158,16 @@ def _sleep_window_gmt_ms(
     )
 
 
+def _epoch_ms_to_utc_iso(epoch_ms: int | float | None) -> str | None:
+    """Converts a Garmin *TimestampGMT epoch-ms value to an ISO 8601 UTC string, or None
+    if absent/malformed. GMT here is Garmin's own naming for UTC (confirmed by the field
+    already being treated as UTC everywhere else it's used, e.g. average_sleep_respiration_from_intervals's
+    direct comparison against respiration reading timestamps)."""
+    if not isinstance(epoch_ms, (int, float)):
+        return None
+    return datetime.fromtimestamp(epoch_ms / 1000.0, tz=timezone.utc).isoformat()
+
+
 # A cluster of readings from only part of the night (e.g. a sync gap, or the device
 # coming back online well after sleep onset) can clear the sample-count floor below
 # without describing the whole night -- so both this count and a minimum span of the
@@ -1191,6 +1201,14 @@ def canonicalize_from_raw(
 
     daily_rec_hours = _daily_recovery_time_hours(training_readiness_today, stats_today)
 
+    # Derived from whichever record selected_sleep actually resolved to (fallback or
+    # today), matching the "must follow the same selected sleep record" rule above --
+    # not the sleep_today-only sleep_start_gmt_ms computed earlier for the respiration
+    # window average, which is unset when the fallback record is used.
+    selected_sleep_start_ms, selected_sleep_end_ms = _sleep_window_gmt_ms(selected_sleep or {})
+    sleep_start_gmt_iso = _epoch_ms_to_utc_iso(selected_sleep_start_ms)
+    sleep_end_gmt_iso = _epoch_ms_to_utc_iso(selected_sleep_end_ms)
+
     return CanonicalDailyMetrics(
         date=target_date_iso,
         resting_heart_rate_bpm=rhr,
@@ -1201,6 +1219,8 @@ def canonicalize_from_raw(
         sleep_score=sleep_score,
         sleep_duration_seconds=sleep_sec,
         sleep_date=sleep_date if sleep_score is not None else None,
+        sleep_start_gmt_iso=sleep_start_gmt_iso,
+        sleep_end_gmt_iso=sleep_end_gmt_iso,
         deep_sleep_seconds=deep_sec,
         rem_sleep_seconds=rem_sec,
         light_sleep_seconds=light_sec,

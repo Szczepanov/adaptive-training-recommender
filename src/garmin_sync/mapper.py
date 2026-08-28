@@ -306,6 +306,8 @@ def _build_raw_metrics(
     return RawMetrics(
         sleepScore=canonical.sleep_score,
         sleepDurationSec=canonical.sleep_duration_seconds,
+        sleepStartTimeGmt=canonical.sleep_start_gmt_iso,
+        sleepEndTimeGmt=canonical.sleep_end_gmt_iso,
         deepSleepSec=canonical.deep_sleep_seconds,
         remSleepSec=canonical.rem_sleep_seconds,
         lightSleepSec=canonical.light_sleep_seconds,

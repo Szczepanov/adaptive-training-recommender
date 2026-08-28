@@ -156,6 +156,11 @@ class Spo2Summary:
 class RawMetrics:
     sleepScore: int | float | None = None
     sleepDurationSec: int | None = None
+    # ISO 8601 UTC timestamps of the sleep session window (Garmin's own
+    # dailySleepDTO.sleepStartTimestampGMT/sleepEndTimestampGMT). Needed as the PI8
+    # identity-replay anchor's session-timing evidence -- see identity_replay_export.py.
+    sleepStartTimeGmt: str | None = None
+    sleepEndTimeGmt: str | None = None
     deepSleepSec: int | None = None
     remSleepSec: int | None = None
     lightSleepSec: int | None = None

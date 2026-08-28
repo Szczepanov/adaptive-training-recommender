@@ -176,6 +176,37 @@ class FirestoreRecoveryRepository:
             f"Successfully saved user-scoped snapshot users/{self.user_id}/{self.collection_name}/{date_iso}."
         )
 
+    def patch_snapshot_fields(self, date_iso: str, field_updates: dict[str, Any]) -> bool:
+        """Patches an existing snapshot document via explicit dotted field paths (e.g.
+        `{"raw.sleepStartTimeGmt": "..."}`), touching only those exact fields.
+
+        Deliberately `update()`, not `upsert_snapshot`'s `set(..., merge=True)`: `update()` with
+        dotted-path keys is Firestore's unambiguous mechanism for patching one nested field without
+        touching siblings, whereas `set(merge=True)`'s nested-map merge semantics are easy to get
+        wrong for a targeted single-field patch on a document holding many other fields (like
+        `raw`, which also carries restingHr/hrvOvernightAvg/sleepScore/etc. that must not be
+        touched). Returns False (no-op) if the document doesn't exist -- this never creates one.
+        """
+        doc_ref = self._get_doc_ref(date_iso)
+        doc_snap = doc_ref.get()
+        if not doc_snap.exists:
+            return False
+        data = doc_snap.to_dict() or {}
+        if data.get("userId") != self.user_id:
+            raise ValueError(
+                f"Snapshot users/{self.user_id}/{self.collection_name}/{date_iso} has userId "
+                f"'{data.get('userId')}', not the configured user_id '{self.user_id}' -- refusing "
+                "to patch a document this repository doesn't own."
+            )
+        updates = dict(field_updates)
+        updates["updatedAt"] = datetime.now(timezone.utc).isoformat()
+        doc_ref.update(updates)
+        logger.info(
+            f"Patched fields {sorted(field_updates.keys())} on "
+            f"users/{self.user_id}/{self.collection_name}/{date_iso}."
+        )
+        return True
+
     def get_historical_snapshots(
         self, start_date_iso: str, end_date_iso: str
     ) -> dict[str, dict[str, Any]]:

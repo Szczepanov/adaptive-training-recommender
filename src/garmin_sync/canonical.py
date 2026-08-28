@@ -205,6 +205,13 @@ class CanonicalDailyMetrics:
     sleep_score: float | None = None
     sleep_duration_seconds: int | None = None
     sleep_date: str | None = None
+    # ISO 8601 UTC timestamps of the sleep session window, from Garmin's own
+    # dailySleepDTO.sleepStartTimestampGMT/sleepEndTimestampGMT -- already parsed
+    # internally (garmin_provider.py's _sleep_window_gmt_ms) for respiration-window
+    # averaging, but not persisted anywhere until this field existed. Needed as the
+    # PI8 identity-replay anchor's session-timing evidence (identity_replay_export.py).
+    sleep_start_gmt_iso: str | None = None
+    sleep_end_gmt_iso: str | None = None
     deep_sleep_seconds: int | None = None
     rem_sleep_seconds: int | None = None
     light_sleep_seconds: int | None = None

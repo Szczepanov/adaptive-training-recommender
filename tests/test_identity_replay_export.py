@@ -75,7 +75,9 @@ def test_export_paired_night_with_anchor_present() -> None:
     # Lineage keys must differ so isLineageIndependent (TS side) treats the anchor as independent.
     assert anchor_ref["lineageKey"] != shared_ref["lineageKey"]
 
-    # Confirmed real gap: Garmin Direct never carries sleep session intervals.
+    # This fixture's raw snapshot has no sleepStartTimeGmt/sleepEndTimeGmt (e.g. a night
+    # synced before the sleep-timing plumbing fix) -- see
+    # test_export_garmin_session_populated_when_raw_has_sleep_timing for the positive case.
     assert night["garminSessions"] == []
     assert night["eightSleepSessions"] == [
         {"startIso": "2026-08-01T22:00:00+00:00", "endIso": "2026-08-01T23:59:00+00:00"}
@@ -137,6 +139,36 @@ def test_export_night_with_no_shared_bundle_is_excluded() -> None:
 
     assert result.pairedNightCount == 0
     assert result.nights == []
+
+
+def test_export_garmin_session_populated_when_raw_has_sleep_timing() -> None:
+    repo = MagicMock()
+    without_timing = _complete_garmin_snapshot("2026-08-06")
+    with_timing = _complete_garmin_snapshot("2026-08-07")
+    with_timing["raw"]["sleepStartTimeGmt"] = "2026-08-07T22:10:00+00:00"
+    with_timing["raw"]["sleepEndTimeGmt"] = "2026-08-08T06:00:00+00:00"
+    repo.get_historical_snapshots.return_value = {
+        "2026-08-06": without_timing,
+        "2026-08-07": with_timing,
+    }
+    repo.get_health_observation_bundles_in_range.return_value = [
+        _eight_sleep_bundle("2026-08-06"),
+        _eight_sleep_bundle("2026-08-07"),
+    ]
+
+    result = export_identity_replay_input(repo, "2026-08-06", "2026-08-07", "test-uid")
+    nights_by_date = {n["sourceNightKey"]: n for n in result.nights}
+
+    assert nights_by_date["2026-08-06"]["garminSessions"] == []
+    assert nights_by_date["2026-08-07"]["garminSessions"] == [
+        {"startIso": "2026-08-07T22:10:00+00:00", "endIso": "2026-08-08T06:00:00+00:00"}
+    ]
+    # The anchor ref's hash must vary with session timing too, or a real timing correction
+    # would silently look identical to a night with no timing data at all.
+    assert (
+        nights_by_date["2026-08-06"]["anchorBundleRefs"][0]["sourcePayloadHash"]
+        != nights_by_date["2026-08-07"]["anchorBundleRefs"][0]["sourcePayloadHash"]
+    )
 
 
 def test_export_config_uses_garmin_direct_anchor_policy() -> None:
