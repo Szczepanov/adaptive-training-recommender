@@ -10,6 +10,13 @@ from garmin_sync.eight_sleep_mapper import map_trends_to_observation_batch, summ
 
 
 def main() -> int:
+    from dotenv import load_dotenv
+
+    # This entry point doesn't otherwise call load_settings()/load_dotenv() before
+    # resolving credentials, so a repo-root .env would silently be ignored without this
+    # explicit load (mirrors _resolve_google_health_auth_manager's Google Health path).
+    load_dotenv()
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--date", required=True)
     args = parser.parse_args()
