@@ -38,8 +38,6 @@ from garmin_sync.canonical import (
     METRIC_SLEEP_START_BASELINE_TIME,
     METRIC_SLEEP_START_TIME_CONSISTENCY,
     METRIC_SLEEP_TAGS,
-    METRIC_SLEEP_WASO_7DAY_AVG_SECONDS,
-    METRIC_SLEEP_WASO_SECONDS,
     METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM,
     METRIC_SLEEPING_HEART_RATE_BPM,
     METRIC_SNORE_DURATION_7DAY_AVG_SECONDS,
@@ -50,7 +48,6 @@ from garmin_sync.canonical import (
     METRIC_TOSS_AND_TURN_COUNT,
     METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS,
     METRIC_WAKEUP_TIME_CONSISTENCY,
-    METRIC_WASO_BASELINE_SECONDS,
     CanonicalHealthObservation,
     ObservationBatch,
     ObservationSource,
@@ -72,7 +69,15 @@ ORIGIN_APPLICATION = "eight_sleep_private_api"
 # Bumping this is what actually makes save_health_observation_day_bundle re-persist
 # already-fetched dates with the richer observation set -- sourcePayloadHash alone is blind
 # to mapper logic changes, since the underlying raw Eight Sleep response is unchanged.
-NORMALIZER_VERSION = 3
+# 4 (ES-EXT-3, 2026-08-28): removed waso/wasoBaseline/waso_7day_avg extraction entirely --
+# confirmed via a real probe that sleepQualityScore.waso.current and
+# performanceWindowStats.wasoBaseline are fractions (0.0193, 0.0616), not seconds, and there
+# is no documented conversion; extracting a wrong-unit field would violate more than it helps.
+# Also fixed social_jetlag_seconds to use _signed_num() instead of _num(): _num() clamps
+# negative values to None, and a real probe showed socialJetlagSeconds=-139, so roughly half
+# of all real nights (whichever side of the personal baseline they fell on) were silently
+# dropped instead of recorded.
+NORMALIZER_VERSION = 4
 
 
 def map_trends_to_observation_batch(
@@ -118,13 +123,22 @@ def map_trends_to_observation_batch(
         or _current(score, "respiratoryRate")
     )
 
-    # Extended fields (ES-EXT): sleepQualityScore.waso/sleepDebt, sleepRoutineScore's
+    # Extended fields (ES-EXT): sleepQualityScore.sleepDebt, sleepRoutineScore's
     # latency/consistency sub-objects, and performanceWindows' social-jetlag/chronotype --
     # all already computed server-side by the private API but not previously extracted.
     # None of these count toward the "did this record contain anything recognized" check
     # below: a day with only these fields and no core sleep/recovery data would be a
     # malformed record, not a legitimately extended one.
-    waso = _num(_current(score, "waso"))
+    #
+    # sleepQualityScore.waso.current is deliberately NOT extracted despite being numeric and
+    # named for a real clinical metric (Wake After Sleep Onset, normally a duration): a real
+    # probe (2026-08-28) found it's a small fraction (e.g. 0.0193), not seconds -- and its
+    # sibling range fields (lowerRange/upperRange/lowerBound/upperBound/average) were all 0,
+    # suggesting this particular score isn't reliably calibrated for this account. Rather
+    # than guess an unknown scale factor (inventing evidence this repo's own discipline
+    # forbids), this metric is skipped entirely. sleep_stage_awake_seconds already covers
+    # "time awake while in bed" reliably via presence-minus-sleep-duration subtraction of two
+    # well-understood raw fields.
     debt_obj = score.get("sleepDebt")
     debt_obj = debt_obj if isinstance(debt_obj, dict) else {}
     sleep_debt = _signed_num(debt_obj.get("dailySleepDebtSeconds"))
@@ -149,7 +163,11 @@ def map_trends_to_observation_batch(
     perf_windows = perf_windows if isinstance(perf_windows, dict) else {}
     social_jetlag_obj = perf_windows.get("socialJetlag")
     social_jetlag_obj = social_jetlag_obj if isinstance(social_jetlag_obj, dict) else {}
-    social_jetlag = _num(social_jetlag_obj.get("socialJetlagSeconds"))
+    # Signed, not _num(): a real probe found negative values (-139) -- direction of the
+    # weekday/weekend sleep-timing misalignment is meaningful, not an invalid reading. _num()
+    # was silently dropping roughly half of all real nights' values before this fix (any
+    # night the misalignment ran the other direction).
+    social_jetlag = _signed_num(social_jetlag_obj.get("socialJetlagSeconds"))
     chronotype_obj = perf_windows.get("chronotype")
     chronotype_obj = chronotype_obj if isinstance(chronotype_obj, dict) else {}
     chronotype_class = _str(chronotype_obj.get("chronoClass"))
@@ -166,14 +184,15 @@ def map_trends_to_observation_batch(
     sleep_start_baseline = _time_of_day(pw_stats.get("sleepStartBaseline"))
     sleep_end_baseline = _time_of_day(pw_stats.get("sleepEndBaseline"))
     sleep_midpoint_baseline = _time_of_day(pw_stats.get("sleepMidpointBaseline"))
-    waso_baseline = _num(pw_stats.get("wasoBaseline"))
+    # wasoBaseline skipped -- same fraction-not-seconds issue as sleepQualityScore.waso
+    # above (real probe: 0.0616, not a plausible seconds value); see that comment.
     total_sleep_time_baseline = _num(pw_stats.get("totalSleepTimeSecondsBaseline"))
     deep_sleep_baseline = _num(pw_stats.get("deepSleepSecondsBaseline"))
 
     hrv_7day_avg = _num(_avg7(score, "hrv"))
     resp_7day_avg = _num(_avg7(score, "respiratoryRate"))
     hr_7day_avg = _num(_avg7(score, "heartRate"))
-    waso_7day_avg = _num(_avg7(score, "waso"))
+    # waso's 7-day average skipped for the same reason as its .current value above.
     sleep_duration_7day_avg = _num(_avg7(score, "sleepDurationSeconds"))
     deep_7day_avg = _num(_avg7(score, "deep"))
     rem_7day_avg = _num(_avg7(score, "rem"))
@@ -229,7 +248,6 @@ def map_trends_to_observation_batch(
     if resp is not None:
         add(METRIC_SLEEP_RESPIRATION_SUMMARY, {"breathsPerMinute": resp}, "brpm")
 
-    add(METRIC_SLEEP_WASO_SECONDS, _whole(waso), "s")
     add(METRIC_SLEEP_DEBT_SECONDS, _whole(sleep_debt), "s")
     add(METRIC_SLEEP_BASELINE_DURATION_SECONDS, _whole(sleep_baseline), "s")
     add(METRIC_SLEEP_LATENCY_ASLEEP_SECONDS, _whole(latency_asleep), "s")
@@ -250,14 +268,12 @@ def map_trends_to_observation_batch(
     add(METRIC_SLEEP_START_BASELINE_TIME, sleep_start_baseline, "HH:MM:SS")
     add(METRIC_SLEEP_END_BASELINE_TIME, sleep_end_baseline, "HH:MM:SS")
     add(METRIC_SLEEP_MIDPOINT_BASELINE_TIME, sleep_midpoint_baseline, "HH:MM:SS")
-    add(METRIC_WASO_BASELINE_SECONDS, _whole(waso_baseline), "s")
     add(METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS, _whole(total_sleep_time_baseline), "s")
     add(METRIC_DEEP_SLEEP_BASELINE_SECONDS, _whole(deep_sleep_baseline), "s")
 
     add(METRIC_HRV_7DAY_AVG_MS, hrv_7day_avg, "ms")
     add(METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM, resp_7day_avg, "brpm")
     add(METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM, hr_7day_avg, "bpm")
-    add(METRIC_SLEEP_WASO_7DAY_AVG_SECONDS, _whole(waso_7day_avg), "s")
     add(METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS, _whole(sleep_duration_7day_avg), "s")
     add(METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS, _whole(deep_7day_avg), "s")
     add(METRIC_SLEEP_STAGE_REM_7DAY_AVG_SECONDS, _whole(rem_7day_avg), "s")

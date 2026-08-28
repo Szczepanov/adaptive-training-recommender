@@ -33,7 +33,11 @@ METRIC_SLEEP_RESPIRATION_SUMMARY = "sleep_respiration_summary"
 # non-Eight-Sleep analogue to normalize toward yet.
 METRIC_SLEEP_LATENCY_ASLEEP_SECONDS = "sleep_latency_asleep_seconds"
 METRIC_SLEEP_LATENCY_OUT_SECONDS = "sleep_latency_out_seconds"
-METRIC_SLEEP_WASO_SECONDS = "sleep_waso_seconds"
+# METRIC_SLEEP_WASO_SECONDS deliberately absent: sleepQualityScore.waso.current turned out to
+# be a small fraction (e.g. 0.0193), not seconds, per a real probe (2026-08-28) -- see
+# eight_sleep_mapper.py's comment at the skipped extraction site. Removed rather than kept
+# around unused, since a stale metric constant with a plausible-looking name is itself a
+# footgun for a future reader who assumes it's populated.
 METRIC_SLEEP_DEBT_SECONDS = "sleep_debt_seconds"
 METRIC_SLEEP_BASELINE_DURATION_SECONDS = "sleep_baseline_duration_seconds"
 METRIC_SNORE_DURATION_SECONDS = "snore_duration_seconds"
@@ -57,7 +61,8 @@ METRIC_BEDTIME_BASELINE_TIME = "bedtime_baseline_time"
 METRIC_SLEEP_START_BASELINE_TIME = "sleep_start_baseline_time"
 METRIC_SLEEP_END_BASELINE_TIME = "sleep_end_baseline_time"
 METRIC_SLEEP_MIDPOINT_BASELINE_TIME = "sleep_midpoint_baseline_time"
-METRIC_WASO_BASELINE_SECONDS = "waso_baseline_seconds"
+# METRIC_WASO_BASELINE_SECONDS deliberately absent -- same fraction-not-seconds issue as
+# METRIC_SLEEP_WASO_SECONDS above (performanceWindowStats.wasoBaseline probed at 0.0616).
 METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS = "total_sleep_time_baseline_seconds"
 METRIC_DEEP_SLEEP_BASELINE_SECONDS = "deep_sleep_baseline_seconds"
 
@@ -68,7 +73,7 @@ METRIC_DEEP_SLEEP_BASELINE_SECONDS = "deep_sleep_baseline_seconds"
 METRIC_HRV_7DAY_AVG_MS = "hrv_rmssd_ms_7day_avg"
 METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM = "sleep_respiration_rate_7day_avg_brpm"
 METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM = "sleeping_heart_rate_bpm_7day_avg"
-METRIC_SLEEP_WASO_7DAY_AVG_SECONDS = "sleep_waso_seconds_7day_avg"
+# METRIC_SLEEP_WASO_7DAY_AVG_SECONDS deliberately absent -- same reason as the two above.
 METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS = "sleep_duration_seconds_7day_avg"
 METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS = "sleep_stage_deep_seconds_7day_avg"
 METRIC_SLEEP_STAGE_REM_7DAY_AVG_SECONDS = "sleep_stage_rem_seconds_7day_avg"
@@ -99,7 +104,6 @@ STANDARD_OBSERVATION_METRICS = {
 EIGHT_SLEEP_EXTENDED_METRICS = {
     METRIC_SLEEP_LATENCY_ASLEEP_SECONDS,
     METRIC_SLEEP_LATENCY_OUT_SECONDS,
-    METRIC_SLEEP_WASO_SECONDS,
     METRIC_SLEEP_DEBT_SECONDS,
     METRIC_SLEEP_BASELINE_DURATION_SECONDS,
     METRIC_SNORE_DURATION_SECONDS,
@@ -117,13 +121,11 @@ EIGHT_SLEEP_EXTENDED_METRICS = {
     METRIC_SLEEP_START_BASELINE_TIME,
     METRIC_SLEEP_END_BASELINE_TIME,
     METRIC_SLEEP_MIDPOINT_BASELINE_TIME,
-    METRIC_WASO_BASELINE_SECONDS,
     METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS,
     METRIC_DEEP_SLEEP_BASELINE_SECONDS,
     METRIC_HRV_7DAY_AVG_MS,
     METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM,
     METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM,
-    METRIC_SLEEP_WASO_7DAY_AVG_SECONDS,
     METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS,
     METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS,
     METRIC_SLEEP_STAGE_REM_7DAY_AVG_SECONDS,

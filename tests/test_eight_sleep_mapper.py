@@ -25,8 +25,6 @@ from garmin_sync.canonical import (
     METRIC_SLEEP_START_BASELINE_TIME,
     METRIC_SLEEP_START_TIME_CONSISTENCY,
     METRIC_SLEEP_TAGS,
-    METRIC_SLEEP_WASO_7DAY_AVG_SECONDS,
-    METRIC_SLEEP_WASO_SECONDS,
     METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM,
     METRIC_SLEEPING_HEART_RATE_BPM,
     METRIC_SNORE_DURATION_7DAY_AVG_SECONDS,
@@ -37,7 +35,6 @@ from garmin_sync.canonical import (
     METRIC_TOSS_AND_TURN_COUNT,
     METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS,
     METRIC_WAKEUP_TIME_CONSISTENCY,
-    METRIC_WASO_BASELINE_SECONDS,
 )
 from garmin_sync.eight_sleep_client import EightSleepSchemaError
 from garmin_sync.eight_sleep_mapper import map_trends_to_observation_batch
@@ -100,7 +97,6 @@ def test_extended_fields_extracted_when_present() -> None:
                 "mitigationEvents": 1,
                 "sleepQualityScore": {
                     "hrv": {"current": 67.0},
-                    "waso": {"current": 420.0},
                     "sleepDebt": {
                         "dailySleepDebtSeconds": 1800.0,
                         "baselineSleepDurationSeconds": 27000.0,
@@ -123,7 +119,6 @@ def test_extended_fields_extracted_when_present() -> None:
     b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
     m = metrics(b)
 
-    assert m[METRIC_SLEEP_WASO_SECONDS].value == 420
     assert m[METRIC_SLEEP_DEBT_SECONDS].value == 1800
     assert m[METRIC_SLEEP_BASELINE_DURATION_SECONDS].value == 27000
     assert m[METRIC_SLEEP_LATENCY_ASLEEP_SECONDS].value == 540
@@ -139,6 +134,32 @@ def test_extended_fields_extracted_when_present() -> None:
     assert m[METRIC_TOSS_AND_TURN_COUNT].value == 12
     assert m[METRIC_SOCIAL_JETLAG_SECONDS].value == 900
     assert m[METRIC_CHRONOTYPE_CLASS].value == "early"
+
+
+def test_social_jetlag_can_be_negative() -> None:
+    """socialJetlagSeconds is signed relative to the user's personal baseline (ahead of
+    baseline is plausibly negative, not just behind = positive) -- must not be silently
+    clamped to None the way _num() would. Real probe showed socialJetlagSeconds=-139,
+    meaning _num()'s negative-clamp was silently dropping roughly half of all real nights
+    before this was switched to _signed_num()."""
+    p = {
+        "days": [
+            {
+                "day": "2026-08-28",
+                "presenceStart": "2026-08-27T21:00:00+02:00",
+                "presenceDuration": 30600,
+                "sleepDuration": 28800,
+                "lightDuration": 14400,
+                "deepDuration": 7200,
+                "remDuration": 7200,
+                "sleepQualityScore": {"hrv": {"current": 67.0}},
+                "performanceWindows": {"socialJetlag": {"socialJetlagSeconds": -139}},
+            }
+        ]
+    }
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    assert m[METRIC_SOCIAL_JETLAG_SECONDS].value == -139
 
 
 def test_batch_2_extended_fields_extracted_when_present() -> None:
@@ -164,7 +185,6 @@ def test_batch_2_extended_fields_extracted_when_present() -> None:
                     "hrv": {"current": 67.0, "inclusive7DayAverage": 64.2},
                     "respiratoryRate": {"current": 13.4, "inclusive7DayAverage": 13.1},
                     "heartRate": {"current": 43.0, "inclusive7DayAverage": 44.5},
-                    "waso": {"current": 420.0, "inclusive7DayAverage": 390.0},
                     "sleepDurationSeconds": {"inclusive7DayAverage": 27600.0},
                     "deep": {"inclusive7DayAverage": 6900.0},
                     "rem": {"inclusive7DayAverage": 6600.0},
@@ -177,7 +197,6 @@ def test_batch_2_extended_fields_extracted_when_present() -> None:
                         "sleepStartBaseline": "22:30:00",
                         "sleepEndBaseline": "06:10:00",
                         "sleepMidpointBaseline": "02:20:00",
-                        "wasoBaseline": 400.0,
                         "totalSleepTimeSecondsBaseline": 27900.0,
                         "deepSleepSecondsBaseline": 7000.0,
                     }
@@ -192,14 +211,12 @@ def test_batch_2_extended_fields_extracted_when_present() -> None:
     assert m[METRIC_SLEEP_START_BASELINE_TIME].value == "22:30:00"
     assert m[METRIC_SLEEP_END_BASELINE_TIME].value == "06:10:00"
     assert m[METRIC_SLEEP_MIDPOINT_BASELINE_TIME].value == "02:20:00"
-    assert m[METRIC_WASO_BASELINE_SECONDS].value == 400
     assert m[METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS].value == 27900
     assert m[METRIC_DEEP_SLEEP_BASELINE_SECONDS].value == 7000
 
     assert m[METRIC_HRV_7DAY_AVG_MS].value == 64.2
     assert m[METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM].value == 13.1
     assert m[METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM].value == 44.5
-    assert m[METRIC_SLEEP_WASO_7DAY_AVG_SECONDS].value == 390
     assert m[METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS].value == 27600
     assert m[METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS].value == 6900
     assert m[METRIC_SNORE_DURATION_7DAY_AVG_SECONDS].value == 250
@@ -208,7 +225,7 @@ def test_batch_2_extended_fields_extracted_when_present() -> None:
     assert m[METRIC_SLEEP_TAGS].value == {"tags": ["travel"]}
 
     # sleepStart/sleepEnd, not presence bounds, must be the actual observed window now.
-    sleep_obs = m[METRIC_SLEEP_WASO_SECONDS]
+    sleep_obs = m[METRIC_HRV_RMSSD_MS]
     assert sleep_obs.observed_start.isoformat() == "2026-08-27T21:05:00+02:00"
     assert sleep_obs.observed_end.isoformat() == "2026-08-28T05:50:00+02:00"
 
@@ -281,7 +298,7 @@ def test_batch_2_fields_absent_when_not_present() -> None:
     m = metrics(b)
     for extended_metric in (
         METRIC_BEDTIME_BASELINE_TIME,
-        METRIC_WASO_BASELINE_SECONDS,
+        METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS,
         METRIC_HRV_7DAY_AVG_MS,
         METRIC_SLEEP_TAGS,
     ):
@@ -361,7 +378,6 @@ def test_extended_fields_absent_when_not_present() -> None:
     b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
     m = metrics(b)
     for extended_metric in (
-        METRIC_SLEEP_WASO_SECONDS,
         METRIC_SLEEP_DEBT_SECONDS,
         METRIC_SNORE_DURATION_SECONDS,
         METRIC_TOSS_AND_TURN_COUNT,
