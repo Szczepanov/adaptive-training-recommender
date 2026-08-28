@@ -130,10 +130,17 @@ Independent of the Google Health path above, `src/garmin_sync/eight_sleep_*.py`
 connector to Eight Sleep's private API, producing `provider=eight_sleep`,
 `transport=eight_sleep_direct` observations through `EightSleepDirectProvider` (a
 `RecoveryObservationProvider`-shaped adapter, ADR-0030). It exists as a **default-off**
-alternative to the `com.eightsleep.eight` Google Health package-attribution path, and is not yet
-wired into any production CLI command — `register_provider()` is only ever called with
-`{"google_health": provider}` in `run_backfill_health_cmd`; the direct provider is exercised only
-by tests until `EIGHT_SLEEP_DIRECT_ENABLED` and runtime secrets are provisioned (see
+alternative to the `com.eightsleep.eight` Google Health package-attribution path. It has its
+own CLI entry points, separate from `backfill-health`'s `{"google_health": provider}`
+registration: `backfill-eight-sleep-direct` persists to
+`health_observation_days/{date}_eight_sleep_eight_sleep_direct`, and
+`compare-eight-sleep-transports` (ES9) diffs those bundles against the pre-existing
+`eight_sleep`/`google_health` ones via a generalized `TransportEquivalenceAnalyzer`
+(`expected_provider` param, `equivalence.py`) shared with MS10's Garmin comparison.
+`backfill-eight-sleep-direct` runs daily via a dedicated Cloud Scheduler job once deployed
+(a bounded 7-day trailing window per tick); `compare-eight-sleep-transports` is run on demand,
+not scheduled. Both still require `EIGHT_SLEEP_DIRECT_ENABLED` and runtime secrets
+provisioned before anything real happens (see
 [`docs/plans/eight-sleep-direct-recovery-ingestion.md`](../plans/eight-sleep-direct-recovery-ingestion.md)).
 
 ### Identity gate location (ADR-0028)

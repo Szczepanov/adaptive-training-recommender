@@ -2,7 +2,10 @@
 
 * **Status:** `In progress (default-off)`
 * **Date:** 2026-08-28
-* **Blocked by:** runtime secret provisioning + real-account probe for operational activation.
+* **Blocked by:** ES9's tooling is implemented and its daily backfill is scheduled (once the
+  five `EIGHT_SLEEP_*`/`APP_USER_ID` secrets are deployed) — it now just needs the
+  accumulation window to elapse before `compare-eight-sleep-transports` is meaningful. ES10
+  needs that plus prospective evidence and a separate activation review.
 * **Decision authority:** none.
 * **Governing ADRs:** ADR-0027 and proposed ADR-0030.
 
@@ -19,12 +22,45 @@ Replace unreliable Google Health transport for Eight Sleep with a repository-own
 | ES5 | Fail-closed transport/schema semantics | implemented |
 | ES6 | Sanitized local probe | implemented |
 | ES7 | Unit tests | implemented |
-| ES8 | Provision secrets + run real-account probe | operational |
-| ES9 | Shadow direct-vs-Google comparison | blocked by ES8/history |
-| ES10 | Baseline/fusion activation decision | blocked by prospective evidence |
+| ES8 | Provision secrets + run real-account probe | implemented — real-account probe ran 2026-08-28, authenticated and returned 9 real observations (`hrv_rmssd_ms`, `sleep_stage_*`, `sleeping_heart_rate_bpm`, etc.) across a 3-day window |
+| ES9 | Shadow direct-vs-Google comparison | implemented — persistence path (`backfill-eight-sleep-direct`, daily-scheduled) and comparator (`compare-eight-sleep-transports`, reusing MS10's generalized `TransportEquivalenceAnalyzer`) landed; real accumulation window not yet elapsed |
+| ES10 | Baseline/fusion activation decision | blocked by ES9's accumulated evidence |
 
 Runtime config: `EIGHT_SLEEP_DIRECT_ENABLED=false`, `EIGHT_SLEEP_EMAIL`, `EIGHT_SLEEP_PASSWORD`, `EIGHT_SLEEP_CLIENT_ID`, `EIGHT_SLEEP_CLIENT_SECRET`, optional `EIGHT_SLEEP_USER_ID`, timezone/retry/timeout overrides. Do not commit values.
 
 Probe: `EIGHT_SLEEP_DIRECT_ENABLED=true python -m garmin_sync.eight_sleep_probe --date YYYY-MM-DD`.
+
+### ES9 — shadow direct-vs-Google comparison (implemented, evidence pending)
+
+Direct Eight Sleep observations previously had no persistence path — the ES6 probe only
+printed a sanitized summary to stdout. Two new commands close that gap:
+
+- `backfill-eight-sleep-direct [--days N] [--start-date] [--end-date]` — registers
+  `EightSleepDirectProvider` with `HealthObservationService` and persists observations to
+  `health_observation_days/{date}_eight_sleep_eight_sleep_direct`, the same idempotent
+  day-source-bundle path `backfill-health` already uses for the Google Health side.
+- `compare-eight-sleep-transports [--days N] [--start-date] [--end-date]` — diffs
+  `eight_sleep_direct` bundles against `eight_sleep`/`google_health` bundles for overlapping
+  dates, reusing `equivalence.py`'s `TransportEquivalenceAnalyzer` (now generalized via an
+  `expected_provider` constructor param instead of MS10's original hardcoded `"garmin"`
+  filter) and `bundle_to_canonical_observations`.
+
+Both commands are read-only with respect to production behavior — they only ever write to
+the shadow `health_observation_days` collection, never `daily_recovery_snapshots`, and
+`EIGHT_SLEEP_DIRECT_ENABLED` stays `false` by default.
+
+`backfill-eight-sleep-direct` runs once daily via a Cloud Scheduler job
+(`eight-sleep-direct-sync-daily`, `0 8 * * *` Europe/Warsaw) once `EIGHT_SLEEP_EMAIL`,
+`EIGHT_SLEEP_PASSWORD`, `EIGHT_SLEEP_CLIENT_ID`, `EIGHT_SLEEP_CLIENT_SECRET`, and
+`APP_USER_ID` are all set as repo secrets — deliberately a fixed daily tick, not a polling
+window like the Garmin Jobs, since there's no cheap freshness pre-check here and every tick
+is a real Eight Sleep API call. Each tick uses a bounded 7-day trailing window sized for
+daily incremental runs, not the historical-backfill default. This still only ever writes to
+the shadow `health_observation_days` collection; `EIGHT_SLEEP_DIRECT_ENABLED` stays
+production-inert. `compare-eight-sleep-transports` is not scheduled — it's a cheap,
+idempotent report over whatever has already accumulated, run on demand. See
+[`docs/ops/cloud-run-deployment.md`](../ops/cloud-run-deployment.md) for the one-time larger
+backfill and comparison commands, or run either locally via
+`uv run python -m garmin_sync backfill-eight-sleep-direct`.
 
 Promotion requires stable real-account auth/schema, source-specific baseline maturity, better reliability than Google Health, replay/prospective evidence and a separate activation review. Rollback is simply `EIGHT_SLEEP_DIRECT_ENABLED=false`; Garmin/recommendation behavior is unchanged.
