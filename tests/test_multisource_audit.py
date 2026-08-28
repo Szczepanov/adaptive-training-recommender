@@ -64,6 +64,73 @@ def test_run_multisource_audit_mocked() -> None:
     assert report.eightSleepIdentityEligibleDays == 1
     assert report.eightSleepIdentityExcludedDays == 0
     assert report.dailyComparisons[0]["identityBaselineEligible"] is True
+    # Neither the Garmin snapshot nor the Eight Sleep bundle above set timing fields --
+    # both sources have sleep data that night but no captured start/end, which is the
+    # missing-timestamp gap this audit exists to surface.
+    assert report.garminSleepTimingDays == 0
+    assert report.garminSleepMissingTimingDates == ["2026-08-25"]
+    assert report.eightSleepSleepTimingDays == 0
+    assert report.eightSleepMissingTimingDates == ["2026-08-25"]
+    assert report.dailyComparisons[0]["garminSleepTimingAvailable"] is False
+    assert report.dailyComparisons[0]["eightSleepTimingAvailable"] is False
+
+
+def test_run_multisource_audit_sleep_timing_available_for_both_sources() -> None:
+    mock_repo = MagicMock()
+    mock_repo.get_historical_snapshots.return_value = {
+        "2026-08-25": {
+            "date": "2026-08-25",
+            "raw": {
+                "sleepDurationSec": 28800,
+                "sleepSessionStart": "2026-08-24T22:00:00+00:00",
+                "sleepSessionEnd": "2026-08-25T06:00:00+00:00",
+            },
+        }
+    }
+    mock_repo.get_health_observation_bundles_in_range.return_value = [
+        {
+            "logicalDate": "2026-08-25",
+            "provider": "eight_sleep",
+            "transport": "google_health",
+            "observations": [
+                {
+                    "metric": "sleep_duration_seconds",
+                    "value": 27600,
+                    "observedStart": "2026-08-24T22:05:00+00:00",
+                    "observedEnd": "2026-08-25T05:45:00+00:00",
+                },
+            ],
+        }
+    ]
+    mock_repo.get_effective_identity_decision_projections_in_range.return_value = {}
+
+    report = run_multisource_audit(mock_repo, "2026-08-25", "2026-08-25")
+
+    assert report.garminSleepTimingDays == 1
+    assert report.garminSleepMissingTimingDates == []
+    assert report.eightSleepSleepTimingDays == 1
+    assert report.eightSleepMissingTimingDates == []
+    assert report.dailyComparisons[0]["garminSleepTimingAvailable"] is True
+    assert report.dailyComparisons[0]["eightSleepTimingAvailable"] is True
+
+
+def test_run_multisource_audit_no_sleep_data_is_not_a_timing_gap() -> None:
+    """A night with no sleep record at all from a source must not be reported as a
+    missing-timestamp night -- that's a coverage gap (garminOnlyDays/eightSleepOnlyDays/
+    neitherDays), a different concern from 'sleep present, timing missing'."""
+    mock_repo = MagicMock()
+    mock_repo.get_historical_snapshots.return_value = {
+        "2026-08-25": {"date": "2026-08-25", "raw": {"restingHr": 45.0}}
+    }
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+    mock_repo.get_effective_identity_decision_projections_in_range.return_value = {}
+
+    report = run_multisource_audit(mock_repo, "2026-08-25", "2026-08-25")
+
+    assert report.garminSleepTimingDays == 0
+    assert report.garminSleepMissingTimingDates == []
+    assert report.eightSleepSleepTimingDays == 0
+    assert report.eightSleepMissingTimingDates == []
 
 
 def test_run_multisource_audit_missing_identity_projection_fails_closed() -> None:

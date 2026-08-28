@@ -108,3 +108,32 @@ def test_snapshot_conversion_and_run_analysis():
     assert report.totalOverlapDays == 1
     assert "daily_resting_heart_rate_bpm" in report.metricSummaries
     assert report.metricSummaries["daily_resting_heart_rate_bpm"]["matchCount"] == 1
+
+
+def test_snapshot_conversion_carries_sleep_session_timing_when_present():
+    from datetime import datetime, timezone
+
+    from garmin_sync.equivalence import snapshot_to_canonical_observations
+
+    snap = {
+        "date": "2026-08-25",
+        "raw": {
+            "sleepDurationSec": 28800,
+            "sleepSessionStart": "2026-08-24T22:00:00+00:00",
+            "sleepSessionEnd": "2026-08-25T06:00:00+00:00",
+        },
+    }
+    obs = snapshot_to_canonical_observations(snap)
+    sleep_obs = next(o for o in obs if o.metric == "sleep_duration_seconds")
+    assert sleep_obs.observed_start == datetime(2026, 8, 24, 22, 0, tzinfo=timezone.utc)
+    assert sleep_obs.observed_end == datetime(2026, 8, 25, 6, 0, tzinfo=timezone.utc)
+
+
+def test_snapshot_conversion_sleep_timing_none_when_absent():
+    from garmin_sync.equivalence import snapshot_to_canonical_observations
+
+    snap = {"date": "2026-08-25", "raw": {"sleepDurationSec": 28800}}
+    obs = snapshot_to_canonical_observations(snap)
+    sleep_obs = next(o for o in obs if o.metric == "sleep_duration_seconds")
+    assert sleep_obs.observed_start is None
+    assert sleep_obs.observed_end is None
