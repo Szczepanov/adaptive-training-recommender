@@ -1,6 +1,6 @@
 import sys
 from typing import Any, Generator
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -12,6 +12,7 @@ from garmin_sync.cli import (
     run_poll_manual_sync_all_cmd,
     run_daily_sync_all,
     run_poll_manual_sync_cmd,
+    run_push_pending_workouts_all_cmd,
     run_rebuild_cmd,
 )
 
@@ -266,6 +267,42 @@ def test_run_rebuild_cmd_exception(mock_settings: Any, mock_service: Any) -> Non
     assert exit_code == 1
 
 
+@patch("garmin_sync.cli._run_for_all_users")
+def test_run_push_pending_workouts_all_cmd_success(mock_run_for_all_users: Any) -> None:
+    mock_run_for_all_users.return_value = 0
+
+    exit_code = run_push_pending_workouts_all_cmd([])
+
+    assert exit_code == 0
+    mock_run_for_all_users.assert_called_once()
+    args, kwargs = mock_run_for_all_users.call_args
+    assert args[0] == "push pending workouts"
+
+    # Test the lambda passed to _run_for_all_users
+    mock_service = MagicMock()
+    operation_lambda = args[1]
+    operation_lambda(mock_service)
+    mock_service.push_pending_workouts.assert_called_once_with(max_age_days=14)
+
+
+@patch("garmin_sync.cli._run_for_all_users")
+def test_run_push_pending_workouts_all_cmd_with_args(mock_run_for_all_users: Any) -> None:
+    mock_run_for_all_users.return_value = 0
+
+    exit_code = run_push_pending_workouts_all_cmd(["--max-age-days", "7"])
+
+    assert exit_code == 0
+    mock_run_for_all_users.assert_called_once()
+    args, kwargs = mock_run_for_all_users.call_args
+    assert args[0] == "push pending workouts"
+
+    # Test the lambda passed to _run_for_all_users
+    mock_service = MagicMock()
+    operation_lambda = args[1]
+    operation_lambda(mock_service)
+    mock_service.push_pending_workouts.assert_called_once_with(max_age_days=7)
+
+
 def test_run_poll_manual_sync_cmd_success(mock_settings: Any, mock_service: Any) -> None:
     mock_service_instance = mock_service.return_value
     mock_service_instance.poll_manual_sync_requests.return_value = True
@@ -385,6 +422,19 @@ def test_main_poll_manual_sync_all(mock_run_poll_manual_sync_all_cmd: Any) -> No
 
     assert exit_code == 0
     mock_run_poll_manual_sync_all_cmd.assert_called_once_with([])
+
+
+@patch("garmin_sync.cli.run_push_pending_workouts_all_cmd")
+def test_main_push_pending_workouts_all(mock_run_push_pending_workouts_all_cmd: Any) -> None:
+    mock_run_push_pending_workouts_all_cmd.return_value = 0
+
+    with patch.object(
+        sys, "argv", ["garmin_sync", "push-pending-workouts-all", "--max-age-days", "7"]
+    ):
+        exit_code = main()
+
+    assert exit_code == 0
+    mock_run_push_pending_workouts_all_cmd.assert_called_once_with(["--max-age-days", "7"])
 
 
 def test_main_missing_command() -> None:
