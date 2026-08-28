@@ -18,6 +18,7 @@ from .firestore_repository import FirestoreRecoveryRepository
 from .garmin_client import GarminClientWrapper
 from .garmin_provider import (
     GarminProviderAdapter,
+    RawGarminTelemetry,
     canonicalize_activities,
     canonicalize_from_raw,
     qualifies_for_activity_detail,
@@ -812,14 +813,12 @@ class GarminSyncService:
             spo2_today = self.archive_store.load("spo2", target_iso)
 
             try:
-                canonical = canonicalize_from_raw(
+                telemetry = RawGarminTelemetry(
                     stats_today=raw_stats,
                     stats_fallback=stats_fallback,
                     sleep_today=raw_sleep,
                     sleep_fallback=sleep_fallback,
                     hrv_today=raw_hrv,
-                    target_date_iso=target_iso,
-                    yesterday_iso=yesterday_iso,
                     stress_today=stress_today,
                     body_battery_today=body_battery_today,
                     training_readiness_today=training_readiness_today,
@@ -828,6 +827,12 @@ class GarminSyncService:
                     respiration_today=respiration_today,
                     body_composition_today=body_composition_today,
                     spo2_today=spo2_today,
+                )
+
+                canonical = canonicalize_from_raw(
+                    telemetry=telemetry,
+                    target_date_iso=target_iso,
+                    yesterday_iso=yesterday_iso,
                 )
                 zone4_floor = (
                     canonical.heart_rate_zones.zone4_floor if canonical.heart_rate_zones else None
@@ -1195,3 +1200,24 @@ class GarminSyncService:
             )
 
         finish(self.repository.db.transaction())
+
+    def export_activities_json(self, start_date_iso: str, end_date_iso: str) -> dict[str, Any]:
+        """Export normalized activities with detailed telemetry in date range."""
+        activities = self.repository.get_activities_in_range(start_date_iso, end_date_iso)
+        return {
+            "schemaVersion": "recent_activities_bundle_v1",
+            "metadata": {
+                "exportedAt": datetime.now(timezone.utc).isoformat(),
+                "format": "recent_activities_bundle_v1",
+                "userId": self.settings.app_user_id,
+                "dateRange": {
+                    "startDateInclusive": start_date_iso,
+                    "throughDateInclusive": end_date_iso,
+                },
+                "totalActivities": len(activities),
+            },
+            "activities": sorted(
+                activities,
+                key=lambda a: (str(a.get("date", "")), str(a.get("activityId", ""))),
+            ),
+        }
