@@ -307,7 +307,17 @@ class GoogleHealthMapper:
                 awake_sec = int(stage_totals["AWAKE"])
 
         if duration_sec is None and start_time and end_time:
-            duration_sec = int((end_time - start_time).total_seconds())
+            # Real API shape has no top-level durationSeconds/minutesAsleep for at least
+            # Eight-Sleep-origin sleep records (confirmed empirically 2026-08-28: ES9's
+            # direct-vs-Google comparison showed Google's duration exactly equal to
+            # end_time - start_time on every one of 38 real nights, while direct Eight
+            # Sleep reports elapsed-minus-awake -- an average ~55min systematic gap that
+            # was actually mostly this fallback, not a real transport disagreement).
+            # Prefer elapsed-minus-awake ("time actually asleep") over the raw session span
+            # when awake_sec is available -- it already reflects the same real per-stage
+            # data (from sleep.stages) parsed just above, so this doesn't invent evidence.
+            elapsed_sec = int((end_time - start_time).total_seconds())
+            duration_sec = max(0, elapsed_sec - awake_sec) if awake_sec is not None else elapsed_sec
 
         session_val = {
             "durationSeconds": duration_sec,
