@@ -703,7 +703,7 @@ def run_compare_transports_cmd(args: list[str] | None = None) -> int:
 
     import os
 
-    from .equivalence import run_equivalence_analysis
+    from .equivalence import format_metric_summaries_table, run_equivalence_analysis
     from .firestore_repository import FirestoreRecoveryRepository
 
     if parsed_args.user_id:
@@ -734,14 +734,7 @@ def run_compare_transports_cmd(args: list[str] | None = None) -> int:
         print(f"  Google-Only Dates:          {report.googleOnlyDays}")
         print(f"  Overall Classification:     {report.overallClassification}")
         print("-" * 80)
-        print(
-            f"{'Metric':<34} {'Evaluated':<10} {'Matches':<10} {'Match %':<10} {'Mean Delta':<12}"
-        )
-        print("-" * 80)
-        for m, s in report.metricSummaries.items():
-            print(
-                f"{m:<34} {s['totalEvaluated']:<10} {s['matchCount']:<10} {s['matchRatePct']:<9}% {s['meanDifference']:<12}"
-            )
+        print(format_metric_summaries_table(report.metricSummaries))
         print("=" * 80 + "\n")
         return 0
 
@@ -964,6 +957,7 @@ def run_compare_eight_sleep_transports_cmd(args: list[str] | None = None) -> int
     parsed_args = parser.parse_args(args)
 
     from .eight_sleep_equivalence import run_eight_sleep_equivalence_analysis
+    from .equivalence import format_metric_summaries_table
     from .firestore_repository import FirestoreRecoveryRepository
 
     if parsed_args.user_id:
@@ -994,14 +988,7 @@ def run_compare_eight_sleep_transports_cmd(args: list[str] | None = None) -> int
         print(f"  Google-Only Dates:          {report.googleOnlyDays}")
         print(f"  Overall Classification:     {report.overallClassification}")
         print("-" * 80)
-        print(
-            f"{'Metric':<34} {'Evaluated':<10} {'Matches':<10} {'Match %':<10} {'Mean Delta':<12}"
-        )
-        print("-" * 80)
-        for m, s in report.metricSummaries.items():
-            print(
-                f"{m:<34} {s['totalEvaluated']:<10} {s['matchCount']:<10} {s['matchRatePct']:<9}% {s['meanDifference']:<12}"
-            )
+        print(format_metric_summaries_table(report.metricSummaries))
         print("=" * 80 + "\n")
         return 0
 
