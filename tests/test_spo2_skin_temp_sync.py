@@ -5,6 +5,7 @@ import pytest
 from garmin_sync.canonical import CanonicalDailyMetrics, CanonicalSpo2
 from garmin_sync.garmin_provider import (
     GarminProviderAdapter,
+    RawGarminTelemetry,
     canonicalize_from_raw,
     extract_skin_temp_deviation,
     extract_spo2,
@@ -80,16 +81,18 @@ def test_sleep_fallback_keeps_overnight_metrics_on_one_logical_date():
     }
 
     canonical = canonicalize_from_raw(
-        stats_today={},
-        stats_fallback=None,
-        sleep_today={},
-        sleep_fallback=fallback_sleep,
-        hrv_today={},
+        telemetry=RawGarminTelemetry(
+            stats_today={},
+            stats_fallback=None,
+            sleep_today={},
+            sleep_fallback=fallback_sleep,
+            hrv_today={},
+            # This belongs to the target date and must not be mixed into the selected
+            # D-1 sleep record.
+            spo2_today={"averageSpO2": 99.0, "lowestSpO2": 98.0},
+        ),
         target_date_iso="2026-08-23",
         yesterday_iso="2026-08-22",
-        # This belongs to the target date and must not be mixed into the selected
-        # D-1 sleep record.
-        spo2_today={"averageSpO2": 99.0, "lowestSpO2": 98.0},
     )
 
     assert canonical.sleep_date == "2026-08-22"

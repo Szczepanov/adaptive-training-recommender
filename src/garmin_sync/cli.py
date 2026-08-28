@@ -822,9 +822,86 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
+def run_export_activities_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Export recent activity telemetry to JSON for AI agent planning."
+    )
+    parser.add_argument("--days", type=int, default=7, help="Number of trailing days (default 7)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
+    parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        default=None,
+        help="Output file path (default: stdout)",
+    )
+    parser.add_argument(
+        "--user-id",
+        type=str,
+        default=None,
+        help="Target application User ID (or APP_USER_ID env var)",
+    )
+    parsed_args = parser.parse_args(args)
+
+    import json
+    import os
+
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
+    start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=7)
+
+    try:
+        settings = load_settings()
+        service = GarminSyncService(settings)
+        bundle = service.export_activities_json(start_date_str, end_date_str)
+        json_output = json.dumps(bundle, indent=2)
+
+        if parsed_args.output:
+            with open(parsed_args.output, "w", encoding="utf-8") as f:
+                f.write(json_output)
+            logger.info(
+                f"Exported {bundle['metadata']['totalActivities']} activities to {parsed_args.output}"
+            )
+        else:
+            print(json_output)
+        return 0
+    except Exception as error:
+        log_exception(logger, "export activities", error)
+        return 1
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Garmin Sync Pipeline CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
+
+    export_activities_parser = subparsers.add_parser(
+        "export-activities",
+        help="Export recent activity telemetry to JSON for AI agent planning",
+    )
+    export_activities_parser.add_argument(
+        "--days", type=int, default=7, help="Number of trailing days (default 7)"
+    )
+    export_activities_parser.add_argument(
+        "--start-date", type=str, default=None, help="Start date YYYY-MM-DD"
+    )
+    export_activities_parser.add_argument(
+        "--end-date", type=str, default=None, help="End date YYYY-MM-DD"
+    )
+    export_activities_parser.add_argument(
+        "--output",
+        "-o",
+        type=str,
+        default=None,
+        help="Output file path (default: stdout)",
+    )
+    export_activities_parser.add_argument(
+        "--user-id",
+        type=str,
+        default=None,
+        help="Target application User ID (or APP_USER_ID env var)",
+    )
 
     sync_parser = subparsers.add_parser("sync", help="Run daily sync for APP_USER_ID")
     sync_parser.add_argument("--date", type=str, default=None, help="Target date YYYY-MM-DD")
@@ -922,6 +999,8 @@ def main() -> int:
 
     args = parser.parse_args()
 
+    if args.command == "export-activities":
+        return run_export_activities_cmd(sys.argv[2:])
     if args.command == "sync":
         return run_daily_sync(sys.argv[2:])
     if args.command == "sync-all":
