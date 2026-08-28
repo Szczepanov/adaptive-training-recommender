@@ -25,6 +25,29 @@ METRIC_RESPIRATION_RATE_BRPM = "respiration_rate_brpm"
 METRIC_DAILY_RESPIRATION_RATE_BRPM = "daily_respiration_rate_brpm"
 METRIC_SLEEP_RESPIRATION_SUMMARY = "sleep_respiration_summary"
 
+# Extended Eight Sleep direct-only vocabulary (ES-EXT): fields the private API's
+# sleepQualityScore/sleepRoutineScore/performanceWindows objects already compute
+# server-side but eight_sleep_mapper.py did not originally extract. No other provider
+# currently supplies these -- unlike the block above, this is deliberately
+# source-specific rather than aspirationally provider-neutral, since there is no
+# non-Eight-Sleep analogue to normalize toward yet.
+METRIC_SLEEP_LATENCY_ASLEEP_SECONDS = "sleep_latency_asleep_seconds"
+METRIC_SLEEP_LATENCY_OUT_SECONDS = "sleep_latency_out_seconds"
+METRIC_SLEEP_WASO_SECONDS = "sleep_waso_seconds"
+METRIC_SLEEP_DEBT_SECONDS = "sleep_debt_seconds"
+METRIC_SLEEP_BASELINE_DURATION_SECONDS = "sleep_baseline_duration_seconds"
+METRIC_SNORE_DURATION_SECONDS = "snore_duration_seconds"
+METRIC_HEAVY_SNORE_DURATION_SECONDS = "heavy_snore_duration_seconds"
+METRIC_SNORE_PERCENT = "snore_percent"
+METRIC_HEAVY_SNORE_PERCENT = "heavy_snore_percent"
+METRIC_SNORE_MITIGATION_EVENTS_COUNT = "snore_mitigation_events_count"
+METRIC_TOSS_AND_TURN_COUNT = "toss_and_turn_count"
+METRIC_SOCIAL_JETLAG_SECONDS = "social_jetlag_seconds"
+METRIC_CHRONOTYPE_CLASS = "chronotype_class"
+METRIC_WAKEUP_TIME_CONSISTENCY = "wakeup_time_consistency"
+METRIC_SLEEP_START_TIME_CONSISTENCY = "sleep_start_time_consistency"
+METRIC_BEDTIME_CONSISTENCY = "bedtime_consistency"
+
 STANDARD_OBSERVATION_METRICS = {
     METRIC_SLEEP_SESSION,
     METRIC_SLEEP_DURATION_SECONDS,
@@ -39,6 +62,25 @@ STANDARD_OBSERVATION_METRICS = {
     METRIC_RESPIRATION_RATE_BRPM,
     METRIC_DAILY_RESPIRATION_RATE_BRPM,
     METRIC_SLEEP_RESPIRATION_SUMMARY,
+}
+
+EIGHT_SLEEP_EXTENDED_METRICS = {
+    METRIC_SLEEP_LATENCY_ASLEEP_SECONDS,
+    METRIC_SLEEP_LATENCY_OUT_SECONDS,
+    METRIC_SLEEP_WASO_SECONDS,
+    METRIC_SLEEP_DEBT_SECONDS,
+    METRIC_SLEEP_BASELINE_DURATION_SECONDS,
+    METRIC_SNORE_DURATION_SECONDS,
+    METRIC_HEAVY_SNORE_DURATION_SECONDS,
+    METRIC_SNORE_PERCENT,
+    METRIC_HEAVY_SNORE_PERCENT,
+    METRIC_SNORE_MITIGATION_EVENTS_COUNT,
+    METRIC_TOSS_AND_TURN_COUNT,
+    METRIC_SOCIAL_JETLAG_SECONDS,
+    METRIC_CHRONOTYPE_CLASS,
+    METRIC_WAKEUP_TIME_CONSISTENCY,
+    METRIC_SLEEP_START_TIME_CONSISTENCY,
+    METRIC_BEDTIME_CONSISTENCY,
 }
 
 

@@ -9,15 +9,31 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from garmin_sync.canonical import (
+    METRIC_BEDTIME_CONSISTENCY,
+    METRIC_CHRONOTYPE_CLASS,
+    METRIC_HEAVY_SNORE_DURATION_SECONDS,
+    METRIC_HEAVY_SNORE_PERCENT,
     METRIC_HRV_RMSSD_MS,
+    METRIC_SLEEP_BASELINE_DURATION_SECONDS,
+    METRIC_SLEEP_DEBT_SECONDS,
     METRIC_SLEEP_DURATION_SECONDS,
+    METRIC_SLEEP_LATENCY_ASLEEP_SECONDS,
+    METRIC_SLEEP_LATENCY_OUT_SECONDS,
     METRIC_SLEEP_RESPIRATION_SUMMARY,
     METRIC_SLEEP_SESSION,
     METRIC_SLEEP_STAGE_AWAKE_SECONDS,
     METRIC_SLEEP_STAGE_DEEP_SECONDS,
     METRIC_SLEEP_STAGE_LIGHT_SECONDS,
     METRIC_SLEEP_STAGE_REM_SECONDS,
+    METRIC_SLEEP_START_TIME_CONSISTENCY,
+    METRIC_SLEEP_WASO_SECONDS,
     METRIC_SLEEPING_HEART_RATE_BPM,
+    METRIC_SNORE_DURATION_SECONDS,
+    METRIC_SNORE_MITIGATION_EVENTS_COUNT,
+    METRIC_SNORE_PERCENT,
+    METRIC_SOCIAL_JETLAG_SECONDS,
+    METRIC_TOSS_AND_TURN_COUNT,
+    METRIC_WAKEUP_TIME_CONSISTENCY,
     CanonicalHealthObservation,
     ObservationBatch,
     ObservationSource,
@@ -27,7 +43,11 @@ from garmin_sync.eight_sleep_client import EightSleepSchemaError
 PROVIDER = "eight_sleep"
 TRANSPORT = "eight_sleep_direct"
 ORIGIN_APPLICATION = "eight_sleep_private_api"
-NORMALIZER_VERSION = 1
+# 2 (ES-EXT, 2026-08-28): added snoring/latency/WASO/sleep-debt/circadian-consistency/
+# chronotype extraction. Bumping this is what actually makes save_health_observation_day_bundle
+# re-persist already-fetched dates with the richer observation set -- sourcePayloadHash alone
+# is blind to mapper logic changes, since the underlying raw Eight Sleep response is unchanged.
+NORMALIZER_VERSION = 2
 
 
 def map_trends_to_observation_batch(
@@ -59,6 +79,43 @@ def map_trends_to_observation_batch(
         _first(selected, "respiratoryRate", "respiratory_rate")
         or _current(score, "respiratoryRate")
     )
+
+    # Extended fields (ES-EXT): sleepQualityScore.waso/sleepDebt, sleepRoutineScore's
+    # latency/consistency sub-objects, and performanceWindows' social-jetlag/chronotype --
+    # all already computed server-side by the private API but not previously extracted.
+    # None of these count toward the "did this record contain anything recognized" check
+    # below: a day with only these fields and no core sleep/recovery data would be a
+    # malformed record, not a legitimately extended one.
+    waso = _num(_current(score, "waso"))
+    debt_obj = score.get("sleepDebt")
+    debt_obj = debt_obj if isinstance(debt_obj, dict) else {}
+    sleep_debt = _signed_num(debt_obj.get("dailySleepDebtSeconds"))
+    sleep_baseline = _num(debt_obj.get("baselineSleepDurationSeconds"))
+
+    routine_score = selected.get("sleepRoutineScore")
+    routine = routine_score if isinstance(routine_score, dict) else {}
+    latency_asleep = _num(_current(routine, "latencyAsleepSeconds"))
+    latency_out = _num(_current(routine, "latencyOutSeconds"))
+    wakeup_consistency = _time_of_day(_current(routine, "wakeupConsistency"))
+    sleep_start_consistency = _time_of_day(_current(routine, "sleepStartConsistency"))
+    bedtime_consistency = _time_of_day(_current(routine, "bedtimeConsistency"))
+
+    snore_sec = _num(_first(selected, "snoreDuration", "snore_duration"))
+    heavy_snore_sec = _num(_first(selected, "heavySnoreDuration", "heavy_snore_duration"))
+    snore_pct = _num(_first(selected, "snorePercent", "snore_percent"))
+    heavy_snore_pct = _num(_first(selected, "heavySnorePercent", "heavy_snore_percent"))
+    mitigation_events = _num(_first(selected, "mitigationEvents", "mitigation_events"))
+    tnt = _num(_first(selected, "tnt"))
+
+    perf_windows = selected.get("performanceWindows")
+    perf_windows = perf_windows if isinstance(perf_windows, dict) else {}
+    social_jetlag_obj = perf_windows.get("socialJetlag")
+    social_jetlag_obj = social_jetlag_obj if isinstance(social_jetlag_obj, dict) else {}
+    social_jetlag = _num(social_jetlag_obj.get("socialJetlagSeconds"))
+    chronotype_obj = perf_windows.get("chronotype")
+    chronotype_obj = chronotype_obj if isinstance(chronotype_obj, dict) else {}
+    chronotype_class = _str(chronotype_obj.get("chronoClass"))
+
     if not any(v is not None for v in (start, presence, sleep, light, deep, rem, hrv, hr, resp)):
         raise EightSleepSchemaError(
             "Eight Sleep target-day record did not contain any recognized sleep/recovery fields."
@@ -102,6 +159,24 @@ def map_trends_to_observation_batch(
     add(METRIC_SLEEPING_HEART_RATE_BPM, hr, "bpm")
     if resp is not None:
         add(METRIC_SLEEP_RESPIRATION_SUMMARY, {"breathsPerMinute": resp}, "brpm")
+
+    add(METRIC_SLEEP_WASO_SECONDS, _whole(waso), "s")
+    add(METRIC_SLEEP_DEBT_SECONDS, _whole(sleep_debt), "s")
+    add(METRIC_SLEEP_BASELINE_DURATION_SECONDS, _whole(sleep_baseline), "s")
+    add(METRIC_SLEEP_LATENCY_ASLEEP_SECONDS, _whole(latency_asleep), "s")
+    add(METRIC_SLEEP_LATENCY_OUT_SECONDS, _whole(latency_out), "s")
+    add(METRIC_WAKEUP_TIME_CONSISTENCY, wakeup_consistency, "HH:MM:SS")
+    add(METRIC_SLEEP_START_TIME_CONSISTENCY, sleep_start_consistency, "HH:MM:SS")
+    add(METRIC_BEDTIME_CONSISTENCY, bedtime_consistency, "HH:MM:SS")
+    add(METRIC_SNORE_DURATION_SECONDS, _whole(snore_sec), "s")
+    add(METRIC_HEAVY_SNORE_DURATION_SECONDS, _whole(heavy_snore_sec), "s")
+    add(METRIC_SNORE_PERCENT, _whole(snore_pct), "percent")
+    add(METRIC_HEAVY_SNORE_PERCENT, _whole(heavy_snore_pct), "percent")
+    add(METRIC_SNORE_MITIGATION_EVENTS_COUNT, _whole(mitigation_events), "count")
+    add(METRIC_TOSS_AND_TURN_COUNT, _whole(tnt), "count")
+    add(METRIC_SOCIAL_JETLAG_SECONDS, _whole(social_jetlag), "s")
+    add(METRIC_CHRONOTYPE_CLASS, chronotype_class, None)
+
     return ObservationBatch(
         logical_date=logical_date,
         observations=observations,
@@ -208,8 +283,42 @@ def _num(value: Any) -> float | None:
     return parsed if parsed >= 0 else None
 
 
+def _signed_num(value: Any) -> float | None:
+    """Like _num but does not clamp negative values -- for fields that are legitimately
+    bidirectional (sleepDebt can plausibly go negative on a surplus night; unlike duration/
+    count fields, there's no physical reason to reject a negative reading here)."""
+    if isinstance(value, bool) or value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _whole(value: float | None) -> float | int | None:
     return int(value) if value is not None and value.is_integer() else value
+
+
+def _str(value: Any) -> str | None:
+    return value if isinstance(value, str) and value.strip() else None
+
+
+_TIME_OF_DAY_RE_LEN = 8  # "HH:MM:SS"
+
+
+def _time_of_day(value: Any) -> str | None:
+    """Validate the HH:MM:SS shape confirmed against a real response (2026-08-28) before
+    trusting it as a time-of-day value -- reject anything that doesn't match rather than
+    passing an unexpected shape through as if it were one."""
+    if not isinstance(value, str) or len(value) != _TIME_OF_DAY_RE_LEN:
+        return None
+    parts = value.split(":")
+    if len(parts) != 3 or not all(p.isdigit() and len(p) == 2 for p in parts):
+        return None
+    hh, mm, ss = (int(p) for p in parts)
+    if not (0 <= hh < 24 and 0 <= mm < 60 and 0 <= ss < 60):
+        return None
+    return value
 
 
 def _dt(value: Any) -> datetime | None:

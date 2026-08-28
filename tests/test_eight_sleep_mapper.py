@@ -1,11 +1,27 @@
 import pytest
 
 from garmin_sync.canonical import (
+    METRIC_BEDTIME_CONSISTENCY,
+    METRIC_CHRONOTYPE_CLASS,
     METRIC_DAILY_RESTING_HEART_RATE_BPM,
+    METRIC_HEAVY_SNORE_DURATION_SECONDS,
+    METRIC_HEAVY_SNORE_PERCENT,
     METRIC_HRV_RMSSD_MS,
+    METRIC_SLEEP_BASELINE_DURATION_SECONDS,
+    METRIC_SLEEP_DEBT_SECONDS,
+    METRIC_SLEEP_LATENCY_ASLEEP_SECONDS,
+    METRIC_SLEEP_LATENCY_OUT_SECONDS,
     METRIC_SLEEP_RESPIRATION_SUMMARY,
     METRIC_SLEEP_STAGE_AWAKE_SECONDS,
+    METRIC_SLEEP_START_TIME_CONSISTENCY,
+    METRIC_SLEEP_WASO_SECONDS,
     METRIC_SLEEPING_HEART_RATE_BPM,
+    METRIC_SNORE_DURATION_SECONDS,
+    METRIC_SNORE_MITIGATION_EVENTS_COUNT,
+    METRIC_SNORE_PERCENT,
+    METRIC_SOCIAL_JETLAG_SECONDS,
+    METRIC_TOSS_AND_TURN_COUNT,
+    METRIC_WAKEUP_TIME_CONSISTENCY,
 )
 from garmin_sync.eight_sleep_client import EightSleepSchemaError
 from garmin_sync.eight_sleep_mapper import map_trends_to_observation_batch
@@ -44,6 +60,153 @@ def test_nested_current_is_measurement_not_proprietary_score() -> None:
         and m[METRIC_SLEEP_STAGE_AWAKE_SECONDS].value == 1800
         and all(o.source.transport == "eight_sleep_direct" for o in b.observations)
     )
+
+
+def test_extended_fields_extracted_when_present() -> None:
+    """ES-EXT: snoring, sleep latency/WASO/debt, circadian consistency, and chronotype --
+    real fields confirmed present in the private API's response (2026-08-28 probe) that the
+    original mapper never extracted. Shape matches the real nested structure exactly."""
+    p = {
+        "days": [
+            {
+                "day": "2026-08-28",
+                "presenceStart": "2026-08-27T21:00:00+02:00",
+                "presenceDuration": 30600,
+                "sleepDuration": 28800,
+                "lightDuration": 14400,
+                "deepDuration": 7200,
+                "remDuration": 7200,
+                "tnt": 12,
+                "snoreDuration": 300,
+                "heavySnoreDuration": 60,
+                "snorePercent": 2,
+                "heavySnorePercent": 0,
+                "mitigationEvents": 1,
+                "sleepQualityScore": {
+                    "hrv": {"current": 67.0},
+                    "waso": {"current": 420.0},
+                    "sleepDebt": {
+                        "dailySleepDebtSeconds": 1800.0,
+                        "baselineSleepDurationSeconds": 27000.0,
+                    },
+                },
+                "sleepRoutineScore": {
+                    "latencyAsleepSeconds": {"current": 540},
+                    "latencyOutSeconds": {"current": 300},
+                    "wakeupConsistency": {"current": "06:13:00"},
+                    "sleepStartConsistency": {"current": "22:45:00"},
+                    "bedtimeConsistency": {"current": "22:30:00"},
+                },
+                "performanceWindows": {
+                    "socialJetlag": {"socialJetlagSeconds": 900},
+                    "chronotype": {"chronoClass": "early", "source": "pod"},
+                },
+            }
+        ]
+    }
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+
+    assert m[METRIC_SLEEP_WASO_SECONDS].value == 420
+    assert m[METRIC_SLEEP_DEBT_SECONDS].value == 1800
+    assert m[METRIC_SLEEP_BASELINE_DURATION_SECONDS].value == 27000
+    assert m[METRIC_SLEEP_LATENCY_ASLEEP_SECONDS].value == 540
+    assert m[METRIC_SLEEP_LATENCY_OUT_SECONDS].value == 300
+    assert m[METRIC_WAKEUP_TIME_CONSISTENCY].value == "06:13:00"
+    assert m[METRIC_SLEEP_START_TIME_CONSISTENCY].value == "22:45:00"
+    assert m[METRIC_BEDTIME_CONSISTENCY].value == "22:30:00"
+    assert m[METRIC_SNORE_DURATION_SECONDS].value == 300
+    assert m[METRIC_HEAVY_SNORE_DURATION_SECONDS].value == 60
+    assert m[METRIC_SNORE_PERCENT].value == 2
+    assert m[METRIC_HEAVY_SNORE_PERCENT].value == 0
+    assert m[METRIC_SNORE_MITIGATION_EVENTS_COUNT].value == 1
+    assert m[METRIC_TOSS_AND_TURN_COUNT].value == 12
+    assert m[METRIC_SOCIAL_JETLAG_SECONDS].value == 900
+    assert m[METRIC_CHRONOTYPE_CLASS].value == "early"
+
+
+def test_sleep_debt_can_be_negative_on_a_surplus_night() -> None:
+    """dailySleepDebtSeconds is plausibly bidirectional (ahead of baseline = surplus, not
+    just behind = debt) -- must not be silently clamped to None the way _num() would for a
+    duration/count field. Confirms _signed_num is actually used, not _num."""
+    p = {
+        "days": [
+            {
+                "day": "2026-08-28",
+                "presenceStart": "2026-08-27T21:00:00+02:00",
+                "presenceDuration": 30600,
+                "sleepDuration": 28800,
+                "lightDuration": 14400,
+                "deepDuration": 7200,
+                "remDuration": 7200,
+                "sleepQualityScore": {
+                    "hrv": {"current": 67.0},
+                    "sleepDebt": {"dailySleepDebtSeconds": -600.0},
+                },
+            }
+        ]
+    }
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    assert m[METRIC_SLEEP_DEBT_SECONDS].value == -600
+
+
+def test_malformed_time_of_day_consistency_value_is_rejected() -> None:
+    """A consistency 'current' value that doesn't match the confirmed real HH:MM:SS shape
+    must be dropped, not passed through as if it were a valid time-of-day."""
+    p = {
+        "days": [
+            {
+                "day": "2026-08-28",
+                "presenceStart": "2026-08-27T21:00:00+02:00",
+                "presenceDuration": 30600,
+                "sleepDuration": 28800,
+                "lightDuration": 14400,
+                "deepDuration": 7200,
+                "remDuration": 7200,
+                "sleepQualityScore": {"hrv": {"current": 67.0}},
+                "sleepRoutineScore": {
+                    "wakeupConsistency": {"current": "not-a-time"},
+                    "sleepStartConsistency": {"current": "25:99:00"},  # out-of-range
+                },
+            }
+        ]
+    }
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    assert METRIC_WAKEUP_TIME_CONSISTENCY not in m
+    assert METRIC_SLEEP_START_TIME_CONSISTENCY not in m
+
+
+def test_extended_fields_absent_when_not_present() -> None:
+    """Backward compat: a response with none of the extended fields (the original test
+    fixture's shape) must not error and must not synthesize any of the new metrics."""
+    p = {
+        "days": [
+            {
+                "day": "2026-08-28",
+                "presenceStart": "2026-08-27T21:00:00+02:00",
+                "presenceDuration": 30600,
+                "sleepDuration": 28800,
+                "lightDuration": 14400,
+                "deepDuration": 7200,
+                "remDuration": 7200,
+                "sleepQualityScore": {"hrv": {"current": 67.0}},
+            }
+        ]
+    }
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    for extended_metric in (
+        METRIC_SLEEP_WASO_SECONDS,
+        METRIC_SLEEP_DEBT_SECONDS,
+        METRIC_SNORE_DURATION_SECONDS,
+        METRIC_TOSS_AND_TURN_COUNT,
+        METRIC_SOCIAL_JETLAG_SECONDS,
+        METRIC_CHRONOTYPE_CLASS,
+        METRIC_WAKEUP_TIME_CONSISTENCY,
+    ):
+        assert extended_metric not in m
 
 
 def test_successful_no_target_day_is_empty() -> None:
