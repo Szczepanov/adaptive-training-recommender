@@ -133,9 +133,10 @@ all-`Ready` table became unusable.
 | SV | [Scientific validation & closed feedback loop](./scientific-validation-and-feedback-loop.md) | **In progress** | SV6 prospective calibration synthesis | SV6 needs multi-block real athlete history | evaluates signal marginal information value, window stability, collinearity, closed-loop telemetry, and counterfactual regret |
 | MS | [Multisource health & recovery ingestion](./multisource-health-and-recovery-ingestion.md) | **Approved** | MS0 | none | source-aware observation contract, Google Health ingestion, Eight Sleep export probing, and evidence-gated fusion (ADR-0027) |
 | PI | [Physiological identity passport & measurement trust](./physiological-identity-passport-and-measurement-trust.md) | **Approved** | PI8 real-data replay export/run; PI7 prospective label accumulation (the review UI is already shipped) | PI9's activation decision needs both of those plus real evidence they don't yet exist; PI10's telemetry additionally needs an analytics pipeline this application does not have | provider-neutral identity-attribution/measurement-trust layer (ADR-0028) between shared-source observations and baseline/fusion logic; PI0-PI7 implemented, PI8/PI9/PI10 partial |
+| ES | [Direct Eight Sleep recovery ingestion](./eight-sleep-direct-recovery-ingestion.md) | **In progress (default-off)** | ES8 (real-account probe) | runtime secrets | owned direct read-only recovery connector for Eight Sleep (ADR-0030) |
 
-Rows G, S, M, UX, OV, HA, SV, MS, and PI are **not phases**. They are capability/surface plans whose work items are
-prefixed `G*`, `S*`, `M*`, `UX*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*` precisely so they cannot be mistaken for the `Phase 0`–`9`
+Rows G, S, M, UX, OV, HA, SV, MS, PI, and ES are **not phases**. They are capability/surface plans whose work items are
+prefixed `G*`, `S*`, `M*`, `UX*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*`, `ES*` precisely so they cannot be mistaken for the `Phase 0`–`9`
 sequence; the `#` column carries that prefix rather than a phase number. For capability plans, an item
 with satisfied dependencies but an unmet usage trigger is **not** listed as startable. A transferred
 historical item (former M7) is likewise not listed under its old plan; only the canonical owner tracks it.
@@ -232,6 +233,11 @@ this table exists so none of them has to be rediscovered by reading six document
 | **D-MS-8S** | Eight Sleep through Google Health is capability-probed, not assumed | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Empirical real-account probe must observe Eight Sleep export before building dependent architecture |
 | **D-MS-FAIL** | Secondary-source failure degrades safely to direct Garmin + subjective | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Secondary source outages emit degradation telemetry without blocking recommendations |
 | **D-MS-EVID** | Observation authority precedes recommendation authority | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Promoting a source requires shadow observation, baseline stability, and simulation evidence |
+| **D-8S-DIRECT** | Prefer direct read-only ingestion as `provider=eight_sleep`, `transport=eight_sleep_direct` | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Google Health route proved unreliable for authoritative Eight Sleep acquisition |
+| **D-8S-OWN** | Own the minimal private protocol instead of adding reverse-engineering dependencies | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Isolates drift behind a small tested connector without unmaintained upstream library risk |
+| **D-8S-SECRETS** | Copy no mobile/community client credentials; require runtime configuration | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Prevents committing reverse-engineered public credentials into source control |
+| **D-8S-FAIL-CLOSED** | Auth/HTTP/rate-limit/schema errors fail closed and preserve prior observations | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Outages must never masquerade as authoritative empty data to observation reconcilers |
+| **D-8S-NO-AUTHORITY** | Ingestion is observation-only; no recommendation/fusion change without evidence | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Maintains multi-source baseline maturity and prospective shadow discipline under ADR-0027 |
 
 Five of the **accepted** decisions — **D-KWD**, **D-GATE**, **D-LIFE**, **D-RECOV**, and the
 withdrawal inside **D-FUSE** — correct errors in earlier drafts and came out of PR #5 review

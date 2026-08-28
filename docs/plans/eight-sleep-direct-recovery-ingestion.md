@@ -4,7 +4,7 @@
 * **Date:** 2026-08-28
 * **Blocked by:** runtime secret provisioning + real-account probe for operational activation.
 * **Decision authority:** none.
-* **Governing ADRs:** ADR-0027 and proposed ADR-0028.
+* **Governing ADRs:** ADR-0027 and proposed ADR-0030.
 
 ## Goal
 Replace unreliable Google Health transport for Eight Sleep with a repository-owned read-only connector emitting existing `CanonicalHealthObservation`s.

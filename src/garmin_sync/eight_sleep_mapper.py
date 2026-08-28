@@ -136,30 +136,30 @@ def summarize_trends_shape(payload: Any) -> dict[str, Any]:
 
 
 def _extract_days(payload: Any) -> list[dict[str, Any]]:
-    raw: list[Any] | None
+    raw: list[Any]
     if isinstance(payload, list):
         raw = payload
     elif isinstance(payload, dict):
-        raw = next(
+        found_list: Any = next(
             (payload[k] for k in ("days", "trends", "data") if isinstance(payload.get(k), list)),
             None,
         )
-        raw = (
-            [payload]
-            if raw is None
-            and any(
-                k in payload
-                for k in (
-                    "day",
-                    "date",
-                    "presenceStart",
-                    "sleepDuration",
-                    "sleepDurationSeconds",
-                    "sleepQualityScore",
-                )
+        if found_list is not None:
+            raw = found_list
+        elif any(
+            k in payload
+            for k in (
+                "day",
+                "date",
+                "presenceStart",
+                "sleepDuration",
+                "sleepDurationSeconds",
+                "sleepQualityScore",
             )
-            else (raw or [])
-        )
+        ):
+            raw = [payload]
+        else:
+            raw = []
     else:
         raise EightSleepSchemaError("Eight Sleep trends response must be an object or array.")
     days = [x for x in raw if isinstance(x, dict)]

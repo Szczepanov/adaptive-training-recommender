@@ -1,4 +1,4 @@
-# ADR-0028: Direct Read-Only Eight Sleep Private-API Transport
+# ADR-0030: Direct Read-Only Eight Sleep Private-API Transport
 
 * **Status:** Proposed
 * **Date:** 2026-08-28

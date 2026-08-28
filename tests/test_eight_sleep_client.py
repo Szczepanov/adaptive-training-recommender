@@ -112,3 +112,25 @@ def test_429_retry_is_bounded() -> None:
     c = EightSleepClient(settings(max_retries=1), transport=t, sleep_fn=lambda _: None)
     with pytest.raises(EightSleepRateLimitError):
         c.get_trends(from_date="2026-08-27", to_date="2026-08-29", timezone="Europe/Warsaw")
+
+
+def test_401_reauth_followed_by_429_retry_reuses_token() -> None:
+    t = FakeTransport(
+        [
+            r(200, '{"access_token":"a","expires_in":3600,"userId":"u"}'),
+            r(401, "{}"),
+            r(200, '{"access_token":"b","expires_in":3600,"userId":"u"}'),
+            r(429, "{}", **{"Retry-After": "0"}),
+            r(200, '{"days":[]}'),
+        ]
+    )
+    c = EightSleepClient(settings(max_retries=1), transport=t, sleep_fn=lambda _: None)
+    data = c.get_trends(from_date="2026-08-27", to_date="2026-08-29", timezone="Europe/Warsaw")
+    assert data == {"days": []}
+    auth_calls = [x for x in t.calls if x["url"] == AUTH_URL]
+    api_calls = [x for x in t.calls if x["url"] != AUTH_URL]
+    assert len(auth_calls) == 2
+    assert len(api_calls) == 3
+    assert api_calls[0]["headers"]["Authorization"] == "Bearer a"  # type: ignore[index]
+    assert api_calls[1]["headers"]["Authorization"] == "Bearer b"  # type: ignore[index]
+    assert api_calls[2]["headers"]["Authorization"] == "Bearer b"  # type: ignore[index]

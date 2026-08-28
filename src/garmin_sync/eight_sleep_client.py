@@ -191,7 +191,7 @@ class EightSleepClient:
         reauthed = False
         retries = 0
         while True:
-            token = self.authenticate(force=reauthed)
+            token = self.authenticate()
             response = self.transport.request(
                 method="GET",
                 url=url,
