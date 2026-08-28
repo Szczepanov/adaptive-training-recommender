@@ -6,7 +6,12 @@ import { activityOverrideService } from '../services/activityOverrideService';
 import { recommendationService } from '../services/recommendationService';
 import { contextBriefService, type ContextBriefResult } from '../services/contextBriefService';
 import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
-import { addDaysToLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
+import {
+  copyActivitiesBundleToClipboard,
+  downloadActivitiesJsonFile,
+  exportActivitiesBundleToJson,
+} from '../utils/activityJsonExport';
 import { ActivityTelemetry } from './ActivityTelemetry';
 import { ActivityReclassificationModal } from './ActivityReclassificationModal';
 import { StrengthOverloadHistory } from './StrengthOverloadHistory';
@@ -97,6 +102,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   } | null>(null);
   const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
   const [activityOverrides, setActivityOverrides] = useState<Record<string, ActivityOverride>>({});
+  const [allActivitiesCopied, setAllActivitiesCopied] = useState(false);
 
   const loadOverrides = useCallback(() => {
     activityOverrideService.getAllOverrides(userId).then(setActivityOverrides);
@@ -172,6 +178,36 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
       setBriefCopied(false);
       setBriefError({ date: brief.asOfDate, message: 'Copy was blocked. Select the text below and copy it manually.' });
     }
+  };
+
+  const handleCopyAllActivities = async () => {
+    if (!activityWindow || activityWindow.state.status !== 'AVAILABLE' || activityWindow.state.data.length === 0) return;
+    const startInclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), -6);
+    const throughDateExclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), 1);
+    try {
+      await copyActivitiesBundleToClipboard(activityWindow.state.data, {
+        userId,
+        startDateInclusive: startInclusive,
+        throughDateExclusive,
+      });
+      setAllActivitiesCopied(true);
+      window.setTimeout(() => setAllActivitiesCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy activities bundle to clipboard', err);
+    }
+  };
+
+  const handleDownloadActivities = () => {
+    if (!activityWindow || activityWindow.state.status !== 'AVAILABLE' || activityWindow.state.data.length === 0) return;
+    const startInclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), -6);
+    const throughDateExclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), 1);
+    const bundle = exportActivitiesBundleToJson(activityWindow.state.data, {
+      userId,
+      startDateInclusive: startInclusive,
+      throughDateExclusive,
+    });
+    const filename = `activities_${userId}_${startInclusive}_to_${throughDateExclusive}`;
+    downloadActivitiesJsonFile(filename, bundle);
   };
 
   if (!decisionInput) {
@@ -965,17 +1001,42 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
         {activeTab === 'recovery' && renderRecoveryData()}
         {activeTab === 'activities' && (
           <div className="data-section">
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-              <h3 style={{ margin: 0 }}>Recent activity telemetry</h3>
+            <div className="activities-tab-header">
+              <div>
+                <h3 style={{ margin: 0 }}>Recent activity telemetry</h3>
+                <p className="activities-tab-subtitle">
+                  Inspect detailed Garmin telemetry. Export structured JSON for external AI agent planning.
+                </p>
+              </div>
               {activityWindow?.state.status === 'AVAILABLE' && activityWindow.state.data.length > 0 && (
-                <button
-                  type="button"
-                  className="quick-action-btn secondary"
-                  style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                  onClick={() => setReclassifyModalOpen(true)}
-                >
-                  ✏️ Correct / Reclassify Activity
-                </button>
+                <div className="activities-header-actions">
+                  <button
+                    type="button"
+                    className="quick-action-btn secondary"
+                    style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                    onClick={handleCopyAllActivities}
+                    title="Copy all recent activities with detailed telemetry as JSON for AI planning"
+                  >
+                    {allActivitiesCopied ? '✓ Copied All JSON' : '📋 Copy All (JSON)'}
+                  </button>
+                  <button
+                    type="button"
+                    className="quick-action-btn secondary"
+                    style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                    onClick={handleDownloadActivities}
+                    title="Download recent activities JSON bundle file"
+                  >
+                    💾 Download JSON
+                  </button>
+                  <button
+                    type="button"
+                    className="quick-action-btn secondary"
+                    style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                    onClick={() => setReclassifyModalOpen(true)}
+                  >
+                    ✏️ Correct / Reclassify
+                  </button>
+                </div>
               )}
             </div>
             <ActivityTelemetry
