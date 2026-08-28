@@ -6,6 +6,7 @@ from garmin_sync.audit import AuditReport, format_report
 def assert_contains_match(pattern: str, text: str) -> None:
     assert re.search(pattern, text), f"Pattern '{pattern}' not found in:\n{text}"
 
+
 def test_format_report_archiving_enabled() -> None:
     report = AuditReport(
         start_date="2023-10-01",
@@ -39,6 +40,7 @@ def test_format_report_archiving_enabled() -> None:
     assert_contains_match(r"Rebuildable dates:\s+4", result)
     assert "Missing dates:" not in result
 
+
 def test_format_report_archiving_disabled() -> None:
     report = AuditReport(
         start_date="2023-10-01",
@@ -61,6 +63,7 @@ def test_format_report_archiving_disabled() -> None:
     assert_contains_match(r"Raw archive:\s+disabled \(GARMIN_ARCHIVE_ENABLED=false\)", result)
     assert "Raw payloads archived:" not in result
     assert "Rebuildable dates:" not in result
+
 
 def test_format_report_few_missing_snapshots() -> None:
     report = AuditReport(
@@ -85,8 +88,9 @@ def test_format_report_few_missing_snapshots() -> None:
     assert "Missing dates: 2023-10-02, 2023-10-03, 2023-10-04" in result
     assert "more" not in result
 
+
 def test_format_report_many_missing_snapshots() -> None:
-    missing_dates = [f"2023-10-{i:02d}" for i in range(1, 16)] # 15 missing dates
+    missing_dates = [f"2023-10-{i:02d}" for i in range(1, 16)]  # 15 missing dates
     report = AuditReport(
         start_date="2023-10-01",
         end_date="2023-10-15",
