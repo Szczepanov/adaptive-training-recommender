@@ -67,8 +67,10 @@ on `main` (HA5 shadow observability/replay merged via #171) and HA6.1–HA6.3 pr
 outcome labels implemented via PR #174 (evidence-only, gated behind the shadow surface).
 Physiological identity passport & measurement trust (PI) is **Approved, in progress**:
 PI0–PI7 are implemented (the pairing/lineage/passport/evaluator/pre-baseline gate engine
-layer, persistence, and the suspicious-night review UI); PI8's historical replay harness is
-built but has not been run against real history yet; PI9's fusion migration is additive and
+layer, persistence, and the suspicious-night review UI); PI8's historical replay has been run
+against real history (68.3% `leaveOneOut` automatic USER coverage on 41 real nights, see
+[the evidence doc](../analysis/2026-08-28-identity-passport-replay-evidence.md)) with prospective
+label collection still not started; PI9's fusion migration is additive and
 its production activation decision is explicitly not made; PI10's architecture docs are
 written, its telemetry deferred to activation.
 
@@ -133,7 +135,7 @@ all-`Ready` table became unusable.
 | HA | [Health anomaly and possible-illness alerting](./health-anomaly-and-illness-risk-alerting.md) | **In progress** | HA7 evidence & prospective accumulation | HA6.4 needs enough labelled personal history; HA7 needs real replay/prospective evidence; HA8/HA9 remain release-gated | explainable physiological-anomaly evidence with structured confounders; HA0–HA5 on `main` (HA5 via #171), HA6.1–HA6.3 prospective labels implemented in PR #174 |
 | SV | [Scientific validation & closed feedback loop](./scientific-validation-and-feedback-loop.md) | **In progress** | SV6 prospective calibration synthesis | SV6 needs multi-block real athlete history | evaluates signal marginal information value, window stability, collinearity, closed-loop telemetry, and counterfactual regret |
 | MS | [Multisource health & recovery ingestion](./multisource-health-and-recovery-ingestion.md) | **Approved** | MS0 | none | source-aware observation contract, Google Health ingestion, Eight Sleep export probing, and evidence-gated fusion (ADR-0027) |
-| PI | [Physiological identity passport & measurement trust](./physiological-identity-passport-and-measurement-trust.md) | **Approved** | PI8 real-data replay export/run; PI7 prospective label accumulation (the review UI is already shipped) | PI9's activation decision needs both of those plus real evidence they don't yet exist; PI10's telemetry additionally needs an analytics pipeline this application does not have | provider-neutral identity-attribution/measurement-trust layer (ADR-0028) between shared-source observations and baseline/fusion logic; PI0-PI7 implemented, PI8/PI9/PI10 partial |
+| PI | [Physiological identity passport & measurement trust](./physiological-identity-passport-and-measurement-trust.md) | **Approved** | PI7 prospective label accumulation (the review UI is already shipped; PI8's real-data replay export/run is done) | PI9's activation decision needs prospective label evidence that doesn't yet exist; PI10's telemetry additionally needs an analytics pipeline this application does not have | provider-neutral identity-attribution/measurement-trust layer (ADR-0028) between shared-source observations and baseline/fusion logic; PI0-PI8 implemented, PI9/PI10 partial |
 | ES | [Direct Eight Sleep recovery ingestion](./eight-sleep-direct-recovery-ingestion.md) | **In progress (default-off)** | ES8 (real-account probe) | runtime secrets | owned direct read-only recovery connector for Eight Sleep (ADR-0030) |
 
 
