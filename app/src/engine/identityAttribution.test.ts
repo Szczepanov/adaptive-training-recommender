@@ -385,4 +385,90 @@ describe('identityAttribution (PI4, ADR-0028)', () => {
         expect(result.identityScore).toBeLessThanOrEqual(1);
         expect(result).not.toHaveProperty('probability');
     });
+
+    describe('relaxed session timing concordance (ADR-0028 softened threshold)', () => {
+        it('allows relaxed timing concordance (3.0 < Z <= 4.5) when Jaccard >= 0.85 and all physiological groups are concordant', () => {
+            // startDeltaMinutes median = 5, mad = 10; value = 40 => deviation = (40 - 5) / 10 = 3.5 MAD (3.0 < Z <= 4.5)
+            const result = evaluateIdentityEvidence(
+                input({
+                    overlap: overlap({
+                        startDeltaMinutes: 40,
+                        jaccard: 0.92,
+                    }),
+                    relation: relation({
+                        rhrResidual: 2, // median=2, mad=1 => Z=0
+                        respResidual: 0.2, // median=0.2, mad=0.5 => Z=0
+                        hrvLogResidual: 0.1, // median=0.1, mad=0.05 => Z=0
+                    }),
+                }),
+            );
+
+            expect(result.automaticStatus).toBe('USER');
+            expect(result.confidenceTier).toBe('HIGH');
+            expect(result.reasonCodes).toContain('SESSION_TIMING_CONCORDANT');
+            expect(result.reasonCodes).not.toContain('SESSION_TIMING_DISCORDANT');
+        });
+
+        it('rejects relaxed timing concordance if any physiological group is discordant', () => {
+            const result = evaluateIdentityEvidence(
+                input({
+                    overlap: overlap({
+                        startDeltaMinutes: 40, // 3.5 MAD
+                        jaccard: 0.92,
+                    }),
+                    relation: relation({
+                        rhrResidual: 20, // Z = (20-2)/1 = 18 >> 3.0 (DISCORDANT)
+                        respResidual: 0.2,
+                        hrvLogResidual: 0.1,
+                    }),
+                }),
+            );
+
+            expect(result.automaticStatus).toBe('UNCERTAIN');
+            expect(result.reasonCodes).toContain('SESSION_TIMING_DISCORDANT');
+            expect(result.reasonCodes).toContain('RHR_RELATION_DISCORDANT');
+            expect(result.reasonCodes).not.toContain('SESSION_TIMING_CONCORDANT');
+        });
+
+        it('rejects relaxed timing concordance if Jaccard < minRelaxedTimingJaccard (0.85)', () => {
+            const result = evaluateIdentityEvidence(
+                input({
+                    overlap: overlap({
+                        startDeltaMinutes: 40, // 3.5 MAD
+                        jaccard: 0.80, // < 0.85
+                    }),
+                    relation: relation({
+                        rhrResidual: 2,
+                        respResidual: 0.2,
+                        hrvLogResidual: 0.1,
+                    }),
+                }),
+            );
+
+            expect(result.automaticStatus).toBe('UNCERTAIN');
+            expect(result.reasonCodes).toContain('SESSION_TIMING_DISCORDANT');
+            expect(result.reasonCodes).not.toContain('SESSION_TIMING_CONCORDANT');
+        });
+
+        it('rejects relaxed timing concordance if timing deviation exceeds relaxedTimingConcordanceZThreshold (4.5 MAD)', () => {
+            // startDeltaMinutes = 55 => deviation = (55 - 5) / 10 = 5.0 MAD (> 4.5)
+            const result = evaluateIdentityEvidence(
+                input({
+                    overlap: overlap({
+                        startDeltaMinutes: 55,
+                        jaccard: 0.92,
+                    }),
+                    relation: relation({
+                        rhrResidual: 2,
+                        respResidual: 0.2,
+                        hrvLogResidual: 0.1,
+                    }),
+                }),
+            );
+
+            expect(result.automaticStatus).toBe('UNCERTAIN');
+            expect(result.reasonCodes).toContain('SESSION_TIMING_DISCORDANT');
+            expect(result.reasonCodes).not.toContain('SESSION_TIMING_CONCORDANT');
+        });
+    });
 });

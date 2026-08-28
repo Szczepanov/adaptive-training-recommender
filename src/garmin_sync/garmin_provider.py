@@ -159,6 +159,17 @@ def _sleep_window_gmt_ms(
     )
 
 
+def _epoch_ms_to_utc_datetime(epoch_ms: int | float | None) -> datetime | None:
+    """Convert a GMT epoch-ms timestamp (as Garmin reports sleepStart/EndTimestampGMT)
+    to a timezone-aware UTC datetime, or None for missing/malformed input."""
+    if epoch_ms is None:
+        return None
+    try:
+        return datetime.fromtimestamp(epoch_ms / 1000, tz=timezone.utc)
+    except (OverflowError, OSError, ValueError, TypeError):
+        return None
+
+
 # A cluster of readings from only part of the night (e.g. a sync gap, or the device
 # coming back online well after sleep onset) can clear the sample-count floor below
 # without describing the whole night -- so both this count and a minimum span of the
@@ -1201,6 +1212,13 @@ def canonicalize_from_raw(
     )
     skin_temp_dev = extract_skin_temp_deviation(selected_sleep)
 
+    # Sleep-session timing, from whichever sleep record was actually selected above (D-1
+    # fallback included) -- independent of the respiration-precision window, which is only
+    # ever computed against telemetry.sleep_today (see the comment above that call).
+    session_start_ms, session_end_ms = _sleep_window_gmt_ms(selected_sleep or {})
+    sleep_session_start = _epoch_ms_to_utc_datetime(session_start_ms)
+    sleep_session_end = _epoch_ms_to_utc_datetime(session_end_ms)
+
     daily_rec_hours = _daily_recovery_time_hours(
         telemetry.training_readiness_today, telemetry.stats_today
     )
@@ -1215,6 +1233,8 @@ def canonicalize_from_raw(
         sleep_score=sleep_score,
         sleep_duration_seconds=sleep_sec,
         sleep_date=sleep_date if sleep_score is not None else None,
+        sleep_session_start=sleep_session_start,
+        sleep_session_end=sleep_session_end,
         deep_sleep_seconds=deep_sec,
         rem_sleep_seconds=rem_sec,
         light_sleep_seconds=light_sec,

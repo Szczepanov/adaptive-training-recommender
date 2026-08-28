@@ -360,6 +360,65 @@ def test_canonicalize_from_raw_skips_precise_respiration_on_sleep_fallback_day()
     )
 
     assert canonical.respiration_rate_brpm == 13
+    # Sleep-session timing is captured from whichever sleep record was actually selected
+    # (the D-1 fallback here) -- independent of, and unlike, the respiration-precision
+    # window above, which deliberately does NOT apply on a fallback day.
+    from datetime import datetime, timezone
+
+    assert canonical.sleep_session_start == datetime(1970, 1, 1, tzinfo=timezone.utc)
+    assert canonical.sleep_session_end == datetime(1970, 1, 1, 1, 23, 20, tzinfo=timezone.utc)
+
+
+def test_canonicalize_from_raw_captures_sleep_session_timing_on_target_date():
+    from datetime import datetime, timezone
+
+    sleep_today = {
+        "dailySleepDTO": {
+            "sleepScores": {"overall": {"value": 82}},
+            "sleepTimeSeconds": 27000,
+            "sleepStartTimestampGMT": 0,
+            "sleepEndTimestampGMT": 5_000_000,
+        }
+    }
+
+    canonical = canonicalize_from_raw(
+        telemetry=RawGarminTelemetry(
+            stats_today={},
+            stats_fallback=None,
+            sleep_today=sleep_today,
+            sleep_fallback=None,
+            hrv_today={},
+        ),
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+    )
+
+    assert canonical.sleep_session_start == datetime(1970, 1, 1, tzinfo=timezone.utc)
+    assert canonical.sleep_session_end == datetime(1970, 1, 1, 1, 23, 20, tzinfo=timezone.utc)
+
+
+def test_canonicalize_from_raw_sleep_session_timing_none_when_absent():
+    sleep_today = {
+        "dailySleepDTO": {
+            "sleepScores": {"overall": {"value": 82}},
+            "sleepTimeSeconds": 27000,
+        }
+    }
+
+    canonical = canonicalize_from_raw(
+        telemetry=RawGarminTelemetry(
+            stats_today={},
+            stats_fallback=None,
+            sleep_today=sleep_today,
+            sleep_fallback=None,
+            hrv_today={},
+        ),
+        target_date_iso="2026-08-06",
+        yesterday_iso="2026-08-05",
+    )
+
+    assert canonical.sleep_session_start is None
+    assert canonical.sleep_session_end is None
 
 
 def test_canonicalize_activities_maps_fields_and_intensity():

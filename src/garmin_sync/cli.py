@@ -804,6 +804,36 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
             f"  Sleep Duration Correlation: {report.sleepDurationCorrelation if report.sleepDurationCorrelation is not None else 'N/A'}"
         )
         print("-" * 80)
+        print("  SLEEP-SESSION TIMING COVERAGE (of nights each source has sleep data for):")
+        garmin_sleep_nights = len(
+            [c for c in report.dailyComparisons if c["garminSleepMinutes"] is not None]
+        )
+        eight_sleep_nights = len(
+            [c for c in report.dailyComparisons if c["eightSleepMinutes"] is not None]
+        )
+        print(
+            f"  Garmin Direct:               {report.garminSleepTimingDays}/{garmin_sleep_nights} nights"
+        )
+        if report.garminSleepMissingTimingDates:
+            preview = ", ".join(report.garminSleepMissingTimingDates[:10])
+            more = (
+                f" (+{len(report.garminSleepMissingTimingDates) - 10} more)"
+                if len(report.garminSleepMissingTimingDates) > 10
+                else ""
+            )
+            print(f"    missing timestamps:       {preview}{more}")
+        print(
+            f"  Eight Sleep:                 {report.eightSleepSleepTimingDays}/{eight_sleep_nights} nights"
+        )
+        if report.eightSleepMissingTimingDates:
+            preview = ", ".join(report.eightSleepMissingTimingDates[:10])
+            more = (
+                f" (+{len(report.eightSleepMissingTimingDates) - 10} more)"
+                if len(report.eightSleepMissingTimingDates) > 10
+                else ""
+            )
+            print(f"    missing timestamps:       {preview}{more}")
+        print("-" * 80)
         print("  EIGHT SLEEP ROLLING BASELINE TELEMETRY:")
         print(
             f"  Identity Eligible / Excluded: {report.eightSleepIdentityEligibleDays} / {report.eightSleepIdentityExcludedDays} nights"

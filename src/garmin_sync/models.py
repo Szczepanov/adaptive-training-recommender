@@ -156,6 +156,12 @@ class Spo2Summary:
 class RawMetrics:
     sleepScore: int | float | None = None
     sleepDurationSec: int | None = None
+    # ISO 8601 UTC timestamps for the actual sleep-session window (see
+    # CanonicalDailyMetrics.sleep_session_start/end) -- None when Garmin's raw sleep
+    # payload didn't include a timing window for the selected (target-date or D-1
+    # fallback) sleep record.
+    sleepSessionStart: str | None = None
+    sleepSessionEnd: str | None = None
     deepSleepSec: int | None = None
     remSleepSec: int | None = None
     lightSleepSec: int | None = None
@@ -313,6 +319,10 @@ class DerivedMetrics:
 @dataclass
 class DataQuality:
     sleepScoreAvailable: bool = False
+    # True only when Garmin's raw sleep payload included both ends of the sleep-session
+    # window (RawMetrics.sleepSessionStart/End) -- independent of sleepScoreAvailable,
+    # since a night can have a score/duration without a captured start/end timestamp.
+    sleepTimingAvailable: bool = False
     restingHrAvailable: bool = False
     hrvAvailable: bool = False
     baseline7dReady: bool = False
