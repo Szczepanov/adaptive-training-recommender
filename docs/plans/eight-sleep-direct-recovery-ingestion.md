@@ -65,3 +65,15 @@ backfill and comparison commands, or run either locally via
 `uv run python -m garmin_sync backfill-eight-sleep-direct`.
 
 Promotion requires stable real-account auth/schema, source-specific baseline maturity, better reliability than Google Health, replay/prospective evidence and a separate activation review. Rollback is simply `EIGHT_SLEEP_DIRECT_ENABLED=false`; Garmin/recommendation behavior is unchanged.
+
+The mapper was later extended (ES-EXT/ES-EXT-2/ES-EXT-3 batches, `NORMALIZER_VERSION` now
+`4`) to capture snoring, sleep latency, sleep debt, social jetlag, circadian consistency
+baselines, chronotype, and night tags — real fields the private API returns that the
+original mapper never extracted. Two extraction bugs (WASO fields were fractions not
+seconds; `social_jetlag_seconds` was silently dropping negative values) were found and
+fixed against real probed data before trusting the result. See
+[`docs/analysis/2026-08-28-eight-sleep-extended-metrics-analysis.md`](../analysis/2026-08-28-eight-sleep-extended-metrics-analysis.md)
+for the full year of corrected findings and the keep/drop verdict: snoring and sleep
+latency are genuine Garmin-incomparable signal worth keeping; chronotype (zero variance)
+and tags (redundant Garmin workout data mirrored back) currently pull no weight; duration/
+timing agreement remains the documented weak spot and D-8S-NO-AUTHORITY still stands.
