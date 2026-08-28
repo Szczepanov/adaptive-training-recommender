@@ -1,5 +1,9 @@
 from garmin_sync.canonical import CanonicalDailyMetrics
-from garmin_sync.garmin_provider import canonicalize_activities, canonicalize_from_raw
+from garmin_sync.garmin_provider import (
+    RawGarminTelemetry,
+    canonicalize_activities,
+    canonicalize_from_raw,
+)
 from garmin_sync.metrics import (
     calculate_average,
     calculate_delta,
@@ -12,11 +16,13 @@ from garmin_sync.metrics import (
 def test_failure_mode_missing_keys_in_raw_payload() -> None:
     corrupt_payload = {"unexpectedKey": 123}
     canonical = canonicalize_from_raw(
-        stats_today=corrupt_payload,
-        stats_fallback=None,
-        sleep_today=corrupt_payload,
-        sleep_fallback=None,
-        hrv_today=corrupt_payload,
+        telemetry=RawGarminTelemetry(
+            stats_today=corrupt_payload,
+            stats_fallback=None,
+            sleep_today=corrupt_payload,
+            sleep_fallback=None,
+            hrv_today=corrupt_payload,
+        ),
         target_date_iso="2026-08-26",
         yesterday_iso="2026-08-25",
     )
