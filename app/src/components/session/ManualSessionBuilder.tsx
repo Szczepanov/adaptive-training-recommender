@@ -81,30 +81,42 @@ interface ManualSessionBuilderProps {
     onClose: () => void;
     onStartExecution: (session: PreparedSessionLaunch) => void;
     userId: string;
+    /** A verified saved revision being edited or duplicated; never raw Firestore bytes. */
+    initialDefinition?: SessionDefinition;
 }
 
-export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ userId, onClose, onStartExecution }) => {
-    const [definitionId] = useState(() => newId('manual'));
-    const [title, setTitle] = useState('Custom workout');
-    const [summary, setSummary] = useState('');
-    const [modality, setModality] = useState<ManualModality>('strength');
-    const [durationMin, setDurationMin] = useState(45);
-    const [blocks, setBlocks] = useState<SessionBlock[]>(initialBlocks);
+export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ userId, onClose, onStartExecution, initialDefinition }) => {
+    const [baseDefinition] = useState(() => initialDefinition);
+    const [definitionId] = useState(() => initialDefinition?.id ?? newId('manual'));
+    const [revision] = useState(() => initialDefinition?.revision ?? 1);
+    const [title, setTitle] = useState(initialDefinition?.title ?? 'Custom workout');
+    const [summary, setSummary] = useState(initialDefinition?.summary ?? '');
+    const [modality, setModality] = useState<ManualModality>(() => {
+        const initial = initialDefinition?.dominantModality;
+        return initial === 'cycling' || initial === 'running' || initial === 'field' || initial === 'mobility' || initial === 'cross_training' || initial === 'strength'
+            ? initial
+            : 'strength';
+    });
+    const [durationMin, setDurationMin] = useState(initialDefinition?.duration?.min ?? 45);
+    const [blocks, setBlocks] = useState<SessionBlock[]>(() => initialDefinition?.blocks ?? initialBlocks());
     const [showPreview, setShowPreview] = useState(false);
     const [showDestination, setShowDestination] = useState(false);
     const [validationError, setValidationError] = useState<string | null>(null);
 
     const definition = useMemo<SessionDefinition>(() => ({
+        ...baseDefinition,
         schemaVersion: 1,
         id: definitionId,
-        revision: 1,
+        revision,
         title: title.trim() || 'Custom workout',
         ...(summary.trim() ? { summary: summary.trim() } : {}),
-        intent: modality === 'mobility' ? 'recovery' : 'training',
+        intent: baseDefinition && !['training', 'recovery'].includes(baseDefinition.intent)
+            ? baseDefinition.intent
+            : modality === 'mobility' ? 'recovery' : 'training',
         dominantModality: modality,
-        duration: { min: durationMin, max: durationMin },
+        duration: { min: durationMin, max: Math.max(durationMin, baseDefinition?.duration?.max ?? durationMin) },
         blocks,
-    }), [blocks, definitionId, durationMin, modality, summary, title]);
+    }), [baseDefinition, blocks, definitionId, durationMin, modality, revision, summary, title]);
 
     // ⚡ Bolt: Precompute static exercise options to prevent full 176-item catalog array mapping on every keystroke
     const exerciseOptions = useMemo(
@@ -281,7 +293,7 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
     return (
         <div className="manual-session-builder">
             <header className="builder-header">
-                <div><h2>Build a session</h2><p>Choose a catalog movement when it exists; custom movements stay explicitly unresolved.</p></div>
+                <div><h2>{baseDefinition ? `Edit template · revision ${revision}` : 'Build a session'}</h2><p>Choose a catalog movement when it exists; custom movements stay explicitly unresolved.</p></div>
                 <button type="button" className="close-builder-btn" onClick={onClose} aria-label="Close builder">×</button>
             </header>
 

@@ -61,6 +61,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
         {screen === 'session' && (
           <SessionRunner
             userId={VISUAL_USER_ID}
+            onBuildSession={() => {}}
             onClose={() => navigate('home')}
           />
         )}

@@ -20,6 +20,7 @@ import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import type { DecisionJournalEntry } from '../engine/models';
+import type { SessionDefinitionHeader } from '../services/sessionDefinitionService';
 import type { VisualFixture } from './fixtures';
 
 /**
@@ -187,7 +188,26 @@ export function installVisualServices(fixture: VisualFixture): void {
   sessionExecutionService.correctEntry = async () => {};
   sessionExecutionService.deleteEntry = async () => {};
   sessionExecutionService.transitionExecution = async () => {};
-  sessionDefinitionService.listDefinitionHeaders = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  const savedTemplateHeaders: SessionDefinitionHeader[] = (fixture.savedTemplates ?? []).map(({ definition, status }, index) => ({
+    userId: fixture.input.userId,
+    definitionId: definition.id,
+    title: definition.title,
+    latestRevision: definition.revision,
+    ...(definition.dominantModality ? { dominantModality: definition.dominantModality } : {}),
+    status,
+    ...(status === 'archived' ? { archivedAt: fixture.input.date } : {}),
+    createdAt: fixture.input.date,
+    updatedAt: `${fixture.input.date}T0${index}:00:00.000+02:00`,
+  }));
+  sessionDefinitionService.listDefinitionHeaders = async () => ({ status: 'AVAILABLE', data: savedTemplateHeaders, revision: null });
+  sessionDefinitionService.getDefinitionRevision = async (_userId, definitionId, revision) => {
+    const saved = fixture.savedTemplates?.find(candidate => (
+      candidate.definition.id === definitionId && candidate.definition.revision === revision
+    ));
+    return saved
+      ? { status: 'AVAILABLE', data: saved.definition, revision: String(revision) }
+      : { status: 'MISSING' };
+  };
   // Home persists the content-addressed catalog prescription before exposing its Start CTA.
   // Keep that evidence write inside the visual harness rather than waiting on real Firestore.
   executionPrescriptionService.savePrescription = async () => {};

@@ -1236,6 +1236,23 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(getDoc(doc(otherDb, sessionDefRevPath)));
     });
 
+    it('allows supported companion metadata and reversible template archive state', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefHeaderPath), {
+            ...validSessionDefHeader(), status: 'active',
+        }))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefRevPath), {
+            ...validSessionDefRevision(),
+            companionSessions: [{ id: 'spin', definitionRef: 'recovery-spin', relation: 'later_same_day' }],
+        }))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefHeaderPath), {
+            ...validSessionDefHeader(), status: 'archived', archivedAt: '2026-08-18T12:00:00Z',
+        }))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefHeaderPath), {
+            ...validSessionDefHeader(), status: 'active',
+        }))).resolves.toBeUndefined();
+    });
+
     const executionPrescriptionPath = `users/${ownerId}/execution_prescriptions/presc-hash-abc`;
 
     function validExecutionPrescription() {
