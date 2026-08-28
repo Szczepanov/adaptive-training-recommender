@@ -852,6 +852,164 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
         return 1
 
 
+def run_backfill_eight_sleep_direct_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Run historical backfill for the direct Eight Sleep connector (ES8/ES9, ADR-0030)."
+    )
+    parser.add_argument("--days", type=int, default=56, help="Number of trailing days (default 56)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
+    parser.add_argument(
+        "--user-id",
+        type=str,
+        default=None,
+        help="Target application User ID (or APP_USER_ID env var)",
+    )
+    parsed_args = parser.parse_args(args)
+
+    from dotenv import load_dotenv
+
+    # Mirrors _resolve_google_health_auth_manager / eight_sleep_probe.main: this entry point
+    # doesn't otherwise call load_settings()/load_dotenv() before resolving credentials, so a
+    # repo-root .env would silently be ignored without this explicit load.
+    load_dotenv()
+
+    from .archive import create_archive_store
+    from .eight_sleep_client import EightSleepClient
+    from .eight_sleep_config import EightSleepConfigurationError, EightSleepSettings
+    from .eight_sleep_provider import EightSleepDirectProvider
+    from .firestore_repository import FirestoreRecoveryRepository
+    from .health_observation_service import HealthObservationService
+
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
+    try:
+        eight_sleep_settings = EightSleepSettings.from_env()
+    except EightSleepConfigurationError as error:
+        print("\n" + "=" * 70)
+        print("  EIGHT SLEEP DIRECT BACKFILL (backfill-eight-sleep-direct)")
+        print("=" * 70)
+        print(f"\n{error}\n")
+        print("Set EIGHT_SLEEP_DIRECT_ENABLED=true plus EIGHT_SLEEP_EMAIL/PASSWORD/")
+        print("CLIENT_ID/CLIENT_SECRET (see .env.example).")
+        print("=" * 70 + "\n")
+        return 1
+
+    try:
+        settings = load_settings()
+        repo = FirestoreRecoveryRepository(
+            user_id=settings.app_user_id,
+            collection_name=settings.firestore_recovery_collection,
+            db=None,
+            credentials_path=settings.firebase_credentials_path,
+        )
+        archive = create_archive_store(
+            enabled=settings.garmin_archive_enabled,
+            store_type=settings.garmin_archive_store,
+            local_dir=settings.garmin_archive_local_dir,
+            bucket_name=settings.resolved_archive_bucket(),
+            prefix=settings.garmin_archive_prefix,
+        )
+
+        client = EightSleepClient(eight_sleep_settings)
+        provider = EightSleepDirectProvider(client, timezone=eight_sleep_settings.timezone)
+
+        service = HealthObservationService(
+            user_id=settings.app_user_id,
+            repository=repo,
+            archive_store=archive,
+            providers={"eight_sleep_direct": provider},
+        )
+
+        start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=56)
+
+        print(
+            f"\nRunning direct Eight Sleep backfill for {settings.app_user_id}: {start_date_str} to {end_date_str}..."
+        )
+        summary = service.backfill_range(start_date_str, end_date_str)
+
+        total_obs = 0
+        saved_bundles = 0
+        for item in summary:
+            results = item.get("results", {}).get("eight_sleep_direct", {})
+            total_obs += results.get("totalObservations", 0)
+            sources = results.get("sources", {})
+            for _src_key, src_res in sources.items():
+                if src_res.get("status") == "saved":
+                    saved_bundles += 1
+
+        print("\n" + "=" * 70)
+        print("  DIRECT EIGHT SLEEP BACKFILL COMPLETED")
+        print("=" * 70)
+        print(f"  Dates Processed:      {len(summary)}")
+        print(f"  Total Observations:   {total_obs}")
+        print(f"  Day Bundles Saved:    {saved_bundles}")
+        print("=" * 70 + "\n")
+        return 0
+
+    except Exception as error:
+        log_exception(logger, "backfill eight sleep direct", error)
+        return 1
+
+
+def run_compare_eight_sleep_transports_cmd(args: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Run Eight Sleep direct vs Google Health transport equivalence analysis (ES9)."
+    )
+    parser.add_argument("--days", type=int, default=60, help="Number of trailing days (default 60)")
+    parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
+    parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
+    parser.add_argument("--user-id", type=str, default=None, help="Application User ID")
+    parsed_args = parser.parse_args(args)
+
+    from .eight_sleep_equivalence import run_eight_sleep_equivalence_analysis
+    from .firestore_repository import FirestoreRecoveryRepository
+
+    if parsed_args.user_id:
+        os.environ["APP_USER_ID"] = parsed_args.user_id
+
+    try:
+        settings = load_settings()
+        repo = FirestoreRecoveryRepository(
+            user_id=settings.app_user_id,
+            collection_name=settings.firestore_recovery_collection,
+            db=None,
+            credentials_path=settings.firebase_credentials_path,
+        )
+
+        start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=60)
+
+        print(
+            f"\nRunning Eight Sleep transport equivalence analysis for {settings.app_user_id}: {start_date_str} to {end_date_str}..."
+        )
+        report = run_eight_sleep_equivalence_analysis(repo, start_date_str, end_date_str)
+
+        print("\n" + "=" * 80)
+        print("  EIGHT SLEEP DIRECT VS GOOGLE HEALTH TRANSPORT EQUIVALENCE REPORT (ES9)")
+        print("=" * 80)
+        print(f"  Date Range:                 {report.startDate} to {report.endDate}")
+        print(f"  Overlapping Dates:          {report.totalOverlapDays}")
+        print(f"  Direct-Only Dates:          {report.directOnlyDays}")
+        print(f"  Google-Only Dates:          {report.googleOnlyDays}")
+        print(f"  Overall Classification:     {report.overallClassification}")
+        print("-" * 80)
+        print(
+            f"{'Metric':<34} {'Evaluated':<10} {'Matches':<10} {'Match %':<10} {'Mean Delta':<12}"
+        )
+        print("-" * 80)
+        for m, s in report.metricSummaries.items():
+            print(
+                f"{m:<34} {s['totalEvaluated']:<10} {s['matchCount']:<10} {s['matchRatePct']:<9}% {s['meanDifference']:<12}"
+            )
+        print("=" * 80 + "\n")
+        return 0
+
+    except Exception as error:
+        log_exception(logger, "compare eight sleep transports", error)
+        return 1
+
+
 def run_export_identity_replay_cmd(args: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Export real Garmin Direct + Eight Sleep data as identityReplay.ts's input shape (PI8)."
@@ -1072,6 +1230,24 @@ def main() -> int:
     audit_multisource_parser.add_argument("--end-date", type=str, default=None)
     audit_multisource_parser.add_argument("--user-id", type=str, default=None)
 
+    backfill_eight_sleep_direct_parser = subparsers.add_parser(
+        "backfill-eight-sleep-direct",
+        help="Run historical backfill for the direct Eight Sleep connector (ES8/ES9)",
+    )
+    backfill_eight_sleep_direct_parser.add_argument("--days", type=int, default=56)
+    backfill_eight_sleep_direct_parser.add_argument("--start-date", type=str, default=None)
+    backfill_eight_sleep_direct_parser.add_argument("--end-date", type=str, default=None)
+    backfill_eight_sleep_direct_parser.add_argument("--user-id", type=str, default=None)
+
+    compare_eight_sleep_transports_parser = subparsers.add_parser(
+        "compare-eight-sleep-transports",
+        help="Run Eight Sleep direct vs Google Health transport equivalence analysis (ES9)",
+    )
+    compare_eight_sleep_transports_parser.add_argument("--days", type=int, default=60)
+    compare_eight_sleep_transports_parser.add_argument("--start-date", type=str, default=None)
+    compare_eight_sleep_transports_parser.add_argument("--end-date", type=str, default=None)
+    compare_eight_sleep_transports_parser.add_argument("--user-id", type=str, default=None)
+
     export_identity_replay_parser = subparsers.add_parser(
         "export-identity-replay",
         help="Export real Garmin Direct + Eight Sleep data as identityReplay.ts's input shape (PI8)",
@@ -1118,6 +1294,10 @@ def main() -> int:
         return run_compare_transports_cmd(sys.argv[2:])
     if args.command == "audit-multisource":
         return run_audit_multisource_cmd(sys.argv[2:])
+    if args.command == "backfill-eight-sleep-direct":
+        return run_backfill_eight_sleep_direct_cmd(sys.argv[2:])
+    if args.command == "compare-eight-sleep-transports":
+        return run_compare_eight_sleep_transports_cmd(sys.argv[2:])
     if args.command == "export-identity-replay":
         return run_export_identity_replay_cmd(sys.argv[2:])
     if args.command == "audit":

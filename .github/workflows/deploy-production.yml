@@ -82,6 +82,13 @@ jobs:
       # deploy-garmin-sync.yml's "Deploy Google Health account linker" step condition).
       GOOGLE_HEALTH_CLIENT_ID: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID }}
       GOOGLE_HEALTH_CLIENT_SECRET: ${{ secrets.GOOGLE_HEALTH_CLIENT_SECRET }}
+      # Optional: only set once created as GitHub secrets. eight-sleep-direct-sync (ES9,
+      # manually invoked, not scheduled) deploys only when all four are present (see
+      # deploy-garmin-sync.yml's "Deploy direct Eight Sleep sync Job" step condition).
+      EIGHT_SLEEP_EMAIL: ${{ secrets.EIGHT_SLEEP_EMAIL }}
+      EIGHT_SLEEP_PASSWORD: ${{ secrets.EIGHT_SLEEP_PASSWORD }}
+      EIGHT_SLEEP_CLIENT_ID: ${{ secrets.EIGHT_SLEEP_CLIENT_ID }}
+      EIGHT_SLEEP_CLIENT_SECRET: ${{ secrets.EIGHT_SLEEP_CLIENT_SECRET }}
 
   deploy-indexes:
     name: Deploy Firestore indexes

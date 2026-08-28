@@ -50,6 +50,14 @@ on:
         required: false
       GOOGLE_HEALTH_CLIENT_SECRET:
         required: false
+      EIGHT_SLEEP_EMAIL:
+        required: false
+      EIGHT_SLEEP_PASSWORD:
+        required: false
+      EIGHT_SLEEP_CLIENT_ID:
+        required: false
+      EIGHT_SLEEP_CLIENT_SECRET:
+        required: false
 
 permissions:
   contents: read
@@ -93,6 +101,11 @@ env:
   # GitHub's own context-availability docs) -- resolve the gate once here, at the only level
   # where `secrets` is usable outside a step body, and reference `env.*` in the step `if:`s.
   GOOGLE_HEALTH_LINKING_ENABLED: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID != '' && secrets.GOOGLE_HEALTH_CLIENT_SECRET != '' }}
+  # ES9 (docs/plans/eight-sleep-direct-recovery-ingestion.md): the direct Eight Sleep
+  # connector stays default-off in code (EIGHT_SLEEP_DIRECT_ENABLED) regardless of this --
+  # this only gates whether the manually-invocable eight-sleep-direct-sync Job gets deployed
+  # at all. Not on any Cloud Scheduler job; run by hand while accumulating ES9 evidence.
+  EIGHT_SLEEP_DIRECT_CONFIGURED: ${{ secrets.EIGHT_SLEEP_EMAIL != '' && secrets.EIGHT_SLEEP_PASSWORD != '' && secrets.EIGHT_SLEEP_CLIENT_ID != '' && secrets.EIGHT_SLEEP_CLIENT_SECRET != '' }}
 
 jobs:
   deploy:
@@ -205,6 +218,37 @@ jobs:
             --service-account="${JOB_SA_EMAIL}" \
             --env-vars-file=cloud-run-garmin.env.yaml \
             --args=poll-manual-sync-all --max-retries=0
+
+      - name: Deploy direct Eight Sleep sync Job (ES9, manually invoked only)
+        if: env.EIGHT_SLEEP_DIRECT_CONFIGURED == 'true'
+        env:
+          EIGHT_SLEEP_EMAIL: ${{ secrets.EIGHT_SLEEP_EMAIL }}
+          EIGHT_SLEEP_PASSWORD: ${{ secrets.EIGHT_SLEEP_PASSWORD }}
+          EIGHT_SLEEP_CLIENT_ID: ${{ secrets.EIGHT_SLEEP_CLIENT_ID }}
+          EIGHT_SLEEP_CLIENT_SECRET: ${{ secrets.EIGHT_SLEEP_CLIENT_SECRET }}
+        run: |
+          # Deliberately NOT on any Cloud Scheduler job -- ES is still an evidence-gathering,
+          # default-off shadow evaluation (docs/plans/eight-sleep-direct-recovery-ingestion.md),
+          # not committed production automation. Default --args runs a backfill; override at
+          # execution time for the comparator, e.g.:
+          #   gcloud run jobs execute eight-sleep-direct-sync --region="${REGION}" \
+          #     --args=compare-eight-sleep-transports,--days=60 --wait
+          cat > cloud-run-eight-sleep.env.yaml <<EOF
+          APP_TIMEZONE: "Europe/Warsaw"
+          GARMIN_TOKEN_STORE: "gcs"
+          GARMIN_TOKEN_BUCKET: "${TOKEN_BUCKET}"
+          GCP_PROJECT_ID: "${GCP_PROJECT}"
+          EIGHT_SLEEP_DIRECT_ENABLED: "true"
+          EIGHT_SLEEP_EMAIL: "${EIGHT_SLEEP_EMAIL}"
+          EIGHT_SLEEP_PASSWORD: "${EIGHT_SLEEP_PASSWORD}"
+          EIGHT_SLEEP_CLIENT_ID: "${EIGHT_SLEEP_CLIENT_ID}"
+          EIGHT_SLEEP_CLIENT_SECRET: "${EIGHT_SLEEP_CLIENT_SECRET}"
+          EOF
+          gcloud run jobs deploy eight-sleep-direct-sync \
+            --image="${IMAGE_TAG}" --region="${REGION}" \
+            --service-account="${JOB_SA_EMAIL}" \
+            --env-vars-file=cloud-run-eight-sleep.env.yaml \
+            --args=backfill-eight-sleep-direct --max-retries=0
 
       - name: Grant Cloud Scheduler permission to run the Jobs
         run: |

@@ -370,6 +370,8 @@ will be dropped on that first run.
    | `GARMIN_EMAIL` | your Garmin Connect email |
    | `GARMIN_PASSWORD` | your Garmin Connect password |
    | `GARMIN_TOTP_SECRET` | optional -- see Bootstrap section below |
+   | `GOOGLE_HEALTH_CLIENT_ID` / `GOOGLE_HEALTH_CLIENT_SECRET` | optional -- deploys `google-health-account-link` only when both are set |
+   | `EIGHT_SLEEP_EMAIL` / `EIGHT_SLEEP_PASSWORD` / `EIGHT_SLEEP_CLIENT_ID` / `EIGHT_SLEEP_CLIENT_SECRET` | optional -- deploys `eight-sleep-direct-sync` only when all four are set (see below) |
 
 ### Deploy
 
@@ -409,3 +411,29 @@ actually logs in and pulls data end to end.
 
 Run **Deploy Garmin Sync** again -- it rebuilds the image and redeploys all three Jobs
 (`gcloud run jobs deploy` upserts) without touching anything already configured.
+
+### Optional: `eight-sleep-direct-sync` (ES9)
+
+If (and only if) `EIGHT_SLEEP_EMAIL`, `EIGHT_SLEEP_PASSWORD`, `EIGHT_SLEEP_CLIENT_ID`, and
+`EIGHT_SLEEP_CLIENT_SECRET` are all set as repo secrets, **Deploy Garmin Sync** also deploys a
+fourth Job, `eight-sleep-direct-sync`, running `backfill-eight-sleep-direct` by default with
+`EIGHT_SLEEP_DIRECT_ENABLED=true` baked into its own env file
+(`docs/plans/eight-sleep-direct-recovery-ingestion.md`, ADR-0030).
+
+Unlike the other three Jobs, **this one is not on any Cloud Scheduler job** -- ES is still an
+evidence-gathering, default-off shadow evaluation, not committed production automation.
+Invoke it by hand while building an ES9 comparison window:
+
+```bash
+# Persist a batch of direct-Eight-Sleep observations (defaults to the trailing 56 days)
+gcloud run jobs execute eight-sleep-direct-sync --region=${REGION} --wait
+
+# Then compare against the pre-existing Google Health Eight Sleep path over the same range --
+# --args overrides the Job's baked-in default for just this execution
+gcloud run jobs execute eight-sleep-direct-sync --region=${REGION} \
+  --args=compare-eight-sleep-transports,--days=60 --wait
+```
+
+Repeat the first command every few days (or daily) to accumulate real overlap before running
+the comparison. `gcloud run jobs logs read eight-sleep-direct-sync --region=${REGION}` shows
+each run's output.

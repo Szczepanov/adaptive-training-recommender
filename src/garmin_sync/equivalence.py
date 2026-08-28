@@ -64,7 +64,13 @@ class DateEquivalenceResult:
 
 
 class TransportEquivalenceAnalyzer:
-    """Compares direct Garmin vs Google-transported Garmin observations."""
+    """Compares one provider's directly-ingested observations against the same provider's
+    observations arriving through Google Health. Defaults to Garmin (MS10's original scope);
+    pass `expected_provider="eight_sleep"` to reuse this for the Eight Sleep direct-vs-Google
+    comparison (ES9) instead of duplicating the comparison engine."""
+
+    def __init__(self, expected_provider: str = "garmin") -> None:
+        self.expected_provider = expected_provider
 
     def compare_date_observations(
         self,
@@ -79,7 +85,7 @@ class TransportEquivalenceAnalyzer:
         google_garmin_map: dict[str, CanonicalHealthObservation] = {
             o.metric: o
             for o in google_observations
-            if o.source.provider == "garmin" and not isinstance(o.value, dict)
+            if o.source.provider == self.expected_provider and not isinstance(o.value, dict)
         }
 
         all_metrics = sorted(list(set(direct_map.keys()) | set(google_garmin_map.keys())))
