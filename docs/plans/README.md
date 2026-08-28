@@ -68,7 +68,7 @@ outcome labels implemented via PR #174 (evidence-only, gated behind the shadow s
 Physiological identity passport & measurement trust (PI) is **Approved, in progress**:
 PI0–PI7 are implemented (the pairing/lineage/passport/evaluator/pre-baseline gate engine
 layer, persistence, and the suspicious-night review UI); PI8's historical replay has been run
-against real history (63.4% `leaveOneOut` automatic USER coverage on 41 real nights, see
+against real history (68.3% `leaveOneOut` automatic USER coverage on 41 real nights, see
 [the evidence doc](../analysis/2026-08-28-identity-passport-replay-evidence.md)) with prospective
 label collection still not started; PI9's fusion migration is additive and
 its production activation decision is explicitly not made; PI10's architecture docs are

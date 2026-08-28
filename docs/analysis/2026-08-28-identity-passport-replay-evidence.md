@@ -8,9 +8,12 @@
 > `models.py`, `mapper.py`) and retroactively re-derived for already-collected history via the
 > existing `rebuild` command (which replays the raw archive through the same canonicalization path
 > — no bespoke backfill script or re-fetch from Garmin needed, see §7a), automatic USER coverage
-> went from **0% → 63.4%** (`leaveOneOut`) / **0% → 36.6%** (`chronologicalExpandingWindow`). §7
-> below has the full re-run. The original §1–§6 findings are kept below, unedited, because they're
-> what led to finding and fixing the real gap — this is not
+> went from **0% → 63.4%** (`leaveOneOut`) / **0% → 36.6%** (`chronologicalExpandingWindow`). A
+> second real bug found investigating the residual discordance — the exporter only passed the
+> *first* Eight Sleep session per night, silently dropping a real overnight session whenever a
+> short nap/presence reading was recorded for the same date — pushed it further to **68.3%** /
+> **43.9%** once fixed (see §7b). §7 below has the full re-run. The original §1–§6 findings are
+> kept below, unedited, because they're what led to finding and fixing the real gap — this is not
 > a retraction, it's the record of how the fix was found.
 
 **Date**: 2026-08-28
@@ -37,10 +40,11 @@ where the result is not what the plan document anticipated.
 | Single/multi-feature disagreement nights | 0 / 0 |
 
 **The headline finding was not "0% coverage" by itself — it was *why*.** Every one of the 41
-nights failed for the identical, structural reason, traced to real code (`identityAttribution.ts:235-237`
-and `:453`): the evaluator requires session-timing evidence (`groupEvidence.has('SESSION_TIMING')`)
-to be present at all before it can ever return automatic `USER`, and it treats an unpairable
-session (`overlap === null`) as `SESSION_TIMING_DISCORDANT` rather than "not evaluated". Real
+nights failed for the identical, structural reason, traced to real code
+(`identityAttribution.ts`'s `evaluateIdentityEvidence`): the evaluator requires session-timing
+evidence (`groupEvidence.has('SESSION_TIMING')`) to be present at all before it can ever return
+automatic `USER`, and it treats an unpairable session (`overlap === null`) as
+`SESSION_TIMING_DISCORDANT` rather than "not evaluated". Real
 Garmin Direct snapshots carried **no sleep session interval timestamps** at all — a gap documented
 in code (`equivalence.py`: *"Direct-Garmin snapshots (RawMetrics) never carry interval timestamps
 today... an honest gap, not a silent pass"*) and confirmed again here. So `overlap` was `null` for
@@ -76,8 +80,9 @@ data wasn't fundamentally unavailable, it was just never plumbed through.
 The first real run showed `respirationRate: N=0` for both before/after baseline gating — a bug in
 the new exporter, not the replay engine: `identity_replay_export.py` initially read
 `METRIC_DAILY_RESPIRATION_RATE_BRPM` ("daily_respiration_rate_brpm"), but
-`google_health_mapper.py:535` always emits Google Health respiration observations under
-`METRIC_RESPIRATION_RATE_BRPM` ("respiration_rate_brpm") — the "daily_" constant is a different,
+`google_health_mapper.py`'s `GoogleHealthMapper._map_respiration` always emits Google Health
+respiration observations under `METRIC_RESPIRATION_RATE_BRPM` ("respiration_rate_brpm") — the
+"daily_" constant is a different,
 unrelated metric name never written by the Google Health ingestion path. `multisource_audit.py`
 already carried a fallback for this exact ambiguity (`metric == METRIC_DAILY_RESPIRATION_RATE_BRPM
 or metric == "respiration_rate_brpm"`), which is what surfaced the mismatch on inspection. Fixed
@@ -195,7 +200,48 @@ Full reports (both replay methods): `artifacts/identity-replay-reports/leave-one
 `artifacts/identity-replay-reports/chronological-expanding-window/report.md` (not committed — real
 per-night data, gitignored; regenerate via the commands above).
 
-**Still not decided**: PI9 activation. 34.1% real out-of-sample coverage on real data is
+### 7b. A second real bug found investigating the residual discordance
+
+Analyzing the 15 `leaveOneOut` discordant nights (raw session deltas computed directly from the
+exported JSON, not assumed) found two genuinely different phenomena, not one:
+
+- **3 nights (2026-07-05, 2026-08-03, 2026-08-14) had deltas of 18–24 *hours*** — not timing
+  noise, a garbage comparison. The matched Eight Sleep "session" for those dates was 40–75 minutes
+  long, at mid-afternoon/early-evening times — a nap or brief presence reading, not the night's
+  real sleep. Checked directly against the real Firestore bundle: **a genuine full-length overnight
+  session (4.9–8.5 hours) was sitting in the same bundle**, alongside the nap, both attributed to
+  the same `logicalDate`. `identity_replay_export.py`'s `_find_sleep_session_observation` returned
+  only the first `sleep_session` observation it found — silently dropping the real night whenever a
+  nap happened to be listed first. Fixed: `_find_sleep_session_observations` (plural) now returns
+  every candidate, feeding all of them into `identityFeatures.ts`'s `selectBestSessionPairing` —
+  which already existed specifically to pick the best-overlapping candidate from a set that may
+  include naps (its own docstring says so) — while the scalar baseline fields
+  (`sharedSleepStartMinutesLocal`/`sharedSleepDurationMinutes`) now use the longest candidate, not
+  whichever came first.
+- **5+ nights (2026-07-07/08/15/16/20) had real, full-length sessions on both sides but a genuine
+  51–146 minute start-time disagreement** larger than this account's own typical pattern —
+  plausibly explained by time spent in bed before actually falling asleep. The evaluator already
+  has a dedicated relaxed-tolerance path for exactly this (`identityAttribution.ts`'s
+  `relaxedTimingConcordanceZThreshold`/`minRelaxedTimingJaccard`, active when physiology is fully
+  concordant), and these nights still failed even that more generous bar. **This is not touched by
+  this fix** — loosening an identity-safety threshold further without real prospective-label
+  evidence would repeat the exact mistake this project has already had to correct once (see the
+  multisource shadow study's fabrication correction), so it stays a genuinely open question, not
+  something decided here.
+
+**Real re-run after this fix**: 4 nights (2026-07-05, 2026-07-15, 2026-08-03, 2026-08-14) now
+export more than one Eight Sleep session candidate. Automatic USER coverage improved further:
+
+| Method | Automatic USER | Coverage |
+| --- | --- | --- |
+| `leaveOneOut` | 28 / 41 | **68.3%** (was 63.4%) |
+| `chronologicalExpandingWindow` | 18 / 41 | **43.9%** (was 36.6%) |
+
+`MULTIPLE_PAIRING_CANDIDATES` now appears in the real reason-code distribution for the first time
+(1 night) — the existing ambiguity-surfacing path (`identityFeatures.ts`) correctly exercising for
+real, exactly as designed, rather than silently picking one candidate.
+
+**Still not decided**: PI9 activation. 68.3% real out-of-sample coverage on real data is
 meaningfully more evidence than 0%, but it is still evidence *for the shadow-replay record*, not
 an activation decision — that stays a separate, explicit decision for the project owner, consistent
 with PI9's own status notes.

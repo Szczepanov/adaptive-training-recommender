@@ -103,11 +103,40 @@ def _shared_bundle_ref(app_user_id: str, date: str, bundle: dict[str, Any]) -> d
     }
 
 
-def _find_sleep_session_observation(bundle: dict[str, Any]) -> dict[str, Any] | None:
-    for obs in bundle.get("observations", []) or []:
-        if obs.get("metric") == METRIC_SLEEP_SESSION and obs.get("observedStart"):
-            return obs
-    return None
+def _find_sleep_session_observations(bundle: dict[str, Any]) -> list[dict[str, Any]]:
+    """Returns every `sleep_session` observation in the bundle, not just the first.
+
+    A single logical date's bundle can genuinely carry more than one -- confirmed against real
+    Firestore data (e.g. a short evening/afternoon presence reading alongside the real overnight
+    session, both attributed to the same `logicalDate`). Returning only the first previously fed
+    a 40-75 minute nap into identity pairing as if it were the whole night, which
+    `computeIntervalOverlapMetrics`/`selectBestSessionPairing` (`identityFeatures.ts`) already
+    knows how to handle correctly -- that module's own docstring says candidate sessions are
+    expected to include naps, with the largest-overlap candidate winning the pairing -- but only
+    if every real candidate is actually passed through, which this function now does.
+    """
+    return [
+        obs
+        for obs in bundle.get("observations", []) or []
+        if obs.get("metric") == METRIC_SLEEP_SESSION
+        and obs.get("observedStart")
+        and obs.get("observedEnd")
+    ]
+
+
+def _longest_session(observations: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Picks the longest-duration session among candidates, for the scalar baseline fields
+    (`sharedSleepStartMinutesLocal`/`sharedSleepDurationMinutes`) that need one representative
+    night's sleep rather than a candidate list -- the real overnight session, not a nap, by
+    construction the longest of the two in every real case found so far.
+    """
+    best: dict[str, Any] | None = None
+    best_duration = -1.0
+    for obs in observations:
+        duration = _sleep_duration_minutes(obs["observedStart"], obs["observedEnd"])
+        if duration is not None and duration > best_duration:
+            best, best_duration = obs, duration
+    return best
 
 
 def _sleep_start_minutes_local(observed_start_iso: str) -> int | None:
@@ -194,13 +223,14 @@ def export_identity_replay_input(
             anchor_missing_count += 1
             anchor_bundle_refs = []
 
-        sleep_obs = _find_sleep_session_observation(bundle)
+        sleep_session_obs = _find_sleep_session_observations(bundle)
+        longest_sleep_obs = _longest_session(sleep_session_obs)
         shared_sleep_start = None
         shared_sleep_duration = None
-        if sleep_obs is not None and sleep_obs.get("observedEnd"):
-            shared_sleep_start = _sleep_start_minutes_local(sleep_obs["observedStart"])
+        if longest_sleep_obs is not None:
+            shared_sleep_start = _sleep_start_minutes_local(longest_sleep_obs["observedStart"])
             shared_sleep_duration = _sleep_duration_minutes(
-                sleep_obs["observedStart"], sleep_obs["observedEnd"]
+                longest_sleep_obs["observedStart"], longest_sleep_obs["observedEnd"]
             )
 
         garmin_rhr = raw.get("restingHr")
@@ -221,11 +251,10 @@ def export_identity_replay_input(
                     if garmin_sleep_start and garmin_sleep_end
                     else []
                 ),
-                "eightSleepSessions": (
-                    [{"startIso": sleep_obs["observedStart"], "endIso": sleep_obs["observedEnd"]}]
-                    if sleep_obs is not None and sleep_obs.get("observedEnd")
-                    else []
-                ),
+                "eightSleepSessions": [
+                    {"startIso": obs["observedStart"], "endIso": obs["observedEnd"]}
+                    for obs in sleep_session_obs
+                ],
                 "sharedRestingHeartRate": _numeric_metric(
                     bundle, METRIC_DAILY_RESTING_HEART_RATE_BPM
                 ),

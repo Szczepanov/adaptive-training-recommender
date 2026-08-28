@@ -117,7 +117,7 @@ The central migration requirement is moving effective identity eligibility **ups
 | PI5 | Pre-baseline effective-eligibility gate | `[x]` | PI4 | blocks unverified Eight Sleep baseline learning |
 | PI6 | Persistence, review events, replay provenance and Firestore rules | `[x]` | PI1, PI4 | none |
 | PI7 | Suspicious-night review UI | `[x]` | PI6 | manual labels only |
-| PI8 | Historical out-of-sample replay + prospective label collection | `[-]` real-data exporter built, real 41-night replay run and published — original 0% coverage root-caused to a Garmin sleep-timing data-plumbing gap and fixed (persisted via `main`'s `sleep_session_start`/`sleep_session_end`, retroactively re-derived via the existing `rebuild` command, no bespoke script); re-run shows 63.4% (`leaveOneOut`) real automatic USER coverage, see evidence doc §7; prospective label collection (real user reviews over time) still not started | PI4, PI6 | evidence only |
+| PI8 | Historical out-of-sample replay + prospective label collection | `[-]` real-data exporter built, real 41-night replay run and published — original 0% coverage root-caused to a Garmin sleep-timing data-plumbing gap and fixed (persisted via `main`'s `sleep_session_start`/`sleep_session_end`, retroactively re-derived via the existing `rebuild` command, no bespoke script), then a second real bug (nap sessions silently displacing the real night, see evidence doc §7b); re-run shows 68.3% (`leaveOneOut`) real automatic USER coverage; prospective label collection (real user reviews over time) still not started | PI4, PI6 | evidence only |
 | PI9 | Activation decision and replacement of `CoPresenceValidator` | `[-]` fusion migrated additively; activation decision not made (needs real evidence) | PI5, PI7, PI8 | production identity gate |
 | PI10 | Living architecture, telemetry, operations and regression suite | `[-]` architecture doc + runbook + privacy docs written; telemetry deferred to activation | PI9 | documentation/ops |
 
@@ -854,11 +854,13 @@ parsed them internally (for a respiration-window average) — they were just nev
 **existing** `rebuild` command, which replays the raw archive through the same canonicalization
 path already used for live syncs — no bespoke backfill script and no re-fetch from Garmin needed.
 
-**Re-run result: automatic USER coverage is 26/41 (63.4%) under `leaveOneOut`, 15/41 (36.6%) under
+**Re-run result: automatic USER coverage is 28/41 (68.3%) under `leaveOneOut`, 18/41 (43.9%) under
 `chronologicalExpandingWindow`** — real, substantial, out-of-sample evidence, on full 40/41-night
-session-timing coverage. Full detail, including the genuine residual (14/15 `leaveOneOut`
-discordant nights now have real session data on both sides and were genuinely found discordant — a
-separate, still-open question) in
+session-timing coverage, after a second real bug fix (a night's real overnight session was
+sometimes silently dropped in favor of a same-day nap — see evidence doc §7b). Full detail,
+including the genuine residual (real, full-length sessions with a real 51–146 minute start-time
+disagreement on several nights, larger than this account's typical pattern — a separate, still-open
+question, not resolved by either fix) in
 [the evidence doc's §7](../analysis/2026-08-28-identity-passport-replay-evidence.md#7-the-fix-and-the-real-current-result-2026-08-28).
 
 **Still not done:** prospective label collection (real user reviews on `UNCERTAIN` nights over
@@ -917,17 +919,19 @@ Because selective classifiers explicitly trade coverage for accepted-case risk, 
 
 # PI9 — Activation decision and replacement of `CoPresenceValidator`
 
-## Status (2026-08-27)
+## Status (2026-08-28)
 
 **The activation decision itself is explicitly NOT made.** The real 41-night out-of-sample replay
-now exists (PI8, 2026-08-28) and — after fixing a real Garmin sleep-timing data gap the first run
-surfaced, and re-deriving full session-timing coverage via the existing `rebuild` command — shows
-63.4% (`leaveOneOut`) automatic USER coverage, real out-of-sample evidence on a majority of nights.
-But 14/15 of the remaining `UNCERTAIN` nights now have real session data on both sides and were
-genuinely found discordant (not a data-absence artifact), an unexplained ~35%-of-all-nights
-residual (see PI8's status note). Majority coverage is meaningfully more evidence than the original
-0%, but an unexplained genuine-discordance residual of that size is exactly the kind of evidence
-that needs review, not an automatic green light.
+now exists (PI8, 2026-08-28) and — after fixing two real bugs (a Garmin sleep-timing data gap, and
+an exporter bug that silently dropped a real overnight session in favor of a same-day nap on
+several nights — see PI8's status note and evidence doc §7b) — shows 68.3% (`leaveOneOut`)
+automatic USER coverage, real out-of-sample evidence on a majority of nights. Of the remaining 13
+`UNCERTAIN` nights, 12 now have real, full-length session data on both sides and were genuinely
+found discordant (not a data-absence artifact) — an unexplained ~29%-of-all-nights residual, real
+51–146 minute start-time disagreements the evaluator's existing relaxed-tolerance path still didn't
+absorb. Majority coverage is meaningfully more evidence than the original 0%, but an unexplained
+genuine-discordance residual of that size is exactly the kind of evidence that needs review, not an
+automatic green light.
 Prospective suspicious-night labels (real user reviews over time) still don't exist and cannot be
 produced in one session.
 Claiming activation-readiness without that evidence would repeat exactly the kind of

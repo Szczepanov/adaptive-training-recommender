@@ -171,6 +171,56 @@ def test_export_garmin_session_populated_when_raw_has_sleep_timing() -> None:
     )
 
 
+def test_export_nap_and_real_night_both_become_pairing_candidates() -> None:
+    """Real bug found in production: a single bundle can carry a short nap/presence reading
+    alongside the real overnight session, both attributed to the same logicalDate (confirmed
+    against real Firestore data for 2026-07-05, 2026-08-03, 2026-08-14). Returning only the
+    first session fed the nap into identity pairing as if it were the whole night. Both must
+    become pairing candidates -- identityFeatures.ts's selectBestSessionPairing already knows
+    how to pick the real overlap, but only if every real candidate reaches it -- while the
+    scalar baseline fields (sharedSleepStartMinutesLocal/sharedSleepDurationMinutes) must use
+    the real (longest) night, not whichever came first in Firestore's observation order."""
+    repo = MagicMock()
+    repo.get_historical_snapshots.return_value = {
+        "2026-07-05": _complete_garmin_snapshot("2026-07-05")
+    }
+    nap_first_bundle = _eight_sleep_bundle(
+        "2026-07-05",
+        observations=[
+            # Nap listed first, exactly matching the real Firestore observation order found.
+            {
+                "metric": "sleep_session",
+                "value": {"durationSeconds": 3780},
+                "observedStart": "2026-07-05T15:01:30+00:00",
+                "observedEnd": "2026-07-05T16:04:30+00:00",
+            },
+            {
+                "metric": "sleep_session",
+                "value": {"durationSeconds": 17730},
+                "observedStart": "2026-07-05T00:09:30+00:00",
+                "observedEnd": "2026-07-05T05:05:00+00:00",
+            },
+            {"metric": "daily_resting_heart_rate_bpm", "value": 47.0},
+            {"metric": "hrv_rmssd_ms", "value": 55.0},
+            {"metric": "respiration_rate_brpm", "value": 14.2},
+        ],
+    )
+    repo.get_health_observation_bundles_in_range.return_value = [nap_first_bundle]
+
+    result = export_identity_replay_input(repo, "2026-07-05", "2026-07-05", "test-uid")
+
+    night = result.nights[0]
+    assert night["eightSleepSessions"] == [
+        {"startIso": "2026-07-05T15:01:30+00:00", "endIso": "2026-07-05T16:04:30+00:00"},
+        {"startIso": "2026-07-05T00:09:30+00:00", "endIso": "2026-07-05T05:05:00+00:00"},
+    ]
+    # The scalar fields must reflect the real (longest) night, not the nap listed first.
+    assert night["sharedSleepDurationMinutes"] == 295.5  # 17730s
+    assert (
+        night["sharedSleepStartMinutesLocal"] == 2 * 60 + 9
+    )  # 00:09:30 UTC -> 02:09 Warsaw (CEST)
+
+
 def test_export_config_uses_garmin_direct_anchor_policy() -> None:
     repo = MagicMock()
     repo.get_historical_snapshots.return_value = {}
