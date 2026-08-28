@@ -9,6 +9,7 @@ import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBri
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { ActivityTelemetry } from './ActivityTelemetry';
 import { ActivityReclassificationModal } from './ActivityReclassificationModal';
+import { StrengthOverloadHistory } from './StrengthOverloadHistory';
 import './DataView.css';
 
 interface DataViewProps {
@@ -18,7 +19,7 @@ interface DataViewProps {
   initialTab?: DataViewTab;
 }
 
-type DataViewTab = 'recovery' | 'activities' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
+type DataViewTab = 'recovery' | 'activities' | 'strength' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
 
 type AdherenceStats = Awaited<ReturnType<typeof recommendationService.getAdherenceStats>>;
 
@@ -917,6 +918,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           Activities
         </button>
         <button
+          className={activeTab === 'strength' ? 'active' : ''}
+          onClick={() => setActiveTab('strength')}
+        >
+          Strength History
+        </button>
+        <button
           className={activeTab === 'checkin' ? 'active' : ''}
           onClick={() => setActiveTab('checkin')}
         >
@@ -985,6 +992,11 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
                 onSaved={loadOverrides}
               />
             )}
+          </div>
+        )}
+        {activeTab === 'strength' && (
+          <div className="data-section">
+            <StrengthOverloadHistory userId={userId} />
           </div>
         )}
         {activeTab === 'checkin' && renderCheckinData()}
