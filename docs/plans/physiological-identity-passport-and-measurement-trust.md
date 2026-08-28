@@ -117,7 +117,7 @@ The central migration requirement is moving effective identity eligibility **ups
 | PI5 | Pre-baseline effective-eligibility gate | `[x]` | PI4 | blocks unverified Eight Sleep baseline learning |
 | PI6 | Persistence, review events, replay provenance and Firestore rules | `[x]` | PI1, PI4 | none |
 | PI7 | Suspicious-night review UI | `[x]` | PI6 | manual labels only |
-| PI8 | Historical out-of-sample replay + prospective label collection | `[-]` real-data exporter built, real 41-night replay run and published — original 0% coverage root-caused to a Garmin sleep-timing data-plumbing gap and fixed (`garmin_sleep_timing_backfill.py`); re-run shows 34.1% (`leaveOneOut`) real automatic USER coverage, see evidence doc §7; prospective label collection (real user reviews over time) still not started | PI4, PI6 | evidence only |
+| PI8 | Historical out-of-sample replay + prospective label collection | `[-]` real-data exporter built, real 41-night replay run and published — original 0% coverage root-caused to a Garmin sleep-timing data-plumbing gap and fixed (persisted via `main`'s `sleep_session_start`/`sleep_session_end`, retroactively re-derived via the existing `rebuild` command, no bespoke script); re-run shows 63.4% (`leaveOneOut`) real automatic USER coverage, see evidence doc §7; prospective label collection (real user reviews over time) still not started | PI4, PI6 | evidence only |
 | PI9 | Activation decision and replacement of `CoPresenceValidator` | `[-]` fusion migrated additively; activation decision not made (needs real evidence) | PI5, PI7, PI8 | production identity gate |
 | PI10 | Living architecture, telemetry, operations and regression suite | `[-]` architecture doc + runbook + privacy docs written; telemetry deferred to activation | PI9 | documentation/ops |
 
@@ -849,15 +849,16 @@ precondition (`overlap === null` → hard `SESSION_TIMING_DISCORDANT`;
 Investigating *why* found the gap was a data-plumbing bug, not a permanent limit: Garmin's raw
 sleep API already includes `sleepStartTimestampGMT`/`sleepEndTimestampGMT`, and the code already
 parsed them internally (for a respiration-window average) — they were just never persisted. Fixed
-(`canonical.py`, `garmin_provider.py`, `models.py`, `mapper.py`), and retroactively backfilled for
-already-collected history from the existing raw archive — no re-fetch from Garmin needed
-([`garmin_sleep_timing_backfill.py`](../../src/garmin_sync/garmin_sleep_timing_backfill.py), CLI
-`backfill-garmin-sleep-timing`).
+(`canonical.py`, `garmin_provider.py`, `models.py`, `mapper.py`, threading `sleep_session_start`/
+`sleep_session_end` through), and retroactively re-derived for already-collected history via the
+**existing** `rebuild` command, which replays the raw archive through the same canonicalization
+path already used for live syncs — no bespoke backfill script and no re-fetch from Garmin needed.
 
-**Re-run result: automatic USER coverage is 14/41 (34.1%) under `leaveOneOut`, 6/41 (14.6%) under
-`chronologicalExpandingWindow`** — real, non-zero, out-of-sample evidence. Full detail, including
-the genuine residual (≈44% of nights with real session data on both sides still show real
-discordance — a separate, still-open question) in
+**Re-run result: automatic USER coverage is 26/41 (63.4%) under `leaveOneOut`, 15/41 (36.6%) under
+`chronologicalExpandingWindow`** — real, substantial, out-of-sample evidence, on full 40/41-night
+session-timing coverage. Full detail, including the genuine residual (14/15 `leaveOneOut`
+discordant nights now have real session data on both sides and were genuinely found discordant — a
+separate, still-open question) in
 [the evidence doc's §7](../analysis/2026-08-28-identity-passport-replay-evidence.md#7-the-fix-and-the-real-current-result-2026-08-28).
 
 **Still not done:** prospective label collection (real user reviews on `UNCERTAIN` nights over
@@ -920,11 +921,13 @@ Because selective classifiers explicitly trade coverage for accepted-case risk, 
 
 **The activation decision itself is explicitly NOT made.** The real 41-night out-of-sample replay
 now exists (PI8, 2026-08-28) and — after fixing a real Garmin sleep-timing data gap the first run
-surfaced — shows 34.1% (`leaveOneOut`) automatic USER coverage, real out-of-sample evidence but
-still a minority of nights, with a genuine, unexplained residual discordance on ≈44% of nights
-that do have real session data on both sides (see PI8's status note). That is meaningfully more
-than the original 0%, but it is not itself a case for activation — a minority-coverage, partially
-unexplained result is exactly the kind of evidence that needs review, not an automatic green light.
+surfaced, and re-deriving full session-timing coverage via the existing `rebuild` command — shows
+63.4% (`leaveOneOut`) automatic USER coverage, real out-of-sample evidence on a majority of nights.
+But 14/15 of the remaining `UNCERTAIN` nights now have real session data on both sides and were
+genuinely found discordant (not a data-absence artifact), an unexplained ~35%-of-all-nights
+residual (see PI8's status note). Majority coverage is meaningfully more evidence than the original
+0%, but an unexplained genuine-discordance residual of that size is exactly the kind of evidence
+that needs review, not an automatic green light.
 Prospective suspicious-night labels (real user reviews over time) still don't exist and cannot be
 produced in one session.
 Claiming activation-readiness without that evidence would repeat exactly the kind of

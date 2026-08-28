@@ -5,11 +5,12 @@
 > permanent limitation: Garmin's raw sleep API has always included `sleepStartTimestampGMT`/
 > `sleepEndTimestampGMT`, and the code already parsed them internally for a respiration-window
 > average — they were just never persisted. Once that was fixed (`canonical.py`, `garmin_provider.py`,
-> `models.py`, `mapper.py`) and retroactively backfilled for already-collected history from the
-> existing raw archive (`garmin_sleep_timing_backfill.py`, no re-fetch from Garmin needed),
-> automatic USER coverage went from **0% → 34.1%** (`leaveOneOut`) / **0% → 14.6%**
-> (`chronologicalExpandingWindow`). §7 below has the full re-run. The original §1–§6 findings are
-> kept below, unedited, because they're what led to finding and fixing the real gap — this is not
+> `models.py`, `mapper.py`) and retroactively re-derived for already-collected history via the
+> existing `rebuild` command (which replays the raw archive through the same canonicalization path
+> — no bespoke backfill script or re-fetch from Garmin needed, see §7a), automatic USER coverage
+> went from **0% → 63.4%** (`leaveOneOut`) / **0% → 36.6%** (`chronologicalExpandingWindow`). §7
+> below has the full re-run. The original §1–§6 findings are kept below, unedited, because they're
+> what led to finding and fixing the real gap — this is not
 > a retraction, it's the record of how the fix was found.
 
 **Date**: 2026-08-28
@@ -119,61 +120,76 @@ always included `dailySleepDTO.sleepStartTimestampGMT`/`sleepEndTimestampGMT`, a
 `garmin_provider.py`'s `_sleep_window_gmt_ms()` already parsed them — but only to feed an internal
 respiration-window average (`average_sleep_respiration_from_intervals`); the parsed timestamps
 were discarded immediately after, never reaching `CanonicalDailyMetrics`, `daily_recovery_snapshots`,
-or anything downstream. Fixed by threading `sleep_start_gmt_iso`/`sleep_end_gmt_iso` through
-`CanonicalDailyMetrics` → `RawMetrics.sleepStartTimeGmt`/`sleepEndTimeGmt` → the persisted
-snapshot, and reading them into `identity_replay_export.py`'s `garminSessions`.
+or anything downstream. Fixed by threading `CanonicalDailyMetrics.sleep_session_start`/
+`sleep_session_end` (real `datetime` values) through `RawMetrics.sleepSessionStart`/`sleepSessionEnd`
+(ISO strings at the persisted-document boundary) to the snapshot, and reading them into
+`identity_replay_export.py`'s `garminSessions`. (An earlier version of this fix used different
+field names and a bespoke retroactive-backfill script; both were superseded before merging when
+`main` turned out to have independently landed the same capability under this naming, more
+completely integrated — see §7a below.)
 
-**Retroactive backfill, not just going-forward**: raw Garmin sleep API responses are archived to
-GCS per date (`service.py`'s `_archive_daily_payloads`, `endpoint="sleep"`). A new module,
-[`garmin_sleep_timing_backfill.py`](../../src/garmin_sync/garmin_sleep_timing_backfill.py) (CLI:
-`backfill-garmin-sleep-timing`), reads the *already-archived* raw payload back and patches
-`raw.sleepStartTimeGmt`/`raw.sleepEndTimeGmt` onto the existing `daily_recovery_snapshots`
-documents via an explicit dotted-field-path `update()` — not a merge-write on the whole `raw` map,
-which would have risked touching sibling fields (`restingHr`, `hrvOvernightAvg`, `sleepScore`,
-etc.) it must not touch. No re-fetch from Garmin's live API was needed. Verified directly against
-Firestore (not just the CLI's own summary) that every patched document still has all of its
-original fields intact, with only the two new fields added.
+**Retroactive population uses the existing `rebuild` command, not a bespoke script**: raw Garmin
+sleep API responses are already archived to GCS per date (`service.py`'s `_archive_daily_payloads`,
+`endpoint="sleep"`), and `service.rebuild(start, end)` (CLI: `rebuild --start-date ... --end-date
+...`) already replays every archived raw payload (stats/sleep/hrv/activities) through the exact
+same `canonicalize_from_raw` the live sync path uses, for any date where all four are present. No
+new script was needed once the field-name reconciliation below happened.
 
-**Real backfill run**: 65-day window (2026-06-25 to 2026-08-28), 31 dates patched. Within the PI8
-replay's 41-night window specifically, **27 / 41 nights now have real Garmin session timing** (the
-remaining 14 have no archived "sleep" payload at all — archiving wasn't running yet for those
-dates, a real, unrecoverable gap for that older history, not something this backfill can fix).
+**Real rebuild run**: 65-day window (2026-06-25 to 2026-08-28) — **65 / 65 dates rebuilt, 0
+skipped**. Within the PI8 replay's 41-night window specifically, **40 / 41 nights now have real
+Garmin session timing** (only 2026-07-18 lacks it, the same date already flagged
+`ANCHOR_QUALITY_INSUFFICIENT` for an incomplete Garmin snapshot that day).
 
-**Real replay result, re-run after the backfill** (`export-identity-replay --days 60` →
+**Real replay result, re-run after the rebuild** (`export-identity-replay --days 60` →
 `evidence:identity-replay`, both methods):
 
 | Method | Automatic USER | Coverage |
 | --- | --- | --- |
-| `leaveOneOut` | 14 / 41 | **34.1%** (was 0.0%) |
-| `chronologicalExpandingWindow` | 6 / 41 | **14.6%** (was 0.0%) |
+| `leaveOneOut` | 26 / 41 | **63.4%** (was 0.0%) |
+| `chronologicalExpandingWindow` | 15 / 41 | **36.6%** (was 0.0%) |
 
-`leaveOneOut`'s reason-code distribution: `SESSION_TIMING_CONCORDANT` on all 14 automatic-USER
-nights; `SESSION_TIMING_DISCORDANT` on 27 nights, which splits into two real, different causes —
-the 14 nights with no archived session data at all (still correctly fail-closed to discordant, per
-`identityAttribution.ts:235-237`'s treatment of `overlap === null`), **and 11 nights that do have
-real session data on both sides but were genuinely found discordant** (e.g. a real timing mismatch
-between the Garmin watch's and Eight Sleep pod's sleep-onset/wake detection — not a data-absence
-artifact). `chronologicalExpandingWindow`'s lower 14.6% is expected and explained by
-`INSUFFICIENT_PASSPORT_HISTORY` (32/41 nights) — a chronological replay with `minTrainingNights=5`
+`leaveOneOut`'s reason-code distribution: `SESSION_TIMING_CONCORDANT` on all 26 automatic-USER
+nights; `SESSION_TIMING_DISCORDANT` on 15 nights — with real session-timing coverage now at 40/41,
+this is overwhelmingly **genuine discordance, not data absence** (only 1 of the 15 lacks session
+data at all). `chronologicalExpandingWindow`'s lower 36.6% is expected and explained by
+`INSUFFICIENT_PASSPORT_HISTORY` (18/41 nights) — a chronological replay with `minTrainingNights=5`
 on a ~6-week dataset has a real cold-start period before enough training history accumulates;
-`leaveOneOut`'s 34.1% is the more informative number for this dataset's size.
+`leaveOneOut`'s 63.4% is the more informative number for this dataset's size.
 
-**What this means for the original open question (§6)**: mostly resolved, not by relaxing the
-evaluator, but by fixing the real data gap as planned — most of the original 0% was genuinely
-missing evidence, not genuine disagreement. But a real residual exists: even with full session
-data, roughly 11/25 nights (44%) with real session timing on both sides showed genuine discordance.
-Whether that's real device-to-device timing noise the evaluator's tolerance should absorb better,
-or a real signal worth its own investigation, is a new, separate, genuinely open question — not
-decided here, and not the same question §6 originally asked.
+**What this means for the original open question (§6)**: resolved, not by relaxing the evaluator,
+but by fixing the real data gap as planned — the original 0% was entirely a missing-evidence
+artifact, not genuine disagreement. A real residual remains: 14/15 `leaveOneOut` discordant nights
+now have real session data on both sides and were genuinely found discordant (~35% of all 41
+nights). Whether that's real device-to-device timing noise the evaluator's tolerance should absorb
+better, or a real signal worth its own investigation, is a new, separate, genuinely open question —
+not decided here, and not the same question §6 originally asked.
 
 **Reproduce**:
 
 ```bash
-uv run python -m garmin_sync backfill-garmin-sleep-timing --days 65
+uv run python -m garmin_sync rebuild --start-date 2026-06-25 --end-date 2026-08-28
 uv run python -m garmin_sync export-identity-replay --days 60
 cd app
 npm run evidence:identity-replay -- --input ../artifacts/identity-replay/replay-input.json
 ```
+
+### 7a. A note on how this shipped
+
+The first pass at this fix (same root cause, same day) used its own field names
+(`sleep_start_gmt_iso`/`sleep_end_gmt_iso`, `RawMetrics.sleepStartTimeGmt`/`sleepEndTimeGmt`) and a
+bespoke retroactive-backfill script (`garmin_sleep_timing_backfill.py`, using a new
+`FirestoreRecoveryRepository.patch_snapshot_fields` dotted-path patch method) — real, tested, and
+run against the real account (31/65 dates patched, 27/41 nights in-window, yielding 34.1%/14.6%
+coverage). While syncing this branch with `main` for merge, that turned out to duplicate work
+already independently merged to `main` under different names (`sleep_session_start`/
+`sleep_session_end`, `RawMetrics.sleepSessionStart`/`sleepSessionEnd`) — and `main`'s version was
+more completely integrated (also threaded into `equivalence.py`'s MS10 transport-equivalence
+comparison) and didn't need a bespoke backfill script at all, since the existing `rebuild` command
+already covers the same retroactive-population need more generally. Reconciled by adopting `main`'s
+naming and mechanism throughout, deleting the now-redundant script and its `patch_snapshot_fields`
+dependency, and re-running the real rebuild + replay end to end to confirm the real numbers above —
+which came out meaningfully *better* than the first pass (63.4% vs. 34.1%), since `rebuild`
+achieved full 65/65 date coverage where the bespoke script only reached 31/65.
 
 Full reports (both replay methods): `artifacts/identity-replay-reports/leave-one-out/report.md`,
 `artifacts/identity-replay-reports/chronological-expanding-window/report.md` (not committed — real
