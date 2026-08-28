@@ -373,7 +373,13 @@ The plan-derived path (`PlanDefinition`) is not wired to contributors in this in
 
 Phase 3 introduced a single, unified ranking path (`rankCandidates`) driven by shared context (`buildOptimizationContext`). Candidates are evaluated via strict **Lexicographic Ordering**:
 
-1. **Hard Eligibility Gates** (Level 1–3): Time budget, required equipment, injury constraints, safety envelopes, phase eligibility, planned-intensity admissibility, and dated role-aware recovery constraints (`QUALITY_SPACING_VIOLATION`, `HARD_LOWER_BODY_SPACING_VIOLATION`, `ROLLING_HARD_CAP_EXCEEDED`, `ANCHOR_PROTECTION_VIOLATION`). Filtered candidates carry explicit `excludedReasons`.
+1. **Hard Eligibility Gates** (Level 1–3): Time budget, required equipment, injury constraints, safety envelopes, phase eligibility, planned-intensity admissibility, and dated role-aware recovery constraints (`QUALITY_SPACING_VIOLATION`, `HARD_LOWER_BODY_SPACING_VIOLATION`, `ROLLING_HARD_CAP_EXCEEDED`, `ANCHOR_PROTECTION_VIOLATION`, `RECOVERY_WINDOW_UNELAPSED`). Filtered candidates carry explicit `excludedReasons`.
+
+`RECOVERY_WINDOW_UNELAPSED` (added `POLICY_VERSION` `2026-08-recovery-window-propagation-v1`,
+PR #212) rejects a hard/anchor candidate when a *prior placed session's own declared*
+`loadProfile.recoveryHours` window (e.g. 48h/54h/72h) has not yet elapsed — a consequence of an
+earlier decision, not a property of the candidate itself. `weeklyAllocation.ts` re-validates
+already-placed later reservations when an earlier placement retroactively triggers it.
 2. **Objective Benefit** (Level 4): Scores a template's stimulus profile against currently unresolved weekly objectives (`calculateStimulusBenefit`). Higher objective satisfaction strictly outranks non-objective candidates regardless of preference multipliers. Weekly-anchor timing and missing supported triathlon-modality coverage are also Level-4 architecture signals.
 3. **Utility Score** (Level 5 & 6): `utility = (benefit / (1 + fatigueCost)) × preferenceMultiplier`. Used to sort candidates of comparable objective benefit (within `0.05` benefit score).
 
@@ -424,7 +430,8 @@ phase eligibility           event-relative template gating (Path B only)
         ↓
 planned intensity gate      hard-class candidates require adequate plan intensity
         ↓
-dated recovery constraints  quality spacing, rolling hard caps, anchor protection
+dated recovery constraints  quality spacing, rolling hard caps, anchor protection,
+                            prior session's own declared recovery window (RECOVERY_WINDOW_UNELAPSED)
         ↓
 lexicographic priority      objective/timing benefit outranks preference
         ↓

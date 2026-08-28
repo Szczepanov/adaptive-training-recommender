@@ -122,6 +122,20 @@ Google Health API (v4) / REST Data Points
 3. **Step Count Semantics (`D-MS-STEPS`)**: Aggregator step counts from Google Health are strictly ignored to prevent double-counting structured training fatigue.
 4. **Instant Maturity via Backfill**: Historical data is backfilled via `uv run python -m garmin_sync backfill-health --days 60 --token <TOKEN>`, immediately seeding 28-day mature baselines.
 
+### Direct Eight Sleep transport (ADR-0030)
+
+Independent of the Google Health path above, `src/garmin_sync/eight_sleep_*.py`
+(`eight_sleep_client.py`, `eight_sleep_config.py`, `eight_sleep_mapper.py`,
+`eight_sleep_provider.py`, `eight_sleep_probe.py`) implements an owned, read-only direct
+connector to Eight Sleep's private API, producing `provider=eight_sleep`,
+`transport=eight_sleep_direct` observations through `EightSleepDirectProvider` (a
+`RecoveryObservationProvider`-shaped adapter, ADR-0030). It exists as a **default-off**
+alternative to the `com.eightsleep.eight` Google Health package-attribution path, and is not yet
+wired into any production CLI command — `register_provider()` is only ever called with
+`{"google_health": provider}` in `run_backfill_health_cmd`; the direct provider is exercised only
+by tests until `EIGHT_SLEEP_DIRECT_ENABLED` and runtime secrets are provisioned (see
+[`docs/plans/eight-sleep-direct-recovery-ingestion.md`](../plans/eight-sleep-direct-recovery-ingestion.md)).
+
 ### Identity gate location (ADR-0028)
 
 A shared source like Eight Sleep sits between "day-source bundle exists" and "source-specific
@@ -155,6 +169,7 @@ recommendation path consumes gated shared-source output yet.
 * [`src/garmin_sync/account_link.py`](../../src/garmin_sync/account_link.py) / [`account_link_api.py`](../../src/garmin_sync/account_link_api.py) — self-service Garmin account linking and token bootstrap.
 * [`src/garmin_sync/coordination.py`](../../src/garmin_sync/coordination.py) — Firestore-backed per-user Garmin execution lease.
 * [`src/garmin_sync/workout_export.py`](../../src/garmin_sync/workout_export.py) — canonical workout-to-Garmin JSON transformation.
+* [`src/garmin_sync/eight_sleep_client.py`](../../src/garmin_sync/eight_sleep_client.py), [`eight_sleep_config.py`](../../src/garmin_sync/eight_sleep_config.py), [`eight_sleep_mapper.py`](../../src/garmin_sync/eight_sleep_mapper.py), [`eight_sleep_provider.py`](../../src/garmin_sync/eight_sleep_provider.py), [`eight_sleep_probe.py`](../../src/garmin_sync/eight_sleep_probe.py) — owned direct read-only Eight Sleep private-API connector (ADR-0030), default-off, not yet wired into any production CLI command.
 * [`app/src/hooks/useAutoGarminSync.ts`](../../app/src/hooks/useAutoGarminSync.ts) — client-side stale/missing snapshot refresh trigger.
 * [`app/src/services/garminSyncRequestService.ts`](../../app/src/services/garminSyncRequestService.ts) — transactional fixed-document sync request coordination.
 
@@ -179,7 +194,12 @@ baseline/provenance fields. Current `raw` fields include:
 * weight/body-fat observations when Garmin supplies a valid weigh-in;
 * Garmin Pulse Ox daily average/minimum (`spo2.avgPct`/`minPct`) and sleep-average SpO2 (`spo2.sleepAvgPct`);
 * overnight skin-temperature deviation in °C (`skinTempDeviationCelsius`);
-* `todayTraining`, `yesterdayTraining`, and recent-hard-session summaries derived from normalized activities.
+* `todayTraining`, `yesterdayTraining`, and recent-hard-session summaries derived from normalized activities;
+* real Garmin sleep-session start/end timestamps (`raw.sleepSessionStart`/`raw.sleepSessionEnd`,
+  from `dailySleepDTO.sleepStartTimestampGMT`/`sleepEndTimestampGMT`), with `dataQuality.sleepTimingAvailable`
+  recording whether both bounds were available for that night — added to feed PI8's identity-attribution
+  `SESSION_TIMING` evidence, which previously had zero coverage because these parsed timestamps were
+  discarded after computing the respiration-window average and never reached `CanonicalDailyMetrics`.
 
 Sleep stages are stored as individual scalar fields, **not** under a `raw.sleepStages` object —
 there is no separate `CanonicalSleepStages` type. The recovery UI currently renders those stage
