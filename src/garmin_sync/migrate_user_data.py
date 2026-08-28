@@ -1,5 +1,6 @@
 import argparse
 import hashlib
+import itertools
 import logging
 import sys
 from dataclasses import dataclass
@@ -156,42 +157,57 @@ class UserDataMigrator:
             collection_ids.add(effective_top)
             target_collection = target_parent.collection(collection_id)
 
-            for source_snapshot in source_collection.stream():
-                documents_seen += 1
-                target_ref = target_collection.document(source_snapshot.id)
-                target_snapshot = target_ref.get()
-                target_payload = target_snapshot.to_dict() if target_snapshot.exists else None
-                if target_snapshot.exists:
-                    existing_targets += 1
+            source_stream = iter(source_collection.stream())
+            while True:
+                chunk = list(itertools.islice(source_stream, _BATCH_LIMIT))
+                if not chunk:
+                    break
 
-                source_payload = source_snapshot.to_dict() or {}
-                payload = self._merged_payload(
-                    source_payload,
-                    target_payload,
-                    source_uid,
-                    target_uid,
-                    target_wins=effective_top in _TARGET_WINS_TOP_LEVEL_COLLECTIONS,
-                )
-                if apply:
-                    batch_state["batch"].set(target_ref, payload)
-                    batch_state["ops"] += 1
-                    if batch_state["ops"] >= _BATCH_LIMIT:
-                        batch_state["batch"].commit()
-                        batch_state["batch"] = self.db.batch()
-                        batch_state["ops"] = 0
+                target_refs = [target_collection.document(snap.id) for snap in chunk]
+                target_snapshots = self.db.get_all(target_refs)
+                target_snapshots_by_id = {snap.id: snap for snap in target_snapshots}
 
-                nested_seen, nested_existing = self._walk(
-                    source_snapshot.reference,
-                    target_ref,
-                    source_uid,
-                    target_uid,
-                    top_level_collection=effective_top,
-                    apply=apply,
-                    batch_state=batch_state,
-                    collection_ids=collection_ids,
-                )
-                documents_seen += nested_seen
-                existing_targets += nested_existing
+                for source_snapshot in chunk:
+                    documents_seen += 1
+                    target_ref = target_collection.document(source_snapshot.id)
+                    target_snapshot = target_snapshots_by_id.get(source_snapshot.id)
+                    target_payload = (
+                        target_snapshot.to_dict()
+                        if target_snapshot and target_snapshot.exists
+                        else None
+                    )
+                    if target_snapshot and target_snapshot.exists:
+                        existing_targets += 1
+
+                    source_payload = source_snapshot.to_dict() or {}
+                    payload = self._merged_payload(
+                        source_payload,
+                        target_payload,
+                        source_uid,
+                        target_uid,
+                        target_wins=effective_top in _TARGET_WINS_TOP_LEVEL_COLLECTIONS,
+                    )
+                    if apply:
+                        batch_state["batch"].set(target_ref, payload)
+                        batch_state["ops"] += 1
+                        if batch_state["ops"] >= _BATCH_LIMIT:
+                            batch_state["batch"].commit()
+                            batch_state["batch"] = self.db.batch()
+                            batch_state["ops"] = 0
+
+                    nested_seen, nested_existing = self._walk(
+                        source_snapshot.reference,
+                        target_ref,
+                        source_uid,
+                        target_uid,
+                        top_level_collection=effective_top,
+                        apply=apply,
+                        batch_state=batch_state,
+                        collection_ids=collection_ids,
+                    )
+                    documents_seen += nested_seen
+                    existing_targets += nested_existing
+
         return documents_seen, existing_targets
 
     def migrate(
