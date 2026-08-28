@@ -1235,6 +1235,12 @@ def main() -> int:
     audit_multisource_parser.add_argument("--start-date", type=str, default=None)
     audit_multisource_parser.add_argument("--end-date", type=str, default=None)
     audit_multisource_parser.add_argument("--user-id", type=str, default=None)
+    audit_multisource_parser.add_argument(
+        "--eight-sleep-transport",
+        type=str,
+        default="google_health",
+        choices=["google_health", "eight_sleep_direct"],
+    )
 
     backfill_eight_sleep_direct_parser = subparsers.add_parser(
         "backfill-eight-sleep-direct",
