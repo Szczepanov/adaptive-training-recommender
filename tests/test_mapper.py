@@ -2,7 +2,11 @@ import json
 from pathlib import Path
 
 from garmin_sync.canonical import CanonicalActivity, CanonicalDailyMetrics
-from garmin_sync.garmin_provider import canonicalize_activities, canonicalize_from_raw
+from garmin_sync.garmin_provider import (
+    RawGarminTelemetry,
+    canonicalize_activities,
+    canonicalize_from_raw,
+)
 from garmin_sync.mapper import build_snapshot_from_canonical, normalize_activity
 from garmin_sync.models import DerivedMetrics
 
@@ -26,11 +30,13 @@ def test_build_snapshot_from_canonical_using_real_fixture_shapes():
     stats_fallback = {"totalSteps": 8420, "restingHeartRate": 51}
 
     canonical = canonicalize_from_raw(
-        stats_today=stats,
-        stats_fallback=stats_fallback,
-        sleep_today=sleep,
-        sleep_fallback=None,
-        hrv_today=hrv,
+        telemetry=RawGarminTelemetry(
+            stats_today=stats,
+            stats_fallback=stats_fallback,
+            sleep_today=sleep,
+            sleep_fallback=None,
+            hrv_today=hrv,
+        ),
         target_date_iso="2026-08-06",
         yesterday_iso="2026-08-05",
     )
