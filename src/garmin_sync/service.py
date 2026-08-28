@@ -745,7 +745,9 @@ class GarminSyncService:
         include_details: bool = False,
     ) -> bool:
         """Run historical backfill for date range."""
-        start_d, end_d, target_dates = self._resolve_backfill_date_range(days, start_date_str, end_date_str)
+        start_d, end_d, target_dates = self._resolve_backfill_date_range(
+            days, start_date_str, end_date_str
+        )
         if not target_dates:
             logger.error("Backfill target date range is empty.")
             return False
@@ -766,14 +768,20 @@ class GarminSyncService:
         failed_dates: list[str] = []
         self._seed_prehistory(raw_memory_store, start_d)
 
-        existing_snapshots, bulk_snapshot_lookup_succeeded = self._fetch_existing_historical_snapshots(
-            target_dates, force
+        existing_snapshots, bulk_snapshot_lookup_succeeded = (
+            self._fetch_existing_historical_snapshots(target_dates, force)
         )
 
         for target_date in target_dates:
             success = self._process_single_backfill_date(
-                target_date, provider, run_id, all_activities_raw,
-                raw_memory_store, existing_snapshots, bulk_snapshot_lookup_succeeded, force
+                target_date,
+                provider,
+                run_id,
+                all_activities_raw,
+                raw_memory_store,
+                existing_snapshots,
+                bulk_snapshot_lookup_succeeded,
+                force,
             )
             if not success:
                 failed_dates.append(get_date_string(target_date))
