@@ -836,6 +836,35 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
             f"  Sleep Duration Correlation: {report.sleepDurationCorrelation if report.sleepDurationCorrelation is not None else 'N/A'}"
         )
         print("-" * 80)
+        print("  LIKELY BED-MOVE NIGHTS (Eight Sleep session started well after Garmin's own")
+        print("  detected sleep start -- consistent with falling asleep elsewhere and moving")
+        print("  to the Eight-Sleep-equipped bed mid-night; not a device disagreement):")
+        print(
+            f"  Flagged nights:              {report.likelyBedMoveNightCount}/{report.sleepDurationPairedNights}"
+        )
+        excl_mean_disp = (
+            report.sleepDurationMeanDiffMinutesExclBedMove
+            if report.sleepDurationMeanDiffMinutesExclBedMove is not None
+            else "N/A"
+        )
+        excl_median_disp = (
+            report.sleepDurationMedianDiffMinutesExclBedMove
+            if report.sleepDurationMedianDiffMinutesExclBedMove is not None
+            else "N/A"
+        )
+        print(
+            f"  Excluding those -- Mean:     {excl_mean_disp} minutes  "
+            f"Median: {excl_median_disp} minutes  (N={report.sleepDurationPairedNightsExclBedMove})"
+        )
+        if report.likelyBedMoveDates:
+            preview = ", ".join(report.likelyBedMoveDates[:10])
+            more = (
+                f" (+{len(report.likelyBedMoveDates) - 10} more)"
+                if len(report.likelyBedMoveDates) > 10
+                else ""
+            )
+            print(f"  Dates:                       {preview}{more}")
+        print("-" * 80)
         print("  SLEEP-SESSION TIMING COVERAGE (of nights each source has sleep data for):")
         garmin_sleep_nights = len(
             [c for c in report.dailyComparisons if c["garminSleepMinutes"] is not None]

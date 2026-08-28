@@ -6,6 +6,7 @@ from garmin_sync.multisource_audit import (
     _calc_mad,
     _calc_median,
     _calc_percentile,
+    _likely_bed_move,
     run_multisource_audit,
 )
 
@@ -25,6 +26,95 @@ def test_calc_percentile() -> None:
     vals = [10.0, 20.0, 30.0, 40.0, 50.0]
     assert _calc_percentile(vals, 0.9) == 50.0
     assert _calc_percentile(vals, 0.0) == 10.0
+
+
+def test_likely_bed_move_unknown_when_either_timestamp_missing() -> None:
+    """Honest 'unknown', never asserted as 'not a bed move' without evidence."""
+    assert _likely_bed_move(None, "2026-08-14T19:22:00+00:00") is None
+    assert _likely_bed_move("2026-08-13T19:56:29+00:00", None) is None
+    assert _likely_bed_move(None, None) is None
+
+
+def test_likely_bed_move_flags_late_eight_sleep_start() -> None:
+    """The real confirmed case: Eight Sleep didn't register bed presence until 3:06am while
+    Garmin detected sleep onset the prior evening -- a ~7 hour gap, clearly past the 60min
+    default threshold."""
+    assert _likely_bed_move("2025-10-05T19:30:00+00:00", "2025-10-06T03:06:00+00:00") is True
+
+
+def test_likely_bed_move_not_flagged_for_ordinary_device_variance() -> None:
+    """A normal night's small (few-minute) detection-timing variance between the two devices
+    must never be flagged -- only material, self-relative gaps are evidence of a bed move."""
+    assert _likely_bed_move("2026-08-13T19:56:29+00:00", "2026-08-13T19:22:00+00:00") is False
+    assert _likely_bed_move("2026-08-13T19:56:29+00:00", "2026-08-13T20:15:00+00:00") is False
+
+
+def test_likely_bed_move_not_flagged_for_shared_late_bedtime() -> None:
+    """A genuinely late but SHARED bedtime (both devices agree sleep started late) must not
+    be flagged -- only Eight Sleep starting materially later than Garmin's own detection for
+    that same night is evidence of a location change, not a late night."""
+    assert _likely_bed_move("2026-08-13T23:30:00+00:00", "2026-08-13T23:35:00+00:00") is False
+
+
+def test_run_multisource_audit_excludes_bed_move_nights_from_clean_stats() -> None:
+    """Integration: a night flagged as a likely bed move must be counted in
+    likelyBedMoveDates/likelyBedMoveNightCount, stay IN the all-nights stats (never silently
+    dropped), but be excluded from the *ExclBedMove stats."""
+    mock_repo = MagicMock()
+    garmin_snaps = {
+        "2026-08-01": {
+            "date": "2026-08-01",
+            "raw": {"sleepDurationSec": 28800, "sleepSessionStart": "2026-07-31T20:00:00+00:00"},
+        },
+        "2026-08-02": {
+            "date": "2026-08-02",
+            "raw": {"sleepDurationSec": 28800, "sleepSessionStart": "2026-08-01T20:00:00+00:00"},
+        },
+    }
+    eight_bundles = [
+        {
+            # Ordinary night: Eight Sleep starts close to Garmin's detected start.
+            "logicalDate": "2026-08-01",
+            "provider": "eight_sleep",
+            "transport": "eight_sleep_direct",
+            "observations": [
+                {
+                    "metric": "sleep_duration_seconds",
+                    "value": 27600,
+                    "observedStart": "2026-07-31T20:10:00+00:00",
+                },
+            ],
+        },
+        {
+            # Likely bed-move night: Eight Sleep starts hours after Garmin's detected start.
+            "logicalDate": "2026-08-02",
+            "provider": "eight_sleep",
+            "transport": "eight_sleep_direct",
+            "observations": [
+                {
+                    "metric": "sleep_duration_seconds",
+                    "value": 10800,
+                    "observedStart": "2026-08-02T02:00:00+00:00",
+                },
+            ],
+        },
+    ]
+    mock_repo.get_historical_snapshots.return_value = garmin_snaps
+    mock_repo.get_health_observation_bundles_in_range.return_value = eight_bundles
+
+    report = run_multisource_audit(
+        mock_repo, "2026-08-01", "2026-08-02", {}, eight_sleep_transport="eight_sleep_direct"
+    )
+
+    assert report.likelyBedMoveNightCount == 1
+    assert report.likelyBedMoveDates == ["2026-08-02"]
+    # All-nights stats still include both dates -- never silently dropped.
+    assert report.sleepDurationPairedNights == 2
+    # Clean stats only reflect the one ordinary night.
+    assert report.sleepDurationPairedNightsExclBedMove == 1
+    assert report.sleepDurationMeanDiffMinutesExclBedMove == 20.0  # (28800-27600)/60
+    assert report.dailyComparisons[0]["likelyBedMove"] is False
+    assert report.dailyComparisons[1]["likelyBedMove"] is True
 
 
 def test_sleep_duration_median_reveals_outlier_skew_hidden_by_mean() -> None:
