@@ -21,6 +21,7 @@ import {
     duplicateDraftBlock,
     duplicateDraftStep,
     moveDraftItem,
+    withResolvedSummary,
 } from '../../sessions/sessionDraft';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { type PreparedSessionLaunch, SessionDestinationSheet } from './SessionDestinationSheet';
@@ -103,20 +104,19 @@ export const ManualSessionBuilder: React.FC<ManualSessionBuilderProps> = ({ user
     const [showDestination, setShowDestination] = useState(false);
     const [validationError, setValidationError] = useState<string | null>(null);
 
-    const definition = useMemo<SessionDefinition>(() => ({
+    const definition = useMemo<SessionDefinition>(() => withResolvedSummary({
         ...baseDefinition,
         schemaVersion: 1,
         id: definitionId,
         revision,
         title: title.trim() || 'Custom workout',
-        ...(summary.trim() ? { summary: summary.trim() } : {}),
         intent: baseDefinition && !['training', 'recovery'].includes(baseDefinition.intent)
             ? baseDefinition.intent
             : modality === 'mobility' ? 'recovery' : 'training',
         dominantModality: modality,
         duration: { min: durationMin, max: Math.max(durationMin, baseDefinition?.duration?.max ?? durationMin) },
         blocks,
-    }), [baseDefinition, blocks, definitionId, durationMin, modality, revision, summary, title]);
+    }, summary), [baseDefinition, blocks, definitionId, durationMin, modality, revision, summary, title]);
 
     // ⚡ Bolt: Precompute static exercise options to prevent full 176-item catalog array mapping on every keystroke
     const exerciseOptions = useMemo(

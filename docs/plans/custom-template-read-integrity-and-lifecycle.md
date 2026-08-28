@@ -258,15 +258,12 @@ living docs match the shipped behavior.
   or outcome evidence;
 * changing the `SessionDefinition` schema version solely for persistence-envelope repair.
 
-## Documentation to update as work lands
+## Documentation outcomes
 
-* Add the persisted definition codec and custom-template lifecycle to a living session
-  execution/authoring architecture document; if that document still does not exist, create
-  `docs/architecture/session-execution.md` rather than putting current behavior into the ADR.
-* Update `docs/plans/multidomain-session-authoring-execution-and-evidence.md` only where its
-  acceptance checklist or current-state statements become true; do not reopen completed M
-  items.
-* Keep ADR-0023 immutable. Write a new ADR only if implementation proposes hard deletion,
-  mutable revisions, or a different ownership/versioning model.
-* When this plan becomes `Implemented`, remove or rewrite its present-tense problem statements
-  so it reads as an outcome record, per `docs/plans/README.md`.
+* The persisted definition codec and custom-template lifecycle are recorded in
+  [`docs/architecture/session-execution.md`](../architecture/session-execution.md), created by
+  this work.
+* `docs/plans/multidomain-session-authoring-execution-and-evidence.md` was left unchanged: no
+  acceptance-checklist or current-state statement there needed updating for this fix.
+* ADR-0023 remains immutable; this work did not propose hard deletion, mutable revisions, or a
+  different ownership/versioning model, so no new ADR was written.

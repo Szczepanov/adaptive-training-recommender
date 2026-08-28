@@ -13,6 +13,7 @@ import { CheckoffInputCard } from './inputs/CheckoffInputCard';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
 import { sessionDefinitionService, type SessionDefinitionHeader } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
+import { archivedSavedDefinitionError } from '../../sessions/sessionLaunch';
 import { getGroupProgress, targetEntriesForGroupStep } from '../../sessions/groupProgression';
 import { stepName } from '../../sessions/stepDisplay';
 import { GroupProgress } from './GroupProgress';
@@ -285,8 +286,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     }, [initialSession, onInitialSessionHandled, runner]);
 
     const startSavedDefinition = async (header: SessionDefinitionHeader) => {
-        if (header.status === 'archived') {
-            setSavedDefinitionsError('Restore this archived template before starting it.');
+        const archivedError = archivedSavedDefinitionError(header, 'This template');
+        if (archivedError) {
+            setSavedDefinitionsError(archivedError);
             return;
         }
         setStartingSavedDefinitionId(header.definitionId);
@@ -382,6 +384,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             }
             const header = savedDefinitions.find(candidate => candidate.definitionId === companion.definitionRef);
             if (header) {
+                const archivedError = archivedSavedDefinitionError(header, `"${companion.definitionRef}"`);
+                if (archivedError) throw new Error(archivedError);
                 const result = await sessionDefinitionService.getDefinitionRevision(userId, header.definitionId, header.latestRevision);
                 if (result.status !== 'AVAILABLE') throw new Error('The companion session cannot be read safely.');
                 const launch = await prepareUnplannedSessionLaunch(userId, result.data);

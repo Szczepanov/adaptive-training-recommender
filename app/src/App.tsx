@@ -155,6 +155,11 @@ function App() {
     setLegacyStrengthSessionId(null);
     setActiveStructuredSession(null);
     setActiveStructuredIntent(null);
+    // A session definition being authored (imported or manually built) belongs to the
+    // previous account. Clearing it here prevents a newly signed-in userId from saving
+    // the prior account's in-progress definition under its own identity.
+    setSessionAuthoringMode(null);
+    setSessionAuthoringDefinition(null);
     if (!userId || authPhase !== 'AUTHENTICATED') return;
     let cancelled = false;
     Promise.allSettled([

@@ -1253,6 +1253,13 @@ emulatorDescribe('Firestore security rules', () => {
         }))).resolves.toBeUndefined();
     });
 
+    it('rejects a session definition header with archivedAt but no status', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, sessionDefHeaderPath), {
+            ...validSessionDefHeader(), archivedAt: '2026-08-18T12:00:00Z',
+        }));
+    });
+
     const executionPrescriptionPath = `users/${ownerId}/execution_prescriptions/presc-hash-abc`;
 
     function validExecutionPrescription() {

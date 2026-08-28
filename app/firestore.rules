@@ -713,6 +713,7 @@ service cloud.firestore {
         && (!('dominantModality' in data) || data.dominantModality is string)
         && (!('status' in data) || data.status in ['active', 'archived'])
         && (!('archivedAt' in data) || data.archivedAt is string)
+        && (!('archivedAt' in data) || 'status' in data)
         && (!('status' in data) || data.status != 'archived' || data.archivedAt is string)
         && (!('status' in data) || data.status != 'active' || !('archivedAt' in data))
         && data.createdAt is string && data.updatedAt is string;
