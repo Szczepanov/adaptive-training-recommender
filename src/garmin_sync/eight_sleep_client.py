@@ -6,6 +6,7 @@ import json
 import time
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from email.utils import parsedate_to_datetime
 from typing import Any, Mapping, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
@@ -78,7 +79,15 @@ class UrllibEightSleepTransport:
         data: bytes | None,
         timeout: float,
     ) -> EightSleepHttpResponse:
-        request = Request(url=url, data=data, headers=dict(headers), method=method)
+        # Authorization must never survive a redirect to a different origin --
+        # urlopen forwards regular Request headers across redirects, so it's added
+        # unredirected (stripped before any redirected request is built) instead of
+        # via the constructor's headers dict, which are all redirect-following.
+        redirect_safe_headers = {k: v for k, v in headers.items() if k.lower() != "authorization"}
+        request = Request(url=url, data=data, headers=redirect_safe_headers, method=method)
+        auth_value = headers.get("Authorization") or headers.get("authorization")
+        if auth_value:
+            request.add_unredirected_header("Authorization", auth_value)
         try:
             with urlopen(request, timeout=timeout) as response:  # noqa: S310 -- fixed HTTPS API endpoints
                 return EightSleepHttpResponse(
@@ -242,6 +251,17 @@ def _retry_delay(headers: Mapping[str, str], attempt: int) -> float:
         try:
             return min(60.0, max(0.0, float(raw)))
         except ValueError:
+            pass
+        # RFC 9110 10.2.3: Retry-After is either delay-seconds (handled above) or an
+        # HTTP-date. Eight Sleep's real format is unconfirmed, so both are honored
+        # rather than silently falling back to a short exponential delay that could
+        # retry sooner than the server actually asked for.
+        try:
+            retry_at = parsedate_to_datetime(raw)
+            if retry_at.tzinfo is None:
+                retry_at = retry_at.replace(tzinfo=UTC)
+            return min(60.0, max(0.0, (retry_at - datetime.now(UTC)).total_seconds()))
+        except (TypeError, ValueError):
             pass
     return min(8.0, float(2**attempt))
 
