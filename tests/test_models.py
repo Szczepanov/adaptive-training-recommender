@@ -1,11 +1,24 @@
 from typing import Any
+
 from garmin_sync.models import (
-    MetricDates, SourceMetadata, PrimaryActivity, YesterdayTraining,
-    StressSummary, TrainingReadinessSummary, TrainingStatusSummary,
-    HeartRateZonesSummary, Spo2Summary, RawMetrics, DerivedDeltas,
-    DerivedMetrics, DataQuality, DailyRecoverySnapshot,
-    HealthObservationDTO, HealthObservationDayBundle
+    DailyRecoverySnapshot,
+    DataQuality,
+    DerivedDeltas,
+    DerivedMetrics,
+    HealthObservationDayBundle,
+    HealthObservationDTO,
+    HeartRateZonesSummary,
+    MetricDates,
+    PrimaryActivity,
+    RawMetrics,
+    SourceMetadata,
+    Spo2Summary,
+    StressSummary,
+    TrainingReadinessSummary,
+    TrainingStatusSummary,
+    YesterdayTraining,
 )
+
 
 def test_metric_dates_serialization() -> None:
     md = MetricDates(
@@ -38,6 +51,7 @@ def test_metric_dates_serialization() -> None:
     assert d["spo2"] == "2023-10-25"
     assert d["skinTempDeviation"] == "2023-10-25"
 
+
 def test_metric_dates_empty_serialization() -> None:
     md = MetricDates()
     d: dict[str, Any] = md.to_dict()
@@ -55,6 +69,7 @@ def test_metric_dates_empty_serialization() -> None:
     assert d["spo2"] is None
     assert d["skinTempDeviation"] is None
 
+
 def test_source_metadata_serialization() -> None:
     md = MetricDates(sleep="2023-10-25")
     sm = SourceMetadata(
@@ -62,7 +77,7 @@ def test_source_metadata_serialization() -> None:
         sourceSchemaVersion=1,
         timezone="Europe/Warsaw",
         metricDates=md,
-        garminconnectVersion="0.3.8"
+        garminconnectVersion="0.3.8",
     )
     d = sm.to_dict()
     assert d["garminSyncedAt"] == "2023-10-25T12:00:00Z"
@@ -71,13 +86,10 @@ def test_source_metadata_serialization() -> None:
     assert d["metricDates"]["sleep"] == "2023-10-25"
     assert d["garminconnectVersion"] == "0.3.8"
 
+
 def test_primary_activity_serialization() -> None:
     pa = PrimaryActivity(
-        activityId=123,
-        type="running",
-        durationMin=30,
-        trainingEffect=3.5,
-        intensityTag="hard"
+        activityId=123, type="running", durationMin=30, trainingEffect=3.5, intensityTag="hard"
     )
     d = pa.to_dict()
     assert d["activityId"] == 123
@@ -86,19 +98,13 @@ def test_primary_activity_serialization() -> None:
     assert d["trainingEffect"] == 3.5
     assert d["intensityTag"] == "hard"
 
+
 def test_yesterday_training_serialization() -> None:
     pa = PrimaryActivity(
-        activityId=123,
-        type="running",
-        durationMin=30,
-        trainingEffect=3.5,
-        intensityTag="hard"
+        activityId=123, type="running", durationMin=30, trainingEffect=3.5, intensityTag="hard"
     )
     yt = YesterdayTraining(
-        activityCount=1,
-        totalDurationMin=30,
-        hardActivityCount=1,
-        primaryActivity=pa
+        activityCount=1, totalDurationMin=30, hardActivityCount=1, primaryActivity=pa
     )
     d = yt.to_dict()
     assert d["activityCount"] == 1
@@ -106,25 +112,21 @@ def test_yesterday_training_serialization() -> None:
     assert d["hardActivityCount"] == 1
     assert d["primaryActivity"]["activityId"] == 123
 
+
 def test_stress_summary_serialization() -> None:
-    ss = StressSummary(
-        avg=45,
-        max=90
-    )
+    ss = StressSummary(avg=45, max=90)
     d = ss.to_dict()
     assert d["avg"] == 45
     assert d["max"] == 90
 
+
 def test_training_readiness_serialization() -> None:
-    tr = TrainingReadinessSummary(
-        score=75,
-        level="high",
-        feedback="good"
-    )
+    tr = TrainingReadinessSummary(score=75, level="high", feedback="good")
     d = tr.to_dict()
     assert d["score"] == 75
     assert d["level"] == "high"
     assert d["feedback"] == "good"
+
 
 def test_training_status_serialization() -> None:
     ts = TrainingStatusSummary(
@@ -134,36 +136,30 @@ def test_training_status_serialization() -> None:
         vo2MaxRunning=55.0,
         vo2MaxRunningDate="2023-10-25",
         vo2MaxCycling=50.0,
-        vo2MaxCyclingDate="2023-10-25"
+        vo2MaxCyclingDate="2023-10-25",
     )
     d = ts.to_dict()
     assert d["statusPhrase"] == "productive"
     assert d["acuteTrainingLoad"] == 500.0
     assert d["vo2MaxRunning"] == 55.0
 
+
 def test_heart_rate_zones_serialization() -> None:
-    hz = HeartRateZonesSummary(
-        restingHrUsed=50,
-        maxHrUsed=190,
-        zone4Floor=160,
-        sport="running"
-    )
+    hz = HeartRateZonesSummary(restingHrUsed=50, maxHrUsed=190, zone4Floor=160, sport="running")
     d = hz.to_dict()
     assert d["restingHrUsed"] == 50
     assert d["maxHrUsed"] == 190
     assert d["zone4Floor"] == 160
     assert d["sport"] == "running"
 
+
 def test_spo2_summary_serialization() -> None:
-    ss = Spo2Summary(
-        avgPct=96.0,
-        minPct=92.0,
-        sleepAvgPct=95.0
-    )
+    ss = Spo2Summary(avgPct=96.0, minPct=92.0, sleepAvgPct=95.0)
     d = ss.to_dict()
     assert d["avgPct"] == 96.0
     assert d["minPct"] == 92.0
     assert d["sleepAvgPct"] == 95.0
+
 
 def test_raw_metrics_serialization() -> None:
     yt = YesterdayTraining(activityCount=0, totalDurationMin=0, hardActivityCount=0)
@@ -201,7 +197,7 @@ def test_raw_metrics_serialization() -> None:
         bodyFatPct=15.0,
         spo2=spo2,
         skinTempDeviationCelsius=0.1,
-        recoveryTimeHours=12
+        recoveryTimeHours=12,
     )
     d = rm.to_dict()
     assert d["sleepScore"] == 85
@@ -212,6 +208,7 @@ def test_raw_metrics_serialization() -> None:
     assert d["trainingStatus"]["statusPhrase"] == "productive"
     assert d["heartRateZones"]["sport"] == "running"
     assert d["spo2"]["avgPct"] == 98.0
+
 
 def test_derived_deltas_serialization() -> None:
     dd = DerivedDeltas(
@@ -240,12 +237,13 @@ def test_derived_deltas_serialization() -> None:
         stressMaxVs7dMedian=0.0,
         stressMaxVs28dMedian=-10.0,
         trainingReadinessScoreVs7dMedian=5.0,
-        trainingReadinessScoreVs28dMedian=10.0
+        trainingReadinessScoreVs28dMedian=10.0,
     )
     d = dd.to_dict()
     assert d["sleepScoreVs7d"] == 5.0
     assert d["restingHrVs7d"] == -1.0
     assert d["trainingReadinessScoreVs28dMedian"] == 10.0
+
 
 def test_derived_metrics_serialization() -> None:
     dd = DerivedDeltas(sleepScoreVs7d=5.0)
@@ -290,12 +288,13 @@ def test_derived_metrics_serialization() -> None:
         trainingReadinessScore7dMedian=75.0,
         trainingReadinessScore28dMedian=70.0,
         trainingReadinessScore28dMad=10.0,
-        deltas=dd
+        deltas=dd,
     )
     d = dm.to_dict()
     assert d["deltas"]["sleepScoreVs7d"] == 5.0
     assert d["sleepScore7dAvg"] == 80.0
     assert d["stressMax28dMad"] == 6.0
+
 
 def test_data_quality_serialization() -> None:
     dq = DataQuality(
@@ -310,12 +309,13 @@ def test_data_quality_serialization() -> None:
         trainingStatusAvailable=False,
         heartRateZonesAvailable=True,
         spo2Available=False,
-        skinTempAvailable=True
+        skinTempAvailable=True,
     )
     d = dq.to_dict()
     assert d["sleepScoreAvailable"] is True
     assert d["restingHrAvailable"] is False
     assert d["heartRateZonesAvailable"] is True
+
 
 def test_daily_recovery_snapshot_serialization() -> None:
     rm = RawMetrics(sleepScore=85)
@@ -324,12 +324,7 @@ def test_daily_recovery_snapshot_serialization() -> None:
     dq = DataQuality()
 
     snap = DailyRecoverySnapshot(
-        userId="user1",
-        date="2023-10-25",
-        source=sm,
-        raw=rm,
-        derived=dm,
-        dataQuality=dq
+        userId="user1", date="2023-10-25", source=sm, raw=rm, derived=dm, dataQuality=dq
     )
     d = snap.to_dict()
     assert d["userId"] == "user1"
@@ -337,29 +332,43 @@ def test_daily_recovery_snapshot_serialization() -> None:
     assert d["raw"]["sleepScore"] == 85
     assert d["source"]["garminSyncedAt"] == "2023-10-25T12:00:00Z"
 
+
 def test_health_observation_dto_serialization() -> None:
     obs = HealthObservationDTO(
         observationId="obs-1",
         metric="heart_rate",
         value=60.0,
         unit="bpm",
-        observedStart="2023-10-25T12:00:00Z"
+        observedStart="2023-10-25T12:00:00Z",
     )
     d = obs.to_dict()
     assert d["observationId"] == "obs-1"
     assert d["value"] == 60.0
-    assert "sourceRecordId" not in d # Test omitting None values
+    assert "sourceRecordId" not in d  # Test omitting None values
+
 
 def test_health_observation_day_bundle_serialization() -> None:
-    obs1 = HealthObservationDTO(observationId="obs-1", metric="hr", value=60.0, unit="bpm", observedStart="2023-10-25T12:00:00Z")
-    obs2 = HealthObservationDTO(observationId="obs-2", metric="hrv", value=55.0, unit="ms", observedStart="2023-10-25T12:00:00Z")
+    obs1 = HealthObservationDTO(
+        observationId="obs-1",
+        metric="hr",
+        value=60.0,
+        unit="bpm",
+        observedStart="2023-10-25T12:00:00Z",
+    )
+    obs2 = HealthObservationDTO(
+        observationId="obs-2",
+        metric="hrv",
+        value=55.0,
+        unit="ms",
+        observedStart="2023-10-25T12:00:00Z",
+    )
     bundle = HealthObservationDayBundle(
         userId="user1",
         logicalDate="2023-10-25",
         provider="garmin",
         transport="api",
         observations=[obs1, obs2],
-        sourcePayloadHash="abc123hash"
+        sourcePayloadHash="abc123hash",
     )
     d = bundle.to_dict()
     assert d["userId"] == "user1"
@@ -367,6 +376,7 @@ def test_health_observation_day_bundle_serialization() -> None:
     assert len(d["observations"]) == 2
     assert d["observations"][0]["observationId"] == "obs-1"
     assert d["sourcePayloadHash"] == "abc123hash"
+
 
 def test_daily_recovery_snapshot_serialization_with_timestamps() -> None:
     rm = RawMetrics(sleepScore=85)
@@ -382,12 +392,13 @@ def test_daily_recovery_snapshot_serialization_with_timestamps() -> None:
         derived=dm,
         dataQuality=dq,
         createdAt="2023-10-25T13:00:00Z",
-        updatedAt="2023-10-25T14:00:00Z"
+        updatedAt="2023-10-25T14:00:00Z",
     )
     d = snap.to_dict()
     assert d["userId"] == "user1"
     assert d["createdAt"] == "2023-10-25T13:00:00Z"
     assert d["updatedAt"] == "2023-10-25T14:00:00Z"
+
 
 def test_health_observation_day_bundle_serialization_with_optional() -> None:
     obs1 = HealthObservationDTO(
@@ -395,7 +406,7 @@ def test_health_observation_day_bundle_serialization_with_optional() -> None:
         metric="hr",
         value=60.0,
         unit="bpm",
-        observedStart="2023-10-25T12:00:00Z"
+        observedStart="2023-10-25T12:00:00Z",
     )
     bundle = HealthObservationDayBundle(
         userId="user1",
@@ -406,7 +417,7 @@ def test_health_observation_day_bundle_serialization_with_optional() -> None:
         sourcePayloadHash="abc123hash",
         rawArchiveRef="path/to/archive.json",
         ingestedAt="2023-10-25T12:05:00Z",
-        effectiveAt="2023-10-25T12:00:00Z"
+        effectiveAt="2023-10-25T12:00:00Z",
     )
     d = bundle.to_dict()
     assert d["rawArchiveRef"] == "path/to/archive.json"
