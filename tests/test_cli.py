@@ -9,6 +9,7 @@ from garmin_sync.cli import (
     run_audit_cmd,
     run_backfill,
     run_daily_sync,
+    run_poll_manual_sync_all_cmd,
     run_poll_manual_sync_cmd,
     run_rebuild_cmd,
 )
@@ -265,6 +266,16 @@ def test_run_poll_manual_sync_cmd_exception(mock_settings: Any, mock_service: An
     assert exit_code == 1
 
 
+@patch("garmin_sync.cli._run_for_all_users")
+def test_run_poll_manual_sync_all_cmd(mock_run_for_all_users: Any) -> None:
+    mock_run_for_all_users.return_value = 0
+
+    exit_code = run_poll_manual_sync_all_cmd([])
+
+    assert exit_code == 0
+    mock_run_for_all_users.assert_called_once()
+
+
 @patch("garmin_sync.cli.run_daily_sync")
 def test_main_sync(mock_run_daily_sync: Any) -> None:
     mock_run_daily_sync.return_value = 0
@@ -324,6 +335,17 @@ def test_main_poll_manual_sync(mock_run_poll_manual_sync_cmd: Any) -> None:
 
     assert exit_code == 0
     mock_run_poll_manual_sync_cmd.assert_called_once_with([])
+
+
+@patch("garmin_sync.cli.run_poll_manual_sync_all_cmd")
+def test_main_poll_manual_sync_all(mock_run_poll_manual_sync_all_cmd: Any) -> None:
+    mock_run_poll_manual_sync_all_cmd.return_value = 0
+
+    with patch.object(sys, "argv", ["garmin_sync", "poll-manual-sync-all"]):
+        exit_code = main()
+
+    assert exit_code == 0
+    mock_run_poll_manual_sync_all_cmd.assert_called_once_with([])
 
 
 def test_main_missing_command() -> None:
