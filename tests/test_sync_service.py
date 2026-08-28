@@ -301,6 +301,70 @@ def test_backfill_uses_bulk_snapshot_lookup_without_per_date_reads():
     assert len(provider.fetch_daily_metrics_calls) == 3
 
 
+def test_backfill_paces_between_live_fetches_but_not_after_the_last_one(monkeypatch) -> None:
+    import garmin_sync.service as service_module
+
+    provider = DetailFakeProvider()
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_backfill_delay_min_seconds=1.0,
+        garmin_backfill_delay_max_seconds=2.0,
+    )
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {}
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(service_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    assert service.backfill(start_date_str="2026-08-06", end_date_str="2026-08-08", force=True)
+
+    assert len(provider.fetch_daily_metrics_calls) == 3
+    # 3 live fetches -> pace twice (between 1st/2nd and 2nd/3rd), never after the last date.
+    assert len(sleep_calls) == 2
+    assert all(1.0 <= s <= 2.0 for s in sleep_calls)
+
+
+def test_backfill_does_not_pace_dates_skipped_via_existing_snapshot(monkeypatch) -> None:
+    """Skipped (already-synced) dates never call Garmin -- pacing them would only slow
+    down the routine, mostly-already-synced case this exists to protect."""
+    import garmin_sync.service as service_module
+
+    provider = DetailFakeProvider()
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_backfill_delay_min_seconds=1.0,
+        garmin_backfill_delay_max_seconds=2.0,
+    )
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {
+        "2026-08-06": {"raw": {"sleepScore": 80}},
+        "2026-08-07": {"raw": {"sleepScore": 81}},
+        "2026-08-08": {"raw": {"sleepScore": 82}},
+    }
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(service_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    assert service.backfill(start_date_str="2026-08-06", end_date_str="2026-08-08", force=False)
+
+    assert provider.fetch_daily_metrics_calls == []
+    assert sleep_calls == []
+
+
+def test_backfill_delay_disabled_by_default_in_directly_constructed_settings() -> None:
+    """Settings() constructed directly (as every other test in this file does) defaults
+    to no backfill pacing -- only _load_base_settings (the real CLI path) turns it on by
+    default. This guards that default so test runs stay fast without every test needing
+    to know about the new fields."""
+    settings = Settings(app_user_id="test_uid_789")
+    assert settings.garmin_backfill_delay_min_seconds == 0.0
+    assert settings.garmin_backfill_delay_max_seconds == 0.0
+
+
 def test_push_workout_fails_when_garmin_does_not_return_a_workout_id():
     settings = Settings(app_user_id="test_uid_789")
     client = MagicMock()

@@ -56,6 +56,15 @@ export interface IdentityAttributionPolicy {
     sessionJaccardScaleFloor: number;
     /** Containment/partial-occupancy guard; only used with discordant session geometry. */
     mixedOccupancyOverlapFraction: number;
+    /**
+     * Softened timing Z-score bound (default: 4.5 MAD) permitted ONLY when all available
+     * physiological relation groups (RHR, Resp, HRV) are 100% concordant and Jaccard >= minRelaxedTimingJaccard.
+     */
+    relaxedTimingConcordanceZThreshold: number;
+    /**
+     * Minimum Jaccard session overlap fraction (default: 0.85) required for relaxed timing concordance.
+     */
+    minRelaxedTimingJaccard: number;
 }
 
 export const DEFAULT_IDENTITY_ATTRIBUTION_POLICY: IdentityAttributionPolicy = Object.freeze({
@@ -69,6 +78,8 @@ export const DEFAULT_IDENTITY_ATTRIBUTION_POLICY: IdentityAttributionPolicy = Ob
     minConcordantPhysiologyFeatures: 2,
     sessionJaccardScaleFloor: 0.05,
     mixedOccupancyOverlapFraction: 0.8,
+    relaxedTimingConcordanceZThreshold: 4.5,
+    minRelaxedTimingJaccard: 0.85,
 });
 
 export type IdentityEvidenceFeature =
@@ -390,14 +401,8 @@ export function evaluateIdentityEvidence(
         }
     }
 
-    const timing = groupEvidence.get('SESSION_TIMING') ?? [];
-    if (timing.length > 0) {
-        reasons.push(
-            timing.every((item) => item.concordant)
-                ? 'SESSION_TIMING_CONCORDANT'
-                : 'SESSION_TIMING_DISCORDANT',
-        );
-    }
+    const physiology = evidence.filter((item) => item.group !== 'SESSION_TIMING');
+    const concordantPhysiologyFeatureCount = physiology.filter((item) => item.concordant).length;
 
     const relationReasonPairs: readonly [
         IdentityEvidenceGroup,
@@ -408,15 +413,47 @@ export function evaluateIdentityEvidence(
         ['RESPIRATION', 'RESPIRATION_RELATION_CONCORDANT', 'RESPIRATION_RELATION_DISCORDANT'],
         ['HRV', 'HRV_RELATION_CONCORDANT', 'HRV_RELATION_DISCORDANT'],
     ];
+    let evaluatedPhysiologyGroupCount = 0;
+    let concordantPhysiologyGroupCount = 0;
     for (const [group, concordantReason, discordantReason] of relationReasonPairs) {
         const groupItems = groupEvidence.get(group) ?? [];
         if (groupItems.length > 0) {
-            reasons.push(groupItems.every((item) => item.concordant) ? concordantReason : discordantReason);
+            evaluatedPhysiologyGroupCount++;
+            const isGroupConcordant = groupItems.every((item) => item.concordant);
+            if (isGroupConcordant) {
+                concordantPhysiologyGroupCount++;
+            }
+            reasons.push(isGroupConcordant ? concordantReason : discordantReason);
         }
     }
 
+    const allPhysiologyConcordant =
+        evaluatedPhysiologyGroupCount >= 1 &&
+        concordantPhysiologyGroupCount === evaluatedPhysiologyGroupCount &&
+        concordantPhysiologyFeatureCount >= policy.minConcordantPhysiologyFeatures;
+
+    const timing = groupEvidence.get('SESSION_TIMING') ?? [];
+    const strictTimingConcordant = timing.length > 0 && timing.every((item) => item.concordant);
+    const relaxedTimingConcordant =
+        timing.length > 0 &&
+        !strictTimingConcordant &&
+        allPhysiologyConcordant &&
+        input.overlap !== null &&
+        input.overlap.jaccard >= policy.minRelaxedTimingJaccard &&
+        timing.every((item) => item.robustDeviation <= policy.relaxedTimingConcordanceZThreshold);
+
+    const timingConcordant = strictTimingConcordant || relaxedTimingConcordant;
+    if (timing.length > 0) {
+        reasons.push(
+            timingConcordant
+                ? 'SESSION_TIMING_CONCORDANT'
+                : 'SESSION_TIMING_DISCORDANT',
+        );
+    }
+
     const mixedOccupancySuspected =
-        timing.some((item) => !item.concordant) &&
+        !timingConcordant &&
+        timing.length > 0 &&
         (input.overlap.eightOverlapFraction < policy.mixedOccupancyOverlapFraction ||
             input.overlap.garminOverlapFraction < policy.mixedOccupancyOverlapFraction);
     if (mixedOccupancySuspected) {
@@ -436,13 +473,13 @@ export function evaluateIdentityEvidence(
             ? null
             : groupScores.reduce((total, score) => total + score, 0) / groupScores.length;
 
-    const groups = [...groupEvidence.entries()];
-    const concordantEvidenceGroupCount = groups.filter(([, items]) =>
-        items.every((item) => item.concordant),
-    ).length;
-    const physiology = evidence.filter((item) => item.group !== 'SESSION_TIMING');
-    const concordantPhysiologyFeatureCount = physiology.filter((item) => item.concordant).length;
-    const hasDiscordance = evidence.some((item) => !item.concordant);
+    let concordantEvidenceGroupCount = concordantPhysiologyGroupCount;
+    if (timing.length > 0 && timingConcordant) {
+        concordantEvidenceGroupCount += 1;
+    }
+    const hasPhysiologyDiscordance = physiology.some((item) => !item.concordant);
+    const hasTimingDiscordance = timing.length > 0 && !timingConcordant;
+    const hasDiscordance = hasPhysiologyDiscordance || hasTimingDiscordance;
     const reasonCodes = uniqueReasons(reasons);
     const hardFailure = hasHardPreconditionFailure(reasonCodes);
     const automaticUser =

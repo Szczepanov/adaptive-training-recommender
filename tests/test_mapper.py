@@ -467,6 +467,51 @@ def test_build_snapshot_maps_sleep_stages():
     assert snapshot.raw.restlessMomentsCount == 12
 
 
+def test_build_snapshot_maps_sleep_session_timing_and_data_quality():
+    from datetime import datetime, timezone
+
+    canonical = CanonicalDailyMetrics(
+        date="2026-08-23",
+        sleep_score=85,
+        sleep_duration_seconds=28800,
+        sleep_session_start=datetime(2026, 8, 22, 22, 0, tzinfo=timezone.utc),
+        sleep_session_end=datetime(2026, 8, 23, 6, 0, tzinfo=timezone.utc),
+    )
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-23",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=DerivedMetrics(),
+    )
+
+    assert snapshot.raw.sleepSessionStart == "2026-08-22T22:00:00+00:00"
+    assert snapshot.raw.sleepSessionEnd == "2026-08-23T06:00:00+00:00"
+    assert snapshot.dataQuality.sleepTimingAvailable is True
+
+
+def test_build_snapshot_sleep_timing_unavailable_when_no_session_window():
+    canonical = CanonicalDailyMetrics(
+        date="2026-08-23",
+        sleep_score=85,
+        sleep_duration_seconds=28800,
+    )
+
+    snapshot = build_snapshot_from_canonical(
+        user_id="test_uid",
+        target_date_iso="2026-08-23",
+        canonical=canonical,
+        canonical_activities=[],
+        derived_metrics=DerivedMetrics(),
+    )
+
+    assert snapshot.raw.sleepSessionStart is None
+    assert snapshot.raw.sleepSessionEnd is None
+    assert snapshot.dataQuality.sleepScoreAvailable is True
+    assert snapshot.dataQuality.sleepTimingAvailable is False
+
+
 def test_build_snapshot_maps_weight_and_body_fat():
     canonical = CanonicalDailyMetrics(
         date="2026-08-23",

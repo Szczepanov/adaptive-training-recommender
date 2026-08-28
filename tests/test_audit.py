@@ -15,6 +15,8 @@ def test_format_report_archiving_enabled() -> None:
         snapshots_present=5,
         missing_snapshots=[],
         sleep_available=4,
+        sleep_timing_available=3,
+        sleep_missing_timing_dates=["2023-10-04"],
         hrv_available=3,
         rhr_available=5,
         spo2_available=2,
@@ -31,6 +33,9 @@ def test_format_report_archiving_enabled() -> None:
     assert_contains_match(r"Snapshots present:\s+5", result)
     assert_contains_match(r"Missing snapshots:\s+0", result)
     assert_contains_match(r"Sleep available:\s+4", result)
+    assert_contains_match(r"Sleep timing available:\s+3", result)
+    assert_contains_match(r"Sleep missing timestamps:\s+1", result)
+    assert "Sleep present but timestamps missing: 2023-10-04" in result
     assert_contains_match(r"HRV available:\s+3", result)
     assert_contains_match(r"RHR available:\s+5", result)
     assert_contains_match(r"SpO2 available:\s+2", result)
@@ -49,6 +54,8 @@ def test_format_report_archiving_disabled() -> None:
         snapshots_present=5,
         missing_snapshots=[],
         sleep_available=4,
+        sleep_timing_available=4,
+        sleep_missing_timing_dates=[],
         hrv_available=3,
         rhr_available=5,
         spo2_available=2,
@@ -73,6 +80,8 @@ def test_format_report_few_missing_snapshots() -> None:
         snapshots_present=2,
         missing_snapshots=["2023-10-02", "2023-10-03", "2023-10-04"],
         sleep_available=0,
+        sleep_timing_available=0,
+        sleep_missing_timing_dates=[],
         hrv_available=0,
         rhr_available=0,
         spo2_available=0,
@@ -98,6 +107,8 @@ def test_format_report_many_missing_snapshots() -> None:
         snapshots_present=0,
         missing_snapshots=missing_dates,
         sleep_available=0,
+        sleep_timing_available=0,
+        sleep_missing_timing_dates=[],
         hrv_available=0,
         rhr_available=0,
         spo2_available=0,

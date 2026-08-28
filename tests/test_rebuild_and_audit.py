@@ -247,8 +247,68 @@ def test_audit_reports_missing_snapshots_and_availability() -> None:
     assert report.snapshots_present == 4
     assert report.missing_snapshots == ["2026-08-04"]
     assert report.sleep_available == 4
+    # None of the fake snapshots set sleepTimingAvailable -- exercises the pre-fix
+    # (legacy) shape where the field is simply absent, same as real historical snapshots
+    # synced before RawMetrics.sleepSessionStart/End existed.
+    assert report.sleep_timing_available == 0
+    assert report.sleep_missing_timing_dates == [
+        "2026-08-02",
+        "2026-08-03",
+        "2026-08-05",
+        "2026-08-06",
+    ]
     assert report.hrv_available == 3
     assert report.rhr_available == 4
     assert report.spo2_available == 3
     assert report.skin_temp_available == 2
     assert report.activities_discovered == 12
+
+
+def test_audit_distinguishes_sleep_present_from_timing_missing() -> None:
+    """A night can have a sleep score/duration without a captured start/end timestamp
+    (dataQuality.sleepTimingAvailable independent of sleepScoreAvailable) -- the audit
+    must count/report those two things separately, not conflate them."""
+    settings = Settings(app_user_id="test_uid_timing")
+    mock_repo = MagicMock()
+    mock_repo.count_activities_in_range.return_value = 0
+
+    def get_historical_snapshots_side_effect(start_iso: str, end_iso: str) -> dict[str, dict]:
+        return {
+            "2026-08-05": {
+                "dataQuality": {
+                    "sleepScoreAvailable": True,
+                    "sleepTimingAvailable": True,
+                    "hrvAvailable": True,
+                    "restingHrAvailable": True,
+                }
+            },
+            "2026-08-06": {
+                "dataQuality": {
+                    "sleepScoreAvailable": True,
+                    "sleepTimingAvailable": False,
+                    "hrvAvailable": True,
+                    "restingHrAvailable": True,
+                }
+            },
+            "2026-08-07": {
+                # No sleep at all that night -- must NOT be reported as a missing-timestamp
+                # night, since there's nothing to time.
+                "dataQuality": {
+                    "sleepScoreAvailable": False,
+                    "sleepTimingAvailable": False,
+                    "hrvAvailable": False,
+                    "restingHrAvailable": True,
+                }
+            },
+        }
+
+    mock_repo.get_historical_snapshots.side_effect = get_historical_snapshots_side_effect
+
+    archive_store = MagicMock()
+    archive_store.list_archived_dates.return_value = set()
+
+    report = run_audit(settings, mock_repo, archive_store, days=3, end_date_str="2026-08-07")
+
+    assert report.sleep_available == 2
+    assert report.sleep_timing_available == 1
+    assert report.sleep_missing_timing_dates == ["2026-08-06"]

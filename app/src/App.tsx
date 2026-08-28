@@ -7,7 +7,7 @@ import { decisionComposer } from './engine/composer';
 import { hasCompletedSubjectiveCheckinForDecision } from './engine/checkinCompletion';
 import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyModels';
 import type { DailyDecisionInput } from './engine/models';
-import type { SessionExecution, SessionIntent } from './sessions/models';
+import type { SessionDefinition, SessionExecution, SessionIntent } from './sessions/models';
 import type { Screen } from './types/navigation';
 import { useAuth } from './contexts/AuthContext';
 import { LoginScreen } from './components/LoginScreen';
@@ -54,6 +54,7 @@ function App() {
   const [activeStructuredSession, setActiveStructuredSession] = useState<SessionExecution | null>(null);
   const [activeStructuredIntent, setActiveStructuredIntent] = useState<SessionIntent | null>(null);
   const [sessionAuthoringMode, setSessionAuthoringMode] = useState<'import' | 'manual' | null>(null);
+  const [sessionAuthoringDefinition, setSessionAuthoringDefinition] = useState<SessionDefinition | null>(null);
   const [sessionLaunch, setSessionLaunch] = useState<PreparedSessionLaunch | null>(null);
   const [onboardingDismissed, setOnboardingDismissed] = useState(() => {
     if (typeof window === 'undefined') return false;
@@ -154,6 +155,11 @@ function App() {
     setLegacyStrengthSessionId(null);
     setActiveStructuredSession(null);
     setActiveStructuredIntent(null);
+    // A session definition being authored (imported or manually built) belongs to the
+    // previous account. Clearing it here prevents a newly signed-in userId from saving
+    // the prior account's in-progress definition under its own identity.
+    setSessionAuthoringMode(null);
+    setSessionAuthoringDefinition(null);
     if (!userId || authPhase !== 'AUTHENTICATED') return;
     let cancelled = false;
     Promise.allSettled([
@@ -394,10 +400,15 @@ function App() {
             ) : sessionAuthoringMode === 'manual' ? (
               <ManualSessionBuilder
                 userId={userId!}
-                onClose={() => setSessionAuthoringMode(null)}
+                initialDefinition={sessionAuthoringDefinition ?? undefined}
+                onClose={() => {
+                  setSessionAuthoringMode(null);
+                  setSessionAuthoringDefinition(null);
+                }}
                 onStartExecution={session => {
                   setSessionLaunch(session);
                   setSessionAuthoringMode(null);
+                  setSessionAuthoringDefinition(null);
                 }}
               />
             ) : (
@@ -407,7 +418,10 @@ function App() {
                   initialSession={sessionLaunch ?? undefined}
                   onInitialSessionHandled={() => setSessionLaunch(null)}
                   onImportSession={() => setSessionAuthoringMode('import')}
-                  onBuildSession={() => setSessionAuthoringMode('manual')}
+                  onBuildSession={definition => {
+                    setSessionAuthoringDefinition(definition ?? null);
+                    setSessionAuthoringMode('manual');
+                  }}
                   onSessionStateChange={session => {
                     setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
                     if (session?.state !== 'in_progress') setActiveStructuredIntent(null);
