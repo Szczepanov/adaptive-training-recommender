@@ -205,6 +205,13 @@ class CanonicalDailyMetrics:
     sleep_score: float | None = None
     sleep_duration_seconds: int | None = None
     sleep_date: str | None = None
+    # The actual sleep-session interval (from dailySleepDTO.sleepStart/EndTimestampGMT on
+    # whichever sleep record was selected -- target-date or the D-1 fallback). Distinct from
+    # `sleep_date` (a logical calendar date): these are the real UTC clock times a co-presence
+    # check (e.g. against Eight Sleep) needs to line up two devices' nights. None when Garmin's
+    # raw sleep payload didn't include a timing window.
+    sleep_session_start: datetime | None = None
+    sleep_session_end: datetime | None = None
     deep_sleep_seconds: int | None = None
     rem_sleep_seconds: int | None = None
     light_sleep_seconds: int | None = None
