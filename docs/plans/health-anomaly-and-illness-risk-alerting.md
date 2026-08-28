@@ -751,7 +751,7 @@ Important: future symptoms are labels in the report, never live input to the day
 
 ## HA6 — prospective label loop and calibration
 
-**Status:** HA6.1–HA6.3 implemented in PR #174 (`feat/health-anomaly-ha-e`), evidence-only, no Home surface. HA6.4 remains observation-only future work pending enough labelled real episodes; release evidence for HA7/HA9 necessarily accumulates over real use.
+**Status:** HA6.1–HA6.3 merged via #174 (`feat/health-anomaly-ha-e`), evidence-only, no Home surface. HA6.4 remains observation-only future work pending enough labelled real episodes; release evidence for HA7/HA9 necessarily accumulates over real use.
 
 ### HA6.1 Low-friction outcome capture
 

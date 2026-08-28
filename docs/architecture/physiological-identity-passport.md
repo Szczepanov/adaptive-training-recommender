@@ -263,7 +263,9 @@ activation, per ADR-0028.
 - No recommendation path reads fusion or shared-source baseline output.
 - Automatic `NOT_USER` is not implemented (v1 structurally cannot emit it).
 - The MS16 simulation harness has not migrated off the legacy co-presence heuristic.
-- The real 60-day/42-night historical replay has not been run — no exporter exists.
+- The real historical replay has been run (PI8): 68.3% `leaveOneOut` automatic USER coverage
+  on 41 real paired nights, see
+  [the evidence doc](../analysis/2026-08-28-identity-passport-replay-evidence.md).
 - Prospective suspicious-night labels have not begun accumulating (no real usage yet).
 - There is no review-history editor for reopening an already-reviewed night across sessions; the
   append-only persistence contract supports supersession, but this PR exposes correction only while

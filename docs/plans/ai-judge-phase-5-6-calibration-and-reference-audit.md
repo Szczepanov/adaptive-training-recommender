@@ -1,13 +1,13 @@
 # AI judge Phase 5–6: calibration controls and reference audit
 
-**Status:** In progress
-**Blocked by:** none — Phase 4 is merged on `origin/main`
+**Status:** Implemented
+**Blocked by:** none — merged via #223
 **Unlocks:** an evidence-based judge/model retention decision and, separately, a reviewed judge-contract baseline migration
 
 **Implementation state:** all planned code, fixtures, tests, commands, and operating docs are
-complete on `codex/ai-judge-phase5-6`; merge/PR review is still pending. The installed 4B
-model now provides a quick local smoke path. A provenance-compatible multi-model reference
-comparison remains an optional operational follow-up.
+complete and merged to `main` via #223 (2026-08-25). The installed 4B model now provides a
+quick local smoke path. A provenance-compatible multi-model reference comparison remains an
+optional operational follow-up.
 
 ## Goal
 
