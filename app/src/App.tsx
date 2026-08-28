@@ -401,7 +401,7 @@ function App() {
                 }}
               />
             ) : (
-              <>
+              <div className="sessions-screen-container">
                 <SessionRunner
                   userId={userId!}
                   initialSession={sessionLaunch ?? undefined}
@@ -414,11 +414,10 @@ function App() {
                   }}
                   onClose={() => handleNavigate('home')}
                 />
-                <details className="strength-history-disclosure">
-                  <summary>View strength history</summary>
+                <div className="dashboard-card strength-history-card" style={{ marginTop: '1.5rem' }}>
                   <StrengthOverloadHistory userId={userId!} />
-                </details>
-              </>
+                </div>
+              </div>
             )
           )}
 

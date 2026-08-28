@@ -876,6 +876,10 @@ class FakeStatefulRepository:
     def upsert_activity(self, activity_id: int, payload: dict) -> None:
         pass  # not exercised by this test
 
+    def upsert_activities(self, activities: list[tuple[str | int, dict]]) -> None:
+        for activity_id, payload in activities:
+            self.upsert_activity(activity_id, payload)
+
     def get_snapshot(self, date_iso: str) -> dict | None:
         return self.snapshots.get(date_iso)
 

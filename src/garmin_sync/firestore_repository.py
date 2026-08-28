@@ -230,6 +230,22 @@ class FirestoreRecoveryRepository:
                 batch.set(doc_ref, payload, merge=True)
             batch.commit()
 
+    def get_activities_in_range(
+        self, start_date_iso: str, end_date_iso: str
+    ) -> list[dict[str, Any]]:
+        """Fetch normalized activities in range [start_date_iso, end_date_iso]."""
+        db = self._get_db()
+        docs = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("activities")
+            .where(filter=FieldFilter("date", ">=", start_date_iso))
+            .where(filter=FieldFilter("date", "<=", end_date_iso))
+            .order_by("date")
+            .stream()
+        )
+        return [doc.to_dict() for doc in docs]
+
     def upsert_garmin_performance_targets(self, targets: Any) -> None:
         """Merge Garmin's current targets into the user's preference profile.
 

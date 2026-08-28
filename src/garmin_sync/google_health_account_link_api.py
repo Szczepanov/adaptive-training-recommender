@@ -201,6 +201,19 @@ class GoogleHealthAccountLinkHandler(BaseHTTPRequestHandler):
         state = _first("state")
         google_error = _first("error")
 
+        # Every exit path below logs something -- this handler previously had a silent path
+        # (no log line on any branch) that made a real production failure undiagnosable (see
+        # docs/analysis/2026-08-28-identity-passport-replay-evidence.md's session notes on the
+        # 2026-08-27 callback investigation). request_id ties this to the access-style log line
+        # already emitted by log_message() for the same request.
+        logger.info(
+            "Google Health callback received (request_id=%s, has_code=%s, has_state=%s, google_error=%s)",
+            self.request_id,
+            bool(code),
+            bool(state),
+            google_error,
+        )
+
         try:
             if google_error:
                 # The user declined consent, or Google itself errored -- not a bug here.
@@ -208,6 +221,12 @@ class GoogleHealthAccountLinkHandler(BaseHTTPRequestHandler):
                 self._app_redirect(success=False, reason="google_declined")
                 return
             if not code or not state:
+                logger.info(
+                    "Google Health OAuth callback missing code/state (request_id=%s, has_code=%s, has_state=%s).",
+                    self.request_id,
+                    bool(code),
+                    bool(state),
+                )
                 self._app_redirect(success=False, reason="missing_code_or_state")
                 return
 
@@ -250,6 +269,12 @@ class GoogleHealthAccountLinkHandler(BaseHTTPRequestHandler):
                 health_user_id=health_user_id,
                 granted_scopes=tokens.scopes,
                 token_object=token_object,
+            )
+            logger.info(
+                "Google Health link succeeded (request_id=%s, uid=%s, health_user_id_resolved=%s).",
+                self.request_id,
+                uid,
+                health_user_id is not None,
             )
             self._app_redirect(success=True)
 

@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import type { DataState } from '../engine/dataState';
 import type { ActivityZoneBucket, NormalizedGarminActivity, RunningDynamics } from '../engine/models';
+import { copyActivityJsonToClipboard } from '../utils/activityJsonExport';
 import './ActivityTelemetry.css';
 
 interface ActivityTelemetryProps {
@@ -56,10 +58,24 @@ function ZoneBars({ title, unit, zones }: { title: string; unit: string; zones: 
 }
 
 export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProps) {
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
   if (state === null) return <p className="activity-telemetry-state">Loading recent activities…</p>;
   if (state.status === 'INVALID') return <p className="activity-telemetry-state error">Stored activity data is malformed and needs repair.</p>;
   if (state.status === 'UNAVAILABLE') return <p className="activity-telemetry-state error">Activity telemetry is temporarily unavailable. Retry the dashboard refresh.</p>;
   if (state.status === 'MISSING' || state.data.length === 0) return <p className="activity-telemetry-state">No activities were recorded in the last seven days.</p>;
+
+  const handleCopyActivityJson = async (activity: NormalizedGarminActivity) => {
+    try {
+      await copyActivityJsonToClipboard(activity);
+      setCopiedId(activity.activityId);
+      window.setTimeout(() => {
+        setCopiedId((curr) => (curr === activity.activityId ? null : curr));
+      }, 2000);
+    } catch (err) {
+      console.error('Failed to copy activity JSON', err);
+    }
+  };
 
   return (
     <div className="activity-telemetry-list">
@@ -84,6 +100,13 @@ export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProp
           activity.recoveryTimeHours != null ? `Rec ${activity.recoveryTimeHours}h` : null,
         ].filter((metric): metric is string => metric !== null);
 
+        const telemetryBadges: string[] = [];
+        if ((activity.powerInZones?.length ?? 0) > 0 || activity.normalizedPower !== undefined) telemetryBadges.push('⚡ Power');
+        if ((activity.hrInZones?.length ?? 0) > 0) telemetryBadges.push('❤️ HR Zones');
+        if (runningDynamics !== undefined) telemetryBadges.push('🏃 Dynamics');
+        if ((activity.exerciseSets?.length ?? 0) > 0) telemetryBadges.push('🏋️ Sets & Reps');
+        if ((activity.laps?.length ?? 0) > 0) telemetryBadges.push('⏱️ Laps');
+
         return (
           <article className="activity-telemetry-card" key={activity.activityId}>
             <header>
@@ -100,6 +123,13 @@ export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProp
                     {trainingResponseMetrics.join(' · ')}
                   </p>
                 )}
+                {telemetryBadges.length > 0 && (
+                  <div className="activity-telemetry-badges" aria-label="Detailed telemetry categories">
+                    {telemetryBadges.map((badge) => (
+                      <span key={badge} className="activity-telemetry-badge">{badge}</span>
+                    ))}
+                  </div>
+                )}
               </div>
               <div className="activity-header-right">
                 {activity.normalizedPower !== undefined && (
@@ -109,16 +139,27 @@ export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProp
                     {activity.variabilityIndex !== undefined && <span><strong>{activity.variabilityIndex.toFixed(2)}</strong> VI</span>}
                   </div>
                 )}
-                {onReclassify && (
+                <div className="activity-card-actions">
                   <button
                     type="button"
-                    className="btn-reclassify-activity"
-                    onClick={() => onReclassify(activity.activityId)}
-                    aria-label={`Correct or reclassify ${activity.type} from ${activity.date}`}
+                    className="btn-copy-activity-json"
+                    onClick={() => handleCopyActivityJson(activity)}
+                    aria-label={`Copy JSON for ${activity.type} from ${activity.date}`}
+                    title="Copy structured activity JSON to clipboard for AI agent planning"
                   >
-                    ✏️ Correct
+                    {copiedId === activity.activityId ? '✓ Copied JSON' : '📋 Copy JSON'}
                   </button>
-                )}
+                  {onReclassify && (
+                    <button
+                      type="button"
+                      className="btn-reclassify-activity"
+                      onClick={() => onReclassify(activity.activityId)}
+                      aria-label={`Correct or reclassify ${activity.type} from ${activity.date}`}
+                    >
+                      ✏️ Correct
+                    </button>
+                  )}
+                </div>
               </div>
             </header>
 
