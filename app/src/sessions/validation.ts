@@ -62,7 +62,8 @@ const CHOICE_ACTION_KINDS = new Set<SessionChoiceAction['kind']>([
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
 
-const SESSION_DEFINITION_KEYS = [
+/** Canonical executable-content fields. Persistence envelopes must not widen this list. */
+export const SESSION_DEFINITION_KEYS = [
     'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities',
     'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets',
     'prohibitedAdditions', 'importWarnings', 'companionSessions', 'blocks',
