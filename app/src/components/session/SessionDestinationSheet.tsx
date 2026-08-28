@@ -3,7 +3,6 @@ import type { SessionDefinition, SessionOccurrence } from '../../sessions/models
 import type { PreparedSessionLaunch } from '../../sessions/sessionLaunch';
 import { validateSessionDefinition } from '../../sessions/validation';
 import { sessionDefinitionService } from '../../services/sessionDefinitionService';
-import { hashSessionDefinition } from '../../sessions/sessionDefinitionHash';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { sessionOccurrenceService } from '../../services/sessionOccurrenceService';
 import { getLocalDateString } from '../../utils/localDate';
@@ -71,8 +70,8 @@ export const SessionDestinationSheet: React.FC<SessionDestinationSheetProps> = (
                 throw new Error(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));
             }
 
-            const contentHash = await hashSessionDefinition(definition);
-            await sessionDefinitionService.saveDefinitionRevision(userId, definition, contentHash);
+            const saved = await sessionDefinitionService.saveDefinitionRevision(userId, definition);
+            const { contentHash } = saved;
 
             if (selectedDestination === 'save_only') {
                 onSaved?.();

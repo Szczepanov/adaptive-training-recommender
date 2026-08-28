@@ -1,5 +1,22 @@
 import type { SessionBlock, SessionChoice, SessionChoiceAction, SessionOption, SessionStep, StepAlternative } from './models';
 
+/**
+ * Sets `summary` to the trimmed authored value, or removes the key entirely when the field
+ * has been cleared. The definition being built may already carry a `summary` inherited from
+ * a spread base definition (when editing a saved revision); deleting the key -- rather than
+ * merely skipping an overwrite -- is what stops that stale value from surviving into the
+ * saved revision.
+ */
+export function withResolvedSummary<T extends { summary?: string }>(definition: T, rawSummary: string): T {
+    const trimmed = rawSummary.trim();
+    if (trimmed) {
+        definition.summary = trimmed;
+    } else {
+        delete definition.summary;
+    }
+    return definition;
+}
+
 /** Moves an item without changing the identity of any item in the collection. */
 export function moveDraftItem<T>(items: readonly T[], fromIndex: number, toIndex: number): T[] {
     if (fromIndex < 0 || toIndex < 0 || fromIndex >= items.length || toIndex >= items.length || fromIndex === toIndex) {

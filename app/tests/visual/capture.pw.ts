@@ -163,6 +163,29 @@ test('captures grouped session runner rotation without horizontal overflow', asy
   ]);
 });
 
+test('captures saved custom-template preview and archived-library states', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-custom-template-library');
+  if (!scenario) throw new Error('Missing saved custom-template library visual scenario');
+  await visitScenario(page, scenario);
+
+  await expect(page.getByRole('heading', { name: 'Your custom templates' })).toBeVisible();
+  const customTemplate = page.locator('.fixture-card').filter({ hasText: 'Upper-Body Strength Maintenance' });
+  await customTemplate.getByRole('button', { name: 'Preview' }).click();
+  await expect(page.getByRole('heading', { name: 'Upper-Body Strength Maintenance' })).toBeVisible();
+  expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
+  await capture(page, scenario, 'preview-open', [
+    'A saved custom template opens in the same structured preview used by catalog sessions.',
+  ]);
+
+  await page.getByRole('button', { name: 'All structured sessions' }).click();
+  await page.getByRole('button', { name: /Show archived templates \(1\)/ }).click();
+  await expect(page.getByText('Shoulder Care Circuit')).toBeVisible();
+  expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
+  await capture(page, scenario, 'archived-open', [
+    'Archived custom templates are separate from active templates and can be restored deliberately.',
+  ]);
+});
+
 test('captures plan view mode switching without horizontal overflow', async ({ page }) => {
   const scenario = VISUAL_SCENARIOS.find(s => s.id === 'plan-imported-active');
   if (!scenario) throw new Error('Missing plan-imported-active visual scenario');

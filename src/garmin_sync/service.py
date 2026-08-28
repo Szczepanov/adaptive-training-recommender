@@ -1,6 +1,8 @@
 import concurrent.futures
 import importlib.metadata
 import logging
+import random
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
@@ -677,8 +679,12 @@ class GarminSyncService:
         existing_snapshots: dict[str, dict[str, Any]],
         bulk_snapshot_lookup_succeeded: bool,
         force: bool,
-    ) -> bool:
-        """Process a single date for backfill, returning True on success, False on failure."""
+    ) -> tuple[bool, bool]:
+        """Process a single date for backfill.
+
+        Returns (success, fetched_from_garmin) -- fetched_from_garmin is False when the
+        date was skipped via an existing Firestore snapshot (no live API call made), so
+        the caller knows not to pace a request that never happened."""
         target_iso = get_date_string(target_date)
         if not force:
             existing = (
@@ -691,7 +697,7 @@ class GarminSyncService:
                 logger.info(
                     f"[{target_iso}] Loaded existing snapshot from Firestore. Skipping Garmin API fetch."
                 )
-                return True
+                return True, False
 
         try:
             yesterday_iso = get_date_string(n_days_ago(target_date, 1))
@@ -726,10 +732,10 @@ class GarminSyncService:
                 )
             )
             logger.info(f"[{target_iso}] Backfill sync completed.")
-            return True
+            return True, True
         except Exception as e:
             logger.error(f"[{target_iso}] Backfill failed: {e}")
-            return False
+            return False, True
 
     def backfill(
         self,
@@ -767,8 +773,11 @@ class GarminSyncService:
             self._fetch_existing_historical_snapshots(target_dates, force)
         )
 
-        for target_date in target_dates:
-            success = self._process_single_backfill_date(
+        delay_min = self.settings.garmin_backfill_delay_min_seconds
+        delay_max = self.settings.garmin_backfill_delay_max_seconds
+        last_index = len(target_dates) - 1
+        for index, target_date in enumerate(target_dates):
+            success, fetched_from_garmin = self._process_single_backfill_date(
                 target_date,
                 provider,
                 run_id,
@@ -780,6 +789,12 @@ class GarminSyncService:
             )
             if not success:
                 failed_dates.append(get_date_string(target_date))
+
+            # Pace only after a date that actually hit the Garmin API (D-BACKFILL-RATE-LIMIT)
+            # -- skipped (already-synced) dates never called Garmin, so there's nothing to
+            # pace, and there's no point delaying after the very last date in the range.
+            if fetched_from_garmin and index < last_index and delay_max > 0:
+                time.sleep(random.uniform(delay_min, delay_max))
 
         self.token_store.persist(self.token_file_path)
 

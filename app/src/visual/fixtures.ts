@@ -14,6 +14,7 @@ import {
 import { evaluateDataConfidence } from '../engine/dataConfidence';
 
 import type { StrengthSession } from '../engine/models';
+import type { SessionDefinition } from '../sessions/models';
 
 export const VISUAL_USER_ID = 'visual-athlete';
 export const VISUAL_DATE = '2026-09-12';
@@ -42,6 +43,8 @@ export interface VisualFixture {
    * the ordinary screens keep exercising the ranked path. */
   externalPlan?: ExternalTrainingPlan;
   strengthSession?: StrengthSession | null;
+  /** Saved manual definitions exercise the same read path as an athlete's template library. */
+  savedTemplates?: Array<{ definition: SessionDefinition; status: 'active' | 'archived' }>;
   /** A recorded journal moves the card from the primary decision surface into insights. */
   decisionJournalEntry?: DecisionJournalEntry;
 }
@@ -175,7 +178,7 @@ const eventGoal: UserGoal & { id: string } = {
 };
 
 function buildFixture(
-  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession' | 'decisionJournalEntry'>> = {},
+  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession' | 'savedTemplates' | 'decisionJournalEntry'>> = {},
   trainingIntentProfile: TrainingIntentProfile | null = null,
 ): VisualFixture {
   const fixtureSettings = overrides.settings ?? settings;
@@ -212,6 +215,7 @@ function buildFixture(
     activities: fixtureActivities,
     ...(overrides.externalPlan ? { externalPlan: overrides.externalPlan } : {}),
     ...(overrides.strengthSession ? { strengthSession: overrides.strengthSession } : {}),
+    ...(overrides.savedTemplates ? { savedTemplates: overrides.savedTemplates } : {}),
     ...(overrides.decisionJournalEntry ? { decisionJournalEntry: overrides.decisionJournalEntry } : {}),
     input,
   };
@@ -291,6 +295,60 @@ const restrictedSettings: TrainingSettings = {
 };
 
 const standardFixture = buildFixture();
+
+const savedUpperBodyStrengthMaintenance: SessionDefinition = {
+  schemaVersion: 1,
+  id: 'visual-upper-body-strength-maintenance',
+  revision: 2,
+  title: 'Upper-Body Strength Maintenance',
+  summary: 'A saved custom template with pressing, pulling, and shoulder-care work.',
+  intent: 'training',
+  modalities: ['Strength'],
+  dominantModality: 'strength',
+  duration: { min: 40, max: 55 },
+  blocks: [
+    {
+      id: 'main-strength',
+      title: 'Main strength',
+      role: 'main',
+      executionMode: 'superset',
+      rounds: 3,
+      steps: [
+        {
+          id: 'bench-press',
+          kind: 'exercise',
+          title: 'Bench press',
+          exerciseRef: { kind: 'catalog', exerciseId: 'bench_press' },
+          dose: { kind: 'repetition', sets: 3, reps: 6 },
+          load: { kind: 'descriptive', display: 'Moderate' },
+        },
+        {
+          id: 'chest-supported-row',
+          kind: 'exercise',
+          title: 'Chest-supported dumbbell row',
+          exerciseRef: { kind: 'catalog', exerciseId: 'chest_supported_dumbbell_row' },
+          dose: { kind: 'repetition', sets: 3, reps: 8 },
+          load: { kind: 'descriptive', display: 'Moderate' },
+        },
+      ],
+    },
+  ],
+};
+
+const archivedShoulderCare: SessionDefinition = {
+  ...savedUpperBodyStrengthMaintenance,
+  id: 'visual-archived-shoulder-care',
+  revision: 1,
+  title: 'Shoulder Care Circuit',
+  summary: 'A retired custom template retained for reference.',
+};
+
+const savedTemplateFixture = buildFixture({
+  savedTemplates: [
+    { definition: savedUpperBodyStrengthMaintenance, status: 'active' },
+    { definition: archivedShoulderCare, status: 'archived' },
+  ],
+});
 
 const fullTelemetryActivity: NormalizedGarminActivity = {
   activityId: 'visual-ride-full', date: VISUAL_DATE, type: 'cycling', durationMin: 72,
@@ -548,6 +606,17 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     screen: 'session',
     expectedFocus: ['The runner shows the current round and advances through a grouped rotation without horizontal overflow.'],
     fixture: standardFixture,
+  },
+  {
+    id: 'session-runner-custom-template-library',
+    title: 'Session Runner — saved custom template library',
+    screen: 'session',
+    expectedFocus: [
+      'An athlete-created template is clearly distinct from reviewed catalog sessions.',
+      'Preview, start, edit, duplicate, and archive actions remain scannable without horizontal overflow.',
+      'Archived templates stay out of the active library while remaining recoverable.',
+    ],
+    fixture: savedTemplateFixture,
   },
   {
     id: 'plan-ai-forecast',

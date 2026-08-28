@@ -32,13 +32,8 @@ packages = ["src/garmin_sync"]
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "-ra -q"
-testpaths = [
-    "tests",
-]
-pythonpath = [
-    "src",
-    "scripts",
-]
+testpaths = ["tests"]
+pythonpath = ["src", "scripts"]
 
 [tool.coverage.run]
 branch = true
