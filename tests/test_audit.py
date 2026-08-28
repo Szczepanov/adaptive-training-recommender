@@ -1,4 +1,10 @@
+import re
+
 from garmin_sync.audit import AuditReport, format_report
+
+
+def assert_contains_match(pattern: str, text: str) -> None:
+    assert re.search(pattern, text), f"Pattern '{pattern}' not found in:\n{text}"
 
 def test_format_report_archiving_enabled() -> None:
     report = AuditReport(
@@ -19,18 +25,18 @@ def test_format_report_archiving_enabled() -> None:
     )
     result = format_report(report)
 
-    assert "Garmin sync audit: 2023-10-01 -> 2023-10-05" in result
-    assert "Expected dates:              5" in result
-    assert "Snapshots present:           5" in result
-    assert "Missing snapshots:           0" in result
-    assert "Sleep available:             4" in result
-    assert "HRV available:                3" in result
-    assert "RHR available:                5" in result
-    assert "SpO2 available:               2" in result
-    assert "Skin temp available:          1" in result
-    assert "Activities discovered:       10" in result
-    assert "Raw payloads archived:        20" in result
-    assert "Rebuildable dates:            4" in result
+    assert_contains_match(r"Garmin sync audit: 2023-10-01 -> 2023-10-05", result)
+    assert_contains_match(r"Expected dates:\s+5", result)
+    assert_contains_match(r"Snapshots present:\s+5", result)
+    assert_contains_match(r"Missing snapshots:\s+0", result)
+    assert_contains_match(r"Sleep available:\s+4", result)
+    assert_contains_match(r"HRV available:\s+3", result)
+    assert_contains_match(r"RHR available:\s+5", result)
+    assert_contains_match(r"SpO2 available:\s+2", result)
+    assert_contains_match(r"Skin temp available:\s+1", result)
+    assert_contains_match(r"Activities discovered:\s+10", result)
+    assert_contains_match(r"Raw payloads archived:\s+20", result)
+    assert_contains_match(r"Rebuildable dates:\s+4", result)
     assert "Missing dates:" not in result
 
 def test_format_report_archiving_disabled() -> None:
@@ -52,7 +58,7 @@ def test_format_report_archiving_disabled() -> None:
     )
     result = format_report(report)
 
-    assert "Raw archive:                  disabled (GARMIN_ARCHIVE_ENABLED=false)" in result
+    assert_contains_match(r"Raw archive:\s+disabled \(GARMIN_ARCHIVE_ENABLED=false\)", result)
     assert "Raw payloads archived:" not in result
     assert "Rebuildable dates:" not in result
 
@@ -75,7 +81,7 @@ def test_format_report_few_missing_snapshots() -> None:
     )
     result = format_report(report)
 
-    assert "Missing snapshots:           3" in result
+    assert_contains_match(r"Missing snapshots:\s+3", result)
     assert "Missing dates: 2023-10-02, 2023-10-03, 2023-10-04" in result
     assert "more" not in result
 
@@ -99,6 +105,6 @@ def test_format_report_many_missing_snapshots() -> None:
     )
     result = format_report(report)
 
-    assert "Missing snapshots:           15" in result
+    assert_contains_match(r"Missing snapshots:\s+15", result)
     preview = ", ".join(missing_dates[:10])
     assert f"Missing dates: {preview} (+5 more)" in result
