@@ -148,11 +148,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                             "lap HR summary",
                         )
                         lap_average_heart_rate_bpm.append(average)
-                elif (
-                    name == "time_in_zone"
-                    and session_count <= 1
-                    and not time_in_hr_zone_seconds
-                ):
+                elif name == "time_in_zone" and session_count <= 1 and not time_in_hr_zone_seconds:
                     # FIT time-in-zone is an array and can be scoped to session/lap via
                     # reference_mesg/reference_index. Only session-scoped data is a safe
                     # fallback for the activity-level summary; never blend lap arrays.
@@ -192,9 +188,7 @@ def _extract_fit_bytes(original: bytes) -> bytes:
             )
         with ZipFile(BytesIO(original)) as archive:
             members = [member for member in archive.infolist() if not member.is_dir()]
-            fit_members = [
-                member for member in members if member.filename.lower().endswith(".fit")
-            ]
+            fit_members = [member for member in members if member.filename.lower().endswith(".fit")]
             if len(fit_members) != 1 or len(members) != 1:
                 raise FitActivityDecodeError(
                     "Original activity ZIP must contain exactly one FIT file."
@@ -214,9 +208,7 @@ def _extract_fit_bytes(original: bytes) -> bytes:
     except FitActivityDecodeError:
         raise
     except (BadZipFile, LargeZipFile, RuntimeError, NotImplementedError, OSError) as error:
-        raise FitActivityDecodeError(
-            "Original activity ZIP could not be read safely."
-        ) from error
+        raise FitActivityDecodeError("Original activity ZIP could not be read safely.") from error
 
 
 def _value(message: Any, name: str) -> Any:
@@ -259,9 +251,7 @@ def _is_session_reference(value: Any) -> bool:
 
 def _guard_capacity(values: list[Any], limit: int, label: str) -> None:
     if len(values) >= limit:
-        raise FitActivityDecodeError(
-            f"Original activity FIT exceeds the HRF {label} limit."
-        )
+        raise FitActivityDecodeError(f"Original activity FIT exceeds the HRF {label} limit.")
 
 
 def _integer(value: Any) -> int | None:
