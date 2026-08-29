@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapContextFromGoalsAndTrainingSettings, mapSnapshotToEngineInput } from './adapters';
+import { mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapSnapshotToEngineInput } from './adapters';
 import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
@@ -179,5 +179,76 @@ describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiri
 
         const forecastContext = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-08', null);
         expect(forecastContext.constraints.restrictedModalities).not.toContain('Running');
+    });
+});
+
+describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', () => {
+    it('sets painFlag when illnessSymptoms is true and no healthContext detail is supplied (unchanged default)', () => {
+        const checkin = testCheckin({ illnessSymptoms: true });
+        expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
+    });
+
+    it('clears painFlag for a mild, allergy-attributed, purely upper-respiratory symptom day', () => {
+        const checkin = testCheckin({
+            illnessSymptoms: true,
+            healthContext: {
+                symptoms: {
+                    present: true,
+                    severity: 'mild',
+                    types: ['sneezing', 'runny_nose'],
+                    suspectedCause: 'allergy',
+                },
+            },
+        });
+        expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(false);
+    });
+
+    it('keeps painFlag set for a severe allergy-attributed day', () => {
+        const checkin = testCheckin({
+            illnessSymptoms: true,
+            healthContext: {
+                symptoms: { present: true, severity: 'severe', suspectedCause: 'allergy' },
+            },
+        });
+        expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
+    });
+
+    it('keeps painFlag set when an allergy-attributed day also reports a systemic symptom type', () => {
+        const checkin = testCheckin({
+            illnessSymptoms: true,
+            healthContext: {
+                symptoms: {
+                    present: true,
+                    severity: 'mild',
+                    types: ['sneezing', 'fever_or_chills'],
+                    suspectedCause: 'allergy',
+                },
+            },
+        });
+        expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
+    });
+
+    it.each(['unsure', 'infectious', undefined] as const)(
+        'keeps painFlag set when suspectedCause is %s (fail-safe default)',
+        suspectedCause => {
+            const checkin = testCheckin({
+                illnessSymptoms: true,
+                healthContext: {
+                    symptoms: { present: true, severity: 'mild', ...(suspectedCause ? { suspectedCause } : {}) },
+                },
+            });
+            expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
+        },
+    );
+
+    it('keeps painFlag set for painOrInjury regardless of allergy attribution', () => {
+        const checkin = testCheckin({
+            painOrInjury: true,
+            illnessSymptoms: true,
+            healthContext: {
+                symptoms: { present: true, severity: 'mild', suspectedCause: 'allergy' },
+            },
+        });
+        expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
     });
 });

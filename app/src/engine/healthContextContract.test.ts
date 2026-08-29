@@ -151,6 +151,35 @@ describe('HA1 validateCheckin migration contract', () => {
             healthContext: { symptoms: { present: false, types: ['cough'] } },
         })).isValid).toBe(false);
     });
+
+    it('accepts the allergy-oriented symptom types and a suspected cause', () => {
+        const result = validateCheckin(writePayload({
+            healthContext: {
+                symptoms: {
+                    present: true,
+                    severity: 'mild',
+                    types: ['sneezing', 'runny_nose'],
+                    suspectedCause: 'allergy',
+                },
+            },
+        }));
+        expect(result.isValid).toBe(true);
+        expect(result.data?.healthContext?.symptoms).toEqual({
+            present: true,
+            severity: 'mild',
+            types: ['sneezing', 'runny_nose'],
+            suspectedCause: 'allergy',
+        });
+    });
+
+    it('rejects an unrecognized suspectedCause and a stale one on a cleared symptom', () => {
+        expect(validateCheckin(writePayload({
+            healthContext: { symptoms: { present: true, suspectedCause: 'viral' } },
+        })).isValid).toBe(false);
+        expect(validateCheckin(writePayload({
+            healthContext: { symptoms: { present: false, suspectedCause: 'allergy' } },
+        })).isValid).toBe(false);
+    });
 });
 
 describe('HA1 parseSubjectiveCheckin migration contract', () => {
@@ -221,5 +250,20 @@ describe('HA1 parseSubjectiveCheckin migration contract', () => {
             healthContext: { timezoneShiftHours: 15 },
         }), PATH, 'u1', DATE);
         expect(invalidRange.status).toBe('INVALID');
+    });
+
+    it('round-trips the allergy-oriented symptom types and suspected cause on read', () => {
+        const parsed = parseSubjectiveCheckin(storedPayload({
+            healthContext: {
+                symptoms: { present: true, types: ['sneezing', 'runny_nose'], suspectedCause: 'allergy' },
+            },
+        }), PATH, 'u1', DATE);
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available');
+        expect(parsed.data.healthContext?.symptoms).toEqual({
+            present: true,
+            types: ['sneezing', 'runny_nose'],
+            suspectedCause: 'allergy',
+        });
     });
 });

@@ -14,6 +14,25 @@ import type {
 import { resolveInjuryRestrictions, resolveEffectiveInjuryConstraints } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
 import { getLocalDateString } from '../utils/localDate';
+import type { HealthSymptomType } from './healthAnomalyModels';
+
+/** Symptom types that indicate more than a purely upper-respiratory/allergy presentation --
+ *  any of these keeps today's conservative illness treatment regardless of suspected cause. */
+const NON_ALLERGY_SYMPTOM_TYPES: readonly HealthSymptomType[] = ['fever_or_chills', 'gastrointestinal', 'unusual_fatigue'];
+
+/**
+ * Mild/moderate, purely upper-respiratory symptoms the athlete has explicitly attributed to
+ * allergy don't get the same clinical restriction as an injury or systemic illness. Unknown
+ * cause, unknown/severe severity, or any systemic symptom type keeps today's conservative
+ * `painFlag` behavior unchanged -- this only softens the narrow, explicit case.
+ */
+function isAllergyLikeSymptomDay(checkin: DailySubjectiveCheckin): boolean {
+    const symptoms = checkin.healthContext?.symptoms;
+    if (!symptoms?.present || symptoms.suspectedCause !== 'allergy') return false;
+    if (symptoms.severity === 'severe') return false;
+    if (symptoms.types?.some(type => NON_ALLERGY_SYMPTOM_TYPES.includes(type))) return false;
+    return true;
+}
 
 /** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
  * engine's TrainingRecord shape, or null if no qualifying activity data is present. */
@@ -149,7 +168,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         stress: checkin.mentalStress ?? NEUTRAL_SCALE_VALUE,
         motivation: checkin.motivation ?? NEUTRAL_SCALE_VALUE,
         timeAvailable: checkin.availability?.timeAvailableMin ?? DEFAULT_TIME_AVAILABLE_MIN,
-        painFlag: checkin.painOrInjury || checkin.illnessSymptoms,
+        painFlag: checkin.painOrInjury || (checkin.illnessSymptoms && !isAllergyLikeSymptomDay(checkin)),
         alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
         preferredModalityToday: checkin.availability?.preferredModalityToday ?? null,
     };

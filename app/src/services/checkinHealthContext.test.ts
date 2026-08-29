@@ -66,6 +66,7 @@ describe('CheckinService HA1 health-context persistence', () => {
             onset: DELETE_FIELD_SENTINEL,
             severity: DELETE_FIELD_SENTINEL,
             types: DELETE_FIELD_SENTINEL,
+            suspectedCause: DELETE_FIELD_SENTINEL,
         });
     });
 
@@ -101,6 +102,7 @@ describe('CheckinService HA1 health-context persistence', () => {
             onset: DELETE_FIELD_SENTINEL,
             severity: DELETE_FIELD_SENTINEL,
             types: DELETE_FIELD_SENTINEL,
+            suspectedCause: DELETE_FIELD_SENTINEL,
         });
     });
 
@@ -122,8 +124,33 @@ describe('CheckinService HA1 health-context persistence', () => {
             onset: DELETE_FIELD_SENTINEL,
             severity: DELETE_FIELD_SENTINEL,
             types: DELETE_FIELD_SENTINEL,
+            suspectedCause: DELETE_FIELD_SENTINEL,
         });
         expect(firestore.setDoc.mock.calls[0][2]).toEqual({ merge: true });
+    });
+
+    it('persists an allergy-attributed symptom report with its suspected cause and types', async () => {
+        await new CheckinService().upsertCheckin('u1', {
+            ...baseCheckin,
+            illnessSymptoms: true,
+            healthContext: {
+                symptoms: {
+                    present: true,
+                    severity: 'mild',
+                    types: ['sneezing', 'runny_nose'],
+                    suspectedCause: 'allergy',
+                },
+            },
+        });
+
+        const payload = firestore.setDoc.mock.calls[0][1] as { healthContext: { symptoms: Record<string, unknown> } };
+        expect(payload.healthContext.symptoms).toEqual({
+            present: true,
+            onset: DELETE_FIELD_SENTINEL,
+            severity: 'mild',
+            types: ['sneezing', 'runny_nose'],
+            suspectedCause: 'allergy',
+        });
     });
 
     it('rejects a clear carrying stale symptom details before writing', async () => {

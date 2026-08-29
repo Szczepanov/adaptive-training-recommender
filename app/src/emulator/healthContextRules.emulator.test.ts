@@ -65,6 +65,29 @@ emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
         }));
     });
 
+    it('allows the allergy-oriented symptom types and a suspected cause', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(db, checkinPath), {
+            ...contextOnlyCheckin(),
+            healthContext: {
+                symptoms: {
+                    present: true,
+                    severity: 'mild',
+                    types: ['sneezing', 'runny_nose'],
+                    suspectedCause: 'allergy',
+                },
+            },
+        }));
+    });
+
+    it('rejects an unrecognized suspectedCause value', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(db, checkinPath), {
+            ...contextOnlyCheckin(),
+            healthContext: { symptoms: { present: true, suspectedCause: 'viral' } },
+        }));
+    });
+
     it('allows a shape-valid conflicting legacy value because app/parser precedence is authoritative', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertSucceeds(setDoc(doc(db, checkinPath), {
@@ -117,12 +140,13 @@ emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
         }));
     });
 
-    it('rejects onset, severity, or types when symptoms are false', async () => {
+    it('rejects onset, severity, types, or suspectedCause when symptoms are false', async () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         for (const symptoms of [
             { present: false, onset: 'today' },
             { present: false, severity: 'mild' },
             { present: false, types: ['cough'] },
+            { present: false, suspectedCause: 'allergy' },
         ]) {
             await assertFails(setDoc(doc(db, checkinPath), {
                 ...baseCheckin(),

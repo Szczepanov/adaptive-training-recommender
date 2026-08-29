@@ -16,9 +16,12 @@ export const HEALTH_TRAVEL_DISRUPTIONS = [
 
 export const HEALTH_SYMPTOM_ONSETS = ['today', 'yesterday', '2_3_days', 'earlier'] as const;
 export const HEALTH_SYMPTOM_SEVERITIES = ['mild', 'moderate', 'severe'] as const;
+export const HEALTH_SYMPTOM_SUSPECTED_CAUSES = ['infectious', 'allergy', 'unsure'] as const;
 export const HEALTH_SYMPTOM_TYPES: readonly HealthSymptomType[] = [
     'sore_throat',
     'congestion',
+    'runny_nose',
+    'sneezing',
     'cough',
     'fever_or_chills',
     'headache_or_body_aches',
@@ -46,7 +49,7 @@ const HEALTH_CONTEXT_KEYS = new Set([
     'symptoms',
 ]);
 
-const HEALTH_SYMPTOM_KEYS = new Set(['present', 'onset', 'severity', 'types']);
+const HEALTH_SYMPTOM_KEYS = new Set(['present', 'onset', 'severity', 'types', 'suspectedCause']);
 
 export interface HealthContextValidationError {
     field: string;
@@ -96,7 +99,7 @@ function validateSymptoms(
         return undefined;
     }
 
-    const nestedFields = ['onset', 'severity', 'types'] as const;
+    const nestedFields = ['onset', 'severity', 'types', 'suspectedCause'] as const;
     if (!raw.present) {
         for (const field of nestedFields) {
             if (raw[field] !== undefined && raw[field] !== null) {
@@ -126,6 +129,14 @@ function validateSymptoms(
             value: raw.severity,
         });
     }
+    if (raw.suspectedCause !== undefined && raw.suspectedCause !== null
+        && !isOneOf(raw.suspectedCause, HEALTH_SYMPTOM_SUSPECTED_CAUSES)) {
+        errors.push({
+            field: 'healthContext.symptoms.suspectedCause',
+            message: `suspectedCause must be one of: ${HEALTH_SYMPTOM_SUSPECTED_CAUSES.join(', ')}`,
+            value: raw.suspectedCause,
+        });
+    }
 
     let types: HealthSymptomType[] | null | undefined;
     if (raw.types === null) {
@@ -149,6 +160,7 @@ function validateSymptoms(
         ...(raw.onset === null ? { onset: null } : isOneOf(raw.onset, HEALTH_SYMPTOM_ONSETS) ? { onset: raw.onset } : {}),
         ...(raw.severity === null ? { severity: null } : isOneOf(raw.severity, HEALTH_SYMPTOM_SEVERITIES) ? { severity: raw.severity } : {}),
         ...(types !== undefined ? { types } : {}),
+        ...(raw.suspectedCause === null ? { suspectedCause: null } : isOneOf(raw.suspectedCause, HEALTH_SYMPTOM_SUSPECTED_CAUSES) ? { suspectedCause: raw.suspectedCause } : {}),
     };
 }
 

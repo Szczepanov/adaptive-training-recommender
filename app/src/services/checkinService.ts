@@ -29,6 +29,7 @@ function healthContextMergeValue(context: DailySubjectiveCheckin['healthContext'
                 onset: valueOrDelete(symptoms.onset),
                 severity: valueOrDelete(symptoms.severity),
                 types: valueOrDelete(symptoms.types),
+                suspectedCause: valueOrDelete(symptoms.suspectedCause),
             }
             : deleteField(),
     };
