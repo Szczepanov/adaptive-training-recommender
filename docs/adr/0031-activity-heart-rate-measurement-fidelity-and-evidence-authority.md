@@ -1,6 +1,6 @@
 # ADR-0031: Activity Heart-Rate Measurement Fidelity and Evidence Authority
 
-* **Status:** Proposed
+* **Status:** Accepted
 * **Date:** 2026-08-29
 * **Deciders:** Core Engineering Team
 * **Source analysis:** [`2026-08-29-activity-hr-measurement-confidence-analysis.md`](../analysis/2026-08-29-activity-hr-measurement-confidence-analysis.md)

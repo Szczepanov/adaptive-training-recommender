@@ -1,10 +1,11 @@
 # HRF — Activity Heart-Rate Measurement Fidelity & Decision Authority
 
-* **Status:** `Draft`
+* **Status:** `Approved`
 * **Proposed:** 2026-08-29
-* **Blocked by:** HRF0 real-account FIT provenance/reconciliation spike; acceptance of [ADR-0031](../adr/0031-activity-heart-rate-measurement-fidelity-and-evidence-authority.md)
+* **Blocked by:** FIT SDK licensing decision before HRF2
 * **Unlocks:** source-aware HR trust, artifact-resistant HR-zone/load interpretation, safe max-HR/threshold/decoupling gating, and athlete/device/activity-specific HR reliability calibration
 * **Source analysis:** [`2026-08-29-activity-hr-measurement-confidence-analysis.md`](../analysis/2026-08-29-activity-hr-measurement-confidence-analysis.md)
+* **HRF0 evidence:** [`2026-08-29-garmin-activity-hr-fit-provenance-spike.md`](../analysis/2026-08-29-garmin-activity-hr-fit-provenance-spike.md)
 * **Decision record:** [ADR-0031](../adr/0031-activity-heart-rate-measurement-fidelity-and-evidence-authority.md)
 * **Related plans:** [`garmin-activity-telemetry-ingestion.md`](./garmin-activity-telemetry-ingestion.md), [`physiological-identity-passport-and-measurement-trust.md`](./physiological-identity-passport-and-measurement-trust.md), [`scientific-validation-and-feedback-loop.md`](./scientific-validation-and-feedback-loop.md), [`health-anomaly-and-illness-risk-alerting.md`](./health-anomaly-and-illness-risk-alerting.md)
 
@@ -191,8 +192,8 @@ HRF0 still verifies the exact installed/locked version and real-account response
 
 | Item | Title | Status | Blocked by | Decision impact |
 |---|---|---|---|---|
-| HRF0 | Real-account FIT provenance, lineage & decoder spike | `[ ]` | — | evidence only |
-| HRF1 | Provider-neutral HR fidelity contracts | `[ ]` | HRF0, ADR-0031 | none |
+| HRF0 | Real-account FIT provenance, lineage & decoder spike | `[x]` | — | evidence only |
+| HRF1 | Provider-neutral HR fidelity contracts | `[x]` | HRF0, ADR-0031 | none |
 | HRF2 | Garmin original-FIT acquisition + sensor inventory | `[ ]` | HRF0, HRF1 | none |
 | HRF3 | Deterministic HR trace-quality diagnostics | `[ ]` | HRF1, HRF2 | shadow only |
 | HRF4 | Canonical mapping + additive Firestore persistence | `[ ]` | HRF1–HRF3 | none |
