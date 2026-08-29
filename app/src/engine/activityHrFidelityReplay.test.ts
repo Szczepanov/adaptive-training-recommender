@@ -49,6 +49,7 @@ describe('runActivityHrFidelityShadowReplay', () => {
             assessedActivities: 1,
             notAssessedActivities: 1,
             unknownAssessmentCount: 1,
+            assessmentUnknownRate: 1,
             assessableCoverage: 0.5,
             assessmentUnknownReasons: {
                 MEASUREMENT_UNAVAILABLE: 1,
@@ -85,12 +86,15 @@ describe('runActivityHrFidelityShadowReplay', () => {
             usefulWristTraceCount: 1,
             featureSpecificBlockWithDisplayAvailableCount: 1,
             artifactPrevalence: { ISOLATED_SPIKE: 1 },
+            summaryComparableCount: 1,
+            summaryReconciliationRate: 1,
+            summaryDiscordanceRate: 0,
         });
         expect(report.summary.candidateBlocks.garminTrainingLoad).toMatchObject({ candidateCount: 1, blocked: 1 });
         expect(report.summary.candidateBlocks.maxHrUpdate).toMatchObject({ candidateCount: 1, blocked: 1 });
     });
 
-    it('measures external-sensor poor traces and summary discordance without claiming false precision', () => {
+    it('measures chest-strap poor traces and summary discordance without claiming false precision', () => {
         const report = runActivityHrFidelityShadowReplay([activity('poor-external', {
             type: 'running',
             hrMeasurement: measurement({
@@ -104,19 +108,63 @@ describe('runActivityHrFidelityShadowReplay', () => {
             }),
         })]);
 
-        expect(report.summary.poorTraceDespiteExternalSensorCount).toBe(1);
+        expect(report.summary.poorTraceDespiteChestStrapCount).toBe(1);
         expect(report.summary.sourceDistribution.external).toBe(1);
         expect(report.summary.summaryCompatibility.discordant).toBe(1);
+        expect(report.summary.summaryComparableCount).toBe(1);
+        expect(report.summary.summaryReconciliationRate).toBe(0);
+        expect(report.summary.summaryDiscordanceRate).toBe(1);
         expect(report.summary.confidenceByActivityType).toEqual([expect.objectContaining({
             activityType: 'running', assessed: 1, confidence: expect.objectContaining({ unreliable: 1 }),
         })]);
         expect(renderActivityHrFidelityShadowReplayMarkdown(report)).not.toMatch(/accuracy\s*=|% accurate/i);
     });
 
+    it('does not call every poor external sensor a chest-strap failure', () => {
+        const report = runActivityHrFidelityShadowReplay([activity('poor-optical', {
+            hrMeasurement: measurement({
+                externalHrSensorPresent: true,
+                sourceForActivity: 'external',
+                sensorTechnology: 'optical_armband',
+                signalQuality: 'poor',
+                measurementConfidence: 'unreliable',
+            }),
+        })]);
+
+        expect(report.summary.poorTraceDespiteChestStrapCount).toBe(0);
+    });
+
+    it('counts preserved wrist display only when production actually has an average-HR display candidate', () => {
+        const report = runActivityHrFidelityShadowReplay([activity('wrist-no-average', {
+            averageHr: null,
+            hrInZones: [],
+            activityTrainingLoad: null,
+            trainingEffectAerobic: null,
+            trainingEffectAnaerobic: null,
+            hrMeasurement: measurement(),
+        })]);
+
+        expect(report.rows[0].authorityByUse.DISPLAY_AVERAGE.status).toBe('ALLOWED');
+        expect(report.summary.usefulWristTraceCount).toBe(0);
+        expect(report.summary.featureSpecificBlockWithDisplayAvailableCount).toBe(0);
+    });
+
+    it('records an explicit fallback reason when assessed unknown confidence has none', () => {
+        const report = runActivityHrFidelityShadowReplay([activity('unknown-no-reason', {
+            hrMeasurement: measurement({ measurementConfidence: 'unknown', reasons: [] }),
+        })]);
+
+        expect(report.summary.assessmentUnknownReasons).toEqual({ ASSESSMENT_REASON_UNSPECIFIED: 1 });
+    });
+
     it('has stable zero-safe observability for an empty replay', () => {
         const report = runActivityHrFidelityShadowReplay([]);
 
         expect(report.summary.assessableCoverage).toBe(0);
+        expect(report.summary.assessmentUnknownRate).toBe(0);
+        expect(report.summary.summaryComparableCount).toBe(0);
+        expect(report.summary.summaryReconciliationRate).toBe(0);
+        expect(report.summary.summaryDiscordanceRate).toBe(0);
         expect(report.summary.candidateBlocks.hrZoneDistribution).toEqual({
             candidateCount: 0, allowed: 0, bounded: 0, observational: 0, blocked: 0,
         });
