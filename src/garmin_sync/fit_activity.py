@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
 from typing import Any
-from zipfile import BadZipFile, ZipFile, is_zipfile
+from zipfile import BadZipFile, LargeZipFile, ZipFile, is_zipfile
 
 import fitdecode
 
@@ -79,6 +79,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
     time_in_hr_zone_seconds: list[float] = []
     timer_events: list[FitTimerEvent] = []
     average_heart_rate_bpm: float | None = None
+    session_count = 0
 
     try:
         with fitdecode.FitReader(
@@ -126,10 +127,18 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                             )
                         )
                 elif name == "session":
-                    average_heart_rate_bpm = _number(_value(message, "avg_heart_rate"))
-                    session_zones = _numbers(_value(message, "time_in_hr_zone"))
-                    if session_zones:
-                        time_in_hr_zone_seconds = _bounded_zone_values(session_zones)
+                    session_count += 1
+                    if session_count == 1:
+                        average_heart_rate_bpm = _number(_value(message, "avg_heart_rate"))
+                        session_zones = _numbers(_value(message, "time_in_hr_zone"))
+                        if session_zones:
+                            time_in_hr_zone_seconds = _bounded_zone_values(session_zones)
+                    else:
+                        # A FIT can legitimately contain several sport sessions. This
+                        # boundary has only one activity-level summary slot, so choosing
+                        # the last session would falsely label it as whole-activity HR.
+                        average_heart_rate_bpm = None
+                        time_in_hr_zone_seconds = []
                 elif name == "lap":
                     average = _number(_value(message, "avg_heart_rate"))
                     if average is not None:
@@ -139,7 +148,11 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                             "lap HR summary",
                         )
                         lap_average_heart_rate_bpm.append(average)
-                elif name == "time_in_zone" and not time_in_hr_zone_seconds:
+                elif (
+                    name == "time_in_zone"
+                    and session_count <= 1
+                    and not time_in_hr_zone_seconds
+                ):
                     # FIT time-in-zone is an array and can be scoped to session/lap via
                     # reference_mesg/reference_index. Only session-scoped data is a safe
                     # fallback for the activity-level summary; never blend lap arrays.
@@ -198,8 +211,12 @@ def _extract_fit_bytes(original: bytes) -> bytes:
                     "Original activity FIT member exceeds the HRF size limit."
                 )
             return fit_bytes
-    except BadZipFile as error:
-        raise FitActivityDecodeError("Original activity ZIP is malformed.") from error
+    except FitActivityDecodeError:
+        raise
+    except (BadZipFile, LargeZipFile, RuntimeError, NotImplementedError, OSError) as error:
+        raise FitActivityDecodeError(
+            "Original activity ZIP could not be read safely."
+        ) from error
 
 
 def _value(message: Any, name: str) -> Any:
