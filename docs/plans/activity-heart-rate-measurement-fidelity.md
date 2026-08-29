@@ -2,7 +2,7 @@
 
 * **Status:** `Approved`
 * **Proposed:** 2026-08-29
-* **Blocked by:** FIT SDK licensing decision before HRF2
+* **Blocked by:** HRF8 replay and independently recorded paired-reference evidence before HRF9 production gating
 * **Unlocks:** source-aware HR trust, artifact-resistant HR-zone/load interpretation, safe max-HR/threshold/decoupling gating, and athlete/device/activity-specific HR reliability calibration
 * **Source analysis:** [`2026-08-29-activity-hr-measurement-confidence-analysis.md`](../analysis/2026-08-29-activity-hr-measurement-confidence-analysis.md)
 * **HRF0 evidence:** [`2026-08-29-garmin-activity-hr-fit-provenance-spike.md`](../analysis/2026-08-29-garmin-activity-hr-fit-provenance-spike.md)
@@ -194,7 +194,7 @@ HRF0 still verifies the exact installed/locked version and real-account response
 |---|---|---|---|---|
 | HRF0 | Real-account FIT provenance, lineage & decoder spike | `[x]` | — | evidence only |
 | HRF1 | Provider-neutral HR fidelity contracts | `[x]` | HRF0, ADR-0031 | none |
-| HRF2 | Garmin original-FIT acquisition + sensor inventory | `[ ]` | HRF0, HRF1 | none |
+| HRF2 | Garmin original-FIT acquisition + sensor inventory | `[x]` | HRF0, HRF1 | none |
 | HRF3 | Deterministic HR trace-quality diagnostics | `[ ]` | HRF1, HRF2 | shadow only |
 | HRF4 | Canonical mapping + additive Firestore persistence | `[ ]` | HRF1–HRF3 | none |
 | HRF5 | TypeScript parser + activity HR authority engine | `[ ]` | HRF4 | shadow only |

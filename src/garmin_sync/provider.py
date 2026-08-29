@@ -22,6 +22,7 @@ class ProviderCapabilities:
     hrv: bool = True
     activities: bool = True
     activity_details: bool = False
+    activity_hr_fidelity: bool = False
     body_composition: bool = False
     race_predictions: bool = False
     training_readiness: bool = False

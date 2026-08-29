@@ -32,6 +32,9 @@ class Settings:
     garmin_archive_local_dir: str = ".garmin_archive"
     garmin_archive_prefix: str = "raw/garmin"
     garmin_activity_detail_enabled: bool = False
+    # HRF2: original FIT acquisition remains explicitly opt-in until the downstream
+    # assessment/persistence path is delivered and evidence-gated.
+    garmin_activity_hr_fidelity_enabled: bool = False
     # Jittered pacing between per-date live Garmin fetches during backfill (D-BACKFILL-RATE-LIMIT):
     # each date that isn't skipped as already-synced sleeps a random duration in this range before
     # the next one, so a wide --days range doesn't hammer Garmin with dozens of back-to-back
@@ -122,6 +125,9 @@ def _load_base_settings(user_id: str) -> Settings:
         "1",
         "yes",
     )
+    activity_hr_fidelity_enabled = os.getenv(
+        "GARMIN_ACTIVITY_HR_FIDELITY_ENABLED", "false"
+    ).lower() in ("true", "1", "yes")
     # Real backfill runs default to a jittered 1.5-4s pace between live Garmin fetches (see
     # Settings.garmin_backfill_delay_min/max_seconds); set both to 0 via env to disable.
     backfill_delay_min = float(os.getenv("GARMIN_BACKFILL_DELAY_MIN_SECONDS", "1.5"))
@@ -153,6 +159,7 @@ def _load_base_settings(user_id: str) -> Settings:
         garmin_archive_local_dir=archive_local_dir,
         garmin_archive_prefix=archive_prefix,
         garmin_activity_detail_enabled=activity_detail_enabled,
+        garmin_activity_hr_fidelity_enabled=activity_hr_fidelity_enabled,
         garmin_backfill_delay_min_seconds=backfill_delay_min,
         garmin_backfill_delay_max_seconds=backfill_delay_max,
     )

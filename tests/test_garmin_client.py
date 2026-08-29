@@ -2,7 +2,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from garminconnect import (
+    Garmin,
     GarminConnectAuthenticationError,
+    GarminConnectInvalidFileFormatError,
+    GarminConnectNotFoundError,
     GarminConnectTooManyRequestsError,
 )
 
@@ -134,6 +137,46 @@ def test_activity_detail_methods_tolerate_empty_response():
     assert wrapper.get_activity_power_zones("123") == []
     assert wrapper.get_activity_hr_zones("123") == []
     assert wrapper.get_activity_splits("123") == {}
+
+
+def test_download_activity_original_uses_verified_upstream_enum():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = MagicMock()
+    wrapper.api.download_activity.return_value = b"original-bytes"
+
+    assert wrapper.download_activity_original("123") == b"original-bytes"
+    wrapper.api.download_activity.assert_called_once_with(
+        "123", dl_fmt=Garmin.ActivityDownloadFormat.ORIGINAL
+    )
+
+
+def test_download_activity_original_returns_none_only_for_not_found():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = MagicMock()
+    wrapper.api.download_activity.side_effect = GarminConnectNotFoundError("not found")
+
+    assert wrapper.download_activity_original("123") is None
+
+
+@pytest.mark.parametrize(
+    "error", [GarminConnectAuthenticationError("auth"), GarminConnectTooManyRequestsError("rate")]
+)
+def test_download_activity_original_preserves_operational_errors(error):
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = MagicMock()
+    wrapper.api.download_activity.side_effect = error
+
+    with pytest.raises(type(error)):
+        wrapper.download_activity_original("123")
+
+
+def test_download_activity_original_rejects_non_binary_success():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = MagicMock()
+    wrapper.api.download_activity.return_value = None
+
+    with pytest.raises(GarminConnectInvalidFileFormatError):
+        wrapper.download_activity_original("123")
 
 
 def test_body_composition_methods():
