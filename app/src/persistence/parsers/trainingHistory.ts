@@ -21,6 +21,11 @@ function optionalNonNegativeNumber(value: unknown): number | null | undefined {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
 
+function optionalPercentage(value: unknown): number | null | undefined {
+    const parsed = optionalNonNegativeNumber(value);
+    return typeof parsed === 'number' && parsed > 100 ? undefined : parsed;
+}
+
 function telemetryNumber(value: unknown): number | undefined {
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
 }
@@ -182,7 +187,7 @@ function parseHrMeasurement(value: unknown): HrMeasurement | undefined {
     const provenanceConfidence = enumValue(value.provenanceConfidence, HR_PROVENANCE_CONFIDENCES);
     const sensorTechnology = enumValue(value.sensorTechnology, HR_SENSOR_TECHNOLOGIES);
     const activityMotionRisk = enumValue(value.activityMotionRisk, HR_ACTIVITY_MOTION_RISKS);
-    const coveragePct = optionalNonNegativeNumber(value.coveragePct);
+    const coveragePct = optionalPercentage(value.coveragePct);
     const longestGapSeconds = optionalNonNegativeNumber(value.longestGapSeconds);
     const signalQuality = enumValue(value.signalQuality, HR_SIGNAL_QUALITIES);
     const measurementConfidence = enumValue(value.measurementConfidence, HR_MEASUREMENT_CONFIDENCES);
