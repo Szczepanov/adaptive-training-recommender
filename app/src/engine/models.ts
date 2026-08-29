@@ -1463,6 +1463,31 @@ export interface ActivityLapSummary {
     averageHrBpm?: number;
 }
 
+export type HrSensorTechnology = 'electrode_chest_strap' | 'optical_armband' | 'wrist_ppg' | 'external_unknown' | 'unknown';
+export type HrSourceForActivity = 'external' | 'wrist' | 'mixed_possible' | 'unknown';
+export type HrProvenanceConfidence = 'confirmed' | 'inferred' | 'ambiguous' | 'unknown';
+export type HrActivityMotionRisk = 'low' | 'moderate' | 'high' | 'unknown';
+export type HrSignalQuality = 'clean' | 'suspect' | 'poor' | 'unknown';
+export type HrMeasurementConfidence = 'high' | 'moderate' | 'low' | 'unreliable' | 'unknown';
+export type HrSummaryCompatibility = 'verified_same_effective_trace' | 'consistent_unproven' | 'discordant' | 'not_comparable' | 'unknown';
+
+/** Compact activity-level HR measurement evidence, never a readiness signal. */
+export interface HrMeasurement {
+    externalHrSensorPresent: boolean | null;
+    sourceForActivity: HrSourceForActivity;
+    provenanceConfidence: HrProvenanceConfidence;
+    sensorTechnology: HrSensorTechnology;
+    activityMotionRisk: HrActivityMotionRisk;
+    coveragePct: number | null;
+    longestGapSeconds: number | null;
+    signalQuality: HrSignalQuality;
+    measurementConfidence: HrMeasurementConfidence;
+    summaryCompatibility: HrSummaryCompatibility;
+    artifactFlags: string[];
+    reasons: string[];
+    diagnosticVersion: string;
+}
+
 export interface RunningDynamics {
     groundContactTimeMs?: number | null;
     groundContactBalanceLeftPct?: number | null;
@@ -1506,6 +1531,7 @@ export interface NormalizedGarminActivity {
     laps?: ActivityLapSummary[];
     runningDynamics?: RunningDynamics;
     exerciseSets?: ActivityExerciseSet[];
+    hrMeasurement?: HrMeasurement;
     syncRunId?: string;
     syncedAt?: string;
 }

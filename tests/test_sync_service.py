@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +12,12 @@ from garmin_sync.canonical import (
     CanonicalZoneBucket,
 )
 from garmin_sync.config import Settings
+from garmin_sync.fit_activity import (
+    FitActivityEvidence,
+    FitDeviceInventoryEntry,
+    FitRecordSample,
+    FitTimerEvent,
+)
 from garmin_sync.provider import (
     ProviderActivitiesResult,
     ProviderActivityDetailResult,
@@ -120,6 +127,39 @@ class DetailFakeProvider(FakeTestProvider):
             normalized_power_watts=230.0,
         )
         return ProviderActivityDetailResult(canonical=detail, raw_payloads={})
+
+
+class HrFidelityFakeProvider(DetailFakeProvider):
+    capabilities = ProviderCapabilities(
+        daily_summary=True,
+        sleep=True,
+        hrv=True,
+        activities=True,
+        activity_details=True,
+        activity_hr_fidelity=True,
+    )
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.hr_fidelity_calls: list[str] = []
+
+    def fetch_activity_hr_fidelity(self, activity_id: str) -> FitActivityEvidence:
+        self.hr_fidelity_calls.append(activity_id)
+        start = datetime(2026, 8, 6, 8, 0)
+        return FitActivityEvidence(
+            devices=(FitDeviceInventoryEntry(1, None, None, "heart_rate", None),),
+            records=tuple(
+                FitRecordSample(start + timedelta(seconds=second), 145.0, None, 200.0)
+                for second in range(3)
+            ),
+            average_heart_rate_bpm=145.0,
+            lap_average_heart_rate_bpm=(),
+            time_in_hr_zone_seconds=(),
+            timer_events=(
+                FitTimerEvent(start, "start"),
+                FitTimerEvent(start + timedelta(seconds=2), "stop"),
+            ),
+        )
 
 
 def _detail_service(provider: DetailFakeProvider, enabled: bool = True):
@@ -1178,6 +1218,40 @@ def test_hr_fidelity_is_target_only_and_never_blocks_base_activity_sync():
 
     mock_client.download_activity_original.assert_called_once_with("101")
     mock_repo.upsert_snapshot.assert_called_once()
+    payload = mock_repo.upsert_activities.call_args.args[0][1][1]
+    assert "hrMeasurement" not in payload
+
+
+def test_hr_fidelity_persists_compact_assessment_in_existing_activity_upsert() -> None:
+    provider = HrFidelityFakeProvider()
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_activity_hr_fidelity_enabled=True,
+    )
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {}
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+
+    assert provider.hr_fidelity_calls == ["1"]
+    payload = repo.upsert_activities.call_args.args[0][0][1]
+    assert payload["hrMeasurement"] == {
+        "externalHrSensorPresent": True,
+        "sourceForActivity": "mixed_possible",
+        "provenanceConfidence": "ambiguous",
+        "sensorTechnology": "external_unknown",
+        "activityMotionRisk": "moderate",
+        "coveragePct": 100.0,
+        "longestGapSeconds": 1.0,
+        "signalQuality": "clean",
+        "measurementConfidence": "moderate",
+        "summaryCompatibility": "unknown",
+        "artifactFlags": [],
+        "reasons": ["PROVENANCE_AMBIGUOUS"],
+        "diagnosticVersion": "1.0.0",
+    }
 
 
 def test_sync_service_skips_archiving_activity_with_missing_id():
