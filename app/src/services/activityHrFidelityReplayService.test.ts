@@ -16,9 +16,24 @@ describe('ActivityHrFidelityReplayService', () => {
 
         expect(services.getActivitiesInRange).toHaveBeenCalledWith('u1', '2026-08-01', '2026-09-01');
         expect(result).toMatchObject({
-            startDate: '2026-08-01', endDate: '2026-08-31', unavailableSources: [],
+            startDate: '2026-08-01', endDate: '2026-08-31', inputIssues: [], unavailableSources: [],
             report: { generatedFrom: 'activity-history', summary: { totalActivities: 0 } },
         });
+    });
+
+    it.each([
+        ['2026-02-30', '2026-03-01'],
+        ['2026-08-02', '2026-08-01'],
+        ['2026/08/01', '2026-08-01'],
+    ])('rejects an invalid replay range before reading activities (%s..%s)', async (startDate, endDate) => {
+        const result = await new ActivityHrFidelityReplayService().build('u1', startDate, endDate);
+
+        expect(services.getActivitiesInRange).not.toHaveBeenCalled();
+        expect(result.report).toBeNull();
+        expect(result.unavailableSources).toEqual([]);
+        expect(result.inputIssues).toEqual([
+            'Replay range must use valid YYYY-MM-DD dates with startDate <= endDateInclusive.',
+        ]);
     });
 
     it('does not turn an unavailable activity source into an empty replay', async () => {
@@ -27,6 +42,7 @@ describe('ActivityHrFidelityReplayService', () => {
         const result = await new ActivityHrFidelityReplayService().build('u1', '2026-08-01', '2026-08-01');
 
         expect(result.report).toBeNull();
+        expect(result.inputIssues).toEqual([]);
         expect(result.unavailableSources).toEqual(['activities']);
     });
 
@@ -36,6 +52,7 @@ describe('ActivityHrFidelityReplayService', () => {
         const result = await new ActivityHrFidelityReplayService().build('u1', '2026-08-01', '2026-08-01');
 
         expect(result.report).toBeNull();
+        expect(result.inputIssues).toEqual([]);
         expect(result.unavailableSources).toEqual(['activities (invalid record)']);
     });
 });
