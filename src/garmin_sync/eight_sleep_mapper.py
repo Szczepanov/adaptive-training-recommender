@@ -29,7 +29,6 @@ from garmin_sync.canonical import (
     METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM,
     METRIC_SLEEP_RESPIRATION_SUMMARY,
     METRIC_SLEEP_SESSION,
-    METRIC_SLEEP_STAGE_AWAKE_SECONDS,
     METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS,
     METRIC_SLEEP_STAGE_DEEP_SECONDS,
     METRIC_SLEEP_STAGE_LIGHT_SECONDS,
@@ -77,7 +76,17 @@ ORIGIN_APPLICATION = "eight_sleep_private_api"
 # negative values to None, and a real probe showed socialJetlagSeconds=-139, so roughly half
 # of all real nights (whichever side of the personal baseline they fell on) were silently
 # dropped instead of recorded.
-NORMALIZER_VERSION = 4
+# 5 (ES-EXT-4, 2026-08-29): stopped emitting METRIC_SLEEP_STAGE_AWAKE_SECONDS as
+# (presenceDuration - sleepDuration). A real cross-device comparison against Garmin Direct's
+# genuine within-session WASO (summed from actual AWAKE-classified sleep segments) on 56
+# nights with tight duration agreement showed presence-minus-sleep averaging ~115min/night
+# vs Garmin's ~11min/night with only r=0.17 correlation -- not device disagreement, but two
+# different concepts sharing one metric name (presence-minus-sleep also bleeds in
+# fall-asleep latency and post-wake bed-lingering time, not just brief within-sleep
+# arousals). Silently corrupts any cross-device comparison/fusion that assumes same-name-
+# means-same-thing (ADR-0027's premise), so it's removed rather than relabeled: there's no
+# well-understood decomposition of what it actually measures.
+NORMALIZER_VERSION = 5
 
 
 def map_trends_to_observation_batch(
@@ -136,9 +145,11 @@ def map_trends_to_observation_batch(
     # sibling range fields (lowerRange/upperRange/lowerBound/upperBound/average) were all 0,
     # suggesting this particular score isn't reliably calibrated for this account. Rather
     # than guess an unknown scale factor (inventing evidence this repo's own discipline
-    # forbids), this metric is skipped entirely. sleep_stage_awake_seconds already covers
-    # "time awake while in bed" reliably via presence-minus-sleep-duration subtraction of two
-    # well-understood raw fields.
+    # forbids), this metric is skipped entirely. presence-minus-sleep-duration is NOT a
+    # substitute for it and is not emitted as METRIC_SLEEP_STAGE_AWAKE_SECONDS either -- see
+    # that constant's skip comment further down in this function for why (a real probe
+    # (2026-08-29) disproved an earlier version of this same comment's claim that the
+    # subtraction "reliably" covers within-session wake time; it does not).
     debt_obj = score.get("sleepDebt")
     debt_obj = debt_obj if isinstance(debt_obj, dict) else {}
     sleep_debt = _signed_num(debt_obj.get("dailySleepDebtSeconds"))
@@ -241,8 +252,21 @@ def map_trends_to_observation_batch(
     add(METRIC_SLEEP_STAGE_LIGHT_SECONDS, _whole(light), "s")
     add(METRIC_SLEEP_STAGE_DEEP_SECONDS, _whole(deep), "s")
     add(METRIC_SLEEP_STAGE_REM_SECONDS, _whole(rem), "s")
-    if presence is not None and sleep is not None:
-        add(METRIC_SLEEP_STAGE_AWAKE_SECONDS, _whole(max(0.0, presence - sleep)), "s")
+    # METRIC_SLEEP_STAGE_AWAKE_SECONDS deliberately NOT emitted here. It used to be computed
+    # as (presenceDuration - sleepDuration) -- but a real probe (2026-08-29) showed that gap
+    # averages ~115min/night, while Google Health's same-named metric (true within-session
+    # WASO, summed from Garmin's own AWAKE-classified sleep segments) averages ~11min/night
+    # on the same paired nights. These are not device disagreement -- they're different
+    # concepts wearing the same metric name: presence-minus-sleep also includes the
+    # fall-asleep latency and the tail of time still "present" after the sleep session ends
+    # (already separately captured, imperfectly, by sleep_latency_asleep_seconds and
+    # sleep_latency_out_seconds), not just brief within-sleep arousals. Emitting it as
+    # METRIC_SLEEP_STAGE_AWAKE_SECONDS would silently corrupt any cross-device comparison or
+    # fusion that assumes the same metric name means the same thing across providers
+    # (ADR-0027's whole premise). The private API's own dedicated WASO field
+    # (sleepQualityScore.waso) is a fraction with no documented seconds conversion (see the
+    # NORMALIZER_VERSION=4 comment above) so there is currently no reliable way to extract
+    # true within-session wake time from this API at all.
     add(METRIC_HRV_RMSSD_MS, hrv, "ms")
     add(METRIC_SLEEPING_HEART_RATE_BPM, hr, "bpm")
     if resp is not None:

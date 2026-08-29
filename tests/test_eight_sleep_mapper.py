@@ -70,7 +70,11 @@ def test_nested_current_is_measurement_not_proprietary_score() -> None:
         and m[METRIC_SLEEPING_HEART_RATE_BPM].value == 43.0
         and METRIC_DAILY_RESTING_HEART_RATE_BPM not in m
         and m[METRIC_SLEEP_RESPIRATION_SUMMARY].value == {"breathsPerMinute": 13.4}
-        and m[METRIC_SLEEP_STAGE_AWAKE_SECONDS].value == 1800
+        # METRIC_SLEEP_STAGE_AWAKE_SECONDS is deliberately NOT emitted despite presenceDuration
+        # (30600) - sleepDuration (28800) = 1800 being computable: see the mapper's skip
+        # comment -- a real cross-device probe showed this presence-minus-sleep subtraction
+        # doesn't represent the same thing as Google Health's true within-session WASO.
+        and METRIC_SLEEP_STAGE_AWAKE_SECONDS not in m
         and all(o.source.transport == "eight_sleep_direct" for o in b.observations)
     )
 
