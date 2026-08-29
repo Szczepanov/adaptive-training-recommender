@@ -38,30 +38,77 @@ _HIGH_MOTION_TYPES = frozenset(
 
 
 class ArtifactPolicy(Protocol):
-    contiguous_sample_seconds: float
-    isolated_spike_bpm: float
-    isolated_neighbor_delta_bpm: float
-    abrupt_change_bpm: float
-    abrupt_context_seconds: float
-    abrupt_persistence_seconds: float
-    abrupt_workload_context_seconds: float
-    abrupt_stable_power_delta_watts: float
-    abrupt_min_power_coverage_pct: float
-    cadence_tolerance_bpm: float
-    harmonic_tolerance_bpm: float
-    lock_min_duration_seconds: float
-    lock_min_match_pct: float
-    lock_min_cadence_coverage_pct: float
-    lock_min_samples: int
-    lock_min_target_range_bpm: float
-    lock_min_power_coverage_pct: float
-    lock_stable_power_delta_watts: float
-    lock_stable_power_relative_delta: float
-    plateau_min_duration_seconds: float
-    plateau_hr_range_bpm: float
-    plateau_power_range_watts: float
-    plateau_power_relative_change: float
-    plateau_min_power_samples_per_third: int
+    @property
+    def contiguous_sample_seconds(self) -> float: ...
+
+    @property
+    def isolated_spike_bpm(self) -> float: ...
+
+    @property
+    def isolated_neighbor_delta_bpm(self) -> float: ...
+
+    @property
+    def abrupt_change_bpm(self) -> float: ...
+
+    @property
+    def abrupt_context_seconds(self) -> float: ...
+
+    @property
+    def abrupt_persistence_seconds(self) -> float: ...
+
+    @property
+    def abrupt_workload_context_seconds(self) -> float: ...
+
+    @property
+    def abrupt_stable_power_delta_watts(self) -> float: ...
+
+    @property
+    def abrupt_min_power_coverage_pct(self) -> float: ...
+
+    @property
+    def cadence_tolerance_bpm(self) -> float: ...
+
+    @property
+    def harmonic_tolerance_bpm(self) -> float: ...
+
+    @property
+    def lock_min_duration_seconds(self) -> float: ...
+
+    @property
+    def lock_min_match_pct(self) -> float: ...
+
+    @property
+    def lock_min_cadence_coverage_pct(self) -> float: ...
+
+    @property
+    def lock_min_samples(self) -> int: ...
+
+    @property
+    def lock_min_target_range_bpm(self) -> float: ...
+
+    @property
+    def lock_min_power_coverage_pct(self) -> float: ...
+
+    @property
+    def lock_stable_power_delta_watts(self) -> float: ...
+
+    @property
+    def lock_stable_power_relative_delta(self) -> float: ...
+
+    @property
+    def plateau_min_duration_seconds(self) -> float: ...
+
+    @property
+    def plateau_hr_range_bpm(self) -> float: ...
+
+    @property
+    def plateau_power_range_watts(self) -> float: ...
+
+    @property
+    def plateau_power_relative_change(self) -> float: ...
+
+    @property
+    def plateau_min_power_samples_per_third(self) -> int: ...
 
 
 def activity_motion_risk(activity_type: str) -> HrActivityMotionRisk:
