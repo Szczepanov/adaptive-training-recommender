@@ -8,11 +8,11 @@ Original activity downloads were decoded only in memory. No FIT file, timestamp,
 
 ## Environment
 
-- Repository runtime: Python 3.12 environment managed by `uv`.
+- Repository runtime used for the spike: Python 3.12 environment managed by `uv`.
 - Installed Garmin Connect client: `garminconnect==0.3.11`.
 - The original-download API is `Garmin.download_activity(activity_id, dl_fmt=Garmin.ActivityDownloadFormat.ORIGINAL)`.
 - `ActivityDownloadFormat` is nested on `Garmin` in the installed client; importing it from the package root fails. HRF2 must use the installed form rather than a guessed package-level import.
-- Official decoder spike: `garmin-fit-sdk==21.214.0`, invoked ephemerally with `uv run --with` and not added to project dependencies.
+- Official decoder used for the evidence spike: `garmin-fit-sdk==21.214.0`, invoked ephemerally with `uv run --with` and not added to project dependencies.
 
 The official decoder exposes `Stream.from_byte_array` and `Decoder.read`, so decoding can remain in memory. Garmin documents FIT as an extensible binary protocol and publishes Python among its supported SDKs. [FIT SDK overview](https://developer.garmin.com/fit/overview/) [FIT Python SDK](https://github.com/garmin/fit-python-sdk)
 
@@ -71,16 +71,33 @@ No field earns `VERIFIED_SAME_EFFECTIVE_TRACE` from this spike. HRF4 must carry 
 
 ## Decoder decision
 
-`garmin-fit-sdk` is the technical decoder candidate for HRF2:
+### HRF0 evidence decoder
 
-- it installed and ran under the repository runtime;
+`garmin-fit-sdk==21.214.0` was the technical decoder used for the real-account spike:
+
+- it installed and ran under the spike runtime;
 - it decoded all five representative real-account FIT members without errors;
 - it exposed `device_info`, `record`, `session`, `lap`, and `time_in_zone` messages needed by the planned boundary;
 - it returned structured errors for both a deliberately truncated FIT member and a CRC-mutated FIT member, without raising from the probe call.
 
 The decoder can still emit partial messages alongside an error. HRF2 must treat *any* decoder error as a failed enrichment, discard partial fidelity output, and leave the core activity sync successful with HR measurement state absent/unknown.
 
-The FIT SDK uses Garmin's FIT Protocol License rather than a conventional permissive open-source license. Technical selection is therefore provisional until the repository owner records acceptance of the redistribution and deployment terms. [FIT Protocol License](https://thisisant.developer.garmin.com/pages/developer/ant/licensing/flexible-and-interoperable-data-transfer-fit-protocol-license/index.html)
+The official FIT SDK uses Garmin's FIT Protocol License rather than a conventional permissive open-source license. That made it unsuitable as the repository's default runtime dependency without a separate redistribution/deployment acceptance decision. [FIT Protocol License](https://thisisant.developer.garmin.com/pages/developer/ant/licensing/flexible-and-interoperable-data-transfer-fit-protocol-license/index.html)
+
+### HRF2 runtime decoder follow-up
+
+HRF2 therefore selects `fitdecode==0.11.0` for the shipped runtime boundary. `fitdecode` is MIT-licensed and its 0.11.0 generated profile is based on FIT SDK profile 21.171, which is older than the 21.214 official SDK used for this spike. That distinction is intentional and must remain visible: the official-SDK spike proves the observed account/file semantics, while the runtime library choice is a separate implementation decision.
+
+The runtime boundary consequently stays conservative:
+
+- process only `fitdecode` data frames; definition/header/CRC frames are not evidence rows;
+- request optional fields with an explicit fallback because legitimate modality-specific FIT records can omit cadence, power, manufacturer or other fields;
+- preserve FIT array fields such as `time_in_hr_zone` as arrays rather than coercing them to scalars;
+- use only recognized HRF fields and ignore unknown/developer data unless a later reviewed contract assigns it meaning;
+- fail the whole fidelity enrichment on decoder/CRC/resource-boundary errors while preserving the base activity sync;
+- bound both original bytes and decoded transient object counts to keep in-memory decoding operationally bounded.
+
+Switching libraries does **not** retroactively prove byte-for-byte or field-for-field parity for the real-account corpus. Before HRF3 output is used as scientific/ship evidence, replay representative account originals through the runtime `fitdecode` path transiently and record only sanitized aggregate parity/errors. Raw originals remain non-persistent and must not be committed as fixtures.
 
 ## Vendor load lineage
 
@@ -90,12 +107,13 @@ The FIT SDK uses Garmin's FIT Protocol License rather than a conventional permis
 
 1. Add an opt-in, bounded original-download wrapper using `Garmin.ActivityDownloadFormat.ORIGINAL`.
 2. Accept the observed ZIP-with-one-FIT-member response shape; reject unexpected ZIP layouts safely.
-3. Keep byte handling in memory or bounded temporary storage and persist only compact derived evidence.
+3. Keep byte handling in memory and persist only compact derived evidence after the later HRF4 contract is approved.
 4. Treat an unavailable download, malformed ZIP, decoder error, or unknown source provenance as not assessed, never as `UNRELIABLE`.
 5. Record device inventory separately from source provenance. No sampled record-level data supports confirmed external source or source-switch reconstruction.
 6. Treat session average and the sampled compatible laps as `CONSISTENT_BUT_NOT_PROVEN`; retain explicit `NOT_COMPARABLE` for HR zones and strength splits.
 7. Keep `activityTrainingLoad` in the parent HR lineage, not as an independent quality signal.
+8. Treat runtime-decoder parity against the sanitized real-account corpus as an explicit validation prerequisite before HRF3-derived evidence contributes to activation decisions.
 
 ## Outcome
 
-HRF0 is complete for the available account history. It validates the acquisition shape and decoder behavior, establishes conservative source and lineage boundaries, and leaves no production behavior changed. ADR-0031 is accepted and HRF1's provider-neutral contracts are implemented; HRF2 remains blocked on resolving the FIT SDK licensing decision.
+HRF0 is complete for the available account history. It validates the acquisition shape, conservative source/lineage boundaries, and official-SDK error behavior without changing production recommendations. ADR-0031 is accepted, HRF1's provider-neutral contracts are implemented, and HRF2's default-off target-only acquisition boundary uses MIT-licensed `fitdecode`. The prior FIT-SDK licensing blocker is therefore resolved for runtime implementation; runtime-decoder parity on representative account originals remains an explicit evidence-validation step before HRF3 output can support any ship/no-ship argument.
