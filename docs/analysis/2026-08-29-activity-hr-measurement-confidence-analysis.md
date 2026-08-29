@@ -1,7 +1,7 @@
 # Activity Heart-Rate Measurement Confidence — Evidence Review and Architecture Proposal
 
-**Date:** 2026-08-29  
-**Status:** Analysis / design proposal  
+**Date:** 2026-08-29
+**Status:** Analysis / design proposal
 **Repository:** `Szczepanov/adaptive-training-recommender`
 
 ---
@@ -94,9 +94,9 @@ The project currently declares:
 garminconnect>=0.3.8,<0.4
 ```
 
-The upstream `python-garminconnect` API exposes `download_activity(...)` and `ActivityDownloadFormat.ORIGINAL`; its documented implementation returns the raw original download bytes and notes that the `ORIGINAL` form is typically a ZIP that the caller must extract.
+The current locked CI environment resolves **`garminconnect==0.3.11`**. The upstream `python-garminconnect` API exposes `download_activity(...)` and `ActivityDownloadFormat.ORIGINAL`; its documented implementation returns the raw original download bytes and notes that the `ORIGINAL` form is typically a ZIP that the caller must extract.
 
-The repository wrapper does not expose that method today. HRF0 therefore does **not** need to discover whether the dependency family has an original-download API from scratch. It still must verify the exact installed/locked version, real-account response shape, unavailable/error behavior and whether the returned archive contains the FIT evidence required by the design.
+The repository wrapper does not expose that method today. HRF0 therefore does **not** need to discover whether the dependency family has an original-download API from scratch. It still must verify real-account response shape, unavailable/error behavior and whether the returned archive contains the FIT evidence required by the design.
 
 ### Required empirical check before implementation
 
@@ -690,7 +690,7 @@ Provider-specific FIT parsing belongs upstream, e.g. in a new Python module arou
 
 Raw high-frequency traces should not be loaded into the daily recommendation engine.
 
-The repository's declared `garminconnect` dependency already has the upstream original-download primitive; the implementation should expose it through `GarminDataClient` / `GarminClientWrapper` rather than bypassing that boundary.
+The repository's locked `garminconnect==0.3.11` dependency already has the upstream original-download primitive; the implementation should expose it through `GarminDataClient` / `GarminClientWrapper` rather than bypassing that boundary.
 
 ### Canonical activity persistence
 
@@ -729,7 +729,7 @@ Critically, Garmin/vendor metrics that are themselves HR-derived must not be tre
 
 ## 14. Validation and rollout
 
-1. **Real FIT provenance spike** — prove what the account actually exposes and verify the installed original-download path.
+1. **Real FIT provenance spike** — prove what the account actually exposes and verify live original-download behavior on locked `garminconnect==0.3.11`.
 2. **Trace-to-summary reconciliation spike** — determine which existing Garmin summaries can safely inherit FIT-trace authority.
 3. **Add source/quality contracts** — include explicit `unknown`; no decision impact.
 4. **Deterministic diagnostics** — coverage, spikes, dropout, plateau, cadence lock, workload discordance.
@@ -822,38 +822,38 @@ That is safer and more scientifically defensible than either trusting all Garmin
 
 ## References
 
-1. Garmin FIT SDK — Activity File Types. `Device Info` messages and activity sensor/device metadata.  
+1. Garmin FIT SDK — Activity File Types. `Device Info` messages and activity sensor/device metadata.
    https://developer.garmin.com/fit/file-types/activity/
 
-2. Garmin FIT SDK — Decoding Activity Files Cookbook.  
+2. Garmin FIT SDK — Decoding Activity Files Cookbook.
    https://developer.garmin.com/fit/cookbook/decoding-activity-files/
 
-3. Garmin Support — Heart Rate Dynamic Source Switching.  
+3. Garmin Support — Heart Rate Dynamic Source Switching.
    https://support.garmin.com/en-AU/?faq=Nf8r6ApX4d9lX0G0flEsVA
 
-4. `python-garminconnect` upstream — `download_activity` / `ActivityDownloadFormat.ORIGINAL`. The project's declared dependency range is `garminconnect>=0.3.8,<0.4`; HRF0 must still verify the installed/locked version and live response.  
+4. `python-garminconnect` upstream — `download_activity` / `ActivityDownloadFormat.ORIGINAL`. The project's locked CI environment resolves `garminconnect==0.3.11`; HRF0 must still verify live response behavior.
    https://github.com/cyberjunky/python-garminconnect/blob/master/garminconnect/__init__.py
 
-5. Garmin Technology — **Training Load**. Garmin describes Training Load as EPOC-based and its engine as predicting EPOC from heartbeat data (with compatible cycling contexts also using power).  
+5. Garmin Technology — **Training Load**. Garmin describes Training Load as EPOC-based and its engine as predicting EPOC from heartbeat data (with compatible cycling contexts also using power).
    https://www.garmin.com/en-US/garmin-technology/running-science/physiological-measurements/training-load/
 
-6. Gillinov S, Etiwy M, Wang R, et al. **Variable Accuracy of Wearable Heart Rate Monitors during Aerobic Exercise.** *Med Sci Sports Exerc.* 2017;49(8):1697-1703. DOI: 10.1249/MSS.0000000000001284.  
+6. Gillinov S, Etiwy M, Wang R, et al. **Variable Accuracy of Wearable Heart Rate Monitors during Aerobic Exercise.** *Med Sci Sports Exerc.* 2017;49(8):1697-1703. DOI: 10.1249/MSS.0000000000001284.
    https://pubmed.ncbi.nlm.nih.gov/28709155/
 
-7. Bent B, Goldstein BA, Kibbe WA, Dunn JP. **Investigating sources of inaccuracy in wearable optical heart rate sensors.** *npj Digital Medicine.* 2020;3:18. DOI: 10.1038/s41746-020-0226-6.  
+7. Bent B, Goldstein BA, Kibbe WA, Dunn JP. **Investigating sources of inaccuracy in wearable optical heart rate sensors.** *npj Digital Medicine.* 2020;3:18. DOI: 10.1038/s41746-020-0226-6.
    https://pubmed.ncbi.nlm.nih.gov/32047863/
 
-8. Boudreaux BD, Hebert EP, Hollander DB, et al. **Validity of Wearable Activity Monitors during Cycling and Resistance Exercise.** *Med Sci Sports Exerc.* 2018;50(3):624-633. DOI: 10.1249/MSS.0000000000001471.  
+8. Boudreaux BD, Hebert EP, Hollander DB, et al. **Validity of Wearable Activity Monitors during Cycling and Resistance Exercise.** *Med Sci Sports Exerc.* 2018;50(3):624-633. DOI: 10.1249/MSS.0000000000001471.
    https://pubmed.ncbi.nlm.nih.gov/29189666/
 
-9. Zhang Y, Weaver RG, Armstrong B, Burkart S, Zhang S, Beets MW. **Validity of Wrist-Worn photoplethysmography devices to measure heart rate: A systematic review and meta-analysis.** *J Sports Sci.* 2020.  
+9. Zhang Y, Weaver RG, Armstrong B, Burkart S, Zhang S, Beets MW. **Validity of Wrist-Worn photoplethysmography devices to measure heart rate: A systematic review and meta-analysis.** *J Sports Sci.* 2020.
    https://pubmed.ncbi.nlm.nih.gov/32552580/
 
-10. Mühlen JM, Stang J, Skovgaard EL, et al. **Recommendations for determining the validity of consumer wearable heart rate devices: expert statement and checklist of the INTERLIVE Network.** *Br J Sports Med.* 2021;55(14):767-779. DOI: 10.1136/bjsports-2020-103148.  
+10. Mühlen JM, Stang J, Skovgaard EL, et al. **Recommendations for determining the validity of consumer wearable heart rate devices: expert statement and checklist of the INTERLIVE Network.** *Br J Sports Med.* 2021;55(14):767-779. DOI: 10.1136/bjsports-2020-103148.
     https://pubmed.ncbi.nlm.nih.gov/33397674/
 
-11. **Validity of Four Consumer-Grade Optical Heart Rate Sensors for Assessing Volume and Intensity Distribution of Physical Activity.** *Scand J Med Sci Sports.* 2024. DOI: 10.1111/sms.14756.  
+11. **Validity of Four Consumer-Grade Optical Heart Rate Sensors for Assessing Volume and Intensity Distribution of Physical Activity.** *Scand J Med Sci Sports.* 2024. DOI: 10.1111/sms.14756.
     https://pubmed.ncbi.nlm.nih.gov/39508366/
 
-12. **A Systematic Review of Chest-Worn Sensors in Cardiac Assessment: Technologies, Advantages, and Limitations.** 2025.  
+12. **A Systematic Review of Chest-Worn Sensors in Cardiac Assessment: Technologies, Advantages, and Limitations.** 2025.
     https://pubmed.ncbi.nlm.nih.gov/41094872/
