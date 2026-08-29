@@ -1,4 +1,4 @@
-# ADR-0031: Cause-Aware Subjective Symptom Gating
+# ADR-0032: Cause-Aware Subjective Symptom Gating
 
 * **Status:** Accepted
 * **Date:** 2026-08-29
