@@ -38,6 +38,19 @@ describe('Phase 6.2c explicit weekly coverage', () => {
         expect(coverageKeysForExposure({ workoutId: 'running_walk_run_01', durationMin: 40 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).not.toContain('aerobic_volume');
     });
 
+    it('keeps the Running legacy bridge reachable without weakening the aerobic-volume duration floor', () => {
+        const running = ENRICHED_TEMPLATES.find(template => template.id === 'end_easy_02');
+        const cycling = ENRICHED_TEMPLATES.find(template => template.id === 'end_easy_01');
+        if (!running || !cycling) throw new Error('Continuous aerobic engine templates missing');
+
+        expect(running.durationMin).toBe(30);
+        expect(running.easierDose).toMatchObject({ durationMin: 30, durationMax: 30 });
+        expect(coverageKeysForTemplate(running, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toContain('aerobic_volume');
+        expect(coverageKeysForTemplate(cycling, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toContain('aerobic_volume');
+        expect(coverageKeysForExposure({ templateId: running.id, durationMin: 29 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).not.toContain('aerobic_volume');
+        expect(coverageKeysForExposure({ templateId: running.id, durationMin: 30 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toContain('aerobic_volume');
+    });
+
     it('maps exact authored workout identity, never overlapping stimulus', () => {
         expect(coverageKeysForExposure({ workoutId: 'cycling_zone2_standard_01', durationMin: 60 }, 'peak')).toContain('aerobic_volume');
         expect(coverageKeysForExposure({ workoutId: 'cycling_zone2_standard_01', durationMin: 20 }, 'peak')).not.toContain('aerobic_volume');
