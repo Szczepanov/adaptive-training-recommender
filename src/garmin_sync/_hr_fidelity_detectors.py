@@ -199,7 +199,8 @@ def _nearby(
     return (
         left.timestamp is not None
         and right.timestamp is not None
-        and 0 < (right.timestamp - left.timestamp).total_seconds()
+        and 0
+        < (right.timestamp - left.timestamp).total_seconds()
         <= policy.contiguous_sample_seconds
     )
 
@@ -233,13 +234,15 @@ def _stable_independent_workload(
     before = [
         record
         for record in records
-        if 0 < (transition - record_timestamp(record)).total_seconds()
+        if 0
+        < (transition - record_timestamp(record)).total_seconds()
         <= policy.abrupt_workload_context_seconds
     ]
     after = [
         record
         for record in records
-        if 0 <= (record_timestamp(record) - transition).total_seconds()
+        if 0
+        <= (record_timestamp(record) - transition).total_seconds()
         <= policy.abrupt_workload_context_seconds
     ]
     before_power = _covered_power_median(before, policy.abrupt_min_power_coverage_pct)
@@ -249,9 +252,7 @@ def _stable_independent_workload(
     return abs(after_power - before_power) <= policy.abrupt_stable_power_delta_watts
 
 
-def _covered_power_median(
-    records: list[FitRecordSample], min_coverage_pct: float
-) -> float | None:
+def _covered_power_median(records: list[FitRecordSample], min_coverage_pct: float) -> float | None:
     if not records:
         return None
     powers: list[float] = []
@@ -276,10 +277,7 @@ def _rolling_time_blocks(
     end_index = 0
     while block_start + timedelta(seconds=window_seconds) <= last:
         block_end = block_start + timedelta(seconds=window_seconds)
-        while (
-            start_index < len(records)
-            and record_timestamp(records[start_index]) < block_start
-        ):
+        while start_index < len(records) and record_timestamp(records[start_index]) < block_start:
             start_index += 1
         end_index = max(end_index, start_index)
         while end_index < len(records) and record_timestamp(records[end_index]) <= block_end:
@@ -309,10 +307,7 @@ def _stale_plateau_block(records: list[FitRecordSample], policy: ArtifactPolicy)
         upper = start + timedelta(seconds=third * (third_index + 1))
         powers: list[float] = []
         for record in records:
-            if (
-                record.power_watts is not None
-                and lower <= record_timestamp(record) <= upper
-            ):
+            if record.power_watts is not None and lower <= record_timestamp(record) <= upper:
                 powers.append(record.power_watts)
         if len(powers) < policy.plateau_min_power_samples_per_third:
             return False
@@ -326,9 +321,7 @@ def _stale_plateau_block(records: list[FitRecordSample], policy: ArtifactPolicy)
     )
 
 
-def _cadence_context_is_suspicious(
-    records: list[FitRecordSample], policy: ArtifactPolicy
-) -> bool:
+def _cadence_context_is_suspicious(records: list[FitRecordSample], policy: ArtifactPolicy) -> bool:
     """Require independent stable workload before calling cadence crossover."""
     if len(records) < 3:
         return False
@@ -339,8 +332,7 @@ def _cadence_context_is_suspicious(
         records[-chunk_size:],
     )
     power_medians = [
-        _covered_power_median(chunk, policy.lock_min_power_coverage_pct)
-        for chunk in chunks
+        _covered_power_median(chunk, policy.lock_min_power_coverage_pct) for chunk in chunks
     ]
     if any(value is None for value in power_medians):
         return False
