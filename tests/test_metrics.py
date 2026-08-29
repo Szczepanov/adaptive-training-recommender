@@ -370,6 +370,8 @@ def test_calculate_circular_delta_minutes_handles_wraparound():
     assert calculate_circular_delta_minutes(10.0, 1430.0) == 20.0
     # Reverse direction: 20 minutes earlier.
     assert calculate_circular_delta_minutes(1430.0, 10.0) == -20.0
+    # Exactly opposite points have no unique shorter direction; convention is -720.
+    assert calculate_circular_delta_minutes(720.0, 0.0) == -720.0
 
 
 def test_calculate_circular_delta_minutes_ordinary_case():
@@ -408,8 +410,8 @@ def test_calculate_accumulated_deficit_none_when_baseline_or_data_insufficient()
 
 def test_compute_derived_metrics_v6_sleep_duration_deviation_and_accumulated_deficit():
     window_7d = [{"sleepDurationSec": v} for v in (27000, 28800, 29700, 27900)]
-    window_28d = window_7d * 4  # 16 items
-    curr = {"sleepDurationSec": 25200}  # a short night: 7h
+    window_28d = window_7d * 4  # 16 historical items; current is intentionally separate.
+    curr = {"sleepDurationSec": 25200}  # a short current night: 7h
 
     derived = compute_derived_metrics(curr, window_7d, window_28d)
 
@@ -418,13 +420,12 @@ def test_compute_derived_metrics_v6_sleep_duration_deviation_and_accumulated_def
     assert derived.sleepDuration28dMedian == round(expected_median, 1)
     assert derived.deltas.sleepDurationVs7dMedian == round(25200 - expected_median, 1)
 
-    # Accumulated deficit uses the 28d median baseline over the last 2 window entries
-    # (window_28d's tail: the [27000, 28800, 29700, 27900] pattern repeated 4x, so the
-    # last two entries are 29700 and 27900).
-    expected_2d = calculate_accumulated_deficit(
-        [27000, 28800, 29700, 27900] * 4, expected_median, 2
-    )
+    # The historical baseline excludes current, but accumulated deficit must include the
+    # current night. For 2d that means yesterday + current; for 3d, D-2 + D-1 + current.
+    expected_2d = calculate_accumulated_deficit([27900, 25200], expected_median, 2)
+    expected_3d = calculate_accumulated_deficit([29700, 27900, 25200], expected_median, 3)
     assert derived.sleepDurationAccumulated2dDeficitSec == round(expected_2d, 1)
+    assert derived.sleepDurationAccumulated3dDeficitSec == round(expected_3d, 1)
 
 
 def test_compute_derived_metrics_v6_bedtime_wake_midpoint_circular_baselines():
@@ -454,6 +455,24 @@ def test_compute_derived_metrics_v6_bedtime_wake_midpoint_circular_baselines():
     assert derived.deltas.bedtimeDeviationVs7dMinutes == 60.0
     # Current wake time matches baseline exactly.
     assert derived.deltas.wakeTimeDeviationVs7dMinutes == 0.0
+
+
+def test_compute_derived_metrics_v6_midnight_circular_mean_persists_as_zero_not_1440():
+    # Symmetric 23:50 / 00:10 local bedtimes have a true mean of midnight. Floating-point
+    # trig can represent that as 1439.999..., so persistence must normalize after rounding.
+    starts = [
+        "2026-01-10T22:50:00+00:00",  # 23:50 local
+        "2026-01-11T23:10:00+00:00",  # 00:10 local next day
+        "2026-01-12T22:50:00+00:00",
+        "2026-01-13T23:10:00+00:00",
+    ]
+    window_7d = [{"sleepSessionStart": value} for value in starts]
+    window_28d = window_7d * 4
+
+    derived = compute_derived_metrics({}, window_7d, window_28d, timezone_name="Europe/Warsaw")
+
+    assert derived.bedtime7dCircularMeanMinutes == 0.0
+    assert derived.bedtime28dCircularMeanMinutes == 0.0
 
 
 def test_compute_derived_metrics_v6_fields_none_when_sleep_timing_absent():
