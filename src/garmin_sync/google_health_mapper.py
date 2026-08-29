@@ -41,7 +41,7 @@ WARSAW_TZ = ZoneInfo("Europe/Warsaw")
 # save_health_observation_day_bundle re-persist already-fetched dates with the corrected
 # duration -- sourcePayloadHash alone is blind to mapper logic changes, since the
 # underlying raw Google Health response is unchanged.
-NORMALIZER_VERSION = 2
+NORMALIZER_VERSION: int = 2
 
 # Controlled mapping table for origin applications (MS6 / ADR-0027)
 ORIGIN_PACKAGE_MAP: dict[str, str] = {

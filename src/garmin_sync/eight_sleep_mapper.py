@@ -95,7 +95,7 @@ ORIGIN_APPLICATION = "eight_sleep_private_api"
 # need this provenance). Only resolved when the night's session is unambiguous (matches
 # mainSessionId, or there's exactly one session); a night with multiple unmatched sessions
 # is skipped rather than guessing which one "is" the night.
-NORMALIZER_VERSION = 6
+NORMALIZER_VERSION: int = 6
 
 
 def map_trends_to_observation_batch(
