@@ -49,6 +49,7 @@ const allUseCases: HrUseCase[] = [
     'DISPLAY_TRACE',
     'ZONE_DISTRIBUTION',
     'TRAINING_LOAD',
+    'TRAINING_EFFECT',
     'AEROBIC_DECOUPLING',
     'INTERVAL_RESPONSE',
     'MAX_HR_UPDATE',
@@ -73,6 +74,7 @@ describe('getHrUseAuthority', () => {
             DISPLAY_TRACE: 'ALLOWED',
             ZONE_DISTRIBUTION: 'BOUNDED',
             TRAINING_LOAD: 'BOUNDED',
+            TRAINING_EFFECT: 'BOUNDED',
             AEROBIC_DECOUPLING: 'BLOCKED',
             INTERVAL_RESPONSE: 'BOUNDED',
             MAX_HR_UPDATE: 'BLOCKED',
@@ -97,6 +99,9 @@ describe('getHrUseAuthority', () => {
             status: 'BLOCKED', reasons: ['INPUT_LINEAGE_UNVERIFIED'],
         });
         expect(getHrUseAuthority(activity(), 'TRAINING_LOAD')).toMatchObject({
+            status: 'BLOCKED', reasons: ['INPUT_LINEAGE_UNVERIFIED'],
+        });
+        expect(getHrUseAuthority(activity(), 'TRAINING_EFFECT')).toMatchObject({
             status: 'BLOCKED', reasons: ['INPUT_LINEAGE_UNVERIFIED'],
         });
         expect(getHrUseAuthority(activity(), 'AEROBIC_DECOUPLING', { inputLineageVerified: true })).toMatchObject({
