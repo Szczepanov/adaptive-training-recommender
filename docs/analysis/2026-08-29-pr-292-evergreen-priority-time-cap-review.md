@@ -13,6 +13,7 @@ The review followed both reported failures through the live engine path rather t
 - legacy-template to canonical-workout coverage identity and duration-credit semantics;
 - Running/no-bike evergreen scheduling through the concrete optimizer;
 - feasibility of same-tier capacity reservations against actual remaining time windows;
+- preservation of constrained long windows during placement;
 - policy-version governance for persisted recommendation changes.
 
 Lint/static-analysis findings are intentionally outside this review scope.
@@ -139,12 +140,27 @@ The allocator still preserves a slot for a later peer when that peer can genuine
 
 A regression uses two 30-minute windows with a 30-minute aerobic role and a 45-minute strength role. Both windows must go to aerobic, while strength is reported explicitly as a goal-required shortfall rather than silently stranding a session.
 
+## Finding 6 — cardinality reservation alone did not preserve the later peer's viable window
+
+Even an availability-aware reservation can fail if placement consumes the wrong concrete window. With one 30-minute window and one 45-minute window, a 30-minute aerobic role and a later 45-minute strength role are jointly feasible. The previous placement tie-breaker could still put aerobic into the earlier 45-minute window, leaving only 30 minutes for strength and turning a feasible two-role week into a strength shortfall.
+
+### Resolution
+
+Within the same delivered role dose, placement now uses a **best-fit window** before the legacy spacing tie-breaker:
+
+- prefer the shortest unused window that can fit the selected role;
+- preserve longer windows for later roles that may have no shorter alternative;
+- only then apply the existing spacing preference and deterministic identity/date tie-breaks.
+
+This is a standard anti-fragmentation scheduling invariant and does not weaken dose or spacing policy. A regression with 30- and 45-minute windows requires aerobic to use the 30-minute slot and strength to retain the 45-minute slot, with both required roles satisfied and no shortfall.
+
 ## Resulting behavioral invariants
 
 - Explicit `endurance` remains a required evergreen adaptation when selected.
 - Same-priority required adaptations share scarce capacity without first-processed starvation.
 - Uneven same-priority demand can consume leftover capacity instead of stranding it.
 - Same-tier capacity is reserved only for later peers that can actually fit a remaining availability window.
+- Flexible roles use the shortest fitting window before spacing tie-breaks, preserving constrained long windows for later roles.
 - An impossible peer remains an explicit shortfall; it does not consume or strand a feasible peer's capacity.
 - A template is excluded only when its minimum duration cannot fit the resolved daily cap.
 - If a wide-range `SessionTemplate` is otherwise eligible, the ranked value has a cap-safe dose variation whose maximum does fit.
