@@ -62,6 +62,7 @@ export interface ActivityHrFidelityShadowSummary {
     assessableCoverage: number;
     assessedActivities: number;
     notAssessedActivities: number;
+    notAssessedReasons: Record<string, number>;
     unknownAssessmentCount: number;
     /** Fraction of assessed activities whose confidence remains `unknown`. */
     assessmentUnknownRate: number;
@@ -207,6 +208,7 @@ export function runActivityHrFidelityShadowReplay(
         .map(deriveActivityHrFidelityShadowRow);
     const source = sourceDistribution();
     const compatibility = compatibilityDistribution();
+    const notAssessedReasons: Record<string, number> = {};
     const unknownReasons: Record<string, number> = {};
     const artifactPrevalence: Record<string, number> = {};
     const byType = new Map<string, HrFidelityConfidenceByActivityType>();
@@ -230,7 +232,7 @@ export function runActivityHrFidelityShadowReplay(
             source.not_assessed += 1;
             compatibility.not_assessed += 1;
             type.notAssessed += 1;
-            unknownReasons.MEASUREMENT_UNAVAILABLE = (unknownReasons.MEASUREMENT_UNAVAILABLE ?? 0) + 1;
+            notAssessedReasons.MEASUREMENT_UNAVAILABLE = (notAssessedReasons.MEASUREMENT_UNAVAILABLE ?? 0) + 1;
             continue;
         }
 
@@ -248,7 +250,11 @@ export function runActivityHrFidelityShadowReplay(
                 : ['ASSESSMENT_REASON_UNSPECIFIED'];
             for (const reason of reasons) unknownReasons[reason] = (unknownReasons[reason] ?? 0) + 1;
         }
-        if (measurement.sensorTechnology === 'electrode_chest_strap' && measurement.signalQuality === 'poor') {
+        if (
+            measurement.externalHrSensorPresent === true
+            && measurement.sensorTechnology === 'electrode_chest_strap'
+            && measurement.signalQuality === 'poor'
+        ) {
             poorTraceDespiteChestStrapCount += 1;
         }
         if (
@@ -293,6 +299,7 @@ export function runActivityHrFidelityShadowReplay(
         assessableCoverage: rows.length === 0 ? 0 : assessedActivities / rows.length,
         assessedActivities,
         notAssessedActivities: rows.length - assessedActivities,
+        notAssessedReasons,
         unknownAssessmentCount,
         assessmentUnknownRate,
         assessmentUnknownReasons: unknownReasons,
@@ -324,7 +331,7 @@ export function runActivityHrFidelityShadowReplay(
         authorityPolicyVersion: HR_FIDELITY_AUTHORITY_POLICY_VERSION,
         limitations: [
             'This is shadow evidence only; it does not alter recommendation, readiness, or completed-training behaviour.',
-            'Absent compact evidence means not assessed, not unreliable.',
+            'Absent compact evidence means not assessed, not unreliable, and its reasons are reported separately from assessed unknown confidence.',
             'Assessed-unknown rate uses assessed activities as its denominator; missing assessments remain separate.',
             'Summary reconciliation/discordance rates use comparable assessed summaries only; unknown and not-comparable records are excluded.',
             'Garmin Training Load and Training Effect remain vendor HR-dependent summaries with unverified exact input lineage.',
