@@ -196,7 +196,7 @@ HRF0 still verifies the exact installed/locked version and real-account response
 | HRF0 | Real-account FIT provenance, lineage & decoder spike | `[x]` | — | evidence only |
 | HRF1 | Provider-neutral HR fidelity contracts | `[x]` | HRF0, ADR-0031 | none |
 | HRF2 | Garmin original-FIT acquisition + sensor inventory | `[x]` | HRF0, HRF1 | none |
-| HRF3 | Deterministic HR trace-quality diagnostics | `[ ]` | HRF1, HRF2 | shadow only |
+| HRF3 | Deterministic HR trace-quality diagnostics | `[x]` | HRF1, HRF2 | shadow only |
 | HRF4 | Canonical mapping + additive Firestore persistence | `[ ]` | HRF1–HRF3 | none |
 | HRF5 | TypeScript parser + activity HR authority engine | `[ ]` | HRF4 | shadow only |
 | HRF6 | HR-consumer/lineage audit + explicit authority adapters | `[ ]` | HRF5 | no production change |
