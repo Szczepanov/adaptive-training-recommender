@@ -36,6 +36,14 @@ const activity = (id: string, overrides: Partial<NormalizedGarminActivity> = {})
     ...overrides,
 });
 
+const emptyAuthorityCounts = {
+    candidateCount: 0,
+    allowed: 0,
+    bounded: 0,
+    observational: 0,
+    blocked: 0,
+};
+
 describe('runActivityHrFidelityShadowReplay', () => {
     it('keeps absent assessment distinct from assessed unknown confidence', () => {
         const report = runActivityHrFidelityShadowReplay([
@@ -62,7 +70,7 @@ describe('runActivityHrFidelityShadowReplay', () => {
         });
     });
 
-    it('records the current vendor summary use while keeping its HRF authority fail-closed', () => {
+    it('records real production candidates while keeping absent future-sensitive candidates at zero', () => {
         const report = runActivityHrFidelityShadowReplay([activity('wrist', {
             hrMeasurement: measurement({ artifactFlags: ['ISOLATED_SPIKE'] }),
         })]);
@@ -89,7 +97,8 @@ describe('runActivityHrFidelityShadowReplay', () => {
             summaryDiscordanceRate: 0,
         });
         expect(report.summary.candidateBlocks.garminTrainingLoad).toMatchObject({ candidateCount: 1, blocked: 1 });
-        expect(report.summary.candidateBlocks.maxHrUpdate).toMatchObject({ candidateCount: 1, blocked: 1 });
+        expect(report.summary.candidateBlocks.maxHrUpdate).toEqual(emptyAuthorityCounts);
+        expect(report.summary.candidateBlocks.aerobicDecoupling).toEqual(emptyAuthorityCounts);
     });
 
     it('measures chest-strap poor traces and summary discordance without claiming false precision', () => {
@@ -176,9 +185,9 @@ describe('runActivityHrFidelityShadowReplay', () => {
         expect(report.summary.summaryComparableCount).toBe(0);
         expect(report.summary.summaryReconciliationRate).toBe(0);
         expect(report.summary.summaryDiscordanceRate).toBe(0);
-        expect(report.summary.candidateBlocks.hrZoneDistribution).toEqual({
-            candidateCount: 0, allowed: 0, bounded: 0, observational: 0, blocked: 0,
-        });
+        expect(report.summary.candidateBlocks.hrZoneDistribution).toEqual(emptyAuthorityCounts);
+        expect(report.summary.candidateBlocks.maxHrUpdate).toEqual(emptyAuthorityCounts);
+        expect(report.summary.candidateBlocks.aerobicDecoupling).toEqual(emptyAuthorityCounts);
         expect(renderActivityHrFidelityShadowReplayMarkdown(report)).toContain('Assessed: 0/0 (0.0%)');
     });
 });
