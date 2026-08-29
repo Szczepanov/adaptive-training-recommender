@@ -60,6 +60,11 @@ window before selecting the most recent N valid nights. This matters operational
 the current night is short, today's snapshot must reflect it immediately rather than
 reporting only D-1/D-2 history.
 
+The current night's sleep duration is mandatory for these rolling values. If it is missing,
+both accumulated fields are `None` even when the historical baseline is mature. This
+prevents a snapshot labelled as current from silently degrading into a stale D-1/D-2-only
+aggregate.
+
 The sum is signed rather than clamping each night to zero: a night above the personal
 baseline can offset a prior shortfall inside the same rolling window. Positive = net
 shortfall versus the historical personal baseline; negative = net surplus.
@@ -72,11 +77,12 @@ variation rather than treating habitual duration as need [R1]. Therefore downstr
 and UI should describe these values as *relative-to-personal-baseline shortfall/surplus*
 unless a future model establishes a defensible sleep-need estimate.
 
-"Most recent N nights with data" deliberately preserves this module's existing
-gap-tolerance: missing observations are skipped, so a sync gap can make the rolling value
-span more than N calendar nights. That is acceptable for observation-only Phase 2, but it
-must be revisited before promotion to decision authority; a missing recent night should
-not be silently interpreted as evidence of recovery.
+For historical nights before the mandatory current observation, "most recent N nights with
+data" deliberately preserves this module's existing gap-tolerance: missing historical
+observations are skipped, so a sync gap can make the rolling value span more than N calendar
+nights. That is acceptable for observation-only Phase 2, but it must be revisited before
+promotion to decision authority; a missing historical night should not be silently
+interpreted as evidence of recovery.
 
 ### Sleep timing
 
@@ -115,6 +121,7 @@ Targeted tests cover:
 - accumulated-deficit helper tail selection and signed surplus behavior;
 - **current-inclusive** 2-day/3-day accumulated shortfall while keeping the baseline
   historical-only;
+- missing current sleep duration producing unknown rolling deficit rather than stale history;
 - missing timing/duration behavior;
 - a full integration-shaped bedtime/wake-time fixture.
 
