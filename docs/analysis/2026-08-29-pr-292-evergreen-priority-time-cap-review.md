@@ -154,6 +154,24 @@ Within the same delivered role dose, placement now uses a **best-fit window** be
 
 This is a standard anti-fragmentation scheduling invariant and does not weaken dose or spacing policy. A regression with 30- and 45-minute windows requires aerobic to use the 30-minute slot and strength to retain the 45-minute slot, with both required roles satisfied and no shortfall.
 
+## Finding 7 — the cap-safe dose adjustment never reached forecast days
+
+Re-running `judge:e2e:quick` after Findings 1-6 landed showed `judge_pref_45min` had genuinely improved (5.0 -> 6.0) but was still flagged: two sessions on a 45-minute-capped weekday still advertised a 30-60 minute range. Cross-referencing the generated plan day-by-day against day-of-week showed only the "today" and "tomorrow" evaluations (2 of every 7 days) were fixed; every forecast day (the other 5) still showed the raw, uncapped range.
+
+The cause: `resolveTimeCapDoseAdjustment`'s logic (Finding 2) only lived inline in `rules.ts`'s `evaluateTrainingWithIntent`, which is the function behind "today" and "tomorrow" only. Every other day in a real week is produced by `planner.ts`'s `generateWeekAheadPlanWithIntent`, a wholly separate greedy loop with its own candidate ranking -- it never called that logic at all, and `WeekAheadDay` (its per-day type) had no field to carry an active dose in the first place. Confirmed directly: `grep -n "easierDose|activeDose" src/engine/planner.ts` returned nothing before this fix. Production impact is real, not test-only: `WeekAheadStrip.tsx` renders `day.template.durationMin/durationMax` straight from this same type, so the same uncapped duration was shown in the actual week-ahead UI for most of any real week.
+
+### Resolution
+
+- `resolveTimeCapDoseAdjustment` and a new `materializeEffectiveDose` (bakes an active dose's duration *and* proportionally-scaled cost/stimulus into a template, for display/trace purposes only) moved to `optimizer.ts` so both call sites share one implementation. `rules.ts` now calls the shared function instead of the logic it used to inline.
+- `generateWeekAheadPlanWithIntent`'s forecast loop calls `resolveTimeCapDoseAdjustment` for every pick and attaches the result to the pushed `WeekAheadDay`.
+- `WeekAheadDay` gained optional `activeDose`/`adjustment` fields, mirroring `Recommendation`'s existing shape. `template` itself is deliberately left untouched everywhere in `planner.ts` -- an earlier version of this fix materialized the adjusted dose directly into `template`, which changed the duration/stimulus/cost that downstream coverage-credit and cross-week history accounting keyed off, and broke three unrelated, previously-passing multi-week scenario tests (objective resolution counts shifted). Keeping `template` as the authored catalog identity and only exposing the adjustment as a sibling field avoids that: coverage/history bookkeeping is provably unaffected (full suite stayed green), and a display consumer opts in explicitly.
+- `analyze.ts`'s `traceFromForecastDay` now materializes `day.activeDose` into the trace the same way `traceFromRecommendation` already did for today/tomorrow, so the judge/simulation harness sees the adjusted duration. `analyze.ts`'s own `materializeEffectiveSimulationTemplate` is now a re-export of the shared `optimizer.ts` function rather than a separate implementation.
+- `WeekAheadStrip.tsx` (the only production UI reading these durations) now renders `activeDose`'s duration when present instead of `template`'s own.
+
+### Regression coverage
+
+`planner.test.ts` adds a scenario with a 45-minute hard cap and a cycling-preferring, indoor-bike-equipped profile: at least one forecast day (`dayOffset >= 2`, not just today/tomorrow) picks a template whose authored `durationMax` exceeds 45, and asserts it carries an `activeDose` whose own `durationMax` fits, plus a matching `adjustment`. The full engine suite (1619 tests) and the previously-regressing scenario tests both stay green.
+
 ## Resulting behavioral invariants
 
 - Explicit `endurance` remains a required evergreen adaptation when selected.
@@ -169,6 +187,8 @@ This is a standard anti-fragmentation scheduling invariant and does not weaken d
 - The Running and Cycling continuous-aerobic legacy bridges both have a reachable 30-minute base floor.
 - Sub-30-minute Running exposures remain distinct from full `aerobic_volume` credit.
 - A Running-preferred athlete without an indoor bike still has a concrete candidate that can satisfy required evergreen aerobic coverage.
+- Every day of a generated week -- today, tomorrow, and every forecast day alike -- applies the same cap-safe dose adjustment, not just the first two.
+- A displayed session duration never advertises past a day's resolved time cap in the production week-ahead view, not only in the single-day recommendation.
 - Persisted decisions produced by this behavior carry a distinct policy version.
 
 ## Verification targets

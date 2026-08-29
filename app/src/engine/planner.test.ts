@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { evaluateNextDayPlan, evaluateTraining, evaluateTrainingWithIntent } from './rules';
+import { evaluateNextDayPlan, evaluateNextDayPlanWithIntent, evaluateTraining, evaluateTrainingWithIntent } from './rules';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, type ProjectionExposure } from './planner';
 import { resolveTrainingIntent } from './trainingIntent';
@@ -318,6 +318,50 @@ describe('generateWeekAheadPlan', () => {
         })[0]?.utilityScore ?? 0;
 
         expect(seededHistory).toBeLessThan(noHistory);
+    });
+});
+
+// --- Forecast-day time-cap dose adjustment ------------------------------------
+// Regression: evaluateTrainingWithIntent (today/tomorrow) applies an auto easier dose
+// when a picked template's durationMax exceeds the day's hard time cap (see
+// resolveTimeCapDoseAdjustment in optimizer.ts), but every other forecast day comes from
+// generateWeekAheadPlanWithIntent's own, wholly separate greedy loop, which previously
+// never applied that adjustment at all -- so most of a real week (5 of 7 days) could
+// silently advertise a duration beyond a cap the athlete was told is a hard maximum.
+describe('generateWeekAheadPlanWithIntent forecast days respect the same time cap as today', () => {
+    const emptyHistoryProvider: TrainingHistoryProvider = { reconstruct: async () => [] };
+
+    it('attaches a fitting activeDose to a forecast-day pick whose template range exceeds the cap', async () => {
+        const context = baseContext({ hasIndoorBike: true, maxTimeMinutes: 45 });
+        const readiness: DailyReadiness = { subjective: neutralSubjective({ timeAvailable: 60 }), objective: quietObjective() };
+        const event: UserEvent = {
+            id: 'e-criterium', title: 'criterium', date: '2026-09-16', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
+            demandProfile: { aerobicEndurance: 0.5, thresholdPower: 0.5, vo2MaxPower: 0.85, repeatedSurges: 0.9, sprintPower: 0.7, fatigueResistance: 0.5, neuromuscular: 0.6 },
+        };
+        const preferences: UserPreferences = {
+            userId: 'u1', preferredRecoveryStyle: 'passive', defaultWeekdayTimeMin: 45, defaultWeekendTimeMin: 45,
+            preferredTimeOfDay: 'flexible', preferredModalities: ['Cycling'], deprioritizedModalities: [], avoidedModalities: [],
+            explanationVerbosity: 'detailed', conservativeBias: false,
+            preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '',
+        };
+        const date = '2026-08-11';
+        const todayRec = await evaluateTrainingWithIntent('u1', readiness, context, [event], date, undefined, emptyHistoryProvider);
+        const nextDayPlan = await evaluateNextDayPlanWithIntent('u1', [event], readiness, context, date, todayRec, emptyHistoryProvider);
+        const tomorrowRec = nextDayPlan.branches.yellow.recommendation;
+
+        const plan = await generateWeekAheadPlanWithIntent('u1', readiness, context, preferences, [event], date, todayRec, tomorrowRec, { days: 6 }, emptyHistoryProvider);
+
+        const overCapDays = plan.days.filter(day => day.template.durationMax > 45);
+        expect(overCapDays.length).toBeGreaterThan(0);
+        overCapDays.forEach(day => {
+            expect(day.activeDose).toBeDefined();
+            expect(day.activeDose?.durationMax).toBeLessThanOrEqual(45);
+            expect(day.adjustment).toMatchObject({ direction: 'easier', tier: 1, originalTemplateId: day.template.id });
+        });
+        // At least one of the fixed instances must land on a genuine forecast day
+        // (dayOffset >= 2) -- today (offset 0, handled separately) and tomorrow (offset 1)
+        // are not the gap this regression covers.
+        expect(overCapDays.some(day => day.dayOffset >= 2)).toBe(true);
     });
 });
 

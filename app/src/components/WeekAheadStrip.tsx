@@ -36,6 +36,18 @@ const SHORT_MODALITY_LABEL: Record<string, string> = {
   None: 'Rest',
 };
 
+/** `day.template` stays the authored catalog session so coverage/history bookkeeping keys
+ * off a stable identity; when the engine auto-applies an easier dose (fatigue-driven
+ * modify, or to respect a hard time cap the template's own range didn't fit -- see
+ * resolveTimeCapDoseAdjustment), the narrower duration lives in `day.activeDose` instead.
+ * Render that one when present so the strip never advertises a duration beyond a
+ * constraint the athlete was told is a hard maximum. */
+function effectiveDuration(day: WeekAheadDay): { min: number; max: number } {
+  return day.activeDose
+    ? { min: day.activeDose.durationMin, max: day.activeDose.durationMax }
+    : { min: day.template.durationMin, max: day.template.durationMax };
+}
+
 const CONFIDENCE_LABEL: Record<WeekAheadDay['confidence'], string> = {
   provisional: 'Provisional',
   projected: 'Projected',
@@ -136,7 +148,7 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({ plan, nextDayPlan, 
             <span className="tile-weekday">{index === 0 ? 'Tomorrow' : weekdayLabel(day.date)}</span>
             <span className="tile-icon">{MODALITY_ICON[day.template.modality] ?? '❔'}</span>
             <span className="tile-category">{SHORT_MODALITY_LABEL[day.template.modality] ?? day.template.modality}</span>
-            <span className="tile-duration">{day.template.durationMin}-{day.template.durationMax} m</span>
+            <span className="tile-duration">{effectiveDuration(day).min}-{effectiveDuration(day).max} m</span>
             <span className={`tile-mode-dot mode-${day.mode}`} title={day.mode === 'recover' ? 'Recovery' : 'Train'} />
           </button>
         ))}
@@ -157,7 +169,7 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({ plan, nextDayPlan, 
           </span>
         </div>
         <p className="detail-meta">
-          {selected.template.category} · {selected.template.durationMin}-{selected.template.durationMax} min · {selected.phaseName} phase
+          {selected.template.category} · {effectiveDuration(selected).min}-{effectiveDuration(selected).max} min · {selected.phaseName} phase
         </p>
         <p className="detail-rationale">{selected.rationale}</p>
         {selected.addressesObjectives && selected.addressesObjectives.length > 0 && (
