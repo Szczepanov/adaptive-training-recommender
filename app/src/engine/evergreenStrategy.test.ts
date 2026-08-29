@@ -38,10 +38,15 @@ describe('evergreen evidence-backed strategy', () => {
         expect(aerobic?.priority).toBe('required');
     });
 
-    it('keeps broad health-only strength advisory when strength_muscle was not explicitly selected', () => {
-        const strategy = resolveEvidenceBackedStrategy({ priorities: ['health'] }, inferAthleteTrainingState([], 7));
-        const strength = strategy.requirements.find(requirement => requirement.adaptation === 'strength');
-        expect(strength?.priority).toBe('target');
+    it('keeps both WHO-backed health adaptations required instead of making strength opportunistic', () => {
+        for (const broadPriority of ['health', 'balanced_performance'] as const) {
+            const strategy = resolveEvidenceBackedStrategy({ priorities: [broadPriority] }, inferAthleteTrainingState([], 7));
+            const aerobic = strategy.requirements.find(requirement => requirement.adaptation === 'aerobic_endurance');
+            const strength = strategy.requirements.find(requirement => requirement.adaptation === 'strength');
+            expect(aerobic?.priority).toBe('required');
+            expect(strength?.priority).toBe('required');
+            expect(strength?.floor).toMatchObject({ dose: { unit: 'sessions', value: 2 } });
+        }
     });
 
     it('does not let health or balanced_performance demote an explicit strength_muscle priority', () => {
