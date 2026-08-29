@@ -11,6 +11,7 @@ export type HrUseCase =
     | 'DISPLAY_TRACE'
     | 'ZONE_DISTRIBUTION'
     | 'TRAINING_LOAD'
+    | 'TRAINING_EFFECT'
     | 'AEROBIC_DECOUPLING'
     | 'INTERVAL_RESPONSE'
     | 'MAX_HR_UPDATE'
@@ -80,6 +81,11 @@ const USE_CASE_POLICY: Record<HrUseCase, HrUsePolicy> = {
         requiresInputLineage: true,
     },
     TRAINING_LOAD: {
+        unavailableStatus: 'BLOCKED',
+        confidence: { high: 'ALLOWED', moderate: 'BOUNDED', low: 'BLOCKED', unreliable: 'BLOCKED', unknown: 'BLOCKED' },
+        requiresInputLineage: true,
+    },
+    TRAINING_EFFECT: {
         unavailableStatus: 'BLOCKED',
         confidence: { high: 'ALLOWED', moderate: 'BOUNDED', low: 'BLOCKED', unreliable: 'BLOCKED', unknown: 'BLOCKED' },
         requiresInputLineage: true,

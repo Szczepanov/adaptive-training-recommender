@@ -199,7 +199,7 @@ HRF0 still verifies the exact installed/locked version and real-account response
 | HRF3 | Deterministic HR trace-quality diagnostics | `[x]` | HRF1, HRF2 | shadow only |
 | HRF4 | Canonical mapping + additive Firestore persistence | `[x]` | HRF1–HRF3 | none |
 | HRF5 | TypeScript parser + activity HR authority engine | `[x]` | HRF4 | shadow only |
-| HRF6 | HR-consumer/lineage audit + explicit authority adapters | `[ ]` | HRF5 | no production change |
+| HRF6 | HR-consumer/lineage audit + explicit authority adapters | `[x]` | HRF5 | no production change |
 | HRF7 | Shadow telemetry, replay journal and UI observability | `[ ]` | HRF5, HRF6 | evidence only |
 | HRF8 | Historical replay + independent prospective paired-reference study | `[ ]` | HRF7 | ship/no-ship evidence |
 | HRF9 | Conservative production gating | `[ ]` | HRF8 + activation decision | production |
