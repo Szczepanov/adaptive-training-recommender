@@ -268,9 +268,7 @@ def test_stale_hr_with_large_sustained_power_change_is_suspect():
         "cycling", _evidence(tuple(records), _complete_events(240)), _source()
     )
 
-    assert {"STALE_PLATEAU", "WORKLOAD_DISCORDANCE"} <= set(
-        result.quality.artifact_flags
-    )
+    assert {"STALE_PLATEAU", "WORKLOAD_DISCORDANCE"} <= set(result.quality.artifact_flags)
 
 
 def test_single_power_spike_does_not_create_workload_discordance():
