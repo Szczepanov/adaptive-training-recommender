@@ -502,8 +502,12 @@ class FirestoreRecoveryRepository:
                 if existing_doc.exists:
                     data = existing_doc.to_dict() or {}
                     existing_hash = data.get("sourcePayloadHash")
+                    existing_normalizer_version = data.get("normalizerVersion", 1)
                     current_rev = data.get("revision", 1)
-                    if existing_hash == bundle.sourcePayloadHash:
+                    if (
+                        existing_hash == bundle.sourcePayloadHash
+                        and existing_normalizer_version >= bundle.normalizerVersion
+                    ):
                         return False, current_rev
                     current_rev += 1
 
@@ -521,8 +525,12 @@ class FirestoreRecoveryRepository:
             if existing_doc.exists:
                 data = existing_doc.to_dict() or {}
                 existing_hash = data.get("sourcePayloadHash")
+                existing_normalizer_version = data.get("normalizerVersion", 1)
                 current_rev = data.get("revision", 1)
-                if existing_hash == bundle.sourcePayloadHash:
+                if (
+                    existing_hash == bundle.sourcePayloadHash
+                    and existing_normalizer_version >= bundle.normalizerVersion
+                ):
                     logger.debug(
                         "Health observation bundle %s already up to date at revision %d.",
                         doc_id,

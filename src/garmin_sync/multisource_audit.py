@@ -11,6 +11,7 @@ but cannot enter HRV/respiration baseline statistics.
 
 import math
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta
 from typing import Any, Mapping
 
 from .canonical import (
@@ -32,12 +33,39 @@ from .identity_eligibility import (
 class MultisourceAuditReport:
     startDate: str
     endDate: str
+    eightSleepTransport: str
     totalDays: int
     bothSourcesDays: int
     garminOnlyDays: int
     eightSleepOnlyDays: int
     neitherDays: int
     sleepDurationMeanDiffMinutes: float
+    # The mean is heavily skewed by a real minority of extreme-disagreement nights --
+    # confirmed empirically 2026-08-28 on a real 180-night window: mean 54.3min vs median
+    # 26.8min (roughly half), with 18/154 nights (12%) exceeding 120min. A reader seeing only
+    # the mean would conclude "typical" agreement is far worse than most nights actually show.
+    # These fields make that shape visible instead of collapsing it into one number.
+    sleepDurationMedianDiffMinutes: float | None
+    sleepDurationP90DiffMinutes: float | None
+    # Denominator for the two counts below -- NOT the same as bothSourcesDays, which counts
+    # dates where both sources have *any* bundle/snapshot at all; this counts only dates
+    # where both actually had a parseable sleep_duration value (a date could have both a
+    # snapshot and a bundle but lack a duration field on one side).
+    sleepDurationPairedNights: int
+    sleepDurationOver60MinCount: int
+    sleepDurationOver120MinCount: int
+    # Likely explanation for a real chunk of the extreme-disagreement tail (confirmed
+    # 2026-08-28: 27/38 real >120min-delta nights had an Eight Sleep session start
+    # materially later than that same night's Garmin-detected sleep start -- consistent
+    # with falling asleep elsewhere and moving to the Eight-Sleep-equipped bed mid-night;
+    # Eight Sleep can only measure presence in its own bed). See _likely_bed_move. Nights
+    # where classification wasn't possible (either timestamp missing) stay IN the "excl"
+    # stats below rather than being speculatively excluded.
+    likelyBedMoveNightCount: int
+    likelyBedMoveDates: list[str]
+    sleepDurationMeanDiffMinutesExclBedMove: float | None
+    sleepDurationMedianDiffMinutesExclBedMove: float | None
+    sleepDurationPairedNightsExclBedMove: int
     sleepDurationCorrelation: float | None
     eightSleepHrvCount: int
     eightSleepHrvMedian: float | None
@@ -76,6 +104,21 @@ def _calc_mad(values: list[float], median: float | None) -> float | None:
     devs = [abs(v - median) for v in values]
     raw_mad = _calc_median(devs)
     return raw_mad * 1.4826 if raw_mad is not None else None
+
+
+def _calc_percentile(values: list[float], pct: float) -> float | None:
+    """Nearest-rank percentile (0.0-1.0). No interpolation -- matches the diagnostic used to
+    surface the mean/median gap in the first place, and keeps the value an actually-observed
+    sample rather than an interpolated one."""
+    if not values:
+        return None
+    sorted_v = sorted(values)
+    n = len(sorted_v)
+    # Nearest-rank: rank = ceil(pct * n), 1-indexed -> index = rank - 1. int(n * pct) is
+    # wrong whenever n * pct lands exactly on an integer (e.g. n=10, pct=0.9 -> int()
+    # gives index 9, the maximum, instead of index 8, the actual 9th-ranked value).
+    idx = min(max(math.ceil(n * pct) - 1, 0), n - 1)
+    return sorted_v[idx]
 
 
 def _calc_correlation(xs: list[float], ys: list[float]) -> float | None:
@@ -117,14 +160,66 @@ def _bundle_sleep_timing_available(bundle: dict[str, Any] | None) -> bool:
     return False
 
 
+DEFAULT_BED_MOVE_THRESHOLD_MINUTES = 60.0
+
+
+def _likely_bed_move(
+    garmin_start_iso: str | None,
+    eight_start_iso: str | None,
+    threshold_minutes: float = DEFAULT_BED_MOVE_THRESHOLD_MINUTES,
+) -> bool | None:
+    """A likely explanation for the extreme-disagreement tail found in real data (2026-08-28,
+    confirmed against 38 real >120min-delta nights: 27/38 had an Eight Sleep session start
+    materially later than Garmin's own detected sleep start, up to a 466-minute gap on one
+    night where Eight Sleep didn't register bed presence until 3:06am): falling asleep
+    somewhere other than the Eight-Sleep-equipped bed and moving there mid-night. Eight Sleep
+    can only measure presence in its own bed; Garmin (wrist-worn) tracks sleep regardless of
+    location -- so this is a real measurement-scope difference, not a device disagreement.
+
+    Deliberately self-relative (Eight Sleep's start vs THIS NIGHT's Garmin-detected start),
+    not a fixed clock-time cutoff -- a late but *shared* bedtime (both devices agree sleep
+    started late) must not be flagged; only a late Eight Sleep start relative to that same
+    night's own Garmin start is evidence of a location change, not a late night.
+
+    Returns None (not False) when either timestamp is unavailable, malformed, or
+    offset-less -- honestly "unknown", never asserted as "not a bed move" without
+    evidence. The Google Health mapper can persist offset-less timestamps, and pairing
+    one against Garmin's offset-aware timestamp would otherwise raise TypeError on
+    subtraction and abort the whole audit; an unclassifiable night must degrade this one
+    night's result, not the run. Both parsed as ISO 8601 UTC when an offset is present.
+    """
+    if not garmin_start_iso or not eight_start_iso:
+        return None
+    try:
+        garmin_start = datetime.fromisoformat(garmin_start_iso.replace("Z", "+00:00"))
+        eight_start = datetime.fromisoformat(eight_start_iso.replace("Z", "+00:00"))
+        if garmin_start.tzinfo is None or eight_start.tzinfo is None:
+            return None
+        gap_minutes = (eight_start - garmin_start).total_seconds() / 60.0
+    except (ValueError, TypeError):
+        return None
+    return gap_minutes > threshold_minutes
+
+
 def run_multisource_audit(
     repository: FirestoreRecoveryRepository,
     start_date_iso: str,
     end_date_iso: str,
     effective_identity_decisions: Mapping[IdentityBundleKey, EffectiveIdentityDecisionProjection]
     | None = None,
+    eight_sleep_transport: str = "google_health",
 ) -> MultisourceAuditReport:
     """Run empirical shadow audit between Garmin Direct and Eight Sleep.
+
+    Two independent devices/sensors, not a transport-fidelity check like MS10/ES9's
+    TransportEquivalenceAnalyzer -- correlation and mean delta are the right comparison here
+    (D-MS-NOAVG: cross-device raw values are not expected to match exactly, so this
+    deliberately doesn't tolerance-match them the way the same-device transport comparators
+    do). `eight_sleep_transport` defaults to "google_health" (this audit's original MS14
+    scope, predating the direct connector); pass "eight_sleep_direct" to compare against
+    Garmin Direct with Google Health removed from both sides of the comparison entirely --
+    the cleanest read on genuine cross-device agreement, free of any Google Health mapping
+    confound (see the ES9 sleep-duration mapper fix in google_health_mapper.py).
 
     Missing effective-identity projections fail closed for baseline admission. The raw bundle
     remains available to descriptive coverage/session-delta telemetry.
@@ -144,7 +239,7 @@ def run_multisource_audit(
         start_date_iso,
         end_date_iso,
         provider="eight_sleep",
-        transport="google_health",
+        transport=eight_sleep_transport,
     )
 
     eight_map: dict[str, dict[str, Any]] = {
@@ -152,8 +247,6 @@ def run_multisource_audit(
     }
 
     # Generate all dates in range
-    from datetime import datetime, timedelta
-
     start_dt = datetime.strptime(start_date_iso, "%Y-%m-%d")
     end_dt = datetime.strptime(end_date_iso, "%Y-%m-%d")
 
@@ -171,6 +264,8 @@ def run_multisource_audit(
     garmin_sleep_mins: list[float] = []
     eight_sleep_mins: list[float] = []
     sleep_diffs: list[float] = []
+    sleep_diffs_excl_bed_move: list[float] = []
+    likely_bed_move_dates: list[str] = []
 
     eight_hrv_vals: list[float] = []
     eight_resp_vals: list[float] = []
@@ -201,13 +296,16 @@ def run_multisource_audit(
             neither_count += 1
 
         garmin_sleep = None
+        garmin_start_iso = None
         if snap:
             raw = snap.get("raw", {}) or {}
             sec = raw.get("sleepDurationSec") or snap.get("sleepSeconds")
             if sec:
                 garmin_sleep = float(sec) / 60.0
+            garmin_start_iso = raw.get("sleepSessionStart")
 
         eight_sleep = None
+        eight_start_iso = None
         eight_hrv = None
         eight_resp = None
         admitted_to_baseline = False
@@ -231,6 +329,7 @@ def run_multisource_audit(
                 if isinstance(val, (int, float)):
                     if metric == METRIC_SLEEP_DURATION_SECONDS:
                         eight_sleep = float(val) / 60.0
+                        eight_start_iso = obs.get("observedStart")
                     elif metric == METRIC_HRV_RMSSD_MS:
                         eight_hrv = float(val)
                         if admitted_to_baseline:
@@ -244,11 +343,20 @@ def run_multisource_audit(
                             eight_resp_vals.append(eight_resp)
 
         sleep_delta = None
+        is_likely_bed_move: bool | None = None
         if garmin_sleep is not None and eight_sleep is not None:
             sleep_delta = abs(garmin_sleep - eight_sleep)
             garmin_sleep_mins.append(garmin_sleep)
             eight_sleep_mins.append(eight_sleep)
             sleep_diffs.append(sleep_delta)
+
+            is_likely_bed_move = _likely_bed_move(garmin_start_iso, eight_start_iso)
+            if is_likely_bed_move:
+                likely_bed_move_dates.append(d)
+            else:
+                # Unknown (missing timestamps) nights stay IN the "excluding bed moves" set --
+                # never speculatively excluded without evidence.
+                sleep_diffs_excl_bed_move.append(sleep_delta)
 
         # Timing coverage per source, only over nights that source actually has sleep
         # data for -- a source with no sleep record that night is a coverage gap
@@ -275,6 +383,7 @@ def run_multisource_audit(
                 "garminSleepMinutes": round(garmin_sleep, 1) if garmin_sleep else None,
                 "eightSleepMinutes": round(eight_sleep, 1) if eight_sleep else None,
                 "sleepDeltaMinutes": round(sleep_delta, 1) if sleep_delta is not None else None,
+                "likelyBedMove": is_likely_bed_move,
                 "garminSleepTimingAvailable": garmin_timing_ok if snap else None,
                 "eightSleepTimingAvailable": eight_timing_ok if bundle else None,
                 "eightSleepHrv": round(eight_hrv, 1) if eight_hrv else None,
@@ -285,6 +394,16 @@ def run_multisource_audit(
         )
 
     mean_sleep_diff = sum(sleep_diffs) / len(sleep_diffs) if sleep_diffs else 0.0
+    median_sleep_diff = _calc_median(sleep_diffs)
+    p90_sleep_diff = _calc_percentile(sleep_diffs, 0.9)
+    over_60_count = sum(1 for x in sleep_diffs if x > 60)
+    over_120_count = sum(1 for x in sleep_diffs if x > 120)
+    mean_sleep_diff_excl_bed_move = (
+        sum(sleep_diffs_excl_bed_move) / len(sleep_diffs_excl_bed_move)
+        if sleep_diffs_excl_bed_move
+        else None
+    )
+    median_sleep_diff_excl_bed_move = _calc_median(sleep_diffs_excl_bed_move)
     sleep_corr = _calc_correlation(garmin_sleep_mins, eight_sleep_mins)
 
     # 28-day rolling window baseline statistics (using latest 28 eligible daily samples)
@@ -299,12 +418,31 @@ def run_multisource_audit(
     return MultisourceAuditReport(
         startDate=start_date_iso,
         endDate=end_date_iso,
+        eightSleepTransport=eight_sleep_transport,
         totalDays=len(all_dates),
         bothSourcesDays=both_count,
         garminOnlyDays=garmin_only_count,
         eightSleepOnlyDays=eight_only_count,
         neitherDays=neither_count,
         sleepDurationMeanDiffMinutes=round(mean_sleep_diff, 1),
+        sleepDurationMedianDiffMinutes=round(median_sleep_diff, 1)
+        if median_sleep_diff is not None
+        else None,
+        sleepDurationP90DiffMinutes=round(p90_sleep_diff, 1)
+        if p90_sleep_diff is not None
+        else None,
+        sleepDurationPairedNights=len(sleep_diffs),
+        sleepDurationOver60MinCount=over_60_count,
+        sleepDurationOver120MinCount=over_120_count,
+        likelyBedMoveNightCount=len(likely_bed_move_dates),
+        likelyBedMoveDates=likely_bed_move_dates,
+        sleepDurationMeanDiffMinutesExclBedMove=round(mean_sleep_diff_excl_bed_move, 1)
+        if mean_sleep_diff_excl_bed_move is not None
+        else None,
+        sleepDurationMedianDiffMinutesExclBedMove=round(median_sleep_diff_excl_bed_move, 1)
+        if median_sleep_diff_excl_bed_move is not None
+        else None,
+        sleepDurationPairedNightsExclBedMove=len(sleep_diffs_excl_bed_move),
         sleepDurationCorrelation=round(sleep_corr, 3) if sleep_corr is not None else None,
         eightSleepHrvCount=len(eight_hrv_vals),
         eightSleepHrvMedian=round(hrv_median, 1) if hrv_median is not None else None,

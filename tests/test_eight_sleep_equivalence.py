@@ -193,6 +193,61 @@ def test_run_eight_sleep_equivalence_analysis_direct_only_no_overlap():
     assert report.dailyResults == []
 
 
+def test_analyzer_flags_ambiguous_metric_when_google_side_has_duplicates() -> None:
+    """Regression for the real ES9 first-read finding: Google Health emitted TWO
+    sleep_duration_seconds observations for one logical date (an overnight session plus a
+    shorter overlapping fragment). The comparator's dict-building silently keeps only the
+    last one (ordinary dict-comprehension collapse) -- that's still true here, since fixing
+    the collapse itself would require picking a "correct" session with no principled way to
+    do so from this module alone. What must change is that the collapse becomes visible:
+    ambiguousMetrics records which metric/side had more than one candidate."""
+    now = datetime.now(timezone.utc)
+    direct_src = ObservationSource(provider="eight_sleep", transport="eight_sleep_direct")
+    google_src = ObservationSource(provider="eight_sleep", transport="google_health")
+
+    direct_obs = [
+        CanonicalHealthObservation(
+            metric="sleep_duration_seconds",
+            value=29340,
+            unit="s",
+            source=direct_src,
+            observed_start=now,
+            observed_end=now,
+            logical_date="2026-08-14",
+        )
+    ]
+    # Two same-metric observations from Google Health for the same date -- an overnight
+    # session and a shorter nested fragment, exactly as observed in real data.
+    google_obs = [
+        CanonicalHealthObservation(
+            metric="sleep_duration_seconds",
+            value=2400,
+            unit="seconds",
+            source=google_src,
+            observed_start=now,
+            observed_end=now,
+            logical_date="2026-08-14",
+        ),
+        CanonicalHealthObservation(
+            metric="sleep_duration_seconds",
+            value=30690,
+            unit="seconds",
+            source=google_src,
+            observed_start=now,
+            observed_end=now,
+            logical_date="2026-08-14",
+        ),
+    ]
+
+    analyzer = TransportEquivalenceAnalyzer(expected_provider="eight_sleep")
+    result = analyzer.compare_date_observations("2026-08-14", direct_obs, google_obs)
+    assert "sleep_duration_seconds" in result.ambiguousMetrics
+    assert result.ambiguousMetrics["sleep_duration_seconds"] == {"google": 2}
+    # The comparison itself still ran (against whichever candidate dict-comprehension kept) --
+    # ambiguity is reported, not silently hidden, but doesn't block the comparison either.
+    assert len(result.comparisons) == 1
+
+
 def test_bundle_to_canonical_observations_reused_directly_for_eight_sleep():
     """eight_sleep_equivalence deliberately reuses equivalence.py's bundle converter rather
     than duplicating it -- confirm it round-trips an eight_sleep_direct bundle correctly."""

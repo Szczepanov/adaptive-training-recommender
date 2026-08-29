@@ -195,11 +195,12 @@ def test_extract_sleep_metrics_handles_nested_and_fallback_shapes():
             "lightSleepSeconds": 12000,
             "awakeSleepSeconds": 1600,
             "restlessMomentsCount": 15,
+            "awakeCount": 3,
         }
     }
-    assert extract_sleep_metrics(nested) == (90, 25000, None, 5400, 6000, 12000, 1600, 15)
-    assert extract_sleep_metrics({}) == (None, None, None, None, None, None, None, None)
-    assert extract_sleep_metrics(None) == (None, None, None, None, None, None, None, None)
+    assert extract_sleep_metrics(nested) == (90, 25000, None, 5400, 6000, 12000, 1600, 15, 3)
+    assert extract_sleep_metrics({}) == (None, None, None, None, None, None, None, None, None)
+    assert extract_sleep_metrics(None) == (None, None, None, None, None, None, None, None, None)
 
 
 # --- Respiration precision (finer than dailySleepDTO.averageRespirationValue) ----

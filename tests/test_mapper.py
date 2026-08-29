@@ -450,6 +450,7 @@ def test_build_snapshot_maps_sleep_stages():
         light_sleep_seconds=15000,
         awake_sleep_seconds=2000,
         restless_moments_count=12,
+        awake_count=3,
     )
 
     snapshot = build_snapshot_from_canonical(
@@ -465,6 +466,7 @@ def test_build_snapshot_maps_sleep_stages():
     assert snapshot.raw.lightSleepSec == 15000
     assert snapshot.raw.awakeSleepSec == 2000
     assert snapshot.raw.restlessMomentsCount == 12
+    assert snapshot.raw.awakeCount == 3
 
 
 def test_build_snapshot_maps_sleep_session_timing_and_data_quality():

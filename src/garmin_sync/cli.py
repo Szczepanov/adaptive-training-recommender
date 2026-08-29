@@ -703,7 +703,7 @@ def run_compare_transports_cmd(args: list[str] | None = None) -> int:
 
     import os
 
-    from .equivalence import run_equivalence_analysis
+    from .equivalence import format_metric_summaries_table, run_equivalence_analysis
     from .firestore_repository import FirestoreRecoveryRepository
 
     if parsed_args.user_id:
@@ -734,14 +734,7 @@ def run_compare_transports_cmd(args: list[str] | None = None) -> int:
         print(f"  Google-Only Dates:          {report.googleOnlyDays}")
         print(f"  Overall Classification:     {report.overallClassification}")
         print("-" * 80)
-        print(
-            f"{'Metric':<34} {'Evaluated':<10} {'Matches':<10} {'Match %':<10} {'Mean Delta':<12}"
-        )
-        print("-" * 80)
-        for m, s in report.metricSummaries.items():
-            print(
-                f"{m:<34} {s['totalEvaluated']:<10} {s['matchCount']:<10} {s['matchRatePct']:<9}% {s['meanDifference']:<12}"
-            )
+        print(format_metric_summaries_table(report.metricSummaries))
         print("=" * 80 + "\n")
         return 0
 
@@ -758,6 +751,18 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
     parser.add_argument("--start-date", type=str, default=None, help="Start date YYYY-MM-DD")
     parser.add_argument("--end-date", type=str, default=None, help="End date YYYY-MM-DD")
     parser.add_argument("--user-id", type=str, default=None, help="Application User ID")
+    parser.add_argument(
+        "--eight-sleep-transport",
+        type=str,
+        default="google_health",
+        choices=["google_health", "eight_sleep_direct"],
+        help=(
+            "Which Eight Sleep transport to compare Garmin Direct against (default "
+            "google_health, MS14's original scope). eight_sleep_direct removes Google "
+            "Health from both sides of the comparison entirely -- the cleanest read on "
+            "genuine cross-device agreement between Garmin and Eight Sleep."
+        ),
+    )
     parsed_args = parser.parse_args(args)
 
     from .firestore_repository import FirestoreRecoveryRepository
@@ -778,12 +783,19 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
         start_date_str, end_date_str = _resolve_date_range(parsed_args, default_days=60)
 
         print(
-            f"\nRunning multisource shadow audit for {settings.app_user_id}: {start_date_str} to {end_date_str}..."
+            f"\nRunning multisource shadow audit for {settings.app_user_id}: {start_date_str} to {end_date_str} "
+            f"(Eight Sleep transport: {parsed_args.eight_sleep_transport})..."
         )
-        report = run_multisource_audit(repo, start_date_str, end_date_str)
+        report = run_multisource_audit(
+            repo,
+            start_date_str,
+            end_date_str,
+            eight_sleep_transport=parsed_args.eight_sleep_transport,
+        )
 
         print("\n" + "=" * 80)
         print("  MULTISOURCE SHADOW AUDIT REPORT (GARMIN DIRECT VS EIGHT SLEEP) — MS14")
+        print(f"  Eight Sleep transport: {report.eightSleepTransport}")
         print("=" * 80)
         print(
             f"  Date Range:                 {report.startDate} to {report.endDate} ({report.totalDays} days)"
@@ -799,10 +811,59 @@ def run_audit_multisource_cmd(args: list[str] | None = None) -> int:
         print(f"  Neither Source:             {report.neitherDays} nights")
         print("-" * 80)
         print("  CROSS-SOURCE AGREEMENT TELEMETRY:")
-        print(f"  Sleep Duration Mean Delta:  {report.sleepDurationMeanDiffMinutes} minutes")
+        print(f"  Sleep Duration Mean Delta:   {report.sleepDurationMeanDiffMinutes} minutes")
+        # The mean alone is misleading here -- it's heavily skewed by a real minority of
+        # extreme-disagreement nights. Median shows what a typical night actually looks like.
+        median_disp = (
+            report.sleepDurationMedianDiffMinutes
+            if report.sleepDurationMedianDiffMinutes is not None
+            else "N/A"
+        )
+        p90_disp = (
+            report.sleepDurationP90DiffMinutes
+            if report.sleepDurationP90DiffMinutes is not None
+            else "N/A"
+        )
+        print(f"  Sleep Duration Median Delta: {median_disp} minutes (typical night)")
+        print(f"  Sleep Duration P90 Delta:    {p90_disp} minutes (worst 10% of nights)")
+        print(
+            f"  Nights >60min disagreement:  {report.sleepDurationOver60MinCount}/{report.sleepDurationPairedNights}"
+        )
+        print(
+            f"  Nights >120min disagreement: {report.sleepDurationOver120MinCount}/{report.sleepDurationPairedNights}"
+        )
         print(
             f"  Sleep Duration Correlation: {report.sleepDurationCorrelation if report.sleepDurationCorrelation is not None else 'N/A'}"
         )
+        print("-" * 80)
+        print("  LIKELY BED-MOVE NIGHTS (Eight Sleep session started well after Garmin's own")
+        print("  detected sleep start -- consistent with falling asleep elsewhere and moving")
+        print("  to the Eight-Sleep-equipped bed mid-night; not a device disagreement):")
+        print(
+            f"  Flagged nights:              {report.likelyBedMoveNightCount}/{report.sleepDurationPairedNights}"
+        )
+        excl_mean_disp = (
+            report.sleepDurationMeanDiffMinutesExclBedMove
+            if report.sleepDurationMeanDiffMinutesExclBedMove is not None
+            else "N/A"
+        )
+        excl_median_disp = (
+            report.sleepDurationMedianDiffMinutesExclBedMove
+            if report.sleepDurationMedianDiffMinutesExclBedMove is not None
+            else "N/A"
+        )
+        print(
+            f"  Excluding those -- Mean:     {excl_mean_disp} minutes  "
+            f"Median: {excl_median_disp} minutes  (N={report.sleepDurationPairedNightsExclBedMove})"
+        )
+        if report.likelyBedMoveDates:
+            preview = ", ".join(report.likelyBedMoveDates[:10])
+            more = (
+                f" (+{len(report.likelyBedMoveDates) - 10} more)"
+                if len(report.likelyBedMoveDates) > 10
+                else ""
+            )
+            print(f"  Dates:                       {preview}{more}")
         print("-" * 80)
         print("  SLEEP-SESSION TIMING COVERAGE (of nights each source has sleep data for):")
         garmin_sleep_nights = len(
@@ -964,6 +1025,7 @@ def run_compare_eight_sleep_transports_cmd(args: list[str] | None = None) -> int
     parsed_args = parser.parse_args(args)
 
     from .eight_sleep_equivalence import run_eight_sleep_equivalence_analysis
+    from .equivalence import format_metric_summaries_table
     from .firestore_repository import FirestoreRecoveryRepository
 
     if parsed_args.user_id:
@@ -994,14 +1056,7 @@ def run_compare_eight_sleep_transports_cmd(args: list[str] | None = None) -> int
         print(f"  Google-Only Dates:          {report.googleOnlyDays}")
         print(f"  Overall Classification:     {report.overallClassification}")
         print("-" * 80)
-        print(
-            f"{'Metric':<34} {'Evaluated':<10} {'Matches':<10} {'Match %':<10} {'Mean Delta':<12}"
-        )
-        print("-" * 80)
-        for m, s in report.metricSummaries.items():
-            print(
-                f"{m:<34} {s['totalEvaluated']:<10} {s['matchCount']:<10} {s['matchRatePct']:<9}% {s['meanDifference']:<12}"
-            )
+        print(format_metric_summaries_table(report.metricSummaries))
         print("=" * 80 + "\n")
         return 0
 
@@ -1229,6 +1284,12 @@ def main() -> int:
     audit_multisource_parser.add_argument("--start-date", type=str, default=None)
     audit_multisource_parser.add_argument("--end-date", type=str, default=None)
     audit_multisource_parser.add_argument("--user-id", type=str, default=None)
+    audit_multisource_parser.add_argument(
+        "--eight-sleep-transport",
+        type=str,
+        default="google_health",
+        choices=["google_health", "eight_sleep_direct"],
+    )
 
     backfill_eight_sleep_direct_parser = subparsers.add_parser(
         "backfill-eight-sleep-direct",

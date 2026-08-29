@@ -129,6 +129,48 @@ def test_snapshot_conversion_carries_sleep_session_timing_when_present():
     assert sleep_obs.observed_end == datetime(2026, 8, 25, 6, 0, tzinfo=timezone.utc)
 
 
+def test_build_metric_summaries_reports_none_not_zero_when_never_paired() -> None:
+    """Regression: a metric that only ever appears on one side (e.g. Garmin's RHR vs Eight
+    Sleep's sleeping-HR-only surface -- always MISSING_DIRECT/MISSING_GOOGLE, never a real
+    pair) previously defaulted meanDifference/maxDifference to 0.0, which is indistinguishable
+    in a printed report from "these values are identical." It must report None ("not
+    comparable") instead, and pairedCount must be 0 while totalEvaluated still counts the
+    one-sided occurrences."""
+    from garmin_sync.equivalence import build_metric_summaries
+
+    summaries = build_metric_summaries(
+        metric_counts={"one_sided_metric": 5, "paired_metric": 3},
+        metric_matches={"paired_metric": 2},
+        metric_diffs={"paired_metric": [1.0, 2.0, 0.0]},
+        metric_paired_counts={"paired_metric": 3},
+        ambiguous_date_counts={},
+    )
+    assert summaries["one_sided_metric"]["pairedCount"] == 0
+    assert summaries["one_sided_metric"]["meanDifference"] is None
+    assert summaries["one_sided_metric"]["maxDifference"] is None
+    assert summaries["one_sided_metric"]["matchRatePct"] == 0.0
+
+    assert summaries["paired_metric"]["pairedCount"] == 3
+    assert summaries["paired_metric"]["meanDifference"] == 1.0
+    assert summaries["paired_metric"]["maxDifference"] == 2.0
+
+
+def test_format_metric_summaries_table_shows_na_and_ambiguous_section() -> None:
+    from garmin_sync.equivalence import build_metric_summaries, format_metric_summaries_table
+
+    summaries = build_metric_summaries(
+        metric_counts={"one_sided_metric": 5},
+        metric_matches={},
+        metric_diffs={},
+        metric_paired_counts={},
+        ambiguous_date_counts={"one_sided_metric": 3},
+    )
+    table = format_metric_summaries_table(summaries)
+    assert "N/A" in table
+    assert "AMBIGUOUS METRICS" in table
+    assert "one_sided_metric: 3 date(s)" in table
+
+
 def test_snapshot_conversion_sleep_timing_none_when_absent():
     from garmin_sync.equivalence import snapshot_to_canonical_observations
 

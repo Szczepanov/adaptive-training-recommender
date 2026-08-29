@@ -33,6 +33,16 @@ logger = logging.getLogger(__name__)
 
 WARSAW_TZ = ZoneInfo("Europe/Warsaw")
 
+# 1: original mapper.
+# 2 (2026-08-29): fixed _map_sleep()'s duration fallback -- was the raw
+# (endTime - startTime) span; now prefers elapsed-minus-awake when an explicit awake
+# duration is available, matching how Garmin/Eight Sleep report "time actually asleep"
+# rather than the full in-bed span. Bumping this is what actually makes
+# save_health_observation_day_bundle re-persist already-fetched dates with the corrected
+# duration -- sourcePayloadHash alone is blind to mapper logic changes, since the
+# underlying raw Google Health response is unchanged.
+NORMALIZER_VERSION: int = 2
+
 # Controlled mapping table for origin applications (MS6 / ADR-0027)
 ORIGIN_PACKAGE_MAP: dict[str, str] = {
     "com.garmin.android.apps.connectmobile": "garmin",
@@ -134,7 +144,7 @@ class GoogleHealthMapper:
             observations=observations,
             source_payload_hash=payload_hash,
             schema_version=1,
-            normalizer_version=1,
+            normalizer_version=NORMALIZER_VERSION,
             revision=1,
         )
 
@@ -307,7 +317,17 @@ class GoogleHealthMapper:
                 awake_sec = int(stage_totals["AWAKE"])
 
         if duration_sec is None and start_time and end_time:
-            duration_sec = int((end_time - start_time).total_seconds())
+            # Real API shape has no top-level durationSeconds/minutesAsleep for at least
+            # Eight-Sleep-origin sleep records (confirmed empirically 2026-08-28: ES9's
+            # direct-vs-Google comparison showed Google's duration exactly equal to
+            # end_time - start_time on every one of 38 real nights, while direct Eight
+            # Sleep reports elapsed-minus-awake -- an average ~55min systematic gap that
+            # was actually mostly this fallback, not a real transport disagreement).
+            # Prefer elapsed-minus-awake ("time actually asleep") over the raw session span
+            # when awake_sec is available -- it already reflects the same real per-stage
+            # data (from sleep.stages) parsed just above, so this doesn't invent evidence.
+            elapsed_sec = int((end_time - start_time).total_seconds())
+            duration_sec = max(0, elapsed_sec - awake_sec) if awake_sec is not None else elapsed_sec
 
         session_val = {
             "durationSeconds": duration_sec,

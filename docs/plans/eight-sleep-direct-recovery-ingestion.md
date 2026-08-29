@@ -2,10 +2,11 @@
 
 * **Status:** `In progress (default-off)`
 * **Date:** 2026-08-28
-* **Blocked by:** ES9's tooling is implemented and its daily backfill is scheduled (once the
-  five `EIGHT_SLEEP_*`/`APP_USER_ID` secrets are deployed) — it now just needs the
-  accumulation window to elapse before `compare-eight-sleep-transports` is meaningful. ES10
-  needs that plus prospective evidence and a separate activation review.
+* **Blocked by:** ES9's tooling is implemented, its daily backfill is scheduled, and a full
+  year of real data has been backfilled and compared (314 real paired nights vs Garmin
+  Direct — see [`docs/analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md`](../analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md)).
+  ES10 needs continued accumulation plus a separate, deliberate activation review — this
+  first read is evidence, not a promotion decision.
 * **Decision authority:** none.
 * **Governing ADRs:** ADR-0027 and proposed ADR-0030.
 
@@ -23,14 +24,14 @@ Replace unreliable Google Health transport for Eight Sleep with a repository-own
 | ES6 | Sanitized local probe | implemented |
 | ES7 | Unit tests | implemented |
 | ES8 | Provision secrets + run real-account probe | implemented — real-account probe ran 2026-08-28, authenticated and returned 9 real observations (`hrv_rmssd_ms`, `sleep_stage_*`, `sleeping_heart_rate_bpm`, etc.) across a 3-day window |
-| ES9 | Shadow direct-vs-Google comparison | implemented — persistence path (`backfill-eight-sleep-direct`, daily-scheduled) and comparator (`compare-eight-sleep-transports`, reusing MS10's generalized `TransportEquivalenceAnalyzer`) landed; real accumulation window not yet elapsed |
-| ES10 | Baseline/fusion activation decision | blocked by ES9's accumulated evidence |
+| ES9 | Shadow direct-vs-Google comparison | implemented and run for real — persistence path (`backfill-eight-sleep-direct`, daily-scheduled) and comparator (`compare-eight-sleep-transports`, reusing MS10's generalized `TransportEquivalenceAnalyzer`) landed; full year backfilled (365 days, 314 real paired nights), see [`docs/analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md`](../analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md) for the Garmin-vs-Eight-Sleep-Direct cross-device evidence (MS14 generalized) this produced |
+| ES10 | Baseline/fusion activation decision | blocked by continued ES9 accumulation and a separate activation review — see the analysis doc above for the current evidence read |
 
 Runtime config: `EIGHT_SLEEP_DIRECT_ENABLED=false`, `EIGHT_SLEEP_EMAIL`, `EIGHT_SLEEP_PASSWORD`, `EIGHT_SLEEP_CLIENT_ID`, `EIGHT_SLEEP_CLIENT_SECRET`, optional `EIGHT_SLEEP_USER_ID`, timezone/retry/timeout overrides. Do not commit values.
 
 Probe: `EIGHT_SLEEP_DIRECT_ENABLED=true python -m garmin_sync.eight_sleep_probe --date YYYY-MM-DD`.
 
-### ES9 — shadow direct-vs-Google comparison (implemented, evidence pending)
+### ES9 — shadow direct-vs-Garmin comparison (implemented, evidence available)
 
 Direct Eight Sleep observations previously had no persistence path — the ES6 probe only
 printed a sanitized summary to stdout. Two new commands close that gap:
@@ -64,3 +65,50 @@ backfill and comparison commands, or run either locally via
 `uv run python -m garmin_sync backfill-eight-sleep-direct`.
 
 Promotion requires stable real-account auth/schema, source-specific baseline maturity, better reliability than Google Health, replay/prospective evidence and a separate activation review. Rollback is simply `EIGHT_SLEEP_DIRECT_ENABLED=false`; Garmin/recommendation behavior is unchanged.
+
+The mapper was later extended (ES-EXT through ES-EXT-5 batches, `NORMALIZER_VERSION` now
+`6`) to capture snoring, sleep latency, sleep debt, social jetlag, circadian consistency
+baselines, chronotype, night tags, and session algorithm-version metadata — real fields
+the private API returns that the original mapper never extracted. Three extraction bugs
+(WASO fields were fractions not seconds; `social_jetlag_seconds` was silently dropping
+negative values; a derived "awake stage" metric was actually presence-minus-sleep, not
+within-session wake time) were found and fixed against real probed data before trusting
+the result. See
+[`docs/analysis/2026-08-28-eight-sleep-extended-metrics-analysis.md`](../analysis/2026-08-28-eight-sleep-extended-metrics-analysis.md)
+for the full year of corrected findings and the keep/drop verdict: snoring and sleep
+latency are genuine Garmin-incomparable signal worth keeping; chronotype (zero variance)
+and tags (redundant Garmin workout data mirrored back) currently pull no weight; duration/
+timing agreement remains the documented weak spot and D-8S-NO-AUTHORITY still stands.
+
+### Sleep-data-for-training-recommendations Phase 1 (2026-08-29)
+
+A separately-reviewed analysis
+([`docs/analysis/2026-08-29-sleep-data-training-recommendations-analysis.md`](../analysis/2026-08-29-sleep-data-training-recommendations-analysis.md)
+— pasted in from another agent, spot-checked against this repo and found accurate on
+every checkable claim) recommended sleep architecture (deep/REM/light) must not directly
+drive training prescription without prospective validation, while duration/timing/debt
+may inform planning, and respiration/snoring/sleeping-HR may inform health-anomaly
+detection. Phase 1 of its implementation plan:
+
+1. **Garmin sleep-timing/`awakeCount` rebuild** — `sleepSessionStart`/`sleepSessionEnd`
+   were present in 73/73 sampled archived nights across the full year but only partially
+   persisted to `daily_recovery_snapshots` (extraction started partway through the year).
+   `awakeCount` (a real per-night awakening count, 0-6 observed) was never extracted at
+   all. Both now flow through `extract_sleep_metrics()`/`canonicalize_from_raw()`/
+   `mapper.py`; `rebuild --start-date 2025-08-29 --end-date 2026-08-28` backfills both for
+   the whole year purely from already-archived payloads (zero new Garmin API calls).
+2. **Eight Sleep algorithm-version metadata** — `sessions[].sleepAlgorithmVersion`/
+   `presenceAlgorithmVersion`/`hrvAlgorithmVersion` now extracted (session resolved via
+   `mainSessionId`, or the sole session; ambiguous multi-session nights skipped).
+3. **Eight Sleep stage-sum invariant check** — verified whether `sessions[].stages`
+   reconciles with Eight Sleep's own day-level deep/rem/light aggregates, the same check
+   already confirmed exact for Garmin's `sleepLevels`. It does **not** hold (light matched
+   0/64 sampled nights) — see
+   [`docs/analysis/2026-08-29-eight-sleep-stage-sum-invariant-check.md`](../analysis/2026-08-29-eight-sleep-stage-sum-invariant-check.md).
+4. **Eight Sleep awake-in-bed/out-of-bed seconds** — **deferred**, gated on #3's finding:
+   persisting a new metric derived from a stage timeline that doesn't reconcile with
+   already-ingested aggregates needs more investigation first.
+5. **`OBSERVATION_AUTHORITY`** (`canonical.py`) — explicit
+   `training_authoritative`/`planning_authoritative`/`health_anomaly`/
+   `observability_only`/`research_only` classification for all 46 metric constants,
+   metadata only, with a regression test enforcing exact coverage.

@@ -54,12 +54,22 @@ class DateEquivalenceResult:
     logicalDate: str
     comparisons: list[MetricComparison] = field(default_factory=list)
     classification: str = "EQUIVALENT"  # "EQUIVALENT", "TRANSFORMING", "INCOMPLETE"
+    # Metrics where either side had MORE THAN ONE same-metric observation for this date
+    # (e.g. Google Health emitting two separate eight_sleep sleep_duration_seconds entries
+    # for one logical date -- an overnight session plus a shorter overlapping/duplicate
+    # fragment). direct_map/google_garmin_map below keep only the LAST such observation per
+    # metric (ordinary dict-comprehension last-wins), so a comparison against an ambiguous
+    # metric is comparing against an arbitrarily-chosen one of several candidates, not
+    # necessarily the "real"/main one. Surfacing this explicitly turns what would otherwise
+    # look like silent measurement disagreement into a visible data-shape finding.
+    ambiguousMetrics: dict[str, dict[str, int]] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "logicalDate": self.logicalDate,
             "comparisons": [asdict(c) for c in self.comparisons],
             "classification": self.classification,
+            "ambiguousMetrics": self.ambiguousMetrics,
         }
 
 
@@ -79,14 +89,25 @@ class TransportEquivalenceAnalyzer:
         google_observations: list[CanonicalHealthObservation],
     ) -> DateEquivalenceResult:
         """Compare observation sets for one logical date."""
-        direct_map: dict[str, CanonicalHealthObservation] = {
-            o.metric: o for o in direct_observations if not isinstance(o.value, dict)
-        }
-        google_garmin_map: dict[str, CanonicalHealthObservation] = {
-            o.metric: o
+        direct_candidates = [o for o in direct_observations if not isinstance(o.value, dict)]
+        google_candidates = [
+            o
             for o in google_observations
             if o.source.provider == self.expected_provider and not isinstance(o.value, dict)
+        ]
+        direct_map: dict[str, CanonicalHealthObservation] = {o.metric: o for o in direct_candidates}
+        google_garmin_map: dict[str, CanonicalHealthObservation] = {
+            o.metric: o for o in google_candidates
         }
+
+        ambiguous_metrics: dict[str, dict[str, int]] = {}
+        for side_name, candidates in (("direct", direct_candidates), ("google", google_candidates)):
+            counts: dict[str, int] = {}
+            for o in candidates:
+                counts[o.metric] = counts.get(o.metric, 0) + 1
+            for metric, count in counts.items():
+                if count > 1:
+                    ambiguous_metrics.setdefault(metric, {})[side_name] = count
 
         all_metrics = sorted(list(set(direct_map.keys()) | set(google_garmin_map.keys())))
         comparisons: list[MetricComparison] = []
@@ -220,6 +241,7 @@ class TransportEquivalenceAnalyzer:
             logicalDate=logical_date,
             comparisons=comparisons,
             classification=classification,
+            ambiguousMetrics=ambiguous_metrics,
         )
 
 
@@ -388,6 +410,74 @@ def bundle_to_canonical_observations(
     return obs_list
 
 
+def build_metric_summaries(
+    metric_counts: dict[str, int],
+    metric_matches: dict[str, int],
+    metric_diffs: dict[str, list[float]],
+    metric_paired_counts: dict[str, int],
+    ambiguous_date_counts: dict[str, int],
+) -> dict[str, dict[str, Any]]:
+    """Shared metric-summary builder for both the Garmin (MS10) and Eight Sleep (ES9)
+    reports. `meanDifference`/`maxDifference` are `None` -- not `0.0` -- when a metric was
+    never actually paired (e.g. a metric only one transport ever emits, like Garmin/Eight
+    Sleep's own single-sided fields): a 0.0 default there previously read as "these values
+    are identical" when it actually meant "zero real comparisons happened," which looks
+    identical to a genuine perfect match in a printed report. `ambiguousDateCount` surfaces
+    how many dates had more than one same-metric source observation (see
+    DateEquivalenceResult.ambiguousMetrics) -- a comparison against an ambiguous metric on a
+    given date used an arbitrary (last-in-list) pick among several candidates, not
+    necessarily the physiologically-relevant one."""
+    summaries: dict[str, dict[str, Any]] = {}
+    for m, count in metric_counts.items():
+        matches = metric_matches.get(m, 0)
+        diffs = metric_diffs.get(m, [])
+        summaries[m] = {
+            "totalEvaluated": count,
+            "pairedCount": metric_paired_counts.get(m, 0),
+            "matchCount": matches,
+            "matchRatePct": round(matches / count * 100.0, 1) if count > 0 else 0.0,
+            "meanDifference": round(sum(diffs) / len(diffs), 3) if diffs else None,
+            "maxDifference": round(max(diffs), 3) if diffs else None,
+            "ambiguousDateCount": ambiguous_date_counts.get(m, 0),
+        }
+    return summaries
+
+
+def format_metric_summaries_table(metric_summaries: dict[str, dict[str, Any]]) -> str:
+    """Shared CLI table formatter for both the Garmin (MS10) and Eight Sleep (ES9) reports.
+    Prints "Paired" (comparisons where BOTH sides actually had this metric) separately from
+    "Evaluated" (also counts MISSING_DIRECT/MISSING_GOOGLE one-sided occurrences), and "N/A"
+    rather than a misleading 0.0 for a metric with zero paired comparisons -- a metric only
+    one transport ever emits (e.g. Garmin's RHR vs Eight Sleep's sleeping-HR-only surface)
+    will always show 0% match / N/A delta, which reads as "not comparable," not "identical."
+    A trailing "Ambiguous dates" section lists any metric where a date's source data had more
+    than one same-metric observation on either side (see DateEquivalenceResult.ambiguousMetrics)
+    -- that comparison used an arbitrary pick among candidates, not necessarily the
+    physiologically-relevant one, and is worth investigating at the mapper level rather than
+    trusting the delta at face value."""
+    lines = [
+        f"{'Metric':<34} {'Evaluated':<10} {'Paired':<8} {'Matches':<9} {'Match %':<9} {'Mean Delta':<12}",
+        "-" * 80,
+    ]
+    ambiguous_lines = []
+    for m, s in metric_summaries.items():
+        mean_disp = s["meanDifference"] if s["meanDifference"] is not None else "N/A"
+        lines.append(
+            f"{m:<34} {s['totalEvaluated']:<10} {s['pairedCount']:<8} {s['matchCount']:<9} "
+            f"{s['matchRatePct']:<8}% {mean_disp!s:<12}"
+        )
+        if s.get("ambiguousDateCount", 0) > 0:
+            ambiguous_lines.append(
+                f"  {m}: {s['ambiguousDateCount']} date(s) had multiple same-metric source "
+                f"observations on one side -- comparison used an arbitrary (last) pick"
+            )
+    if ambiguous_lines:
+        lines.append("-" * 80)
+        lines.append("AMBIGUOUS METRICS (investigate at the mapper level, not the comparison):")
+        lines.extend(ambiguous_lines)
+    return "\n".join(lines)
+
+
 @dataclass
 class TransportEquivalenceReport:
     startDate: str
@@ -439,6 +529,8 @@ def run_equivalence_analysis(
     metric_diffs: dict[str, list[float]] = {}
     metric_matches: dict[str, int] = {}
     metric_counts: dict[str, int] = {}
+    metric_paired_counts: dict[str, int] = {}
+    ambiguous_date_counts: dict[str, int] = {}
 
     for d in all_dates:
         snap = direct_snapshots.get(d)
@@ -454,10 +546,15 @@ def run_equivalence_analysis(
             for comp in res.comparisons:
                 m = comp.metric
                 metric_counts[m] = metric_counts.get(m, 0) + 1
+                if comp.status in ("MATCH", "DELTA"):
+                    metric_paired_counts[m] = metric_paired_counts.get(m, 0) + 1
                 if comp.status == "MATCH":
                     metric_matches[m] = metric_matches.get(m, 0) + 1
                 if comp.difference is not None:
                     metric_diffs.setdefault(m, []).append(comp.difference)
+
+            for m in res.ambiguousMetrics:
+                ambiguous_date_counts[m] = ambiguous_date_counts.get(m, 0) + 1
 
         elif snap:
             direct_only_count += 1
@@ -475,19 +572,9 @@ def run_equivalence_analysis(
     else:
         overall = "EQUIVALENT"
 
-    metric_summaries: dict[str, dict[str, Any]] = {}
-    for m, count in metric_counts.items():
-        matches = metric_matches.get(m, 0)
-        diffs = metric_diffs.get(m, [])
-        mean_diff = sum(diffs) / len(diffs) if diffs else 0.0
-        max_diff = max(diffs) if diffs else 0.0
-        metric_summaries[m] = {
-            "totalEvaluated": count,
-            "matchCount": matches,
-            "matchRatePct": round(matches / count * 100.0, 1) if count > 0 else 0.0,
-            "meanDifference": round(mean_diff, 3),
-            "maxDifference": round(max_diff, 3),
-        }
+    metric_summaries = build_metric_summaries(
+        metric_counts, metric_matches, metric_diffs, metric_paired_counts, ambiguous_date_counts
+    )
 
     return TransportEquivalenceReport(
         startDate=start_date_iso,

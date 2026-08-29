@@ -18,6 +18,7 @@ from typing import Any
 from .equivalence import (
     DateEquivalenceResult,
     TransportEquivalenceAnalyzer,
+    build_metric_summaries,
     bundle_to_canonical_observations,
 )
 
@@ -85,6 +86,8 @@ def run_eight_sleep_equivalence_analysis(
     metric_diffs: dict[str, list[float]] = {}
     metric_matches: dict[str, int] = {}
     metric_counts: dict[str, int] = {}
+    metric_paired_counts: dict[str, int] = {}
+    ambiguous_date_counts: dict[str, int] = {}
 
     for d in all_dates:
         direct_bundle = direct_bundle_map.get(d)
@@ -100,10 +103,15 @@ def run_eight_sleep_equivalence_analysis(
             for comp in res.comparisons:
                 m = comp.metric
                 metric_counts[m] = metric_counts.get(m, 0) + 1
+                if comp.status in ("MATCH", "DELTA"):
+                    metric_paired_counts[m] = metric_paired_counts.get(m, 0) + 1
                 if comp.status == "MATCH":
                     metric_matches[m] = metric_matches.get(m, 0) + 1
                 if comp.difference is not None:
                     metric_diffs.setdefault(m, []).append(comp.difference)
+
+            for m in res.ambiguousMetrics:
+                ambiguous_date_counts[m] = ambiguous_date_counts.get(m, 0) + 1
 
         elif direct_bundle:
             direct_only_count += 1
@@ -120,19 +128,9 @@ def run_eight_sleep_equivalence_analysis(
     else:
         overall = "EQUIVALENT"
 
-    metric_summaries: dict[str, dict[str, Any]] = {}
-    for m, count in metric_counts.items():
-        matches = metric_matches.get(m, 0)
-        diffs = metric_diffs.get(m, [])
-        mean_diff = sum(diffs) / len(diffs) if diffs else 0.0
-        max_diff = max(diffs) if diffs else 0.0
-        metric_summaries[m] = {
-            "totalEvaluated": count,
-            "matchCount": matches,
-            "matchRatePct": round(matches / count * 100.0, 1) if count > 0 else 0.0,
-            "meanDifference": round(mean_diff, 3),
-            "maxDifference": round(max_diff, 3),
-        }
+    metric_summaries = build_metric_summaries(
+        metric_counts, metric_matches, metric_diffs, metric_paired_counts, ambiguous_date_counts
+    )
 
     return EightSleepTransportEquivalenceReport(
         startDate=start_date_iso,
