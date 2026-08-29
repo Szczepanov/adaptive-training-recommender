@@ -237,6 +237,10 @@ export function packWeeklyDose(
                     .map(slot => ({ role, slot })))
                 .sort((left, right) =>
                     right.role.durationMinutes - left.role.durationMinutes
+                    // Best-fit placement preserves longer windows for later roles that may
+                    // have no short-window alternative. Spacing remains a tie-breaker once
+                    // dose and fit flexibility are equal.
+                    || left.slot.availableMinutes - right.slot.availableMinutes
                     || (penaltyByDate.get(left.slot.date) ?? 0)
                         - (penaltyByDate.get(right.slot.date) ?? 0)
                     || left.role.id.localeCompare(right.role.id)
