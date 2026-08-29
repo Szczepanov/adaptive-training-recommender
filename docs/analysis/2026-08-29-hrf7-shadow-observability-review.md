@@ -35,7 +35,7 @@ That is too broad because HRF explicitly separates:
 - source provenance;
 - sensor technology.
 
-An optical armband or unknown external sensor must not be reported as a failed electrode chest strap. The replay now counts this metric only when `sensorTechnology === electrode_chest_strap` and the trace is actually classified `poor`.
+An optical armband or unknown external sensor must not be reported as a failed electrode chest strap. The replay now counts this metric only when external HR sensor presence is affirmative, `sensorTechnology === electrode_chest_strap`, and the trace is actually classified `poor`. Contradictory/incomplete metadata therefore cannot manufacture a chest-strap failure.
 
 ### 3. “Useful wrist trace preserved” requires a real display candidate
 
@@ -54,9 +54,11 @@ This remains distinct from:
 - unavailable activity history;
 - malformed persisted activity records.
 
-### 5. Assessed `unknown` always retains a reason bucket
+### 5. Missing assessments and assessed `unknown` have separate reason buckets
 
-If an assessed measurement has `measurementConfidence === unknown` but its persisted reason list is empty, the replay now records `ASSESSMENT_REASON_UNSPECIFIED`. This prevents the unknown-count numerator from exceeding the sum of its reason buckets without explanation.
+HRF treats `NOT_ASSESSED` and assessed `unknown` as different states. The original aggregate placed `MEASUREMENT_UNAVAILABLE` in the same map as reasons from assessed-`unknown` measurements, which made the reason distribution inconsistent with the `assessmentUnknownRate` denominator.
+
+The replay now exposes `notAssessedReasons` separately from `assessmentUnknownReasons`. If an assessed measurement has `measurementConfidence === unknown` but its persisted reason list is empty, the replay records `ASSESSMENT_REASON_UNSPECIFIED`, so every assessed-unknown numerator remains explainable without conflating missing data with a failed/incomplete assessment.
 
 ## External semantics checked
 
@@ -85,7 +87,7 @@ The reviewed implementation preserves the HRF/ADR-0031 boundaries:
 - replay code reads compact persisted activity evidence only;
 - no raw FIT bytes, full HR traces, GPS traces, credentials, or sensor serials are persisted by the replay;
 - missing fidelity remains `NOT_ASSESSED`, never `UNRELIABLE`;
-- assessed `unknown` remains separate from missing assessment;
+- assessed `unknown` remains separate from missing assessment, including aggregate reason accounting;
 - per-use authority remains feature-specific;
 - vendor Training Load / Training Effect lineage remains fail-closed;
 - Firestore access remains user-scoped through the existing activity service;
@@ -96,8 +98,9 @@ The reviewed implementation preserves the HRF/ADR-0031 boundaries:
 The PR now covers, in addition to its original HRF7 tests:
 
 - rate-denominator behavior and zero-safe rates;
-- chest-strap vs optical-external distinction;
+- chest-strap vs optical-external distinction and contradictory metadata;
 - no false “useful wrist display” count when no average-HR display candidate exists;
+- separate missing-assessment vs assessed-unknown reason accounting;
 - fallback reason accounting for assessed `unknown`;
 - invalid calendar dates;
 - reversed replay ranges;
