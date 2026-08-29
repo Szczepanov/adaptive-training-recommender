@@ -25,7 +25,23 @@ SCHEMA_VERSION = 3
 # readiness score (bodyBatteryWake28dMad, stressAvg7dMedian, etc.). Unlike v4, none of
 # these had *any* baseline before -- this is new, not an alternate stat alongside an
 # existing mean. Still not consumed by the engine. Absent on documents written before v5.
-BASELINE_COMPUTATION_VERSION = 5
+# v6 (Phase 2, sleep-decision-authority plan, 2026-08-29): adds observation-only
+# sleep-duration median/MAD/deltas (sleepDuration7dMedian etc.) and a 2-day/3-day
+# accumulated sleep-duration deficit (signed: positive = net shortfall vs the 28d median
+# baseline over the most recent N nights with data, negative = net surplus -- "most recent
+# N nights with data" tolerates a sync gap the same way calculate_median/calculate_average
+# already do elsewhere in this file, so it is not strictly the last N *calendar* nights).
+# Also adds bedtime/wake-time/sleep-midpoint circular-mean baselines and signed
+# shortest-arc deviations (bedtime7dCircularMeanMinutes etc.) -- clock times wrap at
+# midnight, so these deliberately use circular mean + shortest-arc delta, not the
+# linear median/MAD the rest of this file uses; see calculate_circular_mean_minutes/
+# calculate_circular_delta_minutes in metrics.py. Sleep midpoint is computed from the real
+# sleep_session_start/end timestamps (exact datetime arithmetic), not circularly averaged
+# from separately-converted bedtime/wake-time values. Still not consumed by the engine.
+# Per the reviewed analysis (docs/analysis/2026-08-29-sleep-data-training-recommendations-
+# analysis.md), these are meant for planning/coaching use once wired up, not training
+# readiness -- see OBSERVATION_AUTHORITY in canonical.py for the analogous ADR-0027 policy.
+BASELINE_COMPUTATION_VERSION = 6
 
 
 @dataclass
@@ -254,6 +270,16 @@ class DerivedDeltas:
     stressMaxVs28dMedian: float | None = None
     trainingReadinessScoreVs7dMedian: float | None = None
     trainingReadinessScoreVs28dMedian: float | None = None
+    # v6: sleep-duration median-baseline deltas and circular time-of-day deviations --
+    # see BASELINE_COMPUTATION_VERSION's v6 note.
+    sleepDurationVs7dMedian: float | None = None
+    sleepDurationVs28dMedian: float | None = None
+    bedtimeDeviationVs7dMinutes: float | None = None
+    bedtimeDeviationVs28dMinutes: float | None = None
+    wakeTimeDeviationVs7dMinutes: float | None = None
+    wakeTimeDeviationVs28dMinutes: float | None = None
+    sleepMidpointDeviationVs7dMinutes: float | None = None
+    sleepMidpointDeviationVs28dMinutes: float | None = None
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -314,6 +340,24 @@ class DerivedMetrics:
     trainingReadinessScore7dMedian: float | None = None
     trainingReadinessScore28dMedian: float | None = None
     trainingReadinessScore28dMad: float | None = None
+    # v6: sleep-duration median/MAD baselines, accumulated deficit, and circular
+    # time-of-day baselines for bedtime/wake-time/sleep-midpoint -- see
+    # BASELINE_COMPUTATION_VERSION's v6 note. Not consumed by rules.ts or fatigue.ts.
+    # Absent on documents written before v6.
+    sleepDuration7dMedian: float | None = None
+    sleepDuration28dMedian: float | None = None
+    sleepDuration28dMad: float | None = None
+    # Signed: positive = net shortfall vs the 28d median baseline over the trailing
+    # window, negative = net surplus. None if fewer than N nights with data are available.
+    sleepDurationAccumulated2dDeficitSec: float | None = None
+    sleepDurationAccumulated3dDeficitSec: float | None = None
+    # Circular mean (not median -- see the v6 note above), minutes since local midnight.
+    bedtime7dCircularMeanMinutes: float | None = None
+    bedtime28dCircularMeanMinutes: float | None = None
+    wakeTime7dCircularMeanMinutes: float | None = None
+    wakeTime28dCircularMeanMinutes: float | None = None
+    sleepMidpoint7dCircularMeanMinutes: float | None = None
+    sleepMidpoint28dCircularMeanMinutes: float | None = None
     deltas: DerivedDeltas = field(default_factory=DerivedDeltas)
 
     def to_dict(self) -> dict[str, Any]:

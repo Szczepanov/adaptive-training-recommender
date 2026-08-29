@@ -1,6 +1,9 @@
+import math
 import statistics
 from collections.abc import Sequence
+from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 from .models import BASELINE_COMPUTATION_VERSION, DerivedDeltas, DerivedMetrics
 
@@ -67,6 +70,92 @@ def calculate_mad(values: Sequence[float | int | None], min_required: int) -> fl
     return None
 
 
+def minutes_of_day_local(dt_iso: str | None, timezone_name: str) -> float | None:
+    """Convert a UTC ISO-8601 datetime string to minutes since local midnight
+    (0.0-1439.999...) in the given timezone. None for missing, malformed, or
+    offset-less input -- an offset-less timestamp can't be unambiguously localized."""
+    if not dt_iso:
+        return None
+    try:
+        dt = datetime.fromisoformat(dt_iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if dt.tzinfo is None:
+        return None
+    local_dt = dt.astimezone(ZoneInfo(timezone_name))
+    return local_dt.hour * 60 + local_dt.minute + local_dt.second / 60.0
+
+
+def sleep_midpoint_iso(start_iso: str | None, end_iso: str | None) -> str | None:
+    """Real datetime midpoint between sleep start and end -- exact interval arithmetic on
+    absolute timestamps, not a circular average of two already-converted time-of-day
+    values (which would be ambiguous: two clock times alone don't say which direction is
+    "through the night"). None for missing/malformed input or a non-positive interval."""
+    if not start_iso or not end_iso:
+        return None
+    try:
+        start = datetime.fromisoformat(start_iso.replace("Z", "+00:00"))
+        end = datetime.fromisoformat(end_iso.replace("Z", "+00:00"))
+    except (ValueError, TypeError):
+        return None
+    if start.tzinfo is None or end.tzinfo is None or end <= start:
+        return None
+    return (start + (end - start) / 2).isoformat()
+
+
+def calculate_circular_mean_minutes(
+    values: Sequence[float | None], min_required: int
+) -> float | None:
+    """Circular mean of time-of-day values (minutes since local midnight, 0-1440),
+    correctly handling wraparound -- e.g. bedtimes of 23:50 (1430min) and 00:10 (10min)
+    average to ~00:00, not ~12:00 the way a naive linear mean would. Standard
+    circular-statistics technique: treat each value as an angle on a 24h circle, average
+    the unit vectors, then convert the resultant angle back to minutes. Deliberately mean,
+    not median (unlike the rest of this module's v3+ baselines) -- there's no single
+    universally-agreed circular median, while circular mean via vector averaging is
+    well-defined and standard for time-of-day/circadian-phase data. Returns None if fewer
+    than min_required valid values, or if they're spread so evenly around the circle that
+    no meaningful mean direction exists (resultant vector length ~0)."""
+    valid = [v for v in values if v is not None]
+    if len(valid) < min_required:
+        return None
+    angles = [2 * math.pi * v / 1440.0 for v in valid]
+    sum_cos = sum(math.cos(a) for a in angles)
+    sum_sin = sum(math.sin(a) for a in angles)
+    if math.isclose(sum_cos, 0.0, abs_tol=1e-9) and math.isclose(sum_sin, 0.0, abs_tol=1e-9):
+        return None
+    mean_angle = math.atan2(sum_sin, sum_cos)
+    return (mean_angle / (2 * math.pi) * 1440.0) % 1440.0
+
+
+def calculate_circular_delta_minutes(current: float | None, baseline: float | None) -> float | None:
+    """Signed shortest-arc difference (current - baseline) in minutes on a 24h circle,
+    in (-720, 720]. Positive = later than baseline, negative = earlier. E.g. current=00:10
+    (10min) vs baseline=23:50 (1430min) -> +20min (20 minutes later), not the -1420min a
+    naive linear subtraction would give."""
+    if current is None or baseline is None:
+        return None
+    return (current - baseline + 720.0) % 1440.0 - 720.0
+
+
+def calculate_accumulated_deficit(
+    values: Sequence[float | int | None], baseline: float | None, n: int
+) -> float | None:
+    """Sum of (baseline - actual) over the most recent `n` window entries that have a
+    value -- signed: positive = net shortfall vs baseline over those nights, negative =
+    net surplus. "Most recent n WITH data" tolerates a sync gap the same way
+    calculate_median/calculate_average already do elsewhere in this module, so this is not
+    strictly the last n *calendar* nights when there's a gap. Requires baseline and at
+    least n valid values, else None -- a partial sum would silently understate a real
+    multi-night deficit."""
+    if baseline is None:
+        return None
+    valid = [v for v in values if v is not None]
+    if len(valid) < n:
+        return None
+    return sum(baseline - v for v in valid[-n:])
+
+
 def classify_activity_intensity(
     training_effect: float,
     average_hr: float | None,
@@ -98,7 +187,9 @@ def classify_activity_intensity(
     return is_hard, intensity_tag
 
 
-def _extract_window_metrics(raws: list[dict[str, Any]]) -> dict[str, list[float | int]]:
+def _extract_window_metrics(
+    raws: list[dict[str, Any]], timezone_name: str
+) -> dict[str, list[float | int]]:
     """Extract non-None metric series from a window in a single pass."""
     metrics: dict[str, list[float | int]] = {
         "sleepScore": [],
@@ -110,6 +201,10 @@ def _extract_window_metrics(raws: list[dict[str, Any]]) -> dict[str, list[float 
         "stressAvg": [],
         "stressMax": [],
         "trainingReadiness": [],
+        "sleepDurationSec": [],
+        "bedtimeMinutes": [],
+        "wakeTimeMinutes": [],
+        "sleepMidpointMinutes": [],
     }
     for d in raws:
         if (v := d.get("sleepScore")) is not None:
@@ -133,6 +228,17 @@ def _extract_window_metrics(raws: list[dict[str, Any]]) -> dict[str, list[float 
         if readiness := d.get("trainingReadiness"):
             if isinstance(readiness, dict) and (v := readiness.get("score")) is not None:
                 metrics["trainingReadiness"].append(v)
+        if (v := d.get("sleepDurationSec")) is not None:
+            metrics["sleepDurationSec"].append(v)
+        session_start = d.get("sleepSessionStart")
+        session_end = d.get("sleepSessionEnd")
+        if (bedtime := minutes_of_day_local(session_start, timezone_name)) is not None:
+            metrics["bedtimeMinutes"].append(bedtime)
+        if (wake_time := minutes_of_day_local(session_end, timezone_name)) is not None:
+            metrics["wakeTimeMinutes"].append(wake_time)
+        midpoint_iso = sleep_midpoint_iso(session_start, session_end)
+        if (midpoint := minutes_of_day_local(midpoint_iso, timezone_name)) is not None:
+            metrics["sleepMidpointMinutes"].append(midpoint)
     return metrics
 
 
@@ -140,15 +246,21 @@ def compute_derived_metrics(
     raw_current: dict[str, Any],
     window_7d_raws: list[dict[str, Any]],
     window_28d_raws: list[dict[str, Any]],
+    timezone_name: str = "Europe/Warsaw",
 ) -> DerivedMetrics:
     """
     Compute 7-day and 28-day historical baselines and deltas.
     - 7-day baseline requires >= 4 valid points
     - 28-day baseline requires >= 14 valid points
     - Current day must be excluded from windows
+
+    `timezone_name` localizes v6's bedtime/wake-time/sleep-midpoint circular baselines
+    (sleepSessionStart/End are UTC timestamps; clock-time-of-day only means something in a
+    specific timezone). Defaults to Europe/Warsaw, this app's single supported timezone
+    (see CLAUDE.md), so existing callers that don't pass it explicitly are unaffected.
     """
-    w7 = _extract_window_metrics(window_7d_raws)
-    w28 = _extract_window_metrics(window_28d_raws)
+    w7 = _extract_window_metrics(window_7d_raws, timezone_name)
+    w28 = _extract_window_metrics(window_28d_raws, timezone_name)
 
     sleep_7d = calculate_average(w7["sleepScore"], 4)
     sleep_28d = calculate_average(w28["sleepScore"], 14)
@@ -215,6 +327,41 @@ def compute_derived_metrics(
     readiness_28d_median = calculate_median(w28["trainingReadiness"], 14)
     readiness_mad28 = calculate_mad(w28["trainingReadiness"], 14)
 
+    # v6: sleep-duration median/MAD baselines, plus a 2d/3d accumulated deficit against the
+    # 28d median (see calculate_accumulated_deficit's docstring for the signed-sum and
+    # gap-tolerance semantics).
+    sleep_duration_7d_median = calculate_median(w7["sleepDurationSec"], 4)
+    sleep_duration_28d_median = calculate_median(w28["sleepDurationSec"], 14)
+    sleep_duration_mad28 = calculate_mad(w28["sleepDurationSec"], 14)
+    sleep_duration_accumulated_2d = calculate_accumulated_deficit(
+        w28["sleepDurationSec"], sleep_duration_28d_median, 2
+    )
+    sleep_duration_accumulated_3d = calculate_accumulated_deficit(
+        w28["sleepDurationSec"], sleep_duration_28d_median, 3
+    )
+
+    # v6: bedtime/wake-time/sleep-midpoint circular-mean baselines (minutes since local
+    # midnight) -- see calculate_circular_mean_minutes's docstring for why mean, not median.
+    bedtime_7d_mean = calculate_circular_mean_minutes(w7["bedtimeMinutes"], 4)
+    bedtime_28d_mean = calculate_circular_mean_minutes(w28["bedtimeMinutes"], 14)
+    wake_time_7d_mean = calculate_circular_mean_minutes(w7["wakeTimeMinutes"], 4)
+    wake_time_28d_mean = calculate_circular_mean_minutes(w28["wakeTimeMinutes"], 14)
+    sleep_midpoint_7d_mean = calculate_circular_mean_minutes(w7["sleepMidpointMinutes"], 4)
+    sleep_midpoint_28d_mean = calculate_circular_mean_minutes(w28["sleepMidpointMinutes"], 14)
+
+    current_bedtime_minutes = minutes_of_day_local(
+        raw_current.get("sleepSessionStart"), timezone_name
+    )
+    current_wake_time_minutes = minutes_of_day_local(
+        raw_current.get("sleepSessionEnd"), timezone_name
+    )
+    current_midpoint_minutes = minutes_of_day_local(
+        sleep_midpoint_iso(
+            raw_current.get("sleepSessionStart"), raw_current.get("sleepSessionEnd")
+        ),
+        timezone_name,
+    )
+
     current_stress = raw_current.get("stress") or {}
     current_readiness = raw_current.get("trainingReadiness") or {}
 
@@ -271,6 +418,34 @@ def compute_derived_metrics(
         trainingReadinessScoreVs28dMedian=_round(
             calculate_delta(current_readiness.get("score"), readiness_28d_median)
         ),
+        # v6: sleep-duration median-baseline deltas and circular time-of-day deviations --
+        # see the v6 comment above. Circular deltas use calculate_circular_delta_minutes
+        # (shortest-arc, signed), not calculate_delta (which would give a huge, wrong value
+        # whenever the baseline and current straddle midnight).
+        sleepDurationVs7dMedian=_round(
+            calculate_delta(raw_current.get("sleepDurationSec"), sleep_duration_7d_median)
+        ),
+        sleepDurationVs28dMedian=_round(
+            calculate_delta(raw_current.get("sleepDurationSec"), sleep_duration_28d_median)
+        ),
+        bedtimeDeviationVs7dMinutes=_round(
+            calculate_circular_delta_minutes(current_bedtime_minutes, bedtime_7d_mean)
+        ),
+        bedtimeDeviationVs28dMinutes=_round(
+            calculate_circular_delta_minutes(current_bedtime_minutes, bedtime_28d_mean)
+        ),
+        wakeTimeDeviationVs7dMinutes=_round(
+            calculate_circular_delta_minutes(current_wake_time_minutes, wake_time_7d_mean)
+        ),
+        wakeTimeDeviationVs28dMinutes=_round(
+            calculate_circular_delta_minutes(current_wake_time_minutes, wake_time_28d_mean)
+        ),
+        sleepMidpointDeviationVs7dMinutes=_round(
+            calculate_circular_delta_minutes(current_midpoint_minutes, sleep_midpoint_7d_mean)
+        ),
+        sleepMidpointDeviationVs28dMinutes=_round(
+            calculate_circular_delta_minutes(current_midpoint_minutes, sleep_midpoint_28d_mean)
+        ),
     )
 
     return DerivedMetrics(
@@ -316,5 +491,18 @@ def compute_derived_metrics(
         trainingReadinessScore7dMedian=_round(readiness_7d_median),
         trainingReadinessScore28dMedian=_round(readiness_28d_median),
         trainingReadinessScore28dMad=_round(readiness_mad28),
+        # v6: sleep-duration median/MAD, accumulated deficit, and circular time-of-day
+        # baselines -- see the v6 comment above.
+        sleepDuration7dMedian=_round(sleep_duration_7d_median),
+        sleepDuration28dMedian=_round(sleep_duration_28d_median),
+        sleepDuration28dMad=_round(sleep_duration_mad28),
+        sleepDurationAccumulated2dDeficitSec=_round(sleep_duration_accumulated_2d),
+        sleepDurationAccumulated3dDeficitSec=_round(sleep_duration_accumulated_3d),
+        bedtime7dCircularMeanMinutes=_round(bedtime_7d_mean),
+        bedtime28dCircularMeanMinutes=_round(bedtime_28d_mean),
+        wakeTime7dCircularMeanMinutes=_round(wake_time_7d_mean),
+        wakeTime28dCircularMeanMinutes=_round(wake_time_28d_mean),
+        sleepMidpoint7dCircularMeanMinutes=_round(sleep_midpoint_7d_mean),
+        sleepMidpoint28dCircularMeanMinutes=_round(sleep_midpoint_28d_mean),
         deltas=deltas,
     )
