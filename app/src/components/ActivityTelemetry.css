@@ -110,8 +110,26 @@
 
 .activity-dynamics,
 .activity-zone-section,
-.activity-laps {
+.activity-laps,
+.activity-hr-fidelity {
   margin-top: 1rem;
+}
+
+.activity-hr-fidelity {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--background-color);
+}
+
+.activity-hr-fidelity p {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.activity-hr-fidelity p strong {
+  color: var(--text-color);
 }
 
 .activity-dynamics-grid {

@@ -31,6 +31,49 @@ function formatTrainingEffectDescriptor(value: string): string {
   return value.replaceAll('_', ' ');
 }
 
+function humanizeHrReason(value: string): string {
+  const known: Record<string, string> = {
+    ISOLATED_SPIKE: 'isolated spikes',
+    REPEATED_DROPOUT: 'repeated dropouts',
+    LONG_GAP: 'long gaps',
+    CADENCE_LOCK_SUSPECTED: 'possible cadence lock',
+    PROVENANCE_AMBIGUOUS: 'ambiguous source provenance',
+    SUMMARY_TRACE_DISCORDANCE: 'summary/trace mismatch',
+  };
+  return known[value] ?? value.replaceAll('_', ' ').toLowerCase();
+}
+
+function hrMeasurementDetail(activity: NormalizedGarminActivity): { status: string; reason: string } | null {
+  const hasHrSummary = activity.averageHr !== null
+    || (activity.hrInZones?.length ?? 0) > 0
+    || activity.activityTrainingLoad !== null
+    || activity.trainingEffectAerobic !== null
+    || activity.trainingEffectAnaerobic !== null;
+  const measurement = activity.hrMeasurement;
+  if (!measurement) {
+    return hasHrSummary
+      ? { status: 'Not assessed', reason: 'No fidelity assessment is available for this activity.' }
+      : null;
+  }
+
+  const status = {
+    high: 'High confidence',
+    moderate: 'Moderate confidence',
+    low: 'Low confidence',
+    unreliable: 'Unreliable',
+    unknown: 'Assessment incomplete',
+  }[measurement.measurementConfidence];
+  const evidence: string[] = [];
+  if (measurement.sourceForActivity === 'wrist') evidence.push('wrist optical HR');
+  if (measurement.sourceForActivity === 'external') evidence.push('external HR source');
+  if (measurement.sourceForActivity === 'mixed_possible') evidence.push('possibly mixed HR source');
+  if (measurement.activityMotionRisk === 'high') evidence.push('high arm-motion risk');
+  evidence.push(...measurement.artifactFlags.map(humanizeHrReason));
+  evidence.push(...measurement.reasons.map(humanizeHrReason));
+  const reason = [...new Set(evidence)].slice(0, 3).join(' + ');
+  return { status, reason: reason || 'Compact trace-quality assessment is available.' };
+}
+
 function ZoneBars({ title, unit, zones }: { title: string; unit: string; zones: ActivityZoneBucket[] }) {
   const total = zones.reduce((sum, zone) => sum + zone.secondsInZone, 0);
   return (
@@ -89,6 +132,7 @@ export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProp
           || activity.normalizedPower !== undefined
           || runningDynamics !== undefined;
         const trainingEffectDescriptor = activity.primaryBenefit ?? activity.trainingEffectLabel;
+        const hrDetail = hrMeasurementDetail(activity);
         const trainingResponseMetrics = [
           activity.trainingEffectAerobic != null
             ? `Aerobic TE ${activity.trainingEffectAerobic.toFixed(1)}`
@@ -163,6 +207,13 @@ export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProp
               </div>
             </header>
 
+            {hrDetail !== null && (
+              <section className="activity-hr-fidelity" aria-label="Heart-rate measurement quality">
+                <h5>Heart-rate measurement</h5>
+                <p><strong>{hrDetail.status}</strong></p>
+                <p className="activity-hr-fidelity-reason">{hrDetail.reason}</p>
+              </section>
+            )}
             {!hasDetail && <p className="activity-telemetry-empty">No zone, lap, or running-dynamics telemetry is available for this activity.</p>}
             {runningDynamics !== undefined && (
               <section className="activity-dynamics" aria-label="Running Dynamics & Biomechanical Symmetry">

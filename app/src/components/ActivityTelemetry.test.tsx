@@ -32,6 +32,65 @@ describe('ActivityTelemetry', () => {
     expect(html).not.toContain('Power zones');
   });
 
+  it('explains available HR fidelity evidence without claiming a calibrated accuracy', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{ status: 'AVAILABLE', revision: null, data: [{
+      ...base,
+      hrMeasurement: {
+        externalHrSensorPresent: false,
+        sourceForActivity: 'wrist',
+        provenanceConfidence: 'inferred',
+        sensorTechnology: 'wrist_ppg',
+        activityMotionRisk: 'high',
+        coveragePct: 92,
+        longestGapSeconds: 4,
+        signalQuality: 'suspect',
+        measurementConfidence: 'low',
+        summaryCompatibility: 'unknown',
+        artifactFlags: ['ISOLATED_SPIKE'],
+        reasons: [],
+        diagnosticVersion: '1.0.0',
+      },
+    }] }} />);
+
+    expect(html).toContain('Heart-rate measurement');
+    expect(html).toContain('Low confidence');
+    expect(html).toContain('wrist optical HR + high arm-motion risk + isolated spikes');
+    expect(html).not.toMatch(/accuracy\s*=/i);
+  });
+
+  it('labels missing fidelity as not assessed, never unreliable', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{ status: 'AVAILABLE', revision: null, data: [base] }} />);
+
+    expect(html).toContain('Not assessed');
+    expect(html).toContain('No fidelity assessment is available for this activity.');
+    expect(html).not.toContain('Unreliable');
+  });
+
+  it('keeps an assessed unknown confidence distinct from a missing assessment', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{ status: 'AVAILABLE', revision: null, data: [{
+      ...base,
+      hrMeasurement: {
+        externalHrSensorPresent: null,
+        sourceForActivity: 'unknown',
+        provenanceConfidence: 'unknown',
+        sensorTechnology: 'unknown',
+        activityMotionRisk: 'unknown',
+        coveragePct: null,
+        longestGapSeconds: null,
+        signalQuality: 'unknown',
+        measurementConfidence: 'unknown',
+        summaryCompatibility: 'unknown',
+        artifactFlags: [],
+        reasons: ['FIT_DATA_INCOMPLETE'],
+        diagnosticVersion: '1.0.0',
+      },
+    }] }} />);
+
+    expect(html).toContain('Assessment incomplete');
+    expect(html).toContain('fit data incomplete');
+    expect(html).not.toContain('Not assessed');
+  });
+
   it('renders a stable empty-detail state for historical activities', () => {
     const html = renderToStaticMarkup(<ActivityTelemetry state={{
       status: 'AVAILABLE', revision: null, data: [{ ...base, powerInZones: [], hrInZones: [], laps: [] }],
