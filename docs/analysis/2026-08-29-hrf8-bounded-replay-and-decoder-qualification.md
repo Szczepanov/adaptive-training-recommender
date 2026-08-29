@@ -44,6 +44,7 @@ was present in every file or record.
 | HRF-consumed surface | Bounded comparison | Qualification status | Limitation |
 |---|---:|---|---|
 | record data-frame count | 7 / 7 match | covered for count | no value-level trace equivalence claim |
+| HRF-relevant message cardinality | only selected device/timer/lap counts or presence were retained | partial | complete per-message cardinality parity, including session multiplicity, was not retained |
 | HR/cadence/power sample presence | 7 / 7 match for each field | partial | aggregate non-null coverage/value parity was not retained |
 | device-inventory entry count | 7 / 7 match | partial | source-reasoning field values (`device_index`, manufacturer, product, device type, source type) were not retained as a parity result |
 | timer-event count | 7 / 7 match | partial | event-state sequence and timestamp ordering/window parity were not retained |
@@ -61,20 +62,21 @@ source-lineage claim.
 No disagreement was observed on the comparisons actually performed. However, the prior
 report overstated that result by calling the complete HRF-consumed decoder surface
 qualified. Counts alone cannot establish semantic parity for device fields that drive
-source reasoning, timer state that defines active analysis windows, or lap values used in
-summary reconciliation. This bounded run therefore provides **partial decoder
-qualification evidence**, not complete D-HRF-DECODER qualification.
+source reasoning, timer state that defines active analysis windows, session multiplicity,
+or lap values used in summary reconciliation. This bounded run therefore provides
+**partial decoder qualification evidence**, not complete D-HRF-DECODER qualification.
 
 Before this decoder qualification is treated as complete for HRF8 activation evidence, a
 future transient comparison should additionally record sanitized equality results for:
 
-1. non-null HR/cadence/power sample counts and aggregate coverage;
-2. non-identifying device-source tuples used by HRF source reasoning;
-3. timer event-type/state sequence and ordering/window semantics without persisting exact timestamps;
-4. per-lap average-HR values, not only lap counts;
-5. session-scoped zone-array shape and values;
-6. decoder failure classification on controlled truncated/CRC-invalid synthetic inputs;
-7. the selection rule, sanitized activity classes, original-download availability denominator,
+1. recognized HRF-relevant message counts, including session multiplicity;
+2. non-null HR/cadence/power sample counts and aggregate coverage;
+3. non-identifying device-source tuples used by HRF source reasoning;
+4. timer event-type/state sequence and ordering/window semantics without persisting exact timestamps;
+5. per-lap average-HR values, not only lap counts;
+6. session-scoped zone-array shape and values;
+7. decoder failure classification on controlled truncated/CRC-invalid synthetic inputs;
+8. the selection rule, sanitized activity classes, original-download availability denominator,
    runtime commit, decoder versions, and profile generations.
 
 Qualification must also be repeated after a material runtime decoder/profile change or
