@@ -166,7 +166,20 @@ export function packWeeklyDose(
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
         const requiredDose = desiredDose(requirement);
-        const allowedSessions = sessionLimit(requirement.priority);
+        // A priority tier's ceiling (e.g. capacity.minSessions for 'required') is a shared
+        // budget across every requirement at that tier, not a per-requirement allowance.
+        // Processing requirements strictly in sequence would let the first one exhaust the
+        // whole tier ceiling and starve every peer that shares it (e.g. an 'endurance' and a
+        // 'strength_muscle' requirement both marked 'required' on a tight weekly commitment).
+        // Give each remaining peer an even split of whatever the tier has left.
+        // sessionLimit(priority) is an absolute, cumulative ceiling on packed.length (it
+        // already accounts for higher-priority tiers packed earlier). Split whatever room
+        // remains under that ceiling evenly across the not-yet-processed peers at this tier,
+        // so the first peer processed cannot claim the entire tier ceiling for itself.
+        const tierPeers = requirements.filter(item => item.priority === requirement.priority);
+        const tierPeersRemaining = tierPeers.length - tierPeers.indexOf(requirement);
+        const roomRemainingInTier = Math.max(0, sessionLimit(requirement.priority) - packed.length);
+        const allowedSessions = packed.length + Math.ceil(roomRemainingInTier / tierPeersRemaining);
 
         while (delivered < requiredDose && packed.length < allowedSessions) {
             const unusedSlots = slots.filter(slot => !slot.used);

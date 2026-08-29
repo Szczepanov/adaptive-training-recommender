@@ -24,6 +24,22 @@ describe('evergreen week-ahead integration', () => {
         expect(plan.allocationReport.outcomes.some(outcome => outcome.occurrence.coverageSetId === 'evergreen_general')).toBe(true);
     });
 
+    it('packs both aerobic and strength coverage when priorities combine endurance with strength_muscle', async () => {
+        // Regression: a former-elite-return-style persona with priorities
+        // ['endurance', 'strength_muscle'] previously got a strength-only plan because
+        // the aerobic requirement resolved to a droppable 'target' priority while strength
+        // resolved to 'required', so strength always claimed the whole session ceiling.
+        const combinedProfile: TrainingIntentProfile = {
+            ...profile, priorities: ['endurance', 'strength_muscle'],
+            weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
+        };
+        const combinedPreferences: UserPreferences = { ...preferences, preferredModalities: ['Running', 'Strength'] };
+        const plan = await generateWeekAheadPlanWithIntent('u1', readiness, context, combinedPreferences, [], '2026-08-31', today, null, { days: 14 }, history, undefined, combinedProfile);
+        const coverageKeys = plan.allocationReport.outcomes.map(outcome => outcome.occurrence.coverageKey);
+        expect(coverageKeys).toContain('aerobic_volume');
+        expect(coverageKeys).toContain('primary_strength');
+    });
+
     it('does not take eventless evergreen objectives from DEFAULT_BASE_DEMAND', async () => {
         const baseline = await generateWeekAheadPlanWithIntent('u1', readiness, context, preferences, [], '2026-08-10', today, null, { days: 6 }, history, undefined, profile);
         const originalDemand = { ...DEFAULT_BASE_DEMAND };

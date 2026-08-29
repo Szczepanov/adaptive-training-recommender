@@ -225,7 +225,11 @@ export function resolveEvidenceBackedStrategy(
     const priorities = new Set(goalOrEvent.priorities.length > 0 ? goalOrEvent.priorities : ['balanced_performance']);
     const requirements: AdaptationDoseRequirement[] = [];
     const healthOrBalanced = priorities.has('health') || priorities.has('balanced_performance');
-    if (healthOrBalanced || priorities.has('endurance')) requirements.push(aerobicRequirement(healthOrBalanced ? 'required' : 'target'));
+    // Aerobic is 'required' whenever it is included at all: either it is the WHO
+    // health-guideline baseline (healthOrBalanced), or the athlete explicitly chose
+    // 'endurance' as a priority — both cases warrant a hard floor, not a droppable
+    // target that a concurrent 'strength_muscle' priority can silently starve out.
+    if (healthOrBalanced || priorities.has('endurance')) requirements.push(aerobicRequirement('required'));
     if (healthOrBalanced || priorities.has('strength_muscle')) requirements.push(strengthRequirement(healthOrBalanced ? 'target' : 'required'));
 
     const performancePriority = priorities.has('endurance') || priorities.has('speed_power') || priorities.has('sport_readiness');

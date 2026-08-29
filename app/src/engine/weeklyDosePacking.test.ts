@@ -90,6 +90,32 @@ describe('weekly dose packing', () => {
         expect(new Set([...budget.requiredRoles, ...budget.targetRoles, ...budget.optionalRoles].map(role => role.date)).size).toBe(4);
     });
 
+    it('splits a shared required-tier ceiling fairly across peers instead of letting the first one exhaust it', () => {
+        // Regression for the former-elite-return persona: 'endurance' and 'strength_muscle'
+        // both resolve to 'required' priority (see evergreenStrategy.ts), and previously the
+        // first requirement processed (aerobic) claimed the whole minSessions ceiling,
+        // leaving strength — a second 'required' requirement — with zero packed sessions.
+        const strategy: EvidenceBackedStrategy = {
+            requirements: [
+                { ...healthStrategy.requirements[0], target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 } },
+                { ...healthStrategy.requirements[0], adaptation: 'strength', priority: 'required', floor: { dose: { unit: 'sessions', value: 2 }, semantics: 'guideline_recommended_minimum' }, target: { unit: 'sessions', minimum: 2, target: 2, maximum: 3 }, substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Strength'] } },
+            ], warnings: [],
+        };
+        const roles: CoverageSetDescriptor = {
+            id: 'fair-share-test',
+            roles: [
+                { id: 'aerobic', adaptations: ['aerobic_endurance'], exactWorkoutIds: ['cycling_zone2_standard_01'], durationMinutes: 30 },
+                { id: 'strength', adaptations: ['strength'], exactWorkoutIds: ['strength_full_body_maintenance_01'], durationMinutes: 45 },
+            ],
+        };
+        const tightCapacity = { ...capacity(60, 3), minSessions: 3, targetSessions: 3, maxSessions: 3 };
+        const budget = packWeeklyDose(strategy, tightCapacity, roles);
+        const adaptationsPacked = new Set(budget.requiredRoles.flatMap(role => role.adaptations));
+        expect(adaptationsPacked.has('aerobic_endurance')).toBe(true);
+        expect(adaptationsPacked.has('strength')).toBe(true);
+        expect(budget.requiredRoles).toHaveLength(3);
+    });
+
     it('uses the 2-to-6-session policy only to break equal-dose placement ties', () => {
         const evenlyViable = {
             ...capacity(60, 2),

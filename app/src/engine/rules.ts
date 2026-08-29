@@ -686,16 +686,30 @@ export async function evaluateTrainingWithIntent(
     // for an explicit athlete request) keeps 'modify' visibly distinct from 'train'
     // whenever the template offers a lighter variant, without inventing a second
     // eligibility/ranking path.
-    const modifyDoseAdjustment = mode === 'modify' && pick?.template.easierDose
+    //
+    // Eligibility only requires durationMin to fit the day's time cap (see
+    // eligibleTemplates/resolveMaximumSessionMinutes), so a template like "Bike VO2
+    // Intervals (30-60 min)" stays eligible on a 45-minute weekday even though its
+    // advertised durationMax does not fit -- there is no other step that narrows what
+    // gets presented. When that happens and an easier dose exists whose own range does
+    // fit, apply it here too, so the recommendation never advertises a duration beyond
+    // a constraint the athlete was told is a hard cap.
+    const pickedDurationMax = pick ? (pick.template.durationMax ?? pick.template.durationMin ?? 0) : 0;
+    const timeCapExceeded = pick ? pickedDurationMax > availability.maxTimeMinutes : false;
+    const easierDose = pick?.template.easierDose;
+    const easierDoseFitsTimeCap = easierDose ? (easierDose.durationMax ?? easierDose.durationMin ?? 0) <= availability.maxTimeMinutes : false;
+    const doseAdjustment = pick && easierDose && (mode === 'modify' || (timeCapExceeded && easierDoseFitsTimeCap))
         ? {
-            activeDose: pick.template.easierDose,
+            activeDose: easierDose,
             adjustment: {
                 direction: 'easier' as const,
                 tier: 1 as const,
                 originalTemplateId: pick.template.id,
                 originalTemplateTitle: pick.template.title,
-                adjustedDoseLabel: pick.template.easierDose.label,
-                rationale: `Today's readiness called for a modify-tier day, so this session automatically uses its easier dose (${pick.template.easierDose.label}) rather than the full prescription.`,
+                adjustedDoseLabel: easierDose.label,
+                rationale: mode === 'modify'
+                    ? `Today's readiness called for a modify-tier day, so this session automatically uses its easier dose (${easierDose.label}) rather than the full prescription.`
+                    : `The full prescription's duration range extends past today's ${availability.maxTimeMinutes}-minute time cap, so this session automatically uses its easier dose (${easierDose.label}), which fits within it.`,
             },
         }
         : {};
@@ -723,9 +737,9 @@ export async function evaluateTrainingWithIntent(
         template: pick.template,
         plannedDose: intent.plannedDose,
         executionDose: resolveExecutionDose(intent.plannedDose, envelopes.plan, null),
-        rationale: modifyDoseAdjustment.adjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${modifyDoseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
+        rationale: doseAdjustment.adjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${doseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
         mode, envelopes, telemetry,
-        ...modifyDoseAdjustment,
+        ...doseAdjustment,
         ...(externalEventAdvisory ? {
             externalPrescription: externalEventAdvisory.prescription,
             externalVerdict: externalEventAdvisory.verdict,
