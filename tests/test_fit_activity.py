@@ -9,6 +9,24 @@ import pytest
 from garmin_sync.fit_activity import FitActivityDecodeError, decode_activity_original
 
 _MISSING = object()
+_FIT_CRC_TABLE = (
+    0x0000,
+    0xCC01,
+    0xD801,
+    0x1400,
+    0xF001,
+    0x3C00,
+    0x2800,
+    0xE401,
+    0xA001,
+    0x6C00,
+    0x7800,
+    0xB401,
+    0x5000,
+    0x9C01,
+    0x8801,
+    0x4400,
+)
 
 
 class FakeDataMessage:
@@ -33,6 +51,53 @@ class FakeDefinitionMessage:
         self.name = name
 
 
+def _fit_crc(data: bytes) -> int:
+    crc = 0
+    for byte in data:
+        tmp = _FIT_CRC_TABLE[crc & 0xF]
+        crc = ((crc >> 4) & 0x0FFF) ^ tmp ^ _FIT_CRC_TABLE[byte & 0xF]
+        tmp = _FIT_CRC_TABLE[crc & 0xF]
+        crc = ((crc >> 4) & 0x0FFF) ^ tmp ^ _FIT_CRC_TABLE[(byte >> 4) & 0xF]
+    return crc
+
+
+def _synthetic_fit_record() -> bytes:
+    """Build a tiny valid FIT stream without user-derived data or Garmin SDK code."""
+    # Local message 0 -> global record (20), with heart_rate/cadence/power only.
+    records = bytes(
+        [
+            0x40,  # definition message, local message 0
+            0x00,  # reserved
+            0x00,  # little endian
+            0x14,
+            0x00,  # global message 20: record
+            0x03,  # field count
+            0x03,
+            0x01,
+            0x02,  # heart_rate: uint8
+            0x04,
+            0x01,
+            0x02,  # cadence: uint8
+            0x07,
+            0x02,
+            0x84,  # power: uint16
+            0x00,  # data message, local message 0
+            151,
+            82,
+            0xD9,
+            0x00,  # 217 W little endian
+        ]
+    )
+    header = bytearray(14)
+    header[0] = 14
+    header[1] = 0x20
+    header[4:8] = len(records).to_bytes(4, "little")
+    header[8:12] = b".FIT"
+    header[12:14] = _fit_crc(bytes(header[:12])).to_bytes(2, "little")
+    payload = bytes(header) + records
+    return payload + _fit_crc(payload).to_bytes(2, "little")
+
+
 def _synthetic_original_zip() -> bytes:
     buffer = BytesIO()
     with ZipFile(buffer, "w") as archive:
@@ -44,6 +109,15 @@ def _reader_with(messages: list[object]) -> MagicMock:
     reader = MagicMock()
     reader.__enter__.return_value = messages
     return reader
+
+
+def test_decode_activity_original_exercises_real_fitdecode_parser():
+    evidence = decode_activity_original(_synthetic_fit_record())
+
+    assert len(evidence.records) == 1
+    assert evidence.records[0].heart_rate_bpm == 151.0
+    assert evidence.records[0].cadence_rpm == 82.0
+    assert evidence.records[0].power_watts == 217.0
 
 
 def test_decode_activity_original_extracts_only_compact_evidence_from_zip():
