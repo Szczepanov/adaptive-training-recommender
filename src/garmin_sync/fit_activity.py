@@ -23,6 +23,7 @@ _MAX_LAP_SUMMARIES = 10_000
 _MAX_TIMER_EVENTS = 20_000
 _MAX_ZONE_BUCKETS = 64
 _SESSION_MESSAGE_NUMBER = 18
+_ANTPLUS_HEART_RATE_DEVICE_TYPE = 120
 
 
 class FitActivityDecodeError(ValueError):
@@ -97,13 +98,17 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                 name = getattr(message, "name", None)
                 if name == "device_info":
                     _guard_capacity(devices, _MAX_DEVICE_ENTRIES, "device inventory")
+                    source_type = _identifier(_value(message, "source_type"))
                     devices.append(
                         FitDeviceInventoryEntry(
                             device_index=_integer(_value(message, "device_index")),
                             manufacturer=_identifier(_value(message, "manufacturer")),
                             product=_identifier(_value(message, "product")),
-                            device_type=_identifier(_value(message, "device_type")),
-                            source_type=_identifier(_value(message, "source_type")),
+                            device_type=_normalize_device_type(
+                                _identifier(_value(message, "device_type")),
+                                source_type,
+                            ),
+                            source_type=source_type,
                         )
                     )
                 elif name == "record":
@@ -266,6 +271,23 @@ def _identifier(value: Any) -> str | int | None:
     if isinstance(value, (str, int)):
         return value
     return None
+
+
+def _normalize_device_type(
+    device_type: str | int | None,
+    source_type: str | int | None,
+) -> str | int | None:
+    """Normalize only source-scoped FIT device enums needed for HR provenance.
+
+    FIT field 1 is dynamic: for ANT+ sources, raw value 120 means heart-rate device.
+    The numeric value is intentionally left untouched when the source is not proven
+    ANT+, because interpreting it without its source discriminator could invent a
+    sensor classification.
+    """
+    normalized_source = source_type.strip().lower() if isinstance(source_type, str) else source_type
+    if normalized_source in {"antplus", 1} and device_type == _ANTPLUS_HEART_RATE_DEVICE_TYPE:
+        return "heart_rate"
+    return device_type
 
 
 def _timestamp(value: Any) -> datetime | None:

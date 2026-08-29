@@ -6,7 +6,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from .canonical import CanonicalActivity, CanonicalActivityDetail, CanonicalDailyMetrics
+from .canonical import (
+    CanonicalActivity,
+    CanonicalActivityDetail,
+    CanonicalDailyMetrics,
+    CanonicalHrMeasurementQuality,
+)
 from .dates import get_date_string, n_days_ago, parse_date_string
 from .models import (
     SCHEMA_VERSION,
@@ -42,6 +47,7 @@ def normalize_activity(
     activity: CanonicalActivity,
     sync_run_id: str,
     detail: CanonicalActivityDetail | None = None,
+    hr_measurement: CanonicalHrMeasurementQuality | None = None,
 ) -> dict[str, Any]:
     """Normalize a canonical activity into the standalone per-activity record stored at
     users/{userId}/activities/{activityId} -- decoupled from any one day's recovery
@@ -93,6 +99,23 @@ def normalize_activity(
         }
         if rd_dict:
             payload["runningDynamics"] = rd_dict
+
+    if hr_measurement is not None:
+        payload["hrMeasurement"] = {
+            "externalHrSensorPresent": hr_measurement.source.external_hr_sensor_present,
+            "sourceForActivity": hr_measurement.source.source_for_activity,
+            "provenanceConfidence": hr_measurement.source.provenance_confidence,
+            "sensorTechnology": hr_measurement.source.sensor_technology,
+            "activityMotionRisk": hr_measurement.activity_motion_risk,
+            "coveragePct": hr_measurement.coverage_pct,
+            "longestGapSeconds": hr_measurement.longest_gap_seconds,
+            "signalQuality": hr_measurement.signal_quality,
+            "measurementConfidence": hr_measurement.measurement_confidence,
+            "summaryCompatibility": hr_measurement.summary_compatibility,
+            "artifactFlags": list(hr_measurement.artifact_flags),
+            "reasons": list(hr_measurement.reasons),
+            "diagnosticVersion": hr_measurement.diagnostic_version,
+        }
 
     if detail is None:
         return payload
