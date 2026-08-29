@@ -20,6 +20,7 @@ _MAX_ORIGINAL_BYTES = 16 * 1024 * 1024
 _MAX_DEVICE_ENTRIES = 512
 _MAX_RECORD_SAMPLES = 250_000
 _MAX_LAP_SUMMARIES = 10_000
+_MAX_TIMER_EVENTS = 20_000
 _MAX_ZONE_BUCKETS = 64
 _SESSION_MESSAGE_NUMBER = 18
 
@@ -50,6 +51,14 @@ class FitRecordSample:
 
 
 @dataclass(frozen=True)
+class FitTimerEvent:
+    """Transient timer state transition used to reconstruct active recording windows."""
+
+    timestamp: datetime | None
+    event_type: str | int | None
+
+
+@dataclass(frozen=True)
 class FitActivityEvidence:
     """Compact decoded evidence; callers must not persist ``records`` verbatim."""
 
@@ -58,6 +67,7 @@ class FitActivityEvidence:
     average_heart_rate_bpm: float | None
     lap_average_heart_rate_bpm: tuple[float, ...]
     time_in_hr_zone_seconds: tuple[float, ...]
+    timer_events: tuple[FitTimerEvent, ...]
 
 
 def decode_activity_original(original: bytes) -> FitActivityEvidence:
@@ -67,6 +77,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
     records: list[FitRecordSample] = []
     lap_average_heart_rate_bpm: list[float] = []
     time_in_hr_zone_seconds: list[float] = []
+    timer_events: list[FitTimerEvent] = []
     average_heart_rate_bpm: float | None = None
 
     try:
@@ -104,6 +115,16 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                             power_watts=_number(_value(message, "power")),
                         )
                     )
+                elif name == "event":
+                    event = _value(message, "event")
+                    if event == "timer" or event == 0:
+                        _guard_capacity(timer_events, _MAX_TIMER_EVENTS, "timer event")
+                        timer_events.append(
+                            FitTimerEvent(
+                                timestamp=_timestamp(_value(message, "timestamp")),
+                                event_type=_identifier(_value(message, "event_type")),
+                            )
+                        )
                 elif name == "session":
                     average_heart_rate_bpm = _number(_value(message, "avg_heart_rate"))
                     session_zones = _numbers(_value(message, "time_in_hr_zone"))
@@ -140,6 +161,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
         average_heart_rate_bpm=average_heart_rate_bpm,
         lap_average_heart_rate_bpm=tuple(lap_average_heart_rate_bpm),
         time_in_hr_zone_seconds=tuple(time_in_hr_zone_seconds),
+        timer_events=tuple(timer_events),
     )
 
 
