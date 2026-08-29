@@ -236,11 +236,12 @@ export function packWeeklyDose(
                 .flatMap(role => unusedSlots.filter(slot => slot.availableMinutes >= role.durationMinutes)
                     .map(slot => ({ role, slot })))
                 .sort((left, right) =>
-                    right.role.durationMinutes - left.role.durationMinutes
-                    // Best-fit placement preserves longer windows for later roles that may
-                    // have no short-window alternative. Spacing remains a tie-breaker once
-                    // dose and fit flexibility are equal.
-                    || left.slot.availableMinutes - right.slot.availableMinutes
+                    // Best-fit placement is the primary constraint: consume the shortest
+                    // window that can host the current requirement before preferring a
+                    // larger-dose role. This preserves scarce long windows for later roles
+                    // that have no short-window alternative.
+                    left.slot.availableMinutes - right.slot.availableMinutes
+                    || right.role.durationMinutes - left.role.durationMinutes
                     || (penaltyByDate.get(left.slot.date) ?? 0)
                         - (penaltyByDate.get(right.slot.date) ?? 0)
                     || left.role.id.localeCompare(right.role.id)
