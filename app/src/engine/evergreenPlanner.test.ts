@@ -24,20 +24,27 @@ describe('evergreen week-ahead integration', () => {
         expect(plan.allocationReport.outcomes.some(outcome => outcome.occurrence.coverageSetId === 'evergreen_general')).toBe(true);
     });
 
-    it('packs both aerobic and strength coverage when priorities combine endurance with strength_muscle', async () => {
+    it('packs and concretely schedules aerobic plus strength coverage for a Running-only endurance+strength profile', async () => {
         // Regression: a former-elite-return-style persona with priorities
-        // ['endurance', 'strength_muscle'] previously got a strength-only plan because
-        // the aerobic requirement resolved to a droppable 'target' priority while strength
-        // resolved to 'required', so strength always claimed the whole session ceiling.
+        // ['endurance', 'strength_muscle'] previously had two independent failure modes:
+        // required-tier packing could starve aerobic work, and after that was fixed the
+        // Running/no-bike path still had no concrete template able to earn aerobic_volume.
         const combinedProfile: TrainingIntentProfile = {
             ...profile, priorities: ['endurance', 'strength_muscle'],
             weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
         };
         const combinedPreferences: UserPreferences = { ...preferences, preferredModalities: ['Running', 'Strength'] };
-        const plan = await generateWeekAheadPlanWithIntent('u1', readiness, context, combinedPreferences, [], '2026-08-31', today, null, { days: 14 }, history, undefined, combinedProfile);
+        const runningOnlyContext: UserContext = {
+            ...context,
+            constraints: { ...context.constraints, hasIndoorBike: false },
+        };
+        const plan = await generateWeekAheadPlanWithIntent('u1', readiness, runningOnlyContext, combinedPreferences, [], '2026-08-31', today, null, { days: 14 }, history, undefined, combinedProfile);
         const coverageKeys = plan.allocationReport.outcomes.map(outcome => outcome.occurrence.coverageKey);
+
         expect(coverageKeys).toContain('aerobic_volume');
         expect(coverageKeys).toContain('primary_strength');
+        expect(plan.days.some(day => day.template.id === 'end_easy_02')).toBe(true);
+        expect(plan.days.some(day => day.template.id === 'end_easy_01')).toBe(false);
     });
 
     it('does not take eventless evergreen objectives from DEFAULT_BASE_DEMAND', async () => {
