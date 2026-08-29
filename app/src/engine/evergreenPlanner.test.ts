@@ -47,6 +47,24 @@ describe('evergreen week-ahead integration', () => {
         expect(plan.days.some(day => day.template.id === 'end_easy_01')).toBe(false);
     });
 
+    it('does not let a broad health goal make explicitly selected strength disappear', async () => {
+        const healthStrengthProfile: TrainingIntentProfile = {
+            ...profile,
+            priorities: ['health', 'strength_muscle'],
+            weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
+        };
+        const healthStrengthPreferences: UserPreferences = {
+            ...preferences,
+            preferredModalities: ['Cycling', 'Strength'],
+        };
+        const plan = await generateWeekAheadPlanWithIntent('u1', readiness, context, healthStrengthPreferences, [], '2026-08-31', today, null, { days: 14 }, history, undefined, healthStrengthProfile);
+        const coverageKeys = plan.allocationReport.outcomes.map(outcome => outcome.occurrence.coverageKey);
+
+        expect(coverageKeys).toContain('aerobic_volume');
+        expect(coverageKeys).toContain('primary_strength');
+        expect(plan.days.some(day => day.template.modality === 'Strength')).toBe(true);
+    });
+
     it('does not take eventless evergreen objectives from DEFAULT_BASE_DEMAND', async () => {
         const baseline = await generateWeekAheadPlanWithIntent('u1', readiness, context, preferences, [], '2026-08-10', today, null, { days: 6 }, history, undefined, profile);
         const originalDemand = { ...DEFAULT_BASE_DEMAND };
