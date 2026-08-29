@@ -19,6 +19,16 @@ function git(args) {
   return execFileSync('git', args, { encoding: 'utf8' });
 }
 
+function gitGrepFiles(pattern, paths = ['app/src']) {
+  try {
+    return git(['grep', '-El', pattern, '--', ...paths]).trim().split('\n').filter(Boolean);
+  } catch (err) {
+    // git grep exits 1 when the pattern has no matches; that is a valid empty result.
+    if (err.status === 1) return [];
+    throw err;
+  }
+}
+
 let diffOutput = '';
 try {
   diffOutput = git(['diff', '--name-only', `${baseRef}...HEAD`]);
@@ -67,11 +77,15 @@ const decisionAffectingFiles = [
 
 const policyFile = 'app/src/engine/policy.ts';
 const rulesFile = 'app/src/engine/rules.ts';
+const adaptersFile = 'app/src/engine/adapters.ts';
 const subjectiveBaselineFile = 'app/src/engine/subjectiveBaseline.ts';
 const adr20File = 'docs/adr/0020-subjective-baselines-in-readiness-mode.md';
 const completedTrainingFile = 'app/src/engine/completedTraining.ts';
 const garminTelemetryEvidenceFile = 'app/src/engine/garminTelemetryEvidence.ts';
 const adr22File = 'docs/adr/0022-zone-derived-completed-training-credit.md';
+const sleepRecoveryEvidenceFile = 'app/src/engine/sleepRecoveryEvidence.ts';
+const sleepRecoveryEvidenceTestFile = 'app/src/engine/sleepRecoveryEvidence.test.ts';
+const sleepRecoveryPhase3Doc = 'docs/analysis/2026-08-29-sleep-decision-authority-phase-3-implementation.md';
 const repoRoot = git(['rev-parse', '--show-toplevel']).trim();
 
 const changedDecisionFiles = changedFiles.filter((f) => decisionAffectingFiles.includes(f));
@@ -187,6 +201,63 @@ function isAcceptedDormantGarminZoneCreditChange() {
   return accepted && explicitlyNoBump;
 }
 
+/**
+ * Phase 3 sleep recovery evidence is intentionally observation-only. adapters.ts has to
+ * expose the precomputed v6 fields to DailyReadiness, but that wiring must not mint a new
+ * live policy identity while no production decision path can consume it. This exception is
+ * fail-closed and mechanical: only the adapter/model/evaluator production sources may be
+ * involved, every sleep-evidence field reference must remain inside that small boundary,
+ * and the evaluator itself may have no production caller. The implementation note also has
+ * to keep the no-bump contract explicit. Any later rules/planner/fatigue consumer makes one
+ * of these checks fail and restores the normal POLICY_VERSION requirement automatically.
+ */
+function isAcceptedDormantSleepRecoveryEvidenceChange() {
+  if (changedDecisionFiles.length === 0 || !changedDecisionFiles.every((file) => file === adaptersFile)) {
+    return false;
+  }
+
+  const allowedProductionSources = new Set([
+    adaptersFile,
+    'app/src/engine/models.ts',
+    sleepRecoveryEvidenceFile,
+  ]);
+  const changedProductionSources = changedFiles.filter((file) =>
+    file.startsWith('app/src/')
+    && !allowedProductionSources.has(file)
+    && !file.endsWith('.test.ts')
+    && !file.includes('/simulation/')
+  );
+  if (changedProductionSources.length > 0) return false;
+
+  const evaluatorReferences = gitGrepFiles('evaluateSleepRecoveryEvidence');
+  const allowedEvaluatorReferences = new Set([
+    sleepRecoveryEvidenceFile,
+    sleepRecoveryEvidenceTestFile,
+  ]);
+  if (evaluatorReferences.length === 0 || evaluatorReferences.some(file => !allowedEvaluatorReferences.has(file))) {
+    return false;
+  }
+
+  const fieldReferences = gitGrepFiles(
+    'sleep_duration_(delta|accumulated_)|bedtime_deviation_|wake_time_deviation_|sleep_midpoint_deviation_',
+  );
+  const allowedFieldReferences = new Set([
+    adaptersFile,
+    'app/src/engine/adapters.test.ts',
+    'app/src/engine/models.ts',
+    sleepRecoveryEvidenceFile,
+    sleepRecoveryEvidenceTestFile,
+  ]);
+  if (fieldReferences.length === 0 || fieldReferences.some(file => !allowedFieldReferences.has(file))) {
+    return false;
+  }
+
+  const phase3Doc = readFileSync(join(repoRoot, sleepRecoveryPhase3Doc), 'utf8');
+  const explicitlyShadow = /## Genuinely shadow/.test(phase3Doc);
+  const explicitlyNoBump = /`POLICY_VERSION` intentionally remains unchanged/.test(phase3Doc);
+  return explicitlyShadow && explicitlyNoBump;
+}
+
 if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
   if (isAcceptedDormantSubjectiveDriftChange()) {
     console.log(
@@ -198,6 +269,13 @@ if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
   if (isAcceptedDormantGarminZoneCreditChange()) {
     console.log(
       'POLICY DRIFT CHECK PASSED: ADR-0022 Garmin zone-credit candidate is default-off and has no production caller; '
+      + `POLICY_VERSION correctly remains ${currentPolicyVersion}.`
+    );
+    process.exit(0);
+  }
+  if (isAcceptedDormantSleepRecoveryEvidenceChange()) {
+    console.log(
+      'POLICY DRIFT CHECK PASSED: Phase 3 sleep recovery evidence has no production decision caller; '
       + `POLICY_VERSION correctly remains ${currentPolicyVersion}.`
     );
     process.exit(0);
