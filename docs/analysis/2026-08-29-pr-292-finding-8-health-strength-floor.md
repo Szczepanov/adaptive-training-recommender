@@ -1,6 +1,6 @@
 # PR #292 Finding 8 — health/balanced strength-floor policy
 
-**Date:** 2026-08-29  
+**Date:** 2026-08-29
 **PR:** #292 — `fix(engine): fix endurance+strength priority starvation and time-cap dose overrun`
 
 ## Finding
