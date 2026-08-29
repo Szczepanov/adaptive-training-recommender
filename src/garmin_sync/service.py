@@ -324,8 +324,25 @@ class GarminSyncService:
                 if context.canonical.training_readiness
                 else None
             ),
+            # v6 (Phase 2, sleep-decision-authority plan): need to be present here too, or
+            # compute_derived_metrics's sleep-duration/bedtime/wake-time/midpoint deltas
+            # would always resolve to None regardless of window data -- same reasoning as
+            # the v5 fields above.
+            "sleepDurationSec": context.canonical.sleep_duration_seconds,
+            "sleepSessionStart": (
+                context.canonical.sleep_session_start.isoformat()
+                if context.canonical.sleep_session_start is not None
+                else None
+            ),
+            "sleepSessionEnd": (
+                context.canonical.sleep_session_end.isoformat()
+                if context.canonical.sleep_session_end is not None
+                else None
+            ),
         }
-        derived = compute_derived_metrics(dummy_current, window_7d, window_28d)
+        derived = compute_derived_metrics(
+            dummy_current, window_7d, window_28d, timezone_name=self.settings.app_timezone
+        )
 
         snapshot = build_snapshot_from_canonical(
             user_id=self.settings.app_user_id,
