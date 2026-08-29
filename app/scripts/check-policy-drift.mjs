@@ -15,8 +15,13 @@ if (baseRef === '0000000000000000000000000000000000000000') {
   process.exit(0);
 }
 
+// npm invokes this script from app/, while CI/manual callers may invoke it from the repo
+// root. Resolve the repository once, then pin every Git command there so pathspecs such as
+// app/src mean the same thing regardless of the caller's working directory.
+const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+
 function git(args) {
-  return execFileSync('git', args, { encoding: 'utf8' });
+  return execFileSync('git', args, { encoding: 'utf8', cwd: repoRoot });
 }
 
 function gitGrepFiles(pattern, paths = ['app/src']) {
@@ -110,7 +115,6 @@ const adr22File = 'docs/adr/0022-zone-derived-completed-training-credit.md';
 const sleepRecoveryEvidenceFile = 'app/src/engine/sleepRecoveryEvidence.ts';
 const sleepRecoveryEvidenceTestFile = 'app/src/engine/sleepRecoveryEvidence.test.ts';
 const sleepRecoveryPhase3Doc = 'docs/analysis/2026-08-29-sleep-decision-authority-phase-3-implementation.md';
-const repoRoot = git(['rev-parse', '--show-toplevel']).trim();
 
 const changedDecisionFiles = changedFiles.filter((f) => decisionAffectingFiles.includes(f));
 
