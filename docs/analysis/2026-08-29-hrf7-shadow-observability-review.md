@@ -1,7 +1,7 @@
 # HRF7 Shadow Observability — PR #291 Review
 
-**Date:** 2026-08-29  
-**Scope:** PR #291 (`feat(hrf): add shadow replay observability`)  
+**Date:** 2026-08-29
+**Scope:** PR #291 (`feat(hrf): add shadow replay observability`)
 **Decision posture:** shadow/evidence-only; no production recommendation authority
 
 ## Review outcome
@@ -81,11 +81,11 @@ Garmin's current public documentation continues to support the conservative HRF6
 
 References:
 
-- Garmin Support — *What Is the Training Effect Feature on My Garmin Device?*  
+- Garmin Support — *What Is the Training Effect Feature on My Garmin Device?*
   https://support.garmin.com/?faq=Vi2undejXR5Mmq662o4lO9
-- Garmin Technology — *Training Load*  
+- Garmin Technology — *Training Load*
   https://www.garmin.com/en-US/garmin-technology/cycling-science/physiological-measurements/training-load/
-- Garmin Technology — *EPOC*  
+- Garmin Technology — *EPOC*
   https://www.garmin.com/en-US/garmin-technology/running-science/physiological-measurements/epoc/
 
 This evidence supports **HR dependence**, not exact lineage. It therefore does not justify upgrading Garmin vendor summaries when their exact relationship to the assessed FIT HR stream is unverified. The existing fail-closed HRF adapters remain correct.
