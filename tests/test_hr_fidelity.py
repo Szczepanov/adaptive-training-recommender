@@ -1,6 +1,11 @@
 from datetime import datetime, timedelta
 
-from garmin_sync.canonical import CanonicalHrSourceEvidence
+from garmin_sync.canonical import (
+    CanonicalHrSourceEvidence,
+    HrProvenanceConfidence,
+    HrSensorTechnology,
+    HrSourceForActivity,
+)
 from garmin_sync.fit_activity import FitActivityEvidence, FitRecordSample, FitTimerEvent
 from garmin_sync.hr_fidelity import activity_motion_risk_for, assess_activity_hr_fidelity
 
@@ -9,15 +14,15 @@ _START = datetime(2026, 8, 29, 8, 0)
 
 def _source(
     *,
-    source_for_activity: str = "wrist",
-    provenance_confidence: str = "inferred",
-    sensor_technology: str = "wrist_ppg",
+    source_for_activity: HrSourceForActivity = "wrist",
+    provenance_confidence: HrProvenanceConfidence = "inferred",
+    sensor_technology: HrSensorTechnology = "wrist_ppg",
 ) -> CanonicalHrSourceEvidence:
     return CanonicalHrSourceEvidence(
         external_hr_sensor_present=None,
-        source_for_activity=source_for_activity,  # type: ignore[arg-type]
-        provenance_confidence=provenance_confidence,  # type: ignore[arg-type]
-        sensor_technology=sensor_technology,  # type: ignore[arg-type]
+        source_for_activity=source_for_activity,
+        provenance_confidence=provenance_confidence,
+        sensor_technology=sensor_technology,
     )
 
 
@@ -59,7 +64,7 @@ def _complete_events(stop_second: int) -> tuple[FitTimerEvent, ...]:
     )
 
 
-def test_unassessable_trace_is_unknown_not_unreliable():
+def test_unassessable_trace_is_unknown_not_unreliable() -> None:
     evidence = _evidence(
         (
             FitRecordSample(None, 140, None, None),
@@ -75,7 +80,7 @@ def test_unassessable_trace_is_unknown_not_unreliable():
     assert result.sampling_irregularity_pct is None
 
 
-def test_clean_confirmed_chest_strap_trace_can_be_high_confidence():
+def test_clean_confirmed_chest_strap_trace_can_be_high_confidence() -> None:
     result = assess_activity_hr_fidelity(
         "cycling",
         _evidence(_records(list(range(121)), power=200), _complete_events(120)),
@@ -91,7 +96,7 @@ def test_clean_confirmed_chest_strap_trace_can_be_high_confidence():
     assert result.quality.signal_quality == "clean"
 
 
-def test_pause_window_is_not_misclassified_as_dropout():
+def test_pause_window_is_not_misclassified_as_dropout() -> None:
     evidence = _evidence(
         _records(list(range(11)) + list(range(100, 111))),
         (
@@ -109,7 +114,7 @@ def test_pause_window_is_not_misclassified_as_dropout():
     assert result.quality.coverage_pct == 100.0
 
 
-def test_leading_stop_keeps_inferred_initial_window_but_is_partial():
+def test_leading_stop_keeps_inferred_initial_window_but_is_partial() -> None:
     evidence = _evidence(
         _records(list(range(11)) + list(range(100, 111))),
         (
@@ -127,7 +132,7 @@ def test_leading_stop_keeps_inferred_initial_window_but_is_partial():
     assert "PARTIAL_TIMER_WINDOW" in result.quality.reasons
 
 
-def test_timer_events_are_clamped_to_record_span():
+def test_timer_events_are_clamped_to_record_span() -> None:
     records = tuple(
         FitRecordSample(_START + timedelta(seconds=second), 140, None, 200)
         for second in range(5, 116)
@@ -143,7 +148,7 @@ def test_timer_events_are_clamped_to_record_span():
     assert result.quality.coverage_pct == 100.0
 
 
-def test_clean_30_second_fit_recording_is_not_treated_as_one_hz_dropout():
+def test_clean_30_second_fit_recording_is_not_treated_as_one_hz_dropout() -> None:
     result = assess_activity_hr_fidelity(
         "cycling",
         _evidence(_records([0, 30, 60, 90, 120], power=200), _complete_events(120)),
@@ -157,7 +162,7 @@ def test_clean_30_second_fit_recording_is_not_treated_as_one_hz_dropout():
     assert "INSUFFICIENT_COVERAGE" not in result.quality.artifact_flags
 
 
-def test_smart_recording_irregularity_is_reported_without_penalizing_complete_hr():
+def test_smart_recording_irregularity_is_reported_without_penalizing_complete_hr() -> None:
     records = _records([0, 1, 3, 4, 7, 8, 10, 11, 14, 15], power=200)
 
     result = assess_activity_hr_fidelity(
@@ -170,7 +175,7 @@ def test_smart_recording_irregularity_is_reported_without_penalizing_complete_hr
     assert "INSUFFICIENT_COVERAGE" not in result.quality.artifact_flags
 
 
-def test_assessed_severe_long_gap_is_unreliable_without_inventing_missing_records():
+def test_assessed_severe_long_gap_is_unreliable_without_inventing_missing_records() -> None:
     result = assess_activity_hr_fidelity(
         "running",
         _evidence(
@@ -185,7 +190,7 @@ def test_assessed_severe_long_gap_is_unreliable_without_inventing_missing_record
     assert "INSUFFICIENT_COVERAGE" not in result.quality.artifact_flags
 
 
-def test_invalid_hr_prefix_is_counted_as_boundary_dropout():
+def test_invalid_hr_prefix_is_counted_as_boundary_dropout() -> None:
     records = tuple(
         FitRecordSample(
             _START + timedelta(seconds=second),
@@ -205,7 +210,7 @@ def test_invalid_hr_prefix_is_counted_as_boundary_dropout():
     assert result.quality.coverage_pct == 50.4
 
 
-def test_isolated_spike_is_kept_as_specific_artifact_evidence():
+def test_isolated_spike_is_kept_as_specific_artifact_evidence() -> None:
     records = list(_records(list(range(121)), power=200))
     records[60] = FitRecordSample(_START + timedelta(seconds=60), 190, None, 200)
 
@@ -217,7 +222,7 @@ def test_isolated_spike_is_kept_as_specific_artifact_evidence():
     assert result.quality.measurement_confidence == "low"
 
 
-def test_persistent_abrupt_jump_requires_stable_independent_workload():
+def test_persistent_abrupt_jump_requires_stable_independent_workload() -> None:
     records = tuple(
         FitRecordSample(
             _START + timedelta(seconds=second),
@@ -235,7 +240,7 @@ def test_persistent_abrupt_jump_requires_stable_independent_workload():
     assert "ABRUPT_JUMP" in result.quality.artifact_flags
 
 
-def test_normal_power_backed_interval_transition_is_not_an_abrupt_hr_artifact():
+def test_normal_power_backed_interval_transition_is_not_an_abrupt_hr_artifact() -> None:
     records = [
         FitRecordSample(
             _START + timedelta(seconds=second),
@@ -253,7 +258,7 @@ def test_normal_power_backed_interval_transition_is_not_an_abrupt_hr_artifact():
     assert "ABRUPT_JUMP" not in result.quality.artifact_flags
 
 
-def test_stale_hr_with_large_sustained_power_change_is_suspect():
+def test_stale_hr_with_large_sustained_power_change_is_suspect() -> None:
     records = [
         FitRecordSample(
             _START + timedelta(seconds=second),
@@ -271,7 +276,7 @@ def test_stale_hr_with_large_sustained_power_change_is_suspect():
     assert {"STALE_PLATEAU", "WORKLOAD_DISCORDANCE"} <= set(result.quality.artifact_flags)
 
 
-def test_single_power_spike_does_not_create_workload_discordance():
+def test_single_power_spike_does_not_create_workload_discordance() -> None:
     records = [
         FitRecordSample(
             _START + timedelta(seconds=second),
@@ -289,7 +294,7 @@ def test_single_power_spike_does_not_create_workload_discordance():
     assert "WORKLOAD_DISCORDANCE" not in result.quality.artifact_flags
 
 
-def test_workload_detector_does_not_bridge_pause_windows():
+def test_workload_detector_does_not_bridge_pause_windows() -> None:
     records = tuple(
         [
             FitRecordSample(_START + timedelta(seconds=second), 140, None, 100)
@@ -312,7 +317,7 @@ def test_workload_detector_does_not_bridge_pause_windows():
     assert "WORKLOAD_DISCORDANCE" not in result.quality.artifact_flags
 
 
-def test_running_cadence_lock_uses_fit_stride_cadence_and_independent_power():
+def test_running_cadence_lock_uses_fit_stride_cadence_and_independent_power() -> None:
     records = tuple(
         FitRecordSample(
             _START + timedelta(seconds=second),
@@ -334,7 +339,7 @@ def test_running_cadence_lock_uses_fit_stride_cadence_and_independent_power():
     assert "CADENCE_LOCK_SUSPECTED" not in cycling.quality.artifact_flags
 
 
-def test_constant_cadence_and_matching_hr_is_not_enough_for_lock():
+def test_constant_cadence_and_matching_hr_is_not_enough_for_lock() -> None:
     result = assess_activity_hr_fidelity(
         "cycling",
         _evidence(
@@ -347,7 +352,7 @@ def test_constant_cadence_and_matching_hr_is_not_enough_for_lock():
     assert "HARMONIC_LOCK_SUSPECTED" not in result.quality.artifact_flags
 
 
-def test_cycling_harmonic_lock_and_ambiguous_source_cannot_be_high():
+def test_cycling_harmonic_lock_and_ambiguous_source_cannot_be_high() -> None:
     records = tuple(
         FitRecordSample(
             _START + timedelta(seconds=second),
@@ -373,7 +378,7 @@ def test_cycling_harmonic_lock_and_ambiguous_source_cannot_be_high():
     assert "PROVENANCE_AMBIGUOUS" in result.quality.reasons
 
 
-def test_sparse_cadence_coverage_does_not_trigger_lock():
+def test_sparse_cadence_coverage_does_not_trigger_lock() -> None:
     records = tuple(
         FitRecordSample(
             _START + timedelta(seconds=second),
@@ -391,7 +396,7 @@ def test_sparse_cadence_coverage_does_not_trigger_lock():
     assert "CADENCE_LOCK_SUSPECTED" not in result.quality.artifact_flags
 
 
-def test_variable_cadence_match_without_independent_power_stays_unflagged():
+def test_variable_cadence_match_without_independent_power_stays_unflagged() -> None:
     records = tuple(
         FitRecordSample(
             _START + timedelta(seconds=second),
@@ -409,7 +414,7 @@ def test_variable_cadence_match_without_independent_power_stays_unflagged():
     assert "CADENCE_LOCK_SUSPECTED" not in result.quality.artifact_flags
 
 
-def test_raw_fit_timer_enum_values_are_supported():
+def test_raw_fit_timer_enum_values_are_supported() -> None:
     events = (
         FitTimerEvent(_START, 0),
         FitTimerEvent(_START + timedelta(seconds=60), 9),
@@ -425,7 +430,7 @@ def test_raw_fit_timer_enum_values_are_supported():
     assert "PARTIAL_TIMER_WINDOW" not in result.quality.reasons
 
 
-def test_motion_risk_mapping_is_small_and_conservative():
+def test_motion_risk_mapping_is_small_and_conservative() -> None:
     assert activity_motion_risk_for("running") == "moderate"
     assert activity_motion_risk_for("strength_training") == "high"
     assert activity_motion_risk_for("swimming") == "unknown"
