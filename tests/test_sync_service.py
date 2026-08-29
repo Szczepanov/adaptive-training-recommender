@@ -1145,6 +1145,41 @@ def test_sync_service_fetches_activities_through_today_for_same_day_detection():
     assert saved_payload["raw"]["todayTraining"]["primaryActivity"]["type"] == "running"
 
 
+def test_hr_fidelity_is_target_only_and_never_blocks_base_activity_sync():
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_activity_hr_fidelity_enabled=True,
+    )
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+    mock_client = MagicMock()
+    mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
+    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {}}}
+    mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
+    mock_client.get_activities_window.return_value = [
+        {
+            "activityId": 100,
+            "startTimeLocal": "2026-08-05T08:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 1800,
+        },
+        {
+            "activityId": 101,
+            "startTimeLocal": "2026-08-06T08:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 1800,
+        },
+    ]
+    mock_client.download_activity_original.side_effect = GarminConnectTooManyRequestsError("rate")
+
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
+    assert service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
+
+    mock_client.download_activity_original.assert_called_once_with("101")
+    mock_repo.upsert_snapshot.assert_called_once()
+
+
 def test_sync_service_skips_archiving_activity_with_missing_id():
     """An activity with no Garmin activityId must not be written to
     users/{userId}/activities/ -- doing so under a shared placeholder key would let it

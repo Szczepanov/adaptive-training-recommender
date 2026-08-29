@@ -1,10 +1,11 @@
 # HRF — Activity Heart-Rate Measurement Fidelity & Decision Authority
 
-* **Status:** `Draft`
+* **Status:** `Approved`
 * **Proposed:** 2026-08-29
-* **Blocked by:** HRF0 real-account FIT provenance/reconciliation spike; acceptance of [ADR-0031](../adr/0031-activity-heart-rate-measurement-fidelity-and-evidence-authority.md)
+* **Blocked by:** HRF8 replay and independently recorded paired-reference evidence before HRF9 production gating
 * **Unlocks:** source-aware HR trust, artifact-resistant HR-zone/load interpretation, safe max-HR/threshold/decoupling gating, and athlete/device/activity-specific HR reliability calibration
 * **Source analysis:** [`2026-08-29-activity-hr-measurement-confidence-analysis.md`](../analysis/2026-08-29-activity-hr-measurement-confidence-analysis.md)
+* **HRF0 evidence:** [`2026-08-29-garmin-activity-hr-fit-provenance-spike.md`](../analysis/2026-08-29-garmin-activity-hr-fit-provenance-spike.md)
 * **Decision record:** [ADR-0031](../adr/0031-activity-heart-rate-measurement-fidelity-and-evidence-authority.md)
 * **Related plans:** [`garmin-activity-telemetry-ingestion.md`](./garmin-activity-telemetry-ingestion.md), [`physiological-identity-passport-and-measurement-trust.md`](./physiological-identity-passport-and-measurement-trust.md), [`scientific-validation-and-feedback-loop.md`](./scientific-validation-and-feedback-loop.md), [`health-anomaly-and-illness-risk-alerting.md`](./health-anomaly-and-illness-risk-alerting.md)
 
@@ -85,6 +86,7 @@ This plan does **not**:
 | **P-HRF-18** | Production authority changes are versioned, replayable and separately approved after shadow evidence. |
 | **P-HRF-19** | Paired wrist/reference validation requires independent measurement channels; source-switched/reference-contaminated comparisons are rejected. |
 | **P-HRF-20** | A feature-specific artifact can block a sensitive use (for example max-HR) without automatically invalidating every less-sensitive use of the activity. |
+| **P-HRF-21** | Runtime FIT decoding and vendor-reference decoding are separate roles: the shipped parser stays isolated/permissively licensed, while semantic parity for HRF-consumed fields is re-qualified against the official Garmin SDK when the runtime parser/profile or consumed field surface materially changes. |
 
 ---
 
@@ -169,11 +171,11 @@ HRF0 still verifies the exact installed/locked version and real-account response
 
 ---
 
-## Decisions required
+## Accepted decisions
 
-[ADR-0031](../adr/0031-activity-heart-rate-measurement-fidelity-and-evidence-authority.md) records the proposed decisions below and must be accepted before HRF1 production-facing schema work.
+[ADR-0031](../adr/0031-activity-heart-rate-measurement-fidelity-and-evidence-authority.md) records the accepted decisions below.
 
-| ID | Proposed decision | Why it matters |
+| ID | Accepted decision | Why it matters |
 |---|---|---|
 | **D-HRF-AUTHORITY** | HR fidelity gates evidence authority; low/unknown confidence is never negative readiness evidence | Core safety invariant |
 | **D-HRF-PROVENANCE** | Sensor presence, source provenance and sensor technology are separate | Garmin source switching makes naive attribution wrong |
@@ -183,7 +185,7 @@ HRF0 still verifies the exact installed/locked version and real-account response
 | **D-HRF-RAW** | Derive compact evidence transiently; do not persist raw FIT by default | Privacy/data-minimization boundary |
 | **D-HRF-SHADOW** | Initial implementation is shadow-only | Prevents silent production changes |
 | **D-HRF-REFERENCE** | Paired validation uses independent streams | Avoid circular validation from Dynamic Source Switching |
-| **D-HRF-DECODER** | Prefer Garmin official FIT Python SDK if practical; otherwise approve an alternative after the spike | Decoder correctness/maintenance/license matter |
+| **D-HRF-DECODER** | Ship MIT-licensed `fitdecode` behind the Garmin boundary; use Garmin's official FIT SDK ephemerally as the validation oracle and re-qualify semantic parity for HRF-consumed fields when decoder/profile semantics change | Keeps the production dependency redistributable while retaining vendor-authoritative validation |
 
 ---
 
@@ -191,9 +193,9 @@ HRF0 still verifies the exact installed/locked version and real-account response
 
 | Item | Title | Status | Blocked by | Decision impact |
 |---|---|---|---|---|
-| HRF0 | Real-account FIT provenance, lineage & decoder spike | `[ ]` | — | evidence only |
-| HRF1 | Provider-neutral HR fidelity contracts | `[ ]` | HRF0, ADR-0031 | none |
-| HRF2 | Garmin original-FIT acquisition + sensor inventory | `[ ]` | HRF0, HRF1 | none |
+| HRF0 | Real-account FIT provenance, lineage & decoder spike | `[x]` | — | evidence only |
+| HRF1 | Provider-neutral HR fidelity contracts | `[x]` | HRF0, ADR-0031 | none |
+| HRF2 | Garmin original-FIT acquisition + sensor inventory | `[x]` | HRF0, HRF1 | none |
 | HRF3 | Deterministic HR trace-quality diagnostics | `[ ]` | HRF1, HRF2 | shadow only |
 | HRF4 | Canonical mapping + additive Firestore persistence | `[ ]` | HRF1–HRF3 | none |
 | HRF5 | TypeScript parser + activity HR authority engine | `[ ]` | HRF4 | shadow only |
@@ -314,18 +316,23 @@ Do not use `activityTrainingLoad` as independent corroboration of a suspect pare
 
 ## Decoder spike
 
-Try the official Garmin FIT Python SDK first.
+Use Garmin's official FIT Python SDK first as the **vendor reference/oracle** for the real-account probe. Record whether it:
 
-Accept it when it:
-
-- works under the repository runtime/CI target;
+- works under the repository runtime target when invoked ephemerally;
 - decodes representative real files;
 - handles unknown/developer fields safely;
 - fails safely on CRC/truncation;
-- provides enough access to `device_info` and `record` fields for HRF;
-- has an acceptable licensing/redistribution story.
+- exposes enough `device_info`, `record`, `event`, `session`, `lap` and zone semantics for HRF;
+- has a redistribution/deployment license compatible with being a shipped runtime dependency.
 
-If not, evaluate a maintained alternative and document the choice before implementation.
+The spike outcome is intentionally allowed to select a different production decoder from the reference decoder. For HRF v1 the accepted split is:
+
+```text
+production runtime: fitdecode
+validation oracle: Garmin official FIT SDK
+```
+
+The report must record both versions/profile generations and any semantic gap relevant to HRF-consumed fields. A newer official profile does not automatically invalidate the runtime parser; it creates an explicit qualification obligation for the consumed field surface.
 
 ## Output
 
@@ -357,7 +364,7 @@ Never commit a real raw FIT file. Fixtures must be synthetic or aggressively red
 - per-sample provenance is classified as possible, impossible or still unknown;
 - trace-to-summary relationships are explicitly classified;
 - Garmin load lineage is documented;
-- decoder choice is explicit;
+- runtime/reference decoder roles are explicit;
 - no production schema/behavior changed.
 
 ---
@@ -521,25 +528,47 @@ Do **not** gate only on hard intensity: easy sessions matter for decoupling, zon
 
 ## FIT decoder boundary
 
-Add a Garmin-specific module, suggested:
+Add a Garmin-specific module:
 
 ```text
 src/garmin_sync/fit_activity.py
 ```
 
+The shipped runtime parser is `fitdecode==0.11.0` under D-HRF-DECODER. Garmin's official FIT SDK is **not** imported by the runtime boundary or installed into the normal application/Docker dependency graph; it remains an ephemeral qualification oracle.
+
 Responsibilities:
 
 - unwrap ZIP if necessary;
-- decode FIT;
+- decode FIT with strict CRC/error handling;
+- process only actual FIT data frames as evidence rows;
+- tolerate legitimately absent optional fields without weakening structural/CRC failures;
+- preserve semantically positional arrays such as `time_in_hr_zone`;
 - extract sensor/device inventory;
 - extract transient HR/cadence/power/timer samples required for diagnostics;
 - expose provider-neutral intermediate evidence;
 - optionally derive/reconstruct values needed for summary reconciliation;
+- bound both original byte size and decoded transient object growth;
 - never write Firestore directly.
 
 Unknown sensor products remain `external_unknown`; do not fuzzy-guess technologies.
 
 If HRF0 cannot recover per-sample source, a switching-capable strap activity may be represented as `mixed_possible` / ambiguous rather than strap-only.
+
+Keep `fitdecode` types inside this anti-corruption boundary. Downstream canonical/domain code must not depend on its frame/message classes so the runtime parser remains replaceable if future qualification shows a material gap.
+
+## Runtime decoder qualification
+
+Parser-unit tests and a generated valid synthetic FIT integration fixture establish that the real `fitdecode.FitReader` path works for the small HRF field surface. They do **not** establish parity with every Garmin profile version or every real-account activity.
+
+Before HRF3-derived diagnostics are promoted from implementation/shadow output into scientific replay or activation evidence:
+
+1. replay a representative, privacy-preserving real-account sample transiently through both `fitdecode` and the current official Garmin FIT SDK;
+2. compare only sanitized structural/aggregate results for fields HRF consumes;
+3. investigate any disagreement that could change provenance, coverage, timer windows, summary compatibility or downstream authority;
+4. record the runtime and official decoder/profile versions used;
+5. keep raw originals non-persistent.
+
+Repeat the qualification when the runtime decoder/profile materially changes or HRF begins consuming a field whose semantics depend on a newer profile.
 
 ## Failure isolation
 
@@ -550,7 +579,7 @@ Do not emit `unreliable` merely because decode failed.
 ### Done when
 
 - wrapper success/no-file/auth/rate-limit tests exist;
-- synthetic FIT fixture decodes;
+- a valid generated synthetic FIT exercises the real runtime `fitdecode` parser path;
 - external HR inventory is extracted;
 - unknown technology remains unknown;
 - switching-capable ambiguous source does not become confirmed external;
@@ -979,6 +1008,8 @@ Do not expose pseudo-precise values such as `HR accuracy = 87%` unless later ref
 
 This item produces the evidence required for production activation.
 
+Before treating runtime FIT-derived HRF outputs as scientific replay inputs, the current `fitdecode` runtime/parser profile SHALL have a recorded D-HRF-DECODER qualification against the official Garmin FIT SDK on representative real-account originals. Qualification is scoped to HRF-consumed semantics, not byte-for-byte decoder equivalence.
+
 ## Historical replay
 
 Use historical activities whose original FIT remains available. Stratify by:
@@ -1074,10 +1105,12 @@ Do not approve on correlation or mean error alone.
 9. Is missing-FIT coverage acceptable?
 10. Are confidence labels understandable/stable?
 11. Were paired reference streams independently recorded?
+12. Was the runtime FIT decoder qualified against the official SDK for the HRF-consumed semantic surface used by this replay?
 
 ### Done when
 
 - historical replay report exists;
+- runtime/reference decoder qualification is recorded for the runtime/profile used by the replay;
 - paired-reference report exists or explicitly documents insufficient evidence;
 - paired-data independence is documented per included session;
 - false-positive examples are reviewed;
@@ -1201,6 +1234,7 @@ docs/ops/activity-heart-rate-fidelity.md
 Architecture should explain:
 
 - ingestion and original-download path;
+- runtime `fitdecode` boundary and official-SDK qualification role;
 - source evidence and Dynamic Source Switching semantics;
 - transient raw handling;
 - assessment-state semantics (`UNKNOWN` vs `UNRELIABLE`);
@@ -1213,6 +1247,7 @@ Architecture should explain:
 Runbook should cover:
 
 - FIT download/decoder failures;
+- runtime/reference decoder parity regressions after decoder/profile changes;
 - sudden rises in `UNKNOWN`;
 - new sensor IDs/products;
 - source-switch capability changes;
@@ -1228,7 +1263,7 @@ Runbook should cover:
 |---|---|
 | Garmin original download | `src/garmin_sync/garmin_client.py` |
 | Feature config | `src/garmin_sync/config.py` |
-| FIT decoder boundary | new `src/garmin_sync/fit_activity.py` |
+| FIT decoder boundary | `src/garmin_sync/fit_activity.py` (`fitdecode` runtime) |
 | Provider-neutral Python contracts | `src/garmin_sync/canonical.py` |
 | HR diagnostics | new `src/garmin_sync/hr_fidelity.py` |
 | Garmin integration | `src/garmin_sync/garmin_provider.py` |
@@ -1240,6 +1275,7 @@ Runbook should cover:
 | Offline fidelity analytics | `app/src/engine/analytics/signalFidelityEvaluator.ts` where appropriate |
 | Dashboard confidence | `app/src/engine/dataConfidence.ts` only as observability, not authority |
 | Health anomaly integration | existing `healthAnomaly*` modules after HRF9 |
+| Decoder qualification oracle | official Garmin FIT SDK, ephemeral validation tooling only |
 
 Before implementation, HRF0 should replace any remaining conceptual path with the exact repository module once the current TypeScript activity parser/consumer audit is recorded in the spike.
 
@@ -1278,7 +1314,7 @@ download
 
 Do not log or persist raw FIT, GPS, sensor serials or full HR arrays under this capability.
 
-If a temporary file is required by the selected SDK, use a bounded private temp location and ensure cleanup on success and exception paths.
+The runtime `fitdecode` boundary decodes from memory. If an ephemeral validation workflow using the official SDK ever requires temporary storage, use a bounded private temp location and ensure cleanup on success and exception paths; that workflow remains outside normal application execution.
 
 ---
 
@@ -1286,7 +1322,8 @@ If a temporary file is required by the selected SDK, use a bounded private temp 
 
 ### FIT/source tests
 
-- wrist-only FIT;
+- generated valid synthetic FIT through the real `fitdecode.FitReader` path;
+- wrist-only FIT semantics;
 - known electrode chest strap;
 - unknown external HR sensor;
 - multiple `device_info` records;
@@ -1297,6 +1334,23 @@ If a temporary file is required by the selected SDK, use a bounded private temp 
 - explicit sample source if HRF0 finds one;
 - ZIP/FIT, corrupt/truncated file, no original;
 - upstream original-download unavailable vs auth/429/transport failure.
+
+Mocked frame/message tests remain useful for boundary edge cases, but they do not replace the generated valid-FIT integration test for the runtime parser itself.
+
+### Runtime/reference decoder qualification
+
+For representative real-account originals, transiently compare `fitdecode` against the current official Garmin SDK for only the semantic surface HRF consumes:
+
+- recognized message/record counts;
+- HR/cadence/power sample presence and aggregate coverage;
+- timer events/state;
+- device inventory fields used by source reasoning;
+- session average HR;
+- lap-average HR;
+- session-scoped HR-zone arrays;
+- decode/CRC failure classification.
+
+Record sanitized aggregate differences and decoder/profile versions. Do not persist the source FIT or complete traces. A difference in irrelevant/ignored fields does not fail qualification; an unexplained difference capable of changing HRF provenance, quality, lineage or authority does.
 
 ### Source semantics tests
 
@@ -1510,10 +1564,13 @@ Required:
 - no recommendation changes;
 - UI language describes **measurement confidence**, not athlete physiology.
 
+The runtime/reference decoder qualification may be performed while HRF3–HRF7 are being developed in shadow, but it MUST be complete before those outputs are used as HRF8 scientific replay/activation evidence.
+
 ### Production Stage A
 
 Required:
 
+- current runtime `fitdecode`/profile qualification against the official Garmin SDK recorded for the HRF-consumed semantic surface;
 - HRF8 replay reviewed;
 - paired reference evidence available for at least the high-risk modality being activated, or scope explicitly limited;
 - paired-stream independence proven;
@@ -1564,7 +1621,7 @@ Rollback must not rewrite historical `UNKNOWN` as `UNRELIABLE` or erase lineage/
 - HRF0 report;
 - installed original-download verification;
 - trace-to-summary reconciliation;
-- decoder decision;
+- runtime/reference decoder decision;
 - vendor-load lineage note;
 - ADR acceptance update;
 - no production behavior.
@@ -1573,9 +1630,9 @@ Rollback must not rewrite historical `UNKNOWN` as `UNRELIABLE` or erase lineage/
 
 - canonical contracts including `UNKNOWN`;
 - original FIT wrapper;
-- decoder boundary;
+- `fitdecode` runtime boundary;
+- generated valid synthetic parser fixture plus edge-case frame tests;
 - sensor inventory;
-- synthetic fixtures;
 - feature default-off.
 
 ### HRF-C — deterministic diagnostics
@@ -1604,6 +1661,7 @@ Rollback must not rewrite historical `UNKNOWN` as `UNRELIABLE` or erase lineage/
 
 ### HRF-F — evidence report
 
+- runtime/reference decoder qualification for the replayed field surface;
 - historical replay;
 - independent paired-reference study;
 - false-positive/over-blocking review;
@@ -1626,6 +1684,7 @@ The capability is complete when:
 
 - [ ] real FIT files were audited;
 - [ ] exact original-download behavior of the installed dependency was verified;
+- [ ] runtime `fitdecode` semantics were qualified against the official Garmin SDK for the HRF-consumed field surface used by activation evidence;
 - [ ] source-switch semantics are represented safely;
 - [ ] sensor/source evidence is preserved;
 - [ ] `UNKNOWN` is distinct from assessed `UNRELIABLE`;
@@ -1656,11 +1715,11 @@ The capability is complete when:
 ```text
 HRF0  prove Garmin FIT provenance + summary lineage + decoder/original-download behavior
   ↓
-ADR-0031 acceptance
+ADR-0031 acceptance + runtime/reference decoder split
   ↓
 HRF1  domain contracts incl. UNKNOWN semantics
   ↓
-HRF2  FIT acquisition + sensor inventory
+HRF2  fitdecode FIT acquisition + sensor inventory + real parser fixture
   ↓
 HRF3  deterministic signal diagnostics
   ↓
@@ -1671,6 +1730,8 @@ HRF5  use-case authority engine with artifact-specific overrides
 HRF6  audit every HR consumer/vendor lineage
   ↓
 HRF7  shadow/replay observability
+  ↓
+      qualify runtime fitdecode semantics against official Garmin SDK
   ↓
 HRF8  real replay + independent paired evidence
   ↓
@@ -1717,6 +1778,16 @@ wrist stream + reference strap
 prove streams are independent
     ↓
 only then calculate agreement
+```
+
+A corresponding decoder rule now protects the implementation boundary:
+
+```text
+fitdecode runtime result
+    ↓
+qualify HRF-consumed semantics against Garmin official SDK
+    ↓
+only then use those semantics as activation evidence
 ```
 
 These descendants and comparisons should preserve the authority and lineage of the underlying measurement rather than appearing as independent facts.

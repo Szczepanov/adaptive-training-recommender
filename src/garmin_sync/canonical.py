@@ -8,7 +8,7 @@ provider actually supplies yet.
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 # Standard multisource metric vocabulary (ADR-0027)
 METRIC_SLEEP_SESSION = "sleep_session"
@@ -451,6 +451,61 @@ class CanonicalRunningDynamics:
     stride_length_m: float | None = None
     avg_running_power_watts: int | None = None
     max_running_power_watts: int | None = None
+
+
+HrSensorTechnology = Literal[
+    "electrode_chest_strap",
+    "optical_armband",
+    "wrist_ppg",
+    "external_unknown",
+    "unknown",
+]
+HrSourceForActivity = Literal["external", "wrist", "mixed_possible", "unknown"]
+HrProvenanceConfidence = Literal["confirmed", "inferred", "ambiguous", "unknown"]
+HrMeasurementConfidence = Literal["high", "moderate", "low", "unreliable", "unknown"]
+HrSummaryCompatibility = Literal[
+    "verified_same_effective_trace",
+    "consistent_unproven",
+    "discordant",
+    "not_comparable",
+    "unknown",
+]
+HrActivityMotionRisk = Literal["low", "moderate", "high", "unknown"]
+HrSignalQuality = Literal["clean", "suspect", "poor", "unknown"]
+
+
+@dataclass(frozen=True)
+class CanonicalHrSourceEvidence:
+    """Provider-neutral inventory and provenance for one activity's HR evidence.
+
+    Sensor presence is deliberately separate from the source that won for an activity:
+    an external sensor can be connected while Garmin dynamically selects another source.
+    """
+
+    external_hr_sensor_present: bool | None
+    source_for_activity: HrSourceForActivity
+    provenance_confidence: HrProvenanceConfidence
+    sensor_technology: HrSensorTechnology
+
+
+@dataclass(frozen=True)
+class CanonicalHrMeasurementQuality:
+    """Compact, replayable HR measurement assessment with no athlete-state meaning.
+
+    ``measurement_confidence='unknown'`` means the measurement was not assessable; it
+    must never be coerced into an assessed low-quality or unreliable result.
+    """
+
+    source: CanonicalHrSourceEvidence
+    activity_motion_risk: HrActivityMotionRisk
+    coverage_pct: float | None
+    longest_gap_seconds: float | None
+    signal_quality: HrSignalQuality
+    measurement_confidence: HrMeasurementConfidence
+    summary_compatibility: HrSummaryCompatibility = "unknown"
+    artifact_flags: tuple[str, ...] = ()
+    reasons: tuple[str, ...] = ()
+    diagnostic_version: str = "1.0.0"
 
 
 @dataclass

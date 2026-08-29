@@ -234,6 +234,41 @@ class GarminSyncService:
                 )
         return details
 
+    def _fetch_activity_hr_fidelity(
+        self,
+        provider: WearableProvider,
+        canonical_activities: list[CanonicalActivity],
+        target_iso: str,
+    ) -> None:
+        """Best-effort, target-only original-FIT decoding while HRF is shadow-only.
+
+        Decoded evidence is deliberately discarded at this phase.  The call establishes
+        the operational boundary and its request budget without allowing raw bytes or
+        partial fidelity data to leak into activity persistence before HRF4.
+        """
+        if not provider.capabilities.activity_hr_fidelity:
+            return
+        fetch_fidelity: Any = getattr(provider, "fetch_activity_hr_fidelity", None)
+        if not callable(fetch_fidelity):
+            return
+
+        for activity in canonical_activities:
+            if activity.date != target_iso or activity.activity_id is None:
+                continue
+            try:
+                fetch_fidelity(activity.activity_id)
+            except GarminConnectTooManyRequestsError as error:
+                logger.warning(
+                    f"[{target_iso}] Garmin HR-fidelity rate limit reached; "
+                    f"abandoning remaining fidelity downloads for this run: {error}"
+                )
+                break
+            except Exception as error:
+                logger.warning(
+                    f"[{target_iso}] Garmin HR-fidelity enrichment failed for "
+                    f"activity=<ID-redacted>, continuing with the base record: {error}"
+                )
+
     def _seed_prehistory(
         self, raw_memory_store: dict[str, dict[str, Any]], range_start: Any
     ) -> None:
@@ -312,6 +347,7 @@ class GarminSyncService:
         target_date: Any,
         target_iso: str,
         include_activity_details: bool = False,
+        include_activity_hr_fidelity: bool = False,
     ) -> bool:
         """Unconditional fetch -> canonicalize -> derive -> store pipeline for one date
         (no staleness check -- callers decide whether a date is worth fetching).
@@ -365,6 +401,8 @@ class GarminSyncService:
             target_iso,
             include_power_details=include_activity_details,
         )
+        if include_activity_hr_fidelity:
+            self._fetch_activity_hr_fidelity(provider, activities_result.canonical, target_iso)
         self._archive_activities(
             activities_result.canonical,
             sync_run_id,
@@ -535,6 +573,7 @@ class GarminSyncService:
                     lookback_date,
                     lookback_iso,
                     include_activity_details=self.settings.garmin_activity_detail_enabled,
+                    include_activity_hr_fidelity=False,
                 )
             except Exception as e:
                 logger.error(f"[{lookback_iso}] Lookback resync failed: {e}")
@@ -553,6 +592,7 @@ class GarminSyncService:
             target_date,
             target_iso,
             include_activity_details=self.settings.garmin_activity_detail_enabled,
+            include_activity_hr_fidelity=self.settings.garmin_activity_hr_fidelity_enabled,
         ):
             ok = False
         else:

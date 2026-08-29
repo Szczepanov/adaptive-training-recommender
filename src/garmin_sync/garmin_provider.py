@@ -28,6 +28,7 @@ from .canonical import (
     CanonicalZoneBucket,
 )
 from .dates import get_date_string, local_today, n_days_ago
+from .fit_activity import FitActivityEvidence, decode_activity_original
 from .garmin_client import GarminClientWrapper
 from .metrics import classify_activity_intensity
 from .provider import (
@@ -1424,6 +1425,7 @@ class GarminProviderAdapter:
         hrv=True,
         activities=True,
         activity_details=True,
+        activity_hr_fidelity=True,
         body_composition=True,
         gear_tracking=True,
         race_predictions=True,
@@ -1679,6 +1681,15 @@ class GarminProviderAdapter:
                 "activity_splits": splits,
             },
         )
+
+    def fetch_activity_hr_fidelity(self, activity_id: str) -> FitActivityEvidence | None:
+        """Decode one original activity in memory; the service owns failure isolation.
+
+        This result remains transient through HRF2/HRF3.  It intentionally has no raw
+        payload sidecar because original FIT bytes must never enter the archive path.
+        """
+        original = self.client.download_activity_original(activity_id)
+        return decode_activity_original(original) if original is not None else None
 
     def fetch_gear(self) -> ProviderGearResult:
         raw_gear = self._fetch_enrichment("gear", lambda: self.client.get_gear())
