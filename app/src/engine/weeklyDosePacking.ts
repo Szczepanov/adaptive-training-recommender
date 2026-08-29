@@ -145,6 +145,21 @@ export function packWeeklyDose(
         return rank[left.priority] - rank[right.priority];
     });
 
+    const sessionsNeededFor = (requirement: AdaptationDoseRequirement): number => {
+        const candidates = coverage.roles.filter(role =>
+            role.adaptations.includes(requirement.adaptation)
+            && permittedWorkoutIds(role, requirement).length > 0,
+        );
+        if (candidates.length === 0) return 0;
+        const delivered = packed
+            .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
+            .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
+        const remainingDose = Math.max(0, desiredDose(requirement) - delivered);
+        const bestPerSessionDose = Math.max(...candidates.map(role => doseFor(role, requirement)));
+        if (!Number.isFinite(bestPerSessionDose) || bestPerSessionDose <= 0) return 0;
+        return Math.ceil(remainingDose / bestPerSessionDose);
+    };
+
     for (const requirement of requirements) {
         const adaptationCandidates = coverage.roles.filter(role => role.adaptations.includes(requirement.adaptation));
         const permittedByRole = new Map<CoverageRoleDescriptor, string[]>();
@@ -166,20 +181,27 @@ export function packWeeklyDose(
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
         const requiredDose = desiredDose(requirement);
-        // A priority tier's ceiling (e.g. capacity.minSessions for 'required') is a shared
-        // budget across every requirement at that tier, not a per-requirement allowance.
-        // Processing requirements strictly in sequence would let the first one exhaust the
-        // whole tier ceiling and starve every peer that shares it (e.g. an 'endurance' and a
-        // 'strength_muscle' requirement both marked 'required' on a tight weekly commitment).
-        // Give each remaining peer an even split of whatever the tier has left.
-        // sessionLimit(priority) is an absolute, cumulative ceiling on packed.length (it
-        // already accounts for higher-priority tiers packed earlier). Split whatever room
-        // remains under that ceiling evenly across the not-yet-processed peers at this tier,
-        // so the first peer processed cannot claim the entire tier ceiling for itself.
-        const tierPeers = requirements.filter(item => item.priority === requirement.priority);
-        const tierPeersRemaining = tierPeers.length - tierPeers.indexOf(requirement);
+        // A priority tier's ceiling is shared. Allocate scarce room in proportion to the
+        // remaining session demand, while reserving one occurrence for every later peer
+        // that still needs coverage. Unlike a fixed even split, this also lets a heavy
+        // requirement reclaim slots a light peer does not need, so capacity is never left
+        // idle while the current tier still has a satisfiable shortfall.
+        const requirementIndex = requirements.indexOf(requirement);
+        const tierPeersRemaining = requirements
+            .slice(requirementIndex)
+            .filter(item => item.priority === requirement.priority);
+        const demandByPeer = tierPeersRemaining.map(peer => sessionsNeededFor(peer));
+        const currentDemand = demandByPeer[0] ?? 0;
+        const totalDemand = demandByPeer.reduce((total, demand) => total + demand, 0);
+        const laterPeersNeedingCoverage = demandByPeer.slice(1).filter(demand => demand > 0).length;
         const roomRemainingInTier = Math.max(0, sessionLimit(requirement.priority) - packed.length);
-        const allowedSessions = packed.length + Math.ceil(roomRemainingInTier / tierPeersRemaining);
+        const proportionalShare = totalDemand > 0
+            ? Math.ceil(roomRemainingInTier * currentDemand / totalDemand)
+            : 0;
+        const reserveForLaterPeers = Math.min(laterPeersNeedingCoverage, Math.max(0, roomRemainingInTier - 1));
+        const maxWithoutStarvingLaterPeers = Math.max(0, roomRemainingInTier - reserveForLaterPeers);
+        const requirementSessionBudget = Math.min(currentDemand, proportionalShare, maxWithoutStarvingLaterPeers);
+        const allowedSessions = packed.length + requirementSessionBudget;
 
         while (delivered < requiredDose && packed.length < allowedSessions) {
             const unusedSlots = slots.filter(slot => !slot.used);
