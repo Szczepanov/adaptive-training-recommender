@@ -2,7 +2,8 @@
 
 Status: **implemented**. Worktree: `.claude/worktrees/symptom-reporting`,
 branch `feat/subjective-symptom-reporting`. See §7 for what shipped and how it differs from
-this document's original sketch.
+this document's original sketch. The final safety decision is recorded in
+[ADR-0031](../adr/0031-cause-aware-subjective-symptom-gating.md).
 
 ## 1. The gap, precisely
 
@@ -11,177 +12,177 @@ You've had 2 days of sneezing + runny/stuffed nose and can't log it. This isn't 
 (`DailySubjectiveCheckin.illnessSymptoms` boolean → `healthContext.symptoms` detail block with
 onset/severity/types). The actual gaps are narrower and land in three places:
 
-1. **Symptom vocabulary is missing exactly your symptoms.** `HealthSymptomType`
-   ([healthAnomalyModels.ts:40-48](app/src/engine/healthAnomalyModels.ts:40)) only has:
+1. **Symptom vocabulary is missing exactly your symptoms.**
+   [`HealthSymptomType`](../../app/src/engine/healthAnomalyModels.ts) originally only had:
    `sore_throat, congestion, cough, fever_or_chills, headache_or_body_aches, gastrointestinal,
-   unusual_fatigue, other`. There's no `sneezing`, and `congestion` only weakly covers a stuffy
-   nose — it doesn't capture a *runny* nose, which is a distinct and common allergy symptom.
+   unusual_fatigue, other`. There was no `sneezing`, and `congestion` only weakly covered a
+   stuffy nose — it did not capture a *runny* nose, which is a distinct and common allergy
+   symptom.
 
-2. **No way to say "this is allergy, not infection."** The only lever is the top-level
-   `illnessSymptoms` boolean, and today it is undifferentiated:
-   - [adapters.ts:152](app/src/engine/adapters.ts:152) — `painFlag: checkin.painOrInjury ||
-     checkin.illnessSymptoms` — folds "I have hay fever" into the exact same flag as a
-     diagnosed injury.
-   - [rules.ts:744-748](app/src/engine/rules.ts:744) — that `painFlag` (as `isPain`) sets
-     `clinicalFlagActive = true`, **restricts Running**, and caps `maxAllowableTier`. Two days
-     of sneezing gets the same modality restriction and tier cap as a torn muscle or the flu.
-   - [healthAnomaly.ts:445-446](app/src/engine/healthAnomaly.ts:445) — any `symptoms.present`
-     marks today's physiological anomaly (elevated RHR/suppressed HRV, etc.) as "explained by
-     illness," which pollutes the HA6 evidence dataset if the real cause was pollen, not a
-     virus.
-   - The after-the-fact anomaly explanation flow (`HEALTH_ANOMALY_OUTCOME_EXPLANATIONS` in
-     [healthAnomalyOutcome.ts:1-12](app/src/engine/healthAnomalyOutcome.ts:1)) offers 10 causes
-     — `illness_symptoms, hard_training_recovery, poor_sleep, alcohol, travel_jetlag, stress,
-     heat_dehydration, vaccination_medication, nothing_obvious, other_not_sure` — again no
-     allergy option, forcing either a false `illness_symptoms` label or a signal-losing
+2. **No way to say "this is allergy, not infection."** The only lever was the top-level
+   `illnessSymptoms` boolean, and it was undifferentiated:
+   - [`mapCheckinToSubjectiveInput`](../../app/src/engine/adapters.ts) mapped
+     `painFlag: checkin.painOrInjury || checkin.illnessSymptoms`, folding "I have hay fever"
+     into the exact same flag as a diagnosed injury.
+   - [`evaluateEnvelopes`](../../app/src/engine/rules.ts) consumes that `painFlag` as `isPain`,
+     activates `clinicalFlagActive`, **restricts Running**, and caps `maxAllowableTier`. Two
+     days of sneezing therefore got the same modality restriction and tier cap as a torn
+     muscle or undifferentiated illness.
+   - [`evaluatePhysiologicalAnomaly`](../../app/src/engine/healthAnomaly.ts) separately records
+     whether symptoms were reported as part of the physiological-anomaly state. That subsystem
+     must retain observed physiology/context independently of whether the real-time training
+     gate is softened.
+   - The after-the-fact anomaly explanation flow,
+     [`HEALTH_ANOMALY_OUTCOME_EXPLANATIONS`](../../app/src/engine/healthAnomalyOutcome.ts), had
+     `illness_symptoms, hard_training_recovery, poor_sleep, alcohol, travel_jetlag, stress,
+     heat_dehydration, vaccination_medication, nothing_obvious, other_not_sure` — no allergy
+     option, forcing either a false `illness_symptoms` label or a signal-losing
      `other_not_sure`.
 
-3. **Same gap in the athlete-decision-feedback vocabulary.** `ModificationReason` in
-   [feedbackModels.ts:12-18](app/src/feedback/feedbackModels.ts:12) (used when logging why you
-   scaled down/rejected a recommendation) has `illness_symptoms` and `muscle_joint_pain` but no
-   allergy option either. Independent subsystem, same root cause.
+3. **Same gap in the athlete-decision-feedback vocabulary.**
+   [`ModificationReason`](../../app/src/feedback/feedbackModels.ts), used when logging why an
+   athlete scaled down/rejected a recommendation, had `illness_symptoms` and
+   `muscle_joint_pain` but no allergy option either. Independent subsystem, same root cause.
 
-## 2. Two phases — a vocabulary fix, and an optional behavior fix
+## 2. Two phases — a vocabulary fix, and a behavior fix
 
-**Phase 1 (recommended, low risk): let you say what's happening.** Add the missing symptom
-types and an allergy cause option everywhere the vocabulary is enumerated. Zero change to how
-the engine reacts — `illnessSymptoms: true` still triggers today's clinical-flag/Running-
-restriction path exactly as now. This alone unblocks logging.
+**Phase 1 (low risk): let the athlete say what's happening.** Add the missing symptom types
+and an allergy cause option everywhere the vocabulary is enumerated. By itself this does not
+need to change how the engine reacts.
 
-**Phase 2 (optional — needs your explicit go-ahead, not bundled by default): stop treating mild
-hay fever like an injury.** Use the new cause/severity detail to soften the
-`painFlag`/`clinicalFlagActive` gate specifically for mild, purely-upper-respiratory,
-allergy-attributed days. This changes actual recommendation output, so it needs a product
-decision and a simulation baseline diff, not just a data-model add. See §5.
-
-I'd suggest shipping Phase 1 now regardless of what you decide on Phase 2 — it's what's
-actually blocking you today.
+**Phase 2 (decision-affecting): stop treating a narrowly defined allergic-rhinitis-style day
+like an injury.** Use the new cause/severity/type detail to soften the
+`painFlag`/`clinicalFlagActive` path only when the report is explicit enough to pass a
+fail-closed predicate. This changes actual recommendation output, so it requires a policy
+version, targeted regression coverage and policy-drift checks. See §5 and ADR-0031.
 
 ## 3. Phase 1 — file-by-file
 
 | # | File | Change |
 |---|------|--------|
-| 1 | [app/src/engine/healthAnomalyModels.ts](app/src/engine/healthAnomalyModels.ts:40) | Add `'sneezing'`, `'runny_nose'` to the `HealthSymptomType` union. |
-| 2 | [app/src/engine/healthContextValidation.ts](app/src/engine/healthContextValidation.ts:19) | Add the same two values to `HEALTH_SYMPTOM_TYPES`. The max-length check at line 135 (`raw.types.length > HEALTH_SYMPTOM_TYPES.length`) is already derived from this array's length, so no separate cap to update here. |
-| 3 | [app/firestore.rules](app/firestore.rules:285) | `hasValidHealthSymptoms.types.hasOnly([...])` — add `'sneezing'`, `'runny_nose'`; bump the hardcoded `symptoms.types.size() <= 8` to `<= 10`. Also extend the `data.explanation in [...]` enum at line ~1344 with the new cause value (see row 5). |
-| 4 | [app/src/engine/healthAnomalyOutcome.ts](app/src/engine/healthAnomalyOutcome.ts:1) | Add `'allergy_or_hay_fever'` to `HEALTH_ANOMALY_OUTCOME_EXPLANATIONS`. |
-| 5 | [app/src/components/checkin/HealthContextSection.tsx](app/src/components/checkin/HealthContextSection.tsx:57) | Add `{ value: 'sneezing', label: 'Sneezing' }` and `{ value: 'runny_nose', label: 'Runny nose' }` to `SYMPTOM_TYPES`. Keep "Congestion" — the three together describe hay fever precisely (stuffy vs. runny vs. sneeze are genuinely distinct and can occur independently). |
-| 6 | [app/src/components/HealthAnomalyFollowupCard.tsx](app/src/components/HealthAnomalyFollowupCard.tsx:17) | Add `allergy_or_hay_fever: 'Seasonal allergy / hay fever'` to `EXPLANATION_LABELS`. Because this is a `Record<HealthAnomalyOutcomeExplanation, string>` over the exact union, TypeScript will hard-fail `npm run check` if this is forgotten once row 4 lands — a free safety net, not extra work to verify separately. |
-| 7 (optional, separate subsystem) | [app/src/feedback/feedbackModels.ts](app/src/feedback/feedbackModels.ts:12) + [feedbackValidation.ts](app/src/feedback/feedbackValidation.ts:29) | Add `'allergy_symptoms'` to `ModificationReason` + `VALID_REASONS`, so "I scaled this down because of allergies" doesn't have to misreport as `illness_symptoms`. Independent of rows 1-6; can ship in the same PR or later. |
+| 1 | [`healthAnomalyModels.ts`](../../app/src/engine/healthAnomalyModels.ts) | Add `'sneezing'`, `'runny_nose'` to `HealthSymptomType`. |
+| 2 | [`healthContextValidation.ts`](../../app/src/engine/healthContextValidation.ts) | Add the same values to `HEALTH_SYMPTOM_TYPES`; `validateSymptoms` derives its type-count bound from that array. |
+| 3 | [`firestore.rules`](../../app/firestore.rules) | Extend `hasValidHealthSymptoms` with the two types, update the hardcoded maximum from 8 to 10, add `suspectedCause`, and extend the health-anomaly outcome explanation allow-list. |
+| 4 | [`healthAnomalyOutcome.ts`](../../app/src/engine/healthAnomalyOutcome.ts) | Add `'allergy_or_hay_fever'` to `HEALTH_ANOMALY_OUTCOME_EXPLANATIONS`. |
+| 5 | [`HealthContextSection.tsx`](../../app/src/components/checkin/HealthContextSection.tsx) | Add `Sneezing` and `Runny nose` to `SYMPTOM_TYPES`. Keep `Congestion` — stuffy, runny and sneezing are useful distinct self-report signals. |
+| 6 | [`HealthAnomalyFollowupCard.tsx`](../../app/src/components/HealthAnomalyFollowupCard.tsx) | Add `allergy_or_hay_fever: 'Seasonal allergy / hay fever'` to `EXPLANATION_LABELS`. Its `Record<HealthAnomalyOutcomeExplanation, string>` type keeps the UI mapping exhaustive. |
+| 7 | [`feedbackModels.ts`](../../app/src/feedback/feedbackModels.ts) + [`feedbackValidation.ts`](../../app/src/feedback/feedbackValidation.ts) | Add `'allergy_symptoms'` to `ModificationReason` + `VALID_REASONS`, so allergy-driven athlete adjustments do not have to be mislabeled as illness. |
 
-### Naming to confirm before I implement
-- Explanation value: `allergy_or_hay_fever` vs. `seasonal_allergy` vs. `allergies` — I lean
-  toward `allergy_or_hay_fever` to match the existing style (`heat_dehydration`,
-  `vaccination_medication` are already compound).
-- Whether to keep `sneezing`/`runny_nose` as two separate types (my preference, consistent with
-  the existing fine-grained split of `cough`/`sore_throat`/`congestion` rather than one combined
-  `rhinitis` type) or merge them.
+### Naming decisions
 
-### Tests to add/update
-- `healthContextDefaults.test.ts`, `healthContextContract.test.ts`,
-  `checkinHealthContext.test.ts` — new types round-trip through
-  `normalizeHealthContext`/the parser.
-- `app/src/emulator/healthContextRules.emulator.test.ts` — accept a doc with
-  `types: ['sneezing','runny_nose']`; keep the existing over-length rejection case correct
-  against the new cap.
-- `app/src/emulator/healthAnomalyOutcomeRules.emulator.test.ts` — accept
-  `explanation: 'allergy_or_hay_fever'`.
-- `healthAnomalyOutcome.test.ts` — any test iterating `HEALTH_ANOMALY_OUTCOME_EXPLANATIONS`
-  picks the new value up automatically; add one explicit case.
-- `HealthAnomalyFollowupCard.test.tsx` — label rendering for the new option.
-- `decisionInputs.test.ts` / `checkinService.test.ts` — parser round-trip for the two new
-  symptom types.
-- `wellnessLanguageAudit.test.ts` — re-run as-is to confirm the new copy doesn't trip the
-  no-diagnostic-language checks (it audits existing rationale/label strings; new UI-only labels
-  should already comply if phrased as self-report, e.g. avoid asserting anything the user didn't
-  say).
-- If row 7 is included: `feedbackValidation.test.ts` for the new `ModificationReason`.
-- New cross-check test worth adding: assert `firestore.rules`' hardcoded symptom-type list/size
-  and explanation enum stay in sync with `HEALTH_SYMPTOM_TYPES` /
-  `HEALTH_ANOMALY_OUTCOME_EXPLANATIONS` — rules can't import TS constants, so this pairing is a
-  manual-sync risk today (nothing currently catches drift between them the way
-  `decisionJournal.test.ts` guards `SHADOW_VERDICTS` against `externalSession.ts`). A simple
-  test that reads `firestore.rules` as text and regex-extracts the enum list, then diffs it
-  against the TS constant, would close this permanently rather than just for this change.
+- Explanation value: `allergy_or_hay_fever`.
+- `sneezing` and `runny_nose` remain separate types, consistent with the existing fine-grained
+  symptom vocabulary.
 
-### Rollout checklist (Phase 1)
+### Tests added/updated
+
+- `healthContextContract.test.ts`, `checkinHealthContext.test.ts` — new symptom/cause values
+  round-trip through the health-context contract/parser.
+- [`healthContextRules.emulator.test.ts`](../../app/src/emulator/healthContextRules.emulator.test.ts)
+  — accepts the allergy-oriented types/cause and rejects invalid or contradictory shapes.
+- [`healthAnomalyOutcomeRules.emulator.test.ts`](../../app/src/emulator/healthAnomalyOutcomeRules.emulator.test.ts)
+  — accepts `explanation: 'allergy_or_hay_fever'`.
+- `healthAnomalyOutcome.test.ts` and `HealthAnomalyFollowupCard.test.tsx` — cover the new
+  explanation/label.
+- `feedbackValidation.test.ts` — covers the new `ModificationReason`.
+- [`adapters.test.ts`](../../app/src/engine/adapters.test.ts) — covers the complete decision
+  predicate described in §5/ADR-0031.
+
+A future cross-check test could additionally parse `firestore.rules` and compare its hardcoded
+symptom/explanation allow-lists with the TypeScript constants. Rules cannot import TypeScript,
+so that remains a manual-sync risk outside the core behavior of this PR.
+
+### Rollout checklist
+
 ```bash
-cd app && npm run check        # TS/ESLint/Vitest/workout catalog
-cd app && npm run test:rules   # Firestore emulator rules tests — mandatory, firestore.rules changed
+cd app && npm run check
+cd app && npm run test:rules
+node scripts/check-policy-drift.mjs main
 ```
-Then `make check` before opening a PR per repo convention.
+
+Because Phase 2 changes recommendation output, scenario simulation is useful additional
+regression evidence when available. The PR's GitHub Actions checks are the authoritative final
+status for the branch.
 
 ## 4. What Phase 1 deliberately does *not* change
 
-- `DailySubjectiveCheckin.illnessSymptoms` semantics — still the single top-level safety gate,
-  unchanged.
-- Any recommendation/engine behavior — `rules.ts`, `adapters.ts` untouched in Phase 1.
-- No retroactive fix for the 2 days already passed — this only unblocks logging from today
-  onward. Backfilling those two days isn't proposed here; say if you want it and I'll size it
-  separately (it'd mean writing historical `daily_subjective_checkins` docs by hand for
-  yesterday and the day before, which is a data-integrity call worth its own confirmation, not
-  a side effect of this feature).
+- `DailySubjectiveCheckin.illnessSymptoms` remains the top-level athlete report.
+- Phase 1 alone does not alter recommendation behavior; the behavior change belongs to Phase 2.
+- No retroactive historical check-ins are created as a side effect of adding the vocabulary.
 
-## 5. Phase 2 (optional) — cause-aware gating, only if you want it
+## 5. Phase 2 — cause-aware gating
 
-The real behavioral complaint underneath the missing fields: right now, ticking
-"illness symptoms" for 2 days of mild sneezing gets you the *same* Running restriction and tier
-cap as a flu or an injury. If you want that softened specifically for mild,
-allergy-attributed, purely-upper-respiratory days:
+The behavioral complaint underneath the missing fields was that ticking "illness symptoms"
+for a day of mild hay-fever-style sneezing got the same Running restriction and tier cap as a
+systemic illness or injury. The implemented rule is intentionally narrower than merely
+trusting `suspectedCause: 'allergy'`.
 
-1. Add `suspectedCause?: 'infectious' | 'allergy' | 'unsure' | null` to `HealthSymptomsCheckin`
-   ([healthAnomalyModels.ts:32](app/src/engine/healthAnomalyModels.ts:32)), threaded through
-   `healthContextValidation.ts`, `firestore.rules`, and a third chip row in
-   `HealthContextSection.tsx` (shown once symptoms are present).
-2. In [adapters.ts:152](app/src/engine/adapters.ts:152), change `painFlag` to fold in
-   `illnessSymptoms` only when NOT (`suspectedCause === 'allergy'` AND `severity !== 'severe'`
-   AND no `fever_or_chills`/`gastrointestinal`/`unusual_fatigue` type reported). Keep
-   `painOrInjury` unconditional — that boolean is untouched either way. Doing the judgment call
-   here, in the adapter, rather than in `rules.ts`, keeps `evaluateEnvelopes`'s
-   `isPain = readiness.subjective.painFlag` contract exactly as simple as it is today.
-3. Decide (this is the actual product call, not an engineering one): should an
-   allergy-explained physiological anomaly still count as "explained" in `healthAnomaly.ts:445`?
-   Probably yes — allergies genuinely can elevate RHR/suppress HRV — but you may want the HA6
-   *evidence label* to record cause separately from the real-time *state machine* treatment, so
-   future model tuning can tell allergy-explained days from virus-explained days even though
-   both currently short-circuit to "explained."
-4. Tests: `rules.test.ts`, `adapters.test.ts`, `healthAnomaly.test.ts`,
-   `wellnessLanguageAudit.test.ts` (new rationale copy must stay self-reported, not diagnostic —
-   e.g. "You're flagging allergy symptoms today" not "You have allergies").
-5. Because this changes recommendation output for a real subset of scenarios, run
-   `npm run simulate:scenarios && npm run simulate:diff` and
-   `node scripts/check-policy-drift.mjs <base-sha>` before merging — this is exactly the kind of
-   policy drift those scripts exist to catch.
+1. [`HealthSymptomsCheckin`](../../app/src/engine/healthAnomalyModels.ts) adds
+   `suspectedCause?: 'infectious' | 'allergy' | 'unsure' | null`, threaded through
+   [`healthContextValidation.ts`](../../app/src/engine/healthContextValidation.ts),
+   [`firestore.rules`](../../app/firestore.rules), persistence, and the check-in UI.
+2. [`mapCheckinToSubjectiveInput`](../../app/src/engine/adapters.ts) softens the
+   `illnessSymptoms` contribution to `painFlag` only when **all** are true:
+   - `healthContext.symptoms.present === true`;
+   - `suspectedCause === 'allergy'`;
+   - severity is explicitly `mild` or `moderate`;
+   - symptom types are present and non-empty;
+   - every type is one of `congestion`, `runny_nose`, `sneezing`.
+3. Missing/`null` severity, missing types, `severe`, `infectious`, `unsure`, or any broader
+   symptom (`sore_throat`, `cough`, `fever_or_chills`, `headache_or_body_aches`,
+   `gastrointestinal`, `unusual_fatigue`, `other`) keeps the previous conservative illness
+   behavior. A future symptom type is conservative automatically until explicitly reviewed.
+4. `painOrInjury` remains unconditional. Allergy attribution can never loosen a tissue/injury
+   restriction.
+5. The judgment stays in the adapter. [`evaluateEnvelopes`](../../app/src/engine/rules.ts)
+   retains its simple `isPain = readiness.subjective.painFlag` contract.
+6. Physiological anomaly evidence remains orthogonal: the exception changes today's training
+   gate, not the observed measurements and not an illness/allergy diagnosis.
 
-**Why I'm not just building this by default:** under-restricting someone whose "probably
-allergies" is actually early-stage flu is the real failure mode here, and it's a judgment call
-about how much slack to give, not something to bake in opportunistically alongside a vocabulary
-fix. If you want Phase 2, say so and I'll turn §5 into the same level of file-by-file detail as
-§3 before touching code.
+### Why fail closed?
+
+The meaningful failure mode is under-restricting someone whose self-attributed "allergy" is an
+early infection or an airway condition. IOC guidance explicitly distinguishes infective and
+non-infective respiratory illness in athletes, while EAACI guidance emphasizes accurate
+diagnosis and the possible coexistence of allergic rhinitis with asthma/exercise-induced
+bronchoconstriction. The app does not yet model enough respiratory red flags to safely relax
+cough/sore-throat/other presentations. ADR-0031 records that evidence and the resulting product
+boundary.
 
 ## 6. Suggested sequencing
 
-1. Confirm naming (§3) and whether row 7 (feedback vocabulary) is in scope.
-2. Implement Phase 1 in this worktree, on `feat/subjective-symptom-reporting`.
-3. `npm run check` + `npm run test:rules`, fix any fallout.
-4. Decide on Phase 2 separately, as its own follow-up if wanted.
+The implementation followed this sequence:
+
+1. Add the symptom/cause vocabulary and persistence validation.
+2. Add outcome/feedback vocabulary and UI support.
+3. Add the adapter behavior behind an explicit fail-closed predicate.
+4. Add targeted decision and Firestore-rule tests.
+5. Add `adapters.ts` to the policy-drift decision-affecting file set and bump `POLICY_VERSION`.
+6. Deep-review the safety predicate, harden missing-detail and symptom-shape behavior, and record
+   the final decision in ADR-0031.
 
 ## 7. What actually shipped
 
-Both phases were approved and implemented together (naming: `allergy_or_hay_fever`; row 7
-included). Phase 2 landed exactly as designed here — entirely inside
-`adapters.ts::mapCheckinToSubjectiveInput` via a new `isAllergyLikeSymptomDay` helper, with
-`rules.ts` untouched. No changes beyond this document's scope.
+Both phases shipped together (naming: `allergy_or_hay_fever`; feedback reason included).
+Phase 2 remains entirely inside `adapters.ts::mapCheckinToSubjectiveInput` via
+`isAllergyLikeSymptomDay`, with `rules.ts` untouched.
 
-One thing this document didn't anticipate, caught while preparing the PR: `adapters.ts` was
-missing from `scripts/check-policy-drift.mjs`'s `decisionAffectingFiles` allow-list, even
-though it clearly determines `painFlag`/`clinicalFlagActive` before `rules.ts` ever runs (the
-same reasoning already applied there to `subjectiveBaseline.ts` and `authoredSessionGates.ts`).
-Fixed as part of this PR:
-- Added `app/src/engine/adapters.ts` to `decisionAffectingFiles`.
-- Bumped `POLICY_VERSION` to `2026-08-allergy-symptom-gating-v1` (single-line bump only, per
-  repo convention — `HISTORICAL_POLICY_VERSIONS` is not touched on every bump).
+The review pass made two important hardening changes beyond the original sketch:
 
-Verification (final, after both commits): `npm run check` (typecheck + lint + `npm test` 2680
-passed + `npm run validate:workouts`), `npm run test:rules` (140 Firestore-emulator tests), and
-`node scripts/check-policy-drift.mjs main` all pass.
+- **Missing severity is no longer fail-open.** `null`/absent severity cannot clear the illness
+  safety gate; it must be explicitly `mild` or `moderate`.
+- **A positive nasal-symptom allow-list replaces the original systemic-symptom blacklist.**
+  Symptom types must be present and every type must be `congestion`, `runny_nose`, or
+  `sneezing`. This prevents `headache_or_body_aches`, `other`, cough/sore throat and future
+  schema additions from silently qualifying.
+
+The review also closed the policy-drift coverage gap exposed by this feature:
+
+- `app/src/engine/adapters.ts` is now in `decisionAffectingFiles`.
+- `POLICY_VERSION` is `2026-08-allergy-symptom-gating-v1`.
+- [ADR-0031](../adr/0031-cause-aware-subjective-symptom-gating.md) records the final safety
+  policy and evidence rationale.
+
+The initial implementation passed the full app and Firestore-rule suites before review. The
+post-review branch must pass the PR's GitHub Actions checks; those checks remain the
+source-of-truth rather than embedding a permanently stale test count in this design document.
