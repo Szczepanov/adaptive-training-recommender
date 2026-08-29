@@ -29,17 +29,40 @@ function gitGrepFiles(pattern, paths = ['app/src']) {
   }
 }
 
-let diffOutput = '';
-try {
-  diffOutput = git(['diff', '--name-only', `${baseRef}...HEAD`]);
-} catch (err) {
-  // If shallow checkout without base commit, attempt a single fetch for the base SHA.
+/**
+ * pull_request workflows normally check out GitHub's synthetic merge commit. The event's
+ * base.sha can become stale if main advances between the event payload and checkout; diffing
+ * that old SHA to HEAD then falsely attributes unrelated new-main files to the PR. On PR
+ * runs, isolate the actual contribution by diffing merge parent 1 (current base) to merge
+ * parent 2 (PR head). Push/manual runs retain the explicit baseRef behaviour below.
+ */
+function pullRequestMergeDiff() {
+  const eventName = process.env.GITHUB_EVENT_NAME;
+  if (eventName !== 'pull_request' && eventName !== 'pull_request_target') return null;
   try {
-    git(['fetch', '--depth=1', 'origin', baseRef]);
+    const parents = git(['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(/\s+/);
+    if (parents.length !== 3) return null;
+    const [, currentBaseParent, prHeadParent] = parents;
+    return git(['diff', '--name-only', `${currentBaseParent}...${prHeadParent}`]);
+  } catch (err) {
+    console.warn(`Could not isolate pull-request merge parents; falling back to base ref: ${err.message}`);
+    return null;
+  }
+}
+
+let diffOutput = pullRequestMergeDiff() ?? '';
+if (!diffOutput) {
+  try {
     diffOutput = git(['diff', '--name-only', `${baseRef}...HEAD`]);
-  } catch (fetchErr) {
-    console.warn(`Could not diff against base ref ${baseRef}: ${fetchErr.message}`);
-    process.exit(0);
+  } catch (err) {
+    // If shallow checkout without base commit, attempt a single fetch for the base SHA.
+    try {
+      git(['fetch', '--depth=1', 'origin', baseRef]);
+      diffOutput = git(['diff', '--name-only', `${baseRef}...HEAD`]);
+    } catch (fetchErr) {
+      console.warn(`Could not diff against base ref ${baseRef}: ${fetchErr.message}`);
+      process.exit(0);
+    }
   }
 }
 
