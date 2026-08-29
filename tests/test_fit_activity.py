@@ -59,6 +59,12 @@ def test_decode_activity_original_extracts_only_compact_evidence_from_zip():
         ),
         FakeDefinitionMessage("record"),
         FakeDataMessage(
+            "event",
+            timestamp=datetime(2026, 1, 1, 9, 59),
+            event="timer",
+            event_type="start",
+        ),
+        FakeDataMessage(
             "record",
             timestamp=datetime(2026, 1, 1, 10, 0),
             heart_rate=151,
@@ -86,6 +92,8 @@ def test_decode_activity_original_extracts_only_compact_evidence_from_zip():
     assert evidence.average_heart_rate_bpm == 148.0
     assert evidence.lap_average_heart_rate_bpm == (150.0,)
     assert evidence.time_in_hr_zone_seconds == (0.0, 15.0, 120.0, 60.0, 30.0, 5.0, 0.0)
+    assert len(evidence.timer_events) == 1
+    assert evidence.timer_events[0].event_type == "start"
 
 
 def test_decode_activity_original_tolerates_missing_optional_fit_fields():
@@ -135,6 +143,32 @@ def test_decode_activity_original_uses_only_session_scoped_time_in_zone_fallback
         evidence = decode_activity_original(_synthetic_original_zip())
 
     assert evidence.time_in_hr_zone_seconds == (10.0, 20.0, 30.0, 40.0, 50.0)
+
+
+def test_decode_activity_original_ignores_non_timer_events():
+    messages = [
+        FakeDataMessage(
+            "event",
+            timestamp=datetime(2026, 1, 1, 10, 0),
+            event="lap",
+            event_type="stop",
+        ),
+        FakeDataMessage(
+            "event",
+            timestamp=datetime(2026, 1, 1, 10, 1),
+            event=0,
+            event_type="stop_all",
+        ),
+    ]
+
+    with patch(
+        "garmin_sync.fit_activity.fitdecode.FitReader",
+        return_value=_reader_with(messages),
+    ):
+        evidence = decode_activity_original(_synthetic_original_zip())
+
+    assert len(evidence.timer_events) == 1
+    assert evidence.timer_events[0].event_type == "stop_all"
 
 
 @pytest.mark.parametrize("original", [b"", b"not-a-fit-or-zip"])
