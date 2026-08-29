@@ -48,13 +48,11 @@ describe('runActivityHrFidelityShadowReplay', () => {
             totalActivities: 2,
             assessedActivities: 1,
             notAssessedActivities: 1,
+            notAssessedReasons: { MEASUREMENT_UNAVAILABLE: 1 },
             unknownAssessmentCount: 1,
             assessmentUnknownRate: 1,
             assessableCoverage: 0.5,
-            assessmentUnknownReasons: {
-                MEASUREMENT_UNAVAILABLE: 1,
-                FIT_DATA_INCOMPLETE: 1,
-            },
+            assessmentUnknownReasons: { FIT_DATA_INCOMPLETE: 1 },
         });
         expect(report.rows[0].authorityByUse.DISPLAY_AVERAGE).toMatchObject({
             status: 'OBSERVATIONAL', reasons: ['MEASUREMENT_UNAVAILABLE'],
@@ -120,16 +118,27 @@ describe('runActivityHrFidelityShadowReplay', () => {
         expect(renderActivityHrFidelityShadowReplayMarkdown(report)).not.toMatch(/accuracy\s*=|% accurate/i);
     });
 
-    it('does not call every poor external sensor a chest-strap failure', () => {
-        const report = runActivityHrFidelityShadowReplay([activity('poor-optical', {
-            hrMeasurement: measurement({
-                externalHrSensorPresent: true,
-                sourceForActivity: 'external',
-                sensorTechnology: 'optical_armband',
-                signalQuality: 'poor',
-                measurementConfidence: 'unreliable',
+    it('does not call every poor external sensor or contradictory technology flag a chest-strap failure', () => {
+        const report = runActivityHrFidelityShadowReplay([
+            activity('poor-optical', {
+                hrMeasurement: measurement({
+                    externalHrSensorPresent: true,
+                    sourceForActivity: 'external',
+                    sensorTechnology: 'optical_armband',
+                    signalQuality: 'poor',
+                    measurementConfidence: 'unreliable',
+                }),
             }),
-        })]);
+            activity('chest-tech-without-presence', {
+                hrMeasurement: measurement({
+                    externalHrSensorPresent: false,
+                    sourceForActivity: 'unknown',
+                    sensorTechnology: 'electrode_chest_strap',
+                    signalQuality: 'poor',
+                    measurementConfidence: 'unreliable',
+                }),
+            }),
+        ]);
 
         expect(report.summary.poorTraceDespiteChestStrapCount).toBe(0);
     });
@@ -155,12 +164,14 @@ describe('runActivityHrFidelityShadowReplay', () => {
         })]);
 
         expect(report.summary.assessmentUnknownReasons).toEqual({ ASSESSMENT_REASON_UNSPECIFIED: 1 });
+        expect(report.summary.notAssessedReasons).toEqual({});
     });
 
     it('has stable zero-safe observability for an empty replay', () => {
         const report = runActivityHrFidelityShadowReplay([]);
 
         expect(report.summary.assessableCoverage).toBe(0);
+        expect(report.summary.notAssessedReasons).toEqual({});
         expect(report.summary.assessmentUnknownRate).toBe(0);
         expect(report.summary.summaryComparableCount).toBe(0);
         expect(report.summary.summaryReconciliationRate).toBe(0);
