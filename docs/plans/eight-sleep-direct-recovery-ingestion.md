@@ -31,7 +31,7 @@ Runtime config: `EIGHT_SLEEP_DIRECT_ENABLED=false`, `EIGHT_SLEEP_EMAIL`, `EIGHT_
 
 Probe: `EIGHT_SLEEP_DIRECT_ENABLED=true python -m garmin_sync.eight_sleep_probe --date YYYY-MM-DD`.
 
-### ES9 — shadow direct-vs-Google comparison (implemented, evidence pending)
+### ES9 — shadow direct-vs-Garmin comparison (implemented, evidence available)
 
 Direct Eight Sleep observations previously had no persistence path — the ES6 probe only
 printed a sanitized summary to stdout. Two new commands close that gap:

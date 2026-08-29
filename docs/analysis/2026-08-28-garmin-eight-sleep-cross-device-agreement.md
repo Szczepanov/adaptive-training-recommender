@@ -12,7 +12,7 @@ real account, full year (2025-08-29 to 2026-08-28), 314 nights with both sources
 
 ## Headline numbers
 
-| Stat | All 314 nights |
+| Stat | 312 paired-duration nights |
 |---|---|
 | Mean absolute delta | 56.9 min |
 | Median absolute delta | 27.2 min |
