@@ -113,7 +113,11 @@ def _calc_percentile(values: list[float], pct: float) -> float | None:
     if not values:
         return None
     sorted_v = sorted(values)
-    idx = min(int(len(sorted_v) * pct), len(sorted_v) - 1)
+    n = len(sorted_v)
+    # Nearest-rank: rank = ceil(pct * n), 1-indexed -> index = rank - 1. int(n * pct) is
+    # wrong whenever n * pct lands exactly on an integer (e.g. n=10, pct=0.9 -> int()
+    # gives index 9, the maximum, instead of index 8, the actual 9th-ranked value).
+    idx = min(max(math.ceil(n * pct) - 1, 0), n - 1)
     return sorted_v[idx]
 
 
@@ -177,17 +181,23 @@ def _likely_bed_move(
     started late) must not be flagged; only a late Eight Sleep start relative to that same
     night's own Garmin start is evidence of a location change, not a late night.
 
-    Returns None (not False) when either timestamp is unavailable -- honestly "unknown",
-    never asserted as "not a bed move" without evidence. Both parsed as ISO 8601 UTC.
+    Returns None (not False) when either timestamp is unavailable, malformed, or
+    offset-less -- honestly "unknown", never asserted as "not a bed move" without
+    evidence. The Google Health mapper can persist offset-less timestamps, and pairing
+    one against Garmin's offset-aware timestamp would otherwise raise TypeError on
+    subtraction and abort the whole audit; an unclassifiable night must degrade this one
+    night's result, not the run. Both parsed as ISO 8601 UTC when an offset is present.
     """
     if not garmin_start_iso or not eight_start_iso:
         return None
     try:
         garmin_start = datetime.fromisoformat(garmin_start_iso.replace("Z", "+00:00"))
         eight_start = datetime.fromisoformat(eight_start_iso.replace("Z", "+00:00"))
+        if garmin_start.tzinfo is None or eight_start.tzinfo is None:
+            return None
+        gap_minutes = (eight_start - garmin_start).total_seconds() / 60.0
     except (ValueError, TypeError):
         return None
-    gap_minutes = (eight_start - garmin_start).total_seconds() / 60.0
     return gap_minutes > threshold_minutes
 
 

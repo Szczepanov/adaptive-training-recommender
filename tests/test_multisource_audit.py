@@ -28,11 +28,29 @@ def test_calc_percentile() -> None:
     assert _calc_percentile(vals, 0.0) == 10.0
 
 
+def test_calc_percentile_p90_of_ten_values_is_ninth_ranked_not_max() -> None:
+    """int(n * pct) is wrong whenever n * pct lands exactly on an integer: for 10 values,
+    int(10 * 0.9) == 9 selects the maximum (index 9) instead of the actual 9th-ranked
+    value (index 8). Nearest-rank should be ceil(n * pct) - 1."""
+    vals = [float(i) for i in range(1, 11)]  # 1.0..10.0
+    assert _calc_percentile(vals, 0.9) == 9.0
+
+
 def test_likely_bed_move_unknown_when_either_timestamp_missing() -> None:
     """Honest 'unknown', never asserted as 'not a bed move' without evidence."""
     assert _likely_bed_move(None, "2026-08-14T19:22:00+00:00") is None
     assert _likely_bed_move("2026-08-13T19:56:29+00:00", None) is None
     assert _likely_bed_move(None, None) is None
+
+
+def test_likely_bed_move_unknown_when_one_timestamp_is_offset_less() -> None:
+    """The Google Health mapper can persist offset-less (timezone-naive) timestamps, and
+    persistence keeps them offset-less. Pairing one against Garmin's offset-aware timestamp
+    must degrade to 'unknown' for that one night, not raise TypeError and abort the whole
+    audit run."""
+    assert _likely_bed_move("2026-08-13T19:56:29+00:00", "2026-08-13T20:15:00") is None
+    assert _likely_bed_move("2026-08-13T19:56:29", "2026-08-13T20:15:00+00:00") is None
+    assert _likely_bed_move("2026-08-13T19:56:29", "2026-08-13T20:15:00") is None
 
 
 def test_likely_bed_move_flags_late_eight_sleep_start() -> None:
