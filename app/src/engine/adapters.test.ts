@@ -120,6 +120,91 @@ describe('mapSnapshotToEngineInput respiration baseline compatibility', () => {
     });
 });
 
+function sleepDecisionAuthoritySnapshot(baselineComputationVersion: number): DailyRecoverySnapshot {
+    return {
+        raw: {
+            totalSteps: null,
+            sleepScore: null,
+            sleepDurationSec: null,
+            restingHr: null,
+            hrvOvernightAvg: null,
+            respirationAvg: null,
+            bodyBatteryWake: null,
+            last3DaysHardSessionsCount: 0,
+            yesterdayTraining: null,
+            todayTraining: null,
+        },
+        derived: {
+            baselineComputationVersion,
+            restingHr7dAvg: null,
+            hrv7dAvg: null,
+            steps7dAvg: null,
+            steps28dAvg: null,
+            hrv28dStdev: null,
+            restingHr28dStdev: null,
+            sleepScore28dStdev: null,
+            steps28dStdev: null,
+            sleepDurationAccumulated2dDeficitSec: 3300, // 55 min
+            sleepDurationAccumulated3dDeficitSec: 4200, // 70 min
+            bedtime7dCircularMeanMinutes: 1350,
+            deltas: {
+                sleepScoreVs7d: null,
+                sleepScoreVs28d: null,
+                restingHrVs7d: null,
+                restingHrVs28d: null,
+                hrvVs7d: null,
+                hrvVs28d: null,
+                respirationVs7d: null,
+                respirationVs28d: null,
+                stepsVs7d: null,
+                stepsVs28d: null,
+                sleepDurationVs7dMedian: -1200, // -20 min (20 min short)
+                sleepDurationVs28dMedian: -900,
+                bedtimeDeviationVs7dMinutes: 15,
+                bedtimeDeviationVs28dMinutes: 10,
+                wakeTimeDeviationVs7dMinutes: -5,
+                wakeTimeDeviationVs28dMinutes: -3,
+                sleepMidpointDeviationVs7dMinutes: 8,
+                sleepMidpointDeviationVs28dMinutes: 6,
+            },
+        },
+    } as unknown as DailyRecoverySnapshot;
+}
+
+describe('mapSnapshotToEngineInput sleep-decision-authority (Phase 2/3) fields', () => {
+    it('leaves every sleep-decision-authority field null below baselineComputationVersion 6', () => {
+        const objective = mapSnapshotToEngineInput(sleepDecisionAuthoritySnapshot(5));
+
+        expect(objective.sleep_duration_delta_7d_min).toBeNull();
+        expect(objective.sleep_duration_delta_28d_min).toBeNull();
+        expect(objective.sleep_duration_accumulated_2d_deficit_min).toBeNull();
+        expect(objective.sleep_duration_accumulated_3d_deficit_min).toBeNull();
+        expect(objective.bedtime_deviation_7d_min).toBeNull();
+        expect(objective.wake_time_deviation_7d_min).toBeNull();
+        expect(objective.sleep_midpoint_deviation_7d_min).toBeNull();
+    });
+
+    it('converts seconds to minutes for duration/deficit fields at baselineComputationVersion 6+', () => {
+        const objective = mapSnapshotToEngineInput(sleepDecisionAuthoritySnapshot(6));
+
+        expect(objective.sleep_duration_delta_7d_min).toBe(-20);
+        expect(objective.sleep_duration_delta_28d_min).toBe(-15);
+        expect(objective.sleep_duration_accumulated_2d_deficit_min).toBe(55);
+        expect(objective.sleep_duration_accumulated_3d_deficit_min).toBe(70);
+    });
+
+    it('passes bedtime/wake-time/sleep-midpoint deviations through unconverted (already minutes)', () => {
+        const objective = mapSnapshotToEngineInput(sleepDecisionAuthoritySnapshot(6));
+
+        expect(objective.bedtime_deviation_7d_min).toBe(15);
+        expect(objective.bedtime_deviation_28d_min).toBe(10);
+        expect(objective.wake_time_deviation_7d_min).toBe(-5);
+        expect(objective.wake_time_deviation_28d_min).toBe(-3);
+        expect(objective.sleep_midpoint_deviation_7d_min).toBe(8);
+        expect(objective.sleep_midpoint_deviation_28d_min).toBe(6);
+    });
+});
+
 describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiring)', () => {
     it('turns persisted unavailable modalities into hard engine restrictions', () => {
         const preferences: UserPreferences = {

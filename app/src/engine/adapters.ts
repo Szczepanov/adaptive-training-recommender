@@ -90,6 +90,14 @@ export function mapSnapshotToEngineInput(
         && snapshot.derived.respiration28dMad !== null
         && snapshot.derived.respiration28dMad !== undefined;
 
+    // Phase 2 sleep-decision-authority fields (shadow/observation-only, feeds
+    // sleepRecoveryEvidence.ts only) -- absent entirely on documents predating
+    // baselineComputationVersion 6, not merely null, so gate on the version rather than
+    // trusting individual field presence.
+    const hasSleepDecisionAuthorityBaseline = (snapshot.derived.baselineComputationVersion ?? 0) >= 6;
+    const secToMin = (sec: number | null | undefined): number | null =>
+        sec === null || sec === undefined ? null : sec / 60;
+
     return {
         total_steps: snapshot.raw.totalSteps,
         sleep_score: snapshot.raw.sleepScore,
@@ -129,6 +137,39 @@ export function mapSnapshotToEngineInput(
         rhr_stdev_28d: snapshot.derived.restingHr28dStdev ?? null,
         sleep_score_stdev_28d: snapshot.derived.sleepScore28dStdev ?? null,
         steps_stdev_28d: snapshot.derived.steps28dStdev ?? null,
+
+        sleep_duration_delta_7d_min: hasSleepDecisionAuthorityBaseline
+            ? secToMin(snapshot.derived.deltas.sleepDurationVs7dMedian)
+            : null,
+        sleep_duration_delta_28d_min: hasSleepDecisionAuthorityBaseline
+            ? secToMin(snapshot.derived.deltas.sleepDurationVs28dMedian)
+            : null,
+        sleep_duration_accumulated_2d_deficit_min: hasSleepDecisionAuthorityBaseline
+            ? secToMin(snapshot.derived.sleepDurationAccumulated2dDeficitSec)
+            : null,
+        sleep_duration_accumulated_3d_deficit_min: hasSleepDecisionAuthorityBaseline
+            ? secToMin(snapshot.derived.sleepDurationAccumulated3dDeficitSec)
+            : null,
+        // Already minutes on the Python side (circular time-of-day arithmetic) -- no
+        // seconds-to-minutes conversion, unlike the duration/deficit fields above.
+        bedtime_deviation_7d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.bedtimeDeviationVs7dMinutes ?? null
+            : null,
+        bedtime_deviation_28d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.bedtimeDeviationVs28dMinutes ?? null
+            : null,
+        wake_time_deviation_7d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.wakeTimeDeviationVs7dMinutes ?? null
+            : null,
+        wake_time_deviation_28d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.wakeTimeDeviationVs28dMinutes ?? null
+            : null,
+        sleep_midpoint_deviation_7d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.sleepMidpointDeviationVs7dMinutes ?? null
+            : null,
+        sleep_midpoint_deviation_28d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.sleepMidpointDeviationVs28dMinutes ?? null
+            : null,
     };
 }
 
