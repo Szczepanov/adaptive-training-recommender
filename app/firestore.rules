@@ -269,7 +269,7 @@ service cloud.firestore {
 
     function hasValidHealthSymptoms(symptoms) {
       return symptoms is map
-        && symptoms.keys().hasOnly(['present', 'onset', 'severity', 'types'])
+        && symptoms.keys().hasOnly(['present', 'onset', 'severity', 'types', 'suspectedCause'])
         && symptoms.keys().hasAll(['present'])
         && symptoms.present is bool
         && (!('onset' in symptoms)
@@ -278,11 +278,14 @@ service cloud.firestore {
         && (!('severity' in symptoms)
           || (symptoms.present && (symptoms.severity == null || symptoms.severity in ['mild', 'moderate', 'severe']))
           || (!symptoms.present && symptoms.severity == null))
+        && (!('suspectedCause' in symptoms)
+          || (symptoms.present && (symptoms.suspectedCause == null || symptoms.suspectedCause in ['infectious', 'allergy', 'unsure']))
+          || (!symptoms.present && symptoms.suspectedCause == null))
         && (!('types' in symptoms)
           || (symptoms.present && (symptoms.types == null || (
             symptoms.types is list
-            && symptoms.types.size() <= 8
-            && symptoms.types.hasOnly(['sore_throat', 'congestion', 'cough', 'fever_or_chills', 'headache_or_body_aches', 'gastrointestinal', 'unusual_fatigue', 'other'])
+            && symptoms.types.size() <= 10
+            && symptoms.types.hasOnly(['sore_throat', 'congestion', 'runny_nose', 'sneezing', 'cough', 'fever_or_chills', 'headache_or_body_aches', 'gastrointestinal', 'unusual_fatigue', 'other'])
           )))
           || (!symptoms.present && symptoms.types == null));
     }
@@ -1341,7 +1344,7 @@ service cloud.firestore {
         && sourceAssessment.revisionId is string && sourceAssessment.revisionId.matches('^ha-[0-9a-f]{16}$')
         && exists(assessmentPath)
         && get(assessmentPath).data.assessment.episodeId == episodeId
-        && data.explanation in ['illness_symptoms', 'hard_training_recovery', 'poor_sleep', 'alcohol', 'travel_jetlag', 'stress', 'heat_dehydration', 'vaccination_medication', 'nothing_obvious', 'other_not_sure']
+        && data.explanation in ['illness_symptoms', 'allergy_or_hay_fever', 'hard_training_recovery', 'poor_sleep', 'alcohol', 'travel_jetlag', 'stress', 'heat_dehydration', 'vaccination_medication', 'nothing_obvious', 'other_not_sure']
         && (symptomOnset == null || (
           symptomOnset is map
           && symptomOnset.keys().hasOnly(['date', 'precision'])

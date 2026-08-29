@@ -27,6 +27,18 @@ describe('feedbackValidation', () => {
             expect(parsed.reasons).toEqual(['feeling_fatigued', 'time_constraint']);
         });
 
+        it('accepts the allergy_symptoms reason', () => {
+            const valid = {
+                date: '2026-08-26',
+                recommendationRef: { recommendationId: 'rec-123', revision: 1 },
+                action: 'scaled_down',
+                reasons: ['allergy_symptoms'],
+                note: null,
+                decidedAt: '2026-08-26T07:30:00Z',
+            };
+            expect(parseAthleteDecisionLog(valid).reasons).toEqual(['allergy_symptoms']);
+        });
+
         it('rejects invalid action', () => {
             const invalid = {
                 date: '2026-08-26',

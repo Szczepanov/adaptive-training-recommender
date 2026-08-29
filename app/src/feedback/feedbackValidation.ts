@@ -33,6 +33,7 @@ const VALID_REASONS: readonly ModificationReason[] = [
     'feeling_strong',
     'muscle_joint_pain',
     'illness_symptoms',
+    'allergy_symptoms',
     'weather_equipment',
     'social_group_ride',
     'other',

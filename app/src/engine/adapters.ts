@@ -14,6 +14,33 @@ import type {
 import { resolveInjuryRestrictions, resolveEffectiveInjuryConstraints } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
 import { getLocalDateString } from '../utils/localDate';
+import type { HealthSymptomType } from './healthAnomalyModels';
+
+/**
+ * Deliberately narrow presentation for which an athlete's self-attributed allergy cause may
+ * soften the legacy illness gate. Broader respiratory or systemic symptoms stay conservative:
+ * the check-in does not diagnose allergy or rule out infection/EIB/asthma.
+ */
+const ALLERGY_COMPATIBLE_SYMPTOM_TYPES: readonly HealthSymptomType[] = [
+    'congestion',
+    'runny_nose',
+    'sneezing',
+];
+
+/**
+ * Explicit mild/moderate nasal allergy symptoms don't get the same clinical restriction as an
+ * injury or undifferentiated illness. This is intentionally fail-closed: unknown severity,
+ * absent symptom detail, any non-nasal symptom type, an uncertain/infectious cause, or severe
+ * symptoms keep today's conservative `painFlag` behavior unchanged.
+ */
+function isAllergyLikeSymptomDay(checkin: DailySubjectiveCheckin): boolean {
+    const symptoms = checkin.healthContext?.symptoms;
+    if (!symptoms?.present || symptoms.suspectedCause !== 'allergy') return false;
+    if (symptoms.severity !== 'mild' && symptoms.severity !== 'moderate') return false;
+    if (!symptoms.types || symptoms.types.length === 0) return false;
+    if (!symptoms.types.every(type => ALLERGY_COMPATIBLE_SYMPTOM_TYPES.includes(type))) return false;
+    return true;
+}
 
 /** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
  * engine's TrainingRecord shape, or null if no qualifying activity data is present. */
@@ -149,7 +176,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         stress: checkin.mentalStress ?? NEUTRAL_SCALE_VALUE,
         motivation: checkin.motivation ?? NEUTRAL_SCALE_VALUE,
         timeAvailable: checkin.availability?.timeAvailableMin ?? DEFAULT_TIME_AVAILABLE_MIN,
-        painFlag: checkin.painOrInjury || checkin.illnessSymptoms,
+        painFlag: checkin.painOrInjury || (checkin.illnessSymptoms && !isAllergyLikeSymptomDay(checkin)),
         alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
         preferredModalityToday: checkin.availability?.preferredModalityToday ?? null,
     };

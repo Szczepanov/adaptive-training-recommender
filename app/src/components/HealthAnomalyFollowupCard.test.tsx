@@ -15,6 +15,7 @@ describe('HealthAnomalyFollowupForm', () => {
         );
         expect(html).toContain('Recovery follow-up (shadow)');
         expect(html).toContain('I developed illness symptoms');
+        expect(html).toContain('Seasonal allergy / hay fever');
         expect(html).toContain('Hard training / recovery');
         expect(html).toContain('Nothing obvious');
         expect(html).toContain('Other / not sure');

@@ -47,6 +47,11 @@ const decisionAffectingFiles = [
   // estimator here is policy even though it sits upstream of the ranking modules.
   'app/src/engine/completedTraining.ts',
   'app/src/engine/garminTelemetryEvidence.ts',
+  // adapters.ts maps the persisted check-in/goals/settings into the engine's SubjectiveInput
+  // and UserContext -- painFlag, restrictedModalities and clinicalFlagActive all derive from
+  // it before rules.ts ever runs, so a change here can alter a persisted decision exactly as
+  // a change to rules.ts does, even though it sits upstream of the ranking modules.
+  'app/src/engine/adapters.ts',
   // ADR-0019: adjudication decides what an externally-planned athlete is told to do, so a
   // change here alters a persisted decision exactly as a change to rules.ts does. The
   // profile derivation is included because the cost it produces feeds the ceilings.
