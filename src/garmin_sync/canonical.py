@@ -85,6 +85,16 @@ METRIC_HEAVY_SNORE_DURATION_7DAY_AVG_SECONDS = "heavy_snore_duration_seconds_7da
 # when the list is actually non-empty.
 METRIC_SLEEP_TAGS = "sleep_tags"
 
+# sessions[].sleepAlgorithmVersion/presenceAlgorithmVersion/hrvAlgorithmVersion: which
+# version of Eight Sleep's own detection algorithms produced this night's session. A
+# vendor algorithm change can create apparent physiological drift that has nothing to do
+# with the athlete -- baselines and anomaly logic need this provenance to avoid silently
+# crossing an algorithm-version boundary. Observability-only: string-valued, not consumed
+# by the recommendation engine.
+METRIC_SLEEP_ALGORITHM_VERSION = "sleep_algorithm_version"
+METRIC_PRESENCE_ALGORITHM_VERSION = "presence_algorithm_version"
+METRIC_HRV_ALGORITHM_VERSION = "hrv_algorithm_version"
+
 STANDARD_OBSERVATION_METRICS = {
     METRIC_SLEEP_SESSION,
     METRIC_SLEEP_DURATION_SECONDS,
@@ -132,6 +142,103 @@ EIGHT_SLEEP_EXTENDED_METRICS = {
     METRIC_SNORE_DURATION_7DAY_AVG_SECONDS,
     METRIC_HEAVY_SNORE_DURATION_7DAY_AVG_SECONDS,
     METRIC_SLEEP_TAGS,
+    METRIC_SLEEP_ALGORITHM_VERSION,
+    METRIC_PRESENCE_ALGORITHM_VERSION,
+    METRIC_HRV_ALGORITHM_VERSION,
+}
+
+
+# Phase 1 (2026-08-29): explicit decision-authority classification per metric, following
+# the reviewed sleep-data-for-training-recommendations analysis (docs/analysis/
+# 2026-08-29-sleep-data-training-recommendations-analysis.md). This is metadata only --
+# no extraction or persistence behavior changes -- intended as a lint-able reference for
+# future engine work, not a runtime gate. Classes:
+#   training_authoritative  -- may directly drive today's training prescription
+#   planning_authoritative  -- may influence scheduling/sleep-protection planning
+#   health_anomaly          -- may contribute to non-diagnostic health-awareness/anomaly logic
+#   observability_only      -- data-quality/provenance metadata, no decision role
+#   research_only           -- shadow/research data; must not reach any decision logic
+#
+# `app/src/engine/multisourceFusion.ts`'s DEFAULT_METRIC_ACTIVATION_CONFIG is the only
+# place in the engine that references any of these metric names today, and even that
+# module has zero callers from `recommendationService.ts` yet (MULTISOURCE_FUSION_POLICY
+# defaults to 'off') -- so "training_authoritative" below means "designed/candidate to
+# become authoritative once fusion activates", not "currently driving live
+# recommendations". Only hrv_rmssd_ms, daily_resting_heart_rate_bpm,
+# daily_respiration_rate_brpm and sleep_duration_seconds are even referenced by that
+# module's candidate metric list; sleep_stage_deep_seconds/sleep_stage_rem_seconds are
+# referenced but explicitly disabled (sleepStages: false, "no real evidence supports
+# activation"). Every other metric below is not wired into the engine at all.
+DecisionAuthority = str  # Literal["training_authoritative", "planning_authoritative",
+# "health_anomaly", "observability_only", "research_only"] -- kept as a plain str alias
+# (not typing.Literal) so this stays valid in a module with `from __future__` unused
+# elsewhere in this file; the docstring above is the source of truth for valid values.
+
+OBSERVATION_AUTHORITY: dict[str, DecisionAuthority] = {
+    # Candidate-authoritative in multisourceFusion.ts's DEFAULT_METRIC_ACTIVATION_CONFIG
+    # (hrv/restingHeartRate/respiration/sleepDuration: true) -- see module-docstring caveat
+    # above about zero production callers today.
+    METRIC_SLEEP_DURATION_SECONDS: "training_authoritative",
+    METRIC_HRV_RMSSD_MS: "training_authoritative",
+    METRIC_DAILY_RESTING_HEART_RATE_BPM: "training_authoritative",
+    METRIC_DAILY_RESPIRATION_RATE_BRPM: "training_authoritative",
+    # Respiration, sleeping HR, snoring, and skin-temp-adjacent signals: non-diagnostic
+    # health-awareness/anomaly candidates, not readiness inputs.
+    METRIC_RESPIRATION_RATE_BRPM: "health_anomaly",
+    METRIC_SLEEP_RESPIRATION_SUMMARY: "health_anomaly",
+    METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM: "health_anomaly",
+    METRIC_SLEEPING_HEART_RATE_BPM: "health_anomaly",
+    METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM: "health_anomaly",
+    METRIC_HEART_RATE_BPM: "health_anomaly",
+    METRIC_SNORE_DURATION_SECONDS: "health_anomaly",
+    METRIC_HEAVY_SNORE_DURATION_SECONDS: "health_anomaly",
+    METRIC_SNORE_PERCENT: "health_anomaly",
+    METRIC_HEAVY_SNORE_PERCENT: "health_anomaly",
+    METRIC_SNORE_MITIGATION_EVENTS_COUNT: "health_anomaly",
+    METRIC_SNORE_DURATION_7DAY_AVG_SECONDS: "health_anomaly",
+    METRIC_HEAVY_SNORE_DURATION_7DAY_AVG_SECONDS: "health_anomaly",
+    # Timing/consistency/debt/jetlag/chronotype: coaching and schedule-protection
+    # candidates (sleep-opportunity mechanism), not readiness inputs.
+    METRIC_WAKEUP_TIME_CONSISTENCY: "planning_authoritative",
+    METRIC_SLEEP_START_TIME_CONSISTENCY: "planning_authoritative",
+    METRIC_BEDTIME_CONSISTENCY: "planning_authoritative",
+    METRIC_BEDTIME_BASELINE_TIME: "planning_authoritative",
+    METRIC_SLEEP_START_BASELINE_TIME: "planning_authoritative",
+    METRIC_SLEEP_END_BASELINE_TIME: "planning_authoritative",
+    METRIC_SLEEP_MIDPOINT_BASELINE_TIME: "planning_authoritative",
+    METRIC_SLEEP_LATENCY_ASLEEP_SECONDS: "planning_authoritative",
+    METRIC_SLEEP_LATENCY_OUT_SECONDS: "planning_authoritative",
+    METRIC_SLEEP_DEBT_SECONDS: "planning_authoritative",
+    METRIC_SLEEP_BASELINE_DURATION_SECONDS: "planning_authoritative",
+    METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS: "planning_authoritative",
+    METRIC_SOCIAL_JETLAG_SECONDS: "planning_authoritative",
+    METRIC_CHRONOTYPE_CLASS: "planning_authoritative",
+    # Sleep-stage totals: real, but cross-device correlation on this account's own data
+    # was r=0.17 (deep) / r=0.44 (rem) / r=0.73 (light) with no PSG ground truth to
+    # arbitrate -- research-only per the reviewed analysis, not a prescription input.
+    # sleep_stage_deep/rem_seconds ARE referenced by multisourceFusion.ts's candidate
+    # config but explicitly disabled (sleepStages: false).
+    METRIC_SLEEP_STAGE_DEEP_SECONDS: "research_only",
+    METRIC_SLEEP_STAGE_REM_SECONDS: "research_only",
+    METRIC_SLEEP_STAGE_LIGHT_SECONDS: "research_only",
+    METRIC_SLEEP_STAGE_AWAKE_SECONDS: "research_only",
+    METRIC_DEEP_SLEEP_BASELINE_SECONDS: "research_only",
+    METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS: "research_only",
+    METRIC_SLEEP_STAGE_REM_7DAY_AVG_SECONDS: "research_only",
+    METRIC_HRV_7DAY_AVG_MS: "research_only",
+    METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS: "research_only",
+    METRIC_TOSS_AND_TURN_COUNT: "research_only",
+    # Confirmed to be Garmin Health-Connect workout tags mirrored back into Eight Sleep,
+    # not an Eight-Sleep-native sleep-context signal -- excluded from sleep logic entirely
+    # (see docs/analysis/2026-08-28-eight-sleep-extended-metrics-analysis.md).
+    METRIC_SLEEP_TAGS: "research_only",
+    # Structural session anchor (the real decision-relevant value is each observation's
+    # own observed_start/observed_end, not this metric specifically).
+    METRIC_SLEEP_SESSION: "observability_only",
+    # Vendor algorithm-version provenance -- data-quality metadata only.
+    METRIC_SLEEP_ALGORITHM_VERSION: "observability_only",
+    METRIC_PRESENCE_ALGORITHM_VERSION: "observability_only",
+    METRIC_HRV_ALGORITHM_VERSION: "observability_only",
 }
 
 
@@ -310,6 +417,10 @@ class CanonicalDailyMetrics:
     light_sleep_seconds: int | None = None
     awake_sleep_seconds: int | None = None
     restless_moments_count: int | None = None
+    # dailySleepDTO.awakeCount -- a real per-night awakening count, distinct from
+    # restless_moments_count (confirmed null for 73/73 sampled nights, 2026-08-29).
+    # Observability-only: not consumed by the recommendation engine.
+    awake_count: int | None = None
     respiration_rate_brpm: float | None = None
     body_battery_wake: float | None = None
     body_battery_wake_date: str | None = None
