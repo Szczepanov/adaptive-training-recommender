@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { TEMPLATES } from './templates';
-import type { TrainingSettings, UserContext } from './models';
+import type { SessionTemplate, TrainingSettings, UserContext } from './models';
 
 function settings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
     return {
@@ -58,6 +58,47 @@ describe('training-settings eligibility', () => {
         const profile = settings();
         expect(resolveMaximumSessionMinutes(context(profile), 60, '2026-08-07')).toBe(45);
         expect(resolveMaximumSessionMinutes(context(profile), 30, '2026-08-08')).toBe(30);
+    });
+
+    it('attaches a cap-safe dose when an eligible wide-range template has no authored easier dose', () => {
+        const profile = settings({ defaults: { weekdayMaxMinutes: 40, weekendMaxMinutes: 90, environment: 'either' } });
+        const template = eligibleTemplates(TEMPLATES, context(profile), 60, '2026-08-07')
+            .find(candidate => candidate.id === 'cycling_technical_01');
+
+        expect(template).toBeDefined();
+        expect(template?.durationMin).toBe(30);
+        expect(template?.durationMax).toBe(55);
+        expect(template?.easierDose).toMatchObject({ durationMin: 30, durationMax: 40 });
+        expect(template?.easierDose?.doseRatio).toBeCloseTo(40 / 55, 6);
+    });
+
+    it('caps an authored easier dose too, so modify-mode auto-adjustment cannot overrun availability', () => {
+        const wideTemplate: SessionTemplate = {
+            id: 'wide-test',
+            category: 'Easy Endurance',
+            modality: 'Cycling',
+            durationMin: 20,
+            durationMax: 60,
+            title: 'Wide test session',
+            description: 'Synthetic wide-range session for the cap invariant.',
+            requiredEquipment: [],
+            environment: 'either',
+            safetyTags: [],
+            systemicCost: 0.3,
+            easierDose: {
+                label: 'Authored easier',
+                durationMin: 15,
+                durationMax: 45,
+                doseRatio: 0.7,
+                prescriptionSummary: 'Shorter authored session.',
+            },
+        };
+        const profile = settings({ defaults: { weekdayMaxMinutes: 30, weekendMaxMinutes: 90, environment: 'either' } });
+        const [eligible] = eligibleTemplates([wideTemplate], context(profile), 60, '2026-08-07');
+
+        expect(eligible).toBeDefined();
+        expect(eligible.easierDose).toMatchObject({ durationMin: 15, durationMax: 30 });
+        expect(eligible.easierDose?.doseRatio).toBeCloseTo(0.7 * (30 / 45), 6);
     });
 
     it('excludes a whole restricted category even when the template carries no matching safetyTag', () => {
