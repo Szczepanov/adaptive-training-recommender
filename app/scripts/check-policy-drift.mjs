@@ -33,8 +33,9 @@ function gitGrepFiles(pattern, paths = ['app/src']) {
  * pull_request workflows normally check out GitHub's synthetic merge commit. The event's
  * base.sha can become stale if main advances between the event payload and checkout; diffing
  * that old SHA to HEAD then falsely attributes unrelated new-main files to the PR. On PR
- * runs, isolate the actual contribution by diffing merge parent 1 (current base) to merge
- * parent 2 (PR head). Push/manual runs retain the explicit baseRef behaviour below.
+ * runs, compare the current base parent to the merged tree itself. This captures exactly the
+ * PR contribution *after* GitHub has merged it with current main, including any automatic
+ * merge resolution. Push/manual runs retain the explicit baseRef behaviour below.
  */
 function pullRequestMergeDiff() {
   const eventName = process.env.GITHUB_EVENT_NAME;
@@ -42,8 +43,8 @@ function pullRequestMergeDiff() {
   try {
     const parents = git(['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(/\s+/);
     if (parents.length !== 3) return null;
-    const [, currentBaseParent, prHeadParent] = parents;
-    return git(['diff', '--name-only', `${currentBaseParent}...${prHeadParent}`]);
+    const [, currentBaseParent] = parents;
+    return git(['diff', '--name-only', currentBaseParent, 'HEAD']);
   } catch (err) {
     console.warn(`Could not isolate pull-request merge parents; falling back to base ref: ${err.message}`);
     return null;
@@ -224,6 +225,11 @@ function isAcceptedDormantGarminZoneCreditChange() {
   return accepted && explicitlyNoBump;
 }
 
+function rejectDormantSleep(reason) {
+  console.warn(`Dormant sleep-evidence policy exception rejected: ${reason}`);
+  return false;
+}
+
 /**
  * Phase 3 sleep recovery evidence is intentionally observation-only. adapters.ts has to
  * expose the precomputed v6 fields to DailyReadiness, but that wiring must not mint a new
@@ -236,7 +242,7 @@ function isAcceptedDormantGarminZoneCreditChange() {
  */
 function isAcceptedDormantSleepRecoveryEvidenceChange() {
   if (changedDecisionFiles.length === 0 || !changedDecisionFiles.every((file) => file === adaptersFile)) {
-    return false;
+    return rejectDormantSleep(`decision files were: ${changedDecisionFiles.join(', ') || '(none)'}`);
   }
 
   const allowedProductionSources = new Set([
@@ -250,15 +256,19 @@ function isAcceptedDormantSleepRecoveryEvidenceChange() {
     && !file.endsWith('.test.ts')
     && !file.includes('/simulation/')
   );
-  if (changedProductionSources.length > 0) return false;
+  if (changedProductionSources.length > 0) {
+    return rejectDormantSleep(`unexpected production sources changed: ${changedProductionSources.join(', ')}`);
+  }
 
   const evaluatorReferences = gitGrepFiles('evaluateSleepRecoveryEvidence');
   const allowedEvaluatorReferences = new Set([
     sleepRecoveryEvidenceFile,
     sleepRecoveryEvidenceTestFile,
   ]);
-  if (evaluatorReferences.length === 0 || evaluatorReferences.some(file => !allowedEvaluatorReferences.has(file))) {
-    return false;
+  const unexpectedEvaluatorReferences = evaluatorReferences.filter(file => !allowedEvaluatorReferences.has(file));
+  if (evaluatorReferences.length === 0) return rejectDormantSleep('evaluator symbol has no repository references');
+  if (unexpectedEvaluatorReferences.length > 0) {
+    return rejectDormantSleep(`evaluator has unexpected references: ${unexpectedEvaluatorReferences.join(', ')}`);
   }
 
   const fieldReferences = gitGrepFiles(
@@ -271,14 +281,19 @@ function isAcceptedDormantSleepRecoveryEvidenceChange() {
     sleepRecoveryEvidenceFile,
     sleepRecoveryEvidenceTestFile,
   ]);
-  if (fieldReferences.length === 0 || fieldReferences.some(file => !allowedFieldReferences.has(file))) {
-    return false;
+  const unexpectedFieldReferences = fieldReferences.filter(file => !allowedFieldReferences.has(file));
+  if (fieldReferences.length === 0) return rejectDormantSleep('sleep-evidence fields have no repository references');
+  if (unexpectedFieldReferences.length > 0) {
+    return rejectDormantSleep(`sleep-evidence fields have unexpected references: ${unexpectedFieldReferences.join(', ')}`);
   }
 
   const phase3Doc = readFileSync(join(repoRoot, sleepRecoveryPhase3Doc), 'utf8');
   const explicitlyShadow = /## Genuinely shadow/.test(phase3Doc);
   const explicitlyNoBump = /`POLICY_VERSION` intentionally remains unchanged/.test(phase3Doc);
-  return explicitlyShadow && explicitlyNoBump;
+  if (!explicitlyShadow || !explicitlyNoBump) {
+    return rejectDormantSleep(`implementation note contract missing (shadow=${explicitlyShadow}, no-bump=${explicitlyNoBump})`);
+  }
+  return true;
 }
 
 if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
