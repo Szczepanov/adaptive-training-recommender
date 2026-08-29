@@ -6,6 +6,14 @@ import type { CompletedExposure } from './trainingHistory';
 import { workoutForTemplate } from '../workouts/prescription';
 import { deriveStrengthExposure } from '../workouts/strengthExposure';
 
+export interface AthleteStateHistoryEvidence {
+    /** The bounded observation window used only to infer current training state. This is
+     * deliberately separate from the shorter operational history used for fatigue and
+     * microcycle bookkeeping. */
+    observedWindowDays: number;
+    exposures: CompletedExposure[];
+}
+
 export interface TrainingHistorySnapshot {
     throughDateExclusive: string;
     windowDays: number;
@@ -14,6 +22,9 @@ export interface TrainingHistorySnapshot {
     sourceStates: Record<'activities' | 'recommendations' | 'manualTraining', DataStateSummary>;
     generatedAt: string;
     revision: string;
+    /** Optional wider evidence window for evergreen athlete-state inference. It is never
+     * replayed into fatigue, microcycle objectives, or delivered-dose accounting. */
+    athleteStateEvidence?: AthleteStateHistoryEvidence;
 }
 
 export type ManualTrainingPolicy = 'off' | 'included';
