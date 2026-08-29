@@ -41,15 +41,14 @@ export interface SleepRecoveryEvidence {
      *  sign convention). Null if unavailable (see that field's docstring). */
     accumulated2dDeficitMin: number | null;
     accumulated3dDeficitMin: number | null;
-    /** Whether self-reported sleep quality agrees with the objective deficit direction.
-     *  Null when there's no objective signal to compare against (state === 'uncertain') --
-     *  never defaulted to a specific boolean, which would fabricate agreement/disagreement
-     *  that was never actually evaluated. */
+    /** Whether self-reported sleep quality agrees with the objective sleep-duration signal.
+     *  Null when the subjective score sits in the deliberately neutral middle band, or when
+     *  there is no objective signal to compare against (state === 'uncertain'). */
     subjectiveConcordance: boolean | null;
-    /** Whether HRV/RHR deviation direction agrees with the objective deficit -- true if at
-     *  least one of HRV-suppressed or RHR-elevated is observed alongside a real deficit.
-     *  Null when there's no objective deficit signal, or when neither HRV nor RHR delta is
-     *  available at all. */
+    /** Whether HRV/RHR deviations materially agree with the objective deficit. Raw sign is
+     *  not enough: a deviation must exceed the person's 28d variability (with the same
+     *  conservative floors used by the live readiness engine). Mixed/within-noise signals
+     *  remain null rather than fabricating agreement/disagreement. */
     physiologicalConcordance: boolean | null;
     /** Human-readable strings explaining what informed this classification -- always
      *  populated (even for 'normal'/'uncertain'), since "what evidence, if any, led here"
@@ -60,12 +59,33 @@ export interface SleepRecoveryEvidence {
 // --- Provisional classification thresholds (minutes) -- see the module docstring. ---
 const PERSISTENT_ACCUMULATED_3D_DEFICIT_MIN = 90;
 const MEANINGFUL_ACUTE_DEFICIT_MIN = 60;
-const MEANINGFUL_ACCUMULATED_2D_DEFICIT_MIN = 60;
+const MEANINGFUL_ACCUMULATED_DEFICIT_MIN = 60;
 const MINOR_ACUTE_DEFICIT_MIN = 20;
-// Below this magnitude, a subjective/physiological signal is treated as "no strong
-// direction" rather than actively agreeing or disagreeing with an objective deficit.
-const SUBJECTIVE_LOW_QUALITY_THRESHOLD = 5; // sleepQuality on a 1-10 scale
-const SUBJECTIVE_HIGH_QUALITY_THRESHOLD = 6;
+
+// A neutral subjective band avoids converting an ordinary mid-scale answer into a forced
+// agreement/disagreement. These remain provisional shadow thresholds.
+const SUBJECTIVE_LOW_QUALITY_THRESHOLD = 4; // sleepQuality on a 1-10 scale
+const SUBJECTIVE_HIGH_QUALITY_THRESHOLD = 7;
+
+// Mirror the live readiness engine's personal-variability floors without importing rules.ts
+// into this shadow module. A raw +/- epsilon must never count as physiological concordance.
+const HRV_STDEV_FLOOR_MS = 3;
+const RHR_STDEV_FLOOR_BPM = 1.5;
+
+type Direction = 'adverse' | 'favorable' | 'neutral' | 'unavailable';
+
+function classifyDirection(
+    delta: number | null,
+    variability: number | null,
+    floor: number,
+    adverseWhenPositive: boolean,
+): Direction {
+    if (delta === null) return 'unavailable';
+    const threshold = Math.max(variability ?? floor, floor);
+    if (Math.abs(delta) < threshold) return 'neutral';
+    const adverse = adverseWhenPositive ? delta > 0 : delta < 0;
+    return adverse ? 'adverse' : 'favorable';
+}
 
 function buildEvidenceStrings(params: {
     state: SleepRecoveryEvidenceState;
@@ -77,6 +97,8 @@ function buildEvidenceStrings(params: {
     sleepQuality: number;
     hrvDeltaMs: number | null;
     rhrDeltaBpm: number | null;
+    hrvDirection: Direction;
+    rhrDirection: Direction;
 }): string[] {
     const evidence: string[] = [];
     const {
@@ -89,6 +111,8 @@ function buildEvidenceStrings(params: {
         sleepQuality,
         hrvDeltaMs,
         rhrDeltaBpm,
+        hrvDirection,
+        rhrDirection,
     } = params;
 
     if (state === 'uncertain') {
@@ -117,19 +141,31 @@ function buildEvidenceStrings(params: {
         );
     }
 
-    if (subjectiveConcordance === true) {
-        evidence.push(`Self-reported sleep quality (${sleepQuality}/10) agrees with the objective deficit.`);
-    } else if (subjectiveConcordance === false) {
-        evidence.push(`Self-reported sleep quality (${sleepQuality}/10) does not agree with the objective deficit.`);
+    if (subjectiveConcordance !== null) {
+        const signal = state === 'normal' ? 'normal objective sleep-duration signal' : 'objective sleep-deficit signal';
+        evidence.push(
+            `Self-reported sleep quality (${sleepQuality}/10) ${subjectiveConcordance ? 'agrees' : 'does not agree'} with the ${signal}.`,
+        );
     }
 
     if (physiologicalConcordance === true) {
         const parts: string[] = [];
-        if (hrvDeltaMs !== null && hrvDeltaMs < 0) parts.push(`HRV suppressed ${Math.round(-hrvDeltaMs)}ms`);
-        if (rhrDeltaBpm !== null && rhrDeltaBpm > 0) parts.push(`RHR elevated ${Math.round(rhrDeltaBpm)}bpm`);
+        if (hrvDirection === 'adverse' && hrvDeltaMs !== null) {
+            parts.push(`HRV materially suppressed ${Math.round(-hrvDeltaMs)}ms`);
+        }
+        if (rhrDirection === 'adverse' && rhrDeltaBpm !== null) {
+            parts.push(`RHR materially elevated ${Math.round(rhrDeltaBpm)}bpm`);
+        }
         evidence.push(`${parts.join(' and ')} vs baseline, consistent with reduced recovery.`);
     } else if (physiologicalConcordance === false) {
-        evidence.push('HRV/RHR do not show the expected direction alongside the objective deficit.');
+        const parts: string[] = [];
+        if (hrvDirection === 'favorable' && hrvDeltaMs !== null) {
+            parts.push(`HRV materially above baseline by ${Math.round(hrvDeltaMs)}ms`);
+        }
+        if (rhrDirection === 'favorable' && rhrDeltaBpm !== null) {
+            parts.push(`RHR materially below baseline by ${Math.round(-rhrDeltaBpm)}bpm`);
+        }
+        evidence.push(`${parts.join(' and ')} despite the objective sleep deficit.`);
     }
 
     if (evidence.length === 0) {
@@ -162,6 +198,8 @@ export function evaluateSleepRecoveryEvidence(readiness: DailyReadiness): SleepR
             sleepQuality: subjective.sleepQuality,
             hrvDeltaMs: objective.hrv_delta,
             rhrDeltaBpm: objective.rhr_delta,
+            hrvDirection: 'unavailable',
+            rhrDirection: 'unavailable',
         });
         return {
             state: 'uncertain',
@@ -179,12 +217,13 @@ export function evaluateSleepRecoveryEvidence(readiness: DailyReadiness): SleepR
     if (
         accumulated3dDeficitMin !== null
         && accumulated3dDeficitMin >= PERSISTENT_ACCUMULATED_3D_DEFICIT_MIN
-        && acuteDeficitMin > 0
+        && acuteDeficitMin >= MINOR_ACUTE_DEFICIT_MIN
     ) {
         state = 'persistent_sleep_deficit';
     } else if (
         acuteDeficitMin >= MEANINGFUL_ACUTE_DEFICIT_MIN
-        || (accumulated2dDeficitMin !== null && accumulated2dDeficitMin >= MEANINGFUL_ACCUMULATED_2D_DEFICIT_MIN)
+        || (accumulated2dDeficitMin !== null && accumulated2dDeficitMin >= MEANINGFUL_ACCUMULATED_DEFICIT_MIN)
+        || (accumulated3dDeficitMin !== null && accumulated3dDeficitMin >= MEANINGFUL_ACCUMULATED_DEFICIT_MIN)
     ) {
         state = 'meaningful_sleep_deficit';
     } else if (acuteDeficitMin >= MINOR_ACUTE_DEFICIT_MIN) {
@@ -193,26 +232,33 @@ export function evaluateSleepRecoveryEvidence(readiness: DailyReadiness): SleepR
         state = 'normal';
     }
 
-    // 'uncertain' already returned above -- state here is always one of the other four.
     const hasObjectiveDeficitSignal = state !== 'normal';
 
     let subjectiveConcordance: boolean | null = null;
     if (hasObjectiveDeficitSignal) {
-        subjectiveConcordance = subjective.sleepQuality <= SUBJECTIVE_LOW_QUALITY_THRESHOLD;
-    } else if (state === 'normal') {
-        subjectiveConcordance = subjective.sleepQuality >= SUBJECTIVE_HIGH_QUALITY_THRESHOLD;
+        if (subjective.sleepQuality <= SUBJECTIVE_LOW_QUALITY_THRESHOLD) subjectiveConcordance = true;
+        else if (subjective.sleepQuality >= SUBJECTIVE_HIGH_QUALITY_THRESHOLD) subjectiveConcordance = false;
+    } else {
+        if (subjective.sleepQuality >= SUBJECTIVE_HIGH_QUALITY_THRESHOLD) subjectiveConcordance = true;
+        else if (subjective.sleepQuality <= SUBJECTIVE_LOW_QUALITY_THRESHOLD) subjectiveConcordance = false;
     }
 
     const hrvDeltaMs = objective.hrv_delta;
     const rhrDeltaBpm = objective.rhr_delta;
+    const hrvDirection = classifyDirection(hrvDeltaMs, objective.hrv_stdev_28d, HRV_STDEV_FLOOR_MS, false);
+    const rhrDirection = classifyDirection(rhrDeltaBpm, objective.rhr_stdev_28d, RHR_STDEV_FLOOR_BPM, true);
+
     let physiologicalConcordance: boolean | null = null;
-    if (hasObjectiveDeficitSignal && (hrvDeltaMs !== null || rhrDeltaBpm !== null)) {
-        physiologicalConcordance = (hrvDeltaMs !== null && hrvDeltaMs < 0) || (rhrDeltaBpm !== null && rhrDeltaBpm > 0);
+    if (hasObjectiveDeficitSignal) {
+        const adverseCount = Number(hrvDirection === 'adverse') + Number(rhrDirection === 'adverse');
+        const favorableCount = Number(hrvDirection === 'favorable') + Number(rhrDirection === 'favorable');
+        if (adverseCount > 0 && favorableCount === 0) physiologicalConcordance = true;
+        else if (favorableCount > 0 && adverseCount === 0) physiologicalConcordance = false;
     }
 
-    // Confidence follows how much history actually backs the classification, not the
-    // magnitude of the deficit itself -- a huge deficit computed from a barely-mature
-    // baseline is still a low-confidence read.
+    // Confidence is deliberately *history confidence*, not an end-to-end data-quality score.
+    // Finality/freshness/identity are separate gates elsewhere in the architecture and must be
+    // incorporated before any future promotion from shadow to decision authority.
     let confidence: SleepRecoveryEvidenceConfidence;
     if (objective.sleep_duration_delta_28d_min !== null && objective.sleep_duration_delta_28d_min !== undefined && accumulated3dDeficitMin !== null) {
         confidence = 'high';
@@ -232,6 +278,8 @@ export function evaluateSleepRecoveryEvidence(readiness: DailyReadiness): SleepR
         sleepQuality: subjective.sleepQuality,
         hrvDeltaMs,
         rhrDeltaBpm,
+        hrvDirection,
+        rhrDirection,
     });
 
     return {
