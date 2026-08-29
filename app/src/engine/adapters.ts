@@ -16,21 +16,29 @@ import { goalToUserEvent } from './periodization';
 import { getLocalDateString } from '../utils/localDate';
 import type { HealthSymptomType } from './healthAnomalyModels';
 
-/** Symptom types that indicate more than a purely upper-respiratory/allergy presentation --
- *  any of these keeps today's conservative illness treatment regardless of suspected cause. */
-const NON_ALLERGY_SYMPTOM_TYPES: readonly HealthSymptomType[] = ['fever_or_chills', 'gastrointestinal', 'unusual_fatigue'];
+/**
+ * Deliberately narrow presentation for which an athlete's self-attributed allergy cause may
+ * soften the legacy illness gate. Broader respiratory or systemic symptoms stay conservative:
+ * the check-in does not diagnose allergy or rule out infection/EIB/asthma.
+ */
+const ALLERGY_COMPATIBLE_SYMPTOM_TYPES: readonly HealthSymptomType[] = [
+    'congestion',
+    'runny_nose',
+    'sneezing',
+];
 
 /**
- * Mild/moderate, purely upper-respiratory symptoms the athlete has explicitly attributed to
- * allergy don't get the same clinical restriction as an injury or systemic illness. Unknown
- * cause, unknown/severe severity, or any systemic symptom type keeps today's conservative
- * `painFlag` behavior unchanged -- this only softens the narrow, explicit case.
+ * Explicit mild/moderate nasal allergy symptoms don't get the same clinical restriction as an
+ * injury or undifferentiated illness. This is intentionally fail-closed: unknown severity,
+ * absent symptom detail, any non-nasal symptom type, an uncertain/infectious cause, or severe
+ * symptoms keep today's conservative `painFlag` behavior unchanged.
  */
 function isAllergyLikeSymptomDay(checkin: DailySubjectiveCheckin): boolean {
     const symptoms = checkin.healthContext?.symptoms;
     if (!symptoms?.present || symptoms.suspectedCause !== 'allergy') return false;
-    if (symptoms.severity === 'severe') return false;
-    if (symptoms.types?.some(type => NON_ALLERGY_SYMPTOM_TYPES.includes(type))) return false;
+    if (symptoms.severity !== 'mild' && symptoms.severity !== 'moderate') return false;
+    if (!symptoms.types || symptoms.types.length === 0) return false;
+    if (!symptoms.types.every(type => ALLERGY_COMPATIBLE_SYMPTOM_TYPES.includes(type))) return false;
     return true;
 }
 
