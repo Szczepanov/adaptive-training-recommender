@@ -60,6 +60,17 @@ HRF treats `NOT_ASSESSED` and assessed `unknown` as different states. The origin
 
 The replay now exposes `notAssessedReasons` separately from `assessmentUnknownReasons`. If an assessed measurement has `measurementConfidence === unknown` but its persisted reason list is empty, the replay records `ASSESSMENT_REASON_UNSPECIFIED`, so every assessed-unknown numerator remains explainable without conflating missing data with a failed/incomplete assessment.
 
+### 6. Actual candidate counts do not fabricate absent consumers
+
+The HRF6 consumer audit found no current activity-HR consumers for max-HR updates, threshold updates, aerobic decoupling, or interval response. The original HRF7 replay nevertheless counted every assessed activity as a potential max-HR and decoupling candidate. That would create apparently meaningful block totals for features that do not currently produce candidates.
+
+The replay now keeps actual `maxHrUpdate` and `aerobicDecoupling` candidate counts at zero. The per-activity `authorityByUse` view still reports how HRF would classify those sensitive uses if a future consumer is introduced, so policy observability is retained without inventing production candidates.
+
+This distinction is important:
+
+- `candidateBlocks` answers **what current/factual candidates would HRF affect?**;
+- `authorityByUse` answers **what would HRF allow/block/bound for this activity if that use existed?**.
+
 ## External semantics checked
 
 Garmin's current public documentation continues to support the conservative HRF6/HRF7 classification of Garmin Training Load and Training Effect as materially HR-dependent vendor summaries:
@@ -88,6 +99,7 @@ The reviewed implementation preserves the HRF/ADR-0031 boundaries:
 - no raw FIT bytes, full HR traces, GPS traces, credentials, or sensor serials are persisted by the replay;
 - missing fidelity remains `NOT_ASSESSED`, never `UNRELIABLE`;
 - assessed `unknown` remains separate from missing assessment, including aggregate reason accounting;
+- actual candidate counts remain separate from hypothetical per-use authority;
 - per-use authority remains feature-specific;
 - vendor Training Load / Training Effect lineage remains fail-closed;
 - Firestore access remains user-scoped through the existing activity service;
@@ -102,6 +114,7 @@ The PR now covers, in addition to its original HRF7 tests:
 - no false “useful wrist display” count when no average-HR display candidate exists;
 - separate missing-assessment vs assessed-unknown reason accounting;
 - fallback reason accounting for assessed `unknown`;
+- actual-vs-hypothetical candidate semantics for absent max-HR/decoupling consumers;
 - invalid calendar dates;
 - reversed replay ranges;
 - no Firestore activity read for invalid operator input.
