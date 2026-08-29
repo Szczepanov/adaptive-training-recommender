@@ -32,6 +32,7 @@ from garmin_sync.canonical import (
     METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM,
     METRIC_SLEEP_RESPIRATION_SUMMARY,
     METRIC_SLEEP_SESSION,
+    METRIC_SLEEP_STAGE_AWAKE_SECONDS,
     METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS,
     METRIC_SLEEP_STAGE_DEEP_SECONDS,
     METRIC_SLEEP_STAGE_LIGHT_SECONDS,
@@ -95,7 +96,17 @@ ORIGIN_APPLICATION = "eight_sleep_private_api"
 # need this provenance). Only resolved when the night's session is unambiguous (matches
 # mainSessionId, or there's exactly one session); a night with multiple unmatched sessions
 # is skipped rather than guessing which one "is" the night.
-NORMALIZER_VERSION: int = 6
+# 7 (ES-EXT-6, 2026-08-29): re-added METRIC_SLEEP_STAGE_AWAKE_SECONDS, now sourced from
+# sessions[].stageSummary.wasoDuration summed across ALL sessions that day (not the single
+# ambiguity-resolved `session` used for algorithm versions above -- a real probe confirmed
+# Eight Sleep's own day-level deepDuration/remDuration/lightDuration are themselves summed
+# across all sessions, e.g. a two-session night with a nap, so wasoDuration is summed the
+# same way for consistency). A real cross-device check against Garmin's true within-session
+# awakeSleepSec (34 duration-agreement nights) found r=0.461, mean abs delta 9min --
+# comparable to REM's r=0.44 (real disagreement, not a units bug), unlike the removed
+# presence-minus-sleep proxy's r=0.17/~115min mismatch. See the ES-EXT-4 removal comment
+# above and this metric's emission site further down for the full history.
+NORMALIZER_VERSION: int = 7
 
 
 def map_trends_to_observation_batch(
@@ -154,11 +165,9 @@ def map_trends_to_observation_batch(
     # sibling range fields (lowerRange/upperRange/lowerBound/upperBound/average) were all 0,
     # suggesting this particular score isn't reliably calibrated for this account. Rather
     # than guess an unknown scale factor (inventing evidence this repo's own discipline
-    # forbids), this metric is skipped entirely. presence-minus-sleep-duration is NOT a
-    # substitute for it and is not emitted as METRIC_SLEEP_STAGE_AWAKE_SECONDS either -- see
-    # that constant's skip comment further down in this function for why (a real probe
-    # (2026-08-29) disproved an earlier version of this same comment's claim that the
-    # subtraction "reliably" covers within-session wake time; it does not).
+    # forbids), this metric is skipped entirely. This is a DIFFERENT field from
+    # sessions[].stageSummary.wasoDuration, which IS extracted -- see
+    # METRIC_SLEEP_STAGE_AWAKE_SECONDS further down in this function.
     debt_obj = score.get("sleepDebt")
     debt_obj = debt_obj if isinstance(debt_obj, dict) else {}
     sleep_debt = _signed_num(debt_obj.get("dailySleepDebtSeconds"))
@@ -289,21 +298,33 @@ def map_trends_to_observation_batch(
     add(METRIC_SLEEP_STAGE_LIGHT_SECONDS, _whole(light), "s")
     add(METRIC_SLEEP_STAGE_DEEP_SECONDS, _whole(deep), "s")
     add(METRIC_SLEEP_STAGE_REM_SECONDS, _whole(rem), "s")
-    # METRIC_SLEEP_STAGE_AWAKE_SECONDS deliberately NOT emitted here. It used to be computed
-    # as (presenceDuration - sleepDuration) -- but a real probe (2026-08-29) showed that gap
-    # averages ~115min/night, while Google Health's same-named metric (true within-session
-    # WASO, summed from Garmin's own AWAKE-classified sleep segments) averages ~11min/night
-    # on the same paired nights. These are not device disagreement -- they're different
-    # concepts wearing the same metric name: presence-minus-sleep also includes the
-    # fall-asleep latency and the tail of time still "present" after the sleep session ends
-    # (already separately captured, imperfectly, by sleep_latency_asleep_seconds and
-    # sleep_latency_out_seconds), not just brief within-sleep arousals. Emitting it as
-    # METRIC_SLEEP_STAGE_AWAKE_SECONDS would silently corrupt any cross-device comparison or
-    # fusion that assumes the same metric name means the same thing across providers
-    # (ADR-0027's whole premise). The private API's own dedicated WASO field
-    # (sleepQualityScore.waso) is a fraction with no documented seconds conversion (see the
-    # NORMALIZER_VERSION=4 comment above) so there is currently no reliable way to extract
-    # true within-session wake time from this API at all.
+    # METRIC_SLEEP_STAGE_AWAKE_SECONDS (ES-EXT-6, 2026-08-29): re-added, now sourced from
+    # sessions[].stageSummary.wasoDuration, summed across ALL sessions that day (not just
+    # the single resolved `session` used for algorithm versions below). This corrects the
+    # ES-EXT-4 removal, which was right to distrust presence-minus-sleep (~115min/night,
+    # r=0.17 vs Garmin) but didn't yet know a real per-session WASO field existed. Confirmed
+    # via a real probe (2025-10-28, a two-session night) that Eight Sleep's own day-level
+    # deepDuration/remDuration/lightDuration are themselves the sum of each session's
+    # stageSummary across all sessions -- summing wasoDuration the same way is consistent
+    # with that, not a new assumption. A real cross-device check (34 duration-agreement
+    # nights) found wasoDuration correlates with Garmin's true within-session awakeSleepSec
+    # at r=0.461 (mean abs delta 9min, means 524s vs 881s) -- comparable to REM's r=0.44
+    # (real device disagreement, not a units/definition bug), nothing like the removed
+    # proxy's r=0.17/~115min mismatch. sleepQualityScore.waso.current is still a fraction
+    # with no documented conversion (unrelated field) and remains unextracted.
+    waso_total = 0.0
+    has_waso = False
+    for s in sessions_list:
+        if not isinstance(s, dict):
+            continue
+        stage_summary = s.get("stageSummary")
+        if not isinstance(stage_summary, dict):
+            continue
+        waso_val = stage_summary.get("wasoDuration")
+        if isinstance(waso_val, (int, float)) and not isinstance(waso_val, bool):
+            waso_total += waso_val
+            has_waso = True
+    add(METRIC_SLEEP_STAGE_AWAKE_SECONDS, _whole(waso_total) if has_waso else None, "s")
     add(METRIC_HRV_RMSSD_MS, hrv, "ms")
     add(METRIC_SLEEPING_HEART_RATE_BPM, hr, "bpm")
     if resp is not None:
