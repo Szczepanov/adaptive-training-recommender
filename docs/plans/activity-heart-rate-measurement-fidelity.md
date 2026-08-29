@@ -407,12 +407,14 @@ HrSummaryCompatibility = Literal[
     "unknown",
 ]
 
+
 @dataclass(frozen=True)
 class CanonicalHrSourceEvidence:
     external_hr_sensor_present: bool | None
     source_for_activity: HrSourceForActivity
     provenance_confidence: HrProvenanceConfidence
     sensor_technology: HrSensorTechnology
+
 
 @dataclass(frozen=True)
 class CanonicalHrMeasurementQuality:
