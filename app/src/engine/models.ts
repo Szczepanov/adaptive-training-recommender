@@ -86,6 +86,32 @@ export interface EngineObjectiveInput {
     rhr_stdev_28d: number | null;
     sleep_score_stdev_28d: number | null;
     steps_stdev_28d?: number | null;
+
+    // --- Phase 2 sleep-decision-authority fields (shadow/observation-only) ---
+    /** Current sleep duration vs its own trailing 7d/28d median baseline, in minutes
+     *  (converted from the Python side's seconds). Optional/undefined on documents whose
+     *  baseline predates baselineComputationVersion 6, following the steps and respiration
+     *  fields' precedent for a later addition. Not consumed by rules.ts/fatigue.ts -- feeds
+     *  sleepRecoveryEvidence.ts's shadow classification only. */
+    sleep_duration_delta_7d_min?: number | null;
+    sleep_duration_delta_28d_min?: number | null;
+    /** Signed accumulated sleep-duration deficit (minutes) over the most recent 2/3 nights
+     *  *through and including* tonight, against the 28d median baseline -- positive = net
+     *  shortfall, negative = net surplus. Null if tonight's sleep duration is unavailable
+     *  (never a silent stale D-1/D-2-only fallback) or fewer than 2/3 nights of history
+     *  exist. See DerivedMetrics.sleepDurationAccumulated2dDeficitSec on the Python side. */
+    sleep_duration_accumulated_2d_deficit_min?: number | null;
+    sleep_duration_accumulated_3d_deficit_min?: number | null;
+    /** Signed shortest-arc bedtime/wake-time/sleep-midpoint deviation (minutes) vs the
+     *  person's own circular-mean baseline -- positive = later than usual, negative =
+     *  earlier. Circular, not linear: correctly handles a baseline/current pair straddling
+     *  midnight. See calculate_circular_delta_minutes on the Python side. */
+    bedtime_deviation_7d_min?: number | null;
+    bedtime_deviation_28d_min?: number | null;
+    wake_time_deviation_7d_min?: number | null;
+    wake_time_deviation_28d_min?: number | null;
+    sleep_midpoint_deviation_7d_min?: number | null;
+    sleep_midpoint_deviation_28d_min?: number | null;
 }
 
 export interface DailyReadiness {
@@ -970,6 +996,26 @@ export interface DailyRecoverySnapshot {
         trainingReadinessScore7dMedian?: number | null;
         trainingReadinessScore28dMedian?: number | null;
         trainingReadinessScore28dMad?: number | null;
+        /** Sleep-duration median/MAD baseline, accumulated 2d/3d deficit (signed: positive
+         *  = net shortfall, negative = net surplus, over the most recent N nights *through
+         *  and including* tonight -- null if tonight's sleep duration is unavailable, never
+         *  silently falling back to a stale D-1/D-2-only aggregate), and bedtime/wake-time/
+         *  sleep-midpoint circular-mean baselines (minutes since local midnight -- circular,
+         *  not linear, because clock times wrap at midnight). See docs/analysis/
+         *  2026-08-29-sleep-decision-authority-phase-2-implementation.md. Nothing in
+         *  rules.ts/fatigue.ts reads these. Absent (undefined) on documents written before
+         *  baselineComputationVersion 6. */
+        sleepDuration7dMedian?: number | null;
+        sleepDuration28dMedian?: number | null;
+        sleepDuration28dMad?: number | null;
+        sleepDurationAccumulated2dDeficitSec?: number | null;
+        sleepDurationAccumulated3dDeficitSec?: number | null;
+        bedtime7dCircularMeanMinutes?: number | null;
+        bedtime28dCircularMeanMinutes?: number | null;
+        wakeTime7dCircularMeanMinutes?: number | null;
+        wakeTime28dCircularMeanMinutes?: number | null;
+        sleepMidpoint7dCircularMeanMinutes?: number | null;
+        sleepMidpoint28dCircularMeanMinutes?: number | null;
         deltas: {
             sleepScoreVs7d: number | null;
             sleepScoreVs28d: number | null;
@@ -1000,6 +1046,20 @@ export interface DailyRecoverySnapshot {
             stressMaxVs28dMedian?: number | null;
             trainingReadinessScoreVs7dMedian?: number | null;
             trainingReadinessScoreVs28dMedian?: number | null;
+            /** Sleep-duration median-baseline deltas and circular time-of-day deviations --
+             *  see the sibling comment above `sleepDuration7dMedian`. Circular deltas are a
+             *  signed shortest-arc difference in minutes, not a linear subtraction (which
+             *  would give a huge, wrong value whenever baseline and current straddle
+             *  midnight). Absent (undefined) on documents written before
+             *  baselineComputationVersion 6. */
+            sleepDurationVs7dMedian?: number | null;
+            sleepDurationVs28dMedian?: number | null;
+            bedtimeDeviationVs7dMinutes?: number | null;
+            bedtimeDeviationVs28dMinutes?: number | null;
+            wakeTimeDeviationVs7dMinutes?: number | null;
+            wakeTimeDeviationVs28dMinutes?: number | null;
+            sleepMidpointDeviationVs7dMinutes?: number | null;
+            sleepMidpointDeviationVs28dMinutes?: number | null;
         };
     };
     dataQuality: {
