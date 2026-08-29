@@ -16,6 +16,7 @@ import './HealthAnomalyFollowupCard.css';
 
 const EXPLANATION_LABELS: Record<HealthAnomalyOutcomeExplanation, string> = {
     illness_symptoms: 'I developed illness symptoms',
+    allergy_or_hay_fever: 'Seasonal allergy / hay fever',
     hard_training_recovery: 'Hard training / recovery',
     poor_sleep: 'Poor sleep',
     alcohol: 'Alcohol',
@@ -97,7 +98,7 @@ export function HealthAnomalyFollowupForm({ candidate, existing, onSave }: Healt
                     </select>
                 </div>
 
-                {(explanation === 'illness_symptoms' || !!existing?.symptomOnset) && (
+                {(explanation === 'illness_symptoms' || explanation === 'allergy_or_hay_fever' || !!existing?.symptomOnset) && (
                     <div className="ha-followup-field">
                         <label htmlFor="ha-followup-onset">Approximate symptom onset date</label>
                         <input

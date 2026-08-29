@@ -35,11 +35,16 @@ export interface HealthSymptomsCheckin {
     severity?: 'mild' | 'moderate' | 'severe' | null;
     /** Null is accepted as an explicit clear for migration/update symmetry. */
     types?: HealthSymptomType[] | null;
+    /** Athlete's own best guess at cause. Unset/'unsure' keeps the conservative default
+     *  treatment; only an explicit 'allergy' can soften engine gating (see adapters.ts). */
+    suspectedCause?: 'infectious' | 'allergy' | 'unsure' | null;
 }
 
 export type HealthSymptomType =
     | 'sore_throat'
     | 'congestion'
+    | 'runny_nose'
+    | 'sneezing'
     | 'cough'
     | 'fever_or_chills'
     | 'headache_or_body_aches'

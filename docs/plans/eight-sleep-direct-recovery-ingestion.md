@@ -102,12 +102,21 @@ detection. Phase 1 of its implementation plan:
    `mainSessionId`, or the sole session; ambiguous multi-session nights skipped).
 3. **Eight Sleep stage-sum invariant check** — verified whether `sessions[].stages`
    reconciles with Eight Sleep's own day-level deep/rem/light aggregates, the same check
-   already confirmed exact for Garmin's `sleepLevels`. It does **not** hold (light matched
-   0/64 sampled nights) — see
+   already confirmed exact for Garmin's `sleepLevels`. Initial check found it did **not**
+   hold (light matched 0/64 sampled nights) — see
    [`docs/analysis/2026-08-29-eight-sleep-stage-sum-invariant-check.md`](../analysis/2026-08-29-eight-sleep-stage-sum-invariant-check.md).
-4. **Eight Sleep awake-in-bed/out-of-bed seconds** — **deferred**, gated on #3's finding:
-   persisting a new metric derived from a stage timeline that doesn't reconcile with
-   already-ingested aggregates needs more investigation first.
+   **Root cause found same day**: the check only summed the `mainSessionId`-matched
+   session, but Eight Sleep's day-level totals sum across *all* sessions that day (main
+   sleep + naps). Corrected method (summing `sessions[].stageSummary` across all sessions):
+   **64/64 exact match** — see
+   [`docs/analysis/2026-08-29-eight-sleep-waso-reinstated.md`](../analysis/2026-08-29-eight-sleep-waso-reinstated.md).
+4. **Eight Sleep real within-session WASO** — **implemented** (`NORMALIZER_VERSION` 7).
+   `sessions[].stageSummary.wasoDuration`, summed across all sessions, validated against
+   Garmin's true `awakeSleepSec` (r=0.461, comparable to REM's r=0.44) on 34 duration-
+   agreement nights — reinstates `METRIC_SLEEP_STAGE_AWAKE_SECONDS` (removed in ES-EXT-4)
+   under the same name, since it's now genuinely the same concept. Still classified
+   `research_only` in `OBSERVATION_AUTHORITY` — real signal, not yet training-decision
+   grade.
 5. **`OBSERVATION_AUTHORITY`** (`canonical.py`) — explicit
    `training_authoritative`/`planning_authoritative`/`health_anomaly`/
    `observability_only`/`research_only` classification for all 46 metric constants,

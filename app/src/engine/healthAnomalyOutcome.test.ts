@@ -71,6 +71,18 @@ describe('HealthAnomalyEpisodeOutcome (HA6)', () => {
         })).toThrow(/respiratory test/);
     });
 
+    it('accepts the allergy_or_hay_fever explanation', () => {
+        const result = buildHealthAnomalyEpisodeOutcome({
+            userId: 'u1',
+            episodeId: 'health-anomaly:2026-08-20',
+            sourceAssessment,
+            explanation: 'allergy_or_hay_fever',
+            now: '2026-08-21T06:00:00.000Z',
+        });
+        expect(result.explanation).toBe('allergy_or_hay_fever');
+        expect(() => parseHealthAnomalyEpisodeOutcome(result)).not.toThrow();
+    });
+
     it('bounds free text and trims an empty note to null', () => {
         const empty = buildHealthAnomalyEpisodeOutcome({
             userId: 'u1', episodeId: 'episode-1', sourceAssessment,
