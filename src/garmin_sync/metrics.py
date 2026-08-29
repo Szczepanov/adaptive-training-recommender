@@ -330,21 +330,23 @@ def compute_derived_metrics(
 
     # v6: sleep-duration median/MAD baselines, plus a 2d/3d accumulated deficit against the
     # historical 28d median. The baseline remains history-only, while the rolling deficit
-    # intentionally appends the current night so today's snapshot reflects today's sleep.
-    # See calculate_accumulated_deficit's docstring for signed-sum and gap-tolerance semantics.
+    # requires and appends the current night so today's snapshot never silently falls back
+    # to a stale D-1/D-2-only aggregate when current sleep duration is unavailable.
     sleep_duration_7d_median = calculate_median(w7["sleepDurationSec"], 4)
     sleep_duration_28d_median = calculate_median(w28["sleepDurationSec"], 14)
     sleep_duration_mad28 = calculate_mad(w28["sleepDurationSec"], 14)
-    sleep_duration_through_current = [
-        *w28["sleepDurationSec"],
-        raw_current.get("sleepDurationSec"),
-    ]
-    sleep_duration_accumulated_2d = calculate_accumulated_deficit(
-        sleep_duration_through_current, sleep_duration_28d_median, 2
-    )
-    sleep_duration_accumulated_3d = calculate_accumulated_deficit(
-        sleep_duration_through_current, sleep_duration_28d_median, 3
-    )
+    current_sleep_duration = raw_current.get("sleepDurationSec")
+    if current_sleep_duration is None:
+        sleep_duration_accumulated_2d = None
+        sleep_duration_accumulated_3d = None
+    else:
+        sleep_duration_through_current = [*w28["sleepDurationSec"], current_sleep_duration]
+        sleep_duration_accumulated_2d = calculate_accumulated_deficit(
+            sleep_duration_through_current, sleep_duration_28d_median, 2
+        )
+        sleep_duration_accumulated_3d = calculate_accumulated_deficit(
+            sleep_duration_through_current, sleep_duration_28d_median, 3
+        )
 
     # v6: bedtime/wake-time/sleep-midpoint circular-mean baselines (minutes since local
     # midnight) -- see calculate_circular_mean_minutes's docstring for why mean, not median.
