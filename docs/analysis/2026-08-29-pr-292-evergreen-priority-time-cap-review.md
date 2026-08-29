@@ -10,6 +10,8 @@ The review followed both reported failures through the live engine path rather t
 - evidence-backed evergreen requirement priority resolution;
 - weekly dose packing under a shared priority-tier session ceiling;
 - training-cap eligibility and downstream automatic dose adjustment;
+- legacy-template to canonical-workout coverage identity and duration-credit semantics;
+- Running/no-bike evergreen scheduling through the concrete optimizer;
 - policy-version governance for persisted recommendation changes.
 
 Lint/static-analysis findings are intentionally outside this review scope.
@@ -69,6 +71,48 @@ The PR changes `rules.ts` behavior and therefore can alter persisted recommendat
 
 This is a behavioral version, not a CI-only workaround.
 
+## Finding 4 — Running/no-bike aerobic coverage was declared but structurally unreachable
+
+A follow-up diagnostic used the exact `endurance + strength_muscle` persona path and showed that Findings 1–3 were fixed at the strategy/packing layer: aerobic and strength both received non-zero required coverage. The concrete Running/no-bike plan could still become strength-only, however.
+
+The failure was downstream in the legacy coverage bridge:
+
+- evergreen `aerobic_volume` explicitly accepts `running_easy_continuous_01`;
+- legacy `end_easy_02` resolves to that canonical workout;
+- `coverageKeysForExposure` intentionally requires an aerobic exposure to meet the canonical workout's `minimumMin` before granting `aerobic_volume` credit;
+- the canonical run minimum is 30 minutes, but `end_easy_02` was authored with `durationMin: 20`;
+- therefore `coverageKeysForTemplate(end_easy_02, 'general')` could never return `aerobic_volume`, so the optimizer had no Running candidate capable of repairing the required role.
+
+The Cycling mirror did not fail because `end_easy_01` and `cycling_zone2_standard_01` both use a 30-minute minimum.
+
+### Cardinality review
+
+This did **not** justify changing the legacy bridge to map one engine template to multiple canonical workouts. Coverage is already many-to-many at the role layer: a single canonical workout can satisfy multiple explicit roles where the descriptor says so. For example, `cycling_event_specific_endurance_01` legitimately earns both `outdoor_event_specific` and `short_surges`, and an existing regression asserts that behavior.
+
+Keeping one canonical execution identity per legacy template therefore remains useful: it prevents vague stimulus overlap from silently substituting for an authored role. If a workout genuinely satisfies multiple roles, that belongs in the coverage descriptor rather than in ambiguous template-to-workout fan-out.
+
+### Duration-semantics decision
+
+The 30-minute floor is retained rather than weakened. Completed/projected aerobic credit should continue to depend on the actual exposure duration, so a 20- or 29-minute run does not suddenly count as the same weekly aerobic-volume unit as the authored 30+ minute continuous prescription.
+
+The fix aligns the legacy run with that contract instead:
+
+- `end_easy_02.durationMin` is now 30 minutes;
+- its cap-safe `easierDose` is exactly 30 minutes and remains continuous running;
+- the shorter jog/walk behavior stays represented by the distinct `end_easy_03` / `running_walk_run_01` path, which intentionally does not earn full `aerobic_volume` credit;
+- the harder 45–60 minute continuous-run dose remains available.
+
+This also closes a subtle 30-minute-day edge case: leaving the old 15–25 minute easier dose on a 30–40 minute base template would allow the optimizer to select the right coverage identity and then auto-apply a dose that could not actually earn that coverage.
+
+### Regression coverage
+
+Two levels now protect the production path:
+
+1. `coverage.test.ts` asserts that both Cycling and Running continuous-aerobic legacy templates can resolve `aerobic_volume`, while a 29-minute Running exposure still does not receive credit and a 30-minute exposure does.
+2. `evergreenPlanner.test.ts` uses a Running-preferred, **no-indoor-bike** `endurance + strength_muscle` profile and asserts the concrete week-ahead plan contains `end_easy_02`, contains no `end_easy_01`, and still carries both aerobic and primary-strength allocations.
+
+This is intentionally stronger than checking the abstract allocation report alone, because the original follow-up failure occurred after allocation had already succeeded.
+
 ## Resulting behavioral invariants
 
 - Explicit `endurance` remains a required evergreen adaptation when selected.
@@ -77,6 +121,10 @@ This is a behavioral version, not a CI-only workaround.
 - A template is excluded only when its minimum duration cannot fit the resolved daily cap.
 - If a wide-range `SessionTemplate` is otherwise eligible, the ranked value has a cap-safe dose variation whose maximum does fit.
 - Automatic `train`/`modify` dose selection therefore does not need every catalog template to author a bespoke easier variant merely to respect a hard time cap.
+- Canonical workout identity may satisfy multiple explicit coverage roles; legacy templates do not need ambiguous many-workout identities to get multi-role credit.
+- The Running and Cycling continuous-aerobic legacy bridges both have a reachable 30-minute base floor.
+- Sub-30-minute Running exposures remain distinct from full `aerobic_volume` credit.
+- A Running-preferred athlete without an indoor bike still has a concrete candidate that can satisfy required evergreen aerobic coverage.
 - Persisted decisions produced by this behavior carry a distinct policy version.
 
 ## Verification targets
