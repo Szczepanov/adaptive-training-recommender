@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime
 from statistics import median
-from typing import Protocol
+from typing import TYPE_CHECKING
 
 from .fit_activity import FitActivityEvidence, FitRecordSample
 
-
-class TimingPolicy(Protocol):
-    max_expected_sample_interval_seconds: float
-    sampling_irregularity_tolerance_ratio: float
-    dropout_gap_seconds: float
+if TYPE_CHECKING:
+    from .hr_fidelity import HrFidelityPolicy
 
 
 def timestamped_records(records: tuple[FitRecordSample, ...]) -> list[FitRecordSample]:
@@ -113,7 +110,7 @@ def valid_hr(value: float | None) -> bool:
 def sampling_profile(
     records: list[FitRecordSample],
     windows: tuple[tuple[datetime, datetime], ...],
-    policy: TimingPolicy,
+    policy: HrFidelityPolicy,
 ) -> tuple[float | None, float | None]:
     intervals: list[float] = []
     for start, end in windows:
@@ -143,7 +140,7 @@ def coverage(
     valid: list[FitRecordSample],
     windows: tuple[tuple[datetime, datetime], ...],
     sample_interval: float | None,
-    policy: TimingPolicy,
+    policy: HrFidelityPolicy,
 ) -> tuple[float, float, int]:
     """Measure HR availability over the FIT Record surface, not an invented grid.
 
