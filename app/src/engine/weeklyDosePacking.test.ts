@@ -181,6 +181,46 @@ describe('weekly dose packing', () => {
         expect(budget.shortfalls).toContainEqual(expect.objectContaining({ adaptation: 'strength', code: 'goal_requirement_shortfall' }));
     });
 
+    it('uses the shortest fitting window so a later constrained peer keeps its only viable long window', () => {
+        const strategy: EvidenceBackedStrategy = {
+            requirements: [
+                {
+                    ...healthStrategy.requirements[0],
+                    floor: { dose: { unit: 'minutes', value: 30 }, semantics: 'goal_required_minimum' },
+                    target: { unit: 'minutes', minimum: 30, target: 30, maximum: 30 },
+                },
+                {
+                    ...healthStrategy.requirements[0],
+                    adaptation: 'strength',
+                    priority: 'required',
+                    floor: { dose: { unit: 'sessions', value: 1 }, semantics: 'goal_required_minimum' },
+                    target: { unit: 'sessions', minimum: 1, target: 1, maximum: 1 },
+                    substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Strength'] },
+                },
+            ], warnings: [],
+        };
+        const roles: CoverageSetDescriptor = {
+            id: 'best-fit-window-test',
+            roles: [
+                { id: 'aerobic', adaptations: ['aerobic_endurance'], exactWorkoutIds: ['cycling_zone2_standard_01'], durationMinutes: 30 },
+                { id: 'strength', adaptations: ['strength'], exactWorkoutIds: ['strength_full_body_maintenance_01'], durationMinutes: 45 },
+            ],
+        };
+        const mixedWindows: ResolvedTrainingCapacity = {
+            ...capacity(45, 2),
+            usableWindows: [
+                { date: '2026-08-10', availableMinutes: 45 },
+                { date: '2026-08-11', availableMinutes: 30 },
+            ],
+        };
+        const budget = packWeeklyDose(strategy, mixedWindows, roles);
+
+        expect(budget.requiredRoles.find(role => role.coverageRoleId === 'aerobic')?.date).toBe('2026-08-11');
+        expect(budget.requiredRoles.find(role => role.coverageRoleId === 'strength')?.date).toBe('2026-08-10');
+        expect(budget.requiredRoles).toHaveLength(2);
+        expect(budget.shortfalls).toEqual([]);
+    });
+
     it('uses the 2-to-6-session policy only to break equal-dose placement ties', () => {
         const evenlyViable = {
             ...capacity(60, 2),
