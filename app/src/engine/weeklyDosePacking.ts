@@ -145,6 +145,11 @@ export function packWeeklyDose(
         return rank[left.priority] - rank[right.priority];
     });
 
+    /** Estimate how many of the *remaining feasible windows* a requirement can still use.
+     * This feeds only fair-share reservation; it must not reserve capacity for a later peer
+     * whose role cannot fit any remaining window. For minute-based requirements, calculate
+     * the best dose each individual window can actually host instead of assuming the role's
+     * globally best per-session dose fits every window. */
     const sessionsNeededFor = (requirement: AdaptationDoseRequirement): number => {
         const candidates = coverage.roles.filter(role =>
             role.adaptations.includes(requirement.adaptation)
@@ -155,9 +160,24 @@ export function packWeeklyDose(
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
         const remainingDose = Math.max(0, desiredDose(requirement) - delivered);
-        const bestPerSessionDose = Math.max(...candidates.map(role => doseFor(role, requirement)));
-        if (!Number.isFinite(bestPerSessionDose) || bestPerSessionDose <= 0) return 0;
-        return Math.ceil(remainingDose / bestPerSessionDose);
+        if (remainingDose <= 0) return 0;
+
+        const feasibleDoseBySlot = slots
+            .filter(slot => !slot.used)
+            .map(slot => candidates
+                .filter(role => slot.availableMinutes >= role.durationMinutes)
+                .reduce((bestDose, role) => Math.max(bestDose, doseFor(role, requirement)), 0))
+            .filter(dose => dose > 0)
+            .sort((left, right) => right - left);
+
+        let accumulatedDose = 0;
+        let sessions = 0;
+        for (const dose of feasibleDoseBySlot) {
+            accumulatedDose += dose;
+            sessions += 1;
+            if (accumulatedDose >= remainingDose) break;
+        }
+        return sessions;
     };
 
     for (const requirement of requirements) {
@@ -182,10 +202,10 @@ export function packWeeklyDose(
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
         const requiredDose = desiredDose(requirement);
         // A priority tier's ceiling is shared. Allocate scarce room in proportion to the
-        // remaining session demand, while reserving one occurrence for every later peer
-        // that still needs coverage. Unlike a fixed even split, this also lets a heavy
-        // requirement reclaim slots a light peer does not need, so capacity is never left
-        // idle while the current tier still has a satisfiable shortfall.
+        // remaining *feasible* session demand, while reserving one occurrence for every
+        // later peer that can still use a window. Unlike a fixed even split, this also lets
+        // a heavy requirement reclaim slots a light or currently infeasible peer does not
+        // need, so capacity is not stranded while the current tier has a satisfiable gap.
         const requirementIndex = requirements.indexOf(requirement);
         const tierPeersRemaining = requirements
             .slice(requirementIndex)
