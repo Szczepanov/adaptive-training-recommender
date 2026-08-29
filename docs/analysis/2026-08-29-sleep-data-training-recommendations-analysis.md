@@ -1067,6 +1067,21 @@ sleep_algorithm_version
 
 This is preferable to a loose collection of booleans because it encodes intent and reduces accidental future promotion.
 
+> **Implementation note (2026-08-29):** as written above, `DecisionAuthority` is a
+> single-valued union, but the examples assign `sleep_duration_seconds` and
+> `respiration` to two roles at once -- a scalar field can't represent that without
+> dropping one. The actual implementation (`OBSERVATION_AUTHORITY` in
+> `src/garmin_sync/canonical.py`) resolved this by picking one authority per metric
+> rather than introducing a set-valued field: `sleep_duration_seconds` is classified
+> `training_authoritative` only (its planning role is covered by the separate timing/
+> baseline metrics, which are `planning_authoritative`), and `respiration`-family
+> metrics are classified `health_anomaly` only (no metric in this codebase's
+> vocabulary is currently gated as fusion-candidate-authoritative under the
+> `daily_respiration_rate_brpm` name *and* also needs boundedness metadata encoded
+> separately -- see that file's own comments for the per-metric rationale). Left the
+> original example text above unedited since it's someone else's pasted analysis, not
+> this repo's code.
+
 ---
 
 ## 17. Proposed ADR-level policy
