@@ -200,7 +200,7 @@ HRF0 still verifies the exact installed/locked version and real-account response
 | HRF4 | Canonical mapping + additive Firestore persistence | `[x]` | HRF1–HRF3 | none |
 | HRF5 | TypeScript parser + activity HR authority engine | `[x]` | HRF4 | shadow only |
 | HRF6 | HR-consumer/lineage audit + explicit authority adapters | `[x]` | HRF5 | no production change |
-| HRF7 | Shadow telemetry, replay journal and UI observability | `[ ]` | HRF5, HRF6 | evidence only |
+| HRF7 | Shadow telemetry, replay journal and UI observability | `[x]` | HRF5, HRF6 | evidence only |
 | HRF8 | Historical replay + independent prospective paired-reference study | `[ ]` | HRF7 | ship/no-ship evidence |
 | HRF9 | Conservative production gating | `[ ]` | HRF8 + activation decision | production |
 | HRF10 | Personal device × activity reliability priors | `[ ]` usage-triggered | independent paired reference history | later candidate |
