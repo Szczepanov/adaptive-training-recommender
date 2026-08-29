@@ -130,9 +130,10 @@ def calculate_circular_mean_minutes(
 
 def calculate_circular_delta_minutes(current: float | None, baseline: float | None) -> float | None:
     """Signed shortest-arc difference (current - baseline) in minutes on a 24h circle,
-    in (-720, 720]. Positive = later than baseline, negative = earlier. E.g. current=00:10
+    in [-720, 720). Positive = later than baseline, negative = earlier. E.g. current=00:10
     (10min) vs baseline=23:50 (1430min) -> +20min (20 minutes later), not the -1420min a
-    naive linear subtraction would give."""
+    naive linear subtraction would give. Exactly opposite points resolve to -720 by
+    convention because there is no uniquely shorter direction."""
     if current is None or baseline is None:
         return None
     return (current - baseline + 720.0) % 1440.0 - 720.0
@@ -252,7 +253,7 @@ def compute_derived_metrics(
     Compute 7-day and 28-day historical baselines and deltas.
     - 7-day baseline requires >= 4 valid points
     - 28-day baseline requires >= 14 valid points
-    - Current day must be excluded from windows
+    - Current day must be excluded from baseline windows
 
     `timezone_name` localizes v6's bedtime/wake-time/sleep-midpoint circular baselines
     (sleepSessionStart/End are UTC timestamps; clock-time-of-day only means something in a
@@ -328,16 +329,21 @@ def compute_derived_metrics(
     readiness_mad28 = calculate_mad(w28["trainingReadiness"], 14)
 
     # v6: sleep-duration median/MAD baselines, plus a 2d/3d accumulated deficit against the
-    # 28d median (see calculate_accumulated_deficit's docstring for the signed-sum and
-    # gap-tolerance semantics).
+    # historical 28d median. The baseline remains history-only, while the rolling deficit
+    # intentionally appends the current night so today's snapshot reflects today's sleep.
+    # See calculate_accumulated_deficit's docstring for signed-sum and gap-tolerance semantics.
     sleep_duration_7d_median = calculate_median(w7["sleepDurationSec"], 4)
     sleep_duration_28d_median = calculate_median(w28["sleepDurationSec"], 14)
     sleep_duration_mad28 = calculate_mad(w28["sleepDurationSec"], 14)
+    sleep_duration_through_current = [
+        *w28["sleepDurationSec"],
+        raw_current.get("sleepDurationSec"),
+    ]
     sleep_duration_accumulated_2d = calculate_accumulated_deficit(
-        w28["sleepDurationSec"], sleep_duration_28d_median, 2
+        sleep_duration_through_current, sleep_duration_28d_median, 2
     )
     sleep_duration_accumulated_3d = calculate_accumulated_deficit(
-        w28["sleepDurationSec"], sleep_duration_28d_median, 3
+        sleep_duration_through_current, sleep_duration_28d_median, 3
     )
 
     # v6: bedtime/wake-time/sleep-midpoint circular-mean baselines (minutes since local
@@ -367,6 +373,10 @@ def compute_derived_metrics(
 
     def _round(val: float | None) -> float | None:
         return round(val, 1) if val is not None else None
+
+    def _round_clock(val: float | None) -> float | None:
+        """Round a clock-time baseline while preserving the canonical [0, 1440) range."""
+        return round(val, 1) % 1440.0 if val is not None else None
 
     deltas = DerivedDeltas(
         sleepScoreVs7d=_round(calculate_delta(raw_current.get("sleepScore"), sleep_7d)),
@@ -498,11 +508,11 @@ def compute_derived_metrics(
         sleepDuration28dMad=_round(sleep_duration_mad28),
         sleepDurationAccumulated2dDeficitSec=_round(sleep_duration_accumulated_2d),
         sleepDurationAccumulated3dDeficitSec=_round(sleep_duration_accumulated_3d),
-        bedtime7dCircularMeanMinutes=_round(bedtime_7d_mean),
-        bedtime28dCircularMeanMinutes=_round(bedtime_28d_mean),
-        wakeTime7dCircularMeanMinutes=_round(wake_time_7d_mean),
-        wakeTime28dCircularMeanMinutes=_round(wake_time_28d_mean),
-        sleepMidpoint7dCircularMeanMinutes=_round(sleep_midpoint_7d_mean),
-        sleepMidpoint28dCircularMeanMinutes=_round(sleep_midpoint_28d_mean),
+        bedtime7dCircularMeanMinutes=_round_clock(bedtime_7d_mean),
+        bedtime28dCircularMeanMinutes=_round_clock(bedtime_28d_mean),
+        wakeTime7dCircularMeanMinutes=_round_clock(wake_time_7d_mean),
+        wakeTime28dCircularMeanMinutes=_round_clock(wake_time_28d_mean),
+        sleepMidpoint7dCircularMeanMinutes=_round_clock(sleep_midpoint_7d_mean),
+        sleepMidpoint28dCircularMeanMinutes=_round_clock(sleep_midpoint_28d_mean),
         deltas=deltas,
     )
