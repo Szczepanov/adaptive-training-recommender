@@ -1,7 +1,8 @@
 # Allergy / cause-aware symptom reporting — implementation plan
 
-Status: **proposed, not yet implemented**. Worktree: `.claude/worktrees/symptom-reporting`,
-branch `feat/subjective-symptom-reporting`.
+Status: **implemented**. Worktree: `.claude/worktrees/symptom-reporting`,
+branch `feat/subjective-symptom-reporting`. See §7 for what shipped and how it differs from
+this document's original sketch.
 
 ## 1. The gap, precisely
 
@@ -164,3 +165,23 @@ fix. If you want Phase 2, say so and I'll turn §5 into the same level of file-b
 2. Implement Phase 1 in this worktree, on `feat/subjective-symptom-reporting`.
 3. `npm run check` + `npm run test:rules`, fix any fallout.
 4. Decide on Phase 2 separately, as its own follow-up if wanted.
+
+## 7. What actually shipped
+
+Both phases were approved and implemented together (naming: `allergy_or_hay_fever`; row 7
+included). Phase 2 landed exactly as designed here — entirely inside
+`adapters.ts::mapCheckinToSubjectiveInput` via a new `isAllergyLikeSymptomDay` helper, with
+`rules.ts` untouched. No changes beyond this document's scope.
+
+One thing this document didn't anticipate, caught while preparing the PR: `adapters.ts` was
+missing from `scripts/check-policy-drift.mjs`'s `decisionAffectingFiles` allow-list, even
+though it clearly determines `painFlag`/`clinicalFlagActive` before `rules.ts` ever runs (the
+same reasoning already applied there to `subjectiveBaseline.ts` and `authoredSessionGates.ts`).
+Fixed as part of this PR:
+- Added `app/src/engine/adapters.ts` to `decisionAffectingFiles`.
+- Bumped `POLICY_VERSION` to `2026-08-allergy-symptom-gating-v1` (single-line bump only, per
+  repo convention — `HISTORICAL_POLICY_VERSIONS` is not touched on every bump).
+
+Verification (final, after both commits): `npm run check` (typecheck + lint + `npm test` 2680
+passed + `npm run validate:workouts`), `npm run test:rules` (140 Firestore-emulator tests), and
+`node scripts/check-policy-drift.mjs main` all pass.
