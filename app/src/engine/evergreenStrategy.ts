@@ -230,7 +230,12 @@ export function resolveEvidenceBackedStrategy(
     // 'endurance' as a priority — both cases warrant a hard floor, not a droppable
     // target that a concurrent 'strength_muscle' priority can silently starve out.
     if (healthOrBalanced || priorities.has('endurance')) requirements.push(aerobicRequirement('required'));
-    if (healthOrBalanced || priorities.has('strength_muscle')) requirements.push(strengthRequirement(healthOrBalanced ? 'target' : 'required'));
+    if (healthOrBalanced || priorities.has('strength_muscle')) {
+        // A broad health/balanced goal keeps strength advisory so existing baseline plans
+        // remain capacity-tolerant. An explicit strength_muscle selection is different:
+        // user intent must outrank the broad-goal default and retain a non-droppable floor.
+        requirements.push(strengthRequirement(priorities.has('strength_muscle') ? 'required' : 'target'));
+    }
 
     const performancePriority = priorities.has('endurance') || priorities.has('speed_power') || priorities.has('sport_readiness');
     const canUseConditionalPrior = athleteState.inference.dataQuality === 'high' && athleteState.trainingAgeProxy === 'established';
