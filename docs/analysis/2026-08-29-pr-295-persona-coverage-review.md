@@ -1,6 +1,6 @@
 # PR #295 — persona coverage expansion review
 
-**Date:** 2026-08-29  
+**Date:** 2026-08-29
 **Scope:** evergreen AI-judge persona coverage expansion
 
 ## Implemented coverage
