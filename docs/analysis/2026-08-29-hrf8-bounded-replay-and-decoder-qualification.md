@@ -4,7 +4,7 @@
 **Scope:** bounded, read-only HRF8 evidence run against real-account activity originals
 **Evidence status:** partial D-HRF-DECODER qualification plus a bounded replay smoke check
 **Decision posture:** no ship; HRF remains shadow-only
-**Runtime code revision:** `5ebea4f93146386359103be49f73a49e3f42e8ca` (the PR base; this PR changes documentation only)
+**Repository code baseline reviewed here:** `5ebea4f93146386359103be49f73a49e3f42e8ca` (the PR base; the bounded run did not record a separate execution commit SHA)
 
 ## Scope and privacy boundary
 
