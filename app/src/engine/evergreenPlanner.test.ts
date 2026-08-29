@@ -47,21 +47,29 @@ describe('evergreen week-ahead integration', () => {
         expect(plan.days.some(day => day.template.id === 'end_easy_01')).toBe(false);
     });
 
-    it('does not let a broad health goal make explicitly selected strength disappear', async () => {
-        const healthStrengthProfile: TrainingIntentProfile = {
+    it('keeps health-only strength coverage concrete for a no-bike resistance-preferring athlete', async () => {
+        // Finding 8 regression: once Running aerobic coverage became reachable, the old
+        // required-aerobic/target-strength split allowed a health-only persona to become
+        // Running-only despite free weights and Strength being its first preference.
+        const healthProfile: TrainingIntentProfile = {
             ...profile,
-            priorities: ['health', 'strength_muscle'],
+            priorities: ['health'],
             weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
         };
-        const healthStrengthPreferences: UserPreferences = {
+        const healthPreferences: UserPreferences = {
             ...preferences,
-            preferredModalities: ['Cycling', 'Strength'],
+            preferredModalities: ['Strength', 'Walking', 'Cycling'],
         };
-        const plan = await generateWeekAheadPlanWithIntent('u1', readiness, context, healthStrengthPreferences, [], '2026-08-31', today, null, { days: 14 }, history, undefined, healthStrengthProfile);
+        const noBikeContext: UserContext = {
+            ...context,
+            constraints: { ...context.constraints, hasIndoorBike: false, hasFreeWeights: true },
+        };
+        const plan = await generateWeekAheadPlanWithIntent('u1', readiness, noBikeContext, healthPreferences, [], '2026-08-31', today, null, { days: 14 }, history, undefined, healthProfile);
         const coverageKeys = plan.allocationReport.outcomes.map(outcome => outcome.occurrence.coverageKey);
 
         expect(coverageKeys).toContain('aerobic_volume');
         expect(coverageKeys).toContain('primary_strength');
+        expect(plan.days.some(day => day.template.id === 'end_easy_02')).toBe(true);
         expect(plan.days.some(day => day.template.modality === 'Strength')).toBe(true);
     });
 
