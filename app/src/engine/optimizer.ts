@@ -1,4 +1,5 @@
 import type {
+    DoseVariation,
     FatigueState,
     FixedActivity,
     AuthoredPlanBlock,
@@ -6,6 +7,7 @@ import type {
     InjuryConstraint,
     IntensityClass,
     PlannedDose,
+    SessionAdjustment,
     SessionHistoryEntry,
     SessionRole,
     SessionTemplate,
@@ -14,6 +16,7 @@ import type {
     UserPreferences,
     WeeklyObjective,
     WorkoutCostProfile,
+    WorkoutStimulusProfile,
 } from './models';
 import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
@@ -26,6 +29,83 @@ import { resolveInjuryRestrictions } from './injuryPolicy';
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
 ];
+
+function scaleCostProfileByRatio(profile: WorkoutCostProfile, ratio: number): WorkoutCostProfile {
+    return {
+        systemic: Math.min(1, profile.systemic * ratio),
+        cardiovascular: Math.min(1, profile.cardiovascular * ratio),
+        lowerBody: Math.min(1, profile.lowerBody * ratio),
+        upperBody: Math.min(1, profile.upperBody * ratio),
+        impactTissue: Math.min(1, profile.impactTissue * ratio),
+        neuromuscular: Math.min(1, profile.neuromuscular * ratio),
+    };
+}
+
+function scaleStimulusProfileByRatio(profile: WorkoutStimulusProfile, ratio: number): WorkoutStimulusProfile {
+    return {
+        aerobicEndurance: Math.min(1, profile.aerobicEndurance * ratio),
+        thresholdPower: Math.min(1, profile.thresholdPower * ratio),
+        vo2MaxPower: Math.min(1, profile.vo2MaxPower * ratio),
+        repeatedSurges: Math.min(1, profile.repeatedSurges * ratio),
+        sprintPower: Math.min(1, profile.sprintPower * ratio),
+        fatigueResistance: Math.min(1, profile.fatigueResistance * ratio),
+        maxStrength: Math.min(1, profile.maxStrength * ratio),
+        hypertrophy: Math.min(1, profile.hypertrophy * ratio),
+    };
+}
+
+/** Bakes an active dose variation (e.g. an auto-applied easier dose) into a concrete,
+ * self-contained template: duration and cost/stimulus all scale by the same dose ratio, so
+ * every downstream reader -- UI display, fatigue projection, simulation history -- sees one
+ * consistent session rather than a raw duration paired with an un-scaled cost. Returns the
+ * original template unchanged when there is no active dose. */
+export function materializeEffectiveDose(template: SessionTemplate, activeDose: DoseVariation | undefined): SessionTemplate {
+    if (!activeDose) return template;
+    const ratio = activeDose.doseRatio;
+    return {
+        ...template,
+        durationMin: activeDose.durationMin,
+        durationMax: activeDose.durationMax,
+        systemicCost: Math.min(1, template.systemicCost * ratio),
+        costProfile: template.costProfile ? scaleCostProfileByRatio(template.costProfile, ratio) : template.costProfile,
+        stimulusProfile: template.stimulusProfile ? scaleStimulusProfileByRatio(template.stimulusProfile, ratio) : template.stimulusProfile,
+    };
+}
+
+/** Eligibility only requires a template's durationMin to fit the day's time cap (see
+ * eligibleTemplates/resolveMaximumSessionMinutes in eligibility.ts), so a wide-range
+ * template can remain eligible on a capped day even though its authored durationMax does
+ * not fit -- eligibleTemplates decorates such a template with a cap-safe easierDose, but
+ * nothing applies it unless asked. Call this wherever a candidate is actually picked for a
+ * date (today, tomorrow, or a forecast day alike) so the recommendation never advertises a
+ * duration beyond a constraint the athlete was told is a hard cap, and so a fatigue-driven
+ * modify-tier day is visibly distinct from a full-prescription train day whenever the
+ * template offers a lighter variant. Returns null when neither condition applies. */
+export function resolveTimeCapDoseAdjustment(
+    template: SessionTemplate,
+    maxTimeMinutes: number,
+    isModifyTier: boolean,
+): { activeDose: DoseVariation; adjustment: SessionAdjustment } | null {
+    const easierDose = template.easierDose;
+    if (!easierDose) return null;
+    const pickedDurationMax = template.durationMax ?? template.durationMin ?? 0;
+    const timeCapExceeded = pickedDurationMax > maxTimeMinutes;
+    const easierDoseFitsTimeCap = (easierDose.durationMax ?? easierDose.durationMin ?? 0) <= maxTimeMinutes;
+    if (!(isModifyTier || (timeCapExceeded && easierDoseFitsTimeCap))) return null;
+    return {
+        activeDose: easierDose,
+        adjustment: {
+            direction: 'easier',
+            tier: 1,
+            originalTemplateId: template.id,
+            originalTemplateTitle: template.title,
+            adjustedDoseLabel: easierDose.label,
+            rationale: isModifyTier
+                ? `This day's readiness calls for a modify-tier session, so it automatically uses its easier dose (${easierDose.label}) rather than the full prescription.`
+                : `The full prescription's duration range extends past this day's ${maxTimeMinutes}-minute time cap, so it automatically uses its easier dose (${easierDose.label}), which fits within it.`,
+        },
+    };
+}
 
 export interface RankedCandidate {
     template: SessionTemplate;

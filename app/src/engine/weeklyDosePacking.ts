@@ -145,6 +145,41 @@ export function packWeeklyDose(
         return rank[left.priority] - rank[right.priority];
     });
 
+    /** Estimate how many of the *remaining feasible windows* a requirement can still use.
+     * This feeds only fair-share reservation; it must not reserve capacity for a later peer
+     * whose role cannot fit any remaining window. For minute-based requirements, calculate
+     * the best dose each individual window can actually host instead of assuming the role's
+     * globally best per-session dose fits every window. */
+    const sessionsNeededFor = (requirement: AdaptationDoseRequirement): number => {
+        const candidates = coverage.roles.filter(role =>
+            role.adaptations.includes(requirement.adaptation)
+            && permittedWorkoutIds(role, requirement).length > 0,
+        );
+        if (candidates.length === 0) return 0;
+        const delivered = packed
+            .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
+            .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
+        const remainingDose = Math.max(0, desiredDose(requirement) - delivered);
+        if (remainingDose <= 0) return 0;
+
+        const feasibleDoseBySlot = slots
+            .filter(slot => !slot.used)
+            .map(slot => candidates
+                .filter(role => slot.availableMinutes >= role.durationMinutes)
+                .reduce((bestDose, role) => Math.max(bestDose, doseFor(role, requirement)), 0))
+            .filter(dose => dose > 0)
+            .sort((left, right) => right - left);
+
+        let accumulatedDose = 0;
+        let sessions = 0;
+        for (const dose of feasibleDoseBySlot) {
+            accumulatedDose += dose;
+            sessions += 1;
+            if (accumulatedDose >= remainingDose) break;
+        }
+        return sessions;
+    };
+
     for (const requirement of requirements) {
         const adaptationCandidates = coverage.roles.filter(role => role.adaptations.includes(requirement.adaptation));
         const permittedByRole = new Map<CoverageRoleDescriptor, string[]>();
@@ -166,7 +201,27 @@ export function packWeeklyDose(
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
         const requiredDose = desiredDose(requirement);
-        const allowedSessions = sessionLimit(requirement.priority);
+        // A priority tier's ceiling is shared. Allocate scarce room in proportion to the
+        // remaining *feasible* session demand, while reserving one occurrence for every
+        // later peer that can still use a window. Unlike a fixed even split, this also lets
+        // a heavy requirement reclaim slots a light or currently infeasible peer does not
+        // need, so capacity is not stranded while the current tier has a satisfiable gap.
+        const requirementIndex = requirements.indexOf(requirement);
+        const tierPeersRemaining = requirements
+            .slice(requirementIndex)
+            .filter(item => item.priority === requirement.priority);
+        const demandByPeer = tierPeersRemaining.map(peer => sessionsNeededFor(peer));
+        const currentDemand = demandByPeer[0] ?? 0;
+        const totalDemand = demandByPeer.reduce((total, demand) => total + demand, 0);
+        const laterPeersNeedingCoverage = demandByPeer.slice(1).filter(demand => demand > 0).length;
+        const roomRemainingInTier = Math.max(0, sessionLimit(requirement.priority) - packed.length);
+        const proportionalShare = totalDemand > 0
+            ? Math.ceil(roomRemainingInTier * currentDemand / totalDemand)
+            : 0;
+        const reserveForLaterPeers = Math.min(laterPeersNeedingCoverage, Math.max(0, roomRemainingInTier - 1));
+        const maxWithoutStarvingLaterPeers = Math.max(0, roomRemainingInTier - reserveForLaterPeers);
+        const requirementSessionBudget = Math.min(currentDemand, proportionalShare, maxWithoutStarvingLaterPeers);
+        const allowedSessions = packed.length + requirementSessionBudget;
 
         while (delivered < requiredDose && packed.length < allowedSessions) {
             const unusedSlots = slots.filter(slot => !slot.used);
@@ -181,7 +236,12 @@ export function packWeeklyDose(
                 .flatMap(role => unusedSlots.filter(slot => slot.availableMinutes >= role.durationMinutes)
                     .map(slot => ({ role, slot })))
                 .sort((left, right) =>
-                    right.role.durationMinutes - left.role.durationMinutes
+                    // Best-fit placement is the primary constraint: consume the shortest
+                    // window that can host the current requirement before preferring a
+                    // larger-dose role. This preserves scarce long windows for later roles
+                    // that have no short-window alternative.
+                    left.slot.availableMinutes - right.slot.availableMinutes
+                    || right.role.durationMinutes - left.role.durationMinutes
                     || (penaltyByDate.get(left.slot.date) ?? 0)
                         - (penaltyByDate.get(right.slot.date) ?? 0)
                     || left.role.id.localeCompare(right.role.id)

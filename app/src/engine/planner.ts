@@ -2,10 +2,12 @@ import type {
     DailyReadiness,
     AuthoredPlanBlock,
     DimensionalFatigue,
+    DoseVariation,
     FatigueState,
     FixedActivity,
     MicrocycleState,
     Recommendation,
+    SessionAdjustment,
     SessionHistoryEntry,
     SessionRole,
     SessionTemplate,
@@ -56,6 +58,7 @@ import {
     candidateMatchesAnchorRole,
     rankCandidates,
     resolveRecoveryStyle,
+    resolveTimeCapDoseAdjustment,
 } from './optimizer';
 import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
@@ -88,10 +91,17 @@ export interface WeekAheadDay {
     dayOffset: number;
     confidence: 'provisional' | 'projected';
     phaseName: string;
+    /** The authored catalog template, unmodified -- coverage/history bookkeeping keys off
+     * its authored identity and duration. When `activeDose` is set, a display consumer
+     * should render that dose's duration instead of the template's own, exactly like
+     * `Recommendation` already does for today's pick; nothing here mutates `template` for
+     * that purpose so credit/history accounting is unaffected by which dose is displayed. */
     template: SessionTemplate;
     mode: 'train' | 'recover';
     rationale: string;
     addressesObjectives: string[];
+    activeDose?: DoseVariation;
+    adjustment?: SessionAdjustment;
     diagnostics?: {
         peakFatigue: number;
         fatigueTier: 'train' | 'modify' | 'recover';
@@ -1103,6 +1113,12 @@ export function generateWeekAheadPlan(
             mode: tomorrowRec.mode === 'recover' ? 'recover' : 'train',
             rationale: tomorrowRec.rationale,
             addressesObjectives: tomorrowCredits.map(item => item.objective.title),
+            // tomorrowRec already resolved any auto-applied easier dose (fatigue-driven
+            // modify, or a time-cap adjustment -- see resolveTimeCapDoseAdjustment); carry
+            // it forward so a display consumer never renders `template`'s own duration when
+            // a narrower one is actually active. `template` itself stays the authored
+            // catalog identity so coverage/history bookkeeping is unaffected.
+            ...(tomorrowRec.activeDose ? { activeDose: tomorrowRec.activeDose, adjustment: tomorrowRec.adjustment } : {}),
         });
         applyPick(tomorrowDate, tomorrowRec.template, tomorrowCredits);
         applyFixedActivityCost(tomorrowDate);
@@ -1384,6 +1400,16 @@ export function generateWeekAheadPlan(
             );
         }
 
+        // Eligibility only requires durationMin to fit this date's time cap, so pick.template
+        // can still advertise a durationMax beyond it (see resolveTimeCapDoseAdjustment for
+        // why, and rules.ts's evaluateTrainingWithIntent for the identical treatment of
+        // today/tomorrow). Forecast days go through this separate greedy loop rather than
+        // that function, so the same adjustment has to be applied here too -- otherwise a
+        // forecasted day (most of any real week) would silently exceed a cap the athlete was
+        // told is a hard maximum.
+        const forecastDoseAdjustment = resolveTimeCapDoseAdjustment(pick.template, evaluation.availability.maxTimeMinutes, fatigueTier === 'modify');
+        const forecastRationale = forecastDoseAdjustment ? `${pick.rationale} ${forecastDoseAdjustment.adjustment.rationale}` : pick.rationale;
+
         resultDays.push({
             date,
             dayOffset: offset,
@@ -1391,8 +1417,12 @@ export function generateWeekAheadPlan(
             phaseName: periodization.phase.phaseName,
             template: pick.template,
             mode: displayModeFromCategory(pick.template.category),
-            rationale: pick.rationale,
+            rationale: forecastRationale,
             addressesObjectives: addressed,
+            // pick.template stays the authored catalog identity (coverage/history
+            // bookkeeping above already keyed off it); a display consumer should render
+            // activeDose's duration instead when present, exactly like `Recommendation`.
+            ...(forecastDoseAdjustment ? { activeDose: forecastDoseAdjustment.activeDose, adjustment: forecastDoseAdjustment.adjustment } : {}),
             diagnostics: {
                 peakFatigue,
                 fatigueTier,

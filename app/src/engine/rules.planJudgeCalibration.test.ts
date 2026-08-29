@@ -200,6 +200,30 @@ describe('plan-judge calibration policy guards', () => {
         });
     });
 
+    it('auto-applies an easier dose on a plain train day when the picked template\'s range exceeds a hard time cap', async () => {
+        // Regression: eligibility only requires a template's durationMin to fit the day's
+        // cap (see resolveMaximumSessionMinutes), so a wide-range template like "Tempo
+        // Ride (40-60 min)" stayed eligible on a 45-minute-capped day and was recommended
+        // with its full, uncapped range -- silently advertising up to 60 minutes on a day
+        // the athlete was told has a 45-minute hard maximum.
+        const cappedContext: UserContext = { ...context(), constraints: { ...context().constraints, hasIndoorBike: true, maxTimeMinutes: 45 } };
+        const result = await evaluateTrainingWithIntent(
+            'calibration-test-user',
+            readiness({ timeAvailable: 45, preferredModalityToday: 'Cycling' }),
+            cappedContext,
+            [],
+            '2026-08-24',
+            undefined,
+            emptyHistoryProvider,
+        );
+
+        expect(result.mode).toBe('train');
+        expect(result.template.durationMax).toBeGreaterThan(45);
+        expect(result.activeDose).toBeDefined();
+        expect(result.activeDose?.durationMax).toBeLessThanOrEqual(45);
+        expect(result.adjustment).toMatchObject({ direction: 'easier', tier: 1 });
+    });
+
     it('enforces pre-event strength restriction within 3 days of an A/B priority cycling event', () => {
         const strengthTemplate = ENRICHED_TEMPLATES.find(t => t.modality === 'Strength' && t.category === 'Full-body Strength')!;
         const focusEvent: UserEvent = {

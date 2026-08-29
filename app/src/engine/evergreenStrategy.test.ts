@@ -32,6 +32,40 @@ describe('evergreen evidence-backed strategy', () => {
         expect(strategy.requirements.map(requirement => requirement.adaptation)).not.toContain('strength');
     });
 
+    it('treats an explicitly chosen endurance priority as required, not a droppable target', () => {
+        const strategy = resolveEvidenceBackedStrategy({ priorities: ['endurance'] }, inferAthleteTrainingState([], 7));
+        const aerobic = strategy.requirements.find(requirement => requirement.adaptation === 'aerobic_endurance');
+        expect(aerobic?.priority).toBe('required');
+    });
+
+    it('keeps both WHO-backed health adaptations required instead of making strength opportunistic', () => {
+        for (const broadPriority of ['health', 'balanced_performance'] as const) {
+            const strategy = resolveEvidenceBackedStrategy({ priorities: [broadPriority] }, inferAthleteTrainingState([], 7));
+            const aerobic = strategy.requirements.find(requirement => requirement.adaptation === 'aerobic_endurance');
+            const strength = strategy.requirements.find(requirement => requirement.adaptation === 'strength');
+            expect(aerobic?.priority).toBe('required');
+            expect(strength?.priority).toBe('required');
+            expect(strength?.floor).toMatchObject({ dose: { unit: 'sessions', value: 2 } });
+        }
+    });
+
+    it('does not let health or balanced_performance demote an explicit strength_muscle priority', () => {
+        for (const broadPriority of ['health', 'balanced_performance'] as const) {
+            const strategy = resolveEvidenceBackedStrategy({ priorities: [broadPriority, 'strength_muscle'] }, inferAthleteTrainingState([], 7));
+            const strength = strategy.requirements.find(requirement => requirement.adaptation === 'strength');
+            expect(strength?.priority).toBe('required');
+            expect(strength?.floor).toMatchObject({ dose: { unit: 'sessions', value: 2 } });
+        }
+    });
+
+    it('keeps endurance and strength_muscle both required when chosen together, so neither starves the other', () => {
+        const strategy = resolveEvidenceBackedStrategy({ priorities: ['endurance', 'strength_muscle'] }, inferAthleteTrainingState([], 7));
+        const aerobic = strategy.requirements.find(requirement => requirement.adaptation === 'aerobic_endurance');
+        const strength = strategy.requirements.find(requirement => requirement.adaptation === 'strength');
+        expect(aerobic?.priority).toBe('required');
+        expect(strength?.priority).toBe('required');
+    });
+
     it('treats conflicting structured modality and recorded session type as conservative evidence', () => {
         const conflicting: CompletedExposure = {
             ...exposure(60), modality: 'Cycling', trainingRecordLike: { type: 'Strength session', duration_min: 60, training_effect: 0, intensity_tag: '' },

@@ -151,7 +151,7 @@ export const TEMPLATES: SessionTemplate[] = [
         id: "end_easy_02",
         category: "Easy Endurance",
         modality: "Running",
-        durationMin: 20,
+        durationMin: 30,
         durationMax: 40,
         title: "Light Base Run",
         description: "Very easy jog. Stop and walk if HR drifts above Zone 2.",
@@ -160,11 +160,11 @@ export const TEMPLATES: SessionTemplate[] = [
         systemicCost: 0.3,
         objectiveTransferable: true,
         easierDose: {
-            label: "20 min Short Jog/Walk",
-            durationMin: 15,
-            durationMax: 25,
-            doseRatio: 0.67,
-            prescriptionSummary: "Short 20 min easy jog."
+            label: "30 min Easy Base Run",
+            durationMin: 30,
+            durationMax: 30,
+            doseRatio: 0.75,
+            prescriptionSummary: "30 min continuous conversational base run."
         },
         harderDose: {
             label: "50 min Aerobic Base Run",

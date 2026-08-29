@@ -129,11 +129,61 @@ export function evaluateTemplateEligibility<T extends GateableSession>(
     return { template, eligible: reasons.length === 0, reasons };
 }
 
+function isSessionTemplate(template: GateableSession): template is SessionTemplate {
+    const candidate = template as Partial<SessionTemplate>;
+    return typeof candidate.id === 'string'
+        && typeof candidate.title === 'string'
+        && typeof candidate.description === 'string';
+}
+
+/**
+ * Eligibility is intentionally based on the authored minimum duration: wide-range sessions
+ * remain valid when their minimum fits the day. Downstream recommendation logic, however,
+ * needs a concrete dose whose *maximum* also respects the same hard cap. Attach a cap-safe
+ * easier variation to eligible catalog templates so every ranking path has one available.
+ *
+ * Prefer the author's easier variation when it can start inside the cap. If its upper bound
+ * is still too large, narrow only that bound and scale its volume ratio proportionally. If
+ * no authored easier variation can start inside the cap, derive a duration-only variation
+ * from the base template. The template itself is not mutated and its authored range remains
+ * available for provenance/audit.
+ */
+function withCapSafeDose<T extends GateableSession>(template: T, maxMinutes: number): T {
+    if (!isSessionTemplate(template) || template.durationMax <= maxMinutes) return template;
+
+    const authored = template.easierDose;
+    const source = authored && authored.durationMin <= maxMinutes
+        ? authored
+        : {
+            label: `${template.durationMin}-${template.durationMax} min`,
+            durationMin: template.durationMin,
+            durationMax: template.durationMax,
+            doseRatio: 1,
+            prescriptionSummary: template.description,
+        };
+    const cappedDurationMax = Math.min(source.durationMax, maxMinutes);
+    const ratioScale = source.durationMax > 0 ? cappedDurationMax / source.durationMax : 1;
+    const cappedDose = source.durationMax <= maxMinutes
+        ? source
+        : {
+            ...source,
+            label: `${source.label} (max ${maxMinutes} min)`,
+            durationMax: cappedDurationMax,
+            doseRatio: source.doseRatio * ratioScale,
+            prescriptionSummary: `${source.prescriptionSummary} Keep total duration at or below ${maxMinutes} minutes.`,
+        };
+
+    return { ...template, easierDose: cappedDose } as T;
+}
+
 export function eligibleTemplates<T extends GateableSession>(
     templates: readonly T[],
     context: UserContext,
     checkinMinutes: number,
     date: string,
 ): T[] {
-    return templates.filter(template => evaluateTemplateEligibility(template, context, checkinMinutes, date).eligible);
+    const maxMinutes = resolveMaximumSessionMinutes(context, checkinMinutes, date);
+    return templates
+        .filter(template => evaluateTemplateEligibility(template, context, checkinMinutes, date).eligible)
+        .map(template => withCapSafeDose(template, maxMinutes));
 }

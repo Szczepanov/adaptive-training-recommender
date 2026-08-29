@@ -1,6 +1,7 @@
 import type { DimensionalFatigue, EquipmentKey, Recommendation, SessionTemplate, UserContext, WorkoutCostProfile, WorkoutStimulusProfile } from '../models';
 import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../rules';
 import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
+import { materializeEffectiveDose } from '../optimizer';
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
 import { evaluatePeriodizationPhase } from '../periodization';
 import { resolvePlanningContext } from '../planningMode';
@@ -100,42 +101,11 @@ function equipmentSatisfied(context: UserContext, required: EquipmentKey[]): boo
     });
 }
 
-function scaleCostProfile(profile: WorkoutCostProfile, ratio: number): WorkoutCostProfile {
-    return {
-        systemic: Math.min(1, profile.systemic * ratio),
-        cardiovascular: Math.min(1, profile.cardiovascular * ratio),
-        lowerBody: Math.min(1, profile.lowerBody * ratio),
-        upperBody: Math.min(1, profile.upperBody * ratio),
-        impactTissue: Math.min(1, profile.impactTissue * ratio),
-        neuromuscular: Math.min(1, profile.neuromuscular * ratio),
-    };
-}
-
-function scaleStimulusProfile(profile: WorkoutStimulusProfile, ratio: number): WorkoutStimulusProfile {
-    return {
-        aerobicEndurance: Math.min(1, profile.aerobicEndurance * ratio),
-        thresholdPower: Math.min(1, profile.thresholdPower * ratio),
-        vo2MaxPower: Math.min(1, profile.vo2MaxPower * ratio),
-        repeatedSurges: Math.min(1, profile.repeatedSurges * ratio),
-        sprintPower: Math.min(1, profile.sprintPower * ratio),
-        fatigueResistance: Math.min(1, profile.fatigueResistance * ratio),
-        maxStrength: Math.min(1, profile.maxStrength * ratio),
-        hypertrophy: Math.min(1, profile.hypertrophy * ratio),
-    };
-}
-
-export function materializeEffectiveSimulationTemplate(template: SessionTemplate, activeDose: Recommendation['activeDose']): SessionTemplate {
-    if (!activeDose) return template;
-    const ratio = activeDose.doseRatio;
-    return {
-        ...template,
-        durationMin: activeDose.durationMin,
-        durationMax: activeDose.durationMax,
-        systemicCost: Math.min(1, template.systemicCost * ratio),
-        costProfile: template.costProfile ? scaleCostProfile(template.costProfile, ratio) : template.costProfile,
-        stimulusProfile: template.stimulusProfile ? scaleStimulusProfile(template.stimulusProfile, ratio) : template.stimulusProfile,
-    };
-}
+/** Re-exported for existing simulation-only callers/tests; the canonical implementation
+ * now lives in optimizer.ts so planner.ts's forecast-day path can share it too -- a
+ * forecast day is generated through a wholly separate loop from evaluateTrainingWithIntent
+ * and previously never applied an auto-adjusted dose at all. */
+export const materializeEffectiveSimulationTemplate = materializeEffectiveDose;
 
 export function recommendationAsDay(date: string, recommendation: Recommendation, phaseName: string): WeekAheadDay {
     const effectiveTemplate = materializeEffectiveSimulationTemplate(recommendation.template, recommendation.activeDose);
@@ -199,9 +169,14 @@ export function traceFromRecommendation(weekIndex: number, date: string, recomme
 function traceFromForecastDay(weekIndex: number, day: WeekAheadDay): ScenarioDecisionTrace {
     const diagnostics = day.diagnostics;
     if (!diagnostics) throw new Error(`Expected forecast diagnostics for ${day.date}.`);
+    // day.template stays the authored catalog identity (coverage/history bookkeeping
+    // upstream already keyed off it); materialize activeDose here purely for this
+    // human/judge-facing trace, matching traceFromRecommendation's treatment of today and
+    // tomorrow, so a displayed duration never exceeds a cap the athlete was told is hard.
+    const effectiveTemplate = materializeEffectiveDose(day.template, day.activeDose);
     return {
         weekIndex, date: day.date, readinessTier: diagnostics.fatigueTier, mode: diagnostics.fatigueTier,
-        selected: { templateId: day.template.id, category: day.template.category, modality: day.template.modality, durationMin: day.template.durationMin, durationMax: day.template.durationMax, stimulusProfile: day.template.stimulusProfile ?? null, projectedCost: day.template.costProfile ?? ZERO_COST },
+        selected: { templateId: effectiveTemplate.id, category: effectiveTemplate.category, modality: effectiveTemplate.modality, durationMin: effectiveTemplate.durationMin, durationMax: effectiveTemplate.durationMax, stimulusProfile: effectiveTemplate.stimulusProfile ?? null, projectedCost: effectiveTemplate.costProfile ?? ZERO_COST },
         fatigue: {
             rawExternalLoad: diagnostics.fatigue?.rawExternalLoadFatigue ?? diagnostics.fatigue?.externalLoadFatigue ?? ZERO_FATIGUE,
             clampedExternalLoad: diagnostics.fatigue?.externalLoadFatigue ?? ZERO_FATIGUE,

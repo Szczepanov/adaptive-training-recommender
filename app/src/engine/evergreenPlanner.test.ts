@@ -24,6 +24,55 @@ describe('evergreen week-ahead integration', () => {
         expect(plan.allocationReport.outcomes.some(outcome => outcome.occurrence.coverageSetId === 'evergreen_general')).toBe(true);
     });
 
+    it('packs and concretely schedules aerobic plus strength coverage for a Running-only endurance+strength profile', async () => {
+        // Regression: a former-elite-return-style persona with priorities
+        // ['endurance', 'strength_muscle'] previously had two independent failure modes:
+        // required-tier packing could starve aerobic work, and after that was fixed the
+        // Running/no-bike path still had no concrete template able to earn aerobic_volume.
+        const combinedProfile: TrainingIntentProfile = {
+            ...profile, priorities: ['endurance', 'strength_muscle'],
+            weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
+        };
+        const combinedPreferences: UserPreferences = { ...preferences, preferredModalities: ['Running', 'Strength'] };
+        const runningOnlyContext: UserContext = {
+            ...context,
+            constraints: { ...context.constraints, hasIndoorBike: false },
+        };
+        const plan = await generateWeekAheadPlanWithIntent('u1', readiness, runningOnlyContext, combinedPreferences, [], '2026-08-31', today, null, { days: 14 }, history, undefined, combinedProfile);
+        const coverageKeys = plan.allocationReport.outcomes.map(outcome => outcome.occurrence.coverageKey);
+
+        expect(coverageKeys).toContain('aerobic_volume');
+        expect(coverageKeys).toContain('primary_strength');
+        expect(plan.days.some(day => day.template.id === 'end_easy_02')).toBe(true);
+        expect(plan.days.some(day => day.template.id === 'end_easy_01')).toBe(false);
+    });
+
+    it('keeps health-only strength coverage concrete for a no-bike resistance-preferring athlete', async () => {
+        // Finding 8 regression: once Running aerobic coverage became reachable, the old
+        // required-aerobic/target-strength split allowed a health-only persona to become
+        // Running-only despite free weights and Strength being its first preference.
+        const healthProfile: TrainingIntentProfile = {
+            ...profile,
+            priorities: ['health'],
+            weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
+        };
+        const healthPreferences: UserPreferences = {
+            ...preferences,
+            preferredModalities: ['Strength', 'Walking', 'Cycling'],
+        };
+        const noBikeContext: UserContext = {
+            ...context,
+            constraints: { ...context.constraints, hasIndoorBike: false, hasFreeWeights: true },
+        };
+        const plan = await generateWeekAheadPlanWithIntent('u1', readiness, noBikeContext, healthPreferences, [], '2026-08-31', today, null, { days: 14 }, history, undefined, healthProfile);
+        const coverageKeys = plan.allocationReport.outcomes.map(outcome => outcome.occurrence.coverageKey);
+
+        expect(coverageKeys).toContain('aerobic_volume');
+        expect(coverageKeys).toContain('primary_strength');
+        expect(plan.days.some(day => day.template.id === 'end_easy_02')).toBe(true);
+        expect(plan.days.some(day => day.template.modality === 'Strength')).toBe(true);
+    });
+
     it('does not take eventless evergreen objectives from DEFAULT_BASE_DEMAND', async () => {
         const baseline = await generateWeekAheadPlanWithIntent('u1', readiness, context, preferences, [], '2026-08-10', today, null, { days: 6 }, history, undefined, profile);
         const originalDemand = { ...DEFAULT_BASE_DEMAND };

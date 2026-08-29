@@ -225,8 +225,13 @@ export function resolveEvidenceBackedStrategy(
     const priorities = new Set(goalOrEvent.priorities.length > 0 ? goalOrEvent.priorities : ['balanced_performance']);
     const requirements: AdaptationDoseRequirement[] = [];
     const healthOrBalanced = priorities.has('health') || priorities.has('balanced_performance');
-    if (healthOrBalanced || priorities.has('endurance')) requirements.push(aerobicRequirement(healthOrBalanced ? 'required' : 'target'));
-    if (healthOrBalanced || priorities.has('strength_muscle')) requirements.push(strengthRequirement(healthOrBalanced ? 'target' : 'required'));
+    // WHO/CDC adult-health guidance recommends both aerobic volume and muscle-strengthening
+    // frequency. If either adaptation is included by the health/balanced baseline, or is
+    // explicitly selected by the athlete, keep its evidence-backed floor non-droppable.
+    // Capacity may still produce an explicit shortfall; it must not silently erase a whole
+    // guideline-backed adaptation by relegating it to opportunistic leftover sessions.
+    if (healthOrBalanced || priorities.has('endurance')) requirements.push(aerobicRequirement('required'));
+    if (healthOrBalanced || priorities.has('strength_muscle')) requirements.push(strengthRequirement('required'));
 
     const performancePriority = priorities.has('endurance') || priorities.has('speed_power') || priorities.has('sport_readiness');
     const canUseConditionalPrior = athleteState.inference.dataQuality === 'high' && athleteState.trainingAgeProxy === 'established';

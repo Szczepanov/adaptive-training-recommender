@@ -21,7 +21,7 @@ import type {
 } from './models';
 import { TEMPLATES, ENRICHED_TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
-import { buildOptimizationContext, rankCandidates, resolveRecoveryStyle } from './optimizer';
+import { buildOptimizationContext, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -685,20 +685,13 @@ export async function evaluateTrainingWithIntent(
     // easier dose (the same mechanism `adjustSessionRecommendation('easier', ...)` uses
     // for an explicit athlete request) keeps 'modify' visibly distinct from 'train'
     // whenever the template offers a lighter variant, without inventing a second
-    // eligibility/ranking path.
-    const modifyDoseAdjustment = mode === 'modify' && pick?.template.easierDose
-        ? {
-            activeDose: pick.template.easierDose,
-            adjustment: {
-                direction: 'easier' as const,
-                tier: 1 as const,
-                originalTemplateId: pick.template.id,
-                originalTemplateTitle: pick.template.title,
-                adjustedDoseLabel: pick.template.easierDose.label,
-                rationale: `Today's readiness called for a modify-tier day, so this session automatically uses its easier dose (${pick.template.easierDose.label}) rather than the full prescription.`,
-            },
-        }
-        : {};
+    // eligibility/ranking path. It also covers the time-cap case: see
+    // resolveTimeCapDoseAdjustment for why eligibility alone cannot guarantee the
+    // recommended duration respects a hard cap. This same helper is used for forecast days
+    // in planner.ts -- keep the two call sites in sync.
+    const doseAdjustment = pick
+        ? resolveTimeCapDoseAdjustment(pick.template, availability.maxTimeMinutes, mode === 'modify')
+        : null;
     if (!pick) {
         const safeRecovery = candidates.find(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
             ?? getCanonicalRestTemplate();
@@ -723,9 +716,9 @@ export async function evaluateTrainingWithIntent(
         template: pick.template,
         plannedDose: intent.plannedDose,
         executionDose: resolveExecutionDose(intent.plannedDose, envelopes.plan, null),
-        rationale: modifyDoseAdjustment.adjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${modifyDoseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
+        rationale: doseAdjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${doseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
         mode, envelopes, telemetry,
-        ...modifyDoseAdjustment,
+        ...(doseAdjustment ?? {}),
         ...(externalEventAdvisory ? {
             externalPrescription: externalEventAdvisory.prescription,
             externalVerdict: externalEventAdvisory.verdict,
