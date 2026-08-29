@@ -315,10 +315,11 @@ export function runActivityHrFidelityShadowReplay(
             hrZoneDistribution: statusCountsForRows(rows, 'ZONE_DISTRIBUTION', row => row.currentProductionUse.hrZoneDisplay),
             garminTrainingLoad: statusCountsForRows(rows, 'TRAINING_LOAD', row => row.currentProductionUse.garminTrainingLoadEvidence),
             garminTrainingEffect: statusCountsForRows(rows, 'TRAINING_EFFECT', row => row.currentProductionUse.garminTrainingEffectEvidence),
-            // There is no persisted max-HR candidate yet. This classifies every assessed
-            // trace as a potential future candidate, keeping that absence visible.
-            maxHrUpdate: statusCountsForRows(rows, 'MAX_HR_UPDATE', row => row.assessmentState === 'ASSESSED'),
-            aerobicDecoupling: statusCountsForRows(rows, 'AEROBIC_DECOUPLING', row => row.assessmentState === 'ASSESSED'),
+            // HRF6 found no current max-HR or decoupling consumers/candidates. Keep their
+            // actual candidate denominators at zero; `authorityByUse` separately reports
+            // how assessed traces would be classified if a future consumer is introduced.
+            maxHrUpdate: emptyAuthorityCounts(),
+            aerobicDecoupling: emptyAuthorityCounts(),
         },
         poorTraceDespiteChestStrapCount,
         usefulWristTraceCount,
@@ -335,7 +336,7 @@ export function runActivityHrFidelityShadowReplay(
             'Assessed-unknown rate uses assessed activities as its denominator; missing assessments remain separate.',
             'Summary reconciliation/discordance rates use comparable assessed summaries only; unknown and not-comparable records are excluded.',
             'Garmin Training Load and Training Effect remain vendor HR-dependent summaries with unverified exact input lineage.',
-            'No maximum-HR candidate is persisted today; the max-HR count classifies assessed traces for a future candidate only.',
+            'HRF6 found no current max-HR or aerobic-decoupling consumer/candidate; their candidate counts stay zero rather than treating every assessed trace as a fabricated candidate. Per-use authority remains available separately.',
         ],
         rows,
         summary,
