@@ -225,17 +225,13 @@ export function resolveEvidenceBackedStrategy(
     const priorities = new Set(goalOrEvent.priorities.length > 0 ? goalOrEvent.priorities : ['balanced_performance']);
     const requirements: AdaptationDoseRequirement[] = [];
     const healthOrBalanced = priorities.has('health') || priorities.has('balanced_performance');
-    // Aerobic is 'required' whenever it is included at all: either it is the WHO
-    // health-guideline baseline (healthOrBalanced), or the athlete explicitly chose
-    // 'endurance' as a priority — both cases warrant a hard floor, not a droppable
-    // target that a concurrent 'strength_muscle' priority can silently starve out.
+    // WHO/CDC adult-health guidance recommends both aerobic volume and muscle-strengthening
+    // frequency. If either adaptation is included by the health/balanced baseline, or is
+    // explicitly selected by the athlete, keep its evidence-backed floor non-droppable.
+    // Capacity may still produce an explicit shortfall; it must not silently erase a whole
+    // guideline-backed adaptation by relegating it to opportunistic leftover sessions.
     if (healthOrBalanced || priorities.has('endurance')) requirements.push(aerobicRequirement('required'));
-    if (healthOrBalanced || priorities.has('strength_muscle')) {
-        // A broad health/balanced goal keeps strength advisory so existing baseline plans
-        // remain capacity-tolerant. An explicit strength_muscle selection is different:
-        // user intent must outrank the broad-goal default and retain a non-droppable floor.
-        requirements.push(strengthRequirement(priorities.has('strength_muscle') ? 'required' : 'target'));
-    }
+    if (healthOrBalanced || priorities.has('strength_muscle')) requirements.push(strengthRequirement('required'));
 
     const performancePriority = priorities.has('endurance') || priorities.has('speed_power') || priorities.has('sport_readiness');
     const canUseConditionalPrior = athleteState.inference.dataQuality === 'high' && athleteState.trainingAgeProxy === 'established';
