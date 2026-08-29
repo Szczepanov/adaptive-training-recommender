@@ -1,6 +1,6 @@
 # PR #292 review — evergreen priority fairness and time-cap invariants
 
-**Date:** 2026-08-29  
+**Date:** 2026-08-29
 **PR:** #292 — `fix(engine): fix endurance+strength priority starvation and time-cap dose overrun`
 
 ## Scope reviewed
