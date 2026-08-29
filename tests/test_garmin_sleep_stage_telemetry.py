@@ -10,6 +10,7 @@ def test_extract_sleep_metrics_reads_top_level_restless_count():
             "remSleepSeconds": 6_000,
             "lightSleepSeconds": 14_000,
             "awakeSleepSeconds": 1_600,
+            "awakeCount": 2,
         },
         "restlessMomentsCount": 17,
     }
@@ -23,6 +24,7 @@ def test_extract_sleep_metrics_reads_top_level_restless_count():
         14_000,
         1_600,
         17,
+        2,
     )
 
 
@@ -35,7 +37,7 @@ def test_extract_sleep_metrics_prefers_nested_count_when_both_shapes_exist():
         "restlessMomentsCount": 99,
     }
 
-    assert extract_sleep_metrics(payload)[-1] == 8
+    assert extract_sleep_metrics(payload)[-2] == 8  # restless_count (awake_count is [-1])
 
 
 def test_extract_sleep_metrics_degrades_on_malformed_sleep_dto_and_invalid_counts():
@@ -48,6 +50,7 @@ def test_extract_sleep_metrics_degrades_on_malformed_sleep_dto_and_invalid_count
         "lightSleepSeconds": 13_000,
         "awakeSleepSeconds": 0,
         "restlessMomentsCount": False,
+        "awakeCount": False,
     }
 
     assert extract_sleep_metrics(payload) == (
@@ -58,5 +61,6 @@ def test_extract_sleep_metrics_degrades_on_malformed_sleep_dto_and_invalid_count
         None,
         13_000,
         0,
+        None,
         None,
     )

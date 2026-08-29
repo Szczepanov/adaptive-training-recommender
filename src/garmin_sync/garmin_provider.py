@@ -94,14 +94,15 @@ def extract_sleep_metrics(
     int | None,
     int | None,
     int | None,
+    int | None,
 ]:
-    """Extract (sleep_score, sleep_sec, avg_resp, deep_sec, rem_sec, light_sec, awake_sec, restless_count)
-    from a raw Garmin sleep response.
+    """Extract (sleep_score, sleep_sec, avg_resp, deep_sec, rem_sec, light_sec, awake_sec,
+    restless_count, awake_count) from a raw Garmin sleep response.
     Handles both known Garmin response shapes (nested dailySleepDTO.sleepScores.overall
     and top-level overallSleepScore), and tolerates stage/restlessness fields appearing
     either in dailySleepDTO or at the response root."""
     if not sleep_obj:
-        return None, None, None, None, None, None, None, None
+        return None, None, None, None, None, None, None, None, None
 
     raw_daily_sleep = sleep_obj.get("dailySleepDTO")
     daily_sleep = raw_daily_sleep if isinstance(raw_daily_sleep, dict) else {}
@@ -130,6 +131,10 @@ def extract_sleep_metrics(
     light_sec = sleep_int("lightSleepSeconds")
     awake_sec = sleep_int("awakeSleepSeconds")
     restless_count = sleep_int("restlessMomentsCount")
+    # dailySleepDTO.awakeCount -- a real per-night awakening count. Unlike
+    # restlessMomentsCount (confirmed null for 73/73 sampled nights, 2026-08-29), this field
+    # is populated for the whole sampled comparison year, with real variation (0-6 observed).
+    awake_count = sleep_int("awakeCount")
 
     return (
         sleep_score,
@@ -140,6 +145,7 @@ def extract_sleep_metrics(
         light_sec,
         awake_sec,
         restless_count,
+        awake_count,
     )
 
 
@@ -1151,6 +1157,7 @@ def canonicalize_from_raw(
         light_sec,
         awake_sec,
         restless_count,
+        awake_count,
     ) = extract_sleep_metrics(telemetry.sleep_today)
     sleep_date = target_date_iso
     used_sleep_fallback = False
@@ -1164,15 +1171,17 @@ def canonicalize_from_raw(
             fb_light,
             fb_awake,
             fb_restless,
+            fb_awake_count,
         ) = extract_sleep_metrics(telemetry.sleep_fallback)
         if fb_score is not None:
             sleep_score, sleep_sec, avg_resp = fb_score, fb_sec, fb_resp
-            deep_sec, rem_sec, light_sec, awake_sec, restless_count = (
+            deep_sec, rem_sec, light_sec, awake_sec, restless_count, awake_count = (
                 fb_deep,
                 fb_rem,
                 fb_light,
                 fb_awake,
                 fb_restless,
+                fb_awake_count,
             )
             sleep_date = yesterday_iso
             used_sleep_fallback = True
@@ -1240,6 +1249,7 @@ def canonicalize_from_raw(
         light_sleep_seconds=light_sec,
         awake_sleep_seconds=awake_sec,
         restless_moments_count=restless_count,
+        awake_count=awake_count,
         respiration_rate_brpm=avg_resp,
         body_battery_wake=bb_wake,
         body_battery_wake_date=bb_wake_date if bb_wake is not None else None,

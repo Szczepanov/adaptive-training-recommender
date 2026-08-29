@@ -167,6 +167,12 @@ class RawMetrics:
     lightSleepSec: int | None = None
     awakeSleepSec: int | None = None
     restlessMomentsCount: int | None = None
+    # Garmin's own per-night awakening count (dailySleepDTO.awakeCount) -- unlike
+    # restlessMomentsCount (confirmed null on this account for 73/73 sampled nights,
+    # 2026-08-29), this field is populated every sampled night across the full comparison
+    # year, with real variation (0-6 observed). Observability-only: not consumed by the
+    # recommendation engine.
+    awakeCount: int | None = None
     restingHr: int | float | None = None
     hrvOvernightAvg: int | float | None = None
     hrvStatus: str | None = None
