@@ -145,6 +145,36 @@ def test_decode_activity_original_uses_only_session_scoped_time_in_zone_fallback
     assert evidence.time_in_hr_zone_seconds == (10.0, 20.0, 30.0, 40.0, 50.0)
 
 
+def test_decode_activity_original_does_not_mislabel_multisession_summary():
+    messages = [
+        FakeDataMessage(
+            "session",
+            avg_heart_rate=140,
+            time_in_hr_zone=(10, 20, 30),
+        ),
+        FakeDataMessage(
+            "session",
+            avg_heart_rate=155,
+            time_in_hr_zone=(1, 2, 3),
+        ),
+        FakeDataMessage(
+            "time_in_zone",
+            reference_mesg="session",
+            reference_index=1,
+            time_in_hr_zone=(9, 9, 9),
+        ),
+    ]
+
+    with patch(
+        "garmin_sync.fit_activity.fitdecode.FitReader",
+        return_value=_reader_with(messages),
+    ):
+        evidence = decode_activity_original(_synthetic_original_zip())
+
+    assert evidence.average_heart_rate_bpm is None
+    assert evidence.time_in_hr_zone_seconds == ()
+
+
 def test_decode_activity_original_ignores_non_timer_events():
     messages = [
         FakeDataMessage(
