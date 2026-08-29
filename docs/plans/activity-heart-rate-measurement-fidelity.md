@@ -6,7 +6,6 @@
 * **Unlocks:** source-aware HR trust, artifact-resistant HR-zone/load interpretation, safe max-HR/threshold/decoupling gating, and athlete/device/activity-specific HR reliability calibration
 * **Source analysis:** [`2026-08-29-activity-hr-measurement-confidence-analysis.md`](../analysis/2026-08-29-activity-hr-measurement-confidence-analysis.md)
 * **HRF0 evidence:** [`2026-08-29-garmin-activity-hr-fit-provenance-spike.md`](../analysis/2026-08-29-garmin-activity-hr-fit-provenance-spike.md)
-* **HRF8 bounded evidence:** [`2026-08-29-hrf8-bounded-replay-and-decoder-qualification.md`](../analysis/2026-08-29-hrf8-bounded-replay-and-decoder-qualification.md) — decoder surface qualified on a bounded sample; no paired-reference evidence, no ship
 * **Decision record:** [ADR-0031](../adr/0031-activity-heart-rate-measurement-fidelity-and-evidence-authority.md)
 * **Related plans:** [`garmin-activity-telemetry-ingestion.md`](./garmin-activity-telemetry-ingestion.md), [`physiological-identity-passport-and-measurement-trust.md`](./physiological-identity-passport-and-measurement-trust.md), [`scientific-validation-and-feedback-loop.md`](./scientific-validation-and-feedback-loop.md), [`health-anomaly-and-illness-risk-alerting.md`](./health-anomaly-and-illness-risk-alerting.md)
 
