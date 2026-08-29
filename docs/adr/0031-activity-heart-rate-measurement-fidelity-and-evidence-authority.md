@@ -195,6 +195,34 @@ Valid study setups include, for example:
 
 Clock synchronization/alignment and resampling rules SHALL be defined before error metrics are computed. Reference-contaminated samples are excluded rather than treated as successful agreement.
 
+### D-HRF-DECODER — ship a permissive runtime decoder and qualify it against the official SDK
+
+The production HRF FIT boundary SHALL use the MIT-licensed `fitdecode` library rather than Garmin's official FIT SDK as a shipped runtime dependency.
+
+Garmin's official FIT SDK SHALL instead be used ephemerally as the reference/oracle decoder for qualification and investigations where its newer vendor profile or vendor-defined behavior is material. It is not part of the production dependency graph or Docker image under this decision.
+
+The two decoder roles are deliberately different:
+
+- **runtime decoder:** `fitdecode`, isolated behind the Garmin-facing `fit_activity.py` anti-corruption boundary;
+- **reference decoder:** Garmin FIT SDK, invoked only in controlled validation/research workflows and not required for normal sync execution.
+
+Because `fitdecode` may lag the current Garmin FIT profile, the runtime decoder version and effective profile version MUST remain explicit in validation evidence. A newer official profile is not automatically a reason to reject `fitdecode`; it is a reason to re-check the fields and semantics HRF actually consumes.
+
+Before HRF3-derived diagnostics are used as scientific replay or activation evidence, representative original activities SHALL be replayed transiently through both decoders and compared on the **HRF-consumed semantic surface**, including where applicable:
+
+- recognized message/record counts;
+- HR/cadence/power sample presence and aggregate coverage;
+- timer-event state;
+- device inventory fields used for source reasoning;
+- session average HR;
+- lap-average HR;
+- session-scoped HR-zone arrays;
+- decode/CRC failure classification.
+
+Qualification does not require byte-for-byte output equality or equality for fields HRF ignores. It requires no unexplained material disagreement on fields that can change HRF provenance, quality, lineage, or authority conclusions.
+
+Any material runtime-decoder/profile upgrade, or newly consumed FIT field that depends on a newer profile, SHALL rerun this qualification before the new semantics support production activation.
+
 ### D-HRF-PERSONAL — personal reliability may supersede generic priors only after out-of-sample validation
 
 A later athlete/device/activity reliability prior MAY refine generic population priors when enough paired reference data exists.
@@ -216,6 +244,8 @@ Personal priors SHALL be trained/evaluated only on paired data that satisfies D-
 - One corrupted HR trace cannot multiply into several independent-looking physiological signals.
 - High-risk features such as max-HR, threshold and decoupling can fail closed while activity completion and non-HR evidence remain intact.
 - Paired validation cannot accidentally validate wrist PPG against a strap-contaminated Garmin stream.
+- Production keeps a permissively licensed, small Python FIT dependency while retaining the official Garmin decoder as a higher-authority validation oracle.
+- Runtime parser/profile drift becomes an explicit qualification problem rather than an invisible dependency assumption.
 - The design aligns with ADR-0010 replay/provenance principles, ADR-0026 wearable telemetry boundaries, ADR-0027 source-aware observations and ADR-0028's separation of identity from technical measurement quality.
 
 ### Negative / cost
@@ -226,6 +256,7 @@ Personal priors SHALL be trained/evaluated only on paired data that satisfies D-
 - Some historical activities will remain `unknown` because original files or provenance are unavailable.
 - Use-case-specific authority is more complex than a single confidence score.
 - Independent paired validation is operationally harder than simply pairing a strap to the same watch.
+- Maintaining a runtime decoder plus an official-SDK validation oracle adds a small decoder-qualification burden, especially when profiles or consumed fields change.
 - Conservative gating can temporarily reduce the number of HR-derived metrics available until enough validation evidence accumulates.
 
 ## Rejected alternatives
@@ -262,6 +293,14 @@ Rejected because electrode straps can still have contact, dropout and battery ar
 
 Rejected because the compared streams may not be independent; strap substitution can create circular validation and artificially improve apparent agreement.
 
+### Ship the Garmin FIT SDK as the default runtime parser
+
+Rejected for HRF v1. The official SDK remains the best vendor reference, but shipping it would add a separate redistribution/deployment-license acceptance burden that the runtime does not need. The HRF-consumed field surface is small enough to keep behind a conservative `fitdecode` boundary and qualify against the official SDK instead.
+
+### Trust `fitdecode` without an official-decoder qualification path
+
+Rejected because a permissive runtime dependency does not remove semantic/profile-drift risk. The official decoder is retained as an oracle so profile gaps or behavioral differences affecting HRF-consumed fields can be detected before they influence activation evidence.
+
 ### Convert fidelity into a readiness penalty
 
 Rejected because that confuses measurement uncertainty with physiological state and would make poor sensors directly worsen the athlete's recommendation.
@@ -278,4 +317,4 @@ Rejected for v1. Deterministic, versioned and explainable diagnostics are easier
 
 Implementation and validation are tracked by the `HRF*` task family in [`docs/plans/activity-heart-rate-measurement-fidelity.md`](../plans/activity-heart-rate-measurement-fidelity.md).
 
-The first required work item is a real-account FIT provenance/reconciliation spike. Architecture and runbook documentation are intentionally deferred until implementation so living docs describe shipped behavior rather than this proposed design.
+HRF2 owns the runtime `fitdecode` acquisition/decoder boundary and its parser-level synthetic integration coverage. The official-SDK-vs-runtime semantic qualification is required before HRF3-derived outputs can be promoted from implementation/shadow diagnostics into scientific replay or activation evidence.
