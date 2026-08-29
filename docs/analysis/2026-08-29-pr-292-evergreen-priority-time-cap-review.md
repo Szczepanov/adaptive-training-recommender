@@ -12,6 +12,7 @@ The review followed both reported failures through the live engine path rather t
 - training-cap eligibility and downstream automatic dose adjustment;
 - legacy-template to canonical-workout coverage identity and duration-credit semantics;
 - Running/no-bike evergreen scheduling through the concrete optimizer;
+- feasibility of same-tier capacity reservations against actual remaining time windows;
 - policy-version governance for persisted recommendation changes.
 
 Lint/static-analysis findings are intentionally outside this review scope.
@@ -28,11 +29,11 @@ A fixed split could allow A only 3 slots, B would use its single slot, and the l
 
 ### Resolution
 
-`packWeeklyDose` now estimates remaining session demand for each same-priority peer from the best eligible per-session dose. Scarce tier room is distributed proportionally to that demand while reserving at least one occurrence for later peers that still need coverage.
+`packWeeklyDose` now estimates remaining feasible session demand for each same-priority peer. Scarce tier room is distributed proportionally to that demand while reserving at least one occurrence for later peers that can still use a remaining availability window.
 
 This preserves both invariants:
 
-1. a same-priority peer cannot be starved merely because it is processed later;
+1. a feasible same-priority peer cannot be starved merely because it is processed later;
 2. capacity is not left idle while the current tier has a satisfiable shortfall.
 
 A regression covers the asymmetric 4-session aerobic + 1-session strength case and requires all five available sessions to be used with no shortfall.
@@ -113,11 +114,38 @@ Two levels now protect the production path:
 
 This is intentionally stronger than checking the abstract allocation report alone, because the original follow-up failure occurred after allocation had already succeeded.
 
+## Finding 5 — fairness reservation could reserve a slot for an impossible later peer
+
+The demand-aware allocator introduced for Finding 1 initially estimated how many sessions each later peer still needed from dose alone. It did not ask whether any **remaining time window could actually fit that peer's role**.
+
+That creates a different stranded-capacity case. For example:
+
+- two 30-minute required-tier windows remain;
+- aerobic work can use 30-minute windows and still needs both;
+- a later same-priority strength role requires 45 minutes;
+- the naive fairness calculation reserves one of the two windows for strength even though strength cannot use either window;
+- aerobic receives one session, strength receives none, and the second 30-minute slot remains unused.
+
+### Resolution
+
+The fair-share demand estimator now evaluates the unused availability windows themselves:
+
+- for each requirement, it considers only exact permitted roles;
+- for each unused window, it calculates the best dose from a role that actually fits that window;
+- it estimates session demand by accumulating those feasible per-window doses until the remaining requirement is met or feasible windows are exhausted;
+- later peers with zero feasible remaining windows reserve zero tier capacity.
+
+The allocator still preserves a slot for a later peer when that peer can genuinely use one; it simply no longer sacrifices usable capacity to an impossible reservation.
+
+A regression uses two 30-minute windows with a 30-minute aerobic role and a 45-minute strength role. Both windows must go to aerobic, while strength is reported explicitly as a goal-required shortfall rather than silently stranding a session.
+
 ## Resulting behavioral invariants
 
 - Explicit `endurance` remains a required evergreen adaptation when selected.
 - Same-priority required adaptations share scarce capacity without first-processed starvation.
 - Uneven same-priority demand can consume leftover capacity instead of stranding it.
+- Same-tier capacity is reserved only for later peers that can actually fit a remaining availability window.
+- An impossible peer remains an explicit shortfall; it does not consume or strand a feasible peer's capacity.
 - A template is excluded only when its minimum duration cannot fit the resolved daily cap.
 - If a wide-range `SessionTemplate` is otherwise eligible, the ranked value has a cap-safe dose variation whose maximum does fit.
 - Automatic `train`/`modify` dose selection therefore does not need every catalog template to author a bespoke easier variant merely to respect a hard time cap.
