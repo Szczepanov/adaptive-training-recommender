@@ -193,7 +193,7 @@ def test_run_eight_sleep_equivalence_analysis_direct_only_no_overlap():
     assert report.dailyResults == []
 
 
-def test_analyzer_flags_ambiguous_metric_when_google_side_has_duplicates():
+def test_analyzer_flags_ambiguous_metric_when_google_side_has_duplicates() -> None:
     """Regression for the real ES9 first-read finding: Google Health emitted TWO
     sleep_duration_seconds observations for one logical date (an overnight session plus a
     shorter overlapping fragment). The comparator's dict-building silently keeps only the

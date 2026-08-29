@@ -129,7 +129,7 @@ def test_snapshot_conversion_carries_sleep_session_timing_when_present():
     assert sleep_obs.observed_end == datetime(2026, 8, 25, 6, 0, tzinfo=timezone.utc)
 
 
-def test_build_metric_summaries_reports_none_not_zero_when_never_paired():
+def test_build_metric_summaries_reports_none_not_zero_when_never_paired() -> None:
     """Regression: a metric that only ever appears on one side (e.g. Garmin's RHR vs Eight
     Sleep's sleeping-HR-only surface -- always MISSING_DIRECT/MISSING_GOOGLE, never a real
     pair) previously defaulted meanDifference/maxDifference to 0.0, which is indistinguishable
@@ -155,7 +155,7 @@ def test_build_metric_summaries_reports_none_not_zero_when_never_paired():
     assert summaries["paired_metric"]["maxDifference"] == 2.0
 
 
-def test_format_metric_summaries_table_shows_na_and_ambiguous_section():
+def test_format_metric_summaries_table_shows_na_and_ambiguous_section() -> None:
     from garmin_sync.equivalence import build_metric_summaries, format_metric_summaries_table
 
     summaries = build_metric_summaries(

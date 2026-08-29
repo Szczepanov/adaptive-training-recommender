@@ -22,7 +22,7 @@ def _make_bundle(
 
 def _mock_repo_with_existing_doc(
     *, existing_hash: str, existing_normalizer_version: int, existing_rev: int
-):
+) -> tuple[FirestoreRecoveryRepository, MagicMock]:
     """Forces the non-transactional fallback path (db.transaction = None) -- simpler and
     sufficient to exercise the dedup decision itself without fighting
     @firestore.transactional's expectations of a real Transaction object."""
@@ -253,7 +253,7 @@ def test_is_fresh_incomplete_snapshot_short_cooldown(monkeypatch):
     )
 
 
-def test_save_health_observation_day_bundle_skips_when_hash_and_version_unchanged():
+def test_save_health_observation_day_bundle_skips_when_hash_and_version_unchanged() -> None:
     repo, doc_ref = _mock_repo_with_existing_doc(
         existing_hash="sha256:abc", existing_normalizer_version=2, existing_rev=3
     )
@@ -265,7 +265,7 @@ def test_save_health_observation_day_bundle_skips_when_hash_and_version_unchange
     doc_ref.set.assert_not_called()
 
 
-def test_save_health_observation_day_bundle_persists_when_normalizer_version_bumped():
+def test_save_health_observation_day_bundle_persists_when_normalizer_version_bumped() -> None:
     """Regression: a mapper logic change (e.g. eight_sleep_mapper.py's ES-EXT extraction)
     must actually get re-persisted for already-fetched dates, even though the underlying
     raw payload -- and therefore sourcePayloadHash -- is unchanged. Before this fix, the
@@ -283,7 +283,9 @@ def test_save_health_observation_day_bundle_persists_when_normalizer_version_bum
     doc_ref.set.assert_called_once()
 
 
-def test_save_health_observation_day_bundle_persists_when_hash_changed_regardless_of_version():
+def test_save_health_observation_day_bundle_persists_when_hash_changed_regardless_of_version() -> (
+    None
+):
     """The original behavior (payload actually changed) must still work unchanged."""
     repo, doc_ref = _mock_repo_with_existing_doc(
         existing_hash="sha256:old", existing_normalizer_version=2, existing_rev=3
