@@ -1,8 +1,8 @@
 """Strict, in-memory decoding boundary for Garmin original activity downloads.
 
 This module is intentionally Garmin-facing but its output uses generic device and
-sample concepts.  It never logs or persists original bytes, locations, serial numbers,
-or complete traces.  A decoder error is all-or-nothing: callers must retain the base
+sample concepts. It never logs or persists original bytes, locations, serial numbers,
+or complete traces. A decoder error is all-or-nothing: callers must retain the base
 activity and treat fidelity as unassessed rather than using partial messages.
 """
 
@@ -17,6 +17,11 @@ from zipfile import BadZipFile, ZipFile, is_zipfile
 import fitdecode
 
 _MAX_ORIGINAL_BYTES = 16 * 1024 * 1024
+_MAX_DEVICE_ENTRIES = 512
+_MAX_RECORD_SAMPLES = 250_000
+_MAX_LAP_SUMMARIES = 10_000
+_MAX_ZONE_BUCKETS = 64
+_SESSION_MESSAGE_NUMBER = 18
 
 
 class FitActivityDecodeError(ValueError):
@@ -71,8 +76,15 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
             error_handling=fitdecode.ErrorHandling.RAISE,
         ) as reader:
             for message in reader:
+                # FitReader yields header/definition/data/CRC frames. Definition
+                # messages expose the same ``name`` as their data messages, so name-only
+                # dispatch would manufacture all-None records/device rows.
+                if getattr(message, "frame_type", None) != fitdecode.FIT_FRAME_DATA:
+                    continue
+
                 name = getattr(message, "name", None)
                 if name == "device_info":
+                    _guard_capacity(devices, _MAX_DEVICE_ENTRIES, "device inventory")
                     devices.append(
                         FitDeviceInventoryEntry(
                             device_index=_integer(_value(message, "device_index")),
@@ -83,6 +95,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                         )
                     )
                 elif name == "record":
+                    _guard_capacity(records, _MAX_RECORD_SAMPLES, "record sample")
                     records.append(
                         FitRecordSample(
                             timestamp=_timestamp(_value(message, "timestamp")),
@@ -93,14 +106,29 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                     )
                 elif name == "session":
                     average_heart_rate_bpm = _number(_value(message, "avg_heart_rate"))
+                    session_zones = _numbers(_value(message, "time_in_hr_zone"))
+                    if session_zones:
+                        time_in_hr_zone_seconds = _bounded_zone_values(session_zones)
                 elif name == "lap":
                     average = _number(_value(message, "avg_heart_rate"))
                     if average is not None:
+                        _guard_capacity(
+                            lap_average_heart_rate_bpm,
+                            _MAX_LAP_SUMMARIES,
+                            "lap HR summary",
+                        )
                         lap_average_heart_rate_bpm.append(average)
-                elif name == "time_in_zone":
-                    seconds = _number(_value(message, "time_in_hr_zone"))
-                    if seconds is not None:
-                        time_in_hr_zone_seconds.append(seconds)
+                elif name == "time_in_zone" and not time_in_hr_zone_seconds:
+                    # FIT time-in-zone is an array and can be scoped to session/lap via
+                    # reference_mesg/reference_index. Only session-scoped data is a safe
+                    # fallback for the activity-level summary; never blend lap arrays.
+                    reference_mesg = _value(message, "reference_mesg")
+                    if _is_session_reference(reference_mesg):
+                        fallback_zones = _numbers(_value(message, "time_in_hr_zone"))
+                        if fallback_zones:
+                            time_in_hr_zone_seconds = _bounded_zone_values(fallback_zones)
+    except FitActivityDecodeError:
+        raise
     except Exception as error:
         raise FitActivityDecodeError(
             "Original activity FIT could not be decoded safely."
@@ -129,7 +157,9 @@ def _extract_fit_bytes(original: bytes) -> bytes:
             )
         with ZipFile(BytesIO(original)) as archive:
             members = [member for member in archive.infolist() if not member.is_dir()]
-            fit_members = [member for member in members if member.filename.lower().endswith(".fit")]
+            fit_members = [
+                member for member in members if member.filename.lower().endswith(".fit")
+            ]
             if len(fit_members) != 1 or len(members) != 1:
                 raise FitActivityDecodeError(
                     "Original activity ZIP must contain exactly one FIT file."
@@ -139,14 +169,20 @@ def _extract_fit_bytes(original: bytes) -> bytes:
                 raise FitActivityDecodeError(
                     "Original activity FIT member exceeds the HRF size limit."
                 )
-            return archive.read(member)
+            with archive.open(member) as fit_stream:
+                fit_bytes = fit_stream.read(_MAX_ORIGINAL_BYTES + 1)
+            if len(fit_bytes) > _MAX_ORIGINAL_BYTES:
+                raise FitActivityDecodeError(
+                    "Original activity FIT member exceeds the HRF size limit."
+                )
+            return fit_bytes
     except BadZipFile as error:
         raise FitActivityDecodeError("Original activity ZIP is malformed.") from error
 
 
 def _value(message: Any, name: str) -> Any:
     getter = getattr(message, "get_value", None)
-    return getter(name) if callable(getter) else None
+    return getter(name, fallback=None) if callable(getter) else None
 
 
 def _number(value: Any) -> float | None:
@@ -155,6 +191,38 @@ def _number(value: Any) -> float | None:
     if isinstance(value, (int, float)):
         return float(value)
     return None
+
+
+def _numbers(value: Any) -> tuple[float, ...]:
+    if isinstance(value, (list, tuple)):
+        values: list[float] = []
+        for item in value:
+            number = _number(item)
+            if number is None:
+                # Array position is semantically meaningful (zone index), so never
+                # compress an invalid/null element and silently shift later buckets.
+                return ()
+            values.append(number)
+        return tuple(values)
+    number = _number(value)
+    return () if number is None else (number,)
+
+
+def _bounded_zone_values(values: tuple[float, ...]) -> list[float]:
+    if len(values) > _MAX_ZONE_BUCKETS:
+        raise FitActivityDecodeError("Original activity FIT has too many HR-zone buckets.")
+    return list(values)
+
+
+def _is_session_reference(value: Any) -> bool:
+    return value == "session" or value == _SESSION_MESSAGE_NUMBER
+
+
+def _guard_capacity(values: list[Any], limit: int, label: str) -> None:
+    if len(values) >= limit:
+        raise FitActivityDecodeError(
+            f"Original activity FIT exceeds the HRF {label} limit."
+        )
 
 
 def _integer(value: Any) -> int | None:
