@@ -428,6 +428,19 @@ def test_compute_derived_metrics_v6_sleep_duration_deviation_and_accumulated_def
     assert derived.sleepDurationAccumulated3dDeficitSec == round(expected_3d, 1)
 
 
+def test_compute_derived_metrics_v6_accumulated_deficit_none_without_current_sleep():
+    window_7d = [{"sleepDurationSec": 28800}] * 4
+    window_28d = [{"sleepDurationSec": 28800}] * 14
+
+    derived = compute_derived_metrics({}, window_7d, window_28d)
+
+    # A mature baseline is not enough: a "through current night" rolling feature must be
+    # unknown when the current night's duration is unknown, not silently D-1/D-2 only.
+    assert derived.sleepDuration28dMedian == 28800.0
+    assert derived.sleepDurationAccumulated2dDeficitSec is None
+    assert derived.sleepDurationAccumulated3dDeficitSec is None
+
+
 def test_compute_derived_metrics_v6_bedtime_wake_midpoint_circular_baselines():
     # A stable ~22:30 bedtime / ~06:30 wake time across the window, real UTC timestamps
     # (Warsaw is UTC+1 in January).
