@@ -188,7 +188,7 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
         expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
     });
 
-    it('clears painFlag for a mild, allergy-attributed, purely upper-respiratory symptom day', () => {
+    it('clears painFlag for a mild, allergy-attributed nasal symptom day', () => {
         const checkin = testCheckin({
             illnessSymptoms: true,
             healthContext: {
@@ -203,24 +203,28 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
         expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(false);
     });
 
-    it('keeps painFlag set for a severe allergy-attributed day', () => {
-        const checkin = testCheckin({
-            illnessSymptoms: true,
-            healthContext: {
-                symptoms: { present: true, severity: 'severe', suspectedCause: 'allergy' },
-            },
-        });
-        expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
-    });
-
-    it('keeps painFlag set when an allergy-attributed day also reports a systemic symptom type', () => {
+    it('also permits an explicitly moderate allergy day when every reported symptom remains nasal', () => {
         const checkin = testCheckin({
             illnessSymptoms: true,
             healthContext: {
                 symptoms: {
                     present: true,
-                    severity: 'mild',
-                    types: ['sneezing', 'fever_or_chills'],
+                    severity: 'moderate',
+                    types: ['congestion', 'sneezing'],
+                    suspectedCause: 'allergy',
+                },
+            },
+        });
+        expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(false);
+    });
+
+    it('keeps painFlag set when allergy-attributed severity is missing', () => {
+        const checkin = testCheckin({
+            illnessSymptoms: true,
+            healthContext: {
+                symptoms: {
+                    present: true,
+                    types: ['sneezing'],
                     suspectedCause: 'allergy',
                 },
             },
@@ -228,13 +232,84 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
         expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
     });
 
+    it('keeps painFlag set when allergy-attributed severity is explicitly null', () => {
+        const checkin = testCheckin({
+            illnessSymptoms: true,
+            healthContext: {
+                symptoms: {
+                    present: true,
+                    severity: null,
+                    types: ['sneezing'],
+                    suspectedCause: 'allergy',
+                },
+            },
+        });
+        expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
+    });
+
+    it('keeps painFlag set when an allergy cause is selected without symptom types', () => {
+        const checkin = testCheckin({
+            illnessSymptoms: true,
+            healthContext: {
+                symptoms: { present: true, severity: 'mild', suspectedCause: 'allergy' },
+            },
+        });
+        expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
+    });
+
+    it('keeps painFlag set for a severe allergy-attributed day', () => {
+        const checkin = testCheckin({
+            illnessSymptoms: true,
+            healthContext: {
+                symptoms: {
+                    present: true,
+                    severity: 'severe',
+                    types: ['sneezing'],
+                    suspectedCause: 'allergy',
+                },
+            },
+        });
+        expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
+    });
+
+    it.each([
+        'sore_throat',
+        'cough',
+        'fever_or_chills',
+        'headache_or_body_aches',
+        'gastrointestinal',
+        'unusual_fatigue',
+        'other',
+    ] as const)(
+        'keeps painFlag set when an allergy-attributed day includes non-nasal symptom type %s',
+        symptomType => {
+            const checkin = testCheckin({
+                illnessSymptoms: true,
+                healthContext: {
+                    symptoms: {
+                        present: true,
+                        severity: 'mild',
+                        types: ['sneezing', symptomType],
+                        suspectedCause: 'allergy',
+                    },
+                },
+            });
+            expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
+        },
+    );
+
     it.each(['unsure', 'infectious', undefined] as const)(
         'keeps painFlag set when suspectedCause is %s (fail-safe default)',
         suspectedCause => {
             const checkin = testCheckin({
                 illnessSymptoms: true,
                 healthContext: {
-                    symptoms: { present: true, severity: 'mild', ...(suspectedCause ? { suspectedCause } : {}) },
+                    symptoms: {
+                        present: true,
+                        severity: 'mild',
+                        types: ['sneezing'],
+                        ...(suspectedCause ? { suspectedCause } : {}),
+                    },
                 },
             });
             expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
@@ -246,7 +321,12 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
             painOrInjury: true,
             illnessSymptoms: true,
             healthContext: {
-                symptoms: { present: true, severity: 'mild', suspectedCause: 'allergy' },
+                symptoms: {
+                    present: true,
+                    severity: 'mild',
+                    types: ['sneezing'],
+                    suspectedCause: 'allergy',
+                },
             },
         });
         expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
