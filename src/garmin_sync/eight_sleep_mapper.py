@@ -17,7 +17,10 @@ from garmin_sync.canonical import (
     METRIC_HEAVY_SNORE_DURATION_SECONDS,
     METRIC_HEAVY_SNORE_PERCENT,
     METRIC_HRV_7DAY_AVG_MS,
+    METRIC_HRV_ALGORITHM_VERSION,
     METRIC_HRV_RMSSD_MS,
+    METRIC_PRESENCE_ALGORITHM_VERSION,
+    METRIC_SLEEP_ALGORITHM_VERSION,
     METRIC_SLEEP_BASELINE_DURATION_SECONDS,
     METRIC_SLEEP_DEBT_SECONDS,
     METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS,
@@ -86,7 +89,13 @@ ORIGIN_APPLICATION = "eight_sleep_private_api"
 # arousals). Silently corrupts any cross-device comparison/fusion that assumes same-name-
 # means-same-thing (ADR-0027's premise), so it's removed rather than relabeled: there's no
 # well-understood decomposition of what it actually measures.
-NORMALIZER_VERSION = 5
+# 6 (ES-EXT-5, 2026-08-29): added sessions[].sleepAlgorithmVersion/presenceAlgorithmVersion/
+# hrvAlgorithmVersion (observability-only -- a vendor algorithm change can create apparent
+# physiological drift that has nothing to do with the athlete, so baselines/anomaly logic
+# need this provenance). Only resolved when the night's session is unambiguous (matches
+# mainSessionId, or there's exactly one session); a night with multiple unmatched sessions
+# is skipped rather than guessing which one "is" the night.
+NORMALIZER_VERSION = 6
 
 
 def map_trends_to_observation_batch(
@@ -213,6 +222,34 @@ def map_trends_to_observation_batch(
     tags_val = selected.get("tags")
     tags = tags_val if isinstance(tags_val, list) and tags_val else None
 
+    # ES-EXT-4: selected.sessions[] carries per-session detail (algorithm versions here;
+    # a real per-segment stage timeline and event-level timeseries also live here but are
+    # deliberately not extracted yet -- see docs/plans/eight-sleep-direct-recovery-ingestion.md).
+    # Only resolved when unambiguous: prefer the session matching mainSessionId, else the
+    # sole entry if there's exactly one. A night with more than one session and no
+    # mainSessionId match (e.g. a nap alongside the main sleep) is deliberately left
+    # unresolved rather than guessing which session is "the" night -- session-scoped fields
+    # are skipped, not misattributed.
+    sessions_val = selected.get("sessions")
+    sessions_list = sessions_val if isinstance(sessions_val, list) else []
+    main_session_id = selected.get("mainSessionId")
+    session: dict[str, Any] | None = None
+    if main_session_id is not None:
+        session = next(
+            (
+                s
+                for s in sessions_list
+                if isinstance(s, dict) and str(s.get("id")) == str(main_session_id)
+            ),
+            None,
+        )
+    if session is None and len(sessions_list) == 1 and isinstance(sessions_list[0], dict):
+        session = sessions_list[0]
+
+    sleep_algorithm_version = _str(session.get("sleepAlgorithmVersion")) if session else None
+    presence_algorithm_version = _str(session.get("presenceAlgorithmVersion")) if session else None
+    hrv_algorithm_version = _str(session.get("hrvAlgorithmVersion")) if session else None
+
     if not any(v is not None for v in (start, presence, sleep, light, deep, rem, hrv, hr, resp)):
         raise EightSleepSchemaError(
             "Eight Sleep target-day record did not contain any recognized sleep/recovery fields."
@@ -306,6 +343,10 @@ def map_trends_to_observation_batch(
 
     if tags is not None:
         add(METRIC_SLEEP_TAGS, {"tags": tags}, None)
+
+    add(METRIC_SLEEP_ALGORITHM_VERSION, sleep_algorithm_version, None)
+    add(METRIC_PRESENCE_ALGORITHM_VERSION, presence_algorithm_version, None)
+    add(METRIC_HRV_ALGORITHM_VERSION, hrv_algorithm_version, None)
 
     return ObservationBatch(
         logical_date=logical_date,

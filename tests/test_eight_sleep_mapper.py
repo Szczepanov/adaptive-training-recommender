@@ -10,7 +10,10 @@ from garmin_sync.canonical import (
     METRIC_HEAVY_SNORE_DURATION_SECONDS,
     METRIC_HEAVY_SNORE_PERCENT,
     METRIC_HRV_7DAY_AVG_MS,
+    METRIC_HRV_ALGORITHM_VERSION,
     METRIC_HRV_RMSSD_MS,
+    METRIC_PRESENCE_ALGORITHM_VERSION,
+    METRIC_SLEEP_ALGORITHM_VERSION,
     METRIC_SLEEP_BASELINE_DURATION_SECONDS,
     METRIC_SLEEP_DEBT_SECONDS,
     METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS,
@@ -390,6 +393,101 @@ def test_extended_fields_absent_when_not_present() -> None:
         METRIC_WAKEUP_TIME_CONSISTENCY,
     ):
         assert extended_metric not in m
+
+
+def _base_payload_with_sessions(sessions: list[dict], main_session_id: object = None) -> dict:
+    day: dict = {
+        "day": "2026-08-28",
+        "presenceStart": "2026-08-27T21:00:00+02:00",
+        "presenceDuration": 30600,
+        "sleepDuration": 28800,
+        "lightDuration": 14400,
+        "deepDuration": 7200,
+        "remDuration": 7200,
+        "sleepQualityScore": {"hrv": {"current": 67.0}},
+        "sessions": sessions,
+    }
+    if main_session_id is not None:
+        day["mainSessionId"] = main_session_id
+    return {"days": [day]}
+
+
+def test_algorithm_versions_extracted_when_session_matches_main_session_id() -> None:
+    p = _base_payload_with_sessions(
+        [
+            {
+                "id": "111",
+                "sleepAlgorithmVersion": "0.1.1",
+                "presenceAlgorithmVersion": "3.2.1",
+                "hrvAlgorithmVersion": "1.2.0",
+            }
+        ],
+        main_session_id="111",
+    )
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    assert m[METRIC_SLEEP_ALGORITHM_VERSION].value == "0.1.1"
+    assert m[METRIC_PRESENCE_ALGORITHM_VERSION].value == "3.2.1"
+    assert m[METRIC_HRV_ALGORITHM_VERSION].value == "1.2.0"
+
+
+def test_algorithm_versions_extracted_when_exactly_one_session_and_no_main_session_id() -> None:
+    p = _base_payload_with_sessions(
+        [{"id": "222", "sleepAlgorithmVersion": "0.1.1", "presenceAlgorithmVersion": "3.2.1"}]
+    )
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    assert m[METRIC_SLEEP_ALGORITHM_VERSION].value == "0.1.1"
+    assert m[METRIC_PRESENCE_ALGORITHM_VERSION].value == "3.2.1"
+    # hrvAlgorithmVersion absent from this session's fixture -- must not synthesize a value.
+    assert METRIC_HRV_ALGORITHM_VERSION not in m
+
+
+def test_algorithm_versions_absent_when_multiple_sessions_are_ambiguous() -> None:
+    """A night with more than one session and no mainSessionId match (e.g. a nap alongside
+    the main sleep) must skip session-scoped fields rather than guessing which session is
+    "the" night."""
+    p = _base_payload_with_sessions(
+        [
+            {"id": "111", "sleepAlgorithmVersion": "0.1.1"},
+            {"id": "222", "sleepAlgorithmVersion": "0.2.0"},
+        ]
+    )
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    for metric in (
+        METRIC_SLEEP_ALGORITHM_VERSION,
+        METRIC_PRESENCE_ALGORITHM_VERSION,
+        METRIC_HRV_ALGORITHM_VERSION,
+    ):
+        assert metric not in m
+
+
+def test_algorithm_versions_absent_when_no_sessions_field() -> None:
+    """Backward compat: a response shape without a sessions[] array at all (older/degraded
+    responses) must not error and must not synthesize any of these metrics."""
+    p = {
+        "days": [
+            {
+                "day": "2026-08-28",
+                "presenceStart": "2026-08-27T21:00:00+02:00",
+                "presenceDuration": 30600,
+                "sleepDuration": 28800,
+                "lightDuration": 14400,
+                "deepDuration": 7200,
+                "remDuration": 7200,
+                "sleepQualityScore": {"hrv": {"current": 67.0}},
+            }
+        ]
+    }
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    for metric in (
+        METRIC_SLEEP_ALGORITHM_VERSION,
+        METRIC_PRESENCE_ALGORITHM_VERSION,
+        METRIC_HRV_ALGORITHM_VERSION,
+    ):
+        assert metric not in m
 
 
 def test_successful_no_target_day_is_empty() -> None:
