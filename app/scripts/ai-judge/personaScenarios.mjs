@@ -300,6 +300,59 @@ const formerElitePersona = {
   ],
 };
 
+const balancedContext = context({
+  goals: {
+    shortTerm: 'Build a balanced week that improves aerobic fitness and whole-body strength without a competition target.',
+    midTerm: 'Improve general performance while keeping both endurance and strength progressing.',
+    longTerm: 'Remain broadly capable across endurance and resistance training.',
+  },
+  preferredModalities: ['Running', 'Strength'],
+  equipment: { free_weights: true, treadmill: true },
+  maxTimeMinutes: 60,
+});
+const balancedIntent = intent(['balanced_performance'], 4, 5);
+const balancedPreferences = preferences(['Running', 'Strength']);
+const balancedPersona = {
+  personaId: 'balanced_performance_generalist',
+  dataAvailability: 'garmin_plus_subjective_checkin',
+  primaryGoal: 'balanced endurance and strength performance',
+  currentTrainingIdentity: 'generalist with no event target',
+  judgeExpectations: [
+    'Treat balanced_performance as requiring meaningful aerobic and strength exposure, not as a synonym for endurance-only training.',
+    'Do not invent an event, taper, or race-specific peak.',
+    'Use today-specific modality preference as a soft signal, not authority to erase the other required adaptation.',
+    'Adverse recovery should lower near-term cost while preserving the longer-horizon balanced intent.',
+  ],
+};
+
+const stackedConstraintContext = context({
+  goals: {
+    shortTerm: 'Maintain a health-focused training routine while lower-body loading is temporarily constrained.',
+    midTerm: 'Preserve aerobic fitness and strength with only currently compatible sessions.',
+    longTerm: 'Return to unrestricted general training after the temporary constraint resolves.',
+  },
+  preferredModalities: ['Strength', 'Cycling', 'Running'],
+  equipment: { free_weights: false, cable_machine: false, treadmill: false, indoor_bike: false, pullup_bar: false },
+  guardrails: { avoid_heavy_lower_body: true },
+  maxTimeMinutes: 60,
+});
+stackedConstraintContext.constraints.restrictedModalities = ['Running'];
+const stackedConstraintIntent = intent(['health'], 4, 5);
+const stackedConstraintPreferences = preferences(['Strength', 'Cycling', 'Running']);
+const stackedConstraintPersona = {
+  personaId: 'health_stacked_injury_equipment_constraints',
+  dataAvailability: 'garmin_plus_subjective_checkin',
+  primaryGoal: 'maintain health-oriented training within temporary injury and equipment constraints',
+  currentTrainingIdentity: 'general fitness with temporarily restricted running and no training equipment',
+  constraintContext: 'running is temporarily restricted; heavy lower-body work is guarded; free weights, cable machine, treadmill and indoor bike are unavailable',
+  judgeExpectations: [
+    'Never bypass a hard running restriction or recommend equipment the athlete does not have.',
+    'Respect the heavy-lower-body guardrail even when health programming still needs aerobic and strength exposure.',
+    'If the required weekly mix is infeasible, expose the shortfall rather than fabricating an inaccessible session.',
+    'Adverse recovery or a short time window should tighten the recommendation on top of the standing hard constraints.',
+  ],
+};
+
 export function buildPersonaFamilies() {
   const noWearable = objectiveUnavailable();
   const neutralGarmin = objectiveGarminNeutral();
@@ -400,6 +453,66 @@ export function buildPersonaFamilies() {
     }),
   ];
 
+  const balancedCases = [
+    makeScenario({
+      id: 'persona_balanced_performance_baseline',
+      label: 'Balanced-performance persona — normal recovery',
+      persona: balancedPersona,
+      readiness: { subjective: subjective({ readiness: 8, fatigue: 2, soreness: 2, motivation: 8 }), objective: neutralGarmin },
+      context: balancedContext,
+      trainingIntentProfile: balancedIntent,
+      userPreferences: balancedPreferences,
+    }),
+    makeScenario({
+      id: 'persona_balanced_performance_adverse_recovery',
+      label: 'Balanced-performance persona — adverse recovery',
+      persona: balancedPersona,
+      readiness: { subjective: subjective({ readiness: 4, sleepQuality: 4, fatigue: 7, soreness: 5, stress: 6, motivation: 7 }), objective: adverseGarmin },
+      context: balancedContext,
+      trainingIntentProfile: balancedIntent,
+      userPreferences: balancedPreferences,
+    }),
+    makeScenario({
+      id: 'persona_balanced_performance_strength_preference',
+      label: 'Balanced-performance persona — strength preference today',
+      persona: balancedPersona,
+      readiness: { subjective: subjective({ readiness: 8, fatigue: 2, soreness: 2, motivation: 9, preferredModalityToday: 'Strength' }), objective: neutralGarmin },
+      context: balancedContext,
+      trainingIntentProfile: balancedIntent,
+      userPreferences: balancedPreferences,
+    }),
+  ];
+
+  const stackedConstraintCases = [
+    makeScenario({
+      id: 'persona_stacked_constraints_baseline',
+      label: 'Stacked-constraint health persona — normal recovery',
+      persona: stackedConstraintPersona,
+      readiness: { subjective: subjective({ readiness: 7, fatigue: 3, soreness: 3, motivation: 8 }), objective: neutralGarmin },
+      context: stackedConstraintContext,
+      trainingIntentProfile: stackedConstraintIntent,
+      userPreferences: stackedConstraintPreferences,
+    }),
+    makeScenario({
+      id: 'persona_stacked_constraints_adverse_recovery',
+      label: 'Stacked-constraint health persona — adverse recovery',
+      persona: stackedConstraintPersona,
+      readiness: { subjective: subjective({ readiness: 4, sleepQuality: 4, fatigue: 7, soreness: 5, stress: 6, motivation: 7 }), objective: adverseGarmin },
+      context: stackedConstraintContext,
+      trainingIntentProfile: stackedConstraintIntent,
+      userPreferences: stackedConstraintPreferences,
+    }),
+    makeScenario({
+      id: 'persona_stacked_constraints_low_time',
+      label: 'Stacked-constraint health persona — only 30 minutes today',
+      persona: stackedConstraintPersona,
+      readiness: { subjective: subjective({ readiness: 7, fatigue: 3, soreness: 3, motivation: 8, timeAvailable: 30 }), objective: neutralGarmin },
+      context: stackedConstraintContext,
+      trainingIntentProfile: stackedConstraintIntent,
+      userPreferences: stackedConstraintPreferences,
+    }),
+  ];
+
   return [
     {
       familyId: 'persona_strength_no_wearable',
@@ -418,6 +531,18 @@ export function buildPersonaFamilies() {
       changedAxis: 'current recovery state for a former high-level endurance athlete whose present training is intermittent',
       comparisonInstruction: 'Historical competitive level must not be mistaken for current load tolerance. Compare current-state reactions; sparse present history should remain the dose authority.',
       cases: formerEliteCases,
+    },
+    {
+      familyId: 'persona_balanced_performance',
+      changedAxis: 'current recovery and today-specific modality preference for an evergreen balanced-performance generalist',
+      comparisonInstruction: 'Compare the same balanced-performance athlete across normal recovery, adverse recovery, and a strength preference today. The planner should preserve both aerobic and strength requirements over the week without inventing event-specific preparation.',
+      cases: balancedCases,
+    },
+    {
+      familyId: 'persona_stacked_constraints',
+      changedAxis: 'current recovery/time state with a standing running restriction, heavy-lower-body guardrail, and no training equipment',
+      comparisonInstruction: 'Compare the same health-priority athlete across normal recovery, adverse recovery, and a short time window while all standing hard constraints remain active. Infeasible coverage should be reported rather than bypassing injury or equipment gates.',
+      cases: stackedConstraintCases,
     },
   ];
 }
@@ -456,6 +581,27 @@ export function assertPersonaFixtureIntegrity(families) {
   if (!health?.scenario.trainingIntentProfile.priorities.includes('health')) failures.push('Health/fat-loss persona must carry health priority.');
   const formerElite = allCases.find((item) => item.scenario.id === 'persona_former_elite_sparse_history_baseline');
   if ((formerElite?.scenario.initialHistory ?? []).length !== 0) failures.push('Former-elite sparse-history case must not invent current training history from historical status.');
+
+  const balanced = allCases.filter((item) => item.persona.personaId === 'balanced_performance_generalist');
+  if (balanced.length === 0 || balanced.some((item) => !item.scenario.trainingIntentProfile.priorities.includes('balanced_performance'))) {
+    failures.push('Balanced-performance persona cases must carry balanced_performance priority.');
+  }
+
+  const stacked = allCases.filter((item) => item.persona.personaId === 'health_stacked_injury_equipment_constraints');
+  for (const definition of stacked) {
+    const { context: stackedContext } = definition.scenario;
+    if (!(stackedContext.constraints.restrictedModalities ?? []).includes('Running')) {
+      failures.push(`${definition.scenario.id}: stacked-constraint persona must keep Running restricted.`);
+    }
+    if (!(stackedContext.constraints.impliedGuardrails ?? []).includes('avoid_heavy_lower_body')) {
+      failures.push(`${definition.scenario.id}: stacked-constraint persona must keep avoid_heavy_lower_body active.`);
+    }
+    for (const equipment of ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar']) {
+      if (stackedContext.trainingSettings.equipment[equipment]) {
+        failures.push(`${definition.scenario.id}: stacked-constraint persona must not have ${equipment}.`);
+      }
+    }
+  }
 
   if (failures.length) throw new Error(`Persona fixture integrity failed:\n- ${failures.join('\n- ')}`);
   return { familyCount: families.length, caseCount: allCases.length };
