@@ -5,6 +5,7 @@ from garmin_sync.canonical import (
     METRIC_SLEEP_SESSION,
 )
 from garmin_sync.google_health_mapper import (
+    NORMALIZER_VERSION,
     GoogleHealthMapper,
     resolve_provider_from_package,
 )
@@ -218,3 +219,15 @@ def test_mapper_sleep_duration_falls_back_to_raw_span_when_no_awake_data() -> No
     batch = mapper.normalize_data_points(raw_points, target_logical_date="2026-08-21")
     metrics = {o.metric: o for o in batch.observations}
     assert metrics[METRIC_SLEEP_DURATION_SECONDS].value == 7 * 3600
+
+
+def test_normalizer_version_bumped_for_the_duration_fallback_fix() -> None:
+    """Regression: normalizer_version was hardcoded to 1 and never bumped when the
+    elapsed-minus-awake duration fallback fix landed, so save_health_observation_day_bundle
+    (which only re-persists when sourcePayloadHash OR normalizerVersion changes) would have
+    silently never re-persisted any already-fetched date with the corrected duration --
+    sourcePayloadHash alone is blind to mapper logic changes."""
+    mapper = GoogleHealthMapper(user_id="test_user")
+    batch = mapper.normalize_data_points([], target_logical_date="2026-08-27")
+    assert batch.normalizer_version == NORMALIZER_VERSION
+    assert NORMALIZER_VERSION > 1
