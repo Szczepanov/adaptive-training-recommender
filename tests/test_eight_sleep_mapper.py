@@ -73,10 +73,12 @@ def test_nested_current_is_measurement_not_proprietary_score() -> None:
         and m[METRIC_SLEEPING_HEART_RATE_BPM].value == 43.0
         and METRIC_DAILY_RESTING_HEART_RATE_BPM not in m
         and m[METRIC_SLEEP_RESPIRATION_SUMMARY].value == {"breathsPerMinute": 13.4}
-        # METRIC_SLEEP_STAGE_AWAKE_SECONDS is deliberately NOT emitted despite presenceDuration
-        # (30600) - sleepDuration (28800) = 1800 being computable: see the mapper's skip
-        # comment -- a real cross-device probe showed this presence-minus-sleep subtraction
-        # doesn't represent the same thing as Google Health's true within-session WASO.
+        # METRIC_SLEEP_STAGE_AWAKE_SECONDS is now sourced from sessions[].stageSummary.
+        # wasoDuration (see ES-EXT-6) -- absent here because this fixture has no `sessions`
+        # key at all, not because it's unsupported. presenceDuration (30600) -
+        # sleepDuration (28800) = 1800 must NOT leak in as a fallback value; that
+        # presence-minus-sleep proxy was removed in ES-EXT-4 for being a different concept
+        # (~115min/night vs Garmin's ~11min, r=0.17) from real within-session WASO.
         and METRIC_SLEEP_STAGE_AWAKE_SECONDS not in m
         and all(o.source.transport == "eight_sleep_direct" for o in b.observations)
     )
@@ -488,6 +490,43 @@ def test_algorithm_versions_absent_when_no_sessions_field() -> None:
         METRIC_HRV_ALGORITHM_VERSION,
     ):
         assert metric not in m
+
+
+def test_waso_extracted_from_single_session_stage_summary() -> None:
+    p = _base_payload_with_sessions(
+        [{"id": "111", "stageSummary": {"wasoDuration": 180}}],
+        main_session_id="111",
+    )
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    assert m[METRIC_SLEEP_STAGE_AWAKE_SECONDS].value == 180
+
+
+def test_waso_summed_across_all_sessions_even_when_ambiguous_for_algorithm_versions() -> None:
+    """Unlike algorithm versions (session-scoped, skipped when ambiguous), wasoDuration is
+    summed across ALL sessions that day -- confirmed via a real probe (2025-10-28, a real
+    two-session night) that Eight Sleep's own day-level deepDuration/remDuration/
+    lightDuration are themselves summed across all sessions the same way. A night with a
+    nap alongside the main sleep must still get a real (summed) waso value, even though its
+    algorithm-version fields are correctly left unresolved."""
+    p = _base_payload_with_sessions(
+        [
+            {"id": "111", "stageSummary": {"wasoDuration": 180}},
+            {"id": "222", "stageSummary": {"wasoDuration": 810}},
+        ]
+    )
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    assert m[METRIC_SLEEP_STAGE_AWAKE_SECONDS].value == 990
+    # Algorithm versions correctly stay unresolved for this same ambiguous-session night.
+    assert METRIC_SLEEP_ALGORITHM_VERSION not in m
+
+
+def test_waso_absent_when_no_session_has_stage_summary() -> None:
+    p = _base_payload_with_sessions([{"id": "111"}], main_session_id="111")
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    assert METRIC_SLEEP_STAGE_AWAKE_SECONDS not in m
 
 
 def test_successful_no_target_day_is_empty() -> None:
