@@ -1,7 +1,7 @@
 # HRF3 trace-diagnostics review hardening
 
-**Date:** 2026-08-29  
-**Scope:** follow-up review of PR #286 (`feat(hrf): add deterministic HR trace diagnostics`)  
+**Date:** 2026-08-29
+**Scope:** follow-up review of PR #286 (`feat(hrf): add deterministic HR trace diagnostics`)
 **Status:** implemented on the PR branch; shadow-only behavior remains unchanged
 
 ## Why this follow-up exists
