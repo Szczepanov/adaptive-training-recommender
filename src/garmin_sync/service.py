@@ -13,10 +13,17 @@ from firebase_admin import firestore
 from garminconnect import GarminConnectTooManyRequestsError
 
 from .archive import ArchiveRecord, RawArchiveStore, create_archive_store
-from .canonical import CanonicalActivity, CanonicalActivityDetail, CanonicalDailyMetrics
+from .canonical import (
+    CanonicalActivity,
+    CanonicalActivityDetail,
+    CanonicalDailyMetrics,
+    CanonicalHrMeasurementQuality,
+    CanonicalHrSourceEvidence,
+)
 from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string
 from .firestore_repository import FirestoreRecoveryRepository
+from .fit_activity import FitDeviceInventoryEntry
 from .garmin_client import GarminClientWrapper
 from .garmin_provider import (
     GarminProviderAdapter,
@@ -26,6 +33,7 @@ from .garmin_provider import (
     qualifies_for_activity_detail,
     qualifies_for_strength_exercise_sets,
 )
+from .hr_fidelity import assess_activity_hr_fidelity
 from .mapper import build_snapshot_from_canonical, normalize_activity
 from .metrics import compute_derived_metrics
 from .models import DailyRecoverySnapshot
@@ -33,6 +41,36 @@ from .provider import WearableProvider
 from .token_store import create_token_store
 
 logger = logging.getLogger(__name__)
+
+
+def _source_evidence_from_fit_devices(
+    devices: tuple[FitDeviceInventoryEntry, ...],
+) -> CanonicalHrSourceEvidence:
+    """Return only source claims the decoded device inventory can support.
+
+    FIT device inventory does not prove which sensor Garmin selected for individual
+    samples. A positively identified external HR accessory is therefore represented
+    as ``mixed_possible`` with ambiguous provenance; absent positive evidence remains
+    unknown rather than guessing wrist provenance from recording-device metadata.
+    """
+    external_hr_present = any(
+        isinstance(device.device_type, str)
+        and device.device_type.strip().lower() in {"heart_rate", "heart_rate_monitor"}
+        for device in devices
+    )
+    if external_hr_present:
+        return CanonicalHrSourceEvidence(
+            external_hr_sensor_present=True,
+            source_for_activity="mixed_possible",
+            provenance_confidence="ambiguous",
+            sensor_technology="external_unknown",
+        )
+    return CanonicalHrSourceEvidence(
+        external_hr_sensor_present=None,
+        source_for_activity="unknown",
+        provenance_confidence="unknown",
+        sensor_technology="unknown",
+    )
 
 
 @dataclass
@@ -159,6 +197,7 @@ class GarminSyncService:
         canonical_activities: list[CanonicalActivity],
         sync_run_id: str,
         details_by_activity_id: dict[str, CanonicalActivityDetail] | None = None,
+        hr_measurements_by_activity_id: dict[str, CanonicalHrMeasurementQuality] | None = None,
     ) -> None:
         """Write a normalized standalone record per activity to users/{userId}/activities/.
         Safe to call unconditionally (no-op for an empty list). Activities without a
@@ -173,6 +212,7 @@ class GarminSyncService:
                 activity,
                 sync_run_id,
                 (details_by_activity_id or {}).get(activity.activity_id),
+                (hr_measurements_by_activity_id or {}).get(activity.activity_id),
             )
             activities_to_upsert.append((activity.activity_id, payload))
 
@@ -239,24 +279,32 @@ class GarminSyncService:
         provider: WearableProvider,
         canonical_activities: list[CanonicalActivity],
         target_iso: str,
-    ) -> None:
-        """Best-effort, target-only original-FIT decoding while HRF is shadow-only.
+    ) -> dict[str, CanonicalHrMeasurementQuality]:
+        """Assess target-date FIT evidence without letting enrichment failures block sync.
 
-        Decoded evidence is deliberately discarded at this phase.  The call establishes
-        the operational boundary and its request budget without allowing raw bytes or
-        partial fidelity data to leak into activity persistence before HRF4.
+        The result contains only compact, provider-neutral measurement evidence. FIT
+        bytes and per-sample data remain in memory and are discarded by the provider
+        boundary. A missing/failed original stays absent rather than being mislabeled
+        as an assessed unreliable trace.
         """
         if not provider.capabilities.activity_hr_fidelity:
-            return
+            return {}
         fetch_fidelity: Any = getattr(provider, "fetch_activity_hr_fidelity", None)
         if not callable(fetch_fidelity):
-            return
+            return {}
 
+        assessments: dict[str, CanonicalHrMeasurementQuality] = {}
         for activity in canonical_activities:
             if activity.date != target_iso or activity.activity_id is None:
                 continue
             try:
-                fetch_fidelity(activity.activity_id)
+                evidence = fetch_fidelity(activity.activity_id)
+                if evidence is not None:
+                    assessments[activity.activity_id] = assess_activity_hr_fidelity(
+                        activity.type,
+                        evidence,
+                        _source_evidence_from_fit_devices(evidence.devices),
+                    ).quality
             except GarminConnectTooManyRequestsError as error:
                 logger.warning(
                     f"[{target_iso}] Garmin HR-fidelity rate limit reached; "
@@ -268,6 +316,7 @@ class GarminSyncService:
                     f"[{target_iso}] Garmin HR-fidelity enrichment failed for "
                     f"activity=<ID-redacted>, continuing with the base record: {error}"
                 )
+        return assessments
 
     def _seed_prehistory(
         self, raw_memory_store: dict[str, dict[str, Any]], range_start: Any
@@ -418,12 +467,16 @@ class GarminSyncService:
             target_iso,
             include_power_details=include_activity_details,
         )
-        if include_activity_hr_fidelity:
+        hr_measurements_by_activity_id = (
             self._fetch_activity_hr_fidelity(provider, activities_result.canonical, target_iso)
+            if include_activity_hr_fidelity
+            else {}
+        )
         self._archive_activities(
             activities_result.canonical,
             sync_run_id,
             details_by_activity_id=details_by_activity_id,
+            hr_measurements_by_activity_id=hr_measurements_by_activity_id,
         )
 
         # Persist refreshed tokens after API calls

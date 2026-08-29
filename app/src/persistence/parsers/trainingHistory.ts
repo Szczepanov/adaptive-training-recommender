@@ -1,4 +1,4 @@
-import type { DailyRecommendation, NormalizedGarminActivity, RunningDynamics, ShadowVerdict } from '../../engine/models';
+import type { DailyRecommendation, HrMeasurement, NormalizedGarminActivity, RunningDynamics, ShadowVerdict } from '../../engine/models';
 import { SHADOW_VERDICTS } from '../../engine/models';
 import type { DataIssue, DataState } from '../../engine/dataState';
 import { validateRecommendation, isValidDate } from '../../engine/validation';
@@ -19,6 +19,11 @@ function optionalNonNegativeNumber(value: unknown): number | null | undefined {
     if (value === undefined) return undefined;
     if (value === null) return null;
     return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+}
+
+function optionalPercentage(value: unknown): number | null | undefined {
+    const parsed = optionalNonNegativeNumber(value);
+    return typeof parsed === 'number' && parsed > 100 ? undefined : parsed;
 }
 
 function telemetryNumber(value: unknown): number | undefined {
@@ -163,6 +168,70 @@ function parseExerciseSets(value: unknown): NormalizedGarminActivity['exerciseSe
         : undefined;
 }
 
+const HR_SENSOR_TECHNOLOGIES = ['electrode_chest_strap', 'optical_armband', 'wrist_ppg', 'external_unknown', 'unknown'] as const;
+const HR_SOURCES_FOR_ACTIVITY = ['external', 'wrist', 'mixed_possible', 'unknown'] as const;
+const HR_PROVENANCE_CONFIDENCES = ['confirmed', 'inferred', 'ambiguous', 'unknown'] as const;
+const HR_ACTIVITY_MOTION_RISKS = ['low', 'moderate', 'high', 'unknown'] as const;
+const HR_SIGNAL_QUALITIES = ['clean', 'suspect', 'poor', 'unknown'] as const;
+const HR_MEASUREMENT_CONFIDENCES = ['high', 'moderate', 'low', 'unreliable', 'unknown'] as const;
+const HR_SUMMARY_COMPATIBILITIES = ['verified_same_effective_trace', 'consistent_unproven', 'discordant', 'not_comparable', 'unknown'] as const;
+
+function enumValue<T extends string>(value: unknown, choices: readonly T[]): T | undefined {
+    return typeof value === 'string' && choices.includes(value as T) ? value as T : undefined;
+}
+
+function parseHrMeasurement(value: unknown): HrMeasurement | undefined {
+    if (!isObject(value)) return undefined;
+    const externalHrSensorPresent = value.externalHrSensorPresent;
+    const sourceForActivity = enumValue(value.sourceForActivity, HR_SOURCES_FOR_ACTIVITY);
+    const provenanceConfidence = enumValue(value.provenanceConfidence, HR_PROVENANCE_CONFIDENCES);
+    const sensorTechnology = enumValue(value.sensorTechnology, HR_SENSOR_TECHNOLOGIES);
+    const activityMotionRisk = enumValue(value.activityMotionRisk, HR_ACTIVITY_MOTION_RISKS);
+    const coveragePct = optionalPercentage(value.coveragePct);
+    const longestGapSeconds = optionalNonNegativeNumber(value.longestGapSeconds);
+    const signalQuality = enumValue(value.signalQuality, HR_SIGNAL_QUALITIES);
+    const measurementConfidence = enumValue(value.measurementConfidence, HR_MEASUREMENT_CONFIDENCES);
+    const summaryCompatibility = enumValue(value.summaryCompatibility, HR_SUMMARY_COMPATIBILITIES);
+    const artifactFlags = value.artifactFlags;
+    const reasons = value.reasons;
+    const diagnosticVersion = value.diagnosticVersion;
+
+    if (
+        (externalHrSensorPresent !== null && typeof externalHrSensorPresent !== 'boolean')
+        || sourceForActivity === undefined
+        || provenanceConfidence === undefined
+        || sensorTechnology === undefined
+        || activityMotionRisk === undefined
+        || coveragePct === undefined
+        || longestGapSeconds === undefined
+        || signalQuality === undefined
+        || measurementConfidence === undefined
+        || summaryCompatibility === undefined
+        || !Array.isArray(artifactFlags)
+        || !artifactFlags.every(flag => typeof flag === 'string')
+        || !Array.isArray(reasons)
+        || !reasons.every(reason => typeof reason === 'string')
+        || typeof diagnosticVersion !== 'string'
+        || diagnosticVersion.trim() === ''
+    ) return undefined;
+
+    return {
+        externalHrSensorPresent,
+        sourceForActivity,
+        provenanceConfidence,
+        sensorTechnology,
+        activityMotionRisk,
+        coveragePct,
+        longestGapSeconds,
+        signalQuality,
+        measurementConfidence,
+        summaryCompatibility,
+        artifactFlags,
+        reasons,
+        diagnosticVersion,
+    };
+}
+
 function parseOptionalString(value: unknown): string | null | undefined {
     if (value === undefined) return undefined;
     if (value === null) return null;
@@ -214,6 +283,7 @@ export function parseNormalizedGarminActivity(
     const epoc = optionalNonNegativeNumber(raw.epoc);
     const recoveryTimeHours = optionalNonNegativeNumber(raw.recoveryTimeHours);
     const exerciseSets = parseExerciseSets(raw.exerciseSets);
+    const hrMeasurement = parseHrMeasurement(raw.hrMeasurement);
 
     return {
         status: 'AVAILABLE',
@@ -239,6 +309,7 @@ export function parseNormalizedGarminActivity(
             ...(laps !== undefined ? { laps } : {}),
             ...(runningDynamics !== undefined ? { runningDynamics } : {}),
             ...(exerciseSets !== undefined ? { exerciseSets } : {}),
+            ...(hrMeasurement !== undefined ? { hrMeasurement } : {}),
             ...(typeof raw.syncRunId === 'string' ? { syncRunId: raw.syncRunId } : {}),
             ...(typeof raw.syncedAt === 'string' ? { syncedAt: raw.syncedAt } : {}),
         },

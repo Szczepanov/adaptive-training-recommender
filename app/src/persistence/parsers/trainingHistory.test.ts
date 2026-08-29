@@ -48,6 +48,43 @@ describe('training-history persistence parsers', () => {
         });
     });
 
+    it('preserves valid HR measurement metadata without changing base activity availability', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            hrMeasurement: {
+                externalHrSensorPresent: null,
+                sourceForActivity: 'unknown',
+                provenanceConfidence: 'unknown',
+                sensorTechnology: 'unknown',
+                activityMotionRisk: 'moderate',
+                coveragePct: null,
+                longestGapSeconds: null,
+                signalQuality: 'unknown',
+                measurementConfidence: 'unknown',
+                summaryCompatibility: 'unknown',
+                artifactFlags: ['ASSESSMENT_UNAVAILABLE'],
+                reasons: ['ASSESSMENT_UNAVAILABLE'],
+                diagnosticVersion: '1.0.0',
+            },
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed).toMatchObject({
+            status: 'AVAILABLE',
+            data: { hrMeasurement: { measurementConfidence: 'unknown' } },
+        });
+    });
+
+    it('drops malformed HR measurement metadata while preserving the base activity', () => {
+        const parsed = parseNormalizedGarminActivity({
+            ...activity,
+            hrMeasurement: { measurementConfidence: 'unreliable', coveragePct: 'bad' },
+        }, 'users/u1/activities/a-1', 'a-1');
+
+        expect(parsed).toMatchObject({ status: 'AVAILABLE', data: { activityId: 'a-1' } });
+        if (parsed.status !== 'AVAILABLE') throw new Error('expected available activity');
+        expect(parsed.data.hrMeasurement).toBeUndefined();
+    });
+
     it('preserves valid running dynamics from persisted running activities', () => {
         const parsed = parseNormalizedGarminActivity({
             ...activity,
