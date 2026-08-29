@@ -1,5 +1,16 @@
 # Eight Sleep stage-sum invariant check (Phase 1 item #3, 2026-08-29)
 
+> **Correction (2026-08-29, same day):** the "invariant does not hold" conclusion below was
+> a bug in this check's own method, not a real Eight Sleep data-quality issue. It only
+> summed the `mainSessionId`-matched session, but Eight Sleep's day-level totals sum
+> **across all sessions that day** (main sleep + naps/secondary sessions). Re-run with the
+> corrected method (summing `sessions[].stageSummary` across all sessions) gave a **64/64
+> exact match** -- same as Garmin's invariant. See
+> [`docs/analysis/2026-08-29-eight-sleep-waso-reinstated.md`](2026-08-29-eight-sleep-waso-reinstated.md)
+> for the full corrected investigation and the resulting item #4 implementation. Left the
+> original text below unedited as the record of what was actually checked and found at the
+> time.
+
 Gate for Phase 1 item #4 (persisting awake-in-bed/out-of-bed seconds from `sessions[].stages`):
 verify Eight Sleep's own per-segment stage timeline reconciles against its own day-level
 aggregate fields, mirroring the invariant already confirmed for Garmin's `sleepLevels`
