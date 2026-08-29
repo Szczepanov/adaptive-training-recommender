@@ -141,9 +141,7 @@ def assess_activity_hr_fidelity(
     # Artifact context must never cross a stopped/paused timer window.
     for window in windows:
         window_valid = [
-            record
-            for record in active_valid
-            if in_windows(record.timestamp, (window,))
+            record for record in active_valid if in_windows(record.timestamp, (window,))
         ]
         flags.update(transition_flags(window_valid, policy))
         flags.update(workload_flags(window_valid, policy))
@@ -166,9 +164,7 @@ def assess_activity_hr_fidelity(
             round(sample_interval, 3) if sample_interval is not None else None
         ),
         sampling_irregularity_pct=(
-            round(sampling_irregularity, 1)
-            if sampling_irregularity is not None
-            else None
+            round(sampling_irregularity, 1) if sampling_irregularity is not None else None
         ),
     )
 
