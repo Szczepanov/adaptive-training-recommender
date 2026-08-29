@@ -116,6 +116,38 @@ describe('weekly dose packing', () => {
         expect(budget.requiredRoles).toHaveLength(3);
     });
 
+    it('reclaims unused fair-share capacity when a later required peer needs fewer sessions', () => {
+        const strategy: EvidenceBackedStrategy = {
+            requirements: [
+                {
+                    ...healthStrategy.requirements[0],
+                    floor: { dose: { unit: 'minutes', value: 240 }, semantics: 'goal_required_minimum' },
+                    target: { unit: 'minutes', minimum: 240, target: 240, maximum: 240 },
+                },
+                {
+                    ...healthStrategy.requirements[0],
+                    adaptation: 'strength',
+                    priority: 'required',
+                    floor: { dose: { unit: 'sessions', value: 1 }, semantics: 'goal_required_minimum' },
+                    target: { unit: 'sessions', minimum: 1, target: 1, maximum: 1 },
+                    substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Strength'] },
+                },
+            ], warnings: [],
+        };
+        const roles: CoverageSetDescriptor = {
+            id: 'uneven-demand-test',
+            roles: [
+                { id: 'aerobic', adaptations: ['aerobic_endurance'], exactWorkoutIds: ['cycling_zone2_standard_01'], durationMinutes: 60 },
+                { id: 'strength', adaptations: ['strength'], exactWorkoutIds: ['strength_full_body_maintenance_01'], durationMinutes: 45 },
+            ],
+        };
+        const budget = packWeeklyDose(strategy, capacity(60, 5), roles);
+        expect(budget.requiredRoles.filter(role => role.coverageRoleId === 'aerobic')).toHaveLength(4);
+        expect(budget.requiredRoles.filter(role => role.coverageRoleId === 'strength')).toHaveLength(1);
+        expect(budget.requiredRoles).toHaveLength(5);
+        expect(budget.shortfalls).toEqual([]);
+    });
+
     it('uses the 2-to-6-session policy only to break equal-dose placement ties', () => {
         const evenlyViable = {
             ...capacity(60, 2),
