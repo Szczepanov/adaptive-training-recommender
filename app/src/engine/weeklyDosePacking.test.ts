@@ -148,6 +148,39 @@ describe('weekly dose packing', () => {
         expect(budget.shortfalls).toEqual([]);
     });
 
+    it('does not reserve scarce tier capacity for a later peer that cannot fit any remaining window', () => {
+        const strategy: EvidenceBackedStrategy = {
+            requirements: [
+                {
+                    ...healthStrategy.requirements[0],
+                    floor: { dose: { unit: 'minutes', value: 60 }, semantics: 'goal_required_minimum' },
+                    target: { unit: 'minutes', minimum: 60, target: 60, maximum: 60 },
+                },
+                {
+                    ...healthStrategy.requirements[0],
+                    adaptation: 'strength',
+                    priority: 'required',
+                    floor: { dose: { unit: 'sessions', value: 1 }, semantics: 'goal_required_minimum' },
+                    target: { unit: 'sessions', minimum: 1, target: 1, maximum: 1 },
+                    substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Strength'] },
+                },
+            ], warnings: [],
+        };
+        const roles: CoverageSetDescriptor = {
+            id: 'infeasible-peer-test',
+            roles: [
+                { id: 'aerobic', adaptations: ['aerobic_endurance'], exactWorkoutIds: ['cycling_zone2_standard_01'], durationMinutes: 30 },
+                { id: 'strength', adaptations: ['strength'], exactWorkoutIds: ['strength_full_body_maintenance_01'], durationMinutes: 45 },
+            ],
+        };
+        const shortWindows = capacity(30, 2);
+        const budget = packWeeklyDose(strategy, shortWindows, roles);
+
+        expect(budget.requiredRoles.filter(role => role.coverageRoleId === 'aerobic')).toHaveLength(2);
+        expect(budget.requiredRoles.filter(role => role.coverageRoleId === 'strength')).toHaveLength(0);
+        expect(budget.shortfalls).toContainEqual(expect.objectContaining({ adaptation: 'strength', code: 'goal_requirement_shortfall' }));
+    });
+
     it('uses the 2-to-6-session policy only to break equal-dose placement ties', () => {
         const evenlyViable = {
             ...capacity(60, 2),
