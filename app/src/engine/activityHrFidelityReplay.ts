@@ -63,11 +63,17 @@ export interface ActivityHrFidelityShadowSummary {
     assessedActivities: number;
     notAssessedActivities: number;
     unknownAssessmentCount: number;
+    /** Fraction of assessed activities whose confidence remains `unknown`. */
+    assessmentUnknownRate: number;
     assessmentUnknownReasons: Record<string, number>;
     sourceDistribution: Record<HrSourceForActivity | 'not_assessed', number>;
     confidenceByActivityType: HrFidelityConfidenceByActivityType[];
     artifactPrevalence: Record<string, number>;
     summaryCompatibility: Record<HrSummaryCompatibility | 'not_assessed', number>;
+    /** Comparable excludes `unknown`, `not_comparable`, and not-assessed records. */
+    summaryComparableCount: number;
+    summaryReconciliationRate: number;
+    summaryDiscordanceRate: number;
     authorityByUse: Record<HrUseCase, HrFidelityAuthorityCounts>;
     candidateBlocks: {
         hrZoneDistribution: HrFidelityAuthorityCounts;
@@ -76,7 +82,7 @@ export interface ActivityHrFidelityShadowSummary {
         maxHrUpdate: HrFidelityAuthorityCounts;
         aerobicDecoupling: HrFidelityAuthorityCounts;
     };
-    poorTraceDespiteExternalSensorCount: number;
+    poorTraceDespiteChestStrapCount: number;
     usefulWristTraceCount: number;
     featureSpecificBlockWithDisplayAvailableCount: number;
 }
@@ -207,7 +213,7 @@ export function runActivityHrFidelityShadowReplay(
 
     let assessedActivities = 0;
     let unknownAssessmentCount = 0;
-    let poorTraceDespiteExternalSensorCount = 0;
+    let poorTraceDespiteChestStrapCount = 0;
     let usefulWristTraceCount = 0;
     let featureSpecificBlockWithDisplayAvailableCount = 0;
 
@@ -237,17 +243,27 @@ export function runActivityHrFidelityShadowReplay(
 
         if (measurement.measurementConfidence === 'unknown') {
             unknownAssessmentCount += 1;
-            for (const reason of measurement.reasons) unknownReasons[reason] = (unknownReasons[reason] ?? 0) + 1;
+            const reasons = measurement.reasons.length > 0
+                ? measurement.reasons
+                : ['ASSESSMENT_REASON_UNSPECIFIED'];
+            for (const reason of reasons) unknownReasons[reason] = (unknownReasons[reason] ?? 0) + 1;
         }
-        if (measurement.externalHrSensorPresent === true && measurement.signalQuality === 'poor') {
-            poorTraceDespiteExternalSensorCount += 1;
+        if (measurement.sensorTechnology === 'electrode_chest_strap' && measurement.signalQuality === 'poor') {
+            poorTraceDespiteChestStrapCount += 1;
         }
-        if (measurement.sourceForActivity === 'wrist' && row.authorityByUse.DISPLAY_AVERAGE.status === 'ALLOWED') {
+        if (
+            measurement.sourceForActivity === 'wrist'
+            && row.currentProductionUse.averageHrDisplay
+            && row.authorityByUse.DISPLAY_AVERAGE.status === 'ALLOWED'
+        ) {
             usefulWristTraceCount += 1;
         }
 
-        const displayAvailable = row.authorityByUse.DISPLAY_AVERAGE.status === 'ALLOWED'
-            || row.authorityByUse.DISPLAY_AVERAGE.status === 'OBSERVATIONAL';
+        const displayAvailable = row.currentProductionUse.averageHrDisplay
+            && (
+                row.authorityByUse.DISPLAY_AVERAGE.status === 'ALLOWED'
+                || row.authorityByUse.DISPLAY_AVERAGE.status === 'OBSERVATIONAL'
+            );
         const sensitiveUseBlocked = [
             row.authorityByUse.ZONE_DISTRIBUTION,
             row.authorityByUse.TRAINING_LOAD,
@@ -261,6 +277,16 @@ export function runActivityHrFidelityShadowReplay(
     const authorityByUse = Object.fromEntries(
         ALL_USE_CASES.map(useCase => [useCase, statusCountsForRows(rows, useCase, () => true)]),
     ) as Record<HrUseCase, HrFidelityAuthorityCounts>;
+    const assessmentUnknownRate = assessedActivities === 0 ? 0 : unknownAssessmentCount / assessedActivities;
+    const summaryComparableCount = compatibility.verified_same_effective_trace
+        + compatibility.consistent_unproven
+        + compatibility.discordant;
+    const summaryReconciliationRate = summaryComparableCount === 0
+        ? 0
+        : compatibility.verified_same_effective_trace / summaryComparableCount;
+    const summaryDiscordanceRate = summaryComparableCount === 0
+        ? 0
+        : compatibility.discordant / summaryComparableCount;
 
     const summary: ActivityHrFidelityShadowSummary = {
         totalActivities: rows.length,
@@ -268,11 +294,15 @@ export function runActivityHrFidelityShadowReplay(
         assessedActivities,
         notAssessedActivities: rows.length - assessedActivities,
         unknownAssessmentCount,
+        assessmentUnknownRate,
         assessmentUnknownReasons: unknownReasons,
         sourceDistribution: source,
         confidenceByActivityType: [...byType.values()].sort((left, right) => left.activityType.localeCompare(right.activityType)),
         artifactPrevalence,
         summaryCompatibility: compatibility,
+        summaryComparableCount,
+        summaryReconciliationRate,
+        summaryDiscordanceRate,
         authorityByUse,
         candidateBlocks: {
             hrZoneDistribution: statusCountsForRows(rows, 'ZONE_DISTRIBUTION', row => row.currentProductionUse.hrZoneDisplay),
@@ -283,7 +313,7 @@ export function runActivityHrFidelityShadowReplay(
             maxHrUpdate: statusCountsForRows(rows, 'MAX_HR_UPDATE', row => row.assessmentState === 'ASSESSED'),
             aerobicDecoupling: statusCountsForRows(rows, 'AEROBIC_DECOUPLING', row => row.assessmentState === 'ASSESSED'),
         },
-        poorTraceDespiteExternalSensorCount,
+        poorTraceDespiteChestStrapCount,
         usefulWristTraceCount,
         featureSpecificBlockWithDisplayAvailableCount,
     };
@@ -295,6 +325,8 @@ export function runActivityHrFidelityShadowReplay(
         limitations: [
             'This is shadow evidence only; it does not alter recommendation, readiness, or completed-training behaviour.',
             'Absent compact evidence means not assessed, not unreliable.',
+            'Assessed-unknown rate uses assessed activities as its denominator; missing assessments remain separate.',
+            'Summary reconciliation/discordance rates use comparable assessed summaries only; unknown and not-comparable records are excluded.',
             'Garmin Training Load and Training Effect remain vendor HR-dependent summaries with unverified exact input lineage.',
             'No maximum-HR candidate is persisted today; the max-HR count classifies assessed traces for a future candidate only.',
         ],
@@ -312,9 +344,12 @@ export function renderActivityHrFidelityShadowReplayMarkdown(report: ActivityHrF
         `- Activities: ${summary.totalActivities}`,
         `- Assessed: ${summary.assessedActivities}/${summary.totalActivities} (${(summary.assessableCoverage * 100).toFixed(1)}%)`,
         `- Not assessed: ${summary.notAssessedActivities}`,
-        `- Assessed with unknown confidence: ${summary.unknownAssessmentCount}`,
+        `- Assessed with unknown confidence: ${summary.unknownAssessmentCount}/${summary.assessedActivities} (${(summary.assessmentUnknownRate * 100).toFixed(1)}%)`,
+        `- Comparable summary assessments: ${summary.summaryComparableCount}`,
+        `- Summary reconciled: ${(summary.summaryReconciliationRate * 100).toFixed(1)}% of comparable assessments`,
+        `- Summary discordant: ${(summary.summaryDiscordanceRate * 100).toFixed(1)}% of comparable assessments`,
         `- Feature-specific block while display remains available: ${summary.featureSpecificBlockWithDisplayAvailableCount}`,
-        `- Poor trace despite external sensor: ${summary.poorTraceDespiteExternalSensorCount}`,
+        `- Poor trace despite electrode chest strap: ${summary.poorTraceDespiteChestStrapCount}`,
         `- Useful wrist traces preserved for display: ${summary.usefulWristTraceCount}`,
         '',
         '## Candidate authority blocks',
