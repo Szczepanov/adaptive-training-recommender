@@ -98,7 +98,7 @@ describe('evaluateSleepRecoveryEvidence', () => {
         expect(result.state).toBe('meaningful_sleep_deficit');
     });
 
-    it('is persistent_sleep_deficit only when the 3-day accumulated deficit is large AND tonight is also short', () => {
+    it('is persistent_sleep_deficit only when the 3-day deficit is large and tonight is meaningfully short', () => {
         const persistent = evaluateSleepRecoveryEvidence(
             readiness({
                 sleep_duration_delta_7d_min: -20,
@@ -107,15 +107,25 @@ describe('evaluateSleepRecoveryEvidence', () => {
         );
         expect(persistent.state).toBe('persistent_sleep_deficit');
 
-        // A large 3-day accumulated deficit does NOT classify as persistent if tonight
-        // itself was a recovery/surplus night -- a genuinely different situation.
-        const recovered = evaluateSleepRecoveryEvidence(
+        // A rounding/noise-sized current shortfall must not turn a large rolling deficit
+        // into "persistent". The rolling signal is still meaningful, just not persistent.
+        const almostRecovered = evaluateSleepRecoveryEvidence(
             readiness({
-                sleep_duration_delta_7d_min: 15, // tonight was a surplus night
+                sleep_duration_delta_7d_min: -1,
                 sleep_duration_accumulated_3d_deficit_min: 120,
             }),
         );
-        expect(recovered.state).not.toBe('persistent_sleep_deficit');
+        expect(almostRecovered.state).toBe('meaningful_sleep_deficit');
+
+        // A genuine recovery/surplus night also remains meaningful while the 3-night
+        // window is still impaired, but is deliberately not called persistent.
+        const recovered = evaluateSleepRecoveryEvidence(
+            readiness({
+                sleep_duration_delta_7d_min: 15,
+                sleep_duration_accumulated_3d_deficit_min: 120,
+            }),
+        );
+        expect(recovered.state).toBe('meaningful_sleep_deficit');
     });
 
     it('accumulated deficit fields pass through unchanged (same sign convention)', () => {
@@ -146,16 +156,31 @@ describe('evaluateSleepRecoveryEvidence', () => {
         expect(moderate.confidence).toBe('moderate');
     });
 
-    it('subjectiveConcordance agrees when low sleep quality accompanies an objective deficit', () => {
+    it('subjectiveConcordance uses a neutral middle band instead of forcing a boolean', () => {
         const agree = evaluateSleepRecoveryEvidence(
             readiness({ sleep_duration_delta_7d_min: -75 }, { sleepQuality: 3 }),
         );
         expect(agree.subjectiveConcordance).toBe(true);
 
+        const neutral = evaluateSleepRecoveryEvidence(
+            readiness({ sleep_duration_delta_7d_min: -75 }, { sleepQuality: 5 }),
+        );
+        expect(neutral.subjectiveConcordance).toBeNull();
+
         const disagree = evaluateSleepRecoveryEvidence(
             readiness({ sleep_duration_delta_7d_min: -75 }, { sleepQuality: 9 }),
         );
         expect(disagree.subjectiveConcordance).toBe(false);
+    });
+
+    it('describes subjective concordance correctly for a normal objective state', () => {
+        const result = evaluateSleepRecoveryEvidence(
+            readiness({ sleep_duration_delta_7d_min: 10 }, { sleepQuality: 3 }),
+        );
+        expect(result.state).toBe('normal');
+        expect(result.subjectiveConcordance).toBe(false);
+        expect(result.evidence.some(item => item.includes('normal objective sleep-duration signal'))).toBe(true);
+        expect(result.evidence.some(item => item.includes('objective deficit'))).toBe(false);
     });
 
     it('subjectiveConcordance is null when state is uncertain', () => {
@@ -165,25 +190,39 @@ describe('evaluateSleepRecoveryEvidence', () => {
         expect(result.subjectiveConcordance).toBeNull();
     });
 
-    it('physiologicalConcordance agrees when HRV is suppressed alongside an objective deficit', () => {
+    it('physiologicalConcordance agrees only when HRV suppression exceeds personal variability', () => {
         const result = evaluateSleepRecoveryEvidence(
             readiness({ sleep_duration_delta_7d_min: -75, hrv_delta: -8, rhr_delta: 0 }),
         );
         expect(result.physiologicalConcordance).toBe(true);
     });
 
-    it('physiologicalConcordance agrees when RHR is elevated alongside an objective deficit', () => {
+    it('physiologicalConcordance agrees only when RHR elevation exceeds personal variability', () => {
         const result = evaluateSleepRecoveryEvidence(
             readiness({ sleep_duration_delta_7d_min: -75, hrv_delta: 0, rhr_delta: 4 }),
         );
         expect(result.physiologicalConcordance).toBe(true);
     });
 
-    it('physiologicalConcordance disagrees when neither HRV nor RHR moves in the expected direction', () => {
+    it('does not call tiny HRV/RHR movements physiological concordance', () => {
         const result = evaluateSleepRecoveryEvidence(
-            readiness({ sleep_duration_delta_7d_min: -75, hrv_delta: 5, rhr_delta: -2 }),
+            readiness({ sleep_duration_delta_7d_min: -75, hrv_delta: -1, rhr_delta: 1 }),
+        );
+        expect(result.physiologicalConcordance).toBeNull();
+    });
+
+    it('physiologicalConcordance disagrees when a material physiological signal is favorable', () => {
+        const result = evaluateSleepRecoveryEvidence(
+            readiness({ sleep_duration_delta_7d_min: -75, hrv_delta: 8, rhr_delta: -4 }),
         );
         expect(result.physiologicalConcordance).toBe(false);
+    });
+
+    it('physiologicalConcordance stays null for conflicting material HRV and RHR directions', () => {
+        const result = evaluateSleepRecoveryEvidence(
+            readiness({ sleep_duration_delta_7d_min: -75, hrv_delta: -8, rhr_delta: -4 }),
+        );
+        expect(result.physiologicalConcordance).toBeNull();
     });
 
     it('physiologicalConcordance is null when neither HRV nor RHR delta is available', () => {
