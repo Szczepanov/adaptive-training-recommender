@@ -16,6 +16,7 @@ const THOMAS_NUTRITION_SOURCE = 'THOMAS-2016-NUTRITION-POSITION';
 const BURKE_CARBOHYDRATE_SOURCE = 'BURKE-2011-CARBOHYDRATE-PRACTICE';
 const RAMOS_CAMPO_CARBOHYDRATE_SOURCE = 'RAMOS-CAMPO-2024-CARBOHYDRATE-META';
 const MORTON_CARBOHYDRATE_SOURCE = 'MORTON-2026-ENDURANCE-CARBOHYDRATE-REVIEW';
+const PLEWS_ULTRA_HIGH_CARBOHYDRATE_SOURCE = 'PLEWS-2026-ULTRA-HIGH-CARBOHYDRATE-OPINION';
 const HEW_BUTLER_HYPONATREMIA_SOURCE = 'HEW-BUTLER-2015-HYPONATREMIA-CONSENSUS';
 const TAPER_PRODUCT_POLICY_SOURCE = 'PRODUCT-TAPER-POLICY-V1';
 
@@ -104,6 +105,19 @@ export const TAPER_FUELING_SOURCES: readonly KnowledgeSource[] = [
         notes: 'Contemporary narrative review supports the established <=90 g/h framework for prolonged endurance exercise while noting that 120 g/h can raise exogenous/whole-body carbohydrate oxidation in trained athletes. It explicitly states that performance efficacy above 90 g/h is not yet substantiated well enough to make very-high intake a general recommendation.',
     },
     {
+        id: PLEWS_ULTRA_HIGH_CARBOHYDRATE_SOURCE,
+        title: 'Fuelled or Fooled? Examining the Evidence and Mechanisms Behind Ultra-High Carbohydrate Intake in Endurance Athletes',
+        sourceType: 'expert_practice',
+        citation: 'Plews DJ, Booth PD, Krieger T, Maunder E. Sports Med. 2026. doi:10.1007/s40279-026-02462-z.',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/42258036/',
+        publishedOn: '2026-06-08',
+        externalIds: [
+            { type: 'pmid', value: '42258036' },
+            { type: 'doi', value: '10.1007/s40279-026-02462-z' },
+        ],
+        notes: 'Current-opinion review focused on ultra-high carbohydrate intake (>90 g/h). It finds limited direct performance evidence, diminishing returns beyond roughly 60-90 g/h in most studied settings, and concludes that broad ultra-high-carbohydrate recommendations are premature, particularly for amateur and recreational athletes. It is supporting context rather than primary efficacy evidence.',
+    },
+    {
         id: HEW_BUTLER_HYPONATREMIA_SOURCE,
         title: 'Statement of the Third International Exercise-Associated Hyponatremia Consensus Development Conference, Carlsbad, California, 2015',
         sourceType: 'consensus',
@@ -168,11 +182,12 @@ export const TAPER_FUELING_CLAIMS: readonly KnowledgeClaim[] = [
             { sourceId: THOMAS_NUTRITION_SOURCE, directness: 'direct' },
             { sourceId: RAMOS_CAMPO_CARBOHYDRATE_SOURCE, directness: 'partially_direct', note: 'Supports performance benefit and duration dependence more strongly than exact dose bands.' },
             { sourceId: MORTON_CARBOHYDRATE_SOURCE, directness: 'partially_direct', note: 'Updates the practical boundary: >90 g/h may raise carbohydrate oxidation in trained athletes, but performance superiority and generalizability remain insufficiently established.' },
+            { sourceId: PLEWS_ULTRA_HIGH_CARBOHYDRATE_SOURCE, directness: 'partially_direct', note: 'Focused current-opinion review concludes that evidence for broad >90 g/h performance recommendations remains insufficient, especially outside selected elite contexts.' },
         ],
         limitations: [
             'The gram-per-hour ranges are practical guidance synthesized across heterogeneous exercise contexts; athletes should individualize by body size only where evidence/guidance specifically calls for it rather than mechanically converting these rates to g/kg/h.',
             'High intakes require gastrointestinal tolerance and often gut-training/practice; the upper range should not be introduced for the first time on race day.',
-            'Recent 2026 evidence reviews describe 120 g/h as physiologically plausible for some trained endurance athletes, but performance benefit beyond the established <=90 g/h framework is not sufficiently substantiated to make >90 g/h a general recommendation.',
+            'Recent 2026 reviews describe 120 g/h as physiologically plausible for some trained endurance athletes, but performance benefit beyond the established <=90 g/h framework is not sufficiently substantiated to make >90 g/h a general recommendation; the most recent focused opinion review explicitly cautions against treating ultra-high intake as a gold standard for amateur/recreational athletes.',
             'Shorter/easier sessions may not require exogenous carbohydrate for performance, and training goals can intentionally alter carbohydrate availability.',
         ], reviewedOn: '2026-08-30', version: 1,
     },
