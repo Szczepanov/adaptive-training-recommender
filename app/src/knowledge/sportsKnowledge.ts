@@ -17,7 +17,7 @@ export type KnowledgeHorizon = 'acute' | 'chronic' | 'both' | 'not_applicable';
 export type KnowledgeSourceType =
     | 'guideline'
     | 'systematic_review'
-    | 'meta_analysis'
+    | 'umbrella_review'
     | 'randomized_trial'
     | 'cohort'
     | 'cross_sectional'
@@ -25,6 +25,13 @@ export type KnowledgeSourceType =
     | 'consensus'
     | 'expert_practice'
     | 'product_policy';
+export type KnowledgeSynthesisMethod = 'meta_analysis' | 'network_meta_analysis' | 'narrative_synthesis';
+export type KnowledgeExternalIdType = 'pmid' | 'pmcid' | 'doi' | 'prospero' | 'isbn';
+
+export interface KnowledgeExternalId {
+    type: KnowledgeExternalIdType;
+    value: string;
+}
 
 export interface KnowledgeSource {
     id: string;
@@ -33,6 +40,10 @@ export interface KnowledgeSource {
     citation: string;
     url?: string;
     publishedOn?: string;
+    /** Stable publication/registration identifiers such as PMID, DOI or PROSPERO. */
+    externalIds?: KnowledgeExternalId[];
+    /** Review-level synthesis methods; meta-analysis is a method, not a source-quality tier. */
+    synthesisMethods?: KnowledgeSynthesisMethod[];
     notes?: string;
 }
 
@@ -84,6 +95,7 @@ export const SPORTS_KNOWLEDGE_SOURCES: readonly KnowledgeSource[] = [
         citation: 'World Health Organization. WHO guidelines on physical activity and sedentary behaviour. 2020. ISBN 978-92-4-001512-8.',
         url: 'https://www.who.int/publications/i/item/9789240015128',
         publishedOn: '2020-11-25',
+        externalIds: [{ type: 'isbn', value: '978-92-4-001512-8' }],
         notes: 'Authoritative public-health guidance; not a sport-performance prescription.',
     },
     {
@@ -206,6 +218,11 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+const PMID_PATTERN = /^\d+$/;
+const PMCID_PATTERN = /^PMC\d+$/i;
+const PROSPERO_PATTERN = /^CRD\d+$/i;
+const DOI_PATTERN = /^10\.\d{4,9}\/\S+$/i;
+const REVIEW_SOURCE_TYPES: readonly KnowledgeSourceType[] = ['systematic_review', 'umbrella_review'];
 
 /** Validate both ISO date shape and Gregorian calendar validity without timezone-dependent parsing. */
 function isIsoCalendarDate(value: string): boolean {
@@ -220,8 +237,30 @@ function isIsoCalendarDate(value: string): boolean {
     return day <= daysInMonth[month - 1];
 }
 
+/** Normalize stable external identifiers for duplicate detection without changing display values. */
+function normalizedExternalId(identifier: KnowledgeExternalId): string {
+    const value = identifier.value.trim();
+    const normalizedValue = identifier.type === 'doi'
+        ? value.toLowerCase()
+        : identifier.type === 'pmcid' || identifier.type === 'prospero'
+            ? value.toUpperCase()
+            : value;
+    return `${identifier.type}:${normalizedValue}`;
+}
+
+/** Return a validation error when an external identifier has an invalid format. */
+function externalIdFormatError(identifier: KnowledgeExternalId): string | null {
+    const value = identifier.value.trim();
+    if (!value) return 'value is required';
+    if (identifier.type === 'pmid' && !PMID_PATTERN.test(value)) return 'PMID must contain digits only';
+    if (identifier.type === 'pmcid' && !PMCID_PATTERN.test(value)) return 'PMCID must use PMC followed by digits';
+    if (identifier.type === 'prospero' && !PROSPERO_PATTERN.test(value)) return 'PROSPERO id must use CRD followed by digits';
+    if (identifier.type === 'doi' && !DOI_PATTERN.test(value)) return 'DOI must use the 10.xxxx/... form';
+    return null;
+}
+
 /**
- * Validate referential, lifecycle, and epistemic invariants for a candidate sports knowledge registry.
+ * Validate referential, lifecycle, source-synthesis, and epistemic invariants for a candidate sports knowledge registry.
  * This deliberately checks structure and category errors; it does not replace scientific peer review.
  */
 export function validateSportsKnowledgeRegistry(
@@ -232,6 +271,7 @@ export function validateSportsKnowledgeRegistry(
     const warnings: string[] = [];
     const sourceIds = new Set<string>();
     const sourceById = new Map<string, KnowledgeSource>();
+    const externalIds = new Set<string>();
     const claimIds = new Set<string>();
 
     for (const source of sources) {
@@ -243,6 +283,23 @@ export function validateSportsKnowledgeRegistry(
         if (!source.citation.trim()) errors.push(`source ${source.id}: citation is required`);
         if (source.publishedOn && !isIsoCalendarDate(source.publishedOn)) {
             errors.push(`source ${source.id}: publishedOn must be a valid YYYY-MM-DD calendar date`);
+        }
+
+        const sourceSynthesisMethods = new Set<KnowledgeSynthesisMethod>();
+        for (const method of source.synthesisMethods ?? []) {
+            if (sourceSynthesisMethods.has(method)) errors.push(`source ${source.id}: duplicate synthesis method ${method}`);
+            sourceSynthesisMethods.add(method);
+        }
+        if (sourceSynthesisMethods.size > 0 && !REVIEW_SOURCE_TYPES.includes(source.sourceType)) {
+            errors.push(`source ${source.id}: synthesisMethods are reserved for systematic/umbrella reviews`);
+        }
+
+        for (const identifier of source.externalIds ?? []) {
+            const formatError = externalIdFormatError(identifier);
+            if (formatError) errors.push(`source ${source.id}: invalid ${identifier.type} identifier: ${formatError}`);
+            const normalized = normalizedExternalId(identifier);
+            if (externalIds.has(normalized)) errors.push(`duplicate external source identifier: ${normalized}`);
+            externalIds.add(normalized);
         }
     }
 
