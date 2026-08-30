@@ -22,23 +22,40 @@ describe('engine knowledge coverage inventory', () => {
         expect(byId('evergreen.high_intensity_weekly_prior')).toMatchObject({ coverage: 'covered', knowledgeRefs: ['performance.high_intensity.conditional_weekly_prior'] });
     });
 
-    it('surfaces the highest-impact research gaps rather than treating them as covered', () => {
+    it('migrates the load, intensity and recovery evidence pack without pretending product cut-points are scientific', () => {
+        const covered = [
+            'readiness.recent_hard_session_penalty',
+            'fatigue.dimension_half_lives',
+            'spacing.anchor_next_day',
+            'spacing.rolling_hard_cap',
+            'spacing.strength_key_cycling_adjacency',
+            'optimizer.intensity_class_thresholds',
+        ];
+        covered.forEach(id => {
+            const item = byId(id);
+            expect(item).toMatchObject({ coverage: 'covered', researchPriority: 'none' });
+            expect(item?.knowledgeRefs.length).toBeGreaterThanOrEqual(2);
+        });
+
+        expect(byId('spacing.hard_lower_body_recovery')).toMatchObject({
+            coverage: 'partial',
+            researchPriority: 'p1',
+            safetyImpact: 'high',
+        });
+        expect(byId('spacing.hard_lower_body_recovery')?.coverageRationale).toContain('catalog-specific');
+    });
+
+    it('keeps the remaining highest-priority research gaps visible', () => {
         const expectedP0Gaps = [
             'readiness.physiological_strain_model',
             'readiness.subjective_mode_thresholds',
             'readiness.absolute_device_floors',
             'readiness.acute_biometric_floors',
-            'readiness.recent_hard_session_penalty',
             'readiness.mode_score_thresholds',
-            'fatigue.dimension_half_lives',
             'fatigue.internal_response_model',
             'injury.tissue_response_severity',
             'injury.region_restriction_mapping',
             'injury.pain_envelope_mapping',
-            'spacing.anchor_next_day',
-            'spacing.rolling_hard_cap',
-            'spacing.hard_lower_body_recovery',
-            'spacing.strength_key_cycling_adjacency',
             'periodization.taper_windows_volume',
         ];
         expectedP0Gaps.forEach(id => {
@@ -53,14 +70,13 @@ describe('engine knowledge coverage inventory', () => {
         expect(byId('data_trust.identity_gated_source_fail_closed')).toMatchObject({ classification: 'safety_invariant', coverage: 'not_applicable' });
     });
 
-    it('reports coverage and high-risk debt as first-class metrics', () => {
+    it('reports the post-pack coverage and risk debt exactly', () => {
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(ENGINE_KNOWLEDGE_COVERAGE.length);
-        expect(summary.byCoverage.covered).toBe(4);
-        expect(summary.byCoverage.uncovered).toBeGreaterThan(30);
-        expect(summary.highImpactUncovered).toBeGreaterThan(15);
-        expect(summary.highSafetyUncovered).toBeGreaterThan(5);
-        expect(summary.byPriority.p0).toBeGreaterThan(10);
+        expect(summary.total).toBe(47);
+        expect(summary.byCoverage).toEqual({ covered: 10, partial: 1, uncovered: 31, not_applicable: 5 });
+        expect(summary.byPriority).toEqual({ p0: 10, p1: 13, p2: 7, p3: 2, none: 15 });
+        expect(summary.highImpactUncovered).toBe(18);
+        expect(summary.highSafetyUncovered).toBe(5);
     });
 
     it('records shadow/observability models outside live decision coverage', () => {
@@ -72,11 +88,12 @@ describe('engine knowledge coverage inventory', () => {
         expect(refs).toContain('engine/identityAttribution.ts');
     });
 
-    it('rejects false coverage and category errors', () => {
+    it('rejects false coverage, category errors and partial items that drop their backlog priority', () => {
         const base = ENGINE_KNOWLEDGE_COVERAGE[0];
         const invalid = [
             { ...base, id: 'bad covered', coverage: 'covered' as const, knowledgeRefs: [] },
             { ...base, id: 'bad.na', classification: 'scientific_claim' as const, coverage: 'not_applicable' as const, knowledgeRefs: [], researchPriority: 'none' as const },
+            { ...base, id: 'bad.partial', coverage: 'partial' as const, knowledgeRefs: ['health.adults.aerobic.weekly_volume'], researchPriority: 'none' as const },
         ];
         const result = validateKnowledgeCoverageInventory(invalid);
         expect(result.valid).toBe(false);
@@ -84,6 +101,7 @@ describe('engine knowledge coverage inventory', () => {
             expect.stringContaining('id must be stable lowercase machine-safe text'),
             expect.stringContaining('covered items require at least one knowledgeRef'),
             expect.stringContaining('not_applicable is reserved'),
+            expect.stringContaining('partial items must retain a research priority'),
         ]));
     });
 });
