@@ -20,7 +20,10 @@ const TODAY = '2026-08-09';
 function settings(): TrainingSettings {
     return {
         userId: 'specificity-contract', schemaVersion: 2,
-        equipment: { free_weights: true, cable_machine: false, treadmill: false, indoor_bike: true, pullup_bar: true },
+        // outdoor_bike: this fixture trains for an outdoor road race (event() below), so the
+        // outdoor Race-Specific Endurance templates (requiredEquipment: ['outdoor_bike']) must
+        // be feasible.
+        equipment: { free_weights: true, cable_machine: false, treadmill: false, indoor_bike: true, pullup_bar: true, outdoor_bike: true, swim_access: false },
         guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
         defaults: { weekdayMaxMinutes: 90, weekendMaxMinutes: 150, environment: 'either' },
         preferences: { preferActiveRecovery: false },

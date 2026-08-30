@@ -19,8 +19,8 @@ export interface SubjectiveInput {
     /** Today's explicit modality ask from the check-in (e.g. 'Running', 'Strength',
      *  'Mobility'), or null for no preference. Compared case-insensitively against
      *  SessionTemplate.modality -- see rules.ts applyModalityPreference. A value with no
-     *  matching template in the catalog (e.g. 'Swimming') simply can't be honored; the
-     *  engine says so in the rationale rather than silently ignoring it. */
+     *  matching template in the catalog simply can't be honored; the engine says so in
+     *  the rationale rather than silently ignoring it. */
     preferredModalityToday: string | null;
 }
 
@@ -307,7 +307,7 @@ export interface ExternalSessionVerdictSummary {
     rationale: string;
 }
 
-export type ExternalSessionModality = 'cycling' | 'running' | 'strength' | 'field' | 'mobility' | 'cross_training';
+export type ExternalSessionModality = 'cycling' | 'running' | 'swimming' | 'strength' | 'field' | 'mobility' | 'cross_training';
 export type ExternalSessionIntensity = 'recovery' | 'easy' | 'moderate' | 'hard' | 'max';
 export type ExternalSessionPriority = 'key' | 'supporting' | 'optional';
 export type ExternalPlacementFlexibility = 'fixed' | 'preferred' | 'any_day';
@@ -658,7 +658,7 @@ export interface TemplatePhaseEligibility {
 export interface SessionTemplate {
     id: string;
     category: 'Hard Endurance' | 'Moderate Endurance' | 'Easy Endurance' | 'Race-Specific Endurance' | 'Upper-body Strength' | 'Lower-body Strength' | 'Full-body Strength' | 'Power Maintenance' | 'Field Maintenance' | 'Technical Skill' | 'Mobility/Recovery' | 'Rest';
-    modality: 'Running' | 'Cycling' | 'Walking' | 'Strength' | 'Field' | 'Mobility' | 'Cross Training' | 'None';
+    modality: 'Running' | 'Cycling' | 'Swimming' | 'Walking' | 'Strength' | 'Field' | 'Mobility' | 'Cross Training' | 'None';
     durationMin: number;
     durationMax: number;
     title: string;
@@ -1230,7 +1230,9 @@ export interface UserConstraint {
 
 /** Athlete-controlled feasibility settings. Equipment is capability, while
  * guardrails are non-negotiable safety boundaries. They must not be conflated. */
-export type EquipmentKey = 'free_weights' | 'cable_machine' | 'treadmill' | 'indoor_bike' | 'pullup_bar';
+export type LegacyEquipmentKey = 'free_weights' | 'cable_machine' | 'treadmill' | 'indoor_bike' | 'pullup_bar';
+export type SportAccessKey = 'outdoor_bike' | 'swim_access';
+export type EquipmentKey = LegacyEquipmentKey | SportAccessKey;
 export type TrainingEnvironment = 'indoor' | 'outdoor' | 'either';
 export type GuardrailKey = 'avoid_high_impact' | 'avoid_heavy_lower_body' | 'avoid_overhead_pressing' | 'avoid_heavy_spinal_loading';
 
@@ -1290,7 +1292,7 @@ export interface RegionTissueResponse {
 export interface TrainingSettings {
     userId: string;
     schemaVersion: 2 | 3;
-    equipment: Record<EquipmentKey, boolean>;
+    equipment: Record<LegacyEquipmentKey, boolean> & Partial<Record<SportAccessKey, boolean>>;
     guardrails: Record<GuardrailKey, boolean>;
     injuries?: InjuryConstraint[];
     capabilities?: {

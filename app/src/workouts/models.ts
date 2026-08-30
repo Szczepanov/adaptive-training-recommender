@@ -1,6 +1,7 @@
 export type WorkoutModality =
   | 'cycling'
   | 'running'
+  | 'swimming'
   | 'walking'
   | 'strength'
   | 'field'
@@ -73,7 +74,8 @@ export type Equipment =
   | 'bodyweight'
   | 'plyo_box'
   | 'cable_machine'
-  | 'hotel_gym';
+  | 'hotel_gym'
+  | 'pool';
 
 export type LoadLevel = 1 | 2 | 3 | 4 | 5;
 

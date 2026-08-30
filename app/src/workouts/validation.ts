@@ -23,6 +23,7 @@ const expectedVariantIds = new Set(['full', 'reduced', 'return_to_training']);
 const compatibleExerciseModalities: Record<WorkoutModality, WorkoutModality[]> = {
   cycling: ['cycling'],
   running: ['running'],
+  swimming: ['swimming'],
   walking: ['walking'],
   strength: ['strength'],
   field: ['field'],

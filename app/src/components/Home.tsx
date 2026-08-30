@@ -230,7 +230,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     if (!decisionInput) return [];
     const { equipment, guardrails, defaults } = decisionInput.trainingSettings;
     const equipmentLabels: Record<keyof typeof equipment, string> = {
-      free_weights: 'Free weights available', cable_machine: 'Cable machine available', treadmill: 'Treadmill available', indoor_bike: 'Stationary bike available', pullup_bar: 'Pull-up bar available'
+      free_weights: 'Free weights available', cable_machine: 'Cable machine available', treadmill: 'Treadmill available', indoor_bike: 'Stationary bike available', pullup_bar: 'Pull-up bar available', outdoor_bike: 'Outdoor bicycle available', swim_access: 'Pool / swim access available'
     };
     const guardrailLabels: Record<keyof typeof guardrails, string> = {
       avoid_high_impact: 'Block high-impact training', avoid_heavy_lower_body: 'Block heavy lower-body work', avoid_overhead_pressing: 'Block overhead pressing', avoid_heavy_spinal_loading: 'Block heavy spinal loading'

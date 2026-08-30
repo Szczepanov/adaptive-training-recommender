@@ -18,10 +18,11 @@ export type TrainingSettingsUpdate = {
 
 const COLLECTION = 'trainingSettings';
 const DOCUMENT = 'profile';
-const equipmentKeys = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar'] as const;
+const requiredEquipmentKeys = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar'] as const;
+const additiveEquipmentKeys = ['outdoor_bike', 'swim_access'] as const;
 const guardrailKeys = ['avoid_high_impact', 'avoid_heavy_lower_body', 'avoid_overhead_pressing', 'avoid_heavy_spinal_loading'] as const;
 const validBodyRegions = ['knee', 'achilles', 'ankle', 'calf', 'hamstring', 'quadriceps', 'adductor_groin', 'hip', 'lower_back', 'shoulder', 'elbow', 'wrist'] as const;
-const validModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'];
+const validModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'];
 
 function timestamp(): string {
     return new Date().toISOString();
@@ -31,7 +32,7 @@ export function createDefaultTrainingSettings(userId: string, now = timestamp())
     return {
         userId,
         schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
-        equipment: { free_weights: false, cable_machine: false, treadmill: false, indoor_bike: false, pullup_bar: false },
+        equipment: { free_weights: false, cable_machine: false, treadmill: false, indoor_bike: false, pullup_bar: false, outdoor_bike: false, swim_access: false },
         guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
         injuries: [],
         defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' },
@@ -57,7 +58,8 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
     const preferences = data.preferences as Record<string, unknown> | undefined;
     const migration = data.migration as Record<string, unknown> | undefined;
     if (!equipment || !guardrails || !defaults || !preferences || !migration) return null;
-    if (!equipmentKeys.every(key => typeof equipment[key] === 'boolean')) return null;
+    if (!requiredEquipmentKeys.every(key => typeof equipment[key] === 'boolean')) return null;
+    if (!additiveEquipmentKeys.every(key => equipment[key] === undefined || typeof equipment[key] === 'boolean')) return null;
     if (!guardrailKeys.every(key => typeof guardrails[key] === 'boolean')) return null;
     if (!isDuration(defaults.weekdayMaxMinutes) || !isDuration(defaults.weekendMaxMinutes)) return null;
     if (!['indoor', 'outdoor', 'either'].includes(String(defaults.environment))) return null;
@@ -83,6 +85,17 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
     return {
         ...(data as unknown as TrainingSettings),
         schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
+        equipment: {
+            free_weights: equipment.free_weights as boolean,
+            cable_machine: equipment.cable_machine as boolean,
+            treadmill: equipment.treadmill as boolean,
+            indoor_bike: equipment.indoor_bike as boolean,
+            pullup_bar: equipment.pullup_bar as boolean,
+            // Additive sport-access fields are fail-safe for historical settings: unknown
+            // access never becomes permission to prescribe an outdoor ride or pool swim.
+            outdoor_bike: typeof equipment.outdoor_bike === 'boolean' ? equipment.outdoor_bike : false,
+            swim_access: typeof equipment.swim_access === 'boolean' ? equipment.swim_access : false,
+        },
         injuries: (data.injuries as TrainingSettings['injuries']) ?? [],
     };
 }

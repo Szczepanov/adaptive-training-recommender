@@ -275,9 +275,13 @@ describe('unmet weekly objectives', () => {
     it('discounts imported credit at the authoredExternal rung rather than crediting it as exact', () => {
         // The same week credited as an exact catalog match would clear this objective; an
         // imported session must not flatter the plan into looking more complete than it is.
+        // requiredCredit sits just above what the authoredExternal-discounted credit for
+        // the default hard 60-75min cycling session actually earns (~0.71 -- see
+        // externalSessionProfiles.ts's catalogDurationReferenceMin), so this stays a
+        // genuine near miss under the discount rather than an exact-tier credit.
         const nearMiss = microcycle([objective({
             key: 'threshold_quality', title: 'Threshold quality',
-            requiredCredit: 0.7, targetExposures: 1, targetStimulus: { thresholdPower: 0.8 },
+            requiredCredit: 0.85, targetExposures: 1, targetStimulus: { thresholdPower: 0.8 },
         })]);
         const result = critiqueExternalWeek(input({
             placed: [placed(MONDAY, { id: 'a' })],

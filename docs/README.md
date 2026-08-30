@@ -148,6 +148,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-29 Sleep Decision Authority Phase 2 Implementation**](./analysis/2026-08-29-sleep-decision-authority-phase-2-implementation.md) — Progress review for Phase 2 of sleep decision authority decoupling.
 * [**2026-08-29 Sleep Decision Authority Phase 3 Implementation**](./analysis/2026-08-29-sleep-decision-authority-phase-3-implementation.md) — Progress review for Phase 3 of sleep decision authority decoupling.
 * [**2026-08-29 Sleep Decision Authority Phase 4 Status**](./analysis/2026-08-29-sleep-decision-authority-phase-4-status.md) — Status report for Phase 4 of sleep decision authority decoupling.
+* [**2026-08-30 Running + triathlon athlete support audit**](./analysis/2026-08-30-running-triathlon-support-audit.md) — Pre/post-change support audit for 5K/10K/half/marathon and 1/8–1/2/70.3 triathlon: Swimming as a first-class modality, hard-gated outdoor bicycle/pool access, independent per-discipline triathlon aerobic exposure, and running long-run/race-pace/taper templates.
+* [**2026-08-30 Triathlon scenario and persona corpus**](./analysis/2026-08-30-triathlon-persona-corpus.md) — Synthetic novice/intermediate/advanced triathlon coverage, including access constraints, recovery perturbations, time caps, and a 14-day 70.3 taper horizon.
 
 ---
 

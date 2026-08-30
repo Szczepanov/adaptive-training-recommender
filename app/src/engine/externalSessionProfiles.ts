@@ -25,6 +25,7 @@ import type { RangeOrNumber, SessionDefinition, SessionStep } from '../sessions/
 const MODALITY_BY_EXTERNAL: Record<ExternalSessionModality, SessionTemplate['modality']> = {
     cycling: 'Cycling',
     running: 'Running',
+    swimming: 'Swimming',
     strength: 'Strength',
     field: 'Field',
     mobility: 'Mobility',
@@ -77,10 +78,19 @@ function durationReferenceMin(range: Pick<ExternalPlanSession['gating'], 'durati
 
 /**
  * The fallback tables are calibrated against catalog-sized sessions, not against an
- * abstract one-hour constant. Imported sessions are untrusted estimates, so use the
- * upper-quartile duration of comparable catalog templates rather than the median. This is
- * intentionally conservative: adding a new short specialist template must not silently
- * increase inferred load/stimulus or objective credit for every unrelated imported session.
+ * abstract one-hour constant. Imported sessions are untrusted estimates, so this uses the
+ * median duration of comparable catalog templates rather than the raw mean. This is
+ * intentionally conservative in both directions: a single new specialist template --
+ * whether markedly shorter (e.g. a brief taper touch) or markedly longer (e.g. a long-run
+ * durability session, whose systemic cost crosses into the "hard" bucket from accumulated
+ * duration rather than from per-minute effort) -- must not silently swing the inferred
+ * load/stimulus/objective credit of every unrelated imported session at that intensity.
+ * An upper-quartile statistic was tried first, but with the small per-(modality, intensity)
+ * sample sizes this catalog actually has, one new long template can dominate the quartile
+ * pick and blow out the reference duration for that bucket alone, breaking the invariant
+ * that a harder authored intensity never produces a lower systemic cost than an easier one
+ * at the same duration (see externalSessionProfiles.test.ts's monotonicity coverage). The
+ * median is far less sensitive to a single new outlier at either end.
  */
 function catalogDurationReferenceMin(
     modality: SessionTemplate['modality'],
@@ -92,8 +102,8 @@ function catalogDurationReferenceMin(
         .filter(duration => Number.isFinite(duration) && duration > 0)
         .sort((left, right) => left - right);
     if (durations.length === 0) return null;
-    const upperQuartileIndex = Math.ceil((durations.length - 1) * 0.75);
-    return durations[upperQuartileIndex];
+    const mid = Math.floor(durations.length / 2);
+    return durations.length % 2 === 0 ? (durations[mid - 1] + durations[mid]) / 2 : durations[mid];
 }
 
 /** Structural profile interfaces intentionally do not expose a string index signature.

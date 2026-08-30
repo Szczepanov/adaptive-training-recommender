@@ -812,7 +812,7 @@ export function reconcileObjectivesForDate(
     date: string,
     todayDate: string,
     periodization: PeriodizationResult,
-    creditMemory: Map<WeeklyObjective['key'], ObjectiveCreditSnapshot>,
+    creditMemory: Map<string, ObjectiveCreditSnapshot>,
     priorExposures: readonly ProjectionExposure[] = [],
     authoredPlanBlocks: readonly AuthoredPlanBlock[] = [],
     planDefinition?: PlanDefinition | null,
@@ -821,16 +821,39 @@ export function reconcileObjectivesForDate(
     const skeleton = generateWeeklyObjectives(periodization.phase, todayDate, periodization.focusEvent, planDefinitionForDate, date);
     const fresh = resolveMultiEventObjectives(events, date, periodization, skeleton.objectives);
 
-    const existingByKey = new Map(microcycle.objectives.map(objective => [objective.key, objective]));
-    const freshKeys = new Set(fresh.objectives.map(objective => objective.key));
+    // Objective keys group related physiology for display and contributor reconciliation,
+    // but they are not unique planning identities. Triathlon deliberately creates three
+    // modality-qualified `zone2_aerobic` objectives, so credit must survive a rolling
+    // re-resolution by stable objective id rather than collapsing onto the last key.
+    const existingById = new Map(microcycle.objectives.map(objective => [objective.id, objective]));
+    const existingByKey = new Map<WeeklyObjective['key'], WeeklyObjective[]>();
+    microcycle.objectives.forEach(objective => {
+        const matching = existingByKey.get(objective.key) ?? [];
+        matching.push(objective);
+        existingByKey.set(objective.key, matching);
+    });
+    const freshIds = new Set(fresh.objectives.map(objective => objective.id));
+    const freshKeyCounts = new Map<WeeklyObjective['key'], number>();
+    fresh.objectives.forEach(objective => freshKeyCounts.set(objective.key, (freshKeyCounts.get(objective.key) ?? 0) + 1));
 
     microcycle.objectives.forEach(objective => {
-        if (!freshKeys.has(objective.key)) creditMemory.set(objective.key, snapshotObjectiveCredit(objective));
+        if (!freshIds.has(objective.id)) {
+            const snapshot = snapshotObjectiveCredit(objective);
+            creditMemory.set(objective.id, snapshot);
+            // Legacy objectives are identified by their semantic key across phase
+            // regeneration. Preserve that compatibility only for an unambiguous key;
+            // triathlon's three same-key objectives must remain isolated by id.
+            if ((existingByKey.get(objective.key)?.length ?? 0) === 1) creditMemory.set(`key:${objective.key}`, snapshot);
+        }
     });
 
     const objectives = fresh.objectives.map(definition => {
-        const existing = existingByKey.get(definition.key);
-        const carried = existing ? snapshotObjectiveCredit(existing) : creditMemory.get(definition.key);
+        const sameKey = existingByKey.get(definition.key) ?? [];
+        const uniqueFreshKey = freshKeyCounts.get(definition.key) === 1;
+        const existing = existingById.get(definition.id) ?? (uniqueFreshKey && sameKey.length === 1 ? sameKey[0] : undefined);
+        const carried = existing
+            ? snapshotObjectiveCredit(existing)
+            : creditMemory.get(definition.id) ?? (uniqueFreshKey ? creditMemory.get(`key:${definition.key}`) : undefined);
         if (carried) return { ...definition, ...carried };
 
         const relevantExposures = priorExposures.filter(exposure => exposure.date < date);
@@ -998,7 +1021,7 @@ export function generateWeekAheadPlan(
         && (entry.systemicCost ?? 0) >= PROJECTED_MODIFY_MAX_SYSTEMIC_COST
     );
 
-    const creditMemory = new Map<WeeklyObjective['key'], ObjectiveCreditSnapshot>();
+    const creditMemory = new Map<string, ObjectiveCreditSnapshot>();
     const droppedContributorObjectives: DroppedContributorObjective[] = [...(seed.droppedContributorObjectives ?? [])];
     const currentlyDroppedPairs = new Set<string>(
         droppedContributorObjectives.map(d => `${d.eventId}:${d.objectiveKey}`)
@@ -1253,7 +1276,7 @@ export function generateWeekAheadPlan(
         const date = addDaysToLocalDateString(todayDate, offset);
         const periodization = evaluatePeriodizationPhase(events, date);
 
-        const priorObjectiveKeys = new Set(microcycle.objectives.map(objective => objective.key));
+        const priorObjectiveIds = new Set(microcycle.objectives.map(objective => objective.id));
         const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition);
         microcycle = reconciled.microcycle;
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, reconciled.droppedContributorObjectives);
@@ -1440,7 +1463,7 @@ export function generateWeekAheadPlan(
                     requiredCredit: objective.requiredCredit ?? objective.targetExposures,
                 })),
                 contributorObjectiveChanges: {
-                    added: microcycle.objectives.filter(objective => !priorObjectiveKeys.has(objective.key)).map(objective => objective.key),
+                    added: microcycle.objectives.filter(objective => !priorObjectiveIds.has(objective.id)).map(objective => objective.key),
                     dropped: reconciled.droppedContributorObjectives
                         .filter(objective => objective.date === date)
                         .map(objective => objective.objectiveKey),

@@ -62,6 +62,9 @@ describe('beamSearchWeekAheadPlan (Phase 5.1 prototype)', () => {
         expect(plan.days.slice(1).every(d => d.confidence === 'projected')).toBe(true);
     });
 
+    // Regression contract for per-branch objective reconciliation: with a width/count of
+    // one, the prototype has no search freedom and must reuse the same date-specific
+    // objective state and rank-0 decisions as the greedy planner.
     it('degenerates to exactly the greedy algorithm when beamWidth=1 and candidatesPerDay=1', () => {
         // The strongest correctness check available: with only ever one branch and one
         // candidate considered per day, cumulative-score pruning can never diverge from

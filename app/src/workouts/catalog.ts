@@ -13,6 +13,8 @@ import { TAPER_RACE_WORKOUTS } from './catalog/taper-race.ts';
 import { FIELD_TECHNIQUE_WORKOUTS } from './catalog/field-technique.ts';
 import { CYCLING_TECHNIQUE_WORKOUTS } from './catalog/cycling-technique.ts';
 import { QUALITY_SUPPORT_WORKOUTS } from './catalog/quality-support.ts';
+import { SWIMMING_WORKOUTS } from './catalog/swimming.ts';
+import { RUNNING_RACE_WORKOUTS } from './catalog/running-race.ts';
 
 export const WORKOUTS: WorkoutDefinition[] = [
   ...CYCLING_BASE_WORKOUTS,
@@ -27,6 +29,8 @@ export const WORKOUTS: WorkoutDefinition[] = [
   ...FIELD_TECHNIQUE_WORKOUTS,
   ...CYCLING_TECHNIQUE_WORKOUTS,
   ...QUALITY_SUPPORT_WORKOUTS,
+  ...SWIMMING_WORKOUTS,
+  ...RUNNING_RACE_WORKOUTS,
   ...RECOVERY_WORKOUTS,
   ...TAPER_RACE_WORKOUTS
 ];

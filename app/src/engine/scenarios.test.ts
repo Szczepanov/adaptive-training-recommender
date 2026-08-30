@@ -143,10 +143,32 @@ describe('running_marathon_A -- no cycling equipment owned', () => {
 });
 
 describe('triathlon_olympic_A -- regression for the category-substring bug', () => {
-    it('both Cycling and Running receive real representation, not just one modality', async () => {
+    it('Swimming, Cycling and Running all receive real representation when access is declared', async () => {
         const result = await getResult('triathlon_olympic_A');
+        expect(result.modalityDistribution.Swimming ?? 0).toBeGreaterThan(0);
         expect(result.modalityDistribution.Cycling ?? 0).toBeGreaterThan(0);
         expect(result.modalityDistribution.Running ?? 0).toBeGreaterThan(0);
+    });
+});
+
+describe('triathlon athlete ladder', () => {
+    it.each(['triathlon_novice_eighth_A', 'triathlon_olympic_A', 'triathlon_advanced_half_iron_A'])(
+        'keeps all three disciplines reachable for %s',
+        async scenarioId => {
+            const result = await getResult(scenarioId);
+            for (const modality of ['Swimming', 'Cycling', 'Running'] as const) {
+                expect(result.modalityDistribution[modality] ?? 0, `${scenarioId}: ${modality}`).toBeGreaterThan(0);
+            }
+            expect(result.qualityWarnings).not.toContain('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
+        },
+    );
+
+    it('keeps the advanced taper horizon strictly before the race date', async () => {
+        const scenario = SCENARIOS.find(item => item.id === 'triathlon_advanced_half_iron_taper_A');
+        if (!scenario?.event) throw new Error('Advanced triathlon taper scenario is missing its event.');
+        const result = await getResult(scenario.id);
+        expect(result.totalDays).toBe(14);
+        expect(result.decisionTraces.every(trace => trace.date < scenario.event!.date)).toBe(true);
     });
 });
 
@@ -236,7 +258,7 @@ describe('scenario quality diagnostics', () => {
     it('surfaces coach-quality failures separately from hard constraint violations', async () => {
         const result = await getResult('triathlon_olympic_A');
         expect(result.constraintViolations).toEqual([]);
-        expect(result.qualityWarnings).toContain('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
+        expect(result.qualityWarnings).not.toContain('Triathlon capability is partial: the engine has no Swimming modality or swim objective/catalog support.');
         expect(result.qualityWarnings.some(warning =>
             warning.startsWith('Event-specific anchor missed')
             || warning.startsWith('Event-specific exposure occurred off the nominated anchor date')

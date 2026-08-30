@@ -573,8 +573,8 @@ service cloud.firestore {
     function hasValidUnavailableModalities(data) {
       return !('unavailableModalities' in data)
         || (data.unavailableModalities is list
-          && data.unavailableModalities.size() <= 6
-          && data.unavailableModalities.hasOnly(['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training']));
+          && data.unavailableModalities.size() <= 9
+          && data.unavailableModalities.hasOnly(['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'Rowing']));
     }
 
     match /users/{userId}/preferences/profile {
@@ -620,7 +620,7 @@ service cloud.firestore {
         && data.keys().hasAll(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'createdAt', 'updatedAt'])
         && data.originalType is string && data.originalType.size() > 0 && data.originalType.size() <= 128
         && data.originalIntensityTag is string && data.originalIntensityTag.size() <= 64
-        && data.overriddenModality in ['Running', 'Cycling', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Unknown']
+        && data.overriddenModality in ['Running', 'Cycling', 'Swimming', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Unknown']
         && data.overriddenIntensity in ['easy', 'moderate', 'hard', 'unknown']
         && (!('rpe' in data) || data.rpe == null || (data.rpe is number && data.rpe >= 1 && data.rpe <= 10))
         && (!('stimulusFocus' in data) || data.stimulusFocus == null || data.stimulusFocus in ['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])

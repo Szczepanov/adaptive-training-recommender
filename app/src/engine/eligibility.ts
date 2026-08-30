@@ -72,7 +72,7 @@ export function resolveMaximumSessionMinutes(context: UserContext, checkinMinute
 }
 
 function hasEquipment(settings: TrainingSettings | undefined, context: UserContext, equipment: EquipmentKey): boolean {
-    if (settings) return settings.equipment[equipment];
+    if (settings) return settings.equipment[equipment] ?? false;
     if (equipment === 'free_weights') return context.constraints.hasFreeWeights;
     if (equipment === 'cable_machine') return context.constraints.hasCableMachine;
     if (equipment === 'treadmill') return context.constraints.hasTreadmill;

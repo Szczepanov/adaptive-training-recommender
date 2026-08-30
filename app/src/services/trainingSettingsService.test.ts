@@ -28,7 +28,7 @@ describe('training settings storage parsing', () => {
             { severity: 'limit', reviewBy: '2026-02-30' },
             { severity: 'limit', note: 42 },
             { severity: 'limit', restrictedModalities: 'Running' },
-            { severity: 'limit', restrictedModalities: ['Swimming'] },
+            { severity: 'limit', restrictedModalities: ['Unsupported'] },
         ];
 
         for (const injury of malformedInjuries) {
@@ -43,5 +43,14 @@ describe('training settings storage parsing', () => {
             injuries: [{ region: 'knee', severity: 'limit', reviewBy: '2026-08-31', note: 'Avoid hills', restrictedModalities: ['Running'] }],
         }, 'athlete');
         expect(parsed?.injuries).toHaveLength(1);
+    });
+
+    it('accepts both walking and swimming injury restrictions after the multisport merge', () => {
+        const base = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const parsed = parseTrainingSettings({
+            ...base,
+            injuries: [{ severity: 'limit', restrictedModalities: ['Walking', 'Swimming'] }],
+        }, 'athlete');
+        expect(parsed?.injuries?.[0].restrictedModalities).toEqual(['Walking', 'Swimming']);
     });
 });

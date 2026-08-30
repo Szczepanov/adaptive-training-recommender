@@ -480,6 +480,7 @@ function eventCategoryMatchesSession(event: UserEvent, session: ExternalPlanSess
     switch (session.gating.modality) {
         case 'cycling': return event.category === 'cycling_event' || event.category === 'triathlon';
         case 'running': return event.category === 'running_race' || event.category === 'triathlon';
+        case 'swimming': return event.category === 'triathlon';
         case 'strength': return event.category === 'strength_meet';
         case 'field':
         case 'mobility':
@@ -804,7 +805,7 @@ export function adjustSessionRecommendation(
         }
     }
 
-    const allowedModalities = (['Running', 'Cycling', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'] as const)
+    const allowedModalities = (['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'] as const)
         .filter(m => !context.preferences.avoidedModalities.map(a => a.toLowerCase()).includes(m.toLowerCase()))
         .filter(m => !safety.restrictedModalities.includes(m));
     const availableTemplates = eligibleTemplates(TEMPLATES, context, readiness.subjective.timeAvailable, date)

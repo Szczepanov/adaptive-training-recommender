@@ -20,7 +20,9 @@ const DEFAULT_FATIGUE: FatigueState = {
 const DEFAULT_AVAILABILITY: ResolvedAvailability = {
     date: '2026-03-01',
     maxTimeMinutes: 120,
-    availableEquipment: ['free_weights', 'indoor_bike', 'treadmill', 'cable_machine'],
+    // outdoor_bike: this file's only outdoor-cycling candidate (end_crit_surges_01, used by
+    // the Priority B race-specific calibration test) now hard-requires declared bike access.
+    availableEquipment: ['free_weights', 'indoor_bike', 'treadmill', 'cable_machine', 'outdoor_bike'],
     fixedActivities: [],
     reservedCapacityCost: 0,
     reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
