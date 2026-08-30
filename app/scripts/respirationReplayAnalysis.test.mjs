@@ -45,7 +45,7 @@ describe('respiration replay analysis', () => {
         expect(classifyRespirationThreshold(row({ respiration: 16, respirationDelta7d: 0.2, respirationDelta28d: 0.4 }), e2)).toBe('normal');
     });
 
-    it('reports threshold matches, conservative overlap and resolving tails', () => {
+    it('reports threshold matches, conservative overlap, readiness-strain overlap and resolving tails', () => {
         const sweep = buildRespirationThresholdSweep([
             row(),
             row({ date: '2026-08-02', productionMode: 'modify', candidateMode: 'modify', modeFlip: false, productionMetricStrain: 1 }),
@@ -56,10 +56,18 @@ describe('respiration replay analysis', () => {
             actionableMatchedDays: 2,
             actionableDaysAlreadyConservative: 1,
             persistentTwoNightDays: 1,
-            corroboratedByExistingMetricStrainDays: 1,
-            isolatedFromExistingMetricStrainDays: 1,
+            existingReadinessStrainOverlapDays: 1,
+            noExistingReadinessStrainOverlapDays: 1,
             resolvingTailDays: 1,
         });
+    });
+
+    it('does not expose aggregate readiness strain under physiological corroboration names', () => {
+        const result = buildRespirationThresholdSweep([row({ productionMetricStrain: 1 })])
+            .find(candidate => candidate.id === 'E2');
+        expect(result).not.toHaveProperty('corroboratedByExistingMetricStrainDays');
+        expect(result).not.toHaveProperty('isolatedFromExistingMetricStrainDays');
+        expect(result).toMatchObject({ existingReadinessStrainOverlapDays: 1 });
     });
 
     it('keeps false-positive rate null without labels and computes only labelled healthy days', () => {

@@ -23,8 +23,21 @@ function finiteOrNull(value: number | null): number | null {
     return value !== null && Number.isFinite(value) ? value : null;
 }
 
-function invalidCurrent(value: number | null): boolean {
-    return value !== null && (value < MIN_VALID_SLEEP_RESPIRATION || value > MAX_VALID_SLEEP_RESPIRATION);
+function invalidRespirationValue(value: number | null): boolean {
+    return value !== null && (
+        !Number.isFinite(value)
+        || value < MIN_VALID_SLEEP_RESPIRATION
+        || value > MAX_VALID_SLEEP_RESPIRATION
+    );
+}
+
+/**
+ * A baseline outside the same broad ingestion plausibility envelope as the current night is not
+ * usable evidence. `MISSING_*_BASELINE` is intentionally the persisted reason for both absent and
+ * unusable baselines so older readers fail closed without a reason-code schema migration.
+ */
+function usableBaselineOrNull(value: number | null): number | null {
+    return invalidRespirationValue(value) ? null : finiteOrNull(value);
 }
 
 function unavailable(
@@ -35,8 +48,8 @@ function unavailable(
     return {
         status: 'unavailable',
         currentValue: finiteOrNull(input.currentValue),
-        baseline7dValue: finiteOrNull(input.baseline7dValue),
-        baseline28dValue: finiteOrNull(input.baseline28dValue),
+        baseline7dValue: usableBaselineOrNull(input.baseline7dValue),
+        baseline28dValue: usableBaselineOrNull(input.baseline28dValue),
         deltaVs7d: null,
         deltaVs28d: null,
         baselineVersion: input.baselineVersion,
@@ -59,8 +72,8 @@ export function evaluateRespirationElevation(
     const unavailableReasons: RespirationElevationReasonCode[] = [];
     if (!input.measurementEligible) unavailableReasons.push('MEASUREMENT_INELIGIBLE');
     if (input.measurementDate !== input.targetDate) unavailableReasons.push('DATE_PROVENANCE_MISMATCH');
-    if (finiteOrNull(input.currentValue) === null) unavailableReasons.push('MISSING_CURRENT');
-    else if (invalidCurrent(input.currentValue)) unavailableReasons.push('INVALID_CURRENT');
+    if (input.currentValue === null) unavailableReasons.push('MISSING_CURRENT');
+    else if (invalidRespirationValue(input.currentValue)) unavailableReasons.push('INVALID_CURRENT');
     if (input.baselineVersion === null || input.baselineVersion < policy.minimumBaselineVersion) {
         unavailableReasons.push('INCOMPATIBLE_BASELINE_VERSION');
     }
@@ -70,8 +83,8 @@ export function evaluateRespirationElevation(
     if (!Number.isFinite(input.recentDayCoverage) || input.recentDayCoverage < policy.minimumRecentDayCoverage) {
         unavailableReasons.push('INSUFFICIENT_RECENT_COVERAGE');
     }
-    if (finiteOrNull(input.baseline7dValue) === null) unavailableReasons.push('MISSING_7D_BASELINE');
-    if (finiteOrNull(input.baseline28dValue) === null) unavailableReasons.push('MISSING_28D_BASELINE');
+    if (usableBaselineOrNull(input.baseline7dValue) === null) unavailableReasons.push('MISSING_7D_BASELINE');
+    if (usableBaselineOrNull(input.baseline28dValue) === null) unavailableReasons.push('MISSING_28D_BASELINE');
     if (unavailableReasons.length > 0) return unavailable(input, policy, unavailableReasons);
 
     const currentValue = input.currentValue as number;

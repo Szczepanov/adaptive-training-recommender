@@ -12,13 +12,13 @@ The implementation matches the canonical policy in the important ways:
 
 - it uses nocturnal respiration as a **longitudinal personal-baseline signal**, not a bedside diagnosis;
 - it compares the current night with backward-looking personal baselines rather than a population cutoff;
-- it fails closed for incompatible baseline versions, insufficient history/coverage, source/date provenance problems, and invalid/missing measurements;
+- it fails closed for incompatible baseline versions, insufficient history/coverage, source/date provenance problems, invalid/missing measurements, and unusable personal baselines;
 - a resolving current value cannot newly tighten training;
-- persistence and adverse RHR/low-HRV corroboration are measured separately;
+- persistence and adverse RHR/low-HRV corroboration are measured separately in the health-anomaly replay;
 - exact E1/E2/E3/S1 values are explicitly product calibration candidates rather than scientific constants;
 - no current recommendation selector consumes `RespirationElevationEvidence`.
 
-The numeric `6–35 br/min` acceptance range in `respirationElevation.ts` is an ingestion/QA plausibility guard only. It must not be documented or surfaced as a clinical normal range, disease threshold, or training-action threshold.
+The numeric `6–35 br/min` acceptance range in `respirationElevation.ts` is an ingestion/QA plausibility guard only. It must not be documented or surfaced as a clinical normal range, disease threshold, or training-action threshold. Current and baseline respiration values now use the same broad plausibility envelope before personal-delta classification; an out-of-envelope baseline is treated as unusable and the classifier fails closed.
 
 ## External evidence cross-check
 
@@ -34,11 +34,11 @@ The research supports the architecture more strongly than it supports any exact 
    https://pubmed.ncbi.nlm.nih.gov/35461692/
    https://pubmed.ncbi.nlm.nih.gov/34932906/
 
-## Additional hardening in this commit
+## Additional hardening
 
 The replay previously exposed the canonical median/MAD standardized respiration deviation only at row level. That made E2/S1 calibration harder to review because an absolute +1 br/min change can represent very different departures from an athlete's own normal nightly variability.
 
-The replay summary now additionally reports:
+The health-anomaly replay summary additionally reports:
 
 - classifier-unavailable days and rate;
 - unavailable reason counts, so warm-up/history limitations can be distinguished from provenance/data failures;
@@ -46,6 +46,8 @@ The replay summary now additionally reports:
 - among discrete elevated/strong days, the robust standardized-deviation median and range.
 
 These values are **calibration telemetry only**. They do not modify E2/S1, do not add another decision boundary, and do not change live readiness.
+
+A review follow-up also corrected terminology in the standalone real-history counterfactual. `productionMetricStrain` is the existing aggregate readiness strain and can include sleep as well as RHR and HRV. It is therefore reported as **existing readiness-strain overlap**, not physiological corroboration. True physiological corroboration for release analysis is the health-anomaly replay's shared adverse-evidence semantics (adverse RHR and low HRV, with symptoms/context evaluated separately).
 
 ## Release gate remains unchanged
 

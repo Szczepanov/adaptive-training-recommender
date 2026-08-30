@@ -78,18 +78,29 @@ describe('respiration elevation evidence', () => {
 
     it.each([
         [{ currentValue: null }, 'MISSING_CURRENT'],
+        [{ currentValue: Number.NaN }, 'INVALID_CURRENT'],
         [{ currentValue: 40 }, 'INVALID_CURRENT'],
         [{ measurementDate: '2026-08-20' }, 'DATE_PROVENANCE_MISMATCH'],
         [{ baselineVersion: 2 }, 'INCOMPATIBLE_BASELINE_VERSION'],
         [{ historyCount: 13 }, 'INSUFFICIENT_HISTORY'],
         [{ recentDayCoverage: 0.5 }, 'INSUFFICIENT_RECENT_COVERAGE'],
         [{ baseline7dValue: null }, 'MISSING_7D_BASELINE'],
+        [{ baseline7dValue: 0 }, 'MISSING_7D_BASELINE'],
+        [{ baseline7dValue: -1 }, 'MISSING_7D_BASELINE'],
         [{ baseline28dValue: null }, 'MISSING_28D_BASELINE'],
+        [{ baseline28dValue: 100 }, 'MISSING_28D_BASELINE'],
         [{ measurementEligible: false }, 'MEASUREMENT_INELIGIBLE'],
     ] as const)('fails closed for %o', (overrides, reason) => {
-        expect(evaluateRespirationElevation(input(overrides))).toMatchObject({
+        const evidence = evaluateRespirationElevation(input(overrides));
+        expect(evidence).toMatchObject({
             status: 'unavailable',
             reasonCodes: expect.arrayContaining([reason]),
         });
+        if ('baseline7dValue' in overrides && overrides.baseline7dValue !== 13.5) {
+            expect(evidence.baseline7dValue).toBeNull();
+        }
+        if ('baseline28dValue' in overrides && overrides.baseline28dValue !== 13) {
+            expect(evidence.baseline28dValue).toBeNull();
+        }
     });
 });

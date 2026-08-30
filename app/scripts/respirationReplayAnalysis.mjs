@@ -68,8 +68,11 @@ export function buildRespirationThresholdSweep(rows, candidates = RESPIRATION_EL
         const alreadyConservative = actionable.filter(row => row.productionMode !== 'train');
         const matchedDates = new Set(matched.map(row => row.date));
         const persistent = matched.filter(row => matchedDates.has(previousCalendarDate(row.date)));
-        const corroborated = matched.filter(row => (row.productionMetricStrain ?? 0) > 0);
-        const isolated = matched.filter(row => (row.productionMetricStrain ?? 0) <= 0);
+        // `productionMetricStrain` is the existing aggregate readiness strain (sleep + RHR + HRV),
+        // not physiological corroboration. Keep this overlap descriptive and separate from the
+        // health-anomaly replay's adverse RHR/low-HRV corroboration predicate.
+        const existingReadinessStrainOverlap = matched.filter(row => (row.productionMetricStrain ?? 0) > 0);
+        const noExistingReadinessStrainOverlap = matched.filter(row => (row.productionMetricStrain ?? 0) <= 0);
         const resolving = classified.filter(item => item.status === 'resolving').map(item => item.row);
         return {
             ...candidate,
@@ -84,8 +87,10 @@ export function buildRespirationThresholdSweep(rows, candidates = RESPIRATION_EL
                 : null,
             persistentTwoNightDays: persistent.length,
             persistentTwoNightDates: persistent.map(row => row.date),
-            corroboratedByExistingMetricStrainDays: corroborated.length,
-            isolatedFromExistingMetricStrainDays: isolated.length,
+            existingReadinessStrainOverlapDays: existingReadinessStrainOverlap.length,
+            existingReadinessStrainOverlapDates: existingReadinessStrainOverlap.map(row => row.date),
+            noExistingReadinessStrainOverlapDays: noExistingReadinessStrainOverlap.length,
+            noExistingReadinessStrainOverlapDates: noExistingReadinessStrainOverlap.map(row => row.date),
             resolvingTailDays: resolving.length,
             resolvingTailDates: resolving.map(row => row.date),
         };

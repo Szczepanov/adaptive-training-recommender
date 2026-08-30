@@ -68,7 +68,6 @@ function round(value) {
 function snapshotFor(date, raw, history) {
     const window7 = history.slice(-7);
     const window28 = history.slice(-28);
-    const values = field => history.map(item => item[field]);
     const values7 = field => window7.map(item => item[field]);
     const values28 = field => window28.map(item => item[field]);
 
@@ -278,9 +277,11 @@ const markdown = [
     '',
     '## Personal-delta threshold sweep',
     '',
-    '| Candidate | Minimum Δ28d | Minimum Δ7d | Matches | Actionable | Already conservative | 2-night persistent | Corroborated | Isolated | Resolving tails |',
+    '- Existing readiness-strain overlap uses the production aggregate metric strain (sleep + RHR + HRV). It is descriptive overlap, not adverse RHR/low-HRV physiological corroboration.',
+    '',
+    '| Candidate | Minimum Δ28d | Minimum Δ7d | Matches | Actionable | Already conservative | 2-night persistent | Existing readiness-strain overlap | No readiness-strain overlap | Resolving tails |',
     '|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|',
-    ...report.thresholdSweep.map(candidate => `| ${candidate.id} | ${candidate.minimumDelta28d} | ${candidate.minimumDelta7d} | ${candidate.matchedDays} | ${candidate.actionableMatchedDays} | ${candidate.actionableDaysAlreadyConservative} | ${candidate.persistentTwoNightDays} | ${candidate.corroboratedByExistingMetricStrainDays} | ${candidate.isolatedFromExistingMetricStrainDays} | ${candidate.resolvingTailDays} |`),
+    ...report.thresholdSweep.map(candidate => `| ${candidate.id} | ${candidate.minimumDelta28d} | ${candidate.minimumDelta7d} | ${candidate.matchedDays} | ${candidate.actionableMatchedDays} | ${candidate.actionableDaysAlreadyConservative} | ${candidate.persistentTwoNightDays} | ${candidate.existingReadinessStrainOverlapDays} | ${candidate.noExistingReadinessStrainOverlapDays} | ${candidate.resolvingTailDays} |`),
     '',
     '## False positives',
     '',
