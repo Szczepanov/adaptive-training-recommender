@@ -60,7 +60,7 @@ describe('multisport executable duration contracts', () => {
       });
     }
 
-    for (const parameter of workout.parameters) {
+    for (const parameter of workout.parameters ?? []) {
       if (durationChangingBindings(parameter).length === 0) continue;
       for (const boundary of ['minimum', 'maximum'] as const) {
         it(`${workout.id}/${parameter.id} ${boundary} stays inside the canonical duration envelope`, () => {
