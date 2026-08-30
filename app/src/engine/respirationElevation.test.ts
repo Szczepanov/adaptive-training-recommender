@@ -96,10 +96,10 @@ describe('respiration elevation evidence', () => {
             status: 'unavailable',
             reasonCodes: expect.arrayContaining([reason]),
         });
-        if ('baseline7dValue' in overrides && overrides.baseline7dValue !== 13.5) {
+        if ('baseline7dValue' in overrides) {
             expect(evidence.baseline7dValue).toBeNull();
         }
-        if ('baseline28dValue' in overrides && overrides.baseline28dValue !== 13) {
+        if ('baseline28dValue' in overrides) {
             expect(evidence.baseline28dValue).toBeNull();
         }
     });
