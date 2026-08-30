@@ -65,8 +65,21 @@ describe('taper and fueling evidence pack', () => {
         expect(dose.statement).toContain('30-60 g/h');
         expect(dose.statement).toContain('90 g/h');
         expect(dose.statement).toContain('not mandatory universal doses');
+        expect(dose.limitations.join(' ')).toContain('120 g/h');
+        expect(dose.limitations.join(' ')).toContain('not sufficiently substantiated');
+
         const meta = getKnowledgeSource('RAMOS-CAMPO-2024-CARBOHYDRATE-META');
+        expect(meta.publishedOn).toBe('2023-07-14');
         expect(meta.notes).toContain('136 studies');
+
+        const contemporary = getKnowledgeSource('MORTON-2026-ENDURANCE-CARBOHYDRATE-REVIEW');
+        expect(contemporary.sourceType).toBe('expert_practice');
+        expect(contemporary.externalIds).toEqual(expect.arrayContaining([
+            { type: 'pmid', value: '41759826' },
+            { type: 'pmcid', value: 'PMC13197957' },
+            { type: 'doi', value: '10.1016/j.tjnut.2026.101442' },
+        ]));
+        expect(contemporary.notes).toContain('not yet substantiated');
     });
 
     it('treats avoidance of overdrinking as a high-safety hydration boundary', () => {
