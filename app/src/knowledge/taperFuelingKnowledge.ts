@@ -15,6 +15,7 @@ const BOSQUET_TAPER_SOURCE = 'BOSQUET-2007-TAPER-META';
 const THOMAS_NUTRITION_SOURCE = 'THOMAS-2016-NUTRITION-POSITION';
 const BURKE_CARBOHYDRATE_SOURCE = 'BURKE-2011-CARBOHYDRATE-PRACTICE';
 const RAMOS_CAMPO_CARBOHYDRATE_SOURCE = 'RAMOS-CAMPO-2024-CARBOHYDRATE-META';
+const MORTON_CARBOHYDRATE_SOURCE = 'MORTON-2026-ENDURANCE-CARBOHYDRATE-REVIEW';
 const HEW_BUTLER_HYPONATREMIA_SOURCE = 'HEW-BUTLER-2015-HYPONATREMIA-CONSENSUS';
 const TAPER_PRODUCT_POLICY_SOURCE = 'PRODUCT-TAPER-POLICY-V1';
 
@@ -78,15 +79,29 @@ export const TAPER_FUELING_SOURCES: readonly KnowledgeSource[] = [
         id: RAMOS_CAMPO_CARBOHYDRATE_SOURCE,
         title: 'The ergogenic effects of acute carbohydrate feeding on endurance performance: a systematic review, meta-analysis and meta-regression',
         sourceType: 'systematic_review',
-        citation: 'Ramos-Campo DJ, et al. Crit Rev Food Sci Nutr. 2024. doi:10.1080/10408398.2023.2233633.',
+        citation: 'Ramos-Campo DJ, et al. Crit Rev Food Sci Nutr. 2024;64(30):11196-11205. doi:10.1080/10408398.2023.2233633.',
         url: 'https://pubmed.ncbi.nlm.nih.gov/37449467/',
-        publishedOn: '2023-07-13',
+        publishedOn: '2023-07-14',
         externalIds: [
             { type: 'pmid', value: '37449467' },
             { type: 'doi', value: '10.1080/10408398.2023.2233633' },
         ],
         synthesisMethods: ['meta_analysis'],
         notes: 'Meta-analysis of 136 studies found carbohydrate ingestion during endurance exercise improved performance versus placebo/control, with larger benefit as event duration increased. This supports the ergogenic direction, not one universal gram-per-hour target.',
+    },
+    {
+        id: MORTON_CARBOHYDRATE_SOURCE,
+        title: 'From Metabolism to Medals: Contemporary Perspectives and Revisiting Carbohydrate Guidelines for Fueling Endurance Athletes during Exercise',
+        sourceType: 'expert_practice',
+        citation: 'Morton JP, Fell JM, Gonzalez JT, Hearris MA, Podlogar T, Pugh JN, Wallis GA. J Nutr. 2026;156(5):101442. doi:10.1016/j.tjnut.2026.101442.',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/41759826/',
+        publishedOn: '2026-02-25',
+        externalIds: [
+            { type: 'pmid', value: '41759826' },
+            { type: 'pmcid', value: 'PMC13197957' },
+            { type: 'doi', value: '10.1016/j.tjnut.2026.101442' },
+        ],
+        notes: 'Contemporary narrative review supports the established <=90 g/h framework for prolonged endurance exercise while noting that 120 g/h can raise exogenous/whole-body carbohydrate oxidation in trained athletes. It explicitly states that performance efficacy above 90 g/h is not yet substantiated well enough to make very-high intake a general recommendation.',
     },
     {
         id: HEW_BUTLER_HYPONATREMIA_SOURCE,
@@ -152,10 +167,12 @@ export const TAPER_FUELING_CLAIMS: readonly KnowledgeClaim[] = [
             { sourceId: BURKE_CARBOHYDRATE_SOURCE, directness: 'direct' },
             { sourceId: THOMAS_NUTRITION_SOURCE, directness: 'direct' },
             { sourceId: RAMOS_CAMPO_CARBOHYDRATE_SOURCE, directness: 'partially_direct', note: 'Supports performance benefit and duration dependence more strongly than exact dose bands.' },
+            { sourceId: MORTON_CARBOHYDRATE_SOURCE, directness: 'partially_direct', note: 'Updates the practical boundary: >90 g/h may raise carbohydrate oxidation in trained athletes, but performance superiority and generalizability remain insufficiently established.' },
         ],
         limitations: [
             'The gram-per-hour ranges are practical guidance synthesized across heterogeneous exercise contexts; athletes should individualize by body size only where evidence/guidance specifically calls for it rather than mechanically converting these rates to g/kg/h.',
             'High intakes require gastrointestinal tolerance and often gut-training/practice; the upper range should not be introduced for the first time on race day.',
+            'Recent 2026 evidence reviews describe 120 g/h as physiologically plausible for some trained endurance athletes, but performance benefit beyond the established <=90 g/h framework is not sufficiently substantiated to make >90 g/h a general recommendation.',
             'Shorter/easier sessions may not require exogenous carbohydrate for performance, and training goals can intentionally alter carbohydrate availability.',
         ], reviewedOn: '2026-08-30', version: 1,
     },
