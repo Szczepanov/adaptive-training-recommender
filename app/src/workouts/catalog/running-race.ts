@@ -16,7 +16,7 @@ export const RUNNING_RACE_WORKOUTS: WorkoutDefinition[] = [
         timeStep('long_run_warmup', 'easy_continuous_run', 'Easy jog', 600, { target: { type: 'rpe', min: 1, max: 2 } })
       ]},
       { id: 'main', name: 'Long aerobic running', role: 'main', steps: [
-        timeStep('long_run_main', 'easy_continuous_run', 'Progressive long run', 4800, { target: { type: 'rpe', min: 2, max: 4 }, notes: ['Keep the large majority of the run easy and conversational.', 'A modest late pickup is optional; do not turn this into a race simulation.', 'Stop or walk if landing mechanics change.'] })
+        timeStep('long_run_main', 'easy_continuous_run', 'Progressive long run', 4500, { target: { type: 'rpe', min: 2, max: 4 }, notes: ['Keep the large majority of the run easy and conversational.', 'A modest late pickup is optional; do not turn this into a race simulation.', 'Stop or walk if landing mechanics change.'] })
       ]},
       { id: 'cooldown', name: 'Cool-down', role: 'cooldown', steps: [
         timeStep('long_run_cooldown', 'easy_continuous_run', 'Easy jog or walk', 300, { target: { type: 'rpe', min: 1, max: 2 } })
@@ -24,11 +24,11 @@ export const RUNNING_RACE_WORKOUTS: WorkoutDefinition[] = [
     ],
     variants: [
       { id: 'full', targetDurationMin: 90, loadMultiplier: 1, rationale: 'Use the currently planned long-run duration.', stepOverrides: [] },
-      { id: 'reduced', targetDurationMin: 65, loadMultiplier: 0.7, rationale: 'Shorten the long run while preserving continuous aerobic exposure.', stepOverrides: [{ stepId: 'long_run_main', durationSeconds: 3300 }] },
-      { id: 'return_to_training', targetDurationMin: 60, loadMultiplier: 0.5, rationale: 'Use the minimum durability-relevant continuous exposure.', stepOverrides: [{ stepId: 'long_run_main', durationSeconds: 2880 }] }
+      { id: 'reduced', targetDurationMin: 65, loadMultiplier: 0.7, rationale: 'Shorten the long run while preserving continuous aerobic exposure.', stepOverrides: [{ stepId: 'long_run_main', durationSeconds: 3000 }] },
+      { id: 'return_to_training', targetDurationMin: 60, loadMultiplier: 0.5, rationale: 'Use the minimum durability-relevant continuous exposure.', stepOverrides: [{ stepId: 'long_run_main', durationSeconds: 2700 }] }
     ],
     parameters: [
-      { id: 'long_run_duration', label: 'Long-run duration', unit: 'minutes', defaultValue: 80, minimum: 45, maximum: 165, step: 5, appliesToStepIds: ['long_run_main'], bindings: [{ stepId: 'long_run_main', property: 'duration.seconds' }], description: 'Grow duration progressively; it is capped by the athlete time budget and current planned dose, never assigned from event distance alone.' }
+      { id: 'long_run_duration', label: 'Long-run duration', unit: 'minutes', defaultValue: 75, minimum: 45, maximum: 165, step: 5, appliesToStepIds: ['long_run_main'], bindings: [{ stepId: 'long_run_main', property: 'duration.seconds' }], description: 'Grow duration progressively; it is capped by the athlete time budget and current planned dose, never assigned from event distance alone.' }
     ],
     regressions: ['running_easy_continuous_01'], progressions: [], substitutions: [],
     garmin: { exportable: true, supportedSport: 'running' },
@@ -46,7 +46,7 @@ export const RUNNING_RACE_WORKOUTS: WorkoutDefinition[] = [
     equipment: [], contraindicationTags: ['acute_hamstring_pain', 'knee_swelling', 'worsening_achilles_pain'], engineTemplateIds: ['run_race_pace_01'],
     blocks: [
       { id: 'warmup', name: 'Warm-up', role: 'warmup', steps: [
-        timeStep('race_pace_warmup', 'walk_run_easy', 'Easy running warm-up', 600, { target: { type: 'rpe', min: 2, max: 3 } })
+        timeStep('race_pace_warmup', 'walk_run_easy', 'Easy running warm-up', 900, { target: { type: 'rpe', min: 2, max: 3 } })
       ]},
       { id: 'main', name: 'Race-pace repeats', role: 'main', steps: [
         timeStep('race_pace_main', 'run_race_pace_interval', 'Race-pace interval', 480, { sets: 3, restAfterSec: 180, target: { type: 'rpe', min: 6, max: 7 }, notes: ['Keep the final repeat as controlled as the first.', 'Recover with easy jogging rather than complete rest.'] })
@@ -57,8 +57,8 @@ export const RUNNING_RACE_WORKOUTS: WorkoutDefinition[] = [
     ],
     variants: [
       { id: 'full', targetDurationMin: 55, loadMultiplier: 1, rationale: 'Three repeatable race-pace efforts.', stepOverrides: [] },
-      { id: 'reduced', targetDurationMin: 45, loadMultiplier: 0.75, rationale: 'Reduce repeat count before increasing effort.', stepOverrides: [{ stepId: 'race_pace_main', sets: 2 }] },
-      { id: 'return_to_training', targetDurationMin: 40, loadMultiplier: 0.55, rationale: 'Use a single controlled effort at reduced intensity.', stepOverrides: [{ stepId: 'race_pace_main', sets: 1, durationSeconds: 300, target: { type: 'rpe', min: 4, max: 5 } }] }
+      { id: 'reduced', targetDurationMin: 45, loadMultiplier: 0.75, rationale: 'Reduce repeat count before increasing effort.', stepOverrides: [{ stepId: 'race_pace_main', sets: 2 }, { stepId: 'race_pace_cooldown', durationSeconds: 660 }] },
+      { id: 'return_to_training', targetDurationMin: 40, loadMultiplier: 0.55, rationale: 'Use a single controlled effort at reduced intensity.', stepOverrides: [{ stepId: 'race_pace_main', sets: 1, durationSeconds: 300, target: { type: 'rpe', min: 4, max: 5 } }, { stepId: 'race_pace_cooldown', durationSeconds: 1200 }] }
     ],
     parameters: [
       { id: 'repeat_count', label: 'Race-pace repeat count', unit: 'repetitions', defaultValue: 3, minimum: 1, maximum: 5, step: 1, appliesToStepIds: ['race_pace_main'], bindings: [{ stepId: 'race_pace_main', property: 'sets' }], description: 'Progress repeat count before making every effort harder.' }
@@ -85,13 +85,13 @@ export const RUNNING_RACE_WORKOUTS: WorkoutDefinition[] = [
         timeStep('taper_run_efforts', 'run_tempo_interval', 'Controlled race-specific touch', 90, { sets: 3, restAfterSec: 150, target: { type: 'rpe', min: 6, max: 7 }, notes: ['Keep every touch crisp and clearly submaximal.', 'Stop before the session creates residual fatigue.'] })
       ]},
       { id: 'cooldown', name: 'Cool-down', role: 'cooldown', steps: [
-        timeStep('taper_run_cooldown', 'walk_run_easy', 'Easy running cool-down', 480, { target: { type: 'rpe', min: 1, max: 2 } })
+        timeStep('taper_run_cooldown', 'walk_run_easy', 'Easy running cool-down', 750, { target: { type: 'rpe', min: 1, max: 2 } })
       ]}
     ],
     variants: [
       { id: 'full', targetDurationMin: 30, loadMultiplier: 1, rationale: 'Normal taper sharpening stimulus.', stepOverrides: [] },
-      { id: 'reduced', targetDurationMin: 24, loadMultiplier: 0.7, rationale: 'Use two touches and a shorter cool-down.', stepOverrides: [{ stepId: 'taper_run_efforts', sets: 2 }, { stepId: 'taper_run_cooldown', durationSeconds: 360 }] },
-      { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.5, rationale: 'Use easy running with one controlled sub-threshold touch.', stepOverrides: [{ stepId: 'taper_run_efforts', sets: 1, durationSeconds: 60, target: { type: 'rpe', min: 4, max: 5 } }, { stepId: 'taper_run_cooldown', durationSeconds: 360 }] }
+      { id: 'reduced', targetDurationMin: 24, loadMultiplier: 0.7, rationale: 'Use two touches and a shorter cool-down.', stepOverrides: [{ stepId: 'taper_run_efforts', sets: 2 }, { stepId: 'taper_run_cooldown', durationSeconds: 630 }] },
+      { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.5, rationale: 'Use easy running with one controlled sub-threshold touch.', stepOverrides: [{ stepId: 'taper_run_efforts', sets: 1, durationSeconds: 60, target: { type: 'rpe', min: 4, max: 5 } }, { stepId: 'taper_run_cooldown', durationSeconds: 660 }] }
     ],
     parameters: [
       { id: 'sharpening_count', label: 'Sharpening touch count', unit: 'repetitions', defaultValue: 3, minimum: 1, maximum: 4, step: 1, appliesToStepIds: ['taper_run_efforts'], bindings: [{ stepId: 'taper_run_efforts', property: 'sets' }], description: 'Use the smallest dose that preserves confidence and sharpness this close to the race.' }

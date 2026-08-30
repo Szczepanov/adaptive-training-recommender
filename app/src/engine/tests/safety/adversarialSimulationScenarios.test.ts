@@ -73,13 +73,17 @@ describe('multi-week adversarial scenario contracts', () => {
         expect(result.constraintViolations).toEqual([]);
     });
 
-    it('avoid_heavy_lower_body excludes lower-body and full-body strength across the full simulated horizon', async () => {
+    it('avoid_heavy_lower_body excludes lower-body strength and loaded full-body strength across the full simulated horizon', async () => {
         const scenario = scenarioById(ADVERSARIAL_IDS.crossSportGuardrail);
         const result = await resultFor(ADVERSARIAL_IDS.crossSportGuardrail);
-        const forbiddenCategories = new Set(['Lower-body Strength', 'Full-body Strength']);
 
         expect(scenario.context.trainingSettings?.guardrails.avoid_heavy_lower_body).toBe(true);
-        expect(result.decisionTraces.filter(trace => forbiddenCategories.has(trace.selected.category))).toEqual([]);
+        expect(result.decisionTraces.filter(trace => trace.selected.category === 'Lower-body Strength')).toEqual([]);
+        // A genuinely zero-equipment full-body session (bodyweight squat/hinge/bridge, no
+        // loaded lower-body work) is not heavy-lower-body and remains a safe, reachable
+        // exception; only a free-weight-loaded full-body template is forbidden here.
+        const fullBodyStrengthTraces = result.decisionTraces.filter(trace => trace.selected.category === 'Full-body Strength');
+        expect(fullBodyStrengthTraces.every(trace => trace.selected.templateId === 'str_full_02')).toBe(true);
         expect(result.constraintViolations).toEqual([]);
     });
 });

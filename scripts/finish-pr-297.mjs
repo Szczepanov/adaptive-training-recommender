@@ -260,8 +260,12 @@ function patchSequenceSearch() {
   );
   text = replaceOnce(
     text,
-`        droppedContributorObjectives: intent.droppedContributorObjectives,`,
-`        droppedContributorObjectives: result.droppedContributorObjectives,`,
+`        microcycleObjectives: result.microcycleObjectives,
+        droppedContributorObjectives: intent.droppedContributorObjectives,
+        allocationReport: { outcomes: [] },`,
+`        microcycleObjectives: result.microcycleObjectives,
+        droppedContributorObjectives: result.droppedContributorObjectives,
+        allocationReport: { outcomes: [] },`,
     'beam wrapper dynamic drops',
   );
 

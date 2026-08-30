@@ -90,5 +90,37 @@ export const STRENGTH_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.5, rationale: 'Use only low-contact, symptom-free preparation.', stepOverrides: [{ stepId: 'reactive_drop', omit: true }, { stepId: 'reactive_cmj', sets: 2 }, { stepId: 'reactive_hip_thrust', sets: 2 }, { stepId: 'reactive_nordic', omit: true }] }
     ],
     regressions: [], progressions: ['strength_full_body_maintenance_01'], substitutions: [], garmin: { exportable: false }, tags: ['power', 'plyometric', 'tissue_capacity'], sourceNotes: ['Reactive work is intentionally low-volume, fully recovered, and limited to athletes with normal tendon and landing tolerance.']
+  },
+  {
+    id: 'strength_bodyweight_full_body_01', version: 1, status: 'active',
+    name: 'Bodyweight Full-body Strength',
+    description: 'Genuine zero-equipment full-body resistance session: controlled-tempo squat, push-up, hip hinge, glute bridge, self-resisted prone row, and trunk work.',
+    modality: 'strength', category: 'full_body_strength', objectives: ['strength_maintenance', 'tissue_capacity'],
+    duration: { defaultMin: 35, minimumMin: 20, maximumMin: 45 },
+    loadProfile: { cardiovascular: 2, muscular: 3, mechanical: 2, eccentric: 2, coordination: 2, recoveryHours: 24 },
+    eligibility: { minimumReadiness: 4, maximumSoreness: 7, forbiddenPainFlags: ['knee_swelling', 'acute_shoulder_pain'] },
+    equipment: ['bodyweight'], contraindicationTags: [], engineTemplateIds: ['str_full_02'],
+    blocks: [
+      { id: 'main', name: 'Full-body resistance', role: 'main', steps: [
+        repsStep('bw_squat', 'bodyweight_squat', 'Bodyweight squat', 12, { sets: 3, restAfterSec: 60, target: { type: 'reps_in_reserve', min: 3, max: 5 } }),
+        repsStep('bw_pushup', 'push_up', 'Push-up', 10, { sets: 3, restAfterSec: 60, target: { type: 'reps_in_reserve', min: 3, max: 5 } }),
+        repsStep('bw_hinge', 'bodyweight_hip_hinge', 'Bodyweight hip hinge', 10, { sets: 3, restAfterSec: 60, target: { type: 'reps_in_reserve', min: 3, max: 5 } }),
+        repsStep('bw_bridge', 'glute_bridge', 'Glute bridge', 12, { sets: 3, restAfterSec: 45, target: { type: 'reps_in_reserve', min: 3, max: 5 } }),
+        repsStep('bw_row', 'prone_scapular_row', 'Prone scapular row', 12, { sets: 3, restAfterSec: 45, target: { type: 'reps_in_reserve', min: 3, max: 5 } })
+      ]},
+      { id: 'accessory', name: 'Trunk', role: 'accessory', steps: [
+        timeStep('bw_plank', 'plank', 'Front plank', 30, { sets: 2, restAfterSec: 30 }),
+        repsStep('bw_deadbug', 'dead_bug', 'Dead bug', 10, { sets: 2, restAfterSec: 30 })
+      ]}
+    ],
+    variants: [
+      { id: 'full', targetDurationMin: 35, loadMultiplier: 1, rationale: 'Normal weekly zero-equipment full-body dose.', stepOverrides: [] },
+      { id: 'reduced', targetDurationMin: 25, loadMultiplier: 0.7, rationale: 'Fewer sets per pattern while keeping every movement represented.', stepOverrides: [{ stepId: 'bw_squat', sets: 2 }, { stepId: 'bw_hinge', sets: 2 }, { stepId: 'bw_row', sets: 2 }, { stepId: 'bw_deadbug', sets: 1 }] },
+      { id: 'return_to_training', targetDurationMin: 20, loadMultiplier: 0.5, rationale: 'Drop the least familiar pattern first and keep the rest at a high reps-in-reserve.', stepOverrides: [{ stepId: 'bw_hinge', omit: true }, { stepId: 'bw_squat', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'bw_pushup', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'bw_bridge', sets: 2 }, { stepId: 'bw_row', sets: 2, target: { type: 'reps_in_reserve', min: 5, max: 6 } }, { stepId: 'bw_deadbug', omit: true }] }
+    ],
+    regressions: [], progressions: ['strength_full_body_maintenance_01'], substitutions: [],
+    garmin: { exportable: false },
+    tags: ['bodyweight', 'zero_equipment', 'full_body'],
+    sourceNotes: ['Genuine zero-equipment session dosed like resistance training (2-4 reps in reserve), not a conditioning circuit. Unloaded pulling is inherently limited, so upper-back work uses a self-resisted prone row rather than fabricating equipment availability.']
   }
 ];
