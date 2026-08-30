@@ -10,18 +10,20 @@
 
 ## Evidence appraisal
 
-The taper review prioritized endurance-specific systematic reviews/meta-analyses. Fueling used a large acute-carbohydrate meta-analysis, recognized sports-nutrition guidance and the international exercise-associated hyponatremia consensus. The review kept intervention efficacy separate from practical dose guidance and from safety boundaries.
+The taper review prioritized endurance-specific systematic reviews/meta-analyses. Fueling used a large acute-carbohydrate meta-analysis, recognized sports-nutrition guidance, a 2026 contemporary endurance-carbohydrate review and the international exercise-associated hyponatremia consensus. The review kept intervention efficacy separate from practical dose guidance and from safety boundaries.
+
+A specific 2026 update was important because current elite endurance practice increasingly experiments with >90 g/h carbohydrate intake. Contemporary review evidence supports greater carbohydrate oxidation at some higher intakes in trained athletes, but does **not** yet establish a general performance advantage above the established <=90 g/h framework. The registry therefore keeps 30-60 / up-to-90 g/h as contextual practice guidance and records >90 g/h as an emerging, athlete-specific boundary rather than silently treating current peloton practice as validated universal dosing.
 
 ## Taper
 
 ### Evidence
 
-**Wang et al., 2023 — endurance taper systematic review/meta-analysis**
+**Wang et al., 2023 — endurance taper systematic review/meta-analysis**  
 PMID 37163550; PMCID PMC10171681; DOI `10.1371/journal.pone.0282838`.
 
 Fourteen studies were included. Time-trial and time-to-exhaustion performance improved after tapering. Subgroup analyses supported reducing training volume by roughly 41-60% while maintaining intensity/frequency, with effective tapers observed across <=7, 8-14 and 15-21 day windows. The authors concluded that a progressive volume reduction over <=21 days is effective on average.
 
-**Bosquet et al., 2007 — taper meta-analysis**
+**Bosquet et al., 2007 — taper meta-analysis**  
 PMID 17762369; DOI `10.1249/mss.0b013e31806010e0`.
 
 Across 27 studies, the best average strategy was approximately two weeks with an exponential 41-60% volume reduction and no reduction in training intensity or frequency.
@@ -57,10 +59,10 @@ A follow-up inventory refactor should split the family into `periodization.pre_e
 
 ### Carbohydrate efficacy
 
-**Ramos-Campo et al., 2024 — systematic review/meta-analysis/meta-regression**
+**Ramos-Campo et al., 2024 — systematic review/meta-analysis/meta-regression**  
 PMID 37449467; DOI `10.1080/10408398.2023.2233633`.
 
-The analysis included 136 studies and found carbohydrate ingestion during endurance exercise improved performance compared with placebo/control. Benefits were larger as event duration increased.
+The analysis included 136 studies and found carbohydrate ingestion during endurance exercise improved performance compared with placebo/control. Benefits were larger as event duration increased. PubMed records the electronic publication date as **2023-07-14**; the final journal issue is 2024, and the registry now stores those two facts consistently rather than using an off-by-one date.
 
 This supports:
 
@@ -70,15 +72,20 @@ The claim is **high-certainty / strong** for the direction that carbohydrate dur
 
 ### Event-scaled carbohydrate dose
 
-**Burke et al., 2011 — carbohydrate training/competition practice framework**
+**Burke et al., 2011 — carbohydrate training/competition practice framework**  
 PMID 21660838; DOI `10.1080/02640414.2011.585473`.
 
 The framework recommends scaling intake to event demands: small amounts can help around one hour, approximately 30-60 g/h is appropriate for longer events, and events beyond about 2.5 hours may benefit from intakes up to roughly 90 g/h using multiple transportable carbohydrates.
 
-**Thomas, Erdman & Burke, 2016 — joint sports-nutrition position statement**
+**Thomas, Erdman & Burke, 2016 — joint sports-nutrition position statement**  
 PMID 26920240; DOI `10.1016/j.jand.2015.12.006`.
 
 The position statement supports individualized selection, amount and timing of food and fluid across training and competition contexts.
+
+**Morton et al., 2026 — contemporary endurance-carbohydrate review**  
+PMID 41759826; PMCID PMC13197957; DOI `10.1016/j.tjnut.2026.101442`.
+
+The review explicitly revisits the <=90 g/h framework in light of current practice. It notes that 120 g/h can increase exogenous and whole-body carbohydrate oxidation in some trained athletes, but that the **performance efficacy of doses above 90 g/h is not yet sufficiently substantiated** to support a broad recommendation. It also highlights limited female evidence and the need for ecologically valid research.
 
 Together these support:
 
@@ -86,9 +93,17 @@ Together these support:
 
 The practical dose claim is **moderate-certainty / conditional**, not a hard dosing algorithm. Gastrointestinal tolerance, intensity, duration, prior carbohydrate availability and athlete experience remain relevant; high race-day intake should be practiced rather than introduced for the first time during competition.
 
+The updated evidence boundary is deliberate:
+
+- the registry does **not** downgrade the established up-to-90 g/h guidance merely because elite cyclists increasingly report 90-120+ g/h;
+- the registry also does **not** claim that 90 g/h is a proven physiological ceiling;
+- >90 g/h is represented as a plausible specialist strategy for selected trained athletes, with performance superiority and generalizability still uncertain.
+
+This prevents a future runtime consumer from turning elite-practice observations into a universal 120 g/h prescription.
+
 ### Hydration safety
 
-**Hew-Butler et al., 2015 — Third International Exercise-Associated Hyponatremia Consensus**
+**Hew-Butler et al., 2015 — Third International Exercise-Associated Hyponatremia Consensus**  
 PMID 26102445; DOI `10.1097/JSM.0000000000000221`.
 
 The key safety boundary is not “replace every millilitre lost.” Excessive fluid consumption is the principal modifiable behavioral driver of exercise-associated hyponatremia. Fluid strategy must account for sweat rate, environment, duration and individual context without encouraging weight gain from overdrinking.
@@ -120,6 +135,8 @@ Tests verify:
 - 41-60% / <=21-day taper evidence without treating exact app windows as scientific;
 - exact taper windows/restrictions/sharpening remain heuristic product claims;
 - carbohydrate efficacy is separated from event-scaled dose guidance;
+- the corrected Ramos-Campo electronic-publication date;
+- contemporary 2026 carbohydrate lineage and the explicit >90 g/h uncertainty boundary;
 - the hydration safety claim explicitly rejects blanket fluid rates;
 - fueling is not inserted into the current engine coverage inventory;
 - the still-bundled taper family remains uncovered until pre- and post-event policies are separated.
