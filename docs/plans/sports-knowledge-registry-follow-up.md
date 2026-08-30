@@ -50,7 +50,7 @@ Scientific boundaries added:
 - individualized/contextual resting-HR interpretation;
 - sleep-loss/performance relevance;
 - consumer wearable sleep-measurement limitations;
-- resting/nocturnal respiration as a **moderate-certainty / conditional early-anomaly signal** that can support conservative readiness adjustment when persistent or corroborated, while remaining nonspecific and non-diagnostic.
+- resting/nocturnal respiration as a **moderate-certainty / informational early-anomaly signal**: a personal-baseline rise can precede respiratory infection in athletes, but RR is also sensitive to non-infectious stress and is not a diagnosis or standalone training veto.
 
 Current product policies documented separately:
 
@@ -62,7 +62,9 @@ Current product policies documented separately:
 
 The pack contains six scientific claims and five explicit product-policy claims. It does **not** treat HRV or RHR as standalone readiness truth, consumer sleep estimates as polysomnography, proprietary Body Battery/sleep scores as independently validated physiological cut-points, or respiration as a specific illness detector. Exact app weights and thresholds remain product heuristics with `not_applicable` scientific certainty.
 
-RHR evidence is sufficiently direct for **moderate / conditional** contextual monitoring authority. The deeper respiration review also supports **moderate / conditional** authority: a small NCAA Division I athlete cohort observed RR elevation three days before a positive COVID-19 test, a systematic review identified increased RR among recurring wearable infection signals, and prospective multivariate validation confirms both advance-warning potential and important nonspecific false alerts. That supports influence on readiness, not an RR-only hard stop or universal numeric cutoff.
+RHR evidence is sufficiently direct for **moderate / conditional** contextual monitoring authority. Respiration now has **moderate evidence certainty for the prognostic/anomaly claim but informational direct action authority**. The expanded evidence includes a small NCAA Division I athlete cohort with RR elevation three days before a positive COVID-19 test, a systematic review identifying RR among recurring presymptomatic wearable signals, a 525-person cohort linking +1 breath/min nightly RR with about 23% higher odds of moderate/high perceived stress, prospective infection validation showing important nonspecific false alerts, and an athlete overload study supporting individualized multivariate monitoring rather than RR-only prescription.
+
+That evidence supports the app allowing RR to contribute to readiness context. It does **not** directly validate "RR rises, therefore reduce training" as a universal rule. Any conservative schedule influence remains conditional product policy and should ideally require persistence and/or corroboration from symptoms, RHR, HRV, sleep or recent load.
 
 The RHR/respiration extension enriches lineage rather than increasing the coverage count. The same five readiness families were already marked covered; they now reference evidence specific to every live objective signal instead of allowing adjacent HRV/sleep evidence to stand in for RHR/respiration.
 
@@ -70,7 +72,7 @@ The RHR/respiration extension enriches lineage rather than increasing the covera
 
 Post-pack inventory remains 15 covered / 1 partial / 26 uncovered / 5 not applicable. P0 / P1 / P2 / P3 = 5 / 13 / 7 / 2. High-impact uncovered = 13 and high-safety uncovered = 4.
 
-No numeric recommendation behavior changes were made, so this pack does not bump the global recommendation `POLICY_VERSION`. A future persistence/corroboration escalation policy for RR would be a separate behavior-changing PR with simulation and athlete-outcome calibration.
+No numeric recommendation behavior changes were made, so this pack does not bump the global recommendation `POLICY_VERSION`. The stale `rules.ts` respiration comment was corrected as a syntax-identical documentation change; the policy-drift gate now proves comment/whitespace-only decision-file edits by comparing normalized TypeScript syntax with comments removed. A future persistence/corroboration escalation policy for RR would be a separate behavior-changing PR with simulation and athlete-outcome calibration.
 
 ### Evidence Pack 3 — Subjective Readiness + Injury/Pain Safety
 
