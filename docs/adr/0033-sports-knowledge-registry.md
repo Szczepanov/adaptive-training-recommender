@@ -133,9 +133,9 @@ This validator does not certify that a paper was interpreted correctly. Human re
 
 A knowledge claim version identifies the reviewed statement/evidence/applicability contract.
 
-`POLICY_VERSION` continues to identify decision logic under ADR-0010. Changing a claim without changing behavior may increment only the claim version. Changing decision behavior still follows the repository's existing `POLICY_VERSION` discipline.
+The global `POLICY_VERSION` continues to identify the deployed recommendation function under ADR-0010. The repository's policy-drift gate treats `evergreenStrategy.ts` as decision-affecting, and this migration changes the provenance contract emitted by that strategy even though its numeric dose values, priorities and history gates remain unchanged. Therefore this PR advances the global policy identity to `2026-08-sports-knowledge-lineage-v1` and records the previous version as historical.
 
-This foundation PR does not alter recommendation behavior, so it does not increment the decision `POLICY_VERSION`.
+The Evergreen sub-policy identifier `evergreen-dose-v1` remains unchanged because the dose/gating semantics of that sub-policy did not change. Claim versions remain independent again: a future evidence review may increment a claim version without necessarily changing either the Evergreen dose sub-policy or the global recommendation logic, subject to the repository's normal policy-drift rules for any touched decision-affecting files.
 
 ### D-SKR-AUDIT-FUTURE — persisted recommendation lineage is a follow-up
 
@@ -176,6 +176,7 @@ No new sport-performance prescription is introduced by this ADR.
 - The checked-in classifications still depend on human scientific judgment.
 - Some existing rules will initially remain undocumented until migrated; this ADR does not claim complete knowledge coverage.
 - Claim versioning creates maintenance discipline that must be followed consistently to be useful.
+- Provenance-contract migrations in decision-affecting files may require a global policy-version bump even when training prescription numbers are unchanged.
 
 ## Rejected alternatives
 
