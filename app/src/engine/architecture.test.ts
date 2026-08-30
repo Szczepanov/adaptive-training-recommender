@@ -437,13 +437,18 @@ describe('Architecture & Phased Engine Integration', () => {
             };
             const afterHardBike = rankCandidates(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', category: 'Hard Endurance', type: 'Bike VO2 Intervals', systemicCost: 1.0 }] });
             const afterEasyBike = rankCandidates(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, { recentHistory: [{ date: '2026-08-06', modality: 'Cycling', type: 'Zone 2 Spin', systemicCost: 0.3 }] });
-            const hardStrengthAfterHard = afterHardBike.accepted.find(r => r.template.category === 'Full-body Strength');
-            const hardStrengthAfterEasy = afterEasyBike.accepted.find(r => r.template.category === 'Full-body Strength');
+            // 'Full-body Strength' now spans two distinct intensities: str_full_01 (loaded,
+            // systemicCost 0.6, genuinely high-intensity) and str_full_02 (bodyweight,
+            // systemicCost 0.4, below the intensity-stacking threshold). Target the loaded
+            // template explicitly so this stays a test of the stacking cap, not of which
+            // Full-body Strength identity happens to rank first.
+            const hardStrengthAfterHard = afterHardBike.accepted.find(r => r.template.id === 'str_full_01');
+            const hardStrengthAfterEasy = afterEasyBike.accepted.find(r => r.template.id === 'str_full_01');
             expect(hardStrengthAfterEasy).toBeDefined();
             if (hardStrengthAfterHard) {
                 expect(hardStrengthAfterHard.utilityScore).toBeLessThan(hardStrengthAfterEasy!.utilityScore);
             } else {
-                const rejected = afterHardBike.rejected.find(r => r.template.category === 'Full-body Strength');
+                const rejected = afterHardBike.rejected.find(r => r.template.id === 'str_full_01');
                 expect(rejected).toBeDefined();
                 expect(rejected!.excludedReasons.length).toBeGreaterThan(0);
             }

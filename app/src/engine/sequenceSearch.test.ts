@@ -62,14 +62,10 @@ describe('beamSearchWeekAheadPlan (Phase 5.1 prototype)', () => {
         expect(plan.days.slice(1).every(d => d.confidence === 'projected')).toBe(true);
     });
 
-    // KNOWN GAP, not a weakened invariant: beamSearchWeekAheadPlan never calls planner.ts's
-    // reconcileObjectivesForDate the way generateWeekAheadPlan does (see the comment above
-    // `initialMicrocycle` in sequenceSearch.ts and docs/analysis/2026-08-30-running-
-    // triathlon-support-audit.md). When a seed's microcycle predates the events passed to
-    // plan generation -- exactly this test's setup -- greedy self-heals daily and beam
-    // search does not, so this legitimate parity check now fails. Skipped rather than
-    // deleted or loosened until the per-branch credit-memory threading is done for real.
-    it.skip('degenerates to exactly the greedy algorithm when beamWidth=1 and candidatesPerDay=1', () => {
+    // Regression contract for per-branch objective reconciliation: with a width/count of
+    // one, the prototype has no search freedom and must reuse the same date-specific
+    // objective state and rank-0 decisions as the greedy planner.
+    it('degenerates to exactly the greedy algorithm when beamWidth=1 and candidatesPerDay=1', () => {
         // The strongest correctness check available: with only ever one branch and one
         // candidate considered per day, cumulative-score pruning can never diverge from
         // picking rank-0 each day -- i.e. this must reproduce generateWeekAheadPlan

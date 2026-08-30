@@ -16,7 +16,7 @@ import type { TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolveAvailability } from './schedule';
-import { isTemplatePhaseEligible, evaluatePeriodizationPhase, type PeriodizationResult } from './periodization';
+import { isTemplatePhaseEligible, evaluatePeriodizationPhase, type DroppedContributorObjective, type PeriodizationResult } from './periodization';
 import { eligibleTemplates } from './eligibility';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { applyCompletedSessionLoad, createEmptyFatigue } from './fatigue';
@@ -27,7 +27,7 @@ import { ENRICHED_TEMPLATES } from './templates';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { deriveObjectiveCreditFromProfile } from './stimulus';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
-import type { PlannedObjectiveCredit, WeekAheadDay, WeekAheadOptions, WeekAheadPlan, WeekAheadPlanSeed } from './planner';
+import type { PlannedObjectiveCredit, ProjectionExposure, WeekAheadDay, WeekAheadOptions, WeekAheadPlan, WeekAheadPlanSeed } from './planner';
 import {
     applyProjectedObjectiveCredits,
     displayModeFromCategory,
@@ -41,6 +41,7 @@ import {
     PROJECTED_FATIGUE_RECOVER_THRESHOLD,
     PROJECTED_MODIFY_MAX_SYSTEMIC_COST,
     projectFatigueForRankingDate,
+    reconcileObjectivesForDate,
     realizedSessionRole,
     resolveWeeklyAnchors,
     trailingHistoryFromCompletedExposures,
@@ -68,6 +69,14 @@ interface SearchBranch {
     microcycle: MicrocycleState;
     externalFatigue: FatigueState;
     objectiveCredits: PlannedObjectiveCredit[];
+    /** Branch-local objective credit memory is required because objective eligibility can
+     * change by forecast date, and sibling branches must never share mutable carry state. */
+    creditMemory: Map<WeeklyObjective['key'], { completedCredit: number; projectedCredit: number; completedExposures: number }>;
+    /** Prior projected recommendations let newly-relevant objectives backfill only credit
+     * that was actually earned before the objective became active. */
+    projectionExposures: ProjectionExposure[];
+    droppedContributorObjectives: DroppedContributorObjective[];
+    currentlyDroppedPairs: Set<string>;
     /** Per projected day, lower is better. Equal-length branches are compared in date
      * order, preserving the coverage-first ordering for earlier projected days. */
     coverageTiers: number[];
@@ -89,6 +98,7 @@ export interface BeamSearchWeekAheadPlan {
     days: WeekAheadDay[];
     objectiveCredits: PlannedObjectiveCredit[];
     microcycleObjectives: WeeklyObjective[];
+    droppedContributorObjectives: DroppedContributorObjective[];
     explain: SequenceExplainEntry[];
     beamWidthUsed: number;
     candidatesPerDayUsed: number;
@@ -109,21 +119,14 @@ export function beamSearchWeekAheadPlan(
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
+    const authoredPlanBlocks = options.authoredPlanBlocks ?? [];
+    const suppliedPlanDefinition = options.planDefinition ?? null;
     const effectivePreferences = preferences ?? { ...NEUTRAL_PREFERENCES, preferredRecoveryStyle: resolveRecoveryStyle(context) };
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
-    // KNOWN GAP (tracked by sequenceSearch.test.ts's "degenerates to exactly the greedy
-    // algorithm" invariant): unlike generateWeekAheadPlan, this function never calls
-    // planner.ts's reconcileObjectivesForDate. When `seed.microcycle` was built against a
-    // different (or empty) `events` list than the `options.events` passed here -- exactly
-    // what the greedy/beam parity test does -- the greedy planner self-heals every day via
-    // reconcileObjectivesForDate (regenerating the objective skeleton from the *current*
-    // day's periodization/focusEvent and merging in any newly-relevant event-specific
-    // objectives), while this beam search stays on the stale seed skeleton for the whole
-    // horizon. Fixing this requires threading reconcileObjectivesForDate's per-branch state
-    // (a `creditMemory` map plus accumulated `droppedContributorObjectives`) through
-    // SearchBranch and cloning it correctly at every branch fork -- real surgery, not a
-    // one-line call, so it's left as a documented gap rather than a rushed partial fix.
+    // Each forecast branch reconciles objectives against that date before ranking. The
+    // branch owns its credit-memory/backfill state so pruning one path cannot leak objective
+    // carry-over into a sibling path.
     const initialMicrocycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent);
     const internalStrain: DimensionalFatigue = seed.fatigue?.internalResponseStrain ?? ZERO_DIMENSIONAL;
     const internalStrainAsOf = todayDate;
@@ -147,6 +150,47 @@ export function beamSearchWeekAheadPlan(
                 ? [{ objective, earnedCredit: credit.earnedCredit }]
                 : [];
         });
+    };
+
+
+    /** Reconcile the objective skeleton for one branch/date without sharing mutable carry
+     * state across sibling branches. This mirrors the production greedy planner's daily
+     * objective reconciliation contract while preserving branch-specific projected credit. */
+    const reconcileBranchForDate = (
+        branch: SearchBranch,
+        date: string,
+        periodization: PeriodizationResult,
+    ): SearchBranch => {
+        const creditMemory = new Map(branch.creditMemory);
+        const reconciled = reconcileObjectivesForDate(
+            branch.microcycle,
+            events,
+            date,
+            todayDate,
+            periodization,
+            creditMemory,
+            branch.projectionExposures,
+            authoredPlanBlocks,
+            suppliedPlanDefinition,
+        );
+
+        const droppedContributorObjectives = [...branch.droppedContributorObjectives];
+        const currentlyDroppedPairs = new Set(branch.currentlyDroppedPairs);
+        const dropKey = (drop: DroppedContributorObjective) => `${drop.eventId}:${drop.objectiveKey}`;
+        const freshKeys = new Set(reconciled.droppedContributorObjectives.map(dropKey));
+        reconciled.droppedContributorObjectives.forEach(drop => {
+            if (!currentlyDroppedPairs.has(dropKey(drop))) droppedContributorObjectives.push(drop);
+        });
+        currentlyDroppedPairs.clear();
+        freshKeys.forEach(key => currentlyDroppedPairs.add(key));
+
+        return {
+            ...branch,
+            microcycle: reconciled.microcycle,
+            creditMemory,
+            droppedContributorObjectives,
+            currentlyDroppedPairs,
+        };
     };
 
     const applyPick = (
@@ -175,6 +219,15 @@ export function beamSearchWeekAheadPlan(
             microcycle: projected.microcycle,
             externalFatigue: applyCompletedSessionLoad(branch.externalFatigue, date, enrichedCostProfile(template.id)),
             objectiveCredits: [...branch.objectiveCredits, ...newCredits],
+            projectionExposures: [...branch.projectionExposures, {
+                occurrenceKey: `recommendation:${date}`,
+                date,
+                stimulus: enrichedStimulusProfile(template),
+                templateId: template.id,
+                modality: template.modality,
+                category: template.category,
+                durationMin: template.durationMin,
+            }],
         };
     };
 
@@ -214,9 +267,15 @@ export function beamSearchWeekAheadPlan(
         };
     };
 
+    const seedDrops = [...(seed.droppedContributorObjectives ?? [])];
     let seedBranch: SearchBranch = {
         days: [], microcycle: initialMicrocycle, externalFatigue: initialFatigue,
-        objectiveCredits: [], coverageTiers: [], cumulativeScore: 0,
+        objectiveCredits: [],
+        creditMemory: new Map(),
+        projectionExposures: [],
+        droppedContributorObjectives: seedDrops,
+        currentlyDroppedPairs: new Set(seedDrops.map(drop => `${drop.eventId}:${drop.objectiveKey}`)),
+        coverageTiers: [], cumulativeScore: 0,
     };
     seedBranch = applyPick(seedBranch, todayDate, todayRec.template);
 
@@ -224,6 +283,7 @@ export function beamSearchWeekAheadPlan(
     if (tomorrowRec) {
         const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
         const tomorrowPeriodization = evaluatePeriodizationPhase(events, tomorrowDate);
+        seedBranch = reconcileBranchForDate(seedBranch, tomorrowDate, tomorrowPeriodization);
         const tomorrowCredits = creditingObjectivesFor(seedBranch.microcycle, tomorrowRec.template);
         const tomorrowDay: WeekAheadDay = {
             date: tomorrowDate, dayOffset: 1, confidence: 'provisional', phaseName: tomorrowPeriodization.phase.phaseName,
@@ -242,13 +302,14 @@ export function beamSearchWeekAheadPlan(
         const date = addDaysToLocalDateString(todayDate, offset);
         const periodization = evaluatePeriodizationPhase(events, date);
         const availability = resolveAvailability(date, null, fixedActivities, context);
-        const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, options.authoredPlanBlocks);
+        const planDefinition = suppliedPlanDefinition ?? resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
 
         const nextGeneration: SearchBranch[] = [];
 
         for (const branch of beam) {
-            const rankingFatigue = projectFatigueForRankingDate(branch.externalFatigue, internalStrain, internalStrainAsOf, date);
-            const unresolved = getUnresolvedObjectives(branch.microcycle, true);
+            const reconciledBranch = reconcileBranchForDate(branch, date, periodization);
+            const rankingFatigue = projectFatigueForRankingDate(reconciledBranch.externalFatigue, internalStrain, internalStrainAsOf, date);
+            const unresolved = getUnresolvedObjectives(reconciledBranch.microcycle, true);
             const eligible = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
                 .filter(t => isTemplatePhaseEligible(t, periodization));
 
@@ -273,7 +334,7 @@ export function beamSearchWeekAheadPlan(
                     durationMin: todayRec.template.durationMin,
                     type: todayRec.template.title,
                 },
-                ...[...confirmedDays, ...branch.days].map(d => ({
+                ...[...confirmedDays, ...reconciledBranch.days].map(d => ({
                     date: d.date, templateId: d.template.id, category: d.template.category, modality: d.template.modality,
                     role: realizedSessionRole(d.date, d.template, anchors), systemicCost: d.template.systemicCost,
                     lowerBodyCost: d.template.costProfile?.lowerBody ?? 0, durationMin: d.template.durationMin, type: d.template.title,
@@ -286,7 +347,7 @@ export function beamSearchWeekAheadPlan(
                     fatigue: rankingFatigue,
                     periodization,
                     history: projectedHistory,
-                    plannedDose: resolvePlannedDoseForDate(periodization.phase, branch.microcycle.objectives, unresolved, planDefinition, date),
+                    plannedDose: resolvePlannedDoseForDate(periodization.phase, reconciledBranch.microcycle.objectives, unresolved, planDefinition, date),
                 },
                 context, effectivePreferences, date,
                 { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier: fatigueTierFor(peakFatigue), authoredPlanBlocks: options.authoredPlanBlocks },
@@ -315,7 +376,7 @@ export function beamSearchWeekAheadPlan(
             if (accepted.length === 0) {
                 if (restFallback) {
                     nextGeneration.push(extendBranch(
-                        branch, date, offset, periodization, restFallback,
+                        reconciledBranch, date, offset, periodization, restFallback,
                         0, 0, 0, 3, peakFatigue, null, restFallback.id, 0, 'No admissible candidate; fell back to rest.'
                     ));
                 }
@@ -325,7 +386,7 @@ export function beamSearchWeekAheadPlan(
             const bestBenefit = [...accepted].sort((a, b) => b.benefitScore - a.benefitScore)[0];
             accepted.slice(0, candidatesPerDay).forEach(candidate => {
                 nextGeneration.push(extendBranch(
-                    branch, date, offset, periodization, candidate.template,
+                    reconciledBranch, date, offset, periodization, candidate.template,
                     candidate.utilityScore, candidate.benefitScore, candidate.costPenalty, candidate.coverageNeedTier,
                     peakFatigue, accepted[1]?.utilityScore ?? null,
                     bestBenefit.template.id, bestBenefit.benefitScore, candidate.rationale
@@ -371,6 +432,7 @@ export function beamSearchWeekAheadPlan(
         days: [...confirmedDays, ...winner.days],
         objectiveCredits: winner.objectiveCredits,
         microcycleObjectives: winner.microcycle.objectives ?? [],
+        droppedContributorObjectives: winner.droppedContributorObjectives,
         explain,
         beamWidthUsed: beamWidth,
         candidatesPerDayUsed: candidatesPerDay,
@@ -416,7 +478,7 @@ export async function generateWeekAheadPlanWithIntentBeamSearch(
         days: result.days,
         objectiveCredits: result.objectiveCredits,
         microcycleObjectives: result.microcycleObjectives,
-        droppedContributorObjectives: intent.droppedContributorObjectives,
+        droppedContributorObjectives: result.droppedContributorObjectives,
         allocationReport: { outcomes: [] },
     };
 }

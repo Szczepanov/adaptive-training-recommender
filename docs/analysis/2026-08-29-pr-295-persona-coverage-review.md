@@ -101,6 +101,95 @@ gate that actually decides eligibility does not expose that granularity) and dec
 it becomes the `primary_strength` role's floor for a no-equipment athlete or a parallel
 required role of its own.
 
+## Finding 4: zero-equipment `primary_strength` gap -- implemented
+
+Resolved per the handover comment's plan. Authored a genuine zero-equipment workout,
+`strength_bodyweight_full_body_01` (bound via `engineTemplateIds: ['str_full_02']`),
+covering a controlled bodyweight squat, push-up progression, glute bridge, unloaded hip
+hinge, self-resisted prone row (true unloaded pulling has no honest zero-equipment
+substitute, so this is documented as a limitation rather than fabricated equipment), and
+trunk work -- dosed like resistance training (2-4 reps in reserve) rather than a
+conditioning circuit. Four new bodyweight-only exercises were authored
+(`bodyweight_squat`, `bodyweight_hip_hinge`, `prone_scapular_row`, plus reusing the
+already-existing `glute_bridge`) with facet overrides so the exhaustive
+strength/field/running/recovery facet-coverage test stays satisfied.
+
+`str_full_02`'s own metadata was corrected: it previously required no equipment while
+describing table/bands, and carried `avoid_high_impact`/`avoid_heavy_lower_body` safety
+tags that excluded it under exactly the guardrail a genuinely bodyweight-only session
+should survive. Both tags are now removed, and the description/dose labels were rewritten
+to match the real movements instead of "circuit rounds" framing. `systemicCost` was left
+at its original 0.55 -- an experiment lowering it (to reflect the lighter true stimulus)
+destabilized unrelated utility-ranking tie-breaks in two other legacy scenarios (a travel
+overlay plan and a fixed-activity fatigue projection), so the safer fix was metadata-only;
+the scalar remains a coarser heuristic than the underlying `costProfile`/`stimulusProfile`,
+consistent with how `str_full_01` is already treated by the shared "Full-body Strength"
+enrichment branch.
+
+`workoutForTemplate('str_full_02')` previously fell back to `travel_strength_maintenance_01`
+(a hotel-gym workout) via a stale entry in `FALLBACK_TEMPLATE_TO_WORKOUT` -- removed, since
+the new workout's `engineTemplateIds` match now resolves correctly and takes priority
+automatically. `strength_bodyweight_full_body_01` was added as a second workoutId for the
+evergreen `primary_strength` role (`EVERGREEN_SESSION_COVERAGE`) -- the required-role floor
+for a no-equipment athlete -- and, separately, for the frozen September event-set's
+`compact_strength` role (ADR-0016 amendment, 2026-08-30): fixing the fallback bug meant
+`str_full_02` stopped accidentally satisfying that role via the wrong workout identity, so
+a genuine membership addition was needed to avoid losing travel-phase strength coverage
+that had (by accident) worked before. The September set's `primary_strength` role (loaded
+strength only) was deliberately left untouched.
+
+Three existing tests encoded assumptions that this fix legitimately falsified and were
+updated rather than the underlying behavior being reverted: a Tier-2 dose-adjustment test
+assumed `str_full_02` was always harder than a 0.45-cost hypothetical (now targets
+`str_full_01` specifically, since the bodyweight identity is a real, distinct intensity);
+an adversarial-guardrail test asserted the entire `Full-body Strength` category was excluded
+under `avoid_heavy_lower_body` (now excludes `Lower-body Strength` plus loaded full-body
+work by id, since the bodyweight identity is correctly exempt); and an intensity-stacking
+test picked "the first Full-body Strength candidate" (now targets `str_full_01` by id, since
+the category now spans two materially different intensities). A fourth test (a travel-block
+multi-day forecast) had its assertion widened from "shows a Full-body Strength day" to "shows
+real strength maintenance, not hard/maximal work" (Full-body Strength or Upper-body Strength),
+since `primary_strength` is not an active requirement during the travel phase and which
+optional/conditional strength role the planner picks there can legitimately shift once
+`compact_strength` credit resolves through the correct workout identity.
+
+`POLICY_VERSION` bumped to `2026-08-evergreen-bodyweight-strength-v1`.
+
+### Side effect on `persona_walking_preferred` (reviewed, accepted -- not a regression in the target persona)
+
+The reviewed `persona:local:stability` run scored `persona_walking_preferred` lower than the
+prior committed baseline (mean overall 7.83 vs 9.0; sensitivity 7.5 vs 9.2), with the judge
+noting the `low_time` case "fails to prioritize walking as the primary aerobic modality,
+treating it as optional filler instead." This was traced with a deterministic
+before/after diff (`--build-only` corpus rebuild, git-stashed engine changes vs current) of
+the exact same three cases, not accepted from the judge score alone.
+
+The `baseline` and `adverse_recovery` cases are byte-identical in Walking/Strength/Rest
+session *counts* before and after (only day placement differs). The `low_time` case (a
+global 30-minute/day cap) is the one that actually shifted: 8 Walking / 3 Strength / 3 Rest
+days before, versus 5 Walking / 4 Strength / 5 Rest days after, across the same 14-day
+window. This persona already has `free_weights` available, so `str_full_02` was never the
+*only* low-time-compatible strength candidate here -- `str_full_03` (20-30 min) already
+satisfied `primary_strength` under the 30-minute cap before this change. Adding
+`str_full_02` (15-25 min) as a second equally time-compatible identity gave the packing
+algorithm more strength-candidate weight in a week where time is scarce for every day, not
+just today; once both weekly roles (`aerobic_volume`, `primary_strength`) are satisfied with
+fewer total sessions, more of the remaining days rest instead of Walking filling the gap.
+
+This is a real, understood behavior shift in a persona this fix was never targeting (unlike
+`persona_stacked_constraints`, which has no equipment at all and is the one this fix exists
+for). It trades some of `persona_walking_preferred`'s previous walking-heavy pattern for a
+more balanced aerobic/strength split with more rest -- arguably closer to this persona's own
+`judgeExpectations` ("Strength should remain represented alongside walking"), even though
+the judge's calibration (tuned against the old walking-heavy pattern) read the new balance as
+under-prioritizing walking. No hard-constraint violation was introduced (the deterministic
+zero-violations regression assertion still passes for every case), and Walking is never
+eliminated from the week in any case. Reverting the `str_full_02` fix to preserve this
+persona's previous walking-to-strength ratio would reintroduce the exact zero-equipment gap
+this pass exists to close, so this was accepted rather than reverted. A follow-up could
+retune the low-time weekly-role packing weights between Walking and compact strength
+candidates specifically, but that is a broader ranking change than this fix's scope.
+
 ## Review findings not implemented in this pass (historical -- both since resolved above)
 
 ### 1. Walking-only coverage is an architectural decision, not just a missing fixture

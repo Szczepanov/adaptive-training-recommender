@@ -141,6 +141,29 @@ roles, consistent with `outdoor_event_specific` and `short_surges` already shari
 `app/src/workouts/frozenEventCoverage.test.ts` was updated in the same commit;
 `FROZEN_KEY_COUNT` (18) is unchanged.
 
+### 2026-08-30 — zero-equipment bodyweight full-body strength added to `compact_strength`
+
+A genuine zero-equipment full-body strength identity, `strength_bodyweight_full_body_01`
+(engine template `str_full_02`, bound via `engineTemplateIds`), was authored to close a gap
+in the evergreen `primary_strength` role: a no-equipment athlete previously had no reachable
+required-strength candidate at all (`docs/analysis/2026-08-29-pr-295-persona-coverage-review.md`,
+Finding 3). Fixing `str_full_02`'s catalog resolution to point at this real workout, instead
+of an incorrect fallback to the hotel-gym `travel_strength_maintenance_01`, is also what this
+event-directed contract observes: `travel_strength_maintenance_01` was, by that same accident,
+the only strength identity `str_full_02` could ever resolve to here, so it had been
+(unintentionally) usable to discharge `compact_strength` during travel.
+
+`workoutIds` for `compact_strength` now include `strength_bodyweight_full_body_01` alongside
+`travel_strength_maintenance_01`, so a zero-equipment athlete travelling without access to a
+hotel gym still has a genuine, explicitly-authored catalog identity able to discharge the
+optional `compact_strength` role. No coverage key, phase list, or requirement level changed —
+this is a membership addition to one existing role. `FROZEN_SHA256` in
+`app/src/workouts/frozenEventCoverage.test.ts` was updated in the same commit; `FROZEN_KEY_COUNT`
+(18) is unchanged. The evergreen `primary_strength` role (`EVERGREEN_SESSION_COVERAGE`, a
+separate, non-frozen coverage set) also gained this workoutId, alongside
+`strength_full_body_maintenance_01` -- that set is not in scope of this ADR or its frozen-hash
+test.
+
 ## Related
 
 - `docs/plans/phase-6-2c-recommendation-quality-and-weekly-coverage.md`
