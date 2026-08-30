@@ -1,10 +1,11 @@
 /** Increment whenever a change can alter a persisted recommendation decision. (Refactoring does not require a bump) */
-export const POLICY_VERSION = '2026-08-multisport-bodyweight-strength-v1';
+export const POLICY_VERSION = '2026-08-triathlon-objective-identity-v1';
 
 /** Historical versions are intentionally not re-executed by this build. Their compact
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-08-multisport-bodyweight-strength-v1',
     '2026-08-multisport-and-walking-merge-v1',
     '2026-08-evergreen-bodyweight-strength-v1',
     '2026-08-evergreen-established-history-and-walking-v1',

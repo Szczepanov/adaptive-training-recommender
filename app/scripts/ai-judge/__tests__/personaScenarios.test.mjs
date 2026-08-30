@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
+import { EVENT_PRESETS } from '../../../src/engine/eventPresets.ts';
 import { runScenario } from '../../../src/engine/simulation/analyze.ts';
 import { assertPersonaFixtureIntegrity, buildPersonaFamilies } from '../personaScenarios.mjs';
 
@@ -11,6 +12,9 @@ const EXPECTED_FAMILY_IDS = [
   'persona_stacked_constraints',
   'persona_walking_preferred',
   'persona_established_history',
+  'persona_triathlon_novice_eighth',
+  'persona_triathlon_intermediate_olympic',
+  'persona_triathlon_advanced_half_iron',
 ];
 
 describe('persona AI-judge fixtures', () => {
@@ -84,6 +88,8 @@ describe('persona AI-judge fixtures', () => {
         treadmill: false,
         indoor_bike: false,
         pullup_bar: false,
+        outdoor_bike: false,
+        swim_access: false,
       });
     }
   });
@@ -110,6 +116,40 @@ describe('persona AI-judge fixtures', () => {
     }
   });
 
+  it('models the 1/8, Olympic, and 70.3 triathlon ladder with authoritative demand profiles and current-history evidence', () => {
+    const expected = [
+      ['persona_triathlon_novice_eighth', 'eighth_im', 0],
+      ['persona_triathlon_intermediate_olympic', 'olympic', 12],
+      ['persona_triathlon_advanced_half_iron', 'half_iron', 18],
+    ];
+
+    for (const [familyId, presetId, historyCount] of expected) {
+      const family = buildPersonaFamilies().find((candidate) => candidate.familyId === familyId);
+      expect(family, familyId).toBeDefined();
+      const expectedPreset = EVENT_PRESETS.triathlon.find((preset) => preset.id === presetId);
+      for (const definition of family.cases) {
+        expect(definition.scenario.event).toMatchObject({ category: 'triathlon', priority: 'A' });
+        expect(definition.scenario.event.demandProfile).toEqual(expectedPreset.demandProfile);
+        expect(definition.scenario.trainingIntentProfile).toBeNull();
+        expect(definition.scenario.initialHistory).toHaveLength(historyCount);
+        expect(definition.scenario.preferences.preferredModalities).toEqual(['Swimming', 'Cycling', 'Running']);
+        expect(definition.scenario.context.trainingSettings.equipment.outdoor_bike).toBe(true);
+      }
+    }
+  });
+
+  it('keeps pool-access loss explicit and reserves the advanced triathlon case for the final 14 days before its event', () => {
+    const families = buildPersonaFamilies();
+    const novice = families.find((candidate) => candidate.familyId === 'persona_triathlon_novice_eighth');
+    const poolUnavailable = novice.cases.find((definition) => definition.scenario.id === 'persona_triathlon_novice_eighth_pool_unavailable');
+    expect(poolUnavailable.scenario.context.trainingSettings.equipment.swim_access).toBe(false);
+
+    const advanced = families.find((candidate) => candidate.familyId === 'persona_triathlon_advanced_half_iron');
+    const taper = advanced.cases.find((definition) => definition.scenario.id === 'persona_triathlon_advanced_half_iron_taper');
+    expect(taper.scenario.event.date).toBe('2026-09-14');
+    expect(taper.scenario.weeks).toBe(2);
+  });
+
   it('executes every persona state through the real multi-week planner without hard-constraint violations', async () => {
     const definitions = buildPersonaFamilies().flatMap((family) => family.cases);
 
@@ -118,6 +158,24 @@ describe('persona AI-judge fixtures', () => {
       expect(result.decisionTraces.length, definition.scenario.id).toBeGreaterThan(0);
       expect(result.decisionTraces.every((trace) => Boolean(trace.selected?.templateId)), definition.scenario.id).toBe(true);
       expect(result.constraintViolations, definition.scenario.id).toEqual([]);
+    }
+  });
+
+  it('keeps all three race disciplines reachable when access exists and never fabricates swimming without a pool', async () => {
+    const definitions = buildPersonaFamilies().flatMap((family) => family.cases);
+    for (const definition of definitions.filter((item) => item.persona.personaId.startsWith('triathlon_'))) {
+      const result = await runScenario(definition.scenario);
+      const selectedModalities = new Set(result.decisionTraces.map((trace) => trace.selected.modality));
+      if (definition.scenario.id === 'persona_triathlon_novice_eighth_pool_unavailable') {
+        expect(selectedModalities.has('Swimming'), definition.scenario.id).toBe(false);
+      } else if (!definition.scenario.id.endsWith('_adverse_recovery')) {
+        for (const modality of ['Swimming', 'Cycling', 'Running']) {
+          expect(selectedModalities.has(modality), definition.scenario.id).toBe(true);
+        }
+      }
+      if (definition.scenario.id === 'persona_triathlon_advanced_half_iron_taper') {
+        expect(result.decisionTraces.every((trace) => trace.date < definition.scenario.event.date), definition.scenario.id).toBe(true);
+      }
     }
   });
 });

@@ -6,8 +6,8 @@ import { isAbsolute, resolve } from 'node:path';
 const reviewed = process.argv.includes('--reviewed');
 const EXPECTED_SCHEMA = 'adaptive-training-recommender/persona-plan-judge-corpus@1';
 const requiredScores = ['safety_recovery_fit', 'goal_event_fit', 'sequencing', 'periodization_taper', 'preference_capacity_fit', 'robustness', 'overall'];
-const EXPECTED_FAMILY_COUNT = 7;
-const EXPECTED_CASE_COUNT = 21;
+const EXPECTED_FAMILY_COUNT = 10;
+const EXPECTED_CASE_COUNT = 30;
 
 const outputDir = resolve('artifacts/persona-plan-judge/latest');
 const corpusPath = resolve(outputDir, 'corpus.json');

@@ -118,6 +118,8 @@ function settings({ equipment = {}, guardrails = {}, weekdayMaxMinutes = 60, wee
       treadmill: false,
       indoor_bike: false,
       pullup_bar: false,
+      outdoor_bike: false,
+      swim_access: false,
       ...equipment,
     },
     guardrails: {
@@ -197,7 +199,7 @@ function preferences(preferredModalities = []) {
   };
 }
 
-function makeScenario({ id, label, persona, readiness, context: userContext, trainingIntentProfile, userPreferences, initialHistory = [] }) {
+function makeScenario({ id, label, persona, readiness, context: userContext, trainingIntentProfile, userPreferences, initialHistory = [], event = null, weeks = 2 }) {
   return {
     persona,
     scenario: {
@@ -205,15 +207,15 @@ function makeScenario({ id, label, persona, readiness, context: userContext, tra
       label,
       description: `Synthetic persona evaluation case for ${persona.personaId}. No real person's name or identifying data is persisted.`,
       context: userContext,
-      event: null,
-      events: [],
+      event: clone(event),
+      events: event ? [clone(event)] : [],
       trainingIntentProfile,
       preferences: userPreferences,
       startDate: '2026-08-31',
       initialHistory: clone(initialHistory),
       fixedActivities: [],
       tags: ['ai-plan-judge', 'persona-evaluation', persona.personaId],
-      weeks: 2,
+      weeks,
       readinessForWeek: () => clone(readiness),
       readinessForDate: () => clone(readiness),
     },
@@ -402,6 +404,110 @@ const establishedHistoryPersona = {
     'This persona\'s authority is current logged training, never historical achievement -- do not confuse it with the former-elite persona\'s sparse-history caution.',
     'Adverse recovery should still reduce near-term load despite the established base.',
     'Low motivation alone, with good objective recovery, should not remove an otherwise-earned higher-intensity opportunity.',
+  ],
+};
+
+const TRIATHLON_DEMANDS = {
+  eighth_im: { aerobicEndurance: 0.6, thresholdPower: 0.75, vo2MaxPower: 0.65, repeatedSurges: 0.3, sprintPower: 0.2, fatigueResistance: 0.5, neuromuscular: 0.2 },
+  olympic: { aerobicEndurance: 0.75, thresholdPower: 0.8, vo2MaxPower: 0.45, repeatedSurges: 0.2, sprintPower: 0.1, fatigueResistance: 0.65, neuromuscular: 0.15 },
+  half_iron: { aerobicEndurance: 0.9, thresholdPower: 0.7, vo2MaxPower: 0.25, repeatedSurges: 0.1, sprintPower: 0.05, fatigueResistance: 0.85, neuromuscular: 0.1 },
+};
+
+function triathlonEvent(preset, date) {
+  return {
+    id: `persona-triathlon-${preset}`,
+    title: `Triathlon A-event (${preset})`,
+    date,
+    priority: 'A',
+    lifecycle: 'scheduled',
+    category: 'triathlon',
+    demandProfile: clone(TRIATHLON_DEMANDS[preset]),
+  };
+}
+
+function triathlonHistory(prefix, dates) {
+  const modalities = ['Swimming', 'Cycling', 'Running'];
+  return dates.map((date, index) => {
+    const modality = modalities[index % modalities.length];
+    return {
+      occurrenceKey: `${prefix}-${index}`,
+      date,
+      costProfile: modality === 'Running'
+        ? { systemic: 0.3, cardiovascular: 0.35, lowerBody: 0.25, upperBody: 0, impactTissue: 0.2, neuromuscular: 0.1 }
+        : { systemic: 0.25, cardiovascular: 0.35, lowerBody: modality === 'Cycling' ? 0.2 : 0.05, upperBody: modality === 'Swimming' ? 0.12 : 0, impactTissue: 0.05, neuromuscular: 0.08 },
+      modality,
+      category: 'Easy Endurance',
+      trainingRecordLike: { type: `${modality} aerobic endurance`, duration_min: modality === 'Swimming' ? 45 : 60, training_effect: 2, intensity_tag: 'easy' },
+    };
+  });
+}
+
+const triathlonNoviceContext = context({
+  goals: {
+    shortTerm: 'Learn to train consistently across swimming, cycling and running for a first short-distance triathlon.',
+    midTerm: 'Build safe confidence in all three disciplines without forcing intensity beyond current experience.',
+    longTerm: 'Complete a 1/8-distance triathlon with sustainable, repeatable preparation.',
+  },
+  preferredModalities: ['Swimming', 'Cycling', 'Running'],
+  equipment: { outdoor_bike: true, swim_access: true },
+  maxTimeMinutes: 60,
+});
+const triathlonNovicePreferences = preferences(['Swimming', 'Cycling', 'Running']);
+const triathlonNovicePersona = {
+  personaId: 'triathlon_novice_eighth',
+  dataAvailability: 'garmin_plus_subjective_checkin',
+  primaryGoal: 'complete a first 1/8-distance triathlon safely',
+  currentTrainingIdentity: 'new triathlon athlete with no fabricated current training base',
+  judgeExpectations: [
+    'Treat no seeded current history as novice status; do not infer swim proficiency or a high training tolerance.',
+    'When pool and bicycle access are available, preserve reachable exposure to Swimming, Cycling and Running across the week.',
+    'When pool access is unavailable, never prescribe Swimming or invent an alternative that claims to satisfy the swim requirement.',
+  ],
+};
+
+const triathlonIntermediateContext = context({
+  goals: {
+    shortTerm: 'Build consistent three-discipline preparation for an Olympic-distance triathlon.',
+    midTerm: 'Progress aerobic durability and controlled quality without losing any race discipline.',
+    longTerm: 'Complete an Olympic triathlon from a current, sustainable mixed-discipline base.',
+  },
+  preferredModalities: ['Swimming', 'Cycling', 'Running'],
+  equipment: { outdoor_bike: true, swim_access: true },
+  maxTimeMinutes: 75,
+});
+const triathlonIntermediatePreferences = preferences(['Swimming', 'Cycling', 'Running']);
+const triathlonIntermediatePersona = {
+  personaId: 'triathlon_intermediate_olympic',
+  dataAvailability: 'garmin_plus_subjective_checkin',
+  primaryGoal: 'prepare for an Olympic-distance triathlon from a current mixed-discipline base',
+  currentTrainingIdentity: 'recreational triathlete with recent swimming, cycling and running exposure',
+  judgeExpectations: [
+    'Use the real recent mixed-discipline history as current capacity evidence, not as permission to ignore recovery signals.',
+    'Retain all three race disciplines when access exists; a short time budget may reduce dose but not bypass hard feasibility rules.',
+    'Do not invent a brick workout, swim pace anchor, or open-water capability that the engine does not model.',
+  ],
+};
+
+const triathlonAdvancedContext = context({
+  goals: {
+    shortTerm: 'Prepare a durable three-discipline week for a 70.3-distance triathlon.',
+    midTerm: 'Maintain consistent swimming, cycling and running while respecting recovery and race proximity.',
+    longTerm: 'Arrive at a 70.3 with a sustainable current endurance base rather than an assumed elite capacity.',
+  },
+  preferredModalities: ['Swimming', 'Cycling', 'Running'],
+  equipment: { outdoor_bike: true, swim_access: true },
+  maxTimeMinutes: 90,
+});
+const triathlonAdvancedPreferences = preferences(['Swimming', 'Cycling', 'Running']);
+const triathlonAdvancedPersona = {
+  personaId: 'triathlon_advanced_half_iron',
+  dataAvailability: 'garmin_plus_subjective_checkin',
+  primaryGoal: 'prepare for a 70.3-distance triathlon from an established current mixed-discipline base',
+  currentTrainingIdentity: 'experienced triathlete with substantial current mixed-discipline exposure',
+  judgeExpectations: [
+    'A larger current base can support more total work, but adverse recovery still reduces near-term cost.',
+    'In the final 14 days, evaluate taper restraint against the scheduled A-event rather than rewarding ordinary build volume.',
+    'Do not infer a specialist long-course volume progression, bricks, or swim-performance anchors beyond the modeled evidence.',
   ],
 };
 
@@ -616,6 +722,127 @@ export function buildPersonaFamilies() {
     }),
   ];
 
+  const intermediateHistory = triathlonHistory('persona-triathlon-intermediate', [
+    '2026-08-03', '2026-08-05', '2026-08-08', '2026-08-10', '2026-08-12', '2026-08-14',
+    '2026-08-17', '2026-08-19', '2026-08-21', '2026-08-23', '2026-08-25', '2026-08-27',
+  ]);
+  const advancedHistory = triathlonHistory('persona-triathlon-advanced', [
+    '2026-08-03', '2026-08-04', '2026-08-06', '2026-08-08', '2026-08-10', '2026-08-11',
+    '2026-08-13', '2026-08-15', '2026-08-17', '2026-08-18', '2026-08-20', '2026-08-22',
+    '2026-08-23', '2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28', '2026-08-29',
+  ]);
+
+  const novicePoolUnavailableContext = clone(triathlonNoviceContext);
+  novicePoolUnavailableContext.trainingSettings.equipment.swim_access = false;
+  const intermediateShortTimeContext = clone(triathlonIntermediateContext);
+  intermediateShortTimeContext.constraints.maxTimeMinutes = 45;
+  intermediateShortTimeContext.trainingSettings.defaults.weekdayMaxMinutes = 45;
+
+  const noviceTriathlonCases = [
+    makeScenario({
+      id: 'persona_triathlon_novice_eighth_baseline',
+      label: 'Novice triathlon persona — 1/8 distance, normal recovery',
+      persona: triathlonNovicePersona,
+      readiness: { subjective: subjective({ readiness: 7, fatigue: 3, soreness: 2, motivation: 8, preferredModalityToday: 'Swimming' }), objective: neutralGarmin },
+      context: triathlonNoviceContext,
+      trainingIntentProfile: null,
+      userPreferences: triathlonNovicePreferences,
+      event: triathlonEvent('eighth_im', '2026-10-12'),
+    }),
+    makeScenario({
+      id: 'persona_triathlon_novice_eighth_adverse_recovery',
+      label: 'Novice triathlon persona — 1/8 distance, adverse recovery',
+      persona: triathlonNovicePersona,
+      readiness: { subjective: subjective({ readiness: 4, sleepQuality: 4, fatigue: 7, soreness: 5, stress: 6, motivation: 6, preferredModalityToday: 'Swimming' }), objective: adverseGarmin },
+      context: triathlonNoviceContext,
+      trainingIntentProfile: null,
+      userPreferences: triathlonNovicePreferences,
+      event: triathlonEvent('eighth_im', '2026-10-12'),
+    }),
+    makeScenario({
+      id: 'persona_triathlon_novice_eighth_pool_unavailable',
+      label: 'Novice triathlon persona — 1/8 distance, pool unavailable',
+      persona: triathlonNovicePersona,
+      readiness: { subjective: subjective({ readiness: 7, fatigue: 3, soreness: 2, motivation: 8, preferredModalityToday: 'Cycling' }), objective: neutralGarmin },
+      context: novicePoolUnavailableContext,
+      trainingIntentProfile: null,
+      userPreferences: triathlonNovicePreferences,
+      event: triathlonEvent('eighth_im', '2026-10-12'),
+    }),
+  ];
+
+  const intermediateTriathlonCases = [
+    makeScenario({
+      id: 'persona_triathlon_intermediate_olympic_baseline',
+      label: 'Intermediate triathlon persona — Olympic distance, normal recovery',
+      persona: triathlonIntermediatePersona,
+      readiness: { subjective: subjective({ readiness: 8, fatigue: 2, soreness: 2, motivation: 8, timeAvailable: 75, preferredModalityToday: 'Cycling' }), objective: neutralGarmin },
+      context: triathlonIntermediateContext,
+      trainingIntentProfile: null,
+      userPreferences: triathlonIntermediatePreferences,
+      initialHistory: intermediateHistory,
+      event: triathlonEvent('olympic', '2026-10-12'),
+    }),
+    makeScenario({
+      id: 'persona_triathlon_intermediate_olympic_adverse_recovery',
+      label: 'Intermediate triathlon persona — Olympic distance, adverse recovery',
+      persona: triathlonIntermediatePersona,
+      readiness: { subjective: subjective({ readiness: 4, sleepQuality: 4, fatigue: 7, soreness: 5, stress: 6, motivation: 7, timeAvailable: 75, preferredModalityToday: 'Cycling' }), objective: adverseGarmin },
+      context: triathlonIntermediateContext,
+      trainingIntentProfile: null,
+      userPreferences: triathlonIntermediatePreferences,
+      initialHistory: intermediateHistory,
+      event: triathlonEvent('olympic', '2026-10-12'),
+    }),
+    makeScenario({
+      id: 'persona_triathlon_intermediate_olympic_short_time',
+      label: 'Intermediate triathlon persona — Olympic distance, 45-minute weekday cap',
+      persona: triathlonIntermediatePersona,
+      readiness: { subjective: subjective({ readiness: 7, fatigue: 3, soreness: 2, motivation: 8, timeAvailable: 45, preferredModalityToday: 'Running' }), objective: neutralGarmin },
+      context: intermediateShortTimeContext,
+      trainingIntentProfile: null,
+      userPreferences: triathlonIntermediatePreferences,
+      initialHistory: intermediateHistory,
+      event: triathlonEvent('olympic', '2026-10-12'),
+    }),
+  ];
+
+  const advancedTriathlonCases = [
+    makeScenario({
+      id: 'persona_triathlon_advanced_half_iron_baseline',
+      label: 'Advanced triathlon persona — 70.3 distance, normal recovery',
+      persona: triathlonAdvancedPersona,
+      readiness: { subjective: subjective({ readiness: 8, fatigue: 2, soreness: 2, motivation: 8, timeAvailable: 90, preferredModalityToday: 'Cycling' }), objective: neutralGarmin },
+      context: triathlonAdvancedContext,
+      trainingIntentProfile: null,
+      userPreferences: triathlonAdvancedPreferences,
+      initialHistory: advancedHistory,
+      event: triathlonEvent('half_iron', '2026-10-12'),
+    }),
+    makeScenario({
+      id: 'persona_triathlon_advanced_half_iron_adverse_recovery',
+      label: 'Advanced triathlon persona — 70.3 distance, adverse recovery',
+      persona: triathlonAdvancedPersona,
+      readiness: { subjective: subjective({ readiness: 4, sleepQuality: 4, fatigue: 7, soreness: 5, stress: 6, motivation: 7, timeAvailable: 90, preferredModalityToday: 'Cycling' }), objective: adverseGarmin },
+      context: triathlonAdvancedContext,
+      trainingIntentProfile: null,
+      userPreferences: triathlonAdvancedPreferences,
+      initialHistory: advancedHistory,
+      event: triathlonEvent('half_iron', '2026-10-12'),
+    }),
+    makeScenario({
+      id: 'persona_triathlon_advanced_half_iron_taper',
+      label: 'Advanced triathlon persona — 70.3 distance, final 14-day taper window',
+      persona: triathlonAdvancedPersona,
+      readiness: { subjective: subjective({ readiness: 8, fatigue: 2, soreness: 2, motivation: 8, timeAvailable: 90, preferredModalityToday: 'Swimming' }), objective: neutralGarmin },
+      context: triathlonAdvancedContext,
+      trainingIntentProfile: null,
+      userPreferences: triathlonAdvancedPreferences,
+      initialHistory: advancedHistory,
+      event: triathlonEvent('half_iron', '2026-09-14'),
+    }),
+  ];
+
   const stackedConstraintCases = [
     makeScenario({
       id: 'persona_stacked_constraints_baseline',
@@ -689,6 +916,24 @@ export function buildPersonaFamilies() {
       comparisonInstruction: 'This is the direct contrast to persona_former_elite_return: authority here is current, recent, consistently logged training rather than historical achievement. Compare the same established athlete across good recovery (which may reasonably unlock one purposeful higher-intensity session per week), adverse recovery (which should still reduce load), and low motivation alone with good objective signals (which should not remove an otherwise-earned higher-intensity opportunity).',
       cases: establishedHistoryCases,
     },
+    {
+      familyId: 'persona_triathlon_novice_eighth',
+      changedAxis: 'current recovery and pool availability for a novice 1/8-distance triathlon athlete',
+      comparisonInstruction: 'Compare the same novice athlete across normal recovery, adverse recovery, and a pool-access loss. With access, the event-directed plan should preserve safe Swimming, Cycling and Running exposure. Without access, it must not fabricate swimming or bypass the access gate.',
+      cases: noviceTriathlonCases,
+    },
+    {
+      familyId: 'persona_triathlon_intermediate_olympic',
+      changedAxis: 'current recovery and weekday capacity for an intermediate Olympic-distance triathlon athlete',
+      comparisonInstruction: 'Compare the same established mixed-discipline athlete across normal recovery, adverse recovery, and a 45-minute weekday cap. The plan must preserve race relevance and hard feasibility without inventing a brick, swim pace anchor, or inaccessible session.',
+      cases: intermediateTriathlonCases,
+    },
+    {
+      familyId: 'persona_triathlon_advanced_half_iron',
+      changedAxis: 'current recovery and race proximity for an advanced 70.3-distance triathlon athlete',
+      comparisonInstruction: 'Compare normal and adverse recovery at the same event distance with a final-14-day taper case. Current history supports meaningful training but does not weaken recovery gates; near-race planning should show taper restraint rather than ordinary build volume.',
+      cases: advancedTriathlonCases,
+    },
   ];
 }
 
@@ -698,10 +943,17 @@ export function assertPersonaFixtureIntegrity(families) {
   const ids = new Set();
   for (const definition of allCases) {
     const { scenario, persona } = definition;
+    const isTriathlonPersona = persona.personaId.startsWith('triathlon_');
     if (ids.has(scenario.id)) failures.push(`Duplicate persona case id: ${scenario.id}`);
     ids.add(scenario.id);
-    if (scenario.event !== null || (scenario.events ?? []).length !== 0) failures.push(`${scenario.id}: persona fixtures must be evergreen and event-free.`);
-    if (scenario.trainingIntentProfile?.planningMode !== 'evergreen') failures.push(`${scenario.id}: missing evergreen training intent.`);
+    if (isTriathlonPersona) {
+      if (scenario.event?.category !== 'triathlon' || (scenario.events ?? []).length !== 1) failures.push(`${scenario.id}: triathlon persona must carry exactly one triathlon event.`);
+      if (scenario.event?.priority !== 'A') failures.push(`${scenario.id}: triathlon persona must carry an A-priority event.`);
+      if (scenario.trainingIntentProfile !== null) failures.push(`${scenario.id}: triathlon persona must remain event-directed rather than forcing evergreen mode.`);
+    } else {
+      if (scenario.event !== null || (scenario.events ?? []).length !== 0) failures.push(`${scenario.id}: evergreen persona fixture must not carry an event.`);
+      if (scenario.trainingIntentProfile?.planningMode !== 'evergreen') failures.push(`${scenario.id}: missing evergreen training intent.`);
+    }
     const serialized = JSON.stringify({ persona, label: scenario.label, description: scenario.description }).toLowerCase();
     for (const realName of ['adrian', 'rafal', 'rafał', 'ola', 'aleksandra']) {
       if (serialized.includes(realName)) failures.push(`${scenario.id}: public fixture contains a real-person name (${realName}).`);
@@ -775,6 +1027,31 @@ export function assertPersonaFixtureIntegrity(families) {
       failures.push(`${definition.scenario.id}: established-history persona must carry endurance priority.`);
     }
   }
+
+  const triathlonExpectations = [
+    { personaId: 'triathlon_novice_eighth', preset: 'eighth_im', historyCount: 0 },
+    { personaId: 'triathlon_intermediate_olympic', preset: 'olympic', historyCount: 12 },
+    { personaId: 'triathlon_advanced_half_iron', preset: 'half_iron', historyCount: 18 },
+  ];
+  for (const expectation of triathlonExpectations) {
+    const definitions = allCases.filter((item) => item.persona.personaId === expectation.personaId);
+    if (definitions.length !== 3) failures.push(`${expectation.personaId}: expected exactly 3 cases, found ${definitions.length}.`);
+    for (const definition of definitions) {
+      const { scenario } = definition;
+      if (scenario.event?.id !== `persona-triathlon-${expectation.preset}`) failures.push(`${scenario.id}: incorrect triathlon event preset.`);
+      if (JSON.stringify(scenario.event?.demandProfile) !== JSON.stringify(TRIATHLON_DEMANDS[expectation.preset])) failures.push(`${scenario.id}: triathlon event demand profile drifted from its fixture preset.`);
+      if (!scenario.context.trainingSettings.equipment.outdoor_bike) failures.push(`${scenario.id}: triathlon persona must declare outdoor bike access.`);
+      const poolUnavailable = scenario.id === 'persona_triathlon_novice_eighth_pool_unavailable';
+      if (scenario.context.trainingSettings.equipment.swim_access === poolUnavailable) failures.push(`${scenario.id}: unexpected pool-access state.`);
+      if ((scenario.initialHistory ?? []).length !== expectation.historyCount) failures.push(`${scenario.id}: expected ${expectation.historyCount} seeded current-history exposures.`);
+      for (const modality of ['Swimming', 'Cycling', 'Running']) {
+        if (!scenario.preferences.preferredModalities.includes(modality)) failures.push(`${scenario.id}: missing ${modality} preference.`);
+      }
+    }
+  }
+
+  const advancedTaper = allCases.find((item) => item.scenario.id === 'persona_triathlon_advanced_half_iron_taper');
+  if (advancedTaper?.scenario.event?.date !== '2026-09-14') failures.push('Advanced triathlon taper case must end at its 14-day event boundary.');
 
   if (failures.length) throw new Error(`Persona fixture integrity failed:\n- ${failures.join('\n- ')}`);
   return { familyCount: families.length, caseCount: allCases.length };

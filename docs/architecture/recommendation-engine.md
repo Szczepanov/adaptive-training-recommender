@@ -503,6 +503,10 @@ Forecast recommendations never mutate completed credit. They accumulate in
 The planner's `objectiveCredits` display is derived from the same V2 objective-credit
 function used by the live ledger, not the old `stimulusCoverage >= 0.6` model.
 
+Rolling re-resolution carries that state by `WeeklyObjective.id`, never the display
+`key`: one triathlon week deliberately contains separate Swimming, Cycling, and Running
+`zone2_aerobic` objectives with the same key but different qualification contracts.
+
 ### Required weekly-role reservations (ADR-0018)
 
 Weekly anchors remain preferences. `weeklyAllocation.ts` adds a separate, exact-identity

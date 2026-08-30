@@ -21,6 +21,16 @@ function personaFacts(persona) {
   return clone(facts);
 }
 
+function eventFacts(event) {
+  if (!event) return null;
+  return {
+    title: event.title,
+    date: event.date,
+    priority: event.priority,
+    category: event.category,
+  };
+}
+
 function planFromResult(result, templatesById) {
   return result.decisionTraces.map((trace) => {
     const template = templatesById.get(trace.selected.templateId);
@@ -52,6 +62,7 @@ function packetFromResult(definition, result, templatesById) {
       weeks: scenario.weeks,
       readiness: clone(readiness),
       goals: clone(scenario.context.goals),
+      event: eventFacts(scenario.event),
       constraints: clone(scenario.context.constraints),
       preferences: clone(scenario.preferences ?? scenario.context.preferences),
       trainingIntentProfile: clone(scenario.trainingIntentProfile),
@@ -68,9 +79,9 @@ You are an independent evaluator of adaptive training recommendations across str
 
 Score each case 0-10 on the existing schema dimensions using these meanings:
 - safety_recovery_fit: respects current pain, fatigue, soreness, recovery signals and active guardrails without over-medicalizing normal variation.
-- goal_event_fit: aligns with the persona's actual evergreen goal. There is no event in these fixtures; do not reward invented peaking/tapering.
+- goal_event_fit: aligns with the persona's actual goal and, when an event is supplied, its category, priority and race date. For event-free personas, do not reward invented peaking/tapering.
 - sequencing: multi-day load is coherent and avoids unnecessary same-tissue/systemic stacking.
-- periodization_taper: for these event-free personas, score sustainable evergreen progression and the absence of fake race periodization. A good evergreen plan may score 10 here without a taper.
+- periodization_taper: for event-free personas, score sustainable evergreen progression and the absence of fake race periodization. For event-directed personas, score appropriate preparation for the stated race timeline; near-race taper restraint is good, while a full build load in the final taper window is not.
 - preference_capacity_fit: respects available time/equipment/preferences AND the declared data source. Never require a wearable for a check-in-only athlete and never hallucinate objective measurements.
 - robustness: behaves sensibly under sparse/missing data, conflicting signals, occupational fatigue and historical-vs-current fitness uncertainty.
 - overall: holistic recommendation quality.
@@ -79,6 +90,7 @@ Persona-specific calibration:
 1. Check-in-only strength persona: subjective readiness/fatigue/soreness/pain are legitimate evidence. A physically demanding job contributes real non-training load through the check-in. Strength specificity should be preserved when safe; cardio is not the primary performance objective. An active shoulder/back flare should tighten the plan and active guardrails must be respected. Do not diagnose an injury.
 2. Health/fat-loss persona: prefer a sustainable combination of aerobic and resistance training with adherence-friendly progression. Garmin can inform recovery but should not turn the plan into event-style performance training. Training can support fat loss, but absent nutrition data do not justify invented calorie targets or crash-diet assumptions.
 3. Former high-level endurance persona: historical competitive achievement is context, not present-day load tolerance. Current recent training and current recovery govern dose. A good Garmin day alone does not justify an elite workload after intermittent current training.
+4. Triathlon personas: Swimming, Cycling and Running are separate race disciplines. When pool and bicycle access exist, do not accept a single discipline as a silent substitute for the others. When access is absent, never reward an unsafe or fabricated session for closing the gap. Do not invent a brick workout, swim pace/CSS anchor, or open-water competence that is absent from the input. A novice has no implied proficiency; an advanced athlete's current history supports capacity but never overrides adverse recovery or taper needs.
 
 Judge methodology:
 - Missing data are different from adverse data.
