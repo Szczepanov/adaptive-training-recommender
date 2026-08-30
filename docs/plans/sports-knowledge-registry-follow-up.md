@@ -37,29 +37,38 @@ Migrated internal intensity semantics, rolling hard density, anchor spacing, rec
 
 Post-pack inventory: 10 covered / 1 partial / 31 uncovered / 5 not applicable. P0 / P1 / P2 / P3 = 10 / 13 / 7 / 2.
 
-### Evidence Pack 2 — Readiness + Sleep + HRV
+### Evidence Pack 2 — Readiness + Sleep + HRV + RHR + Respiration
 
 **Status:** Complete (2026-08-30)
 
 Analysis: `docs/analysis/2026-08-30-evidence-pack-readiness-sleep-hrv.md`
 
-Migrated:
+Scientific boundaries added:
 
 - contextual/longitudinal HRV interpretation;
 - conditional HRV-guided training authority;
+- individualized/contextual resting-HR interpretation;
 - sleep-loss/performance relevance;
 - consumer wearable sleep-measurement limitations;
-- the live HRV/RHR/sleep/respiration strain model;
+- resting/nocturnal respiration as a low-certainty contextual anomaly signal rather than a specific illness/readiness marker.
+
+Current product policies documented separately:
+
+- live HRV/RHR/sleep/respiration strain weights and variability floors;
 - absolute sleep-score / Body Battery floors;
 - acute HRV/RHR modify floors;
 - composite train/modify/recover score thresholds;
 - internal-response HRV/RHR/sleep normalization and fusion model.
 
-The pack explicitly does **not** treat HRV as standalone readiness truth, consumer sleep estimates as polysomnography, or proprietary Body Battery/sleep scores as independently validated physiological cut-points. Exact app weights and thresholds remain product heuristics with `not_applicable` scientific certainty.
+The pack contains six scientific claims and five explicit product-policy claims. It does **not** treat HRV or RHR as standalone readiness truth, consumer sleep estimates as polysomnography, proprietary Body Battery/sleep scores as independently validated physiological cut-points, or respiration as a specific illness detector. Exact app weights and thresholds remain product heuristics with `not_applicable` scientific certainty.
 
-`readiness.subjective_mode_thresholds` remains **uncovered / P0** because evidence about HRV and sleep must not be used to legitimize subjective cut-points by proximity.
+RHR evidence is sufficiently direct for **moderate / conditional** contextual monitoring authority. Respiration evidence is materially less direct to athlete readiness: the selected literature mainly supports measurement, within-person longitudinal stability and multivariate infection/anomaly context, so its claim is intentionally **low / informational**.
 
-Post-pack inventory: 15 covered / 1 partial / 26 uncovered / 5 not applicable. P0 / P1 / P2 / P3 = 5 / 13 / 7 / 2. High-impact uncovered falls to 13 and high-safety uncovered to 4.
+The RHR/respiration extension enriches lineage rather than increasing the coverage count. The same five readiness families were already marked covered; they now reference evidence specific to every live objective signal instead of allowing adjacent HRV/sleep evidence to stand in for RHR/respiration.
+
+`readiness.subjective_mode_thresholds` remains **uncovered / P0** because objective-biomarker evidence must not be used to legitimize subjective cut-points by proximity.
+
+Post-pack inventory remains 15 covered / 1 partial / 26 uncovered / 5 not applicable. P0 / P1 / P2 / P3 = 5 / 13 / 7 / 2. High-impact uncovered = 13 and high-safety uncovered = 4.
 
 No recommendation behavior changes were made, so this pack does not bump the global recommendation `POLICY_VERSION`.
 
