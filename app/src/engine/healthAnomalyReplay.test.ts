@@ -115,6 +115,37 @@ describe('health anomaly replay', () => {
         expect(Object.values(symptomatic?.assessmentStates ?? {})[0]?.state).toBe('symptoms_reported');
     });
 
+    it('does not count unusually high HRV as adverse corroboration for elevated respiration', () => {
+        const history = Array.from({ length: 20 }, (_, index) => ({
+            date: dateAt(index),
+            recoverySnapshot: snapshot(dateAt(index), 50, 58 + (index % 5), 13.8 + (index % 4) * 0.1),
+            subjectiveCheckin: checkin(dateAt(index)),
+        }));
+        const elevatedDate = dateAt(20);
+        const report = runHealthAnomalyReplay({
+            days: [
+                ...history,
+                {
+                    date: elevatedDate,
+                    recoverySnapshot: snapshot(elevatedDate, 50, 95, 15.5),
+                    subjectiveCheckin: checkin(elevatedDate),
+                },
+            ],
+        });
+
+        const elevated = report.rows.find(row => row.date === elevatedDate);
+        expect(elevated?.respirationElevation?.status).toBe('elevated');
+        expect(elevated?.coreEvidence.find(item => item.signal === 'hrv')).toMatchObject({
+            status: 'strong_anomaly',
+            direction: 'two_sided',
+        });
+        expect(report.respirationElevationSummary).toMatchObject({
+            elevatedOrStrongDays: 1,
+            corroboratedDays: 0,
+            isolatedDays: 1,
+        });
+    });
+
     it('exports estimator candidates, context and machine-readable plus markdown states', () => {
         const days = Array.from({ length: 21 }, (_, index) => ({
             date: dateAt(index),
