@@ -109,6 +109,7 @@ export interface EvidenceBackedStrategy {
 
 const POLICY_VERSION = 'evergreen-dose-v1';
 
+/** Project an active knowledge claim into the legacy provenance shape consumed by existing planner code. */
 function evidenceProvenance(
     knowledgeClaimId: string,
     authority: EvidenceProvenance['authority'],
@@ -136,11 +137,13 @@ function evidenceProvenance(
     };
 }
 
+/** Return whether a normalized label contains any of the supplied classification terms. */
 function hasAny(text: string, terms: readonly string[]): boolean {
     const normalized = text.toLowerCase();
     return terms.some(term => normalized.includes(term));
 }
 
+/** Detect contradictory structured modality and free-text session-type evidence in one exposure. */
 function hasConflictingStructuralEvidence(exposure: CompletedExposure): boolean {
     if (!exposure.modality) return false;
     const label = exposure.trainingRecordLike.type;
@@ -210,6 +213,7 @@ export function inferAthleteTrainingState(
     };
 }
 
+/** Build the WHO-backed adult aerobic dose requirement without applying capacity constraints. */
 function aerobicRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
     const primaryClaimId = KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume;
     return {
@@ -222,6 +226,7 @@ function aerobicRequirement(priority: AdaptationDoseRequirement['priority']): Ad
     };
 }
 
+/** Build the adult strength requirement from the WHO floor plus the separate product upper-target claim. */
 function strengthRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
     const primaryClaimId = KNOWLEDGE_CLAIM_IDS.adultStrengthHealthFrequency;
     return {
