@@ -44,4 +44,13 @@ describe('training settings storage parsing', () => {
         }, 'athlete');
         expect(parsed?.injuries).toHaveLength(1);
     });
+
+    it('accepts both walking and swimming injury restrictions after the multisport merge', () => {
+        const base = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const parsed = parseTrainingSettings({
+            ...base,
+            injuries: [{ severity: 'limit', restrictedModalities: ['Walking', 'Swimming'] }],
+        }, 'athlete');
+        expect(parsed?.injuries?.[0].restrictedModalities).toEqual(['Walking', 'Swimming']);
+    });
 });
