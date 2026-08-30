@@ -7,7 +7,12 @@ function snapshot(date: string, rhr = 50, hrv = 60, respiration = 14): DailyReco
     return {
         userId: 'u1',
         date,
-        source: { garminSyncedAt: `${date}T06:00:00Z`, sourceSchemaVersion: 3, timezone: 'Europe/Warsaw' },
+        source: {
+            garminSyncedAt: `${date}T06:00:00Z`,
+            sourceSchemaVersion: 3,
+            timezone: 'Europe/Warsaw',
+            metricDates: { sleep: date },
+        },
         raw: {
             sleepScore: 85,
             sleepDurationSec: 8 * 3600,
@@ -144,6 +149,31 @@ describe('health anomaly replay', () => {
             corroboratedDays: 0,
             isolatedDays: 1,
         });
+    });
+
+    it('fails respiration closed when the selected sleep record belongs to another date', () => {
+        const history = Array.from({ length: 20 }, (_, index) => ({
+            date: dateAt(index),
+            recoverySnapshot: snapshot(dateAt(index), 50, 58 + (index % 5), 13.8 + (index % 4) * 0.1),
+            subjectiveCheckin: checkin(dateAt(index)),
+        }));
+        const targetDate = dateAt(20);
+        const stale = snapshot(targetDate, 50, 60, 15.5);
+        stale.source.metricDates = { sleep: dateAt(19) };
+        const report = runHealthAnomalyReplay({
+            days: [
+                ...history,
+                { date: targetDate, recoverySnapshot: stale, subjectiveCheckin: checkin(targetDate) },
+            ],
+        });
+
+        const row = report.rows.find(item => item.date === targetDate);
+        expect(row?.respirationElevation).toMatchObject({
+            status: 'unavailable',
+            reasonCodes: ['DATE_PROVENANCE_MISMATCH'],
+        });
+        expect(row?.coreEvidence.find(item => item.signal === 'respiration')?.status).toBe('unavailable');
+        expect(report.respirationElevationSummary.elevatedOrStrongDays).toBe(0);
     });
 
     it('exports estimator candidates, context and machine-readable plus markdown states', () => {
