@@ -3,6 +3,7 @@ import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../ru
 import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
 import { materializeEffectiveDose } from '../optimizer';
 import type { CompletedExposure, TrainingHistoryProvider } from '../trainingHistory';
+import type { TrainingHistorySnapshot } from '../trainingHistorySnapshot';
 import { evaluatePeriodizationPhase } from '../periodization';
 import { resolvePlanningContext } from '../planningMode';
 import { addDaysToLocalDateString } from '../../utils/localDate';
@@ -354,11 +355,31 @@ export async function runScenario(
     const subjectiveDriftPolicy = options.subjectiveDriftPolicy ?? 'off';
     const subjectiveDriftWeights = options.subjectiveDriftWeights ?? REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS;
     const accumulatedHistory: CompletedExposure[] = [...(scenario.initialHistory ?? [])];
+    const windowedExposures = (throughDateExclusive: string, windowDays: number): CompletedExposure[] => {
+        const windowStart = addDaysToLocalDateString(throughDateExclusive, -windowDays);
+        return accumulatedHistory.filter(exposure => exposure.date >= windowStart && exposure.date < throughDateExclusive);
+    };
+    // A getSnapshot implementation is required for resolveTrainingIntent's wider
+    // athlete-state evidence window (see trainingIntent.ts's ATHLETE_STATE_HISTORY_WINDOW_DAYS)
+    // to ever be reachable through simulation: prepareTrainingHistorySnapshot returns null for
+    // any provider that only implements reconstruct(), which previously made
+    // dataQuality: 'high' / trainingAgeProxy: 'established' structurally unreachable for every
+    // scenario and persona run through this harness, regardless of seeded initialHistory.
     const historyProvider: TrainingHistoryProvider = {
-        reconstruct: async (_userId, throughDateExclusive, windowDays) => {
-            const windowStart = addDaysToLocalDateString(throughDateExclusive, -windowDays);
-            return accumulatedHistory.filter(exposure => exposure.date >= windowStart && exposure.date < throughDateExclusive);
-        },
+        reconstruct: async (_userId, throughDateExclusive, windowDays) => windowedExposures(throughDateExclusive, windowDays),
+        getSnapshot: async (_userId, throughDateExclusive, windowDays): Promise<TrainingHistorySnapshot> => ({
+            throughDateExclusive,
+            windowDays,
+            completedEvents: [],
+            exposures: windowedExposures(throughDateExclusive, windowDays),
+            sourceStates: {
+                activities: { status: 'AVAILABLE', revision: `sim-activities-${windowDays}` },
+                recommendations: { status: 'AVAILABLE', revision: `sim-recommendations-${windowDays}` },
+                manualTraining: { status: 'MISSING' },
+            },
+            generatedAt: new Date().toISOString(),
+            revision: `sim-history-${throughDateExclusive}-${windowDays}-${accumulatedHistory.length}`,
+        }),
     };
 
     const weeklyDays: WeekAheadDay[][] = [];
