@@ -31,4 +31,10 @@ replaceOnce(
   "    const allowedModalities = (['Running', 'Cycling', 'Swimming', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'] as const)",
 );
 
-console.log('Applied multisport exhaustiveness follow-up fixes.');
+replaceOnce(
+  'app/src/engine/multisportSupport.test.ts',
+  "        const { outdoor_bike: _bike, swim_access: _swim, ...legacyEquipment } = base.equipment;",
+  "        const legacyEquipment = { ...base.equipment };\n        delete legacyEquipment.outdoor_bike;\n        delete legacyEquipment.swim_access;",
+);
+
+console.log('Applied multisport exhaustiveness and regression-test follow-up fixes.');
