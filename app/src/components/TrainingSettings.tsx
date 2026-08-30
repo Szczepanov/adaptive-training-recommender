@@ -32,7 +32,7 @@ const injuryRegions: Array<{ value: BodyRegion; label: string }> = [
   { value: 'adductor_groin', label: 'Adductor / groin' }, { value: 'hip', label: 'Hip' }, { value: 'lower_back', label: 'Lower back' },
   { value: 'shoulder', label: 'Shoulder' }, { value: 'elbow', label: 'Elbow' }, { value: 'wrist', label: 'Wrist' },
 ];
-const injuryModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Swimming', 'Strength', 'Field', 'Mobility', 'Cross Training'];
+const injuryModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training'];
 const emptyInjuryDraft = { region: '', severity: 'limit' as InjuryConstraint['severity'], restrictedModalities: [] as SessionTemplate['modality'][], reviewBy: '', note: '' };
 
 export function TrainingSettings({ userId }: TrainingSettingsProps) {
