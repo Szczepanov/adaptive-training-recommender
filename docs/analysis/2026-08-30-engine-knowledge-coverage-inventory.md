@@ -175,9 +175,9 @@ The warnings are deliberate. CI should prevent false provenance and inventory co
 ## Next implementation order
 
 1. **Evidence Pack 1 — hard-session density, recovery and strength/endurance spacing.** Split current P0 families into atomic research questions and review high-quality systematic reviews/meta-analyses, consensus/guidelines where available, and direct primary studies where required.
-2. **Evidence Pack 2 — readiness, HRV/RHR/sleep and recovery decision authority.** Expect the distinction between population evidence and individual calibration to be central.
+2. **Evidence Pack 2 — readiness, HRV/RHR/sleep, fatigue-model interpretation and recovery decision authority.** Expect the distinction between population evidence and individual calibration to be central.
 3. **Evidence Pack 3 — taper/event preparation.** Replace monolithic taper defaults with claim-linked policy where evidence is sufficiently direct.
 4. **Evidence Pack 4 — injury/pain safety boundaries.** Treat as high-safety and avoid overclaiming clinical applicability.
-5. Continue P1/P2 migrations: event demand profiles, periodization objectives, stimulus credit and optimizer calibration.
+5. Continue P1/P2 migrations: event demand profiles, periodization objectives, stimulus credit, optimizer calibration, and fueling/recovery recommendations as those features gain decision authority.
 
 Each evidence migration should preserve behavior unless the evidence review explicitly justifies a separate policy-change PR and recommendation `POLICY_VERSION` bump.
