@@ -8,22 +8,26 @@ const ACTIVE_TRIATHLON_PERSONA_ID = 'triathlon_established_olympic';
 const CYCLING_HYBRID_FAMILY_ID = 'persona_cycling_primary_hybrid';
 const CYCLING_HYBRID_PERSONA_ID = 'cycling_primary_hybrid_advanced';
 
+/** Return a detached JSON-safe copy of fixture data. */
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
+/** Find a required source family or fail fast with a fixture-specific error. */
 function requireFamily(families, familyId) {
   const family = families.find((candidate) => candidate.familyId === familyId);
   if (!family) throw new Error(`Persona catalog is missing required family: ${familyId}`);
   return family;
 }
 
+/** Find a required source case within a catalog family or fail fast. */
 function requireCase(family, caseId) {
   const definition = family.cases.find((candidate) => candidate.scenario.id === caseId);
   if (!definition) throw new Error(`Persona catalog family ${family.familyId} is missing required case: ${caseId}`);
   return definition;
 }
 
+/** Adapt one readiness snapshot to the week- and date-based scenario interfaces. */
 function staticReadiness(readiness) {
   const snapshot = clone(readiness);
   return {
@@ -32,6 +36,7 @@ function staticReadiness(readiness) {
   };
 }
 
+/** Compose the single active Olympic-distance triathlon family from reusable catalog cases. */
 function buildActiveTriathlonFamily(catalogFamilies) {
   const noviceFamily = requireFamily(catalogFamilies, 'persona_triathlon_novice_eighth');
   const intermediateFamily = requireFamily(catalogFamilies, 'persona_triathlon_intermediate_olympic');
@@ -62,6 +67,7 @@ function buildActiveTriathlonFamily(catalogFamilies) {
   const basePreferences = clone(baselineSource.scenario.preferences);
   const baseHistory = clone(baselineSource.scenario.initialHistory);
 
+  /** Normalize a catalog case onto the shared active triathlon identity and baseline evidence. */
   function normalizeCase(source, { id, label, context = baseContext, event = baseEvent, readiness } = {}) {
     const normalizedEvent = clone(event);
     const scenario = {
@@ -120,6 +126,7 @@ function buildActiveTriathlonFamily(catalogFamilies) {
   };
 }
 
+/** Compose the active cycling-primary hybrid identity and its decision-state perturbations. */
 function buildCyclingPrimaryHybridFamily(catalogFamilies) {
   const balancedFamily = requireFamily(catalogFamilies, 'persona_balanced_performance');
   const establishedFamily = requireFamily(catalogFamilies, 'persona_established_history');
@@ -239,6 +246,7 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
     ],
   };
 
+  /** Clone a catalog readiness state and override only the fields relevant to one perturbation. */
   function readinessFrom(definition, subjectiveOverrides = {}, objectiveOverrides = {}) {
     const readiness = clone(definition.scenario.readinessForWeek(0));
     readiness.subjective = { ...readiness.subjective, ...subjectiveOverrides };
@@ -246,6 +254,7 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
     return readiness;
   }
 
+  /** Materialize one evergreen hybrid case from shared identity, history, and intent. */
   function makeCase({ id, label, readiness, caseContext = context }) {
     return {
       persona: clone(persona),
@@ -350,6 +359,7 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
   };
 }
 
+/** Build the active judge suite from the larger reusable persona catalog. */
 export function buildPersonaFamilies() {
   const catalogFamilies = buildCatalogFamilies();
   assertCatalogIntegrity(catalogFamilies);
@@ -362,6 +372,7 @@ export function buildPersonaFamilies() {
   ];
 }
 
+/** Validate active-suite privacy, composition, evidence, and adversarial-case invariants. */
 export function assertPersonaFixtureIntegrity(families) {
   const failures = [];
   const allCases = families.flatMap((family) => family.cases);
