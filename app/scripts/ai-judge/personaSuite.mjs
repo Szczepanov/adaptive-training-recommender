@@ -32,16 +32,6 @@ function staticReadiness(readiness) {
   };
 }
 
-function replaceReadiness(definition, readiness) {
-  return {
-    ...definition,
-    scenario: {
-      ...definition.scenario,
-      ...staticReadiness(readiness),
-    },
-  };
-}
-
 function buildActiveTriathlonFamily(catalogFamilies) {
   const noviceFamily = requireFamily(catalogFamilies, 'persona_triathlon_novice_eighth');
   const intermediateFamily = requireFamily(catalogFamilies, 'persona_triathlon_intermediate_olympic');
@@ -169,27 +159,68 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
   preferences.preferredModalities = ['Cycling', 'Strength'];
   preferences.deprioritizedModalities = ['Running'];
 
-  const currentHistory = clone(establishedBaseline.scenario.initialHistory).map((exposure, index) => ({
-    ...exposure,
-    occurrenceKey: `persona-cycling-hybrid-${index}`,
-    modality: 'Cycling',
-    category: 'Easy Endurance',
-    costProfile: {
-      systemic: 0.25,
-      cardiovascular: 0.35,
-      lowerBody: 0.2,
-      upperBody: 0,
-      impactTissue: 0.03,
-      neuromuscular: 0.08,
-    },
-    trainingRecordLike: {
-      ...exposure.trainingRecordLike,
-      type: 'Cycling aerobic endurance',
-      duration_min: 60,
-      training_effect: 2,
-      intensity_tag: 'easy',
-    },
-  }));
+  // Keep the fixture's observed history aligned with the identity the judge is asked to
+  // evaluate. A cycling-primary hybrid can be cycling-dominant without erasing recent
+  // resistance exposure from the evidence available to the planner.
+  const strengthHistoryIndexes = new Set([2, 5, 8, 11]);
+  const cyclingQualityIndexes = new Set([3, 7]);
+  const currentHistory = clone(establishedBaseline.scenario.initialHistory).map((exposure, index) => {
+    if (strengthHistoryIndexes.has(index)) {
+      return {
+        ...exposure,
+        occurrenceKey: `persona-cycling-hybrid-${index}`,
+        modality: 'Strength',
+        category: 'Full-body Strength',
+        costProfile: {
+          systemic: 0.35,
+          cardiovascular: 0.12,
+          lowerBody: 0.42,
+          upperBody: 0.32,
+          impactTissue: 0.02,
+          neuromuscular: 0.42,
+        },
+        trainingRecordLike: {
+          ...exposure.trainingRecordLike,
+          type: 'Full-body resistance training',
+          duration_min: 50,
+          training_effect: 2,
+          intensity_tag: 'moderate',
+        },
+      };
+    }
+
+    const isQuality = cyclingQualityIndexes.has(index);
+    return {
+      ...exposure,
+      occurrenceKey: `persona-cycling-hybrid-${index}`,
+      modality: 'Cycling',
+      category: isQuality ? 'Tempo' : 'Easy Endurance',
+      costProfile: isQuality
+        ? {
+            systemic: 0.45,
+            cardiovascular: 0.58,
+            lowerBody: 0.3,
+            upperBody: 0,
+            impactTissue: 0.03,
+            neuromuscular: 0.16,
+          }
+        : {
+            systemic: 0.25,
+            cardiovascular: 0.35,
+            lowerBody: 0.2,
+            upperBody: 0,
+            impactTissue: 0.03,
+            neuromuscular: 0.08,
+          },
+      trainingRecordLike: {
+        ...exposure.trainingRecordLike,
+        type: isQuality ? 'Cycling tempo endurance' : 'Cycling aerobic endurance',
+        duration_min: 60,
+        training_effect: isQuality ? 3 : 2,
+        intensity_tag: isQuality ? 'moderate' : 'easy',
+      },
+    };
+  });
 
   const persona = {
     personaId: CYCLING_HYBRID_PERSONA_ID,
@@ -200,7 +231,7 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
     constraintContext: 'high training willingness and access to indoor/outdoor cycling plus free weights; running is secondary rather than required',
     judgeExpectations: [
       'When goals compete, protect key cycling adaptation first while retaining enough resistance training to preserve strength and muscle.',
-      'Good wearable readiness must not override active pain or mechanical guardrails; local symptom evidence is decision-relevant even when HRV, sleep and resting heart rate look normal.',
+      'Good wearable readiness must not override active pain or mechanical guardrails; local symptom evidence is decision-relevant even when HRV, sleep and resting heart rate look favorable.',
       'Prefer cycling-specific aerobic work over unnecessary running when both satisfy endurance development and cycling is the declared primary sport.',
       'Adverse recovery should reduce near-term training cost without erasing the longer-horizon requirement for both cycling and resistance exposure.',
       'A strength preference today is a soft preference, not authority to turn the week into strength-primary programming.',
@@ -208,9 +239,10 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
     ],
   };
 
-  function readinessFrom(definition, overrides = {}) {
+  function readinessFrom(definition, subjectiveOverrides = {}, objectiveOverrides = {}) {
     const readiness = clone(definition.scenario.readinessForWeek(0));
-    readiness.subjective = { ...readiness.subjective, ...overrides };
+    readiness.subjective = { ...readiness.subjective, ...subjectiveOverrides };
+    readiness.objective = { ...readiness.objective, ...objectiveOverrides };
     return readiness;
   }
 
@@ -263,15 +295,28 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
     painFlag: false,
     preferredModalityToday: 'Cycling',
   });
-  const tissueConflictReadiness = readinessFrom(triathlonBaseline, {
-    readiness: 6,
-    fatigue: 3,
-    soreness: 6,
-    motivation: 8,
-    timeAvailable: 75,
-    painFlag: true,
-    preferredModalityToday: 'Cycling',
-  });
+  const tissueConflictReadiness = readinessFrom(
+    triathlonBaseline,
+    {
+      readiness: 6,
+      fatigue: 3,
+      soreness: 6,
+      motivation: 8,
+      timeAvailable: 75,
+      painFlag: true,
+      preferredModalityToday: 'Cycling',
+    },
+    {
+      sleep_score: 92,
+      sleep_duration_min: 500,
+      rhr: 54,
+      rhr_delta: -4,
+      hrv_last_night: 51,
+      hrv_delta: 9,
+      body_battery_wake: 88,
+      sleep_score_delta_7d: 10,
+    },
+  );
   const strengthPreferenceReadiness = readinessFrom(triathlonBaseline, {
     readiness: 8,
     fatigue: 2,
@@ -294,13 +339,13 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
   return {
     familyId: CYCLING_HYBRID_FAMILY_ID,
     changedAxis: 'recovery, local mechanical constraint, today-specific modality preference, and time availability for a cycling-primary hybrid athlete',
-    comparisonInstruction: 'Compare one established cycling-primary hybrid athlete across normal recovery, adverse recovery, a good-wearable/local-tissue conflict, a strength preference today, and a short weekday window. Cycling remains the primary performance objective, resistance training remains a real retention requirement, and active pain/guardrails outrank apparently favorable wearable readiness.',
+    comparisonInstruction: 'Compare one established cycling-primary hybrid athlete across normal recovery, adverse recovery, a genuinely favorable-wearable/local-tissue conflict, a strength preference today, and a short training window. Cycling remains the primary performance objective, resistance training remains a real retention requirement backed by observed history, and active pain/guardrails outrank favorable wearable readiness.',
     cases: [
       makeCase({ id: 'persona_cycling_hybrid_baseline', label: 'Cycling-primary hybrid persona — normal recovery', readiness: baselineReadiness }),
       makeCase({ id: 'persona_cycling_hybrid_adverse_recovery', label: 'Cycling-primary hybrid persona — adverse recovery', readiness: adverseReadiness }),
-      makeCase({ id: 'persona_cycling_hybrid_local_tissue_conflict', label: 'Cycling-primary hybrid persona — good wearable signals with active local-tissue guardrails', readiness: tissueConflictReadiness, caseContext: tissueConflictContext }),
+      makeCase({ id: 'persona_cycling_hybrid_local_tissue_conflict', label: 'Cycling-primary hybrid persona — favorable wearable signals with active local-tissue guardrails', readiness: tissueConflictReadiness, caseContext: tissueConflictContext }),
       makeCase({ id: 'persona_cycling_hybrid_strength_preference', label: 'Cycling-primary hybrid persona — strength preference today', readiness: strengthPreferenceReadiness }),
-      makeCase({ id: 'persona_cycling_hybrid_low_time', label: 'Cycling-primary hybrid persona — only 35 minutes today', readiness: lowTimeReadiness, caseContext: lowTimeContext }),
+      makeCase({ id: 'persona_cycling_hybrid_low_time', label: 'Cycling-primary hybrid persona — 35-minute training window', readiness: lowTimeReadiness, caseContext: lowTimeContext }),
     ],
   };
 }
@@ -364,14 +409,24 @@ export function assertPersonaFixtureIntegrity(families) {
     if (scenario.trainingIntentProfile?.planningMode !== 'evergreen') failures.push(`${scenario.id}: cycling-primary hybrid must carry evergreen training intent.`);
     if (!scenario.trainingIntentProfile?.priorities.includes('endurance') || !scenario.trainingIntentProfile?.priorities.includes('strength_muscle')) failures.push(`${scenario.id}: cycling-primary hybrid must preserve endurance and strength_muscle priorities.`);
     if (!scenario.preferences.preferredModalities.includes('Cycling') || !scenario.preferences.preferredModalities.includes('Strength')) failures.push(`${scenario.id}: cycling-primary hybrid must prefer Cycling and Strength.`);
-    if ((scenario.initialHistory ?? []).length !== 12 || scenario.initialHistory.some((item) => item.modality !== 'Cycling')) failures.push(`${scenario.id}: cycling-primary hybrid must seed the same 12-exposure cycling base.`);
+
+    const history = scenario.initialHistory ?? [];
+    const cyclingCount = history.filter((item) => item.modality === 'Cycling').length;
+    const strengthCount = history.filter((item) => item.modality === 'Strength').length;
+    if (history.length !== 12 || cyclingCount !== 8 || strengthCount !== 4) failures.push(`${scenario.id}: cycling-primary hybrid must seed a 12-exposure cycling-dominant mixed history (8 Cycling, 4 Strength).`);
   }
   const tissueConflict = cyclingHybrid?.cases.find((definition) => definition.scenario.id === 'persona_cycling_hybrid_local_tissue_conflict');
-  if (!tissueConflict?.scenario.readinessForWeek(0).subjective.painFlag) failures.push('Cycling-primary hybrid local-tissue case must set painFlag=true.');
+  const tissueReadiness = tissueConflict?.scenario.readinessForWeek(0);
+  if (!tissueReadiness?.subjective.painFlag) failures.push('Cycling-primary hybrid local-tissue case must set painFlag=true.');
+  if (!(tissueReadiness?.objective.hrv_delta > 0) || !(tissueReadiness?.objective.rhr_delta < 0) || !(tissueReadiness?.objective.sleep_score >= 90) || !(tissueReadiness?.objective.body_battery_wake >= 80)) {
+    failures.push('Cycling-primary hybrid local-tissue case must contain clearly favorable wearable signals so symptom-over-wearable arbitration is actually exercised.');
+  }
   for (const guardrail of ['avoid_high_impact', 'avoid_heavy_lower_body']) {
     if (!(tissueConflict?.scenario.context.constraints.impliedGuardrails ?? []).includes(guardrail)) failures.push(`Cycling-primary hybrid local-tissue case must activate ${guardrail}.`);
   }
 
-  if (failures.length) throw new Error(`Active persona suite integrity failed:\n- ${failures.join('\n- ')}`);
+  if (failures.length) throw new Error(`Active persona suite integrity failed:\
+- ${failures.join('\
+- ')}`);
   return { familyCount: families.length, caseCount: allCases.length };
 }
