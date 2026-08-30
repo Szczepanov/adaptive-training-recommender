@@ -40,7 +40,7 @@ The deprecated free-text history fallback was also tightened: a modality-scoped 
 - 5K/10K demand gets a race-pace-specific running objective/session in the specific build window.
 - Half marathon and marathon demand gets a long-run durability objective and a 60-180 minute long-run template, still capped by the athlete's time budget and planned dose.
 - Running taper receives a short sharpening template/objective instead of relying only on generic sessions.
-- Generic aerobic objective credit is now scoped to the governing event's sport rather than letting cross-training satisfy a running or cycling race's primary aerobic exposure.
+- Primary-discipline specificity is explicit where substitution would be harmful: running/cycling race-specific objectives are modality-scoped, while the generic single-sport aerobic-base objective intentionally remains cross-training-creditable. Triathlon uses separate swim/bike/run aerobic objectives because one generic aerobic bucket would otherwise let a single discipline satisfy the whole multisport requirement.
 
 ### 5. Distance naming is made explicit
 
