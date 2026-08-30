@@ -95,7 +95,7 @@ export const SWIMMING_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 35, loadMultiplier: 0.55, rationale: 'Use fewer, easier repeats.', stepOverrides: [{ stepId: 'swim_thresh_main', sets: 3, target: { type: 'rpe', min: 4, max: 5 } }, { stepId: 'swim_thresh_cooldown', durationSeconds: 480 }] }
     ],
     parameters: [
-      { id: 'interval_count', label: 'Interval count', unit: 'repetitions', defaultValue: 5, minimum: 3, maximum: 8, step: 1, appliesToStepIds: ['swim_thresh_main'], bindings: [{ stepId: 'swim_thresh_main', property: 'sets' }], description: 'Progress repeat count before making every effort harder.' }
+      { id: 'interval_count', label: 'Interval count', unit: 'repetitions', defaultValue: 5, minimum: 4, maximum: 7, step: 1, appliesToStepIds: ['swim_thresh_main'], bindings: [{ stepId: 'swim_thresh_main', property: 'sets' }], description: 'Progress repeat count before making every effort harder.' }
     ],
     regressions: ['swimming_easy_aerobic_01'], progressions: [], substitutions: [],
     garmin: { exportable: false },
