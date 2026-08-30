@@ -35,7 +35,7 @@ describe('engine knowledge coverage inventory', () => {
         expect(byId('spacing.hard_lower_body_recovery')).toMatchObject({ coverage: 'partial', researchPriority: 'p1', safetyImpact: 'high' });
     });
 
-    it('migrates the readiness, sleep and HRV evidence pack while keeping exact cut-points explicitly heuristic', () => {
+    it('migrates the objective-readiness evidence pack while keeping exact cut-points explicitly heuristic', () => {
         const covered = [
             'readiness.physiological_strain_model',
             'readiness.absolute_device_floors',
@@ -49,6 +49,17 @@ describe('engine knowledge coverage inventory', () => {
             expect(item?.knowledgeRefs.length).toBeGreaterThanOrEqual(3);
             expect(item?.coverageRationale).toMatch(/product|Product/);
         });
+
+        expect(byId('readiness.physiological_strain_model')?.knowledgeRefs).toEqual(expect.arrayContaining([
+            'readiness.hrv.contextual_individualized_monitoring',
+            'readiness.rhr.contextual_individualized_monitoring',
+            'readiness.sleep.loss_impairs_performance',
+            'readiness.sleep.consumer_wearable_measurement_limits',
+            'readiness.respiration.longitudinal_contextual_signal',
+            'policy.readiness.physiological_strain_model_v1',
+        ]));
+        expect(byId('readiness.acute_biometric_floors')?.knowledgeRefs).toContain('readiness.rhr.contextual_individualized_monitoring');
+        expect(byId('readiness.mode_score_thresholds')?.knowledgeRefs).toContain('readiness.respiration.longitudinal_contextual_signal');
     });
 
     it('keeps the remaining P0 research gaps visible rather than laundering adjacent evidence into them', () => {
