@@ -88,5 +88,11 @@ function addEquipmentToOutdoorCyclingTemplates(path) {
   }
 }`;
 
-fs.writeFileSync(path, source.slice(0, start) + replacement + source.slice(end));
-console.log('Hardened multisport transformer object matching.');
+let hardened = source.slice(0, start) + replacement + source.slice(end);
+const staleDocAnchor = "  'Running, triathlon, strength, and general events retain demand-derived planning.',";
+const currentDocAnchor = "  'running, triathlon,\\nstrength, and general events retain `demand_derived` planning.',";
+if (!hardened.includes(staleDocAnchor)) throw new Error('Could not locate stale architecture-doc anchor in patch script');
+hardened = hardened.replace(staleDocAnchor, currentDocAnchor);
+
+fs.writeFileSync(path, hardened);
+console.log('Hardened multisport transformer object matching and current architecture anchor.');
