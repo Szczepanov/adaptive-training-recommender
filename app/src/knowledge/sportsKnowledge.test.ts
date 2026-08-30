@@ -6,6 +6,7 @@ import {
     SPORTS_KNOWLEDGE_SOURCES,
     validateSportsKnowledgeRegistry,
     type KnowledgeClaim,
+    type KnowledgeSource,
 } from './sportsKnowledge';
 
 describe('sports knowledge registry', () => {
@@ -50,6 +51,65 @@ describe('sports knowledge registry', () => {
         const result = validateSportsKnowledgeRegistry(SPORTS_KNOWLEDGE_SOURCES, [invalidClaim]);
         expect(result.valid).toBe(false);
         expect(result.errors).toContain('claim test.invalid_date: reviewedOn must be a valid YYYY-MM-DD calendar date');
+    });
+
+    it('represents a PubMed-indexed systematic review and its meta-analysis independently', () => {
+        const reviewSource: KnowledgeSource = {
+            id: 'TEST-SYSTEMATIC-REVIEW',
+            title: 'Synthetic systematic review fixture',
+            sourceType: 'systematic_review',
+            citation: 'Synthetic review fixture for registry validation.',
+            publishedOn: '2026-01-15',
+            externalIds: [
+                { type: 'pmid', value: '12345678' },
+                { type: 'doi', value: '10.1000/test-meta' },
+                { type: 'prospero', value: 'CRD420261234567' },
+            ],
+            synthesisMethods: ['meta_analysis'],
+        };
+        const claim: KnowledgeClaim = {
+            ...SPORTS_KNOWLEDGE_CLAIMS[0],
+            id: 'test.review_supported_claim',
+            evidence: [{ sourceId: reviewSource.id, directness: 'direct' }],
+        };
+        expect(validateSportsKnowledgeRegistry([...SPORTS_KNOWLEDGE_SOURCES, reviewSource], [claim])).toEqual({
+            valid: true,
+            errors: [],
+            warnings: [],
+        });
+    });
+
+    it('rejects review synthesis methods on a primary study', () => {
+        const invalidSource: KnowledgeSource = {
+            id: 'TEST-RCT-WITH-META',
+            title: 'Synthetic trial fixture',
+            sourceType: 'randomized_trial',
+            citation: 'Synthetic trial fixture for registry validation.',
+            synthesisMethods: ['meta_analysis'],
+        };
+        const result = validateSportsKnowledgeRegistry([...SPORTS_KNOWLEDGE_SOURCES, invalidSource], SPORTS_KNOWLEDGE_CLAIMS);
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('source TEST-RCT-WITH-META: synthesisMethods are reserved for systematic/umbrella reviews');
+    });
+
+    it('rejects duplicate stable external identifiers across source records', () => {
+        const first: KnowledgeSource = {
+            id: 'TEST-PUBMED-FIRST',
+            title: 'First PubMed fixture',
+            sourceType: 'systematic_review',
+            citation: 'First fixture.',
+            externalIds: [{ type: 'pmid', value: '12345678' }],
+        };
+        const second: KnowledgeSource = {
+            id: 'TEST-PUBMED-SECOND',
+            title: 'Second PubMed fixture',
+            sourceType: 'systematic_review',
+            citation: 'Second fixture.',
+            externalIds: [{ type: 'pmid', value: '12345678' }],
+        };
+        const result = validateSportsKnowledgeRegistry([...SPORTS_KNOWLEDGE_SOURCES, first, second], SPORTS_KNOWLEDGE_CLAIMS);
+        expect(result.valid).toBe(false);
+        expect(result.errors).toContain('duplicate external source identifier: pmid:12345678');
     });
 
     it('keeps scientific certainty separate from product heuristics', () => {
