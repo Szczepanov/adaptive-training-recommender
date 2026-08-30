@@ -6,12 +6,12 @@ import {
     type KnowledgeClaim,
     type KnowledgeRegistryValidation,
     type KnowledgeSource,
-} from './sportsKnowledge';
+} from './sportsKnowledge.ts';
 import {
     READINESS_CARDIORESPIRATORY_CLAIM_IDS,
     READINESS_CARDIORESPIRATORY_CLAIMS,
     READINESS_CARDIORESPIRATORY_SOURCES,
-} from './readinessCardiorespiratoryKnowledge';
+} from './readinessCardiorespiratoryKnowledge.ts';
 
 /**
  * Canonical aggregate registry.
