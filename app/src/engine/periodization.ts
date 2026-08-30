@@ -153,18 +153,24 @@ export function objectivesFromDemand(
                 });
             }
         } else {
-            // Deliberately unscoped: the triathlon branch above exists precisely because a
-            // single shared aerobic bucket lets one discipline silently satisfy every
+            // Unscoped away from taper: the triathlon branch above exists precisely because
+            // a single shared aerobic bucket lets one discipline silently satisfy every
             // discipline's aerobic exposure. A single-sport event (running, cycling,
-            // strength, general) has no such cross-discipline substitution risk, so
-            // scoping this to the event's own modality only shrinks which historical
-            // exposures count as "aerobic base" without protecting anything -- and
+            // strength, general) has no such cross-discipline substitution risk during base
+            // building, so scoping this to the event's own modality there only shrinks which
+            // historical exposures count as "aerobic base" without protecting anything -- and
             // starves the week's coverage/anchor-day logic of credit it used to have.
+            //
+            // Scoped during taper: this close to the race, a low-cost off-modality session
+            // (e.g. a walk) satisfying the same aerobic-base bucket as a cyclist's easy ride
+            // is exactly the wrong kind of substitution -- specificity matters most right
+            // before the event, so the credit must come from the event's own modality.
             objectives.push({
                 id: 'obj_z2_aerobic', key: 'zone2_aerobic', title: 'Aerobic Base (Zone 2)',
                 targetExposures: demand.aerobicEndurance >= 0.7 ? 2 : 1,
                 completedExposures: 0,
                 targetStimulus: { aerobicEndurance: 0.8 },
+                qualification: taperActive && allowedModalities.length > 0 ? { allowedModalities } : undefined,
             });
         }
     }
