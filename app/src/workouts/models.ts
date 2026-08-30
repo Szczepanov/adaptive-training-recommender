@@ -2,6 +2,7 @@ export type WorkoutModality =
   | 'cycling'
   | 'running'
   | 'swimming'
+  | 'walking'
   | 'strength'
   | 'field'
   | 'mobility'

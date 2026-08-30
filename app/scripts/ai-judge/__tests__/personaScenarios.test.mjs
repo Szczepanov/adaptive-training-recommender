@@ -3,17 +3,23 @@ import { describe, expect, it } from 'vitest';
 import { runScenario } from '../../../src/engine/simulation/analyze.ts';
 import { assertPersonaFixtureIntegrity, buildPersonaFamilies } from '../personaScenarios.mjs';
 
+const EXPECTED_FAMILY_IDS = [
+  'persona_strength_no_wearable',
+  'persona_health_fat_loss',
+  'persona_former_elite_return',
+  'persona_balanced_performance',
+  'persona_stacked_constraints',
+  'persona_walking_preferred',
+  'persona_established_history',
+];
+
 describe('persona AI-judge fixtures', () => {
-  it('keeps three anonymized persona families with state perturbations', () => {
+  it('keeps the expected anonymized persona families with three state perturbations each', () => {
     const families = buildPersonaFamilies();
     const summary = assertPersonaFixtureIntegrity(families);
 
-    expect(summary).toEqual({ familyCount: 3, caseCount: 9 });
-    expect(families.map((family) => family.familyId)).toEqual([
-      'persona_strength_no_wearable',
-      'persona_health_fat_loss',
-      'persona_former_elite_return',
-    ]);
+    expect(summary).toEqual({ familyCount: EXPECTED_FAMILY_IDS.length, caseCount: EXPECTED_FAMILY_IDS.length * 3 });
+    expect(families.map((family) => family.familyId)).toEqual(EXPECTED_FAMILY_IDS);
     expect(families.every((family) => family.cases.length === 3)).toBe(true);
   });
 
@@ -53,13 +59,65 @@ describe('persona AI-judge fixtures', () => {
     ]);
   });
 
-  it('executes every persona state through the real multi-week planner', async () => {
+  it('exercises balanced_performance directly rather than assuming health is equivalent', () => {
+    const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_balanced_performance');
+    expect(family).toBeDefined();
+
+    for (const definition of family.cases) {
+      expect(definition.scenario.trainingIntentProfile.priorities).toEqual(['balanced_performance']);
+      expect(definition.scenario.event).toBeNull();
+      expect(definition.scenario.events).toEqual([]);
+    }
+  });
+
+  it('keeps injury and equipment constraints stacked in every constrained-persona perturbation', () => {
+    const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_stacked_constraints');
+    expect(family).toBeDefined();
+
+    for (const definition of family.cases) {
+      const { context } = definition.scenario;
+      expect(context.constraints.restrictedModalities).toContain('Running');
+      expect(context.constraints.impliedGuardrails).toContain('avoid_heavy_lower_body');
+      expect(context.trainingSettings.equipment).toEqual({
+        free_weights: false,
+        cable_machine: false,
+        treadmill: false,
+        indoor_bike: false,
+        pullup_bar: false,
+      });
+    }
+  });
+
+  it('keeps Running restricted and Walking preferred in every walking-persona perturbation', () => {
+    const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_walking_preferred');
+    expect(family).toBeDefined();
+
+    for (const definition of family.cases) {
+      const { context, preferences: prefs } = definition.scenario;
+      expect(context.constraints.restrictedModalities).toContain('Running');
+      expect(prefs.preferredModalities).toContain('Walking');
+    }
+  });
+
+  it('seeds the established-history persona with a real, boundary-precise 28-day/12-session base', () => {
+    const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_established_history');
+    expect(family).toBeDefined();
+
+    for (const definition of family.cases) {
+      expect(definition.scenario.trainingIntentProfile.priorities).toEqual(['endurance']);
+      expect(definition.scenario.initialHistory.length).toBe(12);
+      expect(definition.scenario.initialHistory.every((exposure) => exposure.trainingRecordLike.duration_min === 60)).toBe(true);
+    }
+  });
+
+  it('executes every persona state through the real multi-week planner without hard-constraint violations', async () => {
     const definitions = buildPersonaFamilies().flatMap((family) => family.cases);
 
     for (const definition of definitions) {
       const result = await runScenario(definition.scenario);
       expect(result.decisionTraces.length, definition.scenario.id).toBeGreaterThan(0);
       expect(result.decisionTraces.every((trace) => Boolean(trace.selected?.templateId)), definition.scenario.id).toBe(true);
+      expect(result.constraintViolations, definition.scenario.id).toEqual([]);
     }
   });
 });

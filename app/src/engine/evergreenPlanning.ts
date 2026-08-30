@@ -40,9 +40,13 @@ export function resolveEvergreenPlan(
         };
     });
     const capacity = resolveTrainingCapacity(planningContext.profile.weeklyCommitment, preferences, availability);
+    const stateEvidence = historySnapshot?.athleteStateEvidence;
     const strategy = resolveEvidenceBackedStrategy(
         { priorities: planningContext.profile.priorities },
-        inferAthleteTrainingState(history, historySnapshot?.windowDays ?? 0),
+        inferAthleteTrainingState(
+            stateEvidence?.exposures ?? history,
+            stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0,
+        ),
     );
     const budget = packWeeklyDose(strategy, capacity, EVERGREEN_PACKING_COVERAGE);
     const result = buildEvergreenPlanDefinition(strategy, capacity, budget, date);

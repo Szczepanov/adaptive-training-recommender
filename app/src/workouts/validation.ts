@@ -24,6 +24,7 @@ const compatibleExerciseModalities: Record<WorkoutModality, WorkoutModality[]> =
   cycling: ['cycling'],
   running: ['running'],
   swimming: ['swimming'],
+  walking: ['walking'],
   strength: ['strength'],
   field: ['field'],
   mobility: ['mobility', 'strength'],

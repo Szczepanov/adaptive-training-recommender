@@ -59,6 +59,12 @@ export const DEFAULT_COST_BY_MODALITY: Record<CompletedModality, Record<Complete
         hard: { systemic: 0.7, cardiovascular: 0.85, lowerBody: 0.2, upperBody: 0.65, impactTissue: 0.05, neuromuscular: 0.5 },
         unknown: { systemic: 0.4, cardiovascular: 0.5, lowerBody: 0.15, upperBody: 0.4, impactTissue: 0.03, neuromuscular: 0.25 },
     },
+    Walking: {
+        easy: { systemic: 0.1, cardiovascular: 0.1, lowerBody: 0.1, upperBody: 0, impactTissue: 0.05, neuromuscular: 0.05 },
+        moderate: { systemic: 0.25, cardiovascular: 0.3, lowerBody: 0.25, upperBody: 0, impactTissue: 0.1, neuromuscular: 0.1 },
+        hard: { systemic: 0.4, cardiovascular: 0.45, lowerBody: 0.4, upperBody: 0, impactTissue: 0.15, neuromuscular: 0.2 },
+        unknown: { systemic: 0.25, cardiovascular: 0.3, lowerBody: 0.25, upperBody: 0, impactTissue: 0.1, neuromuscular: 0.1 },
+    },
     Strength: {
         easy: { systemic: 0.2, cardiovascular: 0.05, lowerBody: 0.2, upperBody: 0.2, impactTissue: 0.1, neuromuscular: 0.15 },
         moderate: { systemic: 0.45, cardiovascular: 0.1, lowerBody: 0.55, upperBody: 0.5, impactTissue: 0.2, neuromuscular: 0.4 },
@@ -278,6 +284,12 @@ export const DEFAULT_STIMULUS_BY_MODALITY: Record<CompletedModality, Record<Comp
         moderate: { aerobicEndurance: 0.70, thresholdPower: 0.35, vo2MaxPower: 0.10, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0.25, maxStrength: 0, hypertrophy: 0 },
         hard: { aerobicEndurance: 0.55, thresholdPower: 0.70, vo2MaxPower: 0.45, repeatedSurges: 0.10, sprintPower: 0.05, fatigueResistance: 0.50, maxStrength: 0, hypertrophy: 0 },
         unknown: { aerobicEndurance: 0.55, thresholdPower: 0.20, vo2MaxPower: 0.05, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0.15, maxStrength: 0, hypertrophy: 0 },
+    },
+    Walking: {
+        easy: { aerobicEndurance: 0.35, thresholdPower: 0.05, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0.05, maxStrength: 0, hypertrophy: 0 },
+        moderate: { aerobicEndurance: 0.45, thresholdPower: 0.10, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0.10, maxStrength: 0, hypertrophy: 0 },
+        hard: { aerobicEndurance: 0.55, thresholdPower: 0.15, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0.15, maxStrength: 0, hypertrophy: 0 },
+        unknown: { aerobicEndurance: 0.40, thresholdPower: 0.10, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0.05, maxStrength: 0, hypertrophy: 0 },
     },
     Strength: {
         easy: { aerobicEndurance: 0.10, thresholdPower: 0.05, vo2MaxPower: 0, repeatedSurges: 0.05, sprintPower: 0, fatigueResistance: 0, maxStrength: 0.40, hypertrophy: 0.30 },

@@ -573,8 +573,8 @@ service cloud.firestore {
     function hasValidUnavailableModalities(data) {
       return !('unavailableModalities' in data)
         || (data.unavailableModalities is list
-          && data.unavailableModalities.size() <= 8
-          && data.unavailableModalities.hasOnly(['Running', 'Cycling', 'Swimming', 'Strength', 'Field', 'Mobility', 'Cross Training', 'Rowing']));
+          && data.unavailableModalities.size() <= 9
+          && data.unavailableModalities.hasOnly(['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'Rowing']));
     }
 
     match /users/{userId}/preferences/profile {

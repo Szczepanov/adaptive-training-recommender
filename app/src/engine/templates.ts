@@ -175,6 +175,33 @@ export const TEMPLATES: SessionTemplate[] = [
         }
     },
     {
+        id: "end_walk_01",
+        category: "Easy Endurance",
+        modality: "Walking",
+        durationMin: 30,
+        durationMax: 60,
+        title: "Brisk Continuous Walk",
+        description: "Purposeful, continuous walk at a genuinely elevated pace -- breathing noticeably up but conversational. Not a stroll.",
+        requiredEquipment: [],
+        environment: 'outdoor', safetyTags: [],
+        systemicCost: 0.2,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "30 min Brisk Walk",
+            durationMin: 30,
+            durationMax: 30,
+            doseRatio: 0.75,
+            prescriptionSummary: "30 min continuous brisk walk."
+        },
+        harderDose: {
+            label: "60 min Extended Brisk Walk",
+            durationMin: 50,
+            durationMax: 75,
+            doseRatio: 1.35,
+            prescriptionSummary: "Extended 60 min purposeful brisk walk."
+        }
+    },
+    {
         id: "end_easy_03",
         category: "Easy Endurance",
         modality: "Running",

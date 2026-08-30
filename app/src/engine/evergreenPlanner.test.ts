@@ -73,6 +73,33 @@ describe('evergreen week-ahead integration', () => {
         expect(plan.days.some(day => day.template.modality === 'Strength')).toBe(true);
     });
 
+    it('schedules concrete Walking sessions for a no-bike, Running-restricted, Walking-preferring health athlete', async () => {
+        // Walking gap regression: before end_walk_01/walking_brisk_continuous_01 existed,
+        // a health-priority athlete who cannot run and has no bike had zero reachable
+        // candidates for the required evergreen aerobic role at all.
+        const healthProfile: TrainingIntentProfile = {
+            ...profile,
+            priorities: ['health'],
+            weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
+        };
+        const walkingPreferences: UserPreferences = {
+            ...preferences,
+            preferredModalities: ['Walking', 'Strength'],
+        };
+        const noBikeNoRunContext: UserContext = {
+            ...context,
+            constraints: { ...context.constraints, hasIndoorBike: false, hasFreeWeights: true, restrictedModalities: ['Running'] },
+        };
+        const plan = await generateWeekAheadPlanWithIntent('u1', readiness, noBikeNoRunContext, walkingPreferences, [], '2026-08-31', today, null, { days: 14 }, history, undefined, healthProfile);
+        const coverageKeys = plan.allocationReport.outcomes.map(outcome => outcome.occurrence.coverageKey);
+
+        expect(coverageKeys).toContain('aerobic_volume');
+        expect(coverageKeys).toContain('primary_strength');
+        expect(plan.days.some(day => day.template.id === 'end_walk_01')).toBe(true);
+        expect(plan.days.some(day => day.template.modality === 'Running')).toBe(false);
+        expect(plan.days.some(day => day.template.modality === 'Strength')).toBe(true);
+    });
+
     it('does not take eventless evergreen objectives from DEFAULT_BASE_DEMAND', async () => {
         const baseline = await generateWeekAheadPlanWithIntent('u1', readiness, context, preferences, [], '2026-08-10', today, null, { days: 6 }, history, undefined, profile);
         const originalDemand = { ...DEFAULT_BASE_DEMAND };

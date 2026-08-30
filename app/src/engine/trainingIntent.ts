@@ -26,9 +26,12 @@ export interface TrainingIntent {
     unresolvedObjectives: WeeklyObjective[];
     plannedDose: PlannedDose;
     fatigue: FatigueState;
-    /** Retained for the pure planner core after a single asynchronous read. */
+    /** Operational history for fatigue/objective/microcycle bookkeeping. This stays bounded
+     * to the requested short planning window even when athlete-state inference needs a
+     * wider observation window. */
     history: CompletedExposure[];
-    /** Null only for legacy fixture providers that implement reconstruct() alone. */
+    /** The short operational snapshot. Evergreen performance planning may attach a wider
+     * `athleteStateEvidence` window, but that evidence is never replayed into `history`. */
     historySnapshot: TrainingHistorySnapshot | null;
     microcycle: MicrocycleState;
     /** Phase 5.6: a contributor objective dropped because it fell inadmissible during the
@@ -45,12 +48,19 @@ export interface TrainingIntent {
 
 const MAX_PLANNED_VOLUME = 1;
 const MAX_PLANNED_INTENSITY = 1.2;
+const ATHLETE_STATE_HISTORY_WINDOW_DAYS = 28;
 
 function boundedPlannedDose(volume: number, intensity: number): PlannedDose {
     return {
         volume: Math.max(0, Math.min(MAX_PLANNED_VOLUME, Number.isFinite(volume) ? volume : 0)),
         intensity: Math.max(0, Math.min(MAX_PLANNED_INTENSITY, Number.isFinite(intensity) ? intensity : 0)),
     };
+}
+
+function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): boolean {
+    if (planningContext.mode !== 'evergreen') return false;
+    return planningContext.profile.priorities.some(priority =>
+        priority === 'endurance' || priority === 'speed_power' || priority === 'sport_readiness');
 }
 
 /**
@@ -127,10 +137,39 @@ export async function resolveTrainingIntent(
     const periodization = planningContext.mode === 'event_directed'
         ? eventPeriodization
         : evaluatePeriodizationPhase([], date);
-    const historySnapshot = preparedHistorySnapshot
+    const operationalSnapshot = preparedHistorySnapshot
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
-    const history = historySnapshot?.exposures ?? await provider.reconstruct(userId, date, windowDays);
+    const operationalWindowStart = addDaysToLocalDateString(date, -windowDays);
+    const operationalHistory = operationalSnapshot?.exposures
+        ?? await provider.reconstruct(userId, date, windowDays);
+    // A caller may reuse a wider immutable snapshot across several horizons. Keep the
+    // operational history explicitly bounded so a 28-day state-evidence read cannot widen
+    // fatigue or microcycle bookkeeping by accident.
+    const history = operationalHistory.filter(exposure => exposure.date >= operationalWindowStart && exposure.date < date);
+
+    let historySnapshot = operationalSnapshot;
+    if (needsEstablishedPerformanceEvidence(planningContext) && operationalSnapshot) {
+        const stateSnapshot = operationalSnapshot.windowDays >= ATHLETE_STATE_HISTORY_WINDOW_DAYS
+            ? operationalSnapshot
+            : await prepareTrainingHistorySnapshot(
+                userId,
+                date,
+                ATHLETE_STATE_HISTORY_WINDOW_DAYS,
+                historyProvider,
+            );
+        const stateExposures = stateSnapshot?.exposures
+            ?? await provider.reconstruct(userId, date, ATHLETE_STATE_HISTORY_WINDOW_DAYS);
+        const stateWindowStart = addDaysToLocalDateString(date, -ATHLETE_STATE_HISTORY_WINDOW_DAYS);
+        historySnapshot = {
+            ...operationalSnapshot,
+            athleteStateEvidence: {
+                observedWindowDays: ATHLETE_STATE_HISTORY_WINDOW_DAYS,
+                exposures: stateExposures.filter(exposure => exposure.date >= stateWindowStart && exposure.date < date),
+            },
+        };
+    }
+
     const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
     const builtMicrocycle = buildMicrocycleState(
         periodization.phase,

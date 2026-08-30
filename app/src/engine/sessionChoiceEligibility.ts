@@ -33,6 +33,7 @@ const WORKOUT_TO_TEMPLATE_MODALITY: Record<WorkoutModality, SessionTemplate['mod
     cycling: 'Cycling',
     running: 'Running',
     swimming: 'Swimming',
+    walking: 'Walking',
     strength: 'Strength',
     field: 'Field',
     mobility: 'Mobility',
