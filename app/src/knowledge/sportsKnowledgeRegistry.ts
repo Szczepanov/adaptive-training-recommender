@@ -12,6 +12,11 @@ import {
     READINESS_CARDIORESPIRATORY_CLAIMS,
     READINESS_CARDIORESPIRATORY_SOURCES,
 } from './readinessCardiorespiratoryKnowledge.ts';
+import {
+    STRENGTH_CONCURRENT_CLAIM_IDS,
+    STRENGTH_CONCURRENT_CLAIMS,
+    STRENGTH_CONCURRENT_SOURCES,
+} from './strengthConcurrentKnowledge.ts';
 
 /**
  * Canonical aggregate registry.
@@ -24,28 +29,34 @@ import {
 export const SPORTS_KNOWLEDGE_SOURCES: readonly KnowledgeSource[] = [
     ...CORE_SPORTS_KNOWLEDGE_SOURCES,
     ...READINESS_CARDIORESPIRATORY_SOURCES,
+    ...STRENGTH_CONCURRENT_SOURCES,
 ];
 
 export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     ...CORE_SPORTS_KNOWLEDGE_CLAIMS,
     ...READINESS_CARDIORESPIRATORY_CLAIMS,
+    ...STRENGTH_CONCURRENT_CLAIMS,
 ];
 
 export const KNOWLEDGE_CLAIM_IDS = {
     ...CORE_KNOWLEDGE_CLAIM_IDS,
     ...READINESS_CARDIORESPIRATORY_CLAIM_IDS,
+    ...STRENGTH_CONCURRENT_CLAIM_IDS,
 } as const;
 
+/** Validate the complete cross-domain registry, including duplicate identifiers and lineage. */
 export function validateCanonicalSportsKnowledgeRegistry(): KnowledgeRegistryValidation {
     return validateSportsKnowledgeRegistry(SPORTS_KNOWLEDGE_SOURCES, SPORTS_KNOWLEDGE_CLAIMS);
 }
 
+/** Resolve a claim from the canonical registry or fail closed for an unknown identifier. */
 export function getKnowledgeClaim(id: string): KnowledgeClaim {
     const claim = SPORTS_KNOWLEDGE_CLAIMS.find(candidate => candidate.id === id);
     if (!claim) throw new Error(`Unknown sports knowledge claim: ${id}`);
     return claim;
 }
 
+/** Resolve only active claims so decision policy cannot silently consume retired knowledge. */
 export function getActiveKnowledgeClaim(id: string): KnowledgeClaim {
     const claim = getKnowledgeClaim(id);
     if (claim.status !== 'active') {
@@ -54,6 +65,7 @@ export function getActiveKnowledgeClaim(id: string): KnowledgeClaim {
     return claim;
 }
 
+/** Resolve a source from the canonical cross-domain registry. */
 export function getKnowledgeSource(id: string): KnowledgeSource {
     const source = SPORTS_KNOWLEDGE_SOURCES.find(candidate => candidate.id === id);
     if (!source) throw new Error(`Unknown sports knowledge source: ${id}`);
