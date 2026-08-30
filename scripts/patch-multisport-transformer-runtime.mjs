@@ -27,7 +27,7 @@ const replacement = String.raw`function findContainingObject(source, index) {
       }
       continue;
     }
-    if (char === "'" || char === '"' || char === '`') {
+    if (char === "'" || char === '"') {
       quote = char;
       continue;
     }
@@ -64,7 +64,7 @@ function addEquipmentToOutdoorCyclingTemplates(path) {
       } else if (block.includes('requiredEquipment: [')) {
         block = block.replace('requiredEquipment: [', "requiredEquipment: ['outdoor_bike', ");
       } else {
-        throw new Error(`Outdoor cycling template lacks requiredEquipment: ${block.slice(0, 180)}`);
+        throw new Error('Outdoor cycling template lacks requiredEquipment: ' + block.slice(0, 180));
       }
       source = source.slice(0, bounds.start) + block + source.slice(bounds.end);
       patched += 1;
@@ -82,7 +82,7 @@ function addEquipmentToOutdoorCyclingTemplates(path) {
     const bounds = findContainingObject(after, modalityIndex);
     const block = after.slice(bounds.start, bounds.end);
     if ((block.includes("environment: 'outdoor'") || block.includes('environment: "outdoor"')) && !block.includes('outdoor_bike')) {
-      throw new Error(`Outdoor cycling template is still ungated: ${block.slice(0, 180)}`);
+      throw new Error('Outdoor cycling template is still ungated: ' + block.slice(0, 180));
     }
     cursor = bounds.end;
   }
