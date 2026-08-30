@@ -804,7 +804,7 @@ export function adjustSessionRecommendation(
         }
     }
 
-    const allowedModalities = (['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'] as const)
+    const allowedModalities = (['Running', 'Cycling', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'] as const)
         .filter(m => !context.preferences.avoidedModalities.map(a => a.toLowerCase()).includes(m.toLowerCase()))
         .filter(m => !safety.restrictedModalities.includes(m));
     const availableTemplates = eligibleTemplates(TEMPLATES, context, readiness.subjective.timeAvailable, date)

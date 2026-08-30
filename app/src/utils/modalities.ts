@@ -7,6 +7,7 @@ export interface CanonicalModality {
 export const CANONICAL_MODALITIES: CanonicalModality[] = [
   { value: 'Running', label: '🏃 Running', category: 'Endurance' },
   { value: 'Cycling', label: '🚴 Cycling', category: 'Endurance' },
+  { value: 'Walking', label: '🚶 Walking', category: 'Endurance' },
   { value: 'Swimming', label: '🏊 Swimming', category: 'Endurance' },
   { value: 'Rowing', label: '🚣 Rowing / Erg', category: 'Endurance' },
   { value: 'Cross Training', label: '⚡ Other Low-Impact Cardio', category: 'Endurance' },

@@ -792,7 +792,7 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
     }
 
     if (raw.unavailableModalities !== undefined) {
-        const validUnavailableModalities = ['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training'];
+        const validUnavailableModalities = ['Running', 'Cycling', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training'];
         if (!Array.isArray(raw.unavailableModalities)) {
             errors.push({ field: 'unavailableModalities', message: 'Unavailable modalities must be an array' });
         } else if (!raw.unavailableModalities.every((m: any) => validUnavailableModalities.includes(m))) {
