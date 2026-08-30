@@ -9,6 +9,8 @@ const EXPECTED_FAMILY_IDS = [
   'persona_former_elite_return',
   'persona_balanced_performance',
   'persona_stacked_constraints',
+  'persona_walking_preferred',
+  'persona_established_history',
 ];
 
 describe('persona AI-judge fixtures', () => {
@@ -83,6 +85,28 @@ describe('persona AI-judge fixtures', () => {
         indoor_bike: false,
         pullup_bar: false,
       });
+    }
+  });
+
+  it('keeps Running restricted and Walking preferred in every walking-persona perturbation', () => {
+    const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_walking_preferred');
+    expect(family).toBeDefined();
+
+    for (const definition of family.cases) {
+      const { context, preferences: prefs } = definition.scenario;
+      expect(context.constraints.restrictedModalities).toContain('Running');
+      expect(prefs.preferredModalities).toContain('Walking');
+    }
+  });
+
+  it('seeds the established-history persona with a real, boundary-precise 28-day/12-session base', () => {
+    const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_established_history');
+    expect(family).toBeDefined();
+
+    for (const definition of family.cases) {
+      expect(definition.scenario.trainingIntentProfile.priorities).toEqual(['endurance']);
+      expect(definition.scenario.initialHistory.length).toBe(12);
+      expect(definition.scenario.initialHistory.every((exposure) => exposure.trainingRecordLike.duration_min === 60)).toBe(true);
     }
   });
 
