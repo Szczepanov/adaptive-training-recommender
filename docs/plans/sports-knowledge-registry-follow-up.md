@@ -50,7 +50,7 @@ Scientific boundaries added:
 - individualized/contextual resting-HR interpretation;
 - sleep-loss/performance relevance;
 - consumer wearable sleep-measurement limitations;
-- resting/nocturnal respiration as a low-certainty contextual anomaly signal rather than a specific illness/readiness marker.
+- resting/nocturnal respiration as a **moderate-certainty / conditional early-anomaly signal** that can support conservative readiness adjustment when persistent or corroborated, while remaining nonspecific and non-diagnostic.
 
 Current product policies documented separately:
 
@@ -62,7 +62,7 @@ Current product policies documented separately:
 
 The pack contains six scientific claims and five explicit product-policy claims. It does **not** treat HRV or RHR as standalone readiness truth, consumer sleep estimates as polysomnography, proprietary Body Battery/sleep scores as independently validated physiological cut-points, or respiration as a specific illness detector. Exact app weights and thresholds remain product heuristics with `not_applicable` scientific certainty.
 
-RHR evidence is sufficiently direct for **moderate / conditional** contextual monitoring authority. Respiration evidence is materially less direct to athlete readiness: the selected literature mainly supports measurement, within-person longitudinal stability and multivariate infection/anomaly context, so its claim is intentionally **low / informational**.
+RHR evidence is sufficiently direct for **moderate / conditional** contextual monitoring authority. The deeper respiration review also supports **moderate / conditional** authority: a small NCAA Division I athlete cohort observed RR elevation three days before a positive COVID-19 test, a systematic review identified increased RR among recurring wearable infection signals, and prospective multivariate validation confirms both advance-warning potential and important nonspecific false alerts. That supports influence on readiness, not an RR-only hard stop or universal numeric cutoff.
 
 The RHR/respiration extension enriches lineage rather than increasing the coverage count. The same five readiness families were already marked covered; they now reference evidence specific to every live objective signal instead of allowing adjacent HRV/sleep evidence to stand in for RHR/respiration.
 
@@ -70,7 +70,7 @@ The RHR/respiration extension enriches lineage rather than increasing the covera
 
 Post-pack inventory remains 15 covered / 1 partial / 26 uncovered / 5 not applicable. P0 / P1 / P2 / P3 = 5 / 13 / 7 / 2. High-impact uncovered = 13 and high-safety uncovered = 4.
 
-No recommendation behavior changes were made, so this pack does not bump the global recommendation `POLICY_VERSION`.
+No numeric recommendation behavior changes were made, so this pack does not bump the global recommendation `POLICY_VERSION`. A future persistence/corroboration escalation policy for RR would be a separate behavior-changing PR with simulation and athlete-outcome calibration.
 
 ### Evidence Pack 3 — Subjective Readiness + Injury/Pain Safety
 
