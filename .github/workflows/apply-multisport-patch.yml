@@ -19,20 +19,26 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: app/package-lock.json
       - name: Install dependencies
         working-directory: app
         run: npm ci
+      - name: Harden transformer
+        run: node scripts/patch-multisport-transformer-runtime.mjs
       - name: Apply patch
         run: node scripts/apply-multisport-patch.mjs
+      - name: Apply follow-up fixes
+        run: if [ -f scripts/apply-multisport-fixes.mjs ]; then node scripts/apply-multisport-fixes.mjs; fi
       - name: Validate app
         working-directory: app
         run: npm run check
       - name: Commit verified implementation
         run: |
           rm scripts/apply-multisport-patch.mjs
+          rm scripts/patch-multisport-transformer-runtime.mjs
+          rm -f scripts/apply-multisport-fixes.mjs
           rm .github/workflows/apply-multisport-patch.yml
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
