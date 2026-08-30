@@ -163,6 +163,5 @@ export const READINESS_CARDIORESPIRATORY_CLAIMS: readonly KnowledgeClaim[] = [
         ],
         reviewedOn: '2026-08-30',
         version: 2,
-        supersedes: 'readiness.respiration.longitudinal_contextual_signal',
     },
 ];
