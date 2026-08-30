@@ -107,7 +107,7 @@ label rather than present as an ordinary pick (ADR-0019 D-EXT).
 An eligible event remains event-directed for profile-less athletes, preserving the legacy
 path. An explicit `event_directed` profile uses an eligible event when present. Otherwise
 the effective mode is `evergreen`: it has no focus event and no event strategy, even if an
-event record exists. Event-directed cycling uses `structured_plan`; Running, triathlon, strength, and general events retain demand-derived planning. Running aerobic objectives are modality-scoped and half-marathon/marathon demand adds a long-run durability objective. Triathlon demand creates separate swim, bike, and run aerobic objectives so one discipline cannot silently satisfy the whole sport. Outdoor cycling and swimming are hard-gated by declared bicycle/swim access.
+event record exists. Event-directed cycling uses `structured_plan`; Running, triathlon, strength, and general events retain demand-derived planning. Running race-specific objectives are modality-scoped and half-marathon/marathon demand adds a long-run durability objective; the generic single-sport aerobic-base objective intentionally remains cross-training-creditable. Triathlon demand creates separate swim, bike, and run aerobic objectives so one discipline cannot silently satisfy the whole sport. Outdoor cycling and swimming are hard-gated by declared bicycle/swim access.
 
 For evergreen mode, `resolveEvergreenPlan` combines bounded completed history with the
 profile and real schedule availability. `resolveEvidenceBackedStrategy` establishes dose
