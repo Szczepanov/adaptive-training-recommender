@@ -10,7 +10,9 @@ const QUER_RHR_LONGITUDINAL_SOURCE = 'QUER-2020-RHR-LONGITUDINAL-COHORT';
 const NATARAJAN_RESPIRATION_SOURCE = 'NATARAJAN-2021-NOCTURNAL-RESPIRATION-COHORT';
 const MITRATZA_WEARABLE_INFECTION_SOURCE = 'MITRATZA-2022-WEARABLE-INFECTION-REVIEW';
 const RENTERIA_ATHLETE_COVID_SOURCE = 'RENTERIA-2024-ATHLETE-COVID-WEARABLE';
+const BLOOMFIELD_RR_STRESS_SOURCE = 'BLOOMFIELD-2024-NOCTURNAL-RR-STRESS-COHORT';
 const ESMAEILPOUR_INFECTION_SOURCE = 'ESMAEILPOUR-2024-WEARABLE-INFECTION-VALIDATION';
+const NUUTTILA_NIGHTLY_RECOVERY_SOURCE = 'NUUTTILA-2025-NIGHTLY-RECOVERY-OVERLOAD';
 
 export const READINESS_CARDIORESPIRATORY_SOURCES: readonly KnowledgeSource[] = [
     {
@@ -85,6 +87,20 @@ export const READINESS_CARDIORESPIRATORY_SOURCES: readonly KnowledgeSource[] = [
         notes: 'Direct athlete evidence but small and narrow: among 14 analyzable NCAA Division I female athletes with COVID-19, nocturnal RR was significantly elevated three days before a positive test; RHR rose and HRV fell later. Supports RR as an early contextual anomaly signal, not infection specificity or an RR-only training rule.',
     },
     {
+        id: BLOOMFIELD_RR_STRESS_SOURCE,
+        title: 'Predicting stress in first-year college students using sleep data from wearable devices',
+        sourceType: 'cohort',
+        citation: 'Bloomfield LSP, Fudolig MI, Kim J, et al. PLOS Digit Health. 2024;3(4):e0000473. doi:10.1371/journal.pdig.0000473.',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/38602898/',
+        publishedOn: '2024-04-11',
+        externalIds: [
+            { type: 'pmid', value: '38602898' },
+            { type: 'pmcid', value: 'PMC11008774' },
+            { type: 'doi', value: '10.1371/journal.pdig.0000473' },
+        ],
+        notes: 'In 525 first-year college students, each 1 breath/min higher average nightly respiratory rate was associated with approximately 23% higher odds of moderate-to-high perceived stress after adjustment for gender and semester week. This supports respiratory rate as a sensitive stress/anomaly signal while reinforcing that elevation is not infection-specific.',
+    },
+    {
         id: ESMAEILPOUR_INFECTION_SOURCE,
         title: 'Detection of Common Respiratory Infections, Including COVID-19, Using Consumer Wearable Devices in Health Care Workers: Prospective Model Validation Study',
         sourceType: 'cohort',
@@ -97,6 +113,20 @@ export const READINESS_CARDIORESPIRATORY_SOURCES: readonly KnowledgeSource[] = [
             { type: 'doi', value: '10.2196/53716' },
         ],
         notes: 'Prospective validation used sleeping resting HR, respiratory rate and HRV together. Alerts could precede respiratory infections, but positive predictive value was low in the study population and false-positive alerts were associated with intense exercise, poor sleep, stress and alcohol, demonstrating important non-specificity.',
+    },
+    {
+        id: NUUTTILA_NIGHTLY_RECOVERY_SOURCE,
+        title: 'Monitoring Sleep and Nightly Recovery with Wrist-Worn Wearables: Links to Training Load and Performance Adaptations',
+        sourceType: 'cohort',
+        citation: 'Nuuttila OP, Schäfer Olstad D, Martinmäki K, Uusitalo A, Kyröläinen H. Sensors (Basel). 2025;25(2):533. doi:10.3390/s25020533.',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/39860902/',
+        publishedOn: '2025-01-17',
+        externalIds: [
+            { type: 'pmid', value: '39860902' },
+            { type: 'pmcid', value: 'PMC11768492' },
+            { type: 'doi', value: '10.3390/s25020533' },
+        ],
+        notes: 'Twenty-four recreational runners completed baseline, overload and recovery periods. Nightly recovery metrics showed no consistent group-level changes despite increased perceived strain; a proprietary individualized ANS-charge composite combining HR, HRV and breathing rate was associated with performance adaptation. This supports multivariate individualized monitoring but does not isolate respiratory rate or validate an RR-triggered training rule.',
     },
 ];
 
@@ -133,12 +163,12 @@ export const READINESS_CARDIORESPIRATORY_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: READINESS_CARDIORESPIRATORY_CLAIM_IDS.respirationLongitudinalContext,
-        statement: 'Nocturnal or resting respiratory rate is a relatively stable within-person signal, and a meaningful rise from personal baseline can precede respiratory infection in some athletes and contribute to early physiological-anomaly detection; when persistent or corroborated by other recovery, illness or training-context signals it can support a conservative readiness adjustment, but it is not a specific illness diagnosis or standalone readiness veto.',
+        statement: 'Nocturnal or resting respiratory rate is a relatively stable within-person signal; a meaningful rise from personal baseline can precede respiratory infection in some athletes and is also associated with non-infectious physiological or psychological stress, making it useful as an early but nonspecific anomaly signal rather than a standalone illness diagnosis or sport-readiness veto.',
         claimType: 'prognostic',
         maturity: 'supported',
         status: 'active',
         evidenceCertainty: 'moderate',
-        recommendationStrength: 'conditional',
+        recommendationStrength: 'informational',
         safetyImpact: 'moderate',
         applicability: {
             contexts: ['daily_readiness', 'wearable_health_context', 'recovery', 'illness_anomaly_detection'],
@@ -151,15 +181,18 @@ export const READINESS_CARDIORESPIRATORY_CLAIMS: readonly KnowledgeClaim[] = [
             { sourceId: NATARAJAN_RESPIRATION_SOURCE, directness: 'partially_direct', note: 'Supports wearable measurement and within-person stability; indirect for training decisions.' },
             { sourceId: MITRATZA_WEARABLE_INFECTION_SOURCE, directness: 'partially_direct', note: 'Systematic review supports respiratory-rate change as one recurring presymptomatic infection signal while documenting heterogeneous performance and bias.' },
             { sourceId: RENTERIA_ATHLETE_COVID_SOURCE, directness: 'direct', note: 'Direct athlete cohort in which RR rose three days before a positive COVID-19 test, with important sample/pathogen limitations.' },
+            { sourceId: BLOOMFIELD_RR_STRESS_SOURCE, directness: 'partially_direct', note: 'Large longitudinal wearable cohort supports sensitivity to non-infectious perceived stress and therefore the signal\'s non-specificity.' },
             { sourceId: ESMAEILPOUR_INFECTION_SOURCE, directness: 'partially_direct', note: 'Prospective multivariate infection-alert validation shows useful early physiological signal and substantial non-specificity.' },
+            { sourceId: NUUTTILA_NIGHTLY_RECOVERY_SOURCE, directness: 'partially_direct', note: 'Athlete overload study supports individualized multivariate nightly monitoring but does not isolate RR or validate RR-guided training actions.' },
         ],
         limitations: [
-            'The most direct athlete study had only 14 analyzable COVID-positive NCAA Division I female athletes; its three-day lead time must not be generalized to all athletes, pathogens or devices.',
+            'The most direct athlete infection study had only 14 analyzable COVID-positive NCAA Division I female athletes; its three-day lead time must not be generalized to all athletes, pathogens or devices.',
             'The broader wearable-infection literature is heterogeneous, largely observational and dominated by COVID-era studies; it does not establish that respiratory-rate-guided training changes improve health or performance outcomes.',
             'Respiratory-rate changes are not specific to infection: intense exercise, poor sleep, emotional stress, alcohol, altitude, environment and other physiological factors can alter the signal or multivariate alerts.',
+            'The athlete overload study used breathing rate only inside a proprietary multivariate recovery score and found no consistent group-level change in nightly recovery metrics, so it cannot validate respiratory rate as an isolated training-readiness marker.',
             'Device algorithms, sleep-state selection, sensor quality and measurement context affect validity; results do not transfer automatically across wearable generations or vendors.',
             'No reviewed evidence establishes a 1 br/min variability floor, a 0.3 readiness weight, the shared z cap, the chronic multiplier, or any standalone respiratory-rate action threshold as a universal sports-readiness boundary.',
-            'A respiratory-rate anomaly should increase suspicion and readiness caution in context, not act as an RR-only illness diagnosis or hard training veto.',
+            'Using an RR anomaly to make training more conservative is therefore a conditional product-policy inference that should require persistence and/or corroborating signals, not be presented as a direct evidence-derived prescription.',
         ],
         reviewedOn: '2026-08-30',
         version: 2,
