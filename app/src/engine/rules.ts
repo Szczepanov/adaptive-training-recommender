@@ -143,16 +143,18 @@ function applyModalityPreference(
 const HRV_STRAIN_WEIGHT = 0.5;
 const RHR_STRAIN_WEIGHT = 0.3;
 const SLEEP_STRAIN_WEIGHT = 0.2;
-// Respiration rate elevation is one of the earliest, most specific signals of oncoming
-// illness (see docs/adr/0006's respiration amendment) -- weighted comparably to RHR
-// rather than folded in at a token weight. Like the other three weights above, this is a
-// first-pass heuristic, not yet run through the 9.6-style sensitivity/simulation harness.
+// A sustained nocturnal/resting respiration-rate rise can precede respiratory infection,
+// including in athlete wearable cohorts, and can also reflect other physiological stress.
+// It is intentionally treated as contextual rather than diagnostic: intense exercise,
+// poor sleep, emotional stress, alcohol, altitude/environment and measurement conditions
+// can also shift the signal. The 0.3 weight remains product calibration, not an
+// evidence-derived illness or readiness coefficient.
 const RESPIRATION_STRAIN_WEIGHT = 0.3;
 const HRV_STDEV_FLOOR_MS = 3;
 const RHR_STDEV_FLOOR_BPM = 1.5;
 const SLEEP_STDEV_FLOOR_PTS = 4;
-// Below Garmin's ~1 br/min effective rounding resolution, a respiration MAD is noise
-// rather than signal -- see RESPIRATION_STRAIN_WEIGHT above.
+// 1 br/min is a product variability floor chosen to avoid overreacting to small wearable
+// fluctuations; it is not an evidence-derived illness or training-action threshold.
 const RESPIRATION_MAD_FLOOR_BR = 1.0;
 const STRAIN_Z_CAP = 2.0;
 const CHRONIC_STRAIN_MULTIPLIER = 1.5;
