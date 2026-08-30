@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 
 const baseRef = process.argv[2];
 
@@ -138,6 +139,50 @@ const sleepRecoveryEvidenceTestFile = 'app/src/engine/sleepRecoveryEvidence.test
 const sleepRecoveryPhase3Doc = 'docs/analysis/2026-08-29-sleep-decision-authority-phase-3-implementation.md';
 
 const changedDecisionFiles = changedFiles.filter((f) => decisionAffectingFiles.includes(f));
+
+/** Return the exact base commit whose tree should be compared with HEAD for this run. */
+function executableComparisonBaseRef() {
+  const eventName = process.env.GITHUB_EVENT_NAME;
+  if (eventName !== 'pull_request' && eventName !== 'pull_request_target') return baseRef;
+  try {
+    const parents = git(['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(/\s+/);
+    if (parents.length === 3) return parents[1];
+  } catch (err) {
+    console.warn(`Could not isolate pull-request base parent for token comparison: ${err.message}`);
+  }
+  return baseRef;
+}
+
+/**
+ * Produce a lexical signature that excludes comments and whitespace but preserves every
+ * executable TypeScript token and literal. This is intentionally stricter than text-diff
+ * heuristics: changing an operator, number, identifier, string or punctuation changes the
+ * signature and therefore still requires a POLICY_VERSION bump.
+ */
+function executableTokenSignature(source) {
+  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, source);
+  const tokens = [];
+  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
+    tokens.push(`${token}:${scanner.getTokenText()}`);
+  }
+  return tokens.join('\u0000');
+}
+
+/** Return true only when every changed decision file is lexically executable-identical. */
+function isCommentOrWhitespaceOnlyDecisionChange() {
+  if (changedDecisionFiles.length === 0) return false;
+  const comparisonBase = executableComparisonBaseRef();
+  return changedDecisionFiles.every((file) => {
+    try {
+      const baseSource = git(['show', `${comparisonBase}:${file}`]);
+      const currentSource = readFileSync(join(repoRoot, file), 'utf8');
+      return executableTokenSignature(baseSource) === executableTokenSignature(currentSource);
+    } catch (err) {
+      console.warn(`Could not prove comment-only policy change for ${file}: ${err.message}`);
+      return false;
+    }
+  });
+}
 
 function extractPolicyVersion(source, label) {
   const match = source.match(/export const POLICY_VERSION\s*=\s*['"]([^'"]+)['"]/);
@@ -322,6 +367,13 @@ function isAcceptedDormantSleepRecoveryEvidenceChange() {
 }
 
 if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
+  if (isCommentOrWhitespaceOnlyDecisionChange()) {
+    console.log(
+      'POLICY DRIFT CHECK PASSED: decision-affecting files changed only in comments/whitespace; '
+      + `executable TypeScript tokens are identical and POLICY_VERSION correctly remains ${currentPolicyVersion}.`
+    );
+    process.exit(0);
+  }
   if (isAcceptedDormantSubjectiveDriftChange()) {
     console.log(
       'POLICY DRIFT CHECK PASSED: ADR-0020 dormant subjective-drift implementation is default-off; '
