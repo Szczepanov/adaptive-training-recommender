@@ -69,7 +69,7 @@ Add review-frequency metadata only after enough claims exist to justify the oper
 
 ## SKR6 — Evidence-synthesis review workflow
 
-**Status:** Planned after the coverage inventory creates enough demand.**
+**Status:** Planned after the coverage inventory creates enough demand.
 
 Build a lightweight review workflow around claims rather than bulk literature ingestion:
 
