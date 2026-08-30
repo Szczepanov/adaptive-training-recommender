@@ -13,7 +13,7 @@ This review covers the live decision authority in `engine/rules.ts` and `engine/
 - resting-heart-rate interpretation;
 - sleep as a recovery/performance input;
 - consumer wearable sleep / proprietary wellness-score limitations;
-- resting/nocturnal respiration as a longitudinal context signal;
+- resting/nocturnal respiration as a longitudinal context and early-anomaly signal;
 - acute versus longitudinal interpretation;
 - the product's current objective-strain fusion, hard biometric floors and train/modify/recover cut-points;
 - the separate internal-response model used by dimensional fatigue.
@@ -112,21 +112,33 @@ Garmin Vivosmart 4 and comparable devices can provide useful sleep estimates, bu
 
 ## Resting/nocturnal respiration
 
-Respiration has a materially weaker evidence path to *training readiness* than HRV, RHR or sleep. The best evidence found supports measurement validity, within-person longitudinal stability and illness/anomaly context rather than an athlete training-action rule.
+The deeper review changes the initial appraisal. Respiratory rate still has less direct evidence for *training-prescription outcomes* than sleep or HRV-guided training, but there is enough athlete-specific and systematic-review evidence to treat a personal-baseline rise as a meaningful early physiological-anomaly signal rather than merely informational noise.
 
 **Natarajan et al., 2021 — wearable respiratory-rate measurement and COVID-19 cohort**
 PMID 34526602; PMCID PMC8443549; DOI `10.1038/s41746-021-00493-6`.
 
-Wearable nocturnal respiratory-rate estimates agreed well with sleep-study reference data in a small validation set. A 10,000-person cohort showed relatively low short-term within-person variation, while a separate infected cohort showed longitudinal respiratory-rate elevations in some participants. The work was Fitbit-affiliated and does not validate sports-readiness decisions.
+Wearable nocturnal respiratory-rate estimates agreed well with sleep-study reference data in a small validation set. A 10,000-person cohort showed relatively low short-term within-person variation, while a separate infected cohort showed longitudinal respiratory-rate elevations in some participants. This supports the core reason RR can be useful: a comparatively stable personal baseline makes an unusual deviation informative. The work was Fitbit-affiliated and does not validate a sports-readiness threshold.
+
+**Mitratza et al., 2022 — systematic review of wearable SARS-CoV-2 detection**
+PMID 35461692; PMCID PMC9020803; DOI `10.1016/S2589-7500(22)00019-X`.
+
+Twelve published studies were included. Increased respiratory rate was one of the recurring physiological changes associated with infection, together with heart rate and skin temperature. Detection performance and presymptomatic sensitivity varied widely and most studies had moderate risk of bias. This supports early anomaly detection while arguing against a universal RR threshold or deterministic illness classifier.
+
+**Rentería et al., 2024 — NCAA Division I female-athlete cohort**
+PMID 37401442; PMCID PMC10333556; DOI `10.1177/19417381231183709`.
+
+This is the most directly relevant athlete evidence found. Of 33 athletes who tested positive for COVID-19, only 14 had sufficient WHOOP data for analysis. Relative to roughly two weeks of noninfected baseline data, respiratory rate was significantly elevated three days before the positive test; resting HR rose and HRV fell later, one day before the positive test. This supports the proposition that RR can sometimes be an early signal in athletes. The result is nevertheless narrow: small sample, female NCAA Division I athletes, one pathogen, one device ecosystem and observational design.
 
 **Esmaeilpour et al., 2024 — prospective respiratory-infection wearable model validation**
 PMID 39018555; PMCID PMC11292157; DOI `10.2196/53716`.
 
-The prospective model used sleeping resting HR, respiratory rate and HRV together rather than respiratory rate in isolation. Alerts sometimes preceded respiratory infections, but positive predictive value was low in the study population. False-positive alerts were associated with intense exercise, poor sleep, emotional stress and alcohol, which is important evidence against calling respiratory rate a specific illness signal.
+The prospective model used sleeping resting HR, respiratory rate and HRV together rather than respiratory rate in isolation. Alerts sometimes preceded respiratory infections, but positive predictive value was low in the study population. False-positive alerts were associated with intense exercise, poor sleep, emotional stress and alcohol. This is exactly why an RR rise is better interpreted as an early *physiological anomaly* than as a specific infection diagnosis.
 
-**Interpretation:** nocturnal/resting respiratory rate can be useful as a stable personal-context signal and can contribute to a multivariate anomaly assessment. Evidence reviewed here does **not** justify describing it as a specific illness detector, a standalone readiness marker, or a reason by itself to stop training. It does not validate the current `1 br/min` variability floor, `0.3` readiness weight, shared z cap or chronic multiplier.
+**Interpretation:** the statement "respiratory rate can change before an athlete realizes illness is developing" is supported, with important caveats. The stronger statement "an elevated RR specifically means an infection is coming" is not supported. RR is useful precisely because nocturnal/resting values are relatively stable within-person; a meaningful deviation therefore raises the probability that something physiologically important has changed. Infection is one possibility, but recent hard training, sleep disruption, psychological stress, alcohol, altitude/environment and measurement issues remain alternatives.
 
-The existing `engine/rules.ts` comment that describes elevated respiration as one of the "earliest, most specific" signs of illness is scientifically too strong. This evidence pack supersedes that interpretation in the knowledge layer: respiration is **contextual and nonspecific**. The comment itself is not changed in this behavior-preserving PR because the repository's current policy-drift gate mechanically treats any edit to `rules.ts` as a decision-policy change requiring a `POLICY_VERSION` bump. A later drift-gate refinement can permit comment-only correction without changing policy identity.
+For training readiness, the evidence supports a **conditional conservative influence**, not an RR-only veto. A persistent personal-baseline RR elevation, especially when corroborated by rising RHR, falling HRV, poor sleep, subjective symptoms or recent load, can reasonably add evidence toward easing the schedule. There is no reviewed randomized or prospective intervention evidence showing that a particular RR threshold followed by a specific training reduction improves athlete health or performance. The current product `1 br/min` variability floor, `0.3` readiness weight, shared z cap and chronic multiplier therefore remain product calibration rather than scientific constants.
+
+This distinction also corrects the previous wording in `engine/rules.ts`. "Early" has direct athlete support; "most specific" overstates the evidence. The code comment should describe RR as an early, contextual and nonspecific anomaly signal. The policy-drift guard should permit token-identical comment/whitespace corrections without requiring a fake recommendation-policy version bump, while continuing to fail closed for executable changes.
 
 ## Claim decisions
 
@@ -139,7 +151,7 @@ The existing `engine/rules.ts` comment that describes elevated respiration as on
 | `readiness.rhr.contextual_individualized_monitoring` | moderate | conditional | Repeated RHR can contribute to training/recovery monitoring when interpreted against the athlete's own baseline and context. |
 | `readiness.sleep.loss_impairs_performance` | moderate | conditional | Meaningful acute sleep loss is performance-relevant; sleep opportunity can matter. |
 | `readiness.sleep.consumer_wearable_measurement_limits` | moderate | informational | Wearable sleep estimates/proprietary scores have measurement/validation limits. |
-| `readiness.respiration.longitudinal_contextual_signal` | low | informational | Resting/nocturnal RR can contribute longitudinal anomaly context but is not a specific illness or standalone readiness marker. |
+| `readiness.respiration.longitudinal_contextual_signal` | moderate | conditional | Personal-baseline RR elevation can be an early anomaly/illness signal and can support conservative readiness adjustment when persistent or corroborated, but is nonspecific and not a standalone veto. |
 
 ### Product-policy claims
 
@@ -220,9 +232,9 @@ The current architecture already contains several evidence-consistent safeguards
 - missing historical fields contribute zero rather than fabricated adverse evidence;
 - recommendation restriction is staged (`train` / `modify` / `recover`) rather than a binary biomarker veto.
 
-The research does not identify a clearly superior replacement set of weights or thresholds that could responsibly be applied without athlete-specific validation. A behavior change here would therefore substitute one arbitrary calibration for another while pretending to be evidence-driven.
+The deeper respiration review actually strengthens the rationale for the existing architecture: RR deserves real influence because a personal-baseline rise can precede illness in athletes, while its nonspecificity argues for composite/contextual influence rather than a standalone threshold. The research still does not identify a clearly superior replacement weight or cutoff that could responsibly be applied without athlete-specific validation.
 
-`POLICY_VERSION` is intentionally unchanged. Any future retuning should be a separate decision-policy PR with simulation, counterfactual analysis and athlete-outcome calibration.
+`POLICY_VERSION` is intentionally unchanged. Any future retuning or a new persistence/corroboration escalation rule should be a separate decision-policy PR with simulation, counterfactual analysis and athlete-outcome calibration.
 
 ## Tests added
 
@@ -231,6 +243,8 @@ The research does not identify a clearly superior replacement set of weights or 
 - Small RHR elevation inside personal variability remains contextual.
 - RHR +6 bpm and HRV -15 ms current hard-floor alignment.
 - Respiration +2 br/min / 1 br/min MAD contributes 0.6 strain but does not independently force modify.
+- Athlete-specific respiration source identity and directness checks.
+- Systematic-review respiration evidence and nonspecific prospective-validation checks.
 - Sleep-score 49/50 penalty boundary.
 - Body Battery 20/21 recover boundary.
 - Internal-response normalization/fusion coefficient alignment.
@@ -245,4 +259,4 @@ Highest-value next evidence work is not more objective biomarker papers. It is:
 1. subjective readiness / fatigue / soreness threshold authority;
 2. high-safety injury and pain restriction mapping;
 3. taper/event-preparation policy;
-4. later, calibration of readiness action thresholds using recommendation audits and athlete-specific outcomes.
+4. later, calibration of readiness action thresholds using recommendation audits and athlete-specific outcomes, including whether persistent/corroborated respiration anomalies deserve more authority than the current generic composite contribution.
