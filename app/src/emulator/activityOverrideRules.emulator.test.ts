@@ -80,7 +80,9 @@ emulatorDescribe('Activity override rules', () => {
 
         await assertFails(setDoc(ref, { ...validOverride(), userId: otherUserId }));
         await assertFails(setDoc(ref, { ...validOverride(), activityId: 'different-activity' }));
-        await assertFails(setDoc(ref, { ...validOverride(), overriddenModality: 'Swimming' }));
+        // Swimming became a valid modality for triathlon/multisport support; 'Underwater
+        // Basket Weaving' keeps this assertion testing a genuinely unsupported modality.
+        await assertFails(setDoc(ref, { ...validOverride(), overriddenModality: 'Underwater Basket Weaving' }));
         await assertFails(setDoc(ref, { ...validOverride(), overriddenIntensity: 'maximal' }));
         await assertFails(setDoc(ref, { ...validOverride(), rpe: 11 }));
         await assertFails(setDoc(ref, { ...validOverride(), stimulusFocus: 'madeUpAxis' }));
