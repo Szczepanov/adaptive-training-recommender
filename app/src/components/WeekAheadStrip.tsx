@@ -19,6 +19,7 @@ interface WeekAheadStripProps {
 const MODALITY_ICON: Record<string, string> = {
   Running: '🏃',
   Cycling: '🚴',
+  Walking: '🚶',
   Strength: '🏋️',
   Field: '⚽',
   Mobility: '🧘',
@@ -29,6 +30,7 @@ const MODALITY_ICON: Record<string, string> = {
 const SHORT_MODALITY_LABEL: Record<string, string> = {
   Running: 'Run',
   Cycling: 'Bike',
+  Walking: 'Walk',
   Strength: 'Lift',
   Field: 'Field',
   Mobility: 'Mobility',

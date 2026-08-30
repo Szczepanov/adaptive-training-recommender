@@ -130,8 +130,8 @@ function hasConflictingStructuralEvidence(exposure: CompletedExposure): boolean 
     if (!exposure.modality) return false;
     const label = exposure.trainingRecordLike.type;
     const strengthLabel = hasAny(label, ['strength', 'weight', 'lifting', 'resistance']);
-    const enduranceLabel = hasAny(label, ['cycling', 'running', 'aerobic', 'endurance', 'zone 2']);
-    return (strengthLabel && ['Cycling', 'Running', 'Field'].includes(exposure.modality))
+    const enduranceLabel = hasAny(label, ['cycling', 'running', 'walking', 'aerobic', 'endurance', 'zone 2']);
+    return (strengthLabel && ['Cycling', 'Running', 'Walking', 'Field'].includes(exposure.modality))
         || (enduranceLabel && exposure.modality === 'Strength');
 }
 
@@ -147,7 +147,7 @@ export function inferAthleteTrainingState(
         const duration = Number.isFinite(exposure.trainingRecordLike.duration_min)
             ? Math.max(0, exposure.trainingRecordLike.duration_min)
             : 0;
-        const aerobic = hasAny(label, ['cycling', 'running', 'aerobic', 'endurance', 'zone 2']);
+        const aerobic = hasAny(label, ['cycling', 'running', 'walking', 'aerobic', 'endurance', 'zone 2']);
         const strength = hasAny(label, ['strength', 'weight', 'lifting', 'resistance']);
         const highIntensity = hasAny(label, ['threshold', 'vo2', 'interval', 'surge', 'hiit']);
         return {

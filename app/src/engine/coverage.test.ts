@@ -51,6 +51,24 @@ describe('Phase 6.2c explicit weekly coverage', () => {
         expect(coverageKeysForExposure({ templateId: running.id, durationMin: 30 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toContain('aerobic_volume');
     });
 
+    it('adds a first-class Walking bridge without weakening the aerobic-volume duration floor', () => {
+        // Walking gap: resolveEvidenceBackedStrategy() already permits 'Walking' as an
+        // aerobic substitution modality, but no SessionTemplate/workout previously existed
+        // to fulfill it -- a Walking-preferring, no-bike, non-runner athlete had zero
+        // reachable candidates for a required evergreen aerobic role. end_walk_01 /
+        // walking_brisk_continuous_01 close that gap the same way end_easy_02 closed it for
+        // Running: a genuinely purposeful continuous exposure, distinct from generic
+        // recovery walking, at or above the shared 30-minute continuous-aerobic floor.
+        const walking = ENRICHED_TEMPLATES.find(template => template.id === 'end_walk_01');
+        if (!walking) throw new Error('Continuous walking engine template missing');
+
+        expect(walking.modality).toBe('Walking');
+        expect(walking.durationMin).toBeGreaterThanOrEqual(30);
+        expect(coverageKeysForTemplate(walking, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toContain('aerobic_volume');
+        expect(coverageKeysForExposure({ templateId: walking.id, durationMin: 29 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).not.toContain('aerobic_volume');
+        expect(coverageKeysForExposure({ templateId: walking.id, durationMin: 30 }, 'general', EVERGREEN_GENERAL_COVERAGE_SET)).toContain('aerobic_volume');
+    });
+
     it('maps exact authored workout identity, never overlapping stimulus', () => {
         expect(coverageKeysForExposure({ workoutId: 'cycling_zone2_standard_01', durationMin: 60 }, 'peak')).toContain('aerobic_volume');
         expect(coverageKeysForExposure({ workoutId: 'cycling_zone2_standard_01', durationMin: 20 }, 'peak')).not.toContain('aerobic_volume');

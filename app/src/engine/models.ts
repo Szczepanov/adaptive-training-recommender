@@ -658,7 +658,7 @@ export interface TemplatePhaseEligibility {
 export interface SessionTemplate {
     id: string;
     category: 'Hard Endurance' | 'Moderate Endurance' | 'Easy Endurance' | 'Race-Specific Endurance' | 'Upper-body Strength' | 'Lower-body Strength' | 'Full-body Strength' | 'Power Maintenance' | 'Field Maintenance' | 'Technical Skill' | 'Mobility/Recovery' | 'Rest';
-    modality: 'Running' | 'Cycling' | 'Strength' | 'Field' | 'Mobility' | 'Cross Training' | 'None';
+    modality: 'Running' | 'Cycling' | 'Walking' | 'Strength' | 'Field' | 'Mobility' | 'Cross Training' | 'None';
     durationMin: number;
     durationMax: number;
     title: string;

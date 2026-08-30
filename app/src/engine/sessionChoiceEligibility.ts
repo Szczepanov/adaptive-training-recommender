@@ -32,6 +32,7 @@ import { EXERCISES_BY_ID } from '../workouts/exercises';
 const WORKOUT_TO_TEMPLATE_MODALITY: Record<WorkoutModality, SessionTemplate['modality'] | null> = {
     cycling: 'Cycling',
     running: 'Running',
+    walking: 'Walking',
     strength: 'Strength',
     field: 'Field',
     mobility: 'Mobility',

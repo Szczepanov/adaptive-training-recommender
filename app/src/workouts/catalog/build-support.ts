@@ -131,5 +131,28 @@ export const BUILD_SUPPORT_WORKOUTS: WorkoutDefinition[] = [
     parameters: [], regressions: ['running_walk_run_01'], progressions: ['running_tempo_01'], substitutions: [],
     garmin: { exportable: true, supportedSport: 'running' }, tags: ['running', 'continuous', 'aerobic_base'],
     sourceNotes: ['Provides the exact continuous-running identity required for evergreen aerobic-volume coverage; walk-run remains a separate low-impact exposure.'],
+  },
+  {
+    id: 'walking_brisk_continuous_01', version: 1, status: 'active',
+    name: 'Brisk Continuous Walk',
+    description: 'A purposeful, continuous brisk walk at a genuinely elevated pace -- distinct from strolling and from running\'s optional walk-run recovery exposure -- that supplies true aerobic volume for an athlete for whom running is not the primary or an available modality.',
+    modality: 'walking', category: 'easy_endurance', objectives: ['aerobic_base'],
+    duration: { defaultMin: 45, minimumMin: 30, maximumMin: 75 },
+    loadProfile: { cardiovascular: 2, muscular: 1, mechanical: 1, eccentric: 1, coordination: 1, recoveryHours: 12 },
+    eligibility: { minimumReadiness: 4, maximumSoreness: 6, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain'] },
+    equipment: [], contraindicationTags: ['knee_swelling'], engineTemplateIds: ['end_walk_01'],
+    blocks: [
+      { id: 'warmup', name: 'Warm-up', role: 'warmup', steps: [timeStep('brisk_walk_warmup', 'easy_continuous_walk', 'Easy pace-building walk', 300, { target: { type: 'rpe', min: 1, max: 2 } })] },
+      { id: 'main', name: 'Continuous brisk walk', role: 'main', steps: [timeStep('brisk_walk_main', 'easy_continuous_walk', 'Purposeful brisk walk, elevated pace throughout', 2100, { target: { type: 'rpe', min: 3, max: 4 }, notes: ['Faster than a stroll -- breathing noticeably elevated but conversational', 'Flat or rolling predictable route', 'Arms driving, consistent cadence'] })] },
+      { id: 'cooldown', name: 'Cool-down', role: 'cooldown', steps: [timeStep('brisk_walk_cooldown', 'easy_continuous_walk', 'Easy pace walk', 300, { target: { type: 'rpe', min: 1, max: 2 } })] },
+    ],
+    variants: [
+      { id: 'full', targetDurationMin: 45, loadMultiplier: 1, rationale: 'Use the complete continuous brisk-walk dose.', stepOverrides: [] },
+      { id: 'reduced', targetDurationMin: 30, loadMultiplier: 0.7, rationale: 'Shorten the continuous brisk walk while preserving its purposeful pace.', stepOverrides: [{ stepId: 'brisk_walk_main', durationSeconds: 1200 }] },
+      { id: 'return_to_training', targetDurationMin: 30, loadMultiplier: 0.6, rationale: 'Use a deliberately short, moderate-pace walk only when tissue response is normal.', stepOverrides: [{ stepId: 'brisk_walk_main', durationSeconds: 1200, target: { type: 'rpe', min: 2, max: 3 } }] },
+    ],
+    parameters: [], regressions: [], progressions: [], substitutions: [],
+    garmin: { exportable: false }, tags: ['walking', 'continuous', 'aerobic_base', 'no_equipment'],
+    sourceNotes: ['Provides a first-class, exact continuous-walking identity for evergreen aerobic-volume coverage; distinct from generic recovery walking and from running\'s walk-run exposure, neither of which earns this credit by design.'],
   }
 ];
