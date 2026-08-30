@@ -1,0 +1,41 @@
+name: Apply multisport patch
+
+on:
+  push:
+    branches:
+      - feat/multisport-running-triathlon-support
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feat/multisport-running-triathlon-support
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+      - name: Install dependencies
+        working-directory: app
+        run: npm ci
+      - name: Apply patch
+        run: node scripts/apply-multisport-patch.mjs
+      - name: Validate app
+        working-directory: app
+        run: npm run check
+      - name: Commit verified implementation
+        run: |
+          rm scripts/apply-multisport-patch.mjs
+          rm .github/workflows/apply-multisport-patch.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "feat(multisport): add running and triathlon foundations"
+          git push origin HEAD:feat/multisport-running-triathlon-support
