@@ -41,15 +41,36 @@ describe('RHR and respiration readiness evidence boundaries', () => {
         expect(claim.limitations.join(' ')).toContain('population');
     });
 
-    it('caps respiration at low-certainty contextual anomaly evidence rather than sport-readiness authority', () => {
+    it('treats respiration as moderate-certainty conditional anomaly evidence without granting standalone authority', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.respirationLongitudinalContext);
         expect(claim.claimType).toBe('prognostic');
-        expect(claim.evidenceCertainty).toBe('low');
-        expect(claim.recommendationStrength).toBe('informational');
-        expect(claim.statement).toContain('multivariate');
+        expect(claim.evidenceCertainty).toBe('moderate');
+        expect(claim.recommendationStrength).toBe('conditional');
+        expect(claim.statement).toContain('conservative readiness adjustment');
+        expect(claim.statement).toContain('not a specific illness diagnosis');
         expect(claim.limitations.join(' ')).toContain('standalone');
         expect(claim.limitations.join(' ')).toContain('1 br/min');
         expect(claim.limitations.join(' ')).toContain('0.3');
+    });
+
+    it('records direct athlete evidence that RR can rise before other wearable signals', () => {
+        const source = getKnowledgeSource('RENTERIA-2024-ATHLETE-COVID-WEARABLE');
+        expect(source.sourceType).toBe('cohort');
+        expect(source.notes).toContain('three days');
+        expect(source.notes).toContain('14 analyzable');
+        expect(source.externalIds).toEqual(expect.arrayContaining([
+            { type: 'pmid', value: '37401442' },
+            { type: 'pmcid', value: 'PMC10333556' },
+            { type: 'doi', value: '10.1177/19417381231183709' },
+        ]));
+    });
+
+    it('uses the systematic review as early-anomaly support rather than a universal training threshold', () => {
+        const source = getKnowledgeSource('MITRATZA-2022-WEARABLE-INFECTION-REVIEW');
+        expect(source.sourceType).toBe('systematic_review');
+        expect(source.synthesisMethods).toContain('narrative_synthesis');
+        expect(source.notes).toContain('varied widely');
+        expect(source.notes).toContain('not a universal RR threshold');
     });
 
     it('preserves the non-specificity seen in prospective wearable infection validation', () => {
