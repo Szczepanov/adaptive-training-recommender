@@ -14,15 +14,16 @@ describe('strength and concurrent training evidence pack', () => {
         expect(validateCanonicalSportsKnowledgeRegistry()).toEqual({ valid: true, errors: [], warnings: [] });
     });
 
-    it('supports supplemental strength for endurance performance without turning it into a VO2max or universal-dose claim', () => {
+    it('supports supplemental strength for endurance performance without overstating certainty or turning it into a VO2max or universal-dose claim', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.enduranceStrengthPerformanceSupport);
         expect(claim).toMatchObject({
             claimType: 'intervention',
-            evidenceCertainty: 'moderate',
+            evidenceCertainty: 'low',
             recommendationStrength: 'conditional',
         });
         expect(claim.statement).toContain('economy or efficiency');
         expect(claim.statement).toContain('without reliably increasing VO2max');
+        expect(claim.limitations.join(' ')).toContain('cross-sport claim is therefore intentionally low-certainty');
         expect(claim.limitations.join(' ')).toContain('two or three strength sessions');
         expect(claim.limitations.join(' ')).toContain('universal progression');
     });
@@ -43,7 +44,7 @@ describe('strength and concurrent training evidence pack', () => {
         ]));
     });
 
-    it('uses the 2026 concurrent umbrella review without manufacturing a universal sequence rule', () => {
+    it('uses current concurrent evidence without manufacturing a universal sequence or spacing rule', () => {
         const source = getKnowledgeSource('HELD-2026-CONCURRENT-TRAINING-UMBRELLA');
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.concurrentSequenceGoalPriority);
         expect(source.sourceType).toBe('umbrella_review');
@@ -52,9 +53,20 @@ describe('strength and concurrent training evidence pack', () => {
             { type: 'doi', value: '10.1007/s40279-026-02401-y' },
             { type: 'prospero', value: 'CRD42025646460' },
         ]));
-        expect(claim).toMatchObject({ evidenceCertainty: 'moderate', recommendationStrength: 'conditional' });
-        expect(claim.statement).toContain('athlete priority');
-        expect(claim.statement).toContain('does not establish a universal sequence advantage');
+        expect(source.notes).toContain('simultaneous, same day or different day');
+        expect(claim).toMatchObject({
+            evidenceCertainty: 'moderate',
+            recommendationStrength: 'conditional',
+            applicability: { horizon: 'chronic' },
+        });
+        expect(claim.statement).toContain('resistance-before-endurance');
+        expect(claim.statement).toContain('less important for aerobic development');
+        expect(claim.statement).toContain('does not establish one universal order');
+        expect(claim.applicability.outcomes).not.toContain('session_quality');
+        expect(claim.evidence).toEqual(expect.arrayContaining([
+            expect.objectContaining({ sourceId: 'BANGSBO-2025-ELITE-ATHLETE-CONSENSUS', directness: 'partially_direct' }),
+        ]));
+        expect(claim.limitations.join(' ')).toContain('Acute residual fatigue');
         expect(claim.limitations.join(' ')).toContain('0-1-day');
     });
 

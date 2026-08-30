@@ -10,6 +10,7 @@ const LLANOS_LAGOS_RUNNING_STRENGTH_SOURCE = 'LLANOS-LAGOS-2024-RUNNING-STRENGTH
 const LLANOS_LAGOS_CYCLING_STRENGTH_SOURCE = 'LLANOS-LAGOS-2026-CYCLING-STRENGTH-META';
 const HELD_CONCURRENT_UMBRELLA_SOURCE = 'HELD-2026-CONCURRENT-TRAINING-UMBRELLA';
 const EDDENS_SEQUENCE_SOURCE = 'EDDENS-2018-CONCURRENT-SEQUENCE-META';
+const BANGSBO_ELITE_CONSENSUS_SOURCE = 'BANGSBO-2025-ELITE-ATHLETE-CONSENSUS';
 
 export const STRENGTH_CONCURRENT_SOURCES: readonly KnowledgeSource[] = [
     {
@@ -24,7 +25,7 @@ export const STRENGTH_CONCURRENT_SOURCES: readonly KnowledgeSource[] = [
             { type: 'doi', value: '10.1519/JSC.0000000000005056' },
         ],
         synthesisMethods: ['narrative_synthesis'],
-        notes: 'Umbrella review of 17 systematic reviews, 12 with meta-analysis. It supports supplemental strength training for endurance performance and running economy while finding no consistent VO2max improvement. Confidence in many included reviews was low or critically low, limiting claims about one optimal strength method or dose.',
+        notes: 'Umbrella review of 17 systematic reviews, 12 with meta-analysis. It supports supplemental strength training for endurance performance and running economy while finding no consistent VO2max improvement. Confidence in most included reviews was low or critically low, limiting claims about one optimal strength method or dose.',
     },
     {
         id: LLANOS_LAGOS_RUNNING_STRENGTH_SOURCE,
@@ -69,7 +70,7 @@ export const STRENGTH_CONCURRENT_SOURCES: readonly KnowledgeSource[] = [
             { type: 'prospero', value: 'CRD42025646460' },
         ],
         synthesisMethods: ['meta_analysis'],
-        notes: 'Umbrella review of 17 meta-analyses / 144 studies / 1,492 healthy participants. Concurrent training developed aerobic and strength-related qualities with broadly comparable strength, power and hypertrophy outcomes to resistance training alone. No robust overall sequence effect was detected; evidence in highly trained and elite athletes remained sparse.',
+        notes: 'Umbrella review of 17 meta-analyses / 144 studies / 1,492 healthy participants. Concurrent training developed aerobic and strength-related qualities with broadly comparable strength, power and hypertrophy outcomes to resistance training alone. Training modality (simultaneous, same day or different day) did not significantly moderate pooled outcomes. Overall sequence effects were not significant, but resistance-before-endurance was favored when strength or hypertrophy was the priority; sequence appeared negligible for aerobic development. Evidence in highly trained and elite athletes remained sparse.',
     },
 ];
 
@@ -80,7 +81,7 @@ export const STRENGTH_CONCURRENT_CLAIMS: readonly KnowledgeClaim[] = [
         claimType: 'intervention',
         maturity: 'supported',
         status: 'active',
-        evidenceCertainty: 'moderate',
+        evidenceCertainty: 'low',
         recommendationStrength: 'conditional',
         safetyImpact: 'low',
         applicability: {
@@ -96,7 +97,7 @@ export const STRENGTH_CONCURRENT_CLAIMS: readonly KnowledgeClaim[] = [
             { sourceId: LLANOS_LAGOS_CYCLING_STRENGTH_SOURCE, directness: 'direct', note: 'Cycling-specific performance and efficiency evidence.' },
         ],
         limitations: [
-            'The umbrella review judged confidence in many included reviews as low or critically low, and the cycling meta-analysis rated outcome certainty as low.',
+            'The umbrella review judged confidence in most included reviews as low or critically low, the cycling meta-analysis rated outcome certainty as low, and the running review ranged from very low to moderate; the cross-sport claim is therefore intentionally low-certainty despite consistent direction of effect.',
             'Benefits are more consistent for economy/efficiency and performance than for VO2max; a strength session should not be modeled as a direct VO2max intervention.',
             'The reviewed interventions used heterogeneous methods, frequencies and durations; they do not scientifically validate the product default of two or three strength sessions per week, a particular percentage of 1RM, or a universal progression rate.',
             'Athlete training history, competition demands, injury status, recovery capacity and concurrent endurance load should shape the implementation.',
@@ -106,7 +107,7 @@ export const STRENGTH_CONCURRENT_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: STRENGTH_CONCURRENT_CLAIM_IDS.concurrentSequenceGoalPriority,
-        statement: 'Concurrent resistance and endurance training can develop both aerobic and strength-related qualities. When modalities share a session or day, exercise order may be chosen according to the athlete priority and desired session quality; current synthesis does not establish a universal sequence advantage or a requirement to separate strength and endurance by a full calendar day.',
+        statement: 'Concurrent resistance and endurance training can develop both aerobic and strength-related qualities. When modalities share a session or day, resistance-before-endurance is the better-supported order when lower-body strength or hypertrophy is the primary target, while sequence appears less important for aerobic development; current evidence does not establish one universal order or a requirement to separate the modalities by a full calendar day.',
         claimType: 'intervention',
         maturity: 'supported',
         status: 'active',
@@ -117,17 +118,18 @@ export const STRENGTH_CONCURRENT_CLAIMS: readonly KnowledgeClaim[] = [
             contexts: ['concurrent_training', 'session_sequencing', 'weekly_planning'],
             sports: ['cycling', 'running', 'endurance_multisport', 'team_sports'],
             populations: ['healthy_adults_and_athletes'],
-            outcomes: ['strength_adaptation', 'power', 'hypertrophy', 'aerobic_capacity', 'session_quality'],
-            horizon: 'both',
+            outcomes: ['strength_adaptation', 'power', 'hypertrophy', 'aerobic_capacity'],
+            horizon: 'chronic',
         },
         evidence: [
             { sourceId: HELD_CONCURRENT_UMBRELLA_SOURCE, directness: 'direct' },
-            { sourceId: EDDENS_SEQUENCE_SOURCE, directness: 'direct', note: 'Earlier sequence meta-analysis found some lower-body dynamic-strength sequence sensitivity without establishing a universal separation interval.' },
+            { sourceId: EDDENS_SEQUENCE_SOURCE, directness: 'direct', note: 'Earlier sequence meta-analysis found lower-body dynamic-strength benefit from resistance-before-endurance without establishing a universal separation interval.' },
+            { sourceId: BANGSBO_ELITE_CONSENSUS_SOURCE, directness: 'partially_direct', note: 'Elite-athlete consensus permits same-day multimodal training and recommends athlete-by-athlete concurrent prescription, while acknowledging limited elite-specific evidence.' },
         ],
         limitations: [
-            'The 2026 umbrella review found no robust overall sequence effect; resistance-before-endurance showed trends that may favor strength or hypertrophy but should not be converted into a universal rule.',
-            'Highly trained and elite athletes were underrepresented in the newest umbrella evidence, so competition-level session-quality constraints may require more conservative scheduling than population-average adaptation data imply.',
-            'Acute residual fatigue and sport-specific key-session quality are distinct from chronic interference; an athlete may rationally separate sessions even when same-day concurrent training is physiologically permissible.',
+            'The 2026 umbrella review found no significant overall sequence effect, but its practical interpretation favors resistance-before-endurance when strength or hypertrophy is the primary target; this nuance should not be flattened into either a universal order or a claim that order never matters.',
+            'Highly trained and elite athletes were underrepresented in the umbrella evidence, so competition-level scheduling may need to be more conservative than population-average chronic adaptation data imply.',
+            'These sources primarily address chronic adaptation. Acute residual fatigue and the quality of a subsequent key sport-specific session are separate questions and are not directly quantified by this claim.',
             'This evidence does not validate the product 0-1-day heavy-strength/key-cycling exclusion, the systemic-cost thresholds that define those sessions, or workout-specific recovery-hour metadata.',
         ],
         reviewedOn: '2026-08-30',
