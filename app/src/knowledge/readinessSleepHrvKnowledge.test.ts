@@ -3,12 +3,12 @@ import {
     getActiveKnowledgeClaim,
     getKnowledgeSource,
     KNOWLEDGE_CLAIM_IDS,
-    validateSportsKnowledgeRegistry,
-} from './sportsKnowledge';
+    validateCanonicalSportsKnowledgeRegistry,
+} from './sportsKnowledgeRegistry';
 
 describe('readiness, sleep and HRV knowledge pack', () => {
-    it('keeps the complete registry structurally valid', () => {
-        expect(validateSportsKnowledgeRegistry()).toEqual({ valid: true, errors: [], warnings: [] });
+    it('keeps the complete canonical registry structurally valid', () => {
+        expect(validateCanonicalSportsKnowledgeRegistry()).toEqual({ valid: true, errors: [], warnings: [] });
     });
 
     it('treats HRV as contextual longitudinal evidence rather than standalone readiness truth', () => {
