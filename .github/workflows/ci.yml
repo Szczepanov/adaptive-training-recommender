@@ -118,6 +118,9 @@ jobs:
       - name: Validate sports knowledge registry
         run: npm run validate:knowledge
 
+      - name: Validate engine knowledge coverage
+        run: npm run validate:knowledge-coverage
+
       - name: Validate workout library
         run: npm run validate:workouts
 

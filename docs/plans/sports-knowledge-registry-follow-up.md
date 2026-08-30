@@ -1,6 +1,6 @@
 # Sports Knowledge Registry Follow-up
 
-**Status:** Planned
+**Status:** In progress
 
 ADR-0033 establishes the first claim registry and migrates Evergreen provenance without changing recommendation behavior. This plan records the next increments so the foundation does not imply complete evidence coverage.
 
@@ -15,25 +15,29 @@ ADR-0033 establishes the first claim registry and migrates Evergreen provenance 
 
 ## SKR2 — Add knowledge coverage inventory
 
-**Status:** Planned
+**Status:** Complete (2026-08-30)
 
 - Inventory decision-affecting numeric thresholds and training-policy assumptions.
 - Classify each as scientific claim, product heuristic, athlete-specific rule, safety invariant or pure implementation constant.
 - Report uncovered decision-affecting assumptions without requiring immediate migration of low-impact display-only logic.
 
+Implemented by `app/src/knowledge/knowledgeCoverage.ts`, validated in CI, with the baseline audit recorded in `docs/analysis/2026-08-30-engine-knowledge-coverage-inventory.md`.
+
+Initial baseline: 47 policy families — 4 covered, 38 uncovered and 5 deliberately not applicable to sports-science provenance. The research backlog is 16 P0 / 13 P1 / 7 P2 / 2 P3, including 7 uncovered high-safety families. Shadow/observability-only models are explicitly separated from live decision authority so provisional thresholds do not inflate coverage debt.
+
 ## SKR3 — Migrate high-impact training policy
 
 **Status:** Planned
 
-Prioritize claims that can materially change training load or recovery decisions:
+Prioritize claims that can materially change training load or recovery decisions. The SKR2 inventory refines the implementation order to:
 
-1. hard-session density and spacing;
-2. progression/load-management rules;
-3. readiness/HRV/RHR/sleep interpretation;
-4. tapering and event-preparation rules;
-5. strength prescriptions used for sport performance;
-6. fueling/recovery recommendations;
-7. injury/safety constraints whose behavior depends on general sports/rehab knowledge.
+1. hard-session density, recovery and strength/endurance spacing;
+2. readiness/HRV/RHR/sleep and fatigue-model interpretation;
+3. tapering and event-preparation rules;
+4. injury/pain safety constraints whose behavior depends on general sports/rehab knowledge;
+5. periodization objectives and sport/event demand profiles;
+6. stimulus-credit and optimizer calibration;
+7. fueling/recovery recommendations as those features gain decision authority.
 
 For each migration, define the atomic claim first and then search the best applicable evidence. Performance claims should explicitly consider current systematic reviews/meta-analyses and relevant primary studies rather than relying on a generic hierarchy label.
 
