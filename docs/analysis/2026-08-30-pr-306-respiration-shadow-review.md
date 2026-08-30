@@ -19,6 +19,17 @@ Two implementation issues were found and corrected during review:
 
 The fixes deliberately tighten evidence quality without changing recommendation behavior.
 
+## Cross-PR boundary with #305
+
+PR #305 and PR #306 are complementary rather than competing implementations.
+
+- PR #305 owns the canonical **external-evidence boundary**. Its respiration claim should describe the evidence as moderate-certainty for longitudinal/anomaly detection but informational for training action: the literature supports an early, nonspecific signal, not a validated training prescription.
+- PR #306 owns the **local product-validation boundary**. E1/E2/E3/S1, persistence/corroboration rules, replay slices, and any future `tighten-v1` behavior are product calibration and must earn authority prospectively.
+- The existing rules engine contains respiration strain arithmetic, but normal snapshot mapping defaults `RespirationStrainPolicy` to `off`; only an explicit comparison policy forwards the respiration deltas/MAD. Therefore the dormant `0.3` weight and `1 br/min` floor must not be described as current live respiration authority.
+- PR #306 must not inherit recommendation authority merely because PR #305 establishes that respiration is a useful physiological-anomaly signal. Scientific signal validity and product action validity remain separate gates.
+
+There is no hard code dependency or overlapping changed production file between the two PRs. Landing #305 first is cleaner for evidence lineage, but #306's shadow implementation remains valid independently as long as this authority separation is preserved.
+
 ## Finding 1 — replay corroboration had drifted from evaluator semantics
 
 ### Before
