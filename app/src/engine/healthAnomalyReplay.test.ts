@@ -148,6 +148,12 @@ describe('health anomaly replay', () => {
             elevatedOrStrongDays: 1,
             corroboratedDays: 0,
             isolatedDays: 1,
+            robustDeviation: {
+                elevatedAvailableDays: 1,
+                elevatedMedian: expect.any(Number),
+                elevatedMin: expect.any(Number),
+                elevatedMax: expect.any(Number),
+            },
         });
     });
 
@@ -174,6 +180,9 @@ describe('health anomaly replay', () => {
         });
         expect(row?.coreEvidence.find(item => item.signal === 'respiration')?.status).toBe('unavailable');
         expect(report.respirationElevationSummary.elevatedOrStrongDays).toBe(0);
+        expect(report.respirationElevationSummary.unavailableDays).toBeGreaterThan(0);
+        expect(report.respirationElevationSummary.unavailableRate).toBeGreaterThan(0);
+        expect(report.respirationElevationSummary.unavailableReasonCounts.DATE_PROVENANCE_MISMATCH).toBe(1);
     });
 
     it('exports estimator candidates, context and machine-readable plus markdown states', () => {
@@ -195,11 +204,14 @@ describe('health anomaly replay', () => {
         expect(Object.keys(last?.assessmentStates ?? {})).toEqual(report.candidatePolicyVersions);
         expect(report.respirationElevationSummary.statusCounts).toBeDefined();
         expect(report.respirationElevationSummary.elevatedOrStrongDays).toBeGreaterThanOrEqual(0);
+        expect(report.respirationElevationSummary.robustDeviation.availableDays).toBeGreaterThan(0);
 
         const markdown = renderHealthAnomalyReplayMarkdown(report);
         expect(markdown).toContain('# Health anomaly shadow replay');
         expect(markdown).toContain('| Date | RHR | Respiration | Resp. delta status | HRV |');
         expect(markdown).toContain('retrospective labels');
         expect(markdown).toContain('Respiration elevation statuses:');
+        expect(markdown).toContain('Respiration unavailable:');
+        expect(markdown).toContain('MAD-normalized respiration deviation:');
     });
 });
