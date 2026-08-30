@@ -4,7 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "check": "npm run typecheck && npm run lint && npm run test && npm run validate:workouts",
+    "check": "npm run typecheck && npm run lint && npm run test && npm run validate:knowledge && npm run validate:workouts",
     "predev": "npm run check",
     "dev": "vite",
     "build": "npm run check && npm run build:bundle",
@@ -12,6 +12,7 @@
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
+    "validate:knowledge": "node --experimental-strip-types scripts/validate-sports-knowledge.ts",
     "validate:workouts": "node --experimental-strip-types scripts/validate-workouts.ts",
     "simulate:scenarios": "node scripts/simulate-scenarios.mjs",
     "simulate:calibrate": "node scripts/simulate-calibrate.mjs",
