@@ -23,25 +23,64 @@ ADR-0033 establishes the first claim registry and migrates Evergreen provenance 
 
 Implemented by `app/src/knowledge/knowledgeCoverage.ts`, validated in CI, with the baseline audit recorded in `docs/analysis/2026-08-30-engine-knowledge-coverage-inventory.md`.
 
-Initial baseline: 47 policy families — 4 covered, 38 uncovered and 5 deliberately not applicable to sports-science provenance. The research backlog is 16 P0 / 13 P1 / 7 P2 / 2 P3, including 7 uncovered high-safety families. Shadow/observability-only models are explicitly separated from live decision authority so provisional thresholds do not inflate coverage debt.
+Initial baseline: 47 policy families — 4 covered, 38 uncovered and 5 deliberately not applicable to sports-science provenance. The research backlog was 16 P0 / 13 P1 / 7 P2 / 2 P3, including 7 uncovered high-safety families. Shadow/observability-only models are explicitly separated from live decision authority so provisional thresholds do not inflate coverage debt.
 
 ## SKR3 — Migrate high-impact training policy
 
-**Status:** Planned
-
-Prioritize claims that can materially change training load or recovery decisions. The SKR2 inventory refines the implementation order to:
-
-1. hard-session density, recovery and strength/endurance spacing;
-2. readiness/HRV/RHR/sleep and fatigue-model interpretation;
-3. tapering and event-preparation rules;
-4. injury/pain safety constraints whose behavior depends on general sports/rehab knowledge;
-5. periodization objectives and sport/event demand profiles;
-6. stimulus-credit and optimizer calibration;
-7. fueling/recovery recommendations as those features gain decision authority.
+**Status:** In progress
 
 For each migration, define the atomic claim first and then search the best applicable evidence. Performance claims should explicitly consider current systematic reviews/meta-analyses and relevant primary studies rather than relying on a generic hierarchy label.
 
 Each migration should be behavior-preserving unless the evidence review explicitly justifies a separate policy change and `POLICY_VERSION` bump.
+
+### Evidence Pack 1 — Load + Intensity + Recovery
+
+**Status:** Complete (2026-08-30)
+
+Analysis: `docs/analysis/2026-08-30-evidence-pack-load-intensity-recovery.md`
+
+Migrated:
+
+- internal hard/moderate intensity classification semantics;
+- rolling hard-session density cap;
+- next-day anchor/quality spacing;
+- recent-hard-session readiness penalty;
+- dimensional fatigue half-life model;
+- heavy lower-body strength vs key-cycling adjacency;
+- default hard-lower-body recovery rule (partial coverage only).
+
+The pack deliberately uses dual lineage where evidence supports the general training/recovery principle but not the exact internal product scalar. Exact `systemicCost` thresholds, count windows and fatigue half-lives remain explicit product heuristics rather than inheriting scientific certainty.
+
+`spacing.hard_lower_body_recovery` remains **partial / P1** because active workout-specific `recoveryHours` and `minimumDaysAfterHardLowerBody` values can override the default and still require a catalog-by-catalog audit.
+
+Post-pack inventory: 10 covered / 1 partial / 31 uncovered / 5 not applicable. P0 / P1 / P2 / P3 = 10 / 13 / 7 / 2. High-impact uncovered falls from 25 to 18; high-safety uncovered from 7 to 5.
+
+No recommendation behavior changes were made, so this pack does not bump the global recommendation `POLICY_VERSION`.
+
+### Evidence Pack 2 — Readiness + HRV/RHR/Sleep + Internal Fatigue
+
+**Status:** Next
+
+Priority families:
+
+1. `readiness.physiological_strain_model`;
+2. `readiness.subjective_mode_thresholds`;
+3. `readiness.absolute_device_floors`;
+4. `readiness.acute_biometric_floors`;
+5. `readiness.mode_score_thresholds`;
+6. `fatigue.internal_response_model`.
+
+The key epistemic question is expected to be whether research supports within-athlete interpretation while exact device-score/biomarker cut-points remain product calibration or need athlete-specific evidence.
+
+### Later SKR3 packs
+
+After Pack 2, prioritize:
+
+1. tapering and event-preparation rules;
+2. injury/pain safety constraints whose behavior depends on general sports/rehab knowledge;
+3. periodization objectives and sport/event demand profiles;
+4. stimulus-credit and optimizer calibration;
+5. fueling/recovery recommendations as those features gain decision authority.
 
 ## SKR4 — Athlete-specific evidence boundary
 
