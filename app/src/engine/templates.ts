@@ -454,25 +454,25 @@ export const TEMPLATES: SessionTemplate[] = [
         modality: "Strength",
         durationMin: 30,
         durationMax: 45,
-        title: "Bodyweight Full Body Circuit",
-        description: "Push-ups, squats, lunges, planks, and rows-via-table/bands. No equipment required, scalable by tempo and reps.",
+        title: "Bodyweight Full Body Strength",
+        description: "Controlled-tempo squat/sit-to-stand, push-up progression, glute bridge, unloaded hip hinge, self-resisted prone row, and trunk work. Genuinely zero equipment, dosed like resistance training (2-4 RIR) rather than a conditioning circuit.",
         requiredEquipment: [],
-        environment: 'either', safetyTags: ['avoid_high_impact', 'avoid_heavy_lower_body'],
+        environment: 'either', safetyTags: [],
         systemicCost: 0.55,
         objectiveTransferable: false,
         easierDose: {
-            label: "2 Circuit Rounds (20 min)",
+            label: "Reduced Sets (20 min)",
             durationMin: 15,
             durationMax: 25,
             doseRatio: 0.67,
-            prescriptionSummary: "Reduced volume: 2 rounds of bodyweight circuit."
+            prescriptionSummary: "Reduced volume: fewer sets per pattern, same controlled tempo."
         },
         harderDose: {
-            label: "4 Circuit Rounds (45 min)",
+            label: "Full Sets (45 min)",
             durationMin: 40,
             durationMax: 50,
             doseRatio: 1.33,
-            prescriptionSummary: "Increased volume: 4 high-tempo circuit rounds."
+            prescriptionSummary: "Increased volume: additional sets per pattern, still 2-4 reps in reserve."
         }
     },
     {

@@ -887,7 +887,15 @@ describe('Authored travel overlay acceptance', () => {
 
         expect(plan.days.map(day => day.date)).toEqual(['2026-08-19', '2026-08-20', '2026-08-21', '2026-08-22']);
         expect(plan.days.some(day => day.template.modality === 'Cycling' && day.template.category === 'Easy Endurance')).toBe(true);
-        expect(plan.days.some(day => day.template.modality === 'Strength' && day.template.category === 'Full-body Strength')).toBe(true);
+        // 'primary_strength' is not an active requirement during the travel phase (only
+        // build/peak); the September set's travel-eligible strength roles ('compact_strength',
+        // 'upper_body_trunk') are optional/conditional alternatives. The bodyweight full-body
+        // identity now correctly resolves into 'compact_strength' instead of accidentally
+        // aliasing to the wrong workout, so which specific maintenance category the planner
+        // picks can legitimately shift; the real contract is just "real strength maintenance,
+        // not hard/maximal work" -- assert on that rather than one specific category.
+        expect(plan.days.some(day => day.template.modality === 'Strength'
+            && ['Full-body Strength', 'Upper-body Strength'].includes(day.template.category))).toBe(true);
         expect(plan.days.some(day => ['Hard Endurance', 'Race-Specific Endurance', 'Power Maintenance'].includes(day.template.category))).toBe(false);
     });
 });

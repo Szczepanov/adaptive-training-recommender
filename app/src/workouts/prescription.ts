@@ -26,8 +26,7 @@ const FALLBACK_TEMPLATE_TO_WORKOUT: Record<string, string> = {
   end_easy_03: 'running_walk_run_01',
   str_upper_01: 'strength_upper_body_trunk_01',
   str_upper_pull_01: 'strength_upper_body_trunk_01',
-  str_full_01: 'strength_full_body_maintenance_01',
-  str_full_02: 'travel_strength_maintenance_01'
+  str_full_01: 'strength_full_body_maintenance_01'
 };
 
 const strengthTempos: Record<string, string> = {
