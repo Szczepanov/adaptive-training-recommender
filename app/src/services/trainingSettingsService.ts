@@ -22,7 +22,7 @@ const requiredEquipmentKeys = ['free_weights', 'cable_machine', 'treadmill', 'in
 const additiveEquipmentKeys = ['outdoor_bike', 'swim_access'] as const;
 const guardrailKeys = ['avoid_high_impact', 'avoid_heavy_lower_body', 'avoid_overhead_pressing', 'avoid_heavy_spinal_loading'] as const;
 const validBodyRegions = ['knee', 'achilles', 'ankle', 'calf', 'hamstring', 'quadriceps', 'adductor_groin', 'hip', 'lower_back', 'shoulder', 'elbow', 'wrist'] as const;
-const validModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Swimming', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'];
+const validModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training', 'None'];
 
 function timestamp(): string {
     return new Date().toISOString();
