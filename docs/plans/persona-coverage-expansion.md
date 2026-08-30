@@ -1,8 +1,18 @@
 # Persona coverage expansion
 
-**Status:** Ready
+**Status:** Implemented
 **Blocked by:** none — branch from `main` at or after `af87b8d1` (PR #292 merged)
 **Unlocks:** nothing formally; expected to surface new engine findings the same way PR #292's persona suite did
+
+**Outcome:** all 5 candidate personas below were implemented across PR #295's two passes.
+The suite is now 7 families / 21 cases:
+`persona_strength_no_wearable`, `persona_health_fat_loss`, `persona_former_elite_return`,
+`persona_balanced_performance`, `persona_stacked_constraints`, `persona_walking_preferred`,
+`persona_established_history`. Two of the five candidates (Walking, established-history)
+required real engine/harness fixes before a persona could even prove the branch existed —
+see `docs/analysis/2026-08-29-pr-295-persona-coverage-review.md` for the first pass and the
+Walking-modality/established-history-window work that followed it. This document's own
+pitfalls/protocol sections below remain valid guidance for the *next* round of expansion.
 
 ---
 
@@ -59,15 +69,18 @@ All persona fixtures live in one file:
   ids, evergreen-only, no real names, no-wearable fields actually null, etc.) — extend this
   with any new invariant a new persona should never violate, the same way the strength-flare
   and former-elite checks were added.
-- **Two scripts hardcode the current counts and must be updated together with any new
-  persona**, or their validation will reject the run:
-  - `app/scripts/run-persona-ai-judge.mjs` calls `buildPersonaFamilies()` directly (no count
-    literal there).
-  - `app/scripts/update-persona-judge-baseline.mjs` hardcodes
-    `EXPECTED_FAMILY_COUNT = 3` and `EXPECTED_CASE_COUNT = 9` — bump both by however many
-    families/cases you add, or `persona:update-baseline -- --reviewed` will refuse to run.
-  - `app/scripts/ai-judge/__tests__/personaScenarios.test.mjs` — check it for count
-    assertions too before running it.
+- **`app/scripts/update-persona-judge-baseline.mjs` hardcodes the current counts as a
+  validation guard** — currently `EXPECTED_FAMILY_COUNT = 5` and `EXPECTED_CASE_COUNT = 15`
+  (bumped from 3/9 by the first persona-expansion pass, `persona_balanced_performance` and
+  `persona_stacked_constraints`) — and refuses to promote a baseline
+  (`persona:update-baseline -- --reviewed`) unless a fresh run matches exactly. Bump both by
+  however many families/cases you add.
+  `app/scripts/run-persona-ai-judge.mjs` calls `buildPersonaFamilies()` directly with no
+  count literal of its own, so it needs no change.
+- `app/scripts/ai-judge/__tests__/personaScenarios.test.mjs` has its own count assertions
+  (currently asserting the 5-family/15-case cross-section) — these are ordinary test
+  expectations, not a runtime guard, but they'll fail and need updating in the same change
+  as any new persona.
 - Baselines: `docs/analysis/persona-judge-baseline.json` (persona suite) and
   `docs/analysis/plan-judge-baseline.4b.json` / `plan-judge-stability.4b.json` (unrelated —
   that's the event/criterium-based `judge:e2e:quick` suite, not personas; you shouldn't need
@@ -133,47 +146,47 @@ family (not just the new one — check the existing 3 didn't regress), and only 
 
 ## Candidate personas (grounded in specific, currently-untested code paths)
 
-Pick some or all of these — each is chosen because a specific branch of the engine is
-provably never exercised by the current 9 cases, not because it "sounds different."
+All five below are now implemented (`persona_balanced_performance`, `persona_stacked_constraints`
+in PR #295's first pass; `persona_walking_preferred`, `persona_established_history` in the
+follow-up; #4's time-cap stress is covered inside `persona_walking_preferred`'s and
+`persona_health_fat_loss`'s low-time cases rather than as its own family). Kept here for
+the record of what each was grounded in, and as the template for the *next* round.
 
-1. **Walking-only, no-equipment, `health` priority.** Direct sibling of the Running-only bug
-   Finding 4 fixed, but for Walking. `EVERGREEN_SESSION_COVERAGE`'s `aerobic_volume` entry
-   (`app/src/workouts/event-plan.ts`) only lists `cycling_zone2_standard_01` and
-   `running_easy_continuous_01` — there is no Walking-modality workout in it at all. A
-   Walking-preferring, no-bike, non-runner persona (e.g. an older or injury-averse athlete
-   who explicitly avoids running) may have **zero** reachable candidate for the same
-   `required` aerobic role Finding 4 just made non-droppable for `health` — worth checking
-   whether that's an intentional design gap or the same class of bug, before assuming Finding
-   4 + Finding 8 together generalize past Running/Cycling.
-2. **`balanced_performance` priority, not `health`.** Shares the same `healthOrBalanced`
-   branch in `resolveEvidenceBackedStrategy` (`app/src/engine/evergreenStrategy.ts:227`) that
-   Findings 4 and 8 both touched, but no current persona sets this priority specifically —
-   only `health` has been exercised end-to-end through personas. Confirm it behaves
-   identically (it should, per the code, but that's exactly the kind of assumption this
-   suite exists to check).
-3. **Established training history + a performance priority** (`endurance`, `speed_power`, or
-   `sport_readiness`). All 9 existing cases use `initialHistory: []`, so
-   `inferAthleteTrainingState` never returns `dataQuality: 'high'` /
-   `trainingAgeProxy: 'established'` — meaning the entire `canUseConditionalPrior` /
-   `high_intensity` optional-requirement / `hardSessionCap: 2` branch
-   (`evergreenStrategy.ts:236-244`) has never been reached by a persona. Give a persona a
-   populated `initialHistory` (12+ sessions, ≥28 observed days, internally consistent
-   modality/type labels so `hasConflictingStructuralEvidence` doesn't trip) and check that
-   the conditional high-intensity session actually shows up, is capped at the stated 2
-   sessions/week, and doesn't crowd out the required aerobic/strength floors.
-4. **Tight time budget with full equipment**, as a health/balanced persona rather than the
-   event/criterium context `judge_pref_45min` already covers — stresses
-   `resolveTimeCapDoseAdjustment` (`app/src/engine/optimizer.ts`) end-to-end through the
-   evergreen path specifically, which the plan-judge suite's criterium fixtures don't
-   exercise.
-5. **Injury/guardrail constraint stacked with an equipment gap** (e.g. a lower-body
-   restriction *and* no indoor bike, on a `health` or `endurance` persona) — two independent
-   gating systems (`injuryPolicy.ts` restrictions and equipment-based template exclusion)
-   that are each unit-tested alone but not obviously tested together through a persona that
-   also has to hit a `required` coverage role.
+1. ~~**Walking-only, no-equipment, `health` priority.**~~ **Done, and it was a real gap, not
+   just a missing fixture.** `EVERGREEN_SESSION_COVERAGE`'s `aerobic_volume` entry had no
+   Walking-modality workout at all, even though `resolveEvidenceBackedStrategy`'s
+   substitution policy already listed `'Walking'` as permitted — the athlete-facing gap
+   PR #295's first-pass review correctly flagged as an architectural decision, not a fixture
+   omission. Resolved by adding a first-class `Walking` `SessionTemplate['modality']`, a
+   purposeful continuous-walk workout/template pair at the same 30-minute floor as
+   Running/Cycling (`end_walk_01` / `walking_brisk_continuous_01`), and
+   `persona_walking_preferred` (Running-restricted, no-bike, Walking+Strength preferred).
+2. ~~**`balanced_performance` priority, not `health`.**~~ **Done** — `persona_balanced_performance`.
+3. ~~**Established training history + a performance priority.**~~ **Done, and the harness
+   itself was broken, not just the fixture.** PR #295's first-pass review found
+   `runScenario()`'s synthetic history provider only implemented `reconstruct()`, so
+   `prepareTrainingHistorySnapshot()` always returned `null` and the observed window was
+   always `0` regardless of seeded `initialHistory` — the branch was unreachable through
+   the harness. The deeper trace that followed found it was **also unreachable in normal
+   production evergreen planning**: `resolveTrainingIntent()` only ever requested a 7-day
+   window, while `inferAthleteTrainingState()` needs ≥28. Fixed with a separate 28-day
+   athlete-state evidence window (`trainingIntent.ts`'s `ATHLETE_STATE_HISTORY_WINDOW_DAYS`,
+   `trainingHistorySnapshot.ts`'s `athleteStateEvidence`) that never replays into the
+   shorter operational history fatigue/microcycle bookkeeping already uses, plus a
+   `getSnapshot()` implementation on the simulation harness's provider so
+   `persona_established_history` can prove it end-to-end. Verified directly (not just via
+   judge score): a diagnostic against the exact persona fixture confirms
+   `dataQuality: 'high'`, `trainingAgeProxy: 'established'`, `hardSessionCap: 2`, and the
+   `high_intensity` requirement present in the resolved strategy.
+4. ~~**Tight time budget with full equipment.**~~ Covered by the `low_time` cases already
+   present in `persona_health_fat_loss` and `persona_walking_preferred` rather than as a
+   dedicated family.
+5. ~~**Injury/guardrail constraint stacked with an equipment gap.**~~ **Done** —
+   `persona_stacked_constraints`.
 
-Don't feel obligated to do all five in one pass — even one or two done with full rigor (per
-the pitfalls section above) is more valuable than five done superficially.
+For the next round, don't feel obligated to cover everything you identify in one pass — even
+one or two personas done with full rigor (per the pitfalls section above) is more valuable
+than several done superficially.
 
 ## Execution protocol
 
