@@ -35,6 +35,8 @@ Prioritize claims that can materially change training load or recovery decisions
 6. fueling/recovery recommendations;
 7. injury/safety constraints whose behavior depends on general sports/rehab knowledge.
 
+For each migration, define the atomic claim first and then search the best applicable evidence. Performance claims should explicitly consider current systematic reviews/meta-analyses and relevant primary studies rather than relying on a generic hierarchy label.
+
 Each migration should be behavior-preserving unless the evidence review explicitly justifies a separate policy change and `POLICY_VERSION` bump.
 
 ## SKR4 — Athlete-specific evidence boundary
@@ -65,10 +67,28 @@ Add review-frequency metadata only after enough claims exist to justify the oper
 - stale review dates create warnings first, not automatic scientific invalidation;
 - automated literature discovery may suggest review work but may not silently rewrite claim status/certainty.
 
+## SKR6 — Evidence-synthesis review workflow
+
+**Status:** Planned after the coverage inventory creates enough demand.**
+
+Build a lightweight review workflow around claims rather than bulk literature ingestion:
+
+- search PubMed and appropriate domain sources (for example Cochrane, society guidelines and journal databases) for candidate systematic reviews/meta-analyses;
+- retain stable source identity using PMID/PMCID/DOI/PROSPERO where available;
+- record review design separately from synthesis method (`systematic_review` + `meta_analysis`, rather than treating meta-analysis as an evidence tier);
+- record whether the source directly, partially or indirectly answers the registered claim;
+- for decision-important syntheses, capture a concise human-reviewed appraisal covering relevance, review risk of bias, heterogeneity, imprecision, publication/reporting bias, pooling appropriateness and important sensitivity analyses;
+- detect obvious duplicate source identity and, later if needed, overlapping primary studies across reviews;
+- treat ROBIS/AMSTAR 2/PRISMA/GRADE as complementary tools with different purposes, not interchangeable scores;
+- allow automated discovery to open a review candidate/task, but require human review before adding/changing active claim certainty, status or recommendation authority.
+
+Do not build this as a citation warehouse. The output of the workflow is still a reviewed `KnowledgeClaim` with a bounded set of materially relevant sources.
+
 ## Explicitly deferred
 
 - vector database / embeddings;
-- automatic paper ingestion;
+- automatic paper ingestion into active claims;
+- automatic certainty upgrades from PubMed indexing, publication type or meta-analysis;
 - RDF/OWL knowledge graph;
 - formal GRADE certification workflow;
 - universal sports ontology;
