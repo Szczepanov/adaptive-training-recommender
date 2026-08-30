@@ -7,7 +7,31 @@ import { buildCoverageState, coverageNeedTierForTemplate } from './coverage';
 import { ENRICHED_TEMPLATES } from './templates';
 
 const strategy: EvidenceBackedStrategy = {
-    requirements: [{ adaptation: 'aerobic_endurance', priority: 'required', floor: { dose: { unit: 'minutes', value: 150 }, semantics: 'guideline_recommended_minimum' }, target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 }, substitutionPolicy: { equivalentModalitiesAllowed: true, permittedModalities: ['Cycling'] }, evidence: { sourceId: 'test', population: 'test', outcome: 'test', confidence: 'high', applicability: [], authority: 'guideline_target', policyVersion: 'test', reviewedOn: '2026-08-10' } }], warnings: [],
+    requirements: [{
+        adaptation: 'aerobic_endurance',
+        priority: 'required',
+        floor: { dose: { unit: 'minutes', value: 150 }, semantics: 'guideline_recommended_minimum' },
+        target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 },
+        substitutionPolicy: { equivalentModalitiesAllowed: true, permittedModalities: ['Cycling'] },
+        knowledgeRefs: ['test.claim'],
+        evidence: {
+            knowledgeClaimId: 'test.claim',
+            knowledgeClaimVersion: 1,
+            sourceId: 'test',
+            sourceIds: ['test'],
+            population: 'test',
+            outcome: 'test',
+            confidence: 'high',
+            evidenceCertainty: 'moderate',
+            maturity: 'established',
+            status: 'active',
+            applicability: [],
+            authority: 'guideline_target',
+            policyVersion: 'test',
+            reviewedOn: '2026-08-10',
+        },
+    }],
+    warnings: [],
 };
 const capacity: ResolvedTrainingCapacity = { minSessions: 2, targetSessions: 3, maxSessions: 4, weekdayMinutes: 60, weekendMinutes: 60, usableWindows: [], estimatedTargetWeeklyMinutes: 120, warnings: [] };
 const budget: WeeklyBudget = {
