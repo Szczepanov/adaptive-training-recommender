@@ -17,6 +17,28 @@ const ASSESSMENT_STATES = [
 ] as const;
 const EVIDENCE_LEVELS = ['none', 'low', 'moderate', 'high'] as const;
 const NON_OFF_MODES = ['shadow-v1', 'visible-v1', 'tighten-v1'] as const;
+const RESPIRATION_ELEVATION_STATUSES = [
+    'unavailable',
+    'normal',
+    'elevated',
+    'strongly_elevated',
+    'resolving',
+] as const;
+const RESPIRATION_ELEVATION_REASONS = [
+    'MEASUREMENT_INELIGIBLE',
+    'MISSING_CURRENT',
+    'INVALID_CURRENT',
+    'DATE_PROVENANCE_MISMATCH',
+    'INCOMPATIBLE_BASELINE_VERSION',
+    'INSUFFICIENT_HISTORY',
+    'INSUFFICIENT_RECENT_COVERAGE',
+    'MISSING_7D_BASELINE',
+    'MISSING_28D_BASELINE',
+    'ABOVE_ELEVATED_PERSONAL_DELTAS',
+    'ABOVE_STRONG_PERSONAL_DELTAS',
+    'RECENT_DELTA_NON_POSITIVE',
+    'BELOW_ELEVATION_BOUNDARY',
+] as const;
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
     return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -108,6 +130,32 @@ function isSourceIdentity(value: unknown): value is HealthAnomalySourceIdentity 
         && typeof item.revision === 'string');
 }
 
+function isNullableFiniteNumber(value: unknown): boolean {
+    return value === null || (typeof value === 'number' && Number.isFinite(value));
+}
+
+function isRespirationElevationEvidence(value: unknown): boolean {
+    if (!isPlainObject(value)) return false;
+    return (RESPIRATION_ELEVATION_STATUSES as readonly unknown[]).includes(value.status)
+        && isNullableFiniteNumber(value.currentValue)
+        && isNullableFiniteNumber(value.baseline7dValue)
+        && isNullableFiniteNumber(value.baseline28dValue)
+        && isNullableFiniteNumber(value.deltaVs7d)
+        && isNullableFiniteNumber(value.deltaVs28d)
+        && (value.baselineVersion === null || (Number.isInteger(value.baselineVersion) && (value.baselineVersion as number) >= 0))
+        && Number.isInteger(value.historyCount)
+        && (value.historyCount as number) >= 0
+        && typeof value.recentDayCoverage === 'number'
+        && Number.isFinite(value.recentDayCoverage)
+        && value.recentDayCoverage >= 0
+        && value.recentDayCoverage <= 1
+        && Array.isArray(value.reasonCodes)
+        && value.reasonCodes.length <= RESPIRATION_ELEVATION_REASONS.length
+        && value.reasonCodes.every(reason => (RESPIRATION_ELEVATION_REASONS as readonly unknown[]).includes(reason))
+        && typeof value.policyVersion === 'string'
+        && value.policyVersion.length > 0;
+}
+
 export function parseHealthAnomalyAssessmentRevision(
     value: unknown,
     expectedUserId?: string,
@@ -132,6 +180,10 @@ export function parseHealthAnomalyAssessmentRevision(
     if (revision.assessment.policyVersion !== revision.policyVersion) throw new Error('Health anomaly policy version mismatch');
     if (revision.assessment.thresholdPolicyVersion !== revision.thresholdPolicy.policyVersion) throw new Error('Health anomaly threshold version mismatch');
     if (revision.assessment.mode !== revision.mode) throw new Error('Health anomaly mode mismatch');
+    if (
+        revision.assessment.respirationElevation !== undefined
+        && !isRespirationElevationEvidence(revision.assessment.respirationElevation)
+    ) throw new Error('Invalid respiration elevation evidence');
     if (!Array.isArray(revision.assessment.coreSignals) || revision.assessment.coreSignals.length !== 3) throw new Error('Health anomaly revision requires three core signal traces');
     for (const signal of revision.assessment.coreSignals) {
         if (!['rhr', 'respiration', 'hrv'].includes(signal.signal)) throw new Error('Invalid health anomaly core signal');

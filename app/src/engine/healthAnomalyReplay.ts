@@ -5,6 +5,7 @@ import type {
     HealthAnomalyFeatureSet,
     HealthAnomalyThresholdPolicy,
     PhysiologicalAnomalyAssessment,
+    RespirationElevationEvidence,
 } from './healthAnomalyModels';
 import type { DailyRecoverySnapshot, DailySubjectiveCheckin } from './models';
 import { addDaysToLocalDateString } from '../utils/localDate';
@@ -33,6 +34,7 @@ export interface HealthAnomalyReplayPolicyResult {
 
 export interface HealthAnomalyReplayRow {
     date: string;
+    respirationElevation: RespirationElevationEvidence | null;
     coreEvidence: CoreSignalEvidence[];
     candidateEstimators: HealthAnomalyFeatureSet['coreSignals'];
     hardSessionContext: {
@@ -69,6 +71,14 @@ export interface HealthAnomalyReplayReport {
     evaluatorMode: 'shadow-v1';
     candidatePolicyVersions: string[];
     observedDays: number;
+    respirationElevationSummary: {
+        statusCounts: Record<string, number>;
+        elevatedOrStrongDays: number;
+        persistentTwoNightDays: number;
+        corroboratedDays: number;
+        isolatedDays: number;
+        resolvingDays: number;
+    };
     limitations: string[];
     rows: HealthAnomalyReplayRow[];
 }
@@ -107,6 +117,36 @@ function futureSymptoms(
         if (symptomDates.has(addDaysToLocalDateString(date, offset))) return true;
     }
     return false;
+}
+
+function isElevatedRespiration(row: HealthAnomalyReplayRow): boolean {
+    return row.respirationElevation?.status === 'elevated'
+        || row.respirationElevation?.status === 'strongly_elevated';
+}
+
+function summarizeRespirationElevation(rows: HealthAnomalyReplayRow[]): HealthAnomalyReplayReport['respirationElevationSummary'] {
+    const statusCounts = rows.reduce<Record<string, number>>((counts, row) => {
+        const status = row.respirationElevation?.status ?? 'unavailable';
+        counts[status] = (counts[status] ?? 0) + 1;
+        return counts;
+    }, {});
+    const byDate = new Map(rows.map(row => [row.date, row]));
+    const elevated = rows.filter(isElevatedRespiration);
+    const corroborated = elevated.filter(row => row.coreEvidence.some(
+        evidence => evidence.signal !== 'respiration'
+            && (evidence.status === 'moderate_anomaly' || evidence.status === 'strong_anomaly'),
+    ));
+    return {
+        statusCounts,
+        elevatedOrStrongDays: elevated.length,
+        persistentTwoNightDays: elevated.filter(row => {
+            const previous = byDate.get(addDaysToLocalDateString(row.date, -1));
+            return previous ? isElevatedRespiration(previous) : false;
+        }).length,
+        corroboratedDays: corroborated.length,
+        isolatedDays: elevated.length - corroborated.length,
+        resolvingDays: statusCounts.resolving ?? 0,
+    };
 }
 
 /**
@@ -169,6 +209,7 @@ export function runHealthAnomalyReplay(
         const health = checkin?.healthContext;
         rowsWithoutLabels.push({
             date: day.date,
+            respirationElevation: representativeAssessment?.respirationElevation ?? null,
             coreEvidence: representativeAssessment?.coreSignals ?? [],
             candidateEstimators: features?.coreSignals ?? [],
             hardSessionContext: {
@@ -213,6 +254,7 @@ export function runHealthAnomalyReplay(
         evaluatorMode: 'shadow-v1',
         candidatePolicyVersions: policies.map(policy => policy.policyVersion),
         observedDays: rows.length,
+        respirationElevationSummary: summarizeRespirationElevation(rows),
         limitations: [
             'Future 24/48/72h symptom flags are retrospective labels joined after evaluation and are never live evaluator input.',
             'Candidate thresholds are shadow calibration parameters, not validated diagnostic cutoffs.',
@@ -238,16 +280,18 @@ export function renderHealthAnomalyReplayMarkdown(report: HealthAnomalyReplayRep
         `- Observed days: ${report.observedDays}`,
         `- Evaluator mode: ${report.evaluatorMode}`,
         `- Candidate policies: ${report.candidatePolicyVersions.join(', ') || 'none'}`,
+        `- Respiration elevation statuses: ${JSON.stringify(report.respirationElevationSummary.statusCounts)}`,
+        `- Elevated/strong days: ${report.respirationElevationSummary.elevatedOrStrongDays}; two-night persistent: ${report.respirationElevationSummary.persistentTwoNightDays}; corroborated: ${report.respirationElevationSummary.corroboratedDays}; isolated: ${report.respirationElevationSummary.isolatedDays}; resolving: ${report.respirationElevationSummary.resolvingDays}`,
         '',
         '## Evidence framing',
         '',
         ...report.limitations.map(item => `- ${item}`),
         '',
-        '| Date | RHR | Respiration | HRV | Hard 3d | Sleep | Stress | State | Symptoms | +24h | +48h | +72h |',
-        '| --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- |',
+        '| Date | RHR | Respiration | Resp. delta status | HRV | Hard 3d | Sleep | Stress | State | Symptoms | +24h | +48h | +72h |',
+        '| --- | --- | --- | --- | --- | ---: | ---: | ---: | --- | --- | --- | --- | --- |',
         ...report.rows.map(row => {
             const state = primaryPolicy ? row.assessmentStates[primaryPolicy]?.state ?? 'N/A' : 'N/A';
-            return `| ${row.date} | ${evidenceCell(row.coreEvidence.find(item => item.signal === 'rhr'))} | ${evidenceCell(row.coreEvidence.find(item => item.signal === 'respiration'))} | ${evidenceCell(row.coreEvidence.find(item => item.signal === 'hrv'))} | ${row.hardSessionContext.last3DaysHardSessionsCount} | ${row.sleepStressContext.sleepScore ?? 'N/A'} | ${row.sleepStressContext.garminStressAvg ?? 'N/A'} | ${state} | ${row.symptomsReported ? 'yes' : 'no'} | ${row.futureSymptoms24h ? 'yes' : 'no'} | ${row.futureSymptoms48h ? 'yes' : 'no'} | ${row.futureSymptoms72h ? 'yes' : 'no'} |`;
+            return `| ${row.date} | ${evidenceCell(row.coreEvidence.find(item => item.signal === 'rhr'))} | ${evidenceCell(row.coreEvidence.find(item => item.signal === 'respiration'))} | ${row.respirationElevation?.status ?? 'unavailable'} | ${evidenceCell(row.coreEvidence.find(item => item.signal === 'hrv'))} | ${row.hardSessionContext.last3DaysHardSessionsCount} | ${row.sleepStressContext.sleepScore ?? 'N/A'} | ${row.sleepStressContext.garminStressAvg ?? 'N/A'} | ${state} | ${row.symptomsReported ? 'yes' : 'no'} | ${row.futureSymptoms24h ? 'yes' : 'no'} | ${row.futureSymptoms48h ? 'yes' : 'no'} | ${row.futureSymptoms72h ? 'yes' : 'no'} |`;
         }),
         '',
     ];

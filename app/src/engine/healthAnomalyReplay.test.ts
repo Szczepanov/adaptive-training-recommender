@@ -126,12 +126,19 @@ describe('health anomaly replay', () => {
         const last = report.rows.at(-1);
         expect(report.candidatePolicyVersions).toHaveLength(1);
         expect(last?.candidateEstimators.map(item => item.signal)).toEqual(['rhr', 'respiration', 'hrv']);
+        expect(last?.respirationElevation).toMatchObject({
+            status: expect.stringMatching(/^(normal|elevated|strongly_elevated|resolving)$/),
+            policyVersion: 'respiration-elevation/shadow-e2-s1-v1',
+        });
         expect(last?.healthContext.authoredTravelActive).toBe(true);
         expect(Object.keys(last?.assessmentStates ?? {})).toEqual(report.candidatePolicyVersions);
+        expect(report.respirationElevationSummary.statusCounts).toBeDefined();
+        expect(report.respirationElevationSummary.elevatedOrStrongDays).toBeGreaterThanOrEqual(0);
 
         const markdown = renderHealthAnomalyReplayMarkdown(report);
         expect(markdown).toContain('# Health anomaly shadow replay');
-        expect(markdown).toContain('| Date | RHR | Respiration | HRV |');
+        expect(markdown).toContain('| Date | RHR | Respiration | Resp. delta status | HRV |');
         expect(markdown).toContain('retrospective labels');
+        expect(markdown).toContain('Respiration elevation statuses:');
     });
 });

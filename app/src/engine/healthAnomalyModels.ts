@@ -201,6 +201,66 @@ export interface HealthAnomalyRationaleTokens {
     cautions: string[];
 }
 
+export type RespirationElevationStatus =
+    | 'unavailable'
+    | 'normal'
+    | 'elevated'
+    | 'strongly_elevated'
+    | 'resolving';
+
+export type RespirationElevationReasonCode =
+    | 'MEASUREMENT_INELIGIBLE'
+    | 'MISSING_CURRENT'
+    | 'INVALID_CURRENT'
+    | 'DATE_PROVENANCE_MISMATCH'
+    | 'INCOMPATIBLE_BASELINE_VERSION'
+    | 'INSUFFICIENT_HISTORY'
+    | 'INSUFFICIENT_RECENT_COVERAGE'
+    | 'MISSING_7D_BASELINE'
+    | 'MISSING_28D_BASELINE'
+    | 'ABOVE_ELEVATED_PERSONAL_DELTAS'
+    | 'ABOVE_STRONG_PERSONAL_DELTAS'
+    | 'RECENT_DELTA_NON_POSITIVE'
+    | 'BELOW_ELEVATION_BOUNDARY';
+
+export interface RespirationElevationPolicy {
+    policyVersion: string;
+    minimumBaselineVersion: number;
+    minimumHistoryCount: number;
+    minimumRecentDayCoverage: number;
+    elevatedDeltaVs28d: number;
+    elevatedDeltaVs7d: number;
+    strongDeltaVs28d: number;
+    strongDeltaVs7d: number;
+}
+
+export interface RespirationElevationInput {
+    targetDate: string;
+    measurementDate: string | null;
+    timezone: 'Europe/Warsaw';
+    currentValue: number | null;
+    baseline7dValue: number | null;
+    baseline28dValue: number | null;
+    baselineVersion: number | null;
+    historyCount: number;
+    recentDayCoverage: number;
+    measurementEligible: boolean;
+}
+
+export interface RespirationElevationEvidence {
+    status: RespirationElevationStatus;
+    currentValue: number | null;
+    baseline7dValue: number | null;
+    baseline28dValue: number | null;
+    deltaVs7d: number | null;
+    deltaVs28d: number | null;
+    baselineVersion: number | null;
+    historyCount: number;
+    recentDayCoverage: number;
+    reasonCodes: RespirationElevationReasonCode[];
+    policyVersion: string;
+}
+
 export interface HealthAnomalyPersistenceInput {
     previousState: PhysiologicalAnomalyState | null;
     previousEpisodeId: string | null;
@@ -237,6 +297,8 @@ export interface PhysiologicalAnomalyAssessment {
     episodeDay: number | null;
     dataQuality: CoreSignalDataQuality[];
     rationale: HealthAnomalyRationaleTokens;
+    /** Observation-only HA9 evidence. It is not an input to the live training selector. */
+    respirationElevation?: RespirationElevationEvidence;
     policyVersion: string;
     thresholdPolicyVersion: string;
     mode: Exclude<HealthAnomalyPolicy, 'off'>;

@@ -950,7 +950,15 @@ known.
 
 ## HA9 — tighten-only training integration
 
-**Status:** blocked by visible-mode prospective evidence and a recorded release decision
+**Status:** respiration shadow evidence implemented through HA9-R2; live tightening remains
+blocked by labelled prospective evidence and a recorded release decision
+
+The scoped implementation decomposition and current personal-history replay findings are in
+[`respiration-elevation-training-tightening.md`](./respiration-elevation-training-tightening.md).
+That addendum refines how respiration may contribute to HA9: a discrete current-elevation
+signal is evaluated in shadow first, while the rejected broad
+`RespirationStrainPolicy='median-mad-v1'` production shortcut remains off. The addendum does
+not authorize `tighten-v1`; HA7/HA9 evidence and a separate release decision still govern.
 
 ### HA9.1 Add a health gate after readiness evaluation
 

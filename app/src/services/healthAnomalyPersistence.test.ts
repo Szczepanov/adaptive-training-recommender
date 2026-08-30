@@ -50,6 +50,20 @@ const assessment: PhysiologicalAnomalyAssessment = {
     mode: 'shadow-v1',
 };
 
+const respirationElevation = {
+    status: 'elevated' as const,
+    currentValue: 14,
+    baseline7dValue: 13.5,
+    baseline28dValue: 13,
+    deltaVs7d: 0.5,
+    deltaVs28d: 1,
+    baselineVersion: 5,
+    historyCount: 28,
+    recentDayCoverage: 1,
+    reasonCodes: ['ABOVE_ELEVATED_PERSONAL_DELTAS' as const],
+    policyVersion: 'respiration-elevation/shadow-e2-s1-v1',
+};
+
 function revision(
     computedAt = '2026-08-21T06:30:00Z',
     recoverySnapshotRevision = source.recoverySnapshotRevision,
@@ -90,6 +104,27 @@ describe('health anomaly immutable persistence identity', () => {
         const record = revision();
         expect(() => parseHealthAnomalyAssessmentRevision({ ...record, revisionId: 'ha-0000000000000000' }, 'u1', '2026-08-21'))
             .toThrow('identity mismatch');
+    });
+
+    it('accepts valid optional respiration elevation evidence and rejects malformed evidence', () => {
+        const record = buildHealthAnomalyAssessmentRevision({
+            userId: 'u1',
+            date: '2026-08-21',
+            computedAt: '2026-08-21T06:30:00Z',
+            mode: 'shadow-v1',
+            thresholdPolicy: SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+            source,
+            assessment: { ...assessment, respirationElevation },
+        });
+        expect(parseHealthAnomalyAssessmentRevision(record).assessment.respirationElevation)
+            .toEqual(respirationElevation);
+        expect(() => parseHealthAnomalyAssessmentRevision({
+            ...record,
+            assessment: {
+                ...record.assessment,
+                respirationElevation: { ...respirationElevation, recentDayCoverage: 2 },
+            },
+        })).toThrow('Invalid respiration elevation evidence');
     });
 
     it('returns the existing immutable revision on an exact idempotent retry', async () => {

@@ -12,8 +12,9 @@ import {
     type PhysiologicalAnomalyAssessment,
     type SupportingSignalEvidence,
 } from './healthAnomalyModels';
+import { evaluateRespirationElevation } from './respirationElevation';
 
-export const HEALTH_ANOMALY_POLICY_VERSION = 'health-anomaly/ha3-v1';
+export const HEALTH_ANOMALY_POLICY_VERSION = 'health-anomaly/ha9-respiration-shadow-v1';
 
 /** Candidate values for shadow replay only; HA7 evidence, not architecture preference, decides cutover. */
 export const SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS: HealthAnomalyThresholdPolicy = {
@@ -433,6 +434,20 @@ export function evaluatePhysiologicalAnomaly(
     const dataQuality = CORE_SIGNALS
         .map(signal => qualityForSignal(input, signal, featuresForSignal(input, signal)))
         .filter((quality): quality is CoreSignalDataQuality => quality !== null);
+    const respirationQuality = dataQuality.find(quality => quality.signal === 'respiration');
+    const respirationElevation = evaluateRespirationElevation({
+        targetDate: input.date,
+        measurementDate: input.recoverySnapshot?.date ?? null,
+        timezone: input.timezone,
+        currentValue: input.recoverySnapshot?.raw.respirationAvg ?? null,
+        baseline7dValue: input.recoverySnapshot?.derived.respiration7dAvg ?? null,
+        baseline28dValue: input.recoverySnapshot?.derived.respiration28dAvg ?? null,
+        baselineVersion: input.recoverySnapshot?.derived.baselineComputationVersion ?? null,
+        historyCount: respirationQuality?.historyCount ?? 0,
+        recentDayCoverage: respirationQuality?.recentDayCoverage ?? 0,
+        measurementEligible: (input.recoverySnapshot?.source.sourceSchemaVersion ?? 0) >= 3
+            && input.recoverySnapshot?.source.timezone === 'Europe/Warsaw',
+    });
     const supportingSignals = deriveSupportingSignals(input);
     const explanations = resolveExplanations(input);
     const adverseAnomalies = coreSignals.filter(isAdverseCoreSignalEvidence);
@@ -482,10 +497,25 @@ export function evaluatePhysiologicalAnomaly(
         episodeDay: episode.episodeDay,
         dataQuality,
         rationale: {
-            facts: rationaleFacts(coreSignals, persistenceDays, symptomsReported, supportingSignals),
+            facts: [
+                ...rationaleFacts(coreSignals, persistenceDays, symptomsReported, supportingSignals),
+                ...(respirationElevation.status === 'elevated' || respirationElevation.status === 'strongly_elevated'
+                    ? [{
+                        code: respirationElevation.status === 'strongly_elevated'
+                            ? 'RESPIRATION_STRONGLY_ELEVATED'
+                            : 'RESPIRATION_ELEVATED',
+                        value: respirationElevation.deltaVs28d,
+                        unit: 'breaths/min above 28d median',
+                    }]
+                    : []),
+                ...(respirationElevation.status === 'resolving'
+                    ? [{ code: 'RESPIRATION_RESOLVING', value: respirationElevation.deltaVs7d, unit: 'breaths/min vs 7d median' }]
+                    : []),
+            ],
             explanations: explanations.map(explanation => explanation.kind.toUpperCase()),
             cautions: state === 'normal' ? [] : ['NOT_A_DIAGNOSIS'],
         },
+        respirationElevation,
         policyVersion: HEALTH_ANOMALY_POLICY_VERSION,
         thresholdPolicyVersion: thresholds.policyVersion,
         mode: policy,
