@@ -1,5 +1,12 @@
 import type { CompletedExposure } from './trainingHistory';
 import type { TrainingIntentProfile, TrainingPriority } from './models';
+import {
+    getActiveKnowledgeClaim,
+    KNOWLEDGE_CLAIM_IDS,
+    type EvidenceCertainty,
+    type KnowledgeMaturity,
+    type KnowledgeStatus,
+} from '../knowledge/sportsKnowledge';
 
 /** The one in-memory default for an athlete who has not yet saved an intent profile.
  * It is deliberately not persisted by planning-mode resolution. */
@@ -25,10 +32,16 @@ export interface DoseRange {
 }
 
 export interface EvidenceProvenance {
+    knowledgeClaimId: string;
+    knowledgeClaimVersion: number;
     sourceId: string;
+    sourceIds: string[];
     population: string;
     outcome: string;
     confidence: 'high' | 'medium' | 'low';
+    evidenceCertainty: EvidenceCertainty;
+    maturity: KnowledgeMaturity;
+    status: KnowledgeStatus;
     applicability: string[];
     authority: 'guideline_target' | 'outcome_supported_default' | 'conditional_prior' | 'product_heuristic';
     policyVersion: string;
@@ -50,6 +63,9 @@ export interface AdaptationDoseRequirement {
     target: DoseRange;
     priority: 'required' | 'target' | 'optional';
     substitutionPolicy: SubstitutionPolicy;
+    /** All scientific/product knowledge claims that justify this requirement. */
+    knowledgeRefs: string[];
+    /** Compatibility projection for existing consumers while policy migrates to claim references. */
     evidence: EvidenceProvenance;
 }
 
@@ -92,34 +108,33 @@ export interface EvidenceBackedStrategy {
 }
 
 const POLICY_VERSION = 'evergreen-dose-v1';
-const REVIEWED_ON = '2026-08-10';
 
-const HEALTH_AEROBIC_PROVENANCE: EvidenceProvenance = {
-    sourceId: 'WHO-2020-PHYSICAL-ACTIVITY-GUIDELINES',
-    population: 'Adults without a sport-specific performance requirement',
-    outcome: 'Health-promoting moderate-intensity aerobic activity volume',
-    confidence: 'high',
-    applicability: ['health', 'balanced_performance'],
-    authority: 'guideline_target', policyVersion: POLICY_VERSION, reviewedOn: REVIEWED_ON,
-};
+function evidenceProvenance(
+    knowledgeClaimId: string,
+    authority: EvidenceProvenance['authority'],
+    legacyConfidence: EvidenceProvenance['confidence'],
+): EvidenceProvenance {
+    const claim = getActiveKnowledgeClaim(knowledgeClaimId);
+    const primaryEvidence = claim.evidence[0];
+    if (!primaryEvidence) throw new Error(`Knowledge claim ${claim.id} has no evidence/source link`);
 
-const STRENGTH_PROVENANCE: EvidenceProvenance = {
-    sourceId: 'WHO-2020-PHYSICAL-ACTIVITY-GUIDELINES',
-    population: 'Adults without a sport-specific performance requirement',
-    outcome: 'Muscle-strengthening activity frequency',
-    confidence: 'high',
-    applicability: ['health', 'balanced_performance', 'strength_muscle'],
-    authority: 'guideline_target', policyVersion: POLICY_VERSION, reviewedOn: REVIEWED_ON,
-};
-
-const HIGH_INTENSITY_PROVENANCE: EvidenceProvenance = {
-    sourceId: 'PRODUCT-CONDITIONAL-TRAINING-PRIOR',
-    population: 'Athletes with sufficient, internally consistent recent training evidence',
-    outcome: 'Optional performance-oriented high-intensity exposure',
-    confidence: 'low',
-    applicability: ['endurance', 'speed_power', 'sport_readiness'],
-    authority: 'conditional_prior', policyVersion: POLICY_VERSION, reviewedOn: REVIEWED_ON,
-};
+    return {
+        knowledgeClaimId: claim.id,
+        knowledgeClaimVersion: claim.version,
+        sourceId: primaryEvidence.sourceId,
+        sourceIds: claim.evidence.map(link => link.sourceId),
+        population: claim.applicability.populations.join('; '),
+        outcome: claim.applicability.outcomes.join('; '),
+        confidence: legacyConfidence,
+        evidenceCertainty: claim.evidenceCertainty,
+        maturity: claim.maturity,
+        status: claim.status,
+        applicability: [...claim.applicability.contexts],
+        authority,
+        policyVersion: POLICY_VERSION,
+        reviewedOn: claim.reviewedOn,
+    };
+}
 
 function hasAny(text: string, terms: readonly string[]): boolean {
     const normalized = text.toLowerCase();
@@ -196,22 +211,26 @@ export function inferAthleteTrainingState(
 }
 
 function aerobicRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
+    const primaryClaimId = KNOWLEDGE_CLAIM_IDS.adultAerobicHealthVolume;
     return {
         adaptation: 'aerobic_endurance', priority,
         floor: { dose: { unit: 'minutes', value: 150 }, semantics: 'guideline_recommended_minimum' },
         target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 },
         substitutionPolicy: { equivalentModalitiesAllowed: true, permittedModalities: ['Walking', 'Running', 'Cycling', 'Other'] },
-        evidence: HEALTH_AEROBIC_PROVENANCE,
+        knowledgeRefs: [primaryClaimId],
+        evidence: evidenceProvenance(primaryClaimId, 'guideline_target', 'high'),
     };
 }
 
 function strengthRequirement(priority: AdaptationDoseRequirement['priority']): AdaptationDoseRequirement {
+    const primaryClaimId = KNOWLEDGE_CLAIM_IDS.adultStrengthHealthFrequency;
     return {
         adaptation: 'strength', priority,
         floor: { dose: { unit: 'sessions', value: 2 }, semantics: 'guideline_recommended_minimum' },
         target: { unit: 'sessions', minimum: 2, target: 2, maximum: 3 },
         substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Strength'] },
-        evidence: STRENGTH_PROVENANCE,
+        knowledgeRefs: [primaryClaimId, KNOWLEDGE_CLAIM_IDS.adultStrengthDefaultUpperTarget],
+        evidence: evidenceProvenance(primaryClaimId, 'guideline_target', 'high'),
     };
 }
 
@@ -225,7 +244,7 @@ export function resolveEvidenceBackedStrategy(
     const priorities = new Set(goalOrEvent.priorities.length > 0 ? goalOrEvent.priorities : ['balanced_performance']);
     const requirements: AdaptationDoseRequirement[] = [];
     const healthOrBalanced = priorities.has('health') || priorities.has('balanced_performance');
-    // WHO/CDC adult-health guidance recommends both aerobic volume and muscle-strengthening
+    // WHO adult-health guidance recommends both aerobic volume and muscle-strengthening
     // frequency. If either adaptation is included by the health/balanced baseline, or is
     // explicitly selected by the athlete, keep its evidence-backed floor non-droppable.
     // Capacity may still produce an explicit shortfall; it must not silently erase a whole
@@ -237,11 +256,13 @@ export function resolveEvidenceBackedStrategy(
     const canUseConditionalPrior = athleteState.inference.dataQuality === 'high' && athleteState.trainingAgeProxy === 'established';
     const warnings: PolicyWarning[] = [];
     if (performancePriority && canUseConditionalPrior) {
+        const primaryClaimId = KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior;
         requirements.push({
             adaptation: 'high_intensity', priority: 'optional', floor: null,
             target: { unit: 'sessions', minimum: 0, target: 1, maximum: 2 },
             substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Running', 'Cycling', 'Other'] },
-            evidence: HIGH_INTENSITY_PROVENANCE,
+            knowledgeRefs: [primaryClaimId],
+            evidence: evidenceProvenance(primaryClaimId, 'conditional_prior', 'low'),
         });
     } else if (performancePriority) {
         warnings.push({ code: 'conditional_prior_withheld', message: 'Performance-intensity work is withheld until sufficient, consistent recent training evidence is available.' });
