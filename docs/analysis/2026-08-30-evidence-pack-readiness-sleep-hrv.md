@@ -1,6 +1,6 @@
 # Evidence Pack — Readiness, Sleep and HRV
 
-**Date:** 2026-08-30  
+**Date:** 2026-08-30
 **Status:** Implemented as SKR3 evidence migration; recommendation behavior intentionally unchanged.
 
 ## Decision question
@@ -35,24 +35,24 @@ For each candidate source, the review considered:
 
 ### HRV measurement and interpretation
 
-**Carter et al., 2026 — HRV rigor/reproducibility guidelines**  
+**Carter et al., 2026 — HRV rigor/reproducibility guidelines**
 PMID 42495990; PMCID PMC13477148; DOI `10.1152/ajpheart.00041.2026`.
 
 The guideline is highly relevant to the engine's interpretation boundary. It emphasizes that HRV depends materially on recording signal, duration, environment, posture/behavior, respiration and analytic approach. It explicitly cautions against interpreting HRV as a specific marker of cardiac sympathetic outflow or sympathovagal balance.
 
-**Bellenger et al., 2016 — autonomic HR regulation and training status meta-analysis**  
+**Bellenger et al., 2016 — autonomic HR regulation and training status meta-analysis**
 PMID 26888648; DOI `10.1007/s40279-016-0484-2`.
 
 Autonomic HR indices can move with both positive training adaptation and maladaptive/overreaching states. Direction alone is therefore not a unique readiness classifier; training tolerance and other context are required.
 
 ### HRV-guided training
 
-**Düking et al., 2021 — systematic review/meta-analysis**  
+**Düking et al., 2021 — systematic review/meta-analysis**
 PMID 34489178; DOI `10.1016/j.jsams.2021.04.012`.
 
 Eight studies / 198 participants. HRV-guided interventions commonly prescribed fewer moderate/high-intensity sessions. The pooled effect on submaximal physiological outcomes was positive, while performance and VO2peak effects were small and not statistically significant.
 
-**Manresa-Rocamora et al., 2021 — methodological systematic review/meta-analysis**  
+**Manresa-Rocamora et al., 2021 — methodological systematic review/meta-analysis**
 PMID 34639599; PMCID PMC8507742; DOI `10.3390/ijerph181910299`.
 
 HRV-guided training improved vagal-related HRV measures, but group-level aerobic-fitness/performance advantages were small/non-significant. Heterogeneous baseline and daily-change methods limit support for a universal decision algorithm.
@@ -61,17 +61,17 @@ HRV-guided training improved vagal-related HRV measures, but group-level aerobic
 
 ## Sleep and athletic performance
 
-**Walsh et al., 2021 — athlete sleep consensus**  
+**Walsh et al., 2021 — athlete sleep consensus**
 PMID 33144349; DOI `10.1136/bjsports-2020-102025`.
 
 Athlete sleep need is individualized. Substantial sleep loss can impair performance; assessment should consider athlete context rather than a single universal duration recommendation or uncritical tracker output.
 
-**Gong et al., 2024 — acute sleep-deprivation systematic review/meta-analysis**  
+**Gong et al., 2024 — acute sleep-deprivation systematic review/meta-analysis**
 PMID 39006249; PMCID PMC11246080; DOI `10.2147/NSS.S467531`.
 
 Twenty-seven studies. Acute sleep deprivation impaired overall athletic performance, with heterogeneous effects by sleep-loss pattern and performance domain. This is direct support for treating major sleep loss as decision-relevant, but it is much stronger evidence for substantial deprivation than for small night-to-night changes in a proprietary score.
 
-**Cunha et al., 2023 — sleep-intervention systematic review**  
+**Cunha et al., 2023 — sleep-intervention systematic review**
 PMID 37462808; PMCID PMC10354314; DOI `10.1186/s40798-023-00599-z`.
 
 Across 25 intervention studies, increasing sleep opportunity or using naps was the most consistently promising strategy, while the body of high-quality evidence remained limited.
@@ -80,12 +80,12 @@ Across 25 intervention studies, increasing sleep opportunity or using naps was t
 
 ## Consumer wearable measurement boundary
 
-**Doherty et al., 2024 — living umbrella review of wearable accuracy**  
+**Doherty et al., 2024 — living umbrella review of wearable accuracy**
 PMID 39080098; PMCID PMC11560992; DOI `10.1007/s40279-024-02077-2`; PROSPERO CRD42023402703.
 
 The umbrella review included 24 systematic reviews and 249 non-duplicate validation studies. Validation coverage across commercially available devices/metrics was sparse and heterogeneous. Sleep measurement tended to overestimate total sleep time, commonly with >10% mean absolute percentage error.
 
-**Schyvens et al., 2024 — Fitbit/Garmin/WHOOP versus polysomnography systematic review**  
+**Schyvens et al., 2024 — Fitbit/Garmin/WHOOP versus polysomnography systematic review**
 PMID 38557808; PMCID PMC11004611; DOI `10.2196/52192`.
 
 Garmin Vivosmart 4 and comparable devices can provide useful sleep estimates, but sleep duration/staging accuracy remains imperfect versus polysomnography. The review does not validate Garmin Body Battery or an app-specific sleep-score readiness threshold.
