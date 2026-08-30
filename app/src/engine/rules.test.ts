@@ -874,10 +874,12 @@ describe('session adjustment engine', () => {
         };
 
         const adjusted = adjustSessionRecommendation(baseRec, 'easier', readiness, context, date);
-        // It must NOT pick str_full_01 (0.60) or str_full_02 (0.55) as Tier 2 because they are harder.
-        // If it adjusts (Tier 3), it must pick a strictly easier session (systemicCost < 0.45).
+        // It must NOT pick str_full_01 (0.60) as Tier 2 because it is harder, not easier.
+        // str_full_02 is a genuine zero-equipment full-body alternative at cost 0.4, so
+        // Tier 2 correctly may pick it here -- whatever is picked must strictly be lower
+        // systemic cost than the 0.45 baseline.
         if (adjusted) {
-            expect(adjusted.adjustment?.tier).not.toBe(2);
+            expect(adjusted.template.id).not.toBe('str_full_01');
             expect(adjusted.template.systemicCost).toBeLessThan(0.45);
         }
     });
