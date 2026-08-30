@@ -27,6 +27,8 @@ WHO's guideline-development process uses GRADE to separate certainty of evidence
 
 That means a field such as `confidence=high` cannot safely serve as both "strong recommendation" and "high scientific certainty".
 
+GRADE also makes an important implementation point for this registry: certainty is a judgment about a **body of evidence for a question/outcome**, not a value that can be mechanically inferred from a source's study-design label. A source type such as `systematic_review` or `randomized_trial` is therefore metadata; it must not automatically set `evidenceCertainty`.
+
 Sources:
 
 - https://www.who.int/publications/i/item/9789240015128
@@ -36,6 +38,8 @@ Sources:
 ### Oxford CEBM distinction
 
 The Oxford Centre for Evidence-Based Medicine explicitly varies the likely best evidence according to the question (intervention benefit, prognosis, diagnosis, harms, etc.) and warns that evidence levels are a search/decision heuristic rather than a definitive recommendation engine.
+
+This supports keeping `claimType` separate from source type and scientific certainty. It also argues against implementing a universal numeric "evidence tier" that would rank every sports-science proposition the same way regardless of the question being asked.
 
 Source:
 
@@ -51,6 +55,18 @@ WHO directly supports muscle-strengthening activity on **2 or more days per week
 - the product's `maximum: 3` allocation default as an explicit `product_policy` heuristic.
 
 The numeric training behavior is unchanged; only the knowledge lineage becomes more honest.
+
+## Review hardening findings
+
+The first implementation review identified three structural failure modes that would weaken the knowledge-control boundary even if the checked-in seed data were valid:
+
+1. **Circular replacement lineage.** Referential integrity alone allows `A.supersedes=B` and `B.supersedes=A`. The validator now traverses replacement lineage and rejects cycles.
+2. **Shape-valid but impossible dates.** A regular expression alone accepts values such as `2026-02-30`. Review/publication dates now require an actual Gregorian calendar date while remaining timezone-independent.
+3. **Internal policy masquerading as scientific support.** A claim could previously carry `moderate`/`high` scientific certainty while all linked sources were `product_policy`. Scientific certainty now requires at least one non-product-policy source, while `maturity=heuristic` requires an explicit product-policy source for the product decision itself.
+
+The third guard is deliberately asymmetric. It does **not** infer certainty from study design and it does not prevent a product heuristic from also citing external research as indirect/contextual support. It only prevents an internal policy document from being the sole basis for a scientific-certainty label.
+
+These are structural integrity rules, not automatic evidence appraisal. Human review is still responsible for whether sources actually support the registered statement, whether directness is classified correctly, and whether the evidence body was searched adequately.
 
 ## Architectural conclusion
 
