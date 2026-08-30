@@ -46,7 +46,7 @@ jobs:
             git checkout --ours app/src/engine/policy.ts
           fi
 
-          node scripts/finish-pr-297.mjs
+          node scripts/run-finish-pr-297.mjs
           git add -A
 
           if git rev-parse -q --verify MERGE_HEAD >/dev/null; then
