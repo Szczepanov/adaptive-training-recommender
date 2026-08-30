@@ -1,4 +1,4 @@
-import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledge.ts';
+import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledgeRegistry.ts';
 
 export type KnowledgeAssumptionClassification =
     | 'scientific_claim'
@@ -109,8 +109,8 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         currentRule: 'Uses weights HRV 0.5, RHR 0.3, sleep 0.2, respiration 0.3; variability floors 3 ms/1.5 bpm/4 points/1 brpm; z cap 2.0; chronic component multiplier 1.5.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:metricStrain', 'engine/rules.ts:evaluateReadinessAndSafetyEnvelope'],
-        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.hrvGuidedTrainingConditional, KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.readinessPhysiologicalStrainModel],
-        coverageRationale: 'HRV evidence supports standardized, longitudinal, multi-signal interpretation and sleep evidence supports treating meaningful sleep loss as decision-relevant. The exact signal weights, variability floors, z cap and chronic multiplier are explicitly registered as product calibration, not scientific coefficients.',
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.hrvGuidedTrainingConditional, KNOWLEDGE_CLAIM_IDS.rhrContextualMonitoring, KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.wearableSleepMeasurementLimits, KNOWLEDGE_CLAIM_IDS.respirationLongitudinalContext, KNOWLEDGE_CLAIM_IDS.readinessPhysiologicalStrainModel],
+        coverageRationale: 'HRV and resting-HR evidence supports longitudinal, individualized, multi-signal interpretation; meaningful sleep loss is performance-relevant but consumer sleep scores retain measurement limits; nocturnal respiration can contribute contextual anomaly information but is not a specific illness/readiness marker. The exact weights, variability floors, z cap and chronic multiplier remain explicit product calibration rather than scientific coefficients.',
     },
     {
         id: 'readiness.subjective_mode_thresholds', domain: 'readiness_recovery', title: 'Subjective readiness mode thresholds',
@@ -132,7 +132,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         currentRule: 'RHR delta >=+6 bpm with >=0.6 acute contribution or HRV delta <=-15 ms with >=1.0 acute contribution can force modify independent of the total score.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope'],
-        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.hrvGuidedTrainingConditional, KNOWLEDGE_CLAIM_IDS.readinessAcuteBiometricFloors],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.hrvGuidedTrainingConditional, KNOWLEDGE_CLAIM_IDS.rhrContextualMonitoring, KNOWLEDGE_CLAIM_IDS.readinessAcuteBiometricFloors],
         coverageRationale: 'HRV/resting-HR changes can contribute to conservative training adjustment when interpreted against the athlete baseline, but the +6 bpm/-15 ms and contribution floors are explicitly product-authored cut-points rather than universal meaningful-change thresholds.',
     },
     {
@@ -148,8 +148,8 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         currentRule: 'Composite objective strain >=1.0 modifies and >=2.2 recovers; conservative mode adds 0.4 before those thresholds.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope'],
-        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.readinessModeThresholds],
-        coverageRationale: 'The external evidence supports contextual multi-signal monitoring and conservative load adjustment, not a universal readiness score. The exact 1.0/2.2/+0.4 action thresholds are now explicit high-safety product policy and remain candidates for simulation and athlete-outcome calibration.',
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.rhrContextualMonitoring, KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.respirationLongitudinalContext, KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.readinessModeThresholds],
+        coverageRationale: 'The external evidence supports contextual multi-signal monitoring and conservative load adjustment, not a universal readiness score. The exact 1.0/2.2/+0.4 action thresholds are explicit high-safety product policy and remain candidates for simulation and athlete-outcome calibration.',
     },
     {
         id: 'readiness.post_recover_buffer', domain: 'readiness_recovery', title: 'Post-recover one-day buffer',
@@ -185,8 +185,8 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         currentRule: 'HRV drop saturates at 15 ms, RHR rise at 10 bpm, sleep strain begins below score 75; systemic is 0.4 subjective fatigue +0.3 HRV +0.3 sleep, cardiovascular 0.5 RHR +0.5 HRV, upper-body soreness multiplier 0.7, neuromuscular 0.5 fatigue +0.5 inverse motivation.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/fatigue.ts:computeInternalResponseStrain'],
-        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.internalResponseStrainModel],
-        coverageRationale: 'HRV, resting HR, sleep and subjective symptoms are defensible complementary recovery inputs, but their exact normalization thresholds and fusion weights are now explicitly registered as product modeling choices rather than inferred effect sizes.',
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.rhrContextualMonitoring, KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.internalResponseStrainModel],
+        coverageRationale: 'HRV, resting HR, sleep and subjective symptoms are defensible complementary recovery inputs, but their exact normalization thresholds and fusion weights are explicitly registered as product modeling choices rather than inferred effect sizes.',
     },
     {
         id: 'fatigue.ambient_step_surge', domain: 'fatigue_load', title: 'Ambient step-surge tissue-strain heuristic',
