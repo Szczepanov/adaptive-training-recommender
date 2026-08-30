@@ -35,6 +35,7 @@ function makeSnapshot(
             garminSyncedAt: `${date}T06:00:00Z`,
             sourceSchemaVersion: 3,
             timezone: 'Europe/Warsaw',
+            metricDates: { sleep: date },
         },
         raw: {
             sleepScore: null,
@@ -125,7 +126,7 @@ describe('mapRecoverySnapshotToHealthAnomalyFeatures HA2', () => {
         expect(result.candidates[1].standardizedDeviation).toBeCloseTo((56 - 49) / 1.5);
     });
 
-    it('uses respiration median/MAD only for baseline v3+ and preserves unknown provenance', () => {
+    it('uses respiration median/MAD only for baseline v3+ and preserves selected-sleep provenance', () => {
         const current = makeSnapshot('2026-07-29', {
             respiration: 15.5,
             respirationMedian: 14,
@@ -140,7 +141,7 @@ describe('mapRecoverySnapshotToHealthAnomalyFeatures HA2', () => {
             scaleValue: 0.5,
             standardizedDeviation: 3,
         });
-        expect(compatible.measurementProvenance).toBeNull();
+        expect(compatible.measurementProvenance).toBe('garmin:sleep:2026-07-29');
 
         const legacy = makeSnapshot('2026-07-29', {
             respiration: 15.5,
@@ -152,6 +153,42 @@ describe('mapRecoverySnapshotToHealthAnomalyFeatures HA2', () => {
             status: 'unavailable',
             unavailableReason: 'incompatible_baseline_version',
             standardizedDeviation: null,
+        });
+    });
+
+    it('fails current respiration closed when selected sleep belongs to another date', () => {
+        const current = makeSnapshot('2026-07-29', {
+            respiration: 15.5,
+            respirationMedian: 14,
+            respirationMad: 0.5,
+        });
+        current.source.metricDates = { sleep: '2026-07-28' };
+
+        const result = signal(current, 'respiration');
+        expect(result.dataQuality.currentValueMissing).toBe(true);
+        expect(result.measurementProvenance).toBe('garmin:sleep:2026-07-28');
+        expect(result.candidates[0]).toMatchObject({
+            status: 'unavailable',
+            unavailableReason: 'missing_current',
+            standardizedDeviation: null,
+        });
+    });
+
+    it('keys respiration history by selected sleep date and does not double-count a fallback night', () => {
+        const current = makeSnapshot('2026-07-29', {
+            respiration: 14.8,
+            respirationMedian: 14,
+            respirationMad: 0.4,
+        });
+        const first = makeSnapshot('2026-07-27', { respiration: 14.0 });
+        const fallback = makeSnapshot('2026-07-28', { respiration: 14.2 });
+        fallback.source.metricDates = { sleep: '2026-07-27' };
+
+        const result = signal(current, 'respiration', [first, fallback]);
+        expect(result.dataQuality).toMatchObject({
+            historyCount: 1,
+            recentDayCoverage: 1 / 7,
+            baselineAgeDays: 2,
         });
     });
 
