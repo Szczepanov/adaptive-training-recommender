@@ -1,8 +1,11 @@
 # PR #306 review — respiration shadow-evidence hardening
 
-**Date:** 2026-08-30  
-**PR:** #306 — `fix: add respiration shadow evidence and replay`  
-**Scope:** engineering review, evidence interpretation, replay semantics, provenance, and release-readiness implications.  
+**Date:** 2026-08-30
+
+**PR:** #306 — `fix: add respiration shadow evidence and replay`
+
+**Scope:** engineering review, evidence interpretation, replay semantics, provenance, and release-readiness implications.
+
 **Decision effect:** none. Respiration elevation remains shadow/observation evidence and does not gain live training authority.
 
 ## Review conclusion
