@@ -1,0 +1,1 @@
+Benchmark took: 9.7247 seconds

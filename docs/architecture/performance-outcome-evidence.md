@@ -1,9 +1,13 @@
 # Performance outcome evidence architecture
 
 This document describes the **currently implemented** performance-outcome evidence boundary.
-It covers the OV0–OV2 foundation delivered by PR #154 and PR #155. Progress classification,
-block verdicts, outcome-evaluation specifications and athlete-facing testing UI are not yet
-implemented; their planned work remains in
+It covers OV0–OV6.1: the OV0–OV2 foundation (PR #154, PR #155), the protocol-locked
+testing/familiarization/validity workflow (OV3, PR #163), progress/reliability/practical-threshold
+interpretation (OV4.1–OV4.3, PR #164), and immutable block-outcome derivation, policy-version
+segmentation, and deterministic report/export (OV5–OV6.1, PR #169). Only personal repeatability
+estimation (OV4.4, gated on real close-spaced repeat trials), an optional progress/report UI
+(OV6.2, usage-triggered), and operational evidence on the real event/block timeline (OV7–OV8)
+remain unimplemented; their planned work stays in
 [`performance-outcome-validation.md`](../plans/performance-outcome-validation.md).
 
 ## Authority boundary
@@ -158,8 +162,10 @@ Manual entry is the first write adapter. The adapter:
 5. emits an immutable observation revision with `source: 'manual'` and explicit
    source/device/validity provenance.
 
-The adapter is platform-neutral. The athlete-facing phone completion/correction workflow is
-not part of OV2; it is the next OV3 testing-workflow slice.
+The adapter is platform-neutral. The athlete-facing phone completion/correction workflow
+(protocol-locked testing intent, familiarization/validity UX, completion-to-observation write)
+is the OV3 slice, implemented in `app/src/observations/protocols.ts` and
+`app/src/services/measurementProtocolService.ts`.
 
 ## Security rules
 
@@ -189,18 +195,33 @@ source: literature_reference | personal_repeatability | manual
 statistic: cv_pct | typical_error_pct | typical_error_abs | sem_abs
 ```
 
-The current foundation stores and validates provenance only. Personal repeatability estimation
-and progress interpretation are later OV4 work and require suitable repeated comparable trials.
+Progress comparison, reliability/error interpretation, and practical-threshold interpretation are
+implemented (OV4.1–OV4.3, `app/src/observations/progress.ts`, `app/src/outcomes/evaluationSpec.ts`).
+Personal repeatability estimation (OV4.4) remains unimplemented — it requires suitable repeated
+comparable trials that do not yet exist for a real athlete, and stays gated behind that evidence.
+
+## Block outcome derivation and reporting (OV5–OV6.1)
+
+Immutable block outcome-evaluation specifications and block verdicts are implemented in
+`app/src/outcomes/blockOutcome.ts`, with policy-version segmentation in
+`app/src/outcomes/policySegments.ts` and a deterministic evaluation-content hash in
+`app/src/outcomes/evaluationHash.ts`. Deterministic block report/export (CSV/JSON) is
+implemented in `app/src/outcomes/blockOutcomeReport.ts`, with supporting process/response
+evidence assembled by `app/src/outcomes/blockProcessEvidence.ts`. `app/src/outcomes/feedbackLoopEvidence.ts`
+(added 2026-08-26 as part of SV4/SV5) is a further additive extension over this evidence — it is
+tested to never move the block verdict, preserving the authority boundary below.
 
 ## Not implemented yet
 
 The following are deliberately absent from the current architecture:
 
-* runner-integrated protocol-locked testing/familiarization/validity UX (OV3);
-* comparable progress labels and error/practical-threshold interpretation (OV4);
-* immutable block outcome-evaluation specifications and block verdicts (OV5);
-* block report/export and any progress dashboard (OV6);
+* personal repeatability estimation (OV4.4) — gated on real close-spaced repeat trials;
+* any progress/report dashboard UI (OV6.2) — usage-triggered, not yet justified by real report use;
+* operational evidence on the real event/block timeline (OV7–OV8);
 * automatic recommendation changes based on outcome evidence.
 
 The last item is not merely unfinished UI. It is an explicit architecture boundary: adding
-selection authority to outcome evidence requires a separate evidence-backed decision.
+selection authority to outcome evidence requires a separate evidence-backed decision. Architecture
+tests (`app/src/outcomes/blockOutcomeArchitecture.test.ts`) enforce it by asserting no runtime
+reachability between the outcome/OV modules and `rules.ts`, `optimizer.ts`, `planner.ts`, or
+`trainingIntent.ts` in either direction.

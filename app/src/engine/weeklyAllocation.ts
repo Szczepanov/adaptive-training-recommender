@@ -116,6 +116,7 @@ const SAFETY_EXCLUSION_REASONS = new Set([
     'HARD_LOWER_BODY_SPACING_VIOLATION',
     'ROLLING_HARD_CAP_EXCEEDED',
     'ANCHOR_PROTECTION_VIOLATION',
+    'RECOVERY_WINDOW_UNELAPSED',
 ]);
 
 const FATIGUE_CEILING_BLOCKER = 'PROJECTED_FATIGUE_CEILING';
@@ -402,6 +403,20 @@ export function resolveWeeklyRoleReservations(
                 }
                 continue;
             }
+            const subsequentAssignments = assignments.filter(item => item.date > candidate.date);
+            let subsequentInvalid = false;
+            if (subsequentAssignments.length > 0) {
+                const updated = [...assignments, candidate];
+                for (const sub of subsequentAssignments) {
+                    const subOutcome = evaluateCached(updated.filter(item => item.date < sub.date), sub.date);
+                    if (!subOutcome.acceptedTemplateIds.includes(sub.templateId)) {
+                        subsequentInvalid = true;
+                        break;
+                    }
+                }
+            }
+            if (subsequentInvalid) continue;
+
             assignments.push(candidate);
             placed.set(next.occurrence.id, candidate);
             search(assignments, placed, rest, depth + 1);

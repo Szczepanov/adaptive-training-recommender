@@ -81,9 +81,52 @@ service cloud.firestore {
         && drift.perMetricContributions.motivation is number && drift.perMetricContributions.motivation >= 0;
     }
 
-    function hasValidRecommendationAudit(audit) {
+    function hasMatchingIdentityReview(userId, identity) {
+      let reviewPath = /databases/$(database)/documents/users/$(userId)/health_identity_review_events/$(identity.reviewEventId);
+      let review = get(reviewPath).data;
+      return exists(reviewPath)
+        && review.assessmentId == identity.identityAssessmentId
+        && review.label == identity.effectiveStatus;
+    }
+
+    function hasValidIdentityDecisionProvenance(userId, identity) {
+      let selected = identity.selectedEffectiveSource;
+      let assessmentPath = /databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(identity.identityAssessmentId);
+      let assessment = get(assessmentPath).data;
+      return identity is map
+        && identity.keys().hasOnly(['identityAssessmentId', 'automaticStatus', 'effectiveStatus', 'reviewEventId', 'identityPolicyVersion', 'featureSchemaVersion', 'passportVersion', 'sharedBundleRef', 'anchorBundleRefs', 'selectedEffectiveSource', 'fallbackReason'])
+        && (
+          selected == null
+          || (
+            selected is map
+            && selected.keys().hasOnly(['provider', 'transport'])
+            && selected.provider is string
+            && selected.transport is string
+            && (
+              identity.effectiveStatus == 'USER'
+              || selected.provider != identity.sharedBundleRef.provider
+              || selected.transport != identity.sharedBundleRef.transport
+            )
+          )
+        )
+        && exists(assessmentPath)
+        && assessment.id == identity.identityAssessmentId
+        && assessment.automaticStatus == identity.automaticStatus
+        && assessment.policyVersion == identity.identityPolicyVersion
+        && assessment.featureSchemaVersion == identity.featureSchemaVersion
+        && assessment.passportVersion == identity.passportVersion
+        && assessment.sharedBundleRef == identity.sharedBundleRef
+        && assessment.anchorBundleRefs == identity.anchorBundleRefs
+        && (identity.fallbackReason == null || identity.fallbackReason in assessment.reasonCodes)
+        && (
+          (identity.reviewEventId == null && identity.effectiveStatus == assessment.automaticStatus)
+          || (identity.reviewEventId != null && hasMatchingIdentityReview(userId, identity))
+        );
+    }
+
+    function hasValidRecommendationAudit(userId, audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -127,7 +170,8 @@ service cloud.firestore {
           && audit.authoredOccurrence.occurrenceId is string && audit.authoredOccurrence.occurrenceId.size() <= 128
           && audit.authoredOccurrence.decision in ['proceed', 'scale']
         ))
-        && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift));
+        && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift))
+        && (!('identityDecision' in audit) || hasValidIdentityDecisionProvenance(userId, audit.identityDecision));
     }
 
     function hasValidRecommendation(userId, date) {
@@ -150,7 +194,7 @@ service cloud.firestore {
         && (!('primarySession' in request.resource.data) || hasValidSessionReferenceBinding(request.resource.data.primarySession))
         && (!('additionalSessions' in request.resource.data) || hasValidAdditionalSessions(request.resource.data.additionalSessions))
         && (request.resource.data.schemaVersion != 3
-          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(request.resource.data.recommendationAudit)));
+          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit)));
     }
 
     function schemaRatchets() {
@@ -225,7 +269,7 @@ service cloud.firestore {
 
     function hasValidHealthSymptoms(symptoms) {
       return symptoms is map
-        && symptoms.keys().hasOnly(['present', 'onset', 'severity', 'types'])
+        && symptoms.keys().hasOnly(['present', 'onset', 'severity', 'types', 'suspectedCause'])
         && symptoms.keys().hasAll(['present'])
         && symptoms.present is bool
         && (!('onset' in symptoms)
@@ -234,11 +278,14 @@ service cloud.firestore {
         && (!('severity' in symptoms)
           || (symptoms.present && (symptoms.severity == null || symptoms.severity in ['mild', 'moderate', 'severe']))
           || (!symptoms.present && symptoms.severity == null))
+        && (!('suspectedCause' in symptoms)
+          || (symptoms.present && (symptoms.suspectedCause == null || symptoms.suspectedCause in ['infectious', 'allergy', 'unsure']))
+          || (!symptoms.present && symptoms.suspectedCause == null))
         && (!('types' in symptoms)
           || (symptoms.present && (symptoms.types == null || (
             symptoms.types is list
-            && symptoms.types.size() <= 8
-            && symptoms.types.hasOnly(['sore_throat', 'congestion', 'cough', 'fever_or_chills', 'headache_or_body_aches', 'gastrointestinal', 'unusual_fatigue', 'other'])
+            && symptoms.types.size() <= 10
+            && symptoms.types.hasOnly(['sore_throat', 'congestion', 'runny_nose', 'sneezing', 'cough', 'fever_or_chills', 'headache_or_body_aches', 'gastrointestinal', 'unusual_fatigue', 'other'])
           )))
           || (!symptoms.present && symptoms.types == null));
     }
@@ -564,6 +611,35 @@ service cloud.firestore {
       allow write: if false;
     }
 
+    function hasValidActivityOverride(userId, activityId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.activityId == activityId
+        && isValidActivityDate(data.date)
+        && data.keys().hasOnly(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'rpe', 'stimulusFocus', 'notes', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['activityId', 'userId', 'date', 'originalType', 'originalIntensityTag', 'overriddenModality', 'overriddenIntensity', 'createdAt', 'updatedAt'])
+        && data.originalType is string && data.originalType.size() > 0 && data.originalType.size() <= 128
+        && data.originalIntensityTag is string && data.originalIntensityTag.size() <= 64
+        && data.overriddenModality in ['Running', 'Cycling', 'Strength', 'Mobility', 'Field', 'Cross Training', 'Unknown']
+        && data.overriddenIntensity in ['easy', 'moderate', 'hard', 'unknown']
+        && (!('rpe' in data) || data.rpe == null || (data.rpe is number && data.rpe >= 1 && data.rpe <= 10))
+        && (!('stimulusFocus' in data) || data.stimulusFocus == null || data.stimulusFocus in ['aerobicEndurance', 'thresholdPower', 'vo2MaxPower', 'repeatedSurges', 'sprintPower', 'fatigueResistance', 'maxStrength', 'hypertrophy'])
+        && (!('notes' in data) || data.notes == null || (data.notes is string && data.notes.size() <= 2000))
+        && data.createdAt is string && data.createdAt.size() > 0
+        && data.updatedAt is string && data.updatedAt.size() > 0;
+    }
+
+    match /users/{userId}/activity_overrides/{activityId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidActivityOverride(userId, activityId);
+      allow update: if hasValidActivityOverride(userId, activityId)
+        && keepsOwnership(userId)
+        && request.resource.data.activityId == resource.data.activityId
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
     match /users/{userId}/gear/{gearId} {
       allow read: if isOwner(userId);
       allow write: if false;
@@ -632,19 +708,24 @@ service cloud.firestore {
     function hasValidSessionDefinitionHeader(userId, definitionId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'definitionId', 'title', 'latestRevision', 'dominantModality', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'definitionId', 'title', 'latestRevision', 'dominantModality', 'status', 'archivedAt', 'createdAt', 'updatedAt'])
         && data.keys().hasAll(['userId', 'definitionId', 'title', 'latestRevision', 'createdAt', 'updatedAt'])
         && data.definitionId == definitionId
         && data.title is string && data.title.size() > 0 && data.title.size() <= 200
         && data.latestRevision is int && data.latestRevision >= 1
         && (!('dominantModality' in data) || data.dominantModality is string)
+        && (!('status' in data) || data.status in ['active', 'archived'])
+        && (!('archivedAt' in data) || data.archivedAt is string)
+        && (!('archivedAt' in data) || 'status' in data)
+        && (!('status' in data) || data.status != 'archived' || data.archivedAt is string)
+        && (!('status' in data) || data.status != 'active' || !('archivedAt' in data))
         && data.createdAt is string && data.updatedAt is string;
     }
 
     function hasValidSessionDefinitionRevision(userId, definitionId, revId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'definitionId', 'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'blocks', 'contentHash', 'createdAt'])
+        && data.keys().hasOnly(['userId', 'definitionId', 'schemaVersion', 'id', 'revision', 'title', 'summary', 'intent', 'modalities', 'dominantModality', 'duration', 'defaultScheduledDate', 'sessionTargets', 'prohibitedAdditions', 'importWarnings', 'companionSessions', 'blocks', 'contentHash', 'createdAt'])
         && data.keys().hasAll(['userId', 'definitionId', 'id', 'revision', 'schemaVersion', 'title', 'intent', 'contentHash', 'blocks', 'createdAt'])
         && data.definitionId == definitionId
         && data.id == definitionId
@@ -652,6 +733,7 @@ service cloud.firestore {
         && data.schemaVersion == 1
         && data.contentHash is string && data.contentHash.size() > 0
         && data.intent in ['training', 'testing', 'competition', 'rehab_return', 'recovery', 'skill_technical']
+        && (!('companionSessions' in data) || data.companionSessions is list)
         && data.blocks is list;
     }
 
@@ -1262,7 +1344,7 @@ service cloud.firestore {
         && sourceAssessment.revisionId is string && sourceAssessment.revisionId.matches('^ha-[0-9a-f]{16}$')
         && exists(assessmentPath)
         && get(assessmentPath).data.assessment.episodeId == episodeId
-        && data.explanation in ['illness_symptoms', 'hard_training_recovery', 'poor_sleep', 'alcohol', 'travel_jetlag', 'stress', 'heat_dehydration', 'vaccination_medication', 'nothing_obvious', 'other_not_sure']
+        && data.explanation in ['illness_symptoms', 'allergy_or_hay_fever', 'hard_training_recovery', 'poor_sleep', 'alcohol', 'travel_jetlag', 'stress', 'heat_dehydration', 'vaccination_medication', 'nothing_obvious', 'other_not_sure']
         && (symptomOnset == null || (
           symptomOnset is map
           && symptomOnset.keys().hasOnly(['date', 'precision'])
@@ -1437,6 +1519,76 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if hasValidCompetitionOutcome(userId, outcomeId);
       allow update, delete: if false;
+    }
+
+    // --- PI6/ADR-0028: physiological identity passports and immutable assessments are
+    // server-managed. Clients may read their own evidence but cannot forge model output.
+    match /users/{userId}/physiological_identity_passports/{passportId} {
+      allow read: if isOwner(userId) && passportId == 'current';
+      allow write: if false;
+    }
+
+    match /users/{userId}/physiological_identity_passport_versions/{versionId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    match /users/{userId}/health_identity_assessments/{assessmentId} {
+      allow read: if isOwner(userId);
+      allow write: if false;
+    }
+
+    function hasValidIdentityReviewEvent(userId, eventId) {
+      let data = request.resource.data;
+      let assessmentPath = /databases/$(database)/documents/users/$(userId)/health_identity_assessments/$(data.assessmentId);
+      let supersededPath = /databases/$(database)/documents/users/$(userId)/health_identity_review_events/$(data.supersedesReviewEventId);
+      return isOwner(userId)
+        && data.keys().hasOnly(['id', 'assessmentId', 'schemaVersion', 'label', 'occupancyAttestation', 'supersedesReviewEventId', 'recordedAt', 'source'])
+        && data.keys().hasAll(['id', 'assessmentId', 'schemaVersion', 'label', 'occupancyAttestation', 'supersedesReviewEventId', 'recordedAt', 'source'])
+        && data.id == eventId
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 160
+        && data.assessmentId is string && data.assessmentId.size() > 0 && data.assessmentId.size() <= 160
+        && data.schemaVersion == 1
+        && data.label in ['USER', 'NOT_USER', 'UNCERTAIN']
+        && data.occupancyAttestation in ['EXCLUSIVE', 'MIXED', 'UNKNOWN']
+        && data.recordedAt is timestamp
+        && data.recordedAt == request.time
+        && data.source == 'user_ui'
+        && exists(assessmentPath)
+        && (
+          (data.label == 'USER' && data.occupancyAttestation == 'EXCLUSIVE')
+          || (data.label == 'NOT_USER' && data.occupancyAttestation == 'UNKNOWN')
+          || (data.label == 'UNCERTAIN' && data.occupancyAttestation in ['MIXED', 'UNKNOWN'])
+        )
+        && (
+          data.supersedesReviewEventId == null
+          || (
+            data.supersedesReviewEventId is string
+            && data.supersedesReviewEventId.size() > 0
+            && data.supersedesReviewEventId != eventId
+            && exists(supersededPath)
+            && get(supersededPath).data.assessmentId == data.assessmentId
+            && data.recordedAt >= get(supersededPath).data.recordedAt
+          )
+        );
+    }
+
+    match /users/{userId}/health_identity_review_events/{eventId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidIdentityReviewEvent(userId, eventId);
+      allow update, delete: if false;
+    }
+
+    // --- MS2/ADR-0027: server-owned multisource health observation day bundles.
+    match /users/{userId}/health_observation_days/{daySourceId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Server-managed only
+    }
+
+    // --- MS4/ADR-0027: server-owned integration connection metadata.
+    match /users/{userId}/connections/{connectionId} {
+      allow read: if isOwner(userId);
+      allow write: if false; // Server-managed only
     }
   }
 }

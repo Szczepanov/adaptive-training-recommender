@@ -6,6 +6,7 @@ import { preferencesService } from '../services/preferencesService';
 import { planBlockService } from '../services/planBlockService';
 import { recommendationService } from '../services/recommendationService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
+import { activityOverrideService } from '../services/activityOverrideService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import { strengthSessionService } from '../services/strengthSessionService';
@@ -18,6 +19,8 @@ import { fixedActivityService } from '../services/fixedActivityService';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { computeContentHash } from '../engine/externalPlanHash';
+import type { DecisionJournalEntry } from '../engine/models';
+import type { SessionDefinitionHeader } from '../services/sessionDefinitionService';
 import type { VisualFixture } from './fixtures';
 
 /**
@@ -26,6 +29,8 @@ import type { VisualFixture } from './fixtures';
  * against stable synthetic inputs without authenticating or reading Firestore.
  */
 export function installVisualServices(fixture: VisualFixture): void {
+  let journalEntry: DecisionJournalEntry | null = fixture.decisionJournalEntry ?? null;
+
   // Phase 9.4: visual fixtures model canonical DailyDecisionInput, while the composer now
   // returns a composition-only extension carrying normalized/compact history evidence.
   // Visual review has no Firestore history source, so represent that honestly as missing.
@@ -43,6 +48,15 @@ export function installVisualServices(fixture: VisualFixture): void {
   }) as Awaited<ReturnType<typeof checkinService.upsertTodayCheckin>>;
 
   recoverySnapshotService.getRecoverySnapshotByDate = async () => fixture.recovery;
+  recoverySnapshotService.getRecoverySnapshotState = async () => (
+    fixture.recovery
+      ? { status: 'AVAILABLE', data: fixture.recovery, revision: null }
+      : { status: 'MISSING' }
+  );
+  activityOverrideService.getAllOverrides = async () => ({});
+  activityOverrideService.getOverride = async () => null;
+  activityOverrideService.saveOverride = async () => true;
+  activityOverrideService.deleteOverride = async () => true;
   activityService.getActivitiesInRange = async () => ({
     status: 'AVAILABLE', data: fixture.activities, revision: null,
   });
@@ -174,7 +188,26 @@ export function installVisualServices(fixture: VisualFixture): void {
   sessionExecutionService.correctEntry = async () => {};
   sessionExecutionService.deleteEntry = async () => {};
   sessionExecutionService.transitionExecution = async () => {};
-  sessionDefinitionService.listDefinitionHeaders = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  const savedTemplateHeaders: SessionDefinitionHeader[] = (fixture.savedTemplates ?? []).map(({ definition, status }, index) => ({
+    userId: fixture.input.userId,
+    definitionId: definition.id,
+    title: definition.title,
+    latestRevision: definition.revision,
+    ...(definition.dominantModality ? { dominantModality: definition.dominantModality } : {}),
+    status,
+    ...(status === 'archived' ? { archivedAt: fixture.input.date } : {}),
+    createdAt: fixture.input.date,
+    updatedAt: `${fixture.input.date}T0${index}:00:00.000+02:00`,
+  }));
+  sessionDefinitionService.listDefinitionHeaders = async () => ({ status: 'AVAILABLE', data: savedTemplateHeaders, revision: null });
+  sessionDefinitionService.getDefinitionRevision = async (_userId, definitionId, revision) => {
+    const saved = fixture.savedTemplates?.find(candidate => (
+      candidate.definition.id === definitionId && candidate.definition.revision === revision
+    ));
+    return saved
+      ? { status: 'AVAILABLE', data: saved.definition, revision: String(revision) }
+      : { status: 'MISSING' };
+  };
   // Home persists the content-addressed catalog prescription before exposing its Start CTA.
   // Keep that evidence write inside the visual harness rather than waiting on real Firestore.
   executionPrescriptionService.savePrescription = async () => {};
@@ -185,27 +218,39 @@ export function installVisualServices(fixture: VisualFixture): void {
   sessionOccurrenceService.getOccurrence = async () => ({ status: 'MISSING' });
   sessionOccurrenceService.saveOccurrence = async () => {};
 
-  decisionJournalService.getEntryState = async () => ({ status: 'MISSING' });
-  decisionJournalService.getEntry = async () => null;
-  decisionJournalService.recordActualVerdict = async (_userId, _date, actualVerdict) => ({
-    userId: fixture.input.userId,
-    date: fixture.input.date,
-    externalVerdict: 'proceed',
-    actualVerdict,
-    sawEngineVerdictFirst: false,
-    schemaVersion: 1,
-    createdAt: fixture.input.date,
-    updatedAt: fixture.input.date,
-  });
-  decisionJournalService.recordMorningEntry = async () => ({
-    userId: fixture.input.userId,
-    date: fixture.input.date,
-    externalVerdict: 'proceed',
-    sawEngineVerdictFirst: false,
-    schemaVersion: 1,
-    createdAt: fixture.input.date,
-    updatedAt: fixture.input.date,
-  });
+  decisionJournalService.getEntryState = async () => (
+    journalEntry
+      ? { status: 'AVAILABLE', data: journalEntry, revision: null }
+      : { status: 'MISSING' }
+  );
+  decisionJournalService.getEntry = async () => journalEntry;
+  decisionJournalService.recordActualVerdict = async (_userId, _date, actualVerdict) => {
+    journalEntry = {
+      ...(journalEntry ?? {
+        userId: fixture.input.userId,
+        date: fixture.input.date,
+        externalVerdict: 'proceed' as const,
+        sawEngineVerdictFirst: false,
+        schemaVersion: 1 as const,
+        createdAt: fixture.input.date,
+      }),
+      actualVerdict,
+      updatedAt: fixture.input.date,
+    };
+    return journalEntry;
+  };
+  decisionJournalService.recordMorningEntry = async () => {
+    journalEntry = {
+      userId: fixture.input.userId,
+      date: fixture.input.date,
+      externalVerdict: 'proceed',
+      sawEngineVerdictFirst: false,
+      schemaVersion: 1,
+      createdAt: fixture.input.date,
+      updatedAt: fixture.input.date,
+    };
+    return journalEntry;
+  };
 
   recommendationService.getAdherenceStats = async () => ({
     totalRecommendations: 14,

@@ -57,6 +57,8 @@ const SEVERITIES = [
 const SYMPTOM_TYPES: Array<{ value: HealthSymptomType; label: string }> = [
     { value: 'sore_throat', label: 'Sore throat' },
     { value: 'congestion', label: 'Congestion' },
+    { value: 'runny_nose', label: 'Runny nose' },
+    { value: 'sneezing', label: 'Sneezing' },
     { value: 'cough', label: 'Cough' },
     { value: 'fever_or_chills', label: 'Fever / chills' },
     { value: 'headache_or_body_aches', label: 'Headache / body aches' },
@@ -64,6 +66,12 @@ const SYMPTOM_TYPES: Array<{ value: HealthSymptomType; label: string }> = [
     { value: 'unusual_fatigue', label: 'Unusual fatigue' },
     { value: 'other', label: 'Other symptom' },
 ];
+
+const SUSPECTED_CAUSES = [
+    ['infectious', 'Cold / infection'],
+    ['allergy', 'Allergy'],
+    ['unsure', 'Not sure'],
+] as const;
 
 function hasUnusualContext(value: HealthContextCheckin | undefined, symptomsPresent: boolean): boolean {
     if (symptomsPresent) return true;
@@ -236,6 +244,23 @@ export function HealthContextSection({
                                         className={`health-context__chip ${symptoms.severity === severity ? 'is-selected' : ''}`}
                                         aria-pressed={symptoms.severity === severity}
                                         onClick={() => updateSymptoms({ severity: symptoms.severity === severity ? null : severity })}
+                                    >
+                                        {label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="health-context__row">
+                            <span className="health-context__label">Likely cause</span>
+                            <div className="health-context__chips" role="group" aria-label="Suspected symptom cause">
+                                {SUSPECTED_CAUSES.map(([cause, label]) => (
+                                    <button
+                                        key={cause}
+                                        type="button"
+                                        className={`health-context__chip ${symptoms.suspectedCause === cause ? 'is-selected' : ''}`}
+                                        aria-pressed={symptoms.suspectedCause === cause}
+                                        onClick={() => updateSymptoms({ suspectedCause: symptoms.suspectedCause === cause ? null : cause })}
                                     >
                                         {label}
                                     </button>

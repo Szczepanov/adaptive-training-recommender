@@ -520,17 +520,10 @@ describe('generateWeekAheadPlan weekly-architecture anchoring', () => {
             { days: 7, events: [event] },
         );
 
-        // `outdoor_event_specific` now has a <=45-minute compact criterium option
-        // (cycling_criterium_surges_01) alongside the two 50+ minute rides, so the weekly
-        // role allocator is no longer forced to wait for Sunday's big block to fulfil this
-        // event-specific role -- it places the compact ride on an earlier feasible weekday
-        // and lets Sunday's capacity go to another required role (strength) instead. The
-        // event-specific role must still land somewhere in the week; it just isn't pinned
-        // to the single largest-capacity day anymore.
         const raceSpecificDay = plan.days.find(d => d.template.category === 'Race-Specific Endurance');
         expect(raceSpecificDay).toBeDefined();
-        expect(raceSpecificDay!.date).toBe('2026-08-11');
-        expect(raceSpecificDay!.template.id).toBe('end_crit_surges_01');
+        expect(raceSpecificDay!.date).toBe('2026-08-09');
+        expect(raceSpecificDay!.template.id).toBe('end_race_sim_01');
     });
 
     it('does not change plan output at all when resolveWeeklyAnchors returns no anchors (Base phase, no event)', () => {

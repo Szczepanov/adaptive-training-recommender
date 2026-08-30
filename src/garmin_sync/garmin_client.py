@@ -6,6 +6,8 @@ from garminconnect import (
     Garmin,
     GarminConnectAuthenticationError,
     GarminConnectConnectionError,
+    GarminConnectInvalidFileFormatError,
+    GarminConnectNotFoundError,
     GarminConnectTooManyRequestsError,
 )
 
@@ -36,6 +38,7 @@ class GarminDataClient(Protocol):
     def get_activity_power_zones(self, activity_id: str) -> list[dict[str, Any]]: ...
     def get_activity_hr_zones(self, activity_id: str) -> list[dict[str, Any]]: ...
     def get_activity_splits(self, activity_id: str) -> dict[str, Any]: ...
+    def download_activity_original(self, activity_id: str) -> bytes | None: ...
     def upload_workout(self, workout_json: dict[str, Any]) -> dict[str, Any]: ...
     def schedule_workout(self, workout_id: str, date_iso: str) -> dict[str, Any]: ...
     def get_gear(self, user_profile_number: str | int | None = None) -> list[dict[str, Any]]: ...
@@ -223,6 +226,30 @@ class GarminClientWrapper:
         if not self.api:
             raise RuntimeError("Garmin client is not authenticated. Call login first.")
         return self.api.get_activity_exercise_sets(activity_id) or {}
+
+    def download_activity_original(self, activity_id: str) -> bytes | None:
+        """Return Garmin's original activity archive without interpreting its contents.
+
+        ``None`` has one narrow meaning: Garmin explicitly reports that the original is
+        unavailable.  Authentication, rate-limit and transport failures deliberately
+        remain typed upstream exceptions so callers can preserve their request budget
+        and failure semantics.  A successful non-binary response is a dependency/API
+        contract failure, not an absent original.
+        """
+        if not self.api:
+            raise RuntimeError("Garmin client is not authenticated. Call login first.")
+        try:
+            result = self.api.download_activity(
+                activity_id,
+                dl_fmt=Garmin.ActivityDownloadFormat.ORIGINAL,
+            )
+        except GarminConnectNotFoundError:
+            return None
+        if not isinstance(result, bytes):
+            raise GarminConnectInvalidFileFormatError(
+                "Garmin original activity download did not return binary content."
+            )
+        return result
 
     def get_activities_window(self, start_date_iso: str, end_date_iso: str) -> list[dict[str, Any]]:
         """Paginate get_activities (newest first) to retrieve activities in [start_date_iso, end_date_iso]."""

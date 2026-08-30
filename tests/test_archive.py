@@ -4,6 +4,7 @@ import pytest
 
 from garmin_sync.archive import (
     ArchiveRecord,
+    HealthArchiveRecord,
     LocalRawArchiveStore,
     NullArchiveStore,
     create_archive_store,
@@ -83,6 +84,61 @@ def test_archive_rejects_path_traversal_identifiers(tmp_path: Path) -> None:
         store.archive(ArchiveRecord("stats", "2026-02-30", {"x": 1}, "run-1"))
     with pytest.raises(ValueError, match="sync run ID"):
         store.archive(ArchiveRecord("stats", "2026-08-06", {"x": 1}, "../run"))
+
+
+def test_local_archive_health_bundle_round_trip(tmp_path: Path) -> None:
+    """Regression test: archive_health builds endpoint="health/{provider}_{transport}", which
+    _object_dir validates as a single path segment and rejects because of the embedded "/" --
+    this was a real bug (2026-08-27) that made every Google Health backfill archive attempt fail
+    with production shapes like provider="google_health", transport="bundle". See
+    docs/plans/2026-08-27-real-google-health-ingestion.md."""
+    store = LocalRawArchiveStore(base_dir=tmp_path)
+    record = HealthArchiveRecord(
+        user_id="user123",
+        provider="google_health",
+        transport="bundle",
+        logical_date="2026-08-07",
+        payload=[{"metric": "sleep_duration_seconds", "value": 27000}],
+        revision=1,
+        normalizer_version=1,
+    )
+
+    object_path = store.archive_health(record)
+
+    assert object_path is not None
+    assert Path(object_path).exists()
+
+
+def test_local_archive_health_scopes_object_path_by_user_id(tmp_path: Path) -> None:
+    """Regression test: archive_health validated record.user_id but never put it in the
+    object path. Production provider/transport values ("google_health"/"bundle") are the
+    same for every linked user, so two different users archiving on the same date/revision
+    used to collide at the identical path -- one user's raw payload silently overwriting
+    (and becoming readable as) another's. See
+    docs/plans/2026-08-27-real-google-health-ingestion.md."""
+    store = LocalRawArchiveStore(base_dir=tmp_path)
+
+    def _record(user_id: str, value: int) -> HealthArchiveRecord:
+        return HealthArchiveRecord(
+            user_id=user_id,
+            provider="google_health",
+            transport="bundle",
+            logical_date="2026-08-07",
+            payload=[{"metric": "sleep_duration_seconds", "value": value}],
+            revision=1,
+            normalizer_version=1,
+        )
+
+    path_a = store.archive_health(_record("user-a", 27000))
+    path_b = store.archive_health(_record("user-b", 99999))
+
+    assert path_a is not None and path_b is not None
+    assert path_a != path_b
+    assert "user-a" in path_a and "user-b" not in path_a
+    assert "user-b" in path_b and "user-a" not in path_b
+    # Both objects survive independently -- user-b's archive did not overwrite user-a's.
+    assert Path(path_a).exists()
+    assert Path(path_b).exists()
 
 
 def test_create_archive_store_disabled_returns_null_store() -> None:

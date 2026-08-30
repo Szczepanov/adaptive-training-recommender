@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { callOllama } from '../providers/ollama.mjs';
+import { callOllama, transformSchemaForOllama } from '../providers/ollama.mjs';
 import { callOpenAI } from '../providers/openai.mjs';
 import { callDeepSeek } from '../providers/deepseek.mjs';
 import { callGemini, sanitizeSchemaForGemini } from '../providers/gemini.mjs';
@@ -310,5 +310,44 @@ describe('AI Judge Provider Adapters', () => {
         rationale: { type: 'string' },
       },
     });
+  });
+
+  it('transformSchemaForOllama converts array enum items to prefixItems with const constraints', () => {
+    const originalSchema = {
+      type: 'object',
+      properties: {
+        caseScores: {
+          type: 'array',
+          minItems: 2,
+          maxItems: 2,
+          items: {
+            type: 'object',
+            properties: {
+              caseId: { type: 'string', enum: ['case_a', 'case_b'] },
+              score: { type: 'number' },
+            },
+          },
+        },
+      },
+    };
+
+    const transformed = transformSchemaForOllama(originalSchema);
+    expect(transformed.properties.caseScores.items).toBeUndefined();
+    expect(transformed.properties.caseScores.prefixItems).toEqual([
+      {
+        type: 'object',
+        properties: {
+          caseId: { const: 'case_a' },
+          score: { type: 'number' },
+        },
+      },
+      {
+        type: 'object',
+        properties: {
+          caseId: { const: 'case_b' },
+          score: { type: 'number' },
+        },
+      },
+    ]);
   });
 });

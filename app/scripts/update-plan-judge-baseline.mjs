@@ -13,7 +13,6 @@ const promptPath = resolve(outputDir, 'judge-prompt.md');
 const responseSchemaPath = resolve(outputDir, 'judge-response-schema.json');
 const scoresPath = resolve(outputDir, 'judge-scores.jsonl');
 const corpusPath = resolve(outputDir, 'corpus.json');
-const baselinePath = resolve('../docs/analysis/plan-judge-baseline.json');
 
 if (!reviewed) {
   console.error('Refusing to update the committed plan judge baseline without --reviewed.');
@@ -37,6 +36,18 @@ try {
   console.error(`Plan judge summary is malformed JSON: ${error instanceof Error ? error.message : String(error)}`);
   process.exit(1);
 }
+
+const targetArgIdx = process.argv.indexOf('--target');
+const explicitTarget = targetArgIdx !== -1 && process.argv[targetArgIdx + 1] ? resolve(process.argv[targetArgIdx + 1]) : null;
+
+const judgeModel = summary?.provenance?.judgeModel || '';
+const is4B = !explicitTarget && /4b/i.test(judgeModel);
+const targetBaselineFilename = is4B ? 'plan-judge-baseline.4b.json' : 'plan-judge-baseline.json';
+const targetStabilityFilename = is4B ? 'plan-judge-stability.4b.json' : 'plan-judge-stability.json';
+
+const baselinePath = explicitTarget || resolve(`../docs/analysis/${targetBaselineFilename}`);
+const baselineStabilityPath = resolve(`../docs/analysis/${targetStabilityFilename}`);
+const stabilitySource = `docs/analysis/${targetStabilityFilename}`;
 
 const failures = [];
 const hashFile = (path) => createHash('sha256').update(readFileSync(path)).digest('hex');
@@ -92,7 +103,6 @@ if (failures.length > 0) {
   process.exit(1);
 }
 
-const baselineStabilityPath = resolve('../docs/analysis/plan-judge-stability.json');
 const artifactStabilityPath = resolve(outputDir, 'judge-stability.json');
 
 const cleanSummary = { ...summary };
@@ -107,7 +117,7 @@ if (!stabilityData && existsSync(artifactStabilityPath)) {
 
 if (stabilityData) {
   writeFileSync(baselineStabilityPath, `${JSON.stringify(stabilityData, null, 2)}\n`);
-  cleanSummary.stabilitySource = 'docs/analysis/plan-judge-stability.json';
+  cleanSummary.stabilitySource = stabilitySource;
   delete cleanSummary.judgeStability;
   console.log(`Reviewed plan judge stability updated at ${baselineStabilityPath}.`);
 }

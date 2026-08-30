@@ -35,6 +35,66 @@
   margin: 0.35rem 0 0;
 }
 
+.activity-header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.5rem;
+}
+
+.activity-card-actions {
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.btn-copy-activity-json,
+.btn-reclassify-activity {
+  background: var(--bg-surface-elevated, #27272a);
+  border: 1px solid var(--border-subtle, #3f3f46);
+  color: var(--text-main, #f4f4f5);
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 0.25rem 0.55rem;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.btn-copy-activity-json:hover {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: var(--success, #10b981);
+  color: #10b981;
+}
+
+.btn-reclassify-activity:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: var(--primary, #38bdf8);
+  color: #38bdf8;
+}
+
+.activity-telemetry-badges {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  margin-top: 0.45rem;
+}
+
+.activity-telemetry-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.7rem;
+  font-weight: 500;
+  padding: 0.15rem 0.45rem;
+  border-radius: 999px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: #38bdf8;
+}
+
 .activity-power-summary {
   display: flex;
   gap: 0.8rem;
@@ -50,8 +110,26 @@
 
 .activity-dynamics,
 .activity-zone-section,
-.activity-laps {
+.activity-laps,
+.activity-hr-fidelity {
   margin-top: 1rem;
+}
+
+.activity-hr-fidelity {
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--background-color);
+}
+
+.activity-hr-fidelity p {
+  margin: 0.25rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.activity-hr-fidelity p strong {
+  color: var(--text-color);
 }
 
 .activity-dynamics-grid {

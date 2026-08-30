@@ -1,5 +1,6 @@
 import type { Recommendation, RecommendationAudit } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
+import type { IdentityDecisionProvenance } from '../observations/identityModels';
 import {
     compactSubjectiveDriftAudit,
     type SubjectiveDriftAudit,
@@ -22,6 +23,7 @@ export function buildRecommendationAudit(
     historySnapshot: TrainingHistorySnapshot,
     evaluatedAt = new Date().toISOString(),
     subjectiveDriftEvidence: SubjectiveDriftAuditSource | null = null,
+    identityDecision: IdentityDecisionProvenance | null = null,
 ): RecommendationAuditWithSubjectiveDrift | null {
     const trace = recommendation.decisionTrace;
     const envelopes = recommendation.envelopes;
@@ -56,5 +58,6 @@ export function buildRecommendationAudit(
         ...(recommendation.primarySession ? { primarySession: recommendation.primarySession } : {}),
         ...(recommendation.additionalSessions && recommendation.additionalSessions.length > 0 ? { additionalSessions: recommendation.additionalSessions } : {}),
         ...(subjectiveDrift ? { subjectiveDrift } : {}),
+        ...(identityDecision ? { identityDecision } : {}),
     };
 }

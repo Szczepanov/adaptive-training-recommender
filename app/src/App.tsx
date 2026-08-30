@@ -7,7 +7,7 @@ import { decisionComposer } from './engine/composer';
 import { hasCompletedSubjectiveCheckinForDecision } from './engine/checkinCompletion';
 import type { HealthAnomalyAssessmentRevision } from './engine/healthAnomalyModels';
 import type { DailyDecisionInput } from './engine/models';
-import type { SessionExecution, SessionIntent } from './sessions/models';
+import type { SessionDefinition, SessionExecution, SessionIntent } from './sessions/models';
 import type { Screen } from './types/navigation';
 import { useAuth } from './contexts/AuthContext';
 import { LoginScreen } from './components/LoginScreen';
@@ -18,6 +18,7 @@ import { strengthSessionService } from './services/strengthSessionService';
 import { sessionExecutionService } from './services/sessionExecutionService';
 import { runConfiguredHealthAnomalyShadow } from './services/healthAnomalyRuntime';
 import { resolveSessionDefinition } from './sessions/sessionDefinitionResolver';
+import { OnboardingWizard } from './components/OnboardingWizard';
 
 const DailyCheckin = lazy(() => import('./components/DailyCheckin').then(m => ({ default: m.DailyCheckin })));
 const Goals = lazy(() => import('./components/Goals').then(m => ({ default: m.Goals })));
@@ -25,6 +26,7 @@ const TrainingSettings = lazy(() => import('./components/TrainingSettings').then
 const Preferences = lazy(() => import('./components/Preferences').then(m => ({ default: m.Preferences })));
 const DataView = lazy(() => import('./components/DataView').then(m => ({ default: m.DataView })));
 const HealthAnomalyShadowPanel = lazy(() => import('./components/HealthAnomalyShadowPanel').then(m => ({ default: m.HealthAnomalyShadowPanel })));
+const IdentityReviewCard = lazy(() => import('./components/IdentityReviewCard').then(m => ({ default: m.IdentityReviewCard })));
 const PlanView = lazy(() => import('./components/PlanView').then(m => ({ default: m.PlanView })));
 const StrengthOverloadHistory = lazy(() => import('./components/StrengthOverloadHistory').then(m => ({ default: m.StrengthOverloadHistory })));
 const SessionRunner = lazy(() => import('./components/session/SessionRunner').then(m => ({ default: m.SessionRunner })));
@@ -52,7 +54,16 @@ function App() {
   const [activeStructuredSession, setActiveStructuredSession] = useState<SessionExecution | null>(null);
   const [activeStructuredIntent, setActiveStructuredIntent] = useState<SessionIntent | null>(null);
   const [sessionAuthoringMode, setSessionAuthoringMode] = useState<'import' | 'manual' | null>(null);
+  const [sessionAuthoringDefinition, setSessionAuthoringDefinition] = useState<SessionDefinition | null>(null);
   const [sessionLaunch, setSessionLaunch] = useState<PreparedSessionLaunch | null>(null);
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    try {
+      return window.localStorage.getItem('adaptive_training_onboarding_done') === 'true';
+    } catch {
+      return false;
+    }
+  });
 
   const loadDecisionInput = useCallback(async () => {
     if (!userId) return;
@@ -144,6 +155,11 @@ function App() {
     setLegacyStrengthSessionId(null);
     setActiveStructuredSession(null);
     setActiveStructuredIntent(null);
+    // A session definition being authored (imported or manually built) belongs to the
+    // previous account. Clearing it here prevents a newly signed-in userId from saving
+    // the prior account's in-progress definition under its own identity.
+    setSessionAuthoringMode(null);
+    setSessionAuthoringDefinition(null);
     if (!userId || authPhase !== 'AUTHENTICATED') return;
     let cancelled = false;
     Promise.allSettled([
@@ -260,7 +276,7 @@ function App() {
               const sessionId = legacyStrengthSessionId;
               void strengthSessionService.transitionState(userId!, sessionId, 'abandoned')
                 .then(() => setLegacyStrengthSessionId(current => current === sessionId ? null : current))
-                .catch(error => console.error('Failed to close legacy Strength session:', error));
+                .catch((error: unknown) => console.error('Failed to close legacy Strength session:', error));
             }}
           >
             Close legacy session
@@ -279,6 +295,21 @@ function App() {
 
       <main className="app-content">
         <Suspense fallback={<div className="loading-state">Loading...</div>}>
+          {userId && !onboardingDismissed && decisionInput && decisionInput.activeGoals.length === 0 && (
+            <OnboardingWizard
+              userId={userId}
+              onCompleted={() => {
+                setOnboardingDismissed(true);
+                try {
+                  window.localStorage.setItem('adaptive_training_onboarding_done', 'true');
+                } catch {
+                  // Ignore localStorage unavailable errors
+                }
+                void loadDecisionInput();
+              }}
+            />
+          )}
+
           {screen === 'home' && (
             <Home
               key={dailyViewDate}
@@ -318,6 +349,9 @@ function App() {
                   decisionInput={decisionInput}
                   liveRevision={healthAnomalyShadowRevision}
                 />
+              )}
+              {decisionInput && (
+                <IdentityReviewCard userId={userId!} date={decisionInput.date} />
               )}
             </>
           )}
@@ -366,31 +400,38 @@ function App() {
             ) : sessionAuthoringMode === 'manual' ? (
               <ManualSessionBuilder
                 userId={userId!}
-                onClose={() => setSessionAuthoringMode(null)}
+                initialDefinition={sessionAuthoringDefinition ?? undefined}
+                onClose={() => {
+                  setSessionAuthoringMode(null);
+                  setSessionAuthoringDefinition(null);
+                }}
                 onStartExecution={session => {
                   setSessionLaunch(session);
                   setSessionAuthoringMode(null);
+                  setSessionAuthoringDefinition(null);
                 }}
               />
             ) : (
-              <>
+              <div className="sessions-screen-container">
                 <SessionRunner
                   userId={userId!}
                   initialSession={sessionLaunch ?? undefined}
                   onInitialSessionHandled={() => setSessionLaunch(null)}
                   onImportSession={() => setSessionAuthoringMode('import')}
-                  onBuildSession={() => setSessionAuthoringMode('manual')}
+                  onBuildSession={definition => {
+                    setSessionAuthoringDefinition(definition ?? null);
+                    setSessionAuthoringMode('manual');
+                  }}
                   onSessionStateChange={session => {
                     setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
                     if (session?.state !== 'in_progress') setActiveStructuredIntent(null);
                   }}
                   onClose={() => handleNavigate('home')}
                 />
-                <details className="strength-history-disclosure">
-                  <summary>View strength history</summary>
+                <div className="dashboard-card strength-history-card" style={{ marginTop: '1.5rem' }}>
                   <StrengthOverloadHistory userId={userId!} />
-                </details>
-              </>
+                </div>
+              </div>
             )
           )}
 

@@ -77,6 +77,21 @@ jobs:
       GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       GCP_DEPLOYER_SA_EMAIL: ${{ secrets.GCP_DEPLOYER_SA_EMAIL }}
+      # Optional: only set once the project owner has created a GitHub secret for these.
+      # google-health-account-link deploys only when both are present (see
+      # deploy-garmin-sync.yml's "Deploy Google Health account linker" step condition).
+      GOOGLE_HEALTH_CLIENT_ID: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID }}
+      GOOGLE_HEALTH_CLIENT_SECRET: ${{ secrets.GOOGLE_HEALTH_CLIENT_SECRET }}
+      # Optional: only set once created as GitHub secrets. eight-sleep-direct-sync (ES9) and
+      # its daily Scheduler job deploy only when all five are present (see
+      # deploy-garmin-sync.yml's EIGHT_SLEEP_DIRECT_CONFIGURED gate). APP_USER_ID pins the
+      # one fixed account this single-user Job persists to -- see that workflow's top-of-file
+      # comment for why this is a deliberate exception to "no static user IDs as secrets".
+      EIGHT_SLEEP_EMAIL: ${{ secrets.EIGHT_SLEEP_EMAIL }}
+      EIGHT_SLEEP_PASSWORD: ${{ secrets.EIGHT_SLEEP_PASSWORD }}
+      EIGHT_SLEEP_CLIENT_ID: ${{ secrets.EIGHT_SLEEP_CLIENT_ID }}
+      EIGHT_SLEEP_CLIENT_SECRET: ${{ secrets.EIGHT_SLEEP_CLIENT_SECRET }}
+      APP_USER_ID: ${{ secrets.APP_USER_ID }}
 
   deploy-indexes:
     name: Deploy Firestore indexes

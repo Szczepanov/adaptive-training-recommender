@@ -182,6 +182,44 @@ function validRecommendation(auditEvaluatedAt = '2026-08-07T08:00:00Z') {
     };
 }
 
+function validIdentityAssessment() {
+    return {
+        id: 'identity-assessment-1',
+        automaticStatus: 'UNCERTAIN',
+        policyVersion: 'identity-v1-shadow',
+        featureSchemaVersion: 'identity-features-v1',
+        passportVersion: '2026-08-07.1',
+        reasonCodes: ['SESSION_TIMING_DISCORDANT'],
+        sharedBundleRef: {
+            id: '2026-08-07_eight_sleep_google_health',
+            provider: 'eight_sleep', transport: 'google_health', revision: 2,
+            sourcePayloadHash: 'sha256:shared', lineageKey: 'eight_sleep:pod-side:a',
+        },
+        anchorBundleRefs: [{
+            id: '2026-08-07_garmin_garmin_direct',
+            provider: 'garmin', transport: 'garmin_direct', revision: 1,
+            sourcePayloadHash: 'sha256:anchor', lineageKey: 'garmin:device:athlete',
+        }],
+    };
+}
+
+function validIdentityDecision() {
+    const assessment = validIdentityAssessment();
+    return {
+        identityAssessmentId: assessment.id,
+        automaticStatus: assessment.automaticStatus,
+        effectiveStatus: assessment.automaticStatus,
+        reviewEventId: null,
+        identityPolicyVersion: assessment.policyVersion,
+        featureSchemaVersion: assessment.featureSchemaVersion,
+        passportVersion: assessment.passportVersion,
+        sharedBundleRef: assessment.sharedBundleRef,
+        anchorBundleRefs: assessment.anchorBundleRefs,
+        selectedEffectiveSource: { provider: 'garmin', transport: 'garmin_direct' },
+        fallbackReason: 'SESSION_TIMING_DISCORDANT',
+    };
+}
+
 emulatorDescribe('Firestore security rules', () => {
     beforeAll(async () => {
         testEnvironment = await initializeTestEnvironment({
@@ -201,6 +239,32 @@ emulatorDescribe('Firestore security rules', () => {
     it('allows an owner to create a schema-v3 recommendation with a compact audit', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, recommendationPath), validRecommendation()))).resolves.toBeUndefined();
+    });
+
+    it('accepts identity provenance only when it matches server-owned assessment evidence', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(
+                doc(context.firestore(), `users/${ownerId}/health_identity_assessments/identity-assessment-1`),
+                validIdentityAssessment(),
+            );
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const recommendation = validRecommendation();
+        recommendation.recommendationAudit.identityDecision = validIdentityDecision();
+        await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), recommendation));
+
+        await testEnvironment.clearFirestore();
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(
+                doc(context.firestore(), `users/${ownerId}/health_identity_assessments/identity-assessment-1`),
+                validIdentityAssessment(),
+            );
+        });
+        const forged = validRecommendation();
+        forged.recommendationAudit.identityDecision = {
+            ...validIdentityDecision(), passportVersion: 'forged-passport',
+        };
+        await assertFails(setDoc(doc(ownerDb, recommendationPath), forged));
     });
 
     it('accepts a valid exact engine verdict and rejects an unsupported one', async () => {
@@ -1170,6 +1234,30 @@ emulatorDescribe('Firestore security rules', () => {
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
         await assertFails(getDoc(doc(otherDb, sessionDefHeaderPath)));
         await assertFails(getDoc(doc(otherDb, sessionDefRevPath)));
+    });
+
+    it('allows supported companion metadata and reversible template archive state', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefHeaderPath), {
+            ...validSessionDefHeader(), status: 'active',
+        }))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefRevPath), {
+            ...validSessionDefRevision(),
+            companionSessions: [{ id: 'spin', definitionRef: 'recovery-spin', relation: 'later_same_day' }],
+        }))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefHeaderPath), {
+            ...validSessionDefHeader(), status: 'archived', archivedAt: '2026-08-18T12:00:00Z',
+        }))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionDefHeaderPath), {
+            ...validSessionDefHeader(), status: 'active',
+        }))).resolves.toBeUndefined();
+    });
+
+    it('rejects a session definition header with archivedAt but no status', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, sessionDefHeaderPath), {
+            ...validSessionDefHeader(), archivedAt: '2026-08-18T12:00:00Z',
+        }));
     });
 
     const executionPrescriptionPath = `users/${ownerId}/execution_prescriptions/presc-hash-abc`;

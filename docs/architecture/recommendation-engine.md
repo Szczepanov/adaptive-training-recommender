@@ -373,7 +373,13 @@ The plan-derived path (`PlanDefinition`) is not wired to contributors in this in
 
 Phase 3 introduced a single, unified ranking path (`rankCandidates`) driven by shared context (`buildOptimizationContext`). Candidates are evaluated via strict **Lexicographic Ordering**:
 
-1. **Hard Eligibility Gates** (Level 1–3): Time budget, required equipment, injury constraints, safety envelopes, phase eligibility, planned-intensity admissibility, and dated role-aware recovery constraints (`QUALITY_SPACING_VIOLATION`, `HARD_LOWER_BODY_SPACING_VIOLATION`, `ROLLING_HARD_CAP_EXCEEDED`, `ANCHOR_PROTECTION_VIOLATION`). Filtered candidates carry explicit `excludedReasons`.
+1. **Hard Eligibility Gates** (Level 1–3): Time budget, required equipment, injury constraints, safety envelopes, phase eligibility, planned-intensity admissibility, and dated role-aware recovery constraints (`QUALITY_SPACING_VIOLATION`, `HARD_LOWER_BODY_SPACING_VIOLATION`, `ROLLING_HARD_CAP_EXCEEDED`, `ANCHOR_PROTECTION_VIOLATION`, `RECOVERY_WINDOW_UNELAPSED`). Filtered candidates carry explicit `excludedReasons`.
+
+`RECOVERY_WINDOW_UNELAPSED` (added `POLICY_VERSION` `2026-08-recovery-window-propagation-v1`,
+PR #212) rejects a hard/anchor candidate when a *prior placed session's own declared*
+`loadProfile.recoveryHours` window (e.g. 48h/54h/72h) has not yet elapsed — a consequence of an
+earlier decision, not a property of the candidate itself. `weeklyAllocation.ts` re-validates
+already-placed later reservations when an earlier placement retroactively triggers it.
 2. **Objective Benefit** (Level 4): Scores a template's stimulus profile against currently unresolved weekly objectives (`calculateStimulusBenefit`). Higher objective satisfaction strictly outranks non-objective candidates regardless of preference multipliers. Weekly-anchor timing and missing supported triathlon-modality coverage are also Level-4 architecture signals.
 3. **Utility Score** (Level 5 & 6): `utility = (benefit / (1 + fatigueCost)) × preferenceMultiplier`. Used to sort candidates of comparable objective benefit (within `0.05` benefit score).
 
@@ -424,7 +430,8 @@ phase eligibility           event-relative template gating (Path B only)
         ↓
 planned intensity gate      hard-class candidates require adequate plan intensity
         ↓
-dated recovery constraints  quality spacing, rolling hard caps, anchor protection
+dated recovery constraints  quality spacing, rolling hard caps, anchor protection,
+                            prior session's own declared recovery window (RECOVERY_WINDOW_UNELAPSED)
         ↓
 lexicographic priority      objective/timing benefit outranks preference
         ↓
@@ -594,6 +601,24 @@ or worse on its own. **Adoption is deferred, not rejected** -- see
 [ADR-0015](../adr/0015-sequence-planning-and-session-role-model.md) for the full
 comparison data and reasoning. Greedy (`generateWeekAheadPlan`) remains the live default;
 `sequenceSearch.ts` is not imported by any production code path.
+
+---
+
+## Morning Decision Evidence & Progressive Disclosure (`decisionEvidence.ts`, `MorningDecisionCard.tsx`)
+
+The dashboard presents morning recommendations through progressive disclosure answering three core questions immediately:
+1. **What should I do today?** Dominant Hero Decision Card with immediate session clarity (title, modality, target duration, 1-line rationale, execution mode badge), immediate primary session launch CTA, and a 1-tap **Easier / Harder** stepper.
+2. **Why?** Pure synthesis (`decisionEvidence.ts:assembleMorningDecisionEvidence`) evaluating:
+   - **Ranked Evidence Factors**: Weighted drivers across autonomic recovery, tissue safety, periodization demand, and chronic baseline deficit with impact indicators.
+   - **Day-over-Day Deltas**: Overnight physiological delta comparisons against yesterday and 28-day chronic baselines (HRV overnight, resting heart rate, sleep score, wake body battery).
+3. **What should make me change that decision?**
+   - **Hard Gates vs Soft Optimization Boundaries**: Clear separation between hard safety guardrails (clinical pain flags, acute illness anomalies, systemic load ceilings) which strictly lock "Harder" adjustments, and soft optimization factors (sport preferences, role reservations).
+   - **Decision Invalidation Triggers**: Explicit boundary triggers (e.g. warmup pain exceeding 3/10, available time dropping under 30 minutes, equipment/venue shifts).
+   - **1-Tap Situational Alternatives**: Instant pivots for time crunches (20m, 30m, 45m), zero-equipment home bodyweight flows, joint mobility sessions, and active recovery walks.
+   - **Honest Data Confidence**: Tiered confidence ratings (`High`, `Moderate`, `Low`) based on biometric and subjective data availability, avoiding false precision when inputs are missing.
+
+### Activity Reclassification Overrides (`activityOverrideService.ts`, `completedTraining.ts`)
+Athletes can correct Garmin misclassifications (sport modality, intensity tag, 1–10 RPE, stimulus focus) directly from Activity Telemetry. Overrides are persisted in Firestore under `users/{userId}/activity_overrides/{activityId}` and integrated into `completedTraining.ts:candidateEventFromGarmin` to adjust downstream load, fatigue, and recovery credit.
 
 ---
 

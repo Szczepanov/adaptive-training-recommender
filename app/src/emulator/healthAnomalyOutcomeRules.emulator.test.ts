@@ -104,6 +104,12 @@ emulatorDescribe('Health anomaly prospective outcome rules (HA6)', () => {
         await assertFails(updateDoc(doc(db, outcomePath), { episodeId: 'different-episode' }));
     });
 
+    it('allows the allergy_or_hay_fever explanation', async () => {
+        await seedAssessment();
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(db, outcomePath), { ...outcome(), explanation: 'allergy_or_hay_fever' }));
+    });
+
     it('rejects malformed explanation, onset and respiratory-test labels', async () => {
         await seedAssessment();
         const db = testEnvironment.authenticatedContext(ownerId).firestore();

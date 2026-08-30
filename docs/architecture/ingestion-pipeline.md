@@ -66,6 +66,95 @@ Primary Firestore paths written or coordinated by this subsystem are:
 * `users/{userId}/garmin_sync_requests/latest` — the single shared manual/automatic sync request.
 * `users/{userId}/garmin_runtime/execution_lease` — per-user Garmin-operation lease.
 * `users/{userId}/garmin_workout_queue/{date}` — outbound workout queue.
+* `users/{userId}/health_observation_days/{YYYY-MM-DD}_{provider}_{transport}` — multi-source day-source recovery observation bundles (ADR-0027).
+
+---
+
+## 🌐 Multi-Source Recovery Ingestion Architecture (ADR-0027)
+
+```text
+Google Health API (v4) / REST Data Points
+  ├── sleep (sleepSession, stage summaries)
+  ├── daily-heart-rate-variability (average HRV, deep sleep RMSSD)
+  ├── daily-resting-heart-rate (RHR bpm)
+  └── daily-respiratory-rate (breaths per minute)
+                    │
+                    ▼
+┌──────────────────────────────────────────────────────────────┐
+│ GoogleHealthClient (`health.googleapis.com/v4`)              │
+│ authenticated OAuth client, pagination, error classification │
+└─────────────────────────────┬────────────────────────────────┘
+                              │
+              ┌───────────────┴───────────────┐
+              │                               │
+              ▼                               ▼
+┌──────────────────────────┐   ┌────────────────────────────────┐
+│ GoogleHealthAuthManager  │   │ GoogleHealthProvider           │
+│ token & credentials      │   │ RecoveryObservationProvider    │
+└──────────────────────────┘   └───────────────┬────────────────┘
+                                               │ raw payload batches
+                                               ▼
+                              ┌────────────────────────────────┐
+                              │ GoogleHealthMapper             │
+                              │ package origin attribution:    │
+                              │ - com.eightsleep.eight         │
+                              │ - com.garmin.android...        │
+                              └───────────────┬────────────────┘
+                                               │ CanonicalHealthObservation[]
+                                               ▼
+                              ┌────────────────────────────────┐
+                              │ HealthObservationService       │
+                              │ sync / repair / backfill-range │
+                              └───────────────┬────────────────┘
+                                               │
+                     ┌─────────────────────────┴─────────────────────────┐
+                     │                                                   │
+                     ▼                                                   ▼
+         ┌──────────────────────────┐                    ┌──────────────────────────────┐
+         │ RawArchiveStore          │                    │ FirestoreRecoveryRepository  │
+         │ immutable GCS / gzip     │                    │ health_observation_days      │
+         └──────────────────────────┘                    └──────────────────────────────┘
+```
+
+### Key Multi-Source Invariants
+1. **Source Attribution**: Every observation preserves exact `provider` (`garmin`, `eight_sleep`), `transport` (`google_health`, `direct`), origin package, and hardware device.
+2. **Day-Source Bundles**: Observations are stored under `users/{userId}/health_observation_days/{date}_{provider}_{transport}` with deterministic observation IDs.
+3. **Step Count Semantics (`D-MS-STEPS`)**: Aggregator step counts from Google Health are strictly ignored to prevent double-counting structured training fatigue.
+4. **Instant Maturity via Backfill**: Historical data is backfilled via `uv run python -m garmin_sync backfill-health --days 60 --token <TOKEN>`, immediately seeding 28-day mature baselines.
+
+### Direct Eight Sleep transport (ADR-0030)
+
+Independent of the Google Health path above, `src/garmin_sync/eight_sleep_*.py`
+(`eight_sleep_client.py`, `eight_sleep_config.py`, `eight_sleep_mapper.py`,
+`eight_sleep_provider.py`, `eight_sleep_probe.py`) implements an owned, read-only direct
+connector to Eight Sleep's private API, producing `provider=eight_sleep`,
+`transport=eight_sleep_direct` observations through `EightSleepDirectProvider` (a
+`RecoveryObservationProvider`-shaped adapter, ADR-0030). It exists as a **default-off**
+alternative to the `com.eightsleep.eight` Google Health package-attribution path. It has its
+own CLI entry points, separate from `backfill-health`'s `{"google_health": provider}`
+registration: `backfill-eight-sleep-direct` persists to
+`health_observation_days/{date}_eight_sleep_eight_sleep_direct`, and
+`compare-eight-sleep-transports` (ES9) diffs those bundles against the pre-existing
+`eight_sleep`/`google_health` ones via a generalized `TransportEquivalenceAnalyzer`
+(`expected_provider` param, `equivalence.py`) shared with MS10's Garmin comparison.
+`backfill-eight-sleep-direct` runs daily via a dedicated Cloud Scheduler job once deployed
+(a bounded 7-day trailing window per tick); `compare-eight-sleep-transports` is run on demand,
+not scheduled. Both still require `EIGHT_SLEEP_DIRECT_ENABLED` and runtime secrets
+provisioned before anything real happens (see
+[`docs/plans/eight-sleep-direct-recovery-ingestion.md`](../plans/eight-sleep-direct-recovery-ingestion.md)).
+
+### Identity gate location (ADR-0028)
+
+A shared source like Eight Sleep sits between "day-source bundle exists" and "source-specific
+baseline accumulation" above. Before any shared-source bundle can enter
+`computeSourceMetricBaseline()` (TypeScript) or `run_multisource_audit()`'s baseline path
+(Python), it must resolve to an effective `USER` identity decision via
+`selectEligibleHealthObservationBundles()` / `src/garmin_sync/identity_eligibility.py` — both
+fail closed on a missing or ambiguous decision. See
+[**Physiological Identity Passport & Measurement Trust**](./physiological-identity-passport.md)
+for the full pipeline (pairing, lineage, the versioned passport, the ternary evaluator, and the
+review UI that produces manual corrections); this is currently shadow/engine-layer only — no
+recommendation path consumes gated shared-source output yet.
 
 ---
 
@@ -87,6 +176,7 @@ Primary Firestore paths written or coordinated by this subsystem are:
 * [`src/garmin_sync/account_link.py`](../../src/garmin_sync/account_link.py) / [`account_link_api.py`](../../src/garmin_sync/account_link_api.py) — self-service Garmin account linking and token bootstrap.
 * [`src/garmin_sync/coordination.py`](../../src/garmin_sync/coordination.py) — Firestore-backed per-user Garmin execution lease.
 * [`src/garmin_sync/workout_export.py`](../../src/garmin_sync/workout_export.py) — canonical workout-to-Garmin JSON transformation.
+* [`src/garmin_sync/eight_sleep_client.py`](../../src/garmin_sync/eight_sleep_client.py), [`eight_sleep_config.py`](../../src/garmin_sync/eight_sleep_config.py), [`eight_sleep_mapper.py`](../../src/garmin_sync/eight_sleep_mapper.py), [`eight_sleep_provider.py`](../../src/garmin_sync/eight_sleep_provider.py), [`eight_sleep_probe.py`](../../src/garmin_sync/eight_sleep_probe.py) — owned direct read-only Eight Sleep private-API connector (ADR-0030), default-off, not yet wired into any production CLI command.
 * [`app/src/hooks/useAutoGarminSync.ts`](../../app/src/hooks/useAutoGarminSync.ts) — client-side stale/missing snapshot refresh trigger.
 * [`app/src/services/garminSyncRequestService.ts`](../../app/src/services/garminSyncRequestService.ts) — transactional fixed-document sync request coordination.
 
@@ -111,7 +201,12 @@ baseline/provenance fields. Current `raw` fields include:
 * weight/body-fat observations when Garmin supplies a valid weigh-in;
 * Garmin Pulse Ox daily average/minimum (`spo2.avgPct`/`minPct`) and sleep-average SpO2 (`spo2.sleepAvgPct`);
 * overnight skin-temperature deviation in °C (`skinTempDeviationCelsius`);
-* `todayTraining`, `yesterdayTraining`, and recent-hard-session summaries derived from normalized activities.
+* `todayTraining`, `yesterdayTraining`, and recent-hard-session summaries derived from normalized activities;
+* real Garmin sleep-session start/end timestamps (`raw.sleepSessionStart`/`raw.sleepSessionEnd`,
+  from `dailySleepDTO.sleepStartTimestampGMT`/`sleepEndTimestampGMT`), with `dataQuality.sleepTimingAvailable`
+  recording whether both bounds were available for that night — added to feed PI8's identity-attribution
+  `SESSION_TIMING` evidence, which previously had zero coverage because these parsed timestamps were
+  discarded after computing the respiration-window average and never reached `CanonicalDailyMetrics`.
 
 Sleep stages are stored as individual scalar fields, **not** under a `raw.sleepStages` object —
 there is no separate `CanonicalSleepStages` type. The recovery UI currently renders those stage

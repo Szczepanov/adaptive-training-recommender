@@ -139,3 +139,47 @@ def test_single_user_command_still_requires_app_user_id(
 
     with pytest.raises(ValueError, match="APP_USER_ID"):
         load_settings(env_file=str(empty_env))
+
+
+def test_backfill_delay_defaults_to_a_jittered_pace_on_the_real_cli_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unlike directly-constructed Settings() (0/0, used throughout the test suite),
+    the real config-loading path defaults to a non-zero pace so a live `backfill` run
+    doesn't hammer Garmin unless someone explicitly opts out."""
+    monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
+    monkeypatch.delenv("GARMIN_BACKFILL_DELAY_MIN_SECONDS", raising=False)
+    monkeypatch.delenv("GARMIN_BACKFILL_DELAY_MAX_SECONDS", raising=False)
+
+    settings = load_settings_for_user("alpha")
+
+    assert settings.garmin_backfill_delay_min_seconds == 1.5
+    assert settings.garmin_backfill_delay_max_seconds == 4.0
+
+
+def test_backfill_delay_reads_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
+    monkeypatch.setenv("GARMIN_BACKFILL_DELAY_MIN_SECONDS", "0")
+    monkeypatch.setenv("GARMIN_BACKFILL_DELAY_MAX_SECONDS", "0")
+
+    settings = load_settings_for_user("alpha")
+
+    assert settings.garmin_backfill_delay_min_seconds == 0.0
+    assert settings.garmin_backfill_delay_max_seconds == 0.0
+
+
+def test_backfill_delay_rejects_min_greater_than_max(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
+    monkeypatch.setenv("GARMIN_BACKFILL_DELAY_MIN_SECONDS", "5")
+    monkeypatch.setenv("GARMIN_BACKFILL_DELAY_MAX_SECONDS", "2")
+
+    with pytest.raises(ValueError, match="GARMIN_BACKFILL_DELAY_MIN_SECONDS"):
+        load_settings_for_user("alpha")
+
+
+def test_backfill_delay_rejects_negative_values(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GARMIN_TOKEN_STORE", "local")
+    monkeypatch.setenv("GARMIN_BACKFILL_DELAY_MIN_SECONDS", "-1")
+
+    with pytest.raises(ValueError, match="GARMIN_BACKFILL_DELAY_MIN_SECONDS"):
+        load_settings_for_user("alpha")

@@ -15,21 +15,60 @@ if (baseRef === '0000000000000000000000000000000000000000') {
   process.exit(0);
 }
 
+// npm invokes this script from app/, while CI/manual callers may invoke it from the repo
+// root. Resolve the repository once, then pin every Git command there so pathspecs such as
+// app/src mean the same thing regardless of the caller's working directory.
+const repoRoot = execFileSync('git', ['rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+
 function git(args) {
-  return execFileSync('git', args, { encoding: 'utf8' });
+  return execFileSync('git', args, { encoding: 'utf8', cwd: repoRoot });
 }
 
-let diffOutput = '';
-try {
-  diffOutput = git(['diff', '--name-only', `${baseRef}...HEAD`]);
-} catch (err) {
-  // If shallow checkout without base commit, attempt a single fetch for the base SHA.
+function gitGrepFiles(pattern, paths = ['app/src']) {
   try {
-    git(['fetch', '--depth=1', 'origin', baseRef]);
+    return git(['grep', '-El', pattern, '--', ...paths]).trim().split('\n').filter(Boolean);
+  } catch (err) {
+    // git grep exits 1 when the pattern has no matches; that is a valid empty result.
+    if (err.status === 1) return [];
+    throw err;
+  }
+}
+
+/**
+ * pull_request workflows normally check out GitHub's synthetic merge commit. The event's
+ * base.sha can become stale if main advances between the event payload and checkout; diffing
+ * that old SHA to HEAD then falsely attributes unrelated new-main files to the PR. On PR
+ * runs, compare the current base parent to the merged tree itself. This captures exactly the
+ * PR contribution *after* GitHub has merged it with current main, including any automatic
+ * merge resolution. Push/manual runs retain the explicit baseRef behaviour below.
+ */
+function pullRequestMergeDiff() {
+  const eventName = process.env.GITHUB_EVENT_NAME;
+  if (eventName !== 'pull_request' && eventName !== 'pull_request_target') return null;
+  try {
+    const parents = git(['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(/\s+/);
+    if (parents.length !== 3) return null;
+    const [, currentBaseParent] = parents;
+    return git(['diff', '--name-only', currentBaseParent, 'HEAD']);
+  } catch (err) {
+    console.warn(`Could not isolate pull-request merge parents; falling back to base ref: ${err.message}`);
+    return null;
+  }
+}
+
+let diffOutput = pullRequestMergeDiff() ?? '';
+if (!diffOutput) {
+  try {
     diffOutput = git(['diff', '--name-only', `${baseRef}...HEAD`]);
-  } catch (fetchErr) {
-    console.warn(`Could not diff against base ref ${baseRef}: ${fetchErr.message}`);
-    process.exit(0);
+  } catch (err) {
+    // If shallow checkout without base commit, attempt a single fetch for the base SHA.
+    try {
+      git(['fetch', '--depth=1', 'origin', baseRef]);
+      diffOutput = git(['diff', '--name-only', `${baseRef}...HEAD`]);
+    } catch (fetchErr) {
+      console.warn(`Could not diff against base ref ${baseRef}: ${fetchErr.message}`);
+      process.exit(0);
+    }
   }
 }
 
@@ -47,6 +86,11 @@ const decisionAffectingFiles = [
   // estimator here is policy even though it sits upstream of the ranking modules.
   'app/src/engine/completedTraining.ts',
   'app/src/engine/garminTelemetryEvidence.ts',
+  // adapters.ts maps the persisted check-in/goals/settings into the engine's SubjectiveInput
+  // and UserContext -- painFlag, restrictedModalities and clinicalFlagActive all derive from
+  // it before rules.ts ever runs, so a change here can alter a persisted decision exactly as
+  // a change to rules.ts does, even though it sits upstream of the ranking modules.
+  'app/src/engine/adapters.ts',
   // ADR-0019: adjudication decides what an externally-planned athlete is told to do, so a
   // change here alters a persisted decision exactly as a change to rules.ts does. The
   // profile derivation is included because the cost it produces feeds the ceilings.
@@ -62,12 +106,15 @@ const decisionAffectingFiles = [
 
 const policyFile = 'app/src/engine/policy.ts';
 const rulesFile = 'app/src/engine/rules.ts';
+const adaptersFile = 'app/src/engine/adapters.ts';
 const subjectiveBaselineFile = 'app/src/engine/subjectiveBaseline.ts';
 const adr20File = 'docs/adr/0020-subjective-baselines-in-readiness-mode.md';
 const completedTrainingFile = 'app/src/engine/completedTraining.ts';
 const garminTelemetryEvidenceFile = 'app/src/engine/garminTelemetryEvidence.ts';
 const adr22File = 'docs/adr/0022-zone-derived-completed-training-credit.md';
-const repoRoot = git(['rev-parse', '--show-toplevel']).trim();
+const sleepRecoveryEvidenceFile = 'app/src/engine/sleepRecoveryEvidence.ts';
+const sleepRecoveryEvidenceTestFile = 'app/src/engine/sleepRecoveryEvidence.test.ts';
+const sleepRecoveryPhase3Doc = 'docs/analysis/2026-08-29-sleep-decision-authority-phase-3-implementation.md';
 
 const changedDecisionFiles = changedFiles.filter((f) => decisionAffectingFiles.includes(f));
 
@@ -182,6 +229,77 @@ function isAcceptedDormantGarminZoneCreditChange() {
   return accepted && explicitlyNoBump;
 }
 
+function rejectDormantSleep(reason) {
+  console.warn(`Dormant sleep-evidence policy exception rejected: ${reason}`);
+  return false;
+}
+
+/**
+ * Phase 3 sleep recovery evidence is intentionally observation-only. adapters.ts has to
+ * expose the precomputed v6 fields to DailyReadiness, but that wiring must not mint a new
+ * live policy identity while no production decision path can consume it. This exception is
+ * fail-closed and mechanical: only the adapter/model/evaluator production sources may be
+ * involved, every sleep-evidence field reference must remain inside that small boundary,
+ * and the evaluator itself may have no production caller. The implementation note also has
+ * to keep the no-bump contract explicit. Any later rules/planner/fatigue consumer makes one
+ * of these checks fail and restores the normal POLICY_VERSION requirement automatically.
+ */
+function isAcceptedDormantSleepRecoveryEvidenceChange() {
+  if (changedDecisionFiles.length === 0 || !changedDecisionFiles.every((file) => file === adaptersFile)) {
+    return rejectDormantSleep(`decision files were: ${changedDecisionFiles.join(', ') || '(none)'}`);
+  }
+
+  const allowedProductionSources = new Set([
+    adaptersFile,
+    'app/src/engine/models.ts',
+    sleepRecoveryEvidenceFile,
+  ]);
+  const changedProductionSources = changedFiles.filter((file) =>
+    file.startsWith('app/src/')
+    && !allowedProductionSources.has(file)
+    && !file.endsWith('.test.ts')
+    && !file.includes('/simulation/')
+  );
+  if (changedProductionSources.length > 0) {
+    return rejectDormantSleep(`unexpected production sources changed: ${changedProductionSources.join(', ')}`);
+  }
+
+  const evaluatorReferences = gitGrepFiles('evaluateSleepRecoveryEvidence');
+  const allowedEvaluatorReferences = new Set([
+    sleepRecoveryEvidenceFile,
+    sleepRecoveryEvidenceTestFile,
+  ]);
+  const unexpectedEvaluatorReferences = evaluatorReferences.filter(file => !allowedEvaluatorReferences.has(file));
+  if (evaluatorReferences.length === 0) return rejectDormantSleep('evaluator symbol has no repository references');
+  if (unexpectedEvaluatorReferences.length > 0) {
+    return rejectDormantSleep(`evaluator has unexpected references: ${unexpectedEvaluatorReferences.join(', ')}`);
+  }
+
+  const fieldReferences = gitGrepFiles(
+    'sleep_duration_(delta|accumulated_)|bedtime_deviation_|wake_time_deviation_|sleep_midpoint_deviation_',
+  );
+  const allowedFieldReferences = new Set([
+    adaptersFile,
+    'app/src/engine/adapters.test.ts',
+    'app/src/engine/models.ts',
+    sleepRecoveryEvidenceFile,
+    sleepRecoveryEvidenceTestFile,
+  ]);
+  const unexpectedFieldReferences = fieldReferences.filter(file => !allowedFieldReferences.has(file));
+  if (fieldReferences.length === 0) return rejectDormantSleep('sleep-evidence fields have no repository references');
+  if (unexpectedFieldReferences.length > 0) {
+    return rejectDormantSleep(`sleep-evidence fields have unexpected references: ${unexpectedFieldReferences.join(', ')}`);
+  }
+
+  const phase3Doc = readFileSync(join(repoRoot, sleepRecoveryPhase3Doc), 'utf8');
+  const explicitlyShadow = /## Genuinely shadow/.test(phase3Doc);
+  const explicitlyNoBump = /`POLICY_VERSION` intentionally remains unchanged/.test(phase3Doc);
+  if (!explicitlyShadow || !explicitlyNoBump) {
+    return rejectDormantSleep(`implementation note contract missing (shadow=${explicitlyShadow}, no-bump=${explicitlyNoBump})`);
+  }
+  return true;
+}
+
 if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
   if (isAcceptedDormantSubjectiveDriftChange()) {
     console.log(
@@ -193,6 +311,13 @@ if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
   if (isAcceptedDormantGarminZoneCreditChange()) {
     console.log(
       'POLICY DRIFT CHECK PASSED: ADR-0022 Garmin zone-credit candidate is default-off and has no production caller; '
+      + `POLICY_VERSION correctly remains ${currentPolicyVersion}.`
+    );
+    process.exit(0);
+  }
+  if (isAcceptedDormantSleepRecoveryEvidenceChange()) {
+    console.log(
+      'POLICY DRIFT CHECK PASSED: Phase 3 sleep recovery evidence has no production decision caller; '
       + `POLICY_VERSION correctly remains ${currentPolicyVersion}.`
     );
     process.exit(0);

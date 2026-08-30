@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { RangeOrNumber, SessionDefinition, SessionEntry, SessionEntryPayload, SessionExecution, SessionReferenceBinding, SessionStep } from '../../sessions/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 import { useSessionRunner } from '../../hooks/useSessionRunner';
@@ -13,11 +13,13 @@ import { CheckoffInputCard } from './inputs/CheckoffInputCard';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
 import { sessionDefinitionService, type SessionDefinitionHeader } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
+import { archivedSavedDefinitionError } from '../../sessions/sessionLaunch';
 import { getGroupProgress, targetEntriesForGroupStep } from '../../sessions/groupProgression';
 import { stepName } from '../../sessions/stepDisplay';
 import { GroupProgress } from './GroupProgress';
 import { ChoiceCard } from './ChoiceCard';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
+import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
 import './SessionRunner.css';
 
@@ -83,7 +85,7 @@ interface SessionRunnerProps {
     initialSession?: { definition: SessionDefinition; binding: SessionReferenceBinding };
     onInitialSessionHandled?: () => void;
     onImportSession?: () => void;
-    onBuildSession?: () => void;
+    onBuildSession?: (initialDefinition?: SessionDefinition) => void;
     onSessionStateChange?: (execution: SessionExecution | null) => void;
     onClose?: () => void;
 }
@@ -109,6 +111,14 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [savedDefinitions, setSavedDefinitions] = useState<SessionDefinitionHeader[]>([]);
     const [savedDefinitionsError, setSavedDefinitionsError] = useState<string | null>(null);
     const [startingSavedDefinitionId, setStartingSavedDefinitionId] = useState<string | null>(null);
+    const [previewDefinition, setPreviewDefinition] = useState<{
+        definition: SessionDefinition;
+        header?: SessionDefinitionHeader;
+    } | null>(null);
+    const [previewingSavedDefinitionId, setPreviewingSavedDefinitionId] = useState<string | null>(null);
+    const [editingSavedDefinitionId, setEditingSavedDefinitionId] = useState<string | null>(null);
+    const [updatingSavedDefinitionId, setUpdatingSavedDefinitionId] = useState<string | null>(null);
+    const [showArchivedDefinitions, setShowArchivedDefinitions] = useState(false);
     // M4.3: a companion is a separately executable session referenced from the one that just
     // finished (SessionDefinition.companionSessions), never an embedded block -- those already
     // render inline within the same execution. Starting one creates its own execution; it may
@@ -236,10 +246,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         initialLaunchAttempted.current = false;
     }, [initialSession?.binding.prescriptionHash]);
 
-    useEffect(() => {
-        let cancelled = false;
-        sessionDefinitionService.listDefinitionHeaders(userId).then(result => {
-            if (cancelled) return;
+    const refreshSavedDefinitions = useCallback(async () => {
+        try {
+            const result = await sessionDefinitionService.listDefinitionHeaders(userId);
             if (result.status === 'AVAILABLE') {
                 setSavedDefinitions(result.data);
                 setSavedDefinitionsError(null);
@@ -248,11 +257,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             } else if (result.status === 'INVALID') {
                 setSavedDefinitionsError('A saved session has invalid data and cannot be listed.');
             }
-        }).catch(() => {
-            if (!cancelled) setSavedDefinitionsError('Could not load saved sessions.');
-        });
-        return () => { cancelled = true; };
+        } catch {
+            setSavedDefinitionsError('Could not load saved sessions.');
+        }
     }, [userId]);
+
+    useEffect(() => { void refreshSavedDefinitions(); }, [refreshSavedDefinitions]);
 
     useEffect(() => {
         if (!initialSession || runner.isRestoring || initialLaunchAttempted.current) return;
@@ -276,6 +286,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     }, [initialSession, onInitialSessionHandled, runner]);
 
     const startSavedDefinition = async (header: SessionDefinitionHeader) => {
+        const archivedError = archivedSavedDefinitionError(header, 'This template');
+        if (archivedError) {
+            setSavedDefinitionsError(archivedError);
+            return;
+        }
         setStartingSavedDefinitionId(header.definitionId);
         setSavedDefinitionsError(null);
         try {
@@ -292,6 +307,59 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             setSavedDefinitionsError(error instanceof Error ? error.message : 'Could not start the saved session.');
         } finally {
             setStartingSavedDefinitionId(null);
+        }
+    };
+
+    const previewSavedDefinition = async (header: SessionDefinitionHeader) => {
+        setPreviewingSavedDefinitionId(header.definitionId);
+        setSavedDefinitionsError(null);
+        try {
+            const result = await sessionDefinitionService.getDefinitionRevision(userId, header.definitionId, header.latestRevision);
+            if (result.status !== 'AVAILABLE') {
+                throw new Error(result.status === 'MISSING' ? 'The latest saved revision is missing.' : 'The saved session cannot be read safely.');
+            }
+            setPreviewDefinition({ definition: result.data, header });
+        } catch (error) {
+            setSavedDefinitionsError(error instanceof Error ? error.message : 'Could not preview the saved session.');
+        } finally {
+            setPreviewingSavedDefinitionId(null);
+        }
+    };
+
+    const editSavedDefinition = async (header: SessionDefinitionHeader, duplicate: boolean) => {
+        if (!onBuildSession) return;
+        setEditingSavedDefinitionId(header.definitionId);
+        setSavedDefinitionsError(null);
+        try {
+            const result = await sessionDefinitionService.getDefinitionRevision(userId, header.definitionId, header.latestRevision);
+            if (result.status !== 'AVAILABLE') {
+                throw new Error(result.status === 'MISSING' ? 'The latest saved revision is missing.' : 'The saved template cannot be read safely.');
+            }
+            onBuildSession(duplicate
+                ? {
+                    ...result.data,
+                    id: `custom-session-${crypto.randomUUID()}`,
+                    revision: 1,
+                    title: `${result.data.title} copy`,
+                }
+                : { ...result.data, revision: result.data.revision + 1 });
+        } catch (error) {
+            setSavedDefinitionsError(error instanceof Error ? error.message : 'Could not open the saved template.');
+        } finally {
+            setEditingSavedDefinitionId(null);
+        }
+    };
+
+    const setSavedDefinitionArchived = async (header: SessionDefinitionHeader, archived: boolean) => {
+        setUpdatingSavedDefinitionId(header.definitionId);
+        setSavedDefinitionsError(null);
+        try {
+            await sessionDefinitionService.setDefinitionArchived(userId, header.definitionId, archived);
+            await refreshSavedDefinitions();
+        } catch (error) {
+            setSavedDefinitionsError(error instanceof Error ? error.message : 'Could not update the saved template.');
+        } finally {
+            setUpdatingSavedDefinitionId(null);
         }
     };
 
@@ -316,6 +384,8 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             }
             const header = savedDefinitions.find(candidate => candidate.definitionId === companion.definitionRef);
             if (header) {
+                const archivedError = archivedSavedDefinitionError(header, `"${companion.definitionRef}"`);
+                if (archivedError) throw new Error(archivedError);
                 const result = await sessionDefinitionService.getDefinitionRevision(userId, header.definitionId, header.latestRevision);
                 if (result.status !== 'AVAILABLE') throw new Error('The companion session cannot be read safely.');
                 const launch = await prepareUnplannedSessionLaunch(userId, result.data);
@@ -508,29 +578,87 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
         return (
             <div className="session-runner-container no-active">
+                {previewDefinition ? (
+                    <section className="session-definition-preview-screen" aria-labelledby="session-definition-preview-title">
+                        <button type="button" className="preview-back-button" onClick={() => setPreviewDefinition(null)}>
+                            ← All structured sessions
+                        </button>
+                        <h2 id="session-definition-preview-title" className="sr-only">Session preview</h2>
+                        <SessionDefinitionPreview
+                            definition={previewDefinition.definition}
+                            onStart={() => {
+                                if (previewDefinition.header) {
+                                    void startSavedDefinition(previewDefinition.header);
+                                } else {
+                                    void runner.startFixtureSession(previewDefinition.definition);
+                                }
+                            }}
+                        />
+                    </section>
+                ) : <>
                 <header className="session-runner-header">
                     <h2>🚀 Start a Structured Session</h2>
                     <p className="session-runner-subtitle">Start a reviewed session, or make one that is stored and validated before execution.</p>
                     {(onImportSession || onBuildSession) && <div className="session-authoring-actions">
                         {onImportSession && <button type="button" className="start-fixture-btn" onClick={onImportSession}>Import session JSON</button>}
-                        {onBuildSession && <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={onBuildSession}>Build session</button>}
+                        {onBuildSession && <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={() => onBuildSession()}>Build session</button>}
                     </div>}
                 </header>
                 {savedDefinitionsError && <p className="session-runner-error" role="alert">{savedDefinitionsError}</p>}
-                {savedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="saved-session-library-title">
-                    <h3 id="saved-session-library-title">Your saved sessions</h3>
+                {savedDefinitions.some(header => header.status === 'active') && <section className="saved-session-library" aria-labelledby="saved-session-library-title">
+                    <h3 id="saved-session-library-title">Your custom templates</h3>
                     <div className="fixture-grid">
-                        {savedDefinitions.map(header => <div key={header.definitionId} className="fixture-card">
+                        {savedDefinitions.filter(header => header.status === 'active').map(header => <div key={header.definitionId} className="fixture-card">
                             <div className="fixture-info">
-                                <span className="fixture-intent-badge">saved · rev {header.latestRevision}</span>
+                                <span className="fixture-intent-badge">custom · rev {header.latestRevision}</span>
                                 <h3 className="fixture-title">{header.title}</h3>
                                 {header.dominantModality && <p className="fixture-summary">{header.dominantModality}</p>}
                             </div>
-                            <button type="button" className="start-fixture-btn" disabled={startingSavedDefinitionId !== null} onClick={() => startSavedDefinition(header)}>
-                                {startingSavedDefinitionId === header.definitionId ? 'Starting…' : 'Start session'}
-                            </button>
+                            <div className="fixture-card-actions">
+                                <button
+                                    type="button"
+                                    className="preview-fixture-btn"
+                                    disabled={previewingSavedDefinitionId !== null}
+                                    onClick={() => { void previewSavedDefinition(header); }}
+                                >
+                                    {previewingSavedDefinitionId === header.definitionId ? 'Loading…' : 'Preview'}
+                                </button>
+                                <button type="button" className="start-fixture-btn" disabled={startingSavedDefinitionId !== null} onClick={() => { void startSavedDefinition(header); }}>
+                                    {startingSavedDefinitionId === header.definitionId ? 'Starting…' : 'Start session'}
+                                </button>
+                                {onBuildSession && <button type="button" className="preview-fixture-btn" disabled={editingSavedDefinitionId !== null} onClick={() => { void editSavedDefinition(header, false); }}>
+                                    {editingSavedDefinitionId === header.definitionId ? 'Loading…' : 'Edit'}
+                                </button>}
+                                {onBuildSession && <button type="button" className="preview-fixture-btn" disabled={editingSavedDefinitionId !== null} onClick={() => { void editSavedDefinition(header, true); }}>
+                                    Duplicate
+                                </button>}
+                                <button type="button" className="preview-fixture-btn" disabled={updatingSavedDefinitionId !== null} onClick={() => { void setSavedDefinitionArchived(header, true); }}>
+                                    {updatingSavedDefinitionId === header.definitionId ? 'Updating…' : 'Archive'}
+                                </button>
+                            </div>
                         </div>)}
                     </div>
+                </section>}
+                {savedDefinitions.some(header => header.status === 'archived') && <section className="saved-session-library" aria-labelledby="archived-session-library-title">
+                    <button type="button" className="preview-back-button" onClick={() => setShowArchivedDefinitions(current => !current)}>
+                        {showArchivedDefinitions ? 'Hide archived templates' : `Show archived templates (${savedDefinitions.filter(header => header.status === 'archived').length})`}
+                    </button>
+                    {showArchivedDefinitions && <div className="fixture-grid">
+                        {savedDefinitions.filter(header => header.status === 'archived').map(header => <div key={header.definitionId} className="fixture-card">
+                            <div className="fixture-info">
+                                <span className="fixture-intent-badge">archived · rev {header.latestRevision}</span>
+                                <h3 className="fixture-title">{header.title}</h3>
+                            </div>
+                            <div className="fixture-card-actions">
+                                <button type="button" className="preview-fixture-btn" disabled={previewingSavedDefinitionId !== null} onClick={() => { void previewSavedDefinition(header); }}>
+                                    {previewingSavedDefinitionId === header.definitionId ? 'Loading…' : 'Preview'}
+                                </button>
+                                <button type="button" className="start-fixture-btn" disabled={updatingSavedDefinitionId !== null} onClick={() => { void setSavedDefinitionArchived(header, false); }}>
+                                    {updatingSavedDefinitionId === header.definitionId ? 'Updating…' : 'Restore'}
+                                </button>
+                            </div>
+                        </div>)}
+                    </div>}
                 </section>}
                 <div className="fixture-grid">
                     {AVAILABLE_FIXTURES.map(fixture => (
@@ -540,16 +668,22 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 <h3 className="fixture-title">{fixture.title}</h3>
                                 <p className="fixture-summary">{fixture.summary || `${fixture.blocks.length} blocks`}</p>
                             </div>
-                            <button
-                                type="button"
-                                className="start-fixture-btn"
-                                onClick={() => runner.startFixtureSession(fixture)}
-                            >
-                                Start Session →
-                            </button>
+                            <div className="fixture-card-actions">
+                                <button type="button" className="preview-fixture-btn" onClick={() => setPreviewDefinition({ definition: fixture })}>
+                                    Preview
+                                </button>
+                                <button
+                                    type="button"
+                                    className="start-fixture-btn"
+                                    onClick={() => { void runner.startFixtureSession(fixture); }}
+                                >
+                                    Start Session →
+                                </button>
+                            </div>
                         </div>
                     ))}
                 </div>
+                </>}
             </div>
         );
     }
@@ -596,6 +730,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         try {
             const title = customTemplateTitle.trim() || `${definition.title} (Custom)`;
             await runner.saveAsNewTemplate(title);
+            await refreshSavedDefinitions();
             setSaveTemplateSuccess(`Saved as template "${title}"!`);
             setTimeout(() => {
                 setShowSaveTemplateModal(false);

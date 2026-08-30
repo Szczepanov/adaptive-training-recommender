@@ -1,5 +1,6 @@
 export const HEALTH_ANOMALY_OUTCOME_EXPLANATIONS = [
     'illness_symptoms',
+    'allergy_or_hay_fever',
     'hard_training_recovery',
     'poor_sleep',
     'alcohol',

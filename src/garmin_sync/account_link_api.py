@@ -19,6 +19,7 @@ from .account_link import (
     GarminLinkConfigurationError,
     GarminLinkConflictError,
 )
+from .connection_status import reconcile_garmin_connection_status
 from .error_reporting import log_exception, sanitize_text
 
 logging.basicConfig(
@@ -100,7 +101,11 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
     def log_message(self, format: str, *args: Any) -> None:
         # BaseHTTPRequestHandler includes the path but never request bodies. Keep logs
         # intentionally free of Garmin email, password, MFA code, challenge ID and tokens.
-        logger.info("%s - %s", self.address_string(), format % args)
+        message = format % args
+        if hasattr(self, "path") and self.path and "?" in self.path:
+            sanitized_path = self.path.split("?", 1)[0]
+            message = message.replace(self.path, sanitized_path)
+        logger.info("%s - %s", self.address_string(), message)
 
     def _json_response(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -178,6 +183,9 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         self.request_id = secrets.token_hex(8)
         try:
+            if self.path == "/api/garmin/status":
+                self._handle_status()
+                return
             if self.path == "/api/garmin/login":
                 self._handle_login()
                 return
@@ -264,6 +272,13 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
                 error_code=report.code,
                 retryable=report.retryable,
             )
+
+    def _handle_status(self) -> None:
+        uid = _verified_uid(self.headers.get("Authorization"))
+        if not uid:
+            raise GarminConnectAuthenticationError("App authentication is required.")
+        result = reconcile_garmin_connection_status(uid)
+        self._json_response(HTTPStatus.OK, result)
 
     def _handle_login(self) -> None:
         client_key = self._client_key()

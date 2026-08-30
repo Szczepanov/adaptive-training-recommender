@@ -55,14 +55,28 @@ These implement the way forward in
 [`docs/analysis/2026-08-08-architecture-review.md`](../analysis/2026-08-08-architecture-review.md)
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.
 
-Phases 0–8 are **implemented**; Phase 9.0 and Phase 9 remain **In progress**.
+Phases 0–8 are **implemented**; Phase 9.0 and Phase 9 remain **In progress**. Phase 9.0's
+9.0.1 operational precondition closed 2026-08-27; the 9.0.7 evidence block's day 1 is
+2026-08-22.
 Among capability plans, Garmin per-activity telemetry (G) and Mobile UX/UI (UX) are
-**implemented**; Strength session logging (S) is **In progress (default-off)** with all
-numbered code delivered; Multidomain sessions (M) is **In progress** with M0–M5.3
+**implemented**; Strength session logging (S) is **In progress (logging & overload history active; fatigue costing default-off)** with all
+numbered code delivered and overload history surfaced in Detailed Data and Sessions; Multidomain sessions (M) is **In progress** with M0–M5.3
 complete; Performance outcome validation (OV) is **In progress** with the engineering
 stack through OV6.1 merged; Health anomaly alerting (HA) is **In progress** with HA0–HA5
 on `main` (HA5 shadow observability/replay merged via #171) and HA6.1–HA6.3 prospective
-outcome labels implemented via PR #174 (evidence-only, gated behind the shadow surface).
+outcome labels merged via PR #174 (evidence-only, gated behind the shadow surface).
+Physiological identity passport & measurement trust (PI) is **Approved, in progress**:
+PI0–PI7 are implemented (the pairing/lineage/passport/evaluator/pre-baseline gate engine
+layer, persistence, and the suspicious-night review UI); PI8's historical replay has been run
+against real history (68.3% `leaveOneOut` automatic USER coverage on 41 real nights, see
+[the evidence doc](../analysis/2026-08-28-identity-passport-replay-evidence.md)) with prospective
+label collection still not started; PI9's fusion migration is additive and
+its production activation decision is explicitly not made; PI10's architecture docs are
+written, its telemetry deferred to activation. Activity HR measurement fidelity (HRF) is
+**approved**: HRF0's real-account FIT provenance/decoder spike and HRF1's
+provider-neutral contracts, HRF2's MIT-licensed target-only FIT ingestion boundary, and
+HRF3's deterministic shadow-only trace diagnostics are complete; production gating remains
+separately evidence-gated after replay.
 
 For Multidomain delivery, the 2026-08-19 evidence-first cutline chain from
 [`2026-08-19-product-scope-cutline-review.md`](../analysis/2026-08-19-product-scope-cutline-review.md),
@@ -86,7 +100,7 @@ landed the fail-closed policy contract plus optional check-in context; #166/#165
 fixes put the anomaly-grade feature mapping, pure evaluator, explanations, persistence,
 episode continuity and composition boundary on `main`. HA-D/#171 landed HA5 shadow
 observability/replay on `main` on 2026-08-21. HA6.1–HA6.3 prospective outcome labels are
-implemented in PR #174 (evidence-only, behind the shadow surface); HA6.4's personal expected-response model additionally
+merged via PR #174 (evidence-only, behind the shadow surface); HA6.4's personal expected-response model additionally
 needs enough labelled personal history to evaluate without fitting sparse noise. User-visible
 wording remains gated by HA7 evidence, and tighten-only training integration remains a separate
 later release decision.
@@ -113,19 +127,25 @@ all-`Ready` table became unusable.
 | 7A | [Weekly allocation & safe role reservations](./phase-7-weekly-allocation-and-role-reservations.md) | **Implemented** | none | none | resolves PR #17's healthy/fresh cycling role-coverage failure without recalibrating recovery |
 | 7B | [Training intent, capacity & planning modes](./phase-7-training-intent-and-planning-modes.md) | **Implemented** | none | none | evidence-derived Evergreen dose packed into real capacity, while preserving structured and demand-derived event planning — not an original review finding |
 | 8 | [Externally-planned mode](./phase-8-externally-planned-mode.md) | **Implemented** | — | — | imports an externally-authored plan and narrows the engine to per-session adjudication plus weekly critique — not an original review finding |
-| 9.0 | [Shadow mode & decision journal](./phase-9-0-shadow-mode-and-decision-journal.md) | **In progress** | 9.0.1 (operational; 9.0.2-9.0.6 code is done) | — | runs the app against the athlete's existing AI loop for one block and records the disagreements — the first evidence in this repository from a real athlete rather than a synthetic corpus |
+| 9.0 | [Shadow mode & decision journal](./phase-9-0-shadow-mode-and-decision-journal.md) | **In progress** | 9.0.7 (run the block; 9.0.1-9.0.6 done, block day 1 is 2026-08-22) | — | runs the app against the athlete's existing AI loop for one block and records the disagreements — the first evidence in this repository from a real athlete rather than a synthetic corpus |
 | 9 | [Subjective baselines in readiness mode](./phase-9-subjective-baselines.md) | **In progress** | only 9.8 remains (9.1–9.7 done — 9.8 needs Phase 9.0's prospective evidence) | — | self-normalises subjective scores as a tighten-only drift term, measured behind a default-off selector before any ship decision — not an original review finding |
-| AJ 5–6 | [AI judge calibration controls & reference audit](./ai-judge-phase-5-6-calibration-and-reference-audit.md) | **In progress** | none | none | evaluates the offline LLM judge against frozen controls and compares compatible reference runs without changing production policy or the committed planner baseline |
+| AJ 5–6 | [AI judge calibration controls & reference audit](./ai-judge-phase-5-6-calibration-and-reference-audit.md) | **Implemented** | — | — | evaluates the offline LLM judge against frozen controls and compares compatible reference runs without changing production policy or the committed planner baseline |
 | G | [Garmin per-activity telemetry](./garmin-activity-telemetry-ingestion.md) | **Implemented** | none | none | ingests per-activity power/HR time-in-zone, normalized power and lap averages; the measured zone-credit candidate remains off after an evidence-backed no-ship decision |
-| S | [Strength session logging](./strength-session-logging.md) | **In progress (default-off)** | none; all numbered work is built | real logged-history evidence before enabling manual Strength load — [M1.7](./multidomain-session-authoring-execution-and-evidence.md) is the item that starts producing it | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
+| HRF | [Activity heart-rate measurement fidelity](./activity-heart-rate-measurement-fidelity.md) | **Approved** | HRF8 | HRF6 inventories current HR consumers and adds shadow adapters for vendor HR-derived summaries; HRF7 adds replayable observability and activity-detail explanations, while production activation still requires HRF8 replay/paired evidence and a separate activation decision | sensor/source-aware activity HR confidence, artifact diagnostics, per-use authority, and evidence-gated protection of HR-derived decisions |
+| S | [Strength session logging](./strength-session-logging.md) | **In progress (logging & history active; load costing default-off)** | none; all numbered work is built | real logged-history evidence before enabling manual Strength load — [M1.7](./multidomain-session-authoring-execution-and-evidence.md) is the item that starts producing it | closes the strength return path — per-set logging, self-calibrating 1RM, and measured strength load — not an original review finding |
 | M | [Multidomain session authoring, execution & evidence](./multidomain-session-authoring-execution-and-evidence.md) | **In progress** | M8.1 | M6 still requires an explicit real-use trigger; repeated-testing implementation has transferred to OV and is not an M blocker/task; M8.2 needs real history and only independently justified M6/OV evidence if required; M9 needs its own named triggers | source-neutral authored sessions, safe mixed-dose execution and occurrence-linked response; specialized field work remains usage-triggered, while repeated testing/progress is owned by OV |
+| CT | [Custom-template read integrity & lifecycle](./custom-template-read-integrity-and-lifecycle.md) | **Implemented** | — | — | repaired the persisted-definition read contract exposed by Preview and added revision-safe edit/duplicate/archive management |
 | UX | [Mobile UX/UI redesign](./mobile_ux_implementation_plan.md) | **Implemented** | none | none | mobile-first daily decision flow, single-page rapid check-in, state-first Home layout, unblocked recommendation, 44px+ touch targets, and mobile layout tokens |
 | OV | [Performance outcome validation & goal-progress loop](./performance-outcome-validation.md) | **In progress** | OV7 operational evidence; OV4.4/OV6.2 only when their triggers are met | OV7 follows the event/block timeline; OV4.4 needs close-spaced repeats; OV6.2 needs repeated report use; OV8 needs multiple prospective blocks | sole implementation/status owner of repeated testing/progress; engineering through OV6.1 is merged (#154/#155/#163/#164/#169), with production selection authority still explicitly excluded |
-| HA | [Health anomaly and possible-illness alerting](./health-anomaly-and-illness-risk-alerting.md) | **In progress** | HA7 evidence & prospective accumulation | HA6.4 needs enough labelled personal history; HA7 needs real replay/prospective evidence; HA8/HA9 remain release-gated | explainable physiological-anomaly evidence with structured confounders; HA0–HA5 on `main` (HA5 via #171), HA6.1–HA6.3 prospective labels implemented in PR #174 |
+| HA | [Health anomaly and possible-illness alerting](./health-anomaly-and-illness-risk-alerting.md) | **In progress** | HA7 evidence & prospective accumulation | HA6.4 needs enough labelled personal history; HA7 needs real replay/prospective evidence; HA8/HA9 remain release-gated | explainable physiological-anomaly evidence with structured confounders; HA0–HA5 on `main` (HA5 via #171), HA6.1–HA6.3 prospective labels merged via PR #174 |
 | SV | [Scientific validation & closed feedback loop](./scientific-validation-and-feedback-loop.md) | **In progress** | SV6 prospective calibration synthesis | SV6 needs multi-block real athlete history | evaluates signal marginal information value, window stability, collinearity, closed-loop telemetry, and counterfactual regret |
+| MS | [Multisource health & recovery ingestion](./multisource-health-and-recovery-ingestion.md) | **In progress** | MS17 | MS17 needs CASA Tier 2 / Restricted Scope Verification (pending in Google Cloud Console) and prospective evidence | source-aware observation contract, Google Health ingestion, Eight Sleep export probing, and evidence-gated fusion (ADR-0027); MS0–MS16, MS18, MS19 done, only MS17's production-activation decision remains |
+| PI | [Physiological identity passport & measurement trust](./physiological-identity-passport-and-measurement-trust.md) | **Approved** | PI7 prospective label accumulation (the review UI is already shipped; PI8's real-data replay export/run is done) | PI9's activation decision needs prospective label evidence that doesn't yet exist; PI10's telemetry additionally needs an analytics pipeline this application does not have | provider-neutral identity-attribution/measurement-trust layer (ADR-0028) between shared-source observations and baseline/fusion logic; PI0-PI8 implemented, PI9/PI10 partial |
+| ES | [Direct Eight Sleep recovery ingestion](./eight-sleep-direct-recovery-ingestion.md) | **In progress (default-off)** | ES9's daily backfill keeps accumulating automatically; `compare-eight-sleep-transports`/`audit-multisource --eight-sleep-transport eight_sleep_direct` run on demand | ES10 needs continued accumulation plus a separate activation review | owned direct read-only recovery connector for Eight Sleep (ADR-0030); ES8's real-account probe ran 2026-08-28; ES9 has a full year (314 nights) of real Garmin-vs-Eight-Sleep-Direct evidence, see [analysis](../analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md) |
 
-Rows G, S, M, UX, OV, HA, and SV are **not phases**. They are capability/surface plans whose work items are
-prefixed `G*`, `S*`, `M*`, `UX*`, `OV*`, `HA*`, `SV*` precisely so they cannot be mistaken for the `Phase 0`–`9`
+
+Rows G, HRF, S, M, UX, OV, HA, SV, MS, PI, and ES are **not phases**. They are capability/surface plans whose work items are
+prefixed `G*`, `HRF*`, `S*`, `M*`, `CT*`, `UX*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*`, `ES*` precisely so they cannot be mistaken for the `Phase 0`–`9`
 sequence; the `#` column carries that prefix rather than a phase number. For capability plans, an item
 with satisfied dependencies but an unmet usage trigger is **not** listed as startable. A transferred
 historical item (former M7) is likewise not listed under its old plan; only the canonical owner tracks it.
@@ -209,6 +229,25 @@ this table exists so none of them has to be rediscovered by reading six document
 | **D-MOBS** | Metrics retain unit, source, protocol, validity and comparison-series provenance | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Prevents uncalibrated comparisons across disparate testing conditions |
 | **D-MRESP** | `DailySubjectiveCheckin.tissueResponses` remains the sole tissue authority; response records store occurrence linkage | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Preserves single source of truth for tissue readiness |
 | **D-MPOLICY** | Step-derived profiles, response-based progression, automatic option selection and domain exposure remain default-off evidence candidates | [ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md) | Adheres to repository evidence discipline before promoting candidates to production |
+| **D-MS-ORIGIN** | Measurement provider and transport are separate provenance dimensions | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Google Health transport does not convert Garmin or Eight Sleep data into a "Google" measurement |
+| **D-MS-OBS** | Multisource recovery enters through a day-source bundled observation layer | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Keeps daily recovery snapshot decoupled from vendor-named fields while optimizing 28-day baseline reads |
+| **D-MS-SEM** | Metric identity includes measurement semantics, not only physical units | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Equal units do not establish equal measurement processes or physiological equivalence |
+| **D-MS-BASE** | Longitudinal baselines are source-specific by default with explicit maturity states | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Prevents device/sensor changes from inducing baseline jumps or false anomaly alarms during warm-up |
+| **D-MS-NOAVG** | Raw cross-device physiological values are not averaged | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Cross-device values are normalized relative to their own baselines before comparison |
+| **D-MS-DIM** | Multiple sensors must not double-count one physiological dimension | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Recovery policy reasons in physiological dimensions, not sensor count |
+| **D-MS-RAW** | Recovery-critical Google Health ingestion uses provenance-preserving raw data | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Third-party reconciliation collapses disagreement before engine can evaluate evidence |
+| **D-MS-GARMIN** | Direct Garmin remains a specialist source for training/recovery and activities | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Preserves deep Garmin sports intelligence that is not exported to Health Connect |
+| **D-MS-STEPS** | Step count provenance remains locked to direct Garmin ($D-1$ completed calendar day) | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Prevents aggregated third-party step counts from corrupting fatigue ambient step deductions |
+| **D-MS-GH** | Google Health is an optional read-only transport | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | No write scopes required; morning recommendation never hard-depends on Google Health |
+| **D-MS-8S** | Eight Sleep through Google Health is capability-probed, not assumed | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Empirical real-account probe must observe Eight Sleep export before building dependent architecture |
+| **D-MS-FAIL** | Secondary-source failure degrades safely to direct Garmin + subjective | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Secondary source outages emit degradation telemetry without blocking recommendations |
+| **D-MS-EVID** | Observation authority precedes recommendation authority | [ADR-0027](../adr/0027-source-aware-multisource-health-observations.md) | Promoting a source requires shadow observation, baseline stability, and simulation evidence |
+| **D-8S-DIRECT** | Prefer direct read-only ingestion as `provider=eight_sleep`, `transport=eight_sleep_direct` | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Google Health route proved unreliable for authoritative Eight Sleep acquisition |
+| **D-8S-READONLY** | Auth, identity and recovery trends only; no bed-control writes | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Keeps the connector observation-only, matching D-8S-NO-AUTHORITY's scope boundary |
+| **D-8S-OWN** | Own the minimal private protocol instead of adding reverse-engineering dependencies | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Isolates drift behind a small tested connector without unmaintained upstream library risk |
+| **D-8S-SECRETS** | Copy no mobile/community client credentials; require runtime configuration | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Prevents committing reverse-engineered public credentials into source control |
+| **D-8S-FAIL-CLOSED** | Auth/HTTP/rate-limit/schema errors fail closed and preserve prior observations | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Outages must never masquerade as authoritative empty data to observation reconcilers |
+| **D-8S-NO-AUTHORITY** | Ingestion is observation-only; no recommendation/fusion change without evidence | [ADR-0030](../adr/0030-eight-sleep-direct-private-api-transport.md) | Maintains multi-source baseline maturity and prospective shadow discipline under ADR-0027 |
 
 Five of the **accepted** decisions — **D-KWD**, **D-GATE**, **D-LIFE**, **D-RECOV**, and the
 withdrawal inside **D-FUSE** — correct errors in earlier drafts and came out of PR #5 review

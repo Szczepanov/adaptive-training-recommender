@@ -4,7 +4,9 @@ import type { DataState } from '../engine/dataState';
 import {
     ActiveExternalPlanService,
     externalPlanContextForDate,
+    externalPlanContextsForDate,
     placedSessionForDate,
+    placedSessionsForDate,
     planEndDate,
     type ActiveExternalPlan,
 } from './activeExternalPlanService';
@@ -130,7 +132,24 @@ describe('ActiveExternalPlanService', () => {
     });
 });
 
-describe('placedSessionForDate', () => {
+describe('placedSessionsForDate & placedSessionForDate', () => {
+    const doubleSessionPlan = plan({
+        sessions: [
+            {
+                id: 'w1-easy-ride', title: 'Easy Ride', priority: 'supporting',
+                placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+                gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 60, environment: 'either', equipment: [] },
+                prescription: { summary: 'Easy aerobic spin.' },
+            },
+            {
+                id: 'w1-strength', title: 'Upper Strength', priority: 'key',
+                placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+                gating: { modality: 'strength', intensity: 'moderate', durationMin: 30, durationMax: 40, environment: 'indoor', equipment: ['free_weights'] },
+                prescription: { summary: 'Upper body maintenance.' },
+            },
+        ],
+    });
+
     const active = (assignments: Parameters<typeof placementDoc>[0] = []): ActiveExternalPlan => ({
         header: header(),
         plan: plan(),
@@ -140,27 +159,110 @@ describe('placedSessionForDate', () => {
         ],
     });
 
+    const activeDouble: ActiveExternalPlan = {
+        header: header(),
+        plan: doubleSessionPlan,
+        placement: null,
+        placed: [
+            { session: doubleSessionPlan.sessions[0], date: '2026-08-20', status: 'planned', moved: false },
+            { session: doubleSessionPlan.sessions[1], date: '2026-08-20', status: 'planned', moved: false },
+        ],
+    };
+
     it('returns a session still to be done', () => {
         expect(placedSessionForDate(active(), '2026-08-18')?.session.id).toBe('w1-threshold');
+    });
+
+    it('returns all placed sessions on a double training day', () => {
+        const sessions = placedSessionsForDate(activeDouble, '2026-08-20');
+        expect(sessions.length).toBe(2);
+        expect(sessions.map(s => s.session.id)).toEqual(['w1-easy-ride', 'w1-strength']);
+    });
+
+    it('prioritizes the highest-priority session (key over supporting) for placedSessionForDate', () => {
+        expect(placedSessionForDate(activeDouble, '2026-08-20')?.session.id).toBe('w1-strength');
     });
 
     it('returns nothing for a session already completed, dropped or superseded', () => {
         for (const status of ['completed', 'dropped', 'superseded'] as const) {
             expect(placedSessionForDate(active([{ sessionId: 'w1-threshold', date: '2026-08-18', status }]), '2026-08-18'), status).toBeNull();
+            expect(placedSessionsForDate(active([{ sessionId: 'w1-threshold', date: '2026-08-18', status }]), '2026-08-18')).toEqual([]);
         }
     });
 
     it('returns nothing for a day with nothing placed', () => {
         expect(placedSessionForDate(active(), '2026-08-19')).toBeNull();
+        expect(placedSessionsForDate(active(), '2026-08-19')).toEqual([]);
     });
 });
 
-describe('externalPlanContextForDate', () => {
+describe('externalPlanContextForDate and externalPlanContextsForDate', () => {
+    const doubleSessionPlan = plan({
+        sessions: [
+            {
+                id: 'w1-easy-ride', title: 'Easy Ride', priority: 'supporting',
+                placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+                gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 60, environment: 'either', equipment: [] },
+                prescription: { summary: 'Easy aerobic spin.' },
+            },
+            {
+                id: 'w1-strength', title: 'Upper Strength', priority: 'key',
+                placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+                gating: { modality: 'strength', intensity: 'moderate', durationMin: 30, durationMax: 40, environment: 'indoor', equipment: ['free_weights'] },
+                prescription: { summary: 'Upper body maintenance.' },
+            },
+        ],
+    });
+
     const active: ActiveExternalPlan = {
         header: header({ contentHash: 'stored-hash' }),
         plan: plan(),
         placement: null,
         placed: [{ session: plan().sessions[0], date: '2026-08-18', status: 'planned', moved: false }],
+    };
+
+    const activeDouble: ActiveExternalPlan = {
+        header: header({ contentHash: 'stored-hash' }),
+        plan: doubleSessionPlan,
+        placement: null,
+        placed: [
+            { session: doubleSessionPlan.sessions[0], date: '2026-08-20', status: 'planned', moved: false },
+            { session: doubleSessionPlan.sessions[1], date: '2026-08-20', status: 'planned', moved: false },
+        ],
+    };
+
+    const tripleSessionPlan = plan({
+        sessions: [
+            {
+                id: 'w1-easy-ride', title: 'Easy Ride', priority: 'supporting',
+                placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+                gating: { modality: 'cycling', intensity: 'easy', durationMin: 45, durationMax: 60, environment: 'either', equipment: [] },
+                prescription: { summary: 'Easy aerobic spin.' },
+            },
+            {
+                id: 'w1-strength', title: 'Upper Strength', priority: 'key',
+                placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+                gating: { modality: 'strength', intensity: 'moderate', durationMin: 30, durationMax: 40, environment: 'indoor', equipment: ['free_weights'] },
+                prescription: { summary: 'Upper body maintenance.' },
+            },
+            {
+                id: 'w1-mobility', title: 'Mobility Routine', priority: 'optional',
+                placement: { week: 1, preferredDay: 'thursday', flexibility: 'preferred', ifMissed: 'drop' },
+                gating: { modality: 'mobility', intensity: 'recovery', durationMin: 15, durationMax: 20, environment: 'indoor', equipment: [] },
+                prescription: { summary: 'Evening mobility.' },
+            },
+        ],
+    });
+
+    const activeTriple: ActiveExternalPlan = {
+        header: header({ contentHash: 'stored-hash' }),
+        plan: tripleSessionPlan,
+        placement: null,
+        placed: [
+            { session: tripleSessionPlan.sessions[0], date: '2026-08-20', status: 'planned', moved: false },
+            { session: tripleSessionPlan.sessions[1], date: '2026-08-20', status: 'planned', moved: false },
+            { session: tripleSessionPlan.sessions[2], date: '2026-08-20', status: 'planned', moved: false },
+        ],
     };
 
     it('carries the stored hash, not a recomputed one, so the audit matches the import', () => {
@@ -170,7 +272,29 @@ describe('externalPlanContextForDate', () => {
         expect(externalPlanContextForDate(active, '2026-08-18')?.session.id).toBe('w1-threshold');
     });
 
+    it('returns all contexts for double training days in externalPlanContextsForDate', () => {
+        const contexts = externalPlanContextsForDate(activeDouble, '2026-08-20');
+        expect(contexts.length).toBe(2);
+        expect(contexts[0].session.id).toBe('w1-easy-ride');
+        expect(contexts[1].session.id).toBe('w1-strength');
+        expect(contexts.every(c => c.contentHash === 'stored-hash')).toBe(true);
+    });
+
+    it('returns all contexts for triple training days in externalPlanContextsForDate and prioritizes key in placedSessionForDate', () => {
+        const sessions = placedSessionsForDate(activeTriple, '2026-08-20');
+        expect(sessions.length).toBe(3);
+        expect(sessions.map(s => s.session.id)).toEqual(['w1-easy-ride', 'w1-strength', 'w1-mobility']);
+
+        // Key priority takes precedence over supporting and optional
+        expect(placedSessionForDate(activeTriple, '2026-08-20')?.session.id).toBe('w1-strength');
+
+        const contexts = externalPlanContextsForDate(activeTriple, '2026-08-20');
+        expect(contexts.length).toBe(3);
+        expect(contexts.map(c => c.session.id)).toEqual(['w1-easy-ride', 'w1-strength', 'w1-mobility']);
+    });
+
     it('is null on a day the plan places nothing, so the ranked path runs', () => {
         expect(externalPlanContextForDate(active, '2026-08-19')).toBeNull();
+        expect(externalPlanContextsForDate(active, '2026-08-19')).toEqual([]);
     });
 });

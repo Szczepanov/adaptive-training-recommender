@@ -65,6 +65,25 @@ function report(context: Record<string, string | number | boolean | null>): Bloc
                 sessionIds: ['execution-b', 'execution-a'],
             },
         },
+        feedbackLoopEvidence: {
+            recordCount: 0,
+            decisionActionCounts: {
+                accepted: 0, scaled_down: 0, scaled_up: 0, substituted: 0, rejected_rest: 0, rejected_train_harder: 0,
+            },
+            modificationRatePct: null,
+            regretClassCounts: {
+                optimal_choice: 0, overreaching_crash: 0, unnecessary_forfeiture: 0, injury_exacerbation: 0, inconclusive: 0,
+            },
+            regretRatePct: null,
+            averageUtilityScore: null,
+            averageClarityScore: null,
+            coachingHelpfulnessCounts: {
+                very_helpful: 0, helpful: 0, neutral: 0, unhelpful: 0, counterproductive: 0,
+            },
+            averageHoldCompliancePct: null,
+            averageDurationDeltaPct: null,
+            sourceIds: { feedbackRecordIds: [] },
+        },
         verdict: 'on_track',
         reasons: ['meaningful_primary_improvement', 'process_adequate'],
         policySegments: [{
@@ -77,6 +96,7 @@ function report(context: Record<string, string | number | boolean | null>): Bloc
             sessionIds: ['execution-a', 'execution-b'],
             recommendationIds: ['2026-08-01@r2', '2026-08-02@r1'],
             ecologicalOutcomeIds: ['race-1'],
+            feedbackRecordIds: [],
         },
     };
 }

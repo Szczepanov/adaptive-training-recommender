@@ -110,15 +110,19 @@ describe('buildPlanningCandidateIndex (Phase 5.2)', () => {
         expect(index.size).toBe(0);
     });
 
-    it('keeps the higher engineTemplatePriority workout when two workouts implement the same template', () => {
+    it('keeps the lower engineTemplatePriority workout when two workouts implement the same template', () => {
+        // Lower number wins, matching prescription.ts's `workoutForTemplate` -- the
+        // pre-existing resolver for this same field. Two independent answers to "which
+        // workout represents this template" must agree once more than one workout links
+        // to the same template id.
         const low = testWorkout({ id: 'low_priority', engineTemplatePriority: 1 });
         const high = testWorkout({ id: 'high_priority', engineTemplatePriority: 5 });
         const index = buildPlanningCandidateIndex([low, high], [testTemplate()]);
-        expect(index.get('tmpl_1')?.workoutId).toBe('high_priority');
+        expect(index.get('tmpl_1')?.workoutId).toBe('low_priority');
 
         // Order independence -- same result regardless of catalog array order.
         const indexReversed = buildPlanningCandidateIndex([high, low], [testTemplate()]);
-        expect(indexReversed.get('tmpl_1')?.workoutId).toBe('high_priority');
+        expect(indexReversed.get('tmpl_1')?.workoutId).toBe('low_priority');
     });
 
     it('the real, module-level PLANNING_CANDIDATE_INDEX is built from the actual catalog and template roster', () => {

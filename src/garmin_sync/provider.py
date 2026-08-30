@@ -11,6 +11,7 @@ from .canonical import (
     CanonicalDailyMetrics,
     CanonicalGearItem,
     CanonicalPerformanceTargets,
+    ObservationBatch,
 )
 
 
@@ -21,6 +22,7 @@ class ProviderCapabilities:
     hrv: bool = True
     activities: bool = True
     activity_details: bool = False
+    activity_hr_fidelity: bool = False
     body_composition: bool = False
     race_predictions: bool = False
     training_readiness: bool = False
@@ -90,3 +92,36 @@ class WearableProvider(Protocol):
         never serves stale cached data from an earlier operation -- providers that
         don't cache anything can no-op."""
         ...
+
+
+class RecoveryObservationProvider(Protocol):
+    """Capability-specific provider boundary for source-aware recovery observations (MS3/ADR-0027).
+
+    Google Health, Garmin, Eight Sleep, or any future source implements this protocol to
+    produce standardized ObservationBatch records without needing to provide activities or profile targets.
+    """
+
+    def fetch_observations(
+        self, logical_date_iso: str, previous_date_iso: str
+    ) -> ObservationBatch: ...
+
+    def clear_cache(self) -> None: ...
+
+
+class ActivityProvider(Protocol):
+    """Capability-specific provider boundary for workouts and recorded activities."""
+
+    def fetch_activities(
+        self,
+        start_date_iso: str,
+        end_date_iso: str,
+        zone4_floor: int | None = None,
+    ) -> ProviderActivitiesResult: ...
+
+
+class ProfileProvider(Protocol):
+    """Capability-specific provider boundary for user performance targets and gear."""
+
+    def fetch_performance_targets(self) -> ProviderPerformanceTargetsResult: ...
+
+    def fetch_gear(self) -> ProviderGearResult: ...

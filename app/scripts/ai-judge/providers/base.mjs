@@ -12,7 +12,14 @@ export function describeStructuredOutputRequirements(schema) {
   const rootRequirement = required.length > 0
     ? `Root JSON MUST include all required fields: ${required.map((field) => `"${field}"`).join(', ')}.`
     : 'Root JSON must match the supplied schema exactly.';
-  return `Return ONLY valid JSON matching the supplied schema. ${rootRequirement} Do not add prose outside the JSON object.`;
+
+  let caseRequirement = '';
+  if (schema?.properties?.caseScores?.items?.properties?.caseId?.enum && Array.isArray(schema.properties.caseScores.items.properties.caseId.enum)) {
+    const caseIds = schema.properties.caseScores.items.properties.caseId.enum;
+    caseRequirement = ` The "caseScores" array MUST contain exactly ${caseIds.length} item(s) corresponding to each case in order: [${caseIds.join(', ')}] with NO duplicates or omissions.`;
+  }
+
+  return `Return ONLY valid JSON matching the supplied schema. ${rootRequirement}${caseRequirement} Do not add prose outside the JSON object.`;
 }
 
 export async function withProgress(request) {

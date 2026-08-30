@@ -6,6 +6,7 @@ import { ModalitySections } from './ModalitySections';
 import { StyleSections } from './StyleSections';
 import { PerformanceSections } from './PerformanceSections';
 import { GarminConnectionSection } from './GarminConnectionSection';
+import { GoogleHealthConnectionSection } from './GoogleHealthConnectionSection';
 import { HealthRunYogaPresetSection } from './HealthRunYogaPresetSection';
 import type { Screen } from '../../types/navigation';
 import '../Preferences.css';
@@ -75,7 +76,9 @@ export function Preferences({ userId }: PreferencesProps) {
       )}
 
       <div className="preferences-content">
-        <GarminConnectionSection />
+        <GarminConnectionSection userId={userId} />
+
+        <GoogleHealthConnectionSection userId={userId} />
 
         <HealthRunYogaPresetSection
           userId={userId}

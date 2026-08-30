@@ -1,16 +1,22 @@
-from garmin_sync.garmin_provider import canonicalize_activities, canonicalize_from_raw
+from garmin_sync.garmin_provider import (
+    RawGarminTelemetry,
+    canonicalize_activities,
+    canonicalize_from_raw,
+)
 
 
 def _daily_metrics(*, readiness: list[dict[str, object]] | None, stats: dict[str, object]):
     return canonicalize_from_raw(
-        stats_today=stats,
-        stats_fallback=None,
-        sleep_today={},
-        sleep_fallback=None,
-        hrv_today={},
+        telemetry=RawGarminTelemetry(
+            stats_today=stats,
+            stats_fallback=None,
+            sleep_today={},
+            sleep_fallback=None,
+            hrv_today={},
+            training_readiness_today=readiness,
+        ),
         target_date_iso="2026-08-23",
         yesterday_iso="2026-08-22",
-        training_readiness_today=readiness,
     )
 
 

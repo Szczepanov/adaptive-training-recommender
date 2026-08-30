@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import json
 import logging
 import re
@@ -91,7 +89,6 @@ def _sanitize_context_value(key: str, value: Any) -> Any:
         return sanitize_context(value)
     if isinstance(value, (list, tuple, set)):
         return [_sanitize_context_value("", item) for item in value]
-    return sanitize_text(value)
     return sanitize_text(value)
 
 

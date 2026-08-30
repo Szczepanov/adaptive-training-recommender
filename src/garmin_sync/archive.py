@@ -42,6 +42,25 @@ def _object_dir(prefix: str, endpoint: str, logical_date: str) -> str:
     return f"{prefix}/{endpoint}/{year}/{month}/{logical_date}"
 
 
+def compute_observation_id(
+    user_id: str,
+    provider: str,
+    transport: str,
+    metric: str,
+    source_record_id: str | None = None,
+    observed_start: str | None = None,
+    observed_end: str | None = None,
+    payload_content: Any = None,
+) -> str:
+    """Compute deterministic observation ID per ADR-0027 / MS2."""
+    if source_record_id:
+        key = f"{user_id}:{provider}:{transport}:{metric}:{source_record_id}"
+    else:
+        payload_hash = _payload_sha256(payload_content) if payload_content is not None else ""
+        key = f"{user_id}:{provider}:{transport}:{metric}:{observed_start or ''}:{observed_end or ''}:{payload_hash}"
+    return f"sha256:{hashlib.sha256(key.encode('utf-8')).hexdigest()}"
+
+
 @dataclasses.dataclass(frozen=True)
 class ArchiveRecord:
     endpoint: str
@@ -51,11 +70,26 @@ class ArchiveRecord:
     garminconnect_version: str | None = None
 
 
+@dataclasses.dataclass(frozen=True)
+class HealthArchiveRecord:
+    user_id: str
+    provider: str
+    transport: str
+    logical_date: str
+    payload: Any
+    revision: int = 1
+    normalizer_version: int = 1
+
+
 class RawArchiveStore(Protocol):
     def archive(self, record: ArchiveRecord) -> str | None:
         """Archive a raw payload for (endpoint, logical_date). Returns the object path,
         or None if skipped because an identical payload is already archived for that
         date (content-addressed idempotency -- repeated same-day syncs don't duplicate)."""
+        ...
+
+    def archive_health(self, record: HealthArchiveRecord) -> str | None:
+        """Archive a raw health observation payload for (provider, transport, logical_date)."""
         ...
 
     def load(self, endpoint: str, logical_date: str) -> Any | None:
@@ -73,6 +107,9 @@ class NullArchiveStore:
     """No-op store used when archiving is disabled."""
 
     def archive(self, record: ArchiveRecord) -> None:
+        return None
+
+    def archive_health(self, record: HealthArchiveRecord) -> None:
         return None
 
     def load(self, endpoint: str, logical_date: str) -> None:
@@ -127,6 +164,57 @@ class LocalRawArchiveStore:
         }
         meta_path.write_text(json.dumps(metadata, indent=2))
         logger.info(f"Archived {record.endpoint}/{record.logical_date} -> {object_path}")
+        return str(object_path)
+
+    def archive_health(self, record: HealthArchiveRecord) -> str | None:
+        _validate_archive_identifier(record.user_id, "user ID")
+        # endpoint must be a single safe path segment (_object_dir validates it as one);
+        # "health/{user_id}/" is a directory level, not part of the segment -- so it goes on
+        # the instance prefix, matching how _object_dir/_validate_archive_identifier are used
+        # everywhere else. record.user_id MUST be part of the path, not just validated: the
+        # production provider/transport values ("google_health"/"bundle") are the same for
+        # every user, so without this, two different linked users archiving on the same date
+        # at the same revision would collide at the identical object path -- one user's raw
+        # payload would silently overwrite (and be readable as) another's. See
+        # docs/plans/2026-08-27-real-google-health-ingestion.md.
+        endpoint = f"{record.provider}_{record.transport}"
+        log_label = f"health/{record.user_id}/{endpoint}"
+        target_dir = self.base_dir / _object_dir(
+            f"{self.prefix}/health/{record.user_id}", endpoint, record.logical_date
+        )
+        payload_hash = _payload_sha256(record.payload)
+
+        if target_dir.exists():
+            for existing in target_dir.glob("*.meta.json"):
+                try:
+                    meta = json.loads(existing.read_text())
+                    if meta.get("payloadSha256") == payload_hash:
+                        logger.debug(
+                            f"Skipping health archive for {log_label}/{record.logical_date}: identical payload already archived."
+                        )
+                        return None
+                except Exception:
+                    continue
+
+        target_dir.mkdir(parents=True, exist_ok=True)
+        object_path = target_dir / f"rev_{record.revision}.json.gz"
+        meta_path = target_dir / f"rev_{record.revision}.meta.json"
+
+        with gzip.open(object_path, "wt", encoding="utf-8") as f:
+            json.dump(record.payload, f, default=str)
+
+        metadata = {
+            "userId": record.user_id,
+            "provider": record.provider,
+            "transport": record.transport,
+            "logicalDate": record.logical_date,
+            "revision": record.revision,
+            "normalizerVersion": record.normalizer_version,
+            "collectedAt": datetime.now(timezone.utc).isoformat(),
+            "payloadSha256": payload_hash,
+        }
+        meta_path.write_text(json.dumps(metadata, indent=2))
+        logger.info(f"Archived health {log_label}/{record.logical_date} -> {object_path}")
         return str(object_path)
 
     def load(self, endpoint: str, logical_date: str) -> Any | None:
@@ -205,6 +293,62 @@ class GcsRawArchiveStore:
             return object_path
         except Exception as e:
             logger.error(f"Failed to archive {record.endpoint}/{record.logical_date} to GCS: {e}")
+            return None
+
+    def archive_health(self, record: HealthArchiveRecord) -> str | None:
+        try:
+            _validate_archive_identifier(record.user_id, "user ID")
+            client = self._client()
+            bucket = client.bucket(self.bucket_name)
+            # endpoint must be a single safe path segment (_object_dir validates it as one);
+            # "health/{user_id}/" is a directory level, not part of the segment -- so it goes
+            # on the prefix. record.user_id MUST be part of the path (not just validated):
+            # production provider/transport values are the same for every user, so without
+            # this, two linked users archiving on the same date/revision would collide at the
+            # identical GCS object -- one user's raw payload silently overwriting (and
+            # becoming readable as) another's. See
+            # docs/plans/2026-08-27-real-google-health-ingestion.md.
+            endpoint = f"{record.provider}_{record.transport}"
+            log_label = f"health/{record.user_id}/{endpoint}"
+            object_dir = _object_dir(
+                f"{self.prefix}/health/{record.user_id}", endpoint, record.logical_date
+            )
+            payload_hash = _payload_sha256(record.payload)
+
+            for existing_blob in client.list_blobs(bucket, prefix=f"{object_dir}/"):
+                if (
+                    existing_blob.metadata
+                    and existing_blob.metadata.get("payloadSha256") == payload_hash
+                ):
+                    logger.debug(
+                        f"Skipping GCS health archive for {log_label}/{record.logical_date}: identical payload already archived."
+                    )
+                    return None
+
+            object_path = f"{object_dir}/rev_{record.revision}.json.gz"
+            blob = bucket.blob(object_path)
+            blob.metadata = {
+                "userId": record.user_id,
+                "provider": record.provider,
+                "transport": record.transport,
+                "logicalDate": record.logical_date,
+                "revision": str(record.revision),
+                "normalizerVersion": str(record.normalizer_version),
+                "collectedAt": datetime.now(timezone.utc).isoformat(),
+                "payloadSha256": payload_hash,
+            }
+            body = json.dumps(record.payload, default=str).encode("utf-8")
+            compressed = gzip.compress(body)
+            blob.content_encoding = "gzip"
+            blob.upload_from_string(compressed, content_type="application/json")
+            logger.info(
+                f"Archived health {log_label}/{record.logical_date} -> gs://{self.bucket_name}/{object_path}"
+            )
+            return object_path
+        except Exception as e:
+            logger.error(
+                f"Failed to archive health {record.user_id}/{record.provider}_{record.transport}/{record.logical_date} to GCS: {e}"
+            )
             return None
 
     def load(self, endpoint: str, logical_date: str) -> Any | None:

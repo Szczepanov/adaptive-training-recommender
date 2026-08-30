@@ -146,7 +146,10 @@ app/src/engine/
   shadowLog.ts         # Phase 9.0: pure day-row joiner + CSV renderer for export
   subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline
   subjectiveDriftAudit.ts # Phase 9.7: compact SubjectiveDriftAudit shape + replay validation
+  decisionEvidence.ts  # Pure evidence ranking, DoD deltas, boundary classification, confidence tiers
   simulation/          # Scenario harness: runAllScenarios, decision-quality metrics, drift comparisons
+  testing/             # Adversarial PRNG generators & property testing runner
+  tests/safety/        # Adversarial domain scenarios, safety invariants, wellness language audit
 
 app/src/sessions/
   models.ts            # Source-neutral session definitions, prescriptions, occurrences, executions

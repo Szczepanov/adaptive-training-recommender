@@ -271,4 +271,36 @@ describe('evidence hierarchy (Phase 5.5)', () => {
         expect(events).toHaveLength(1);
         expect(events[0].evidenceTier).toBe('measuredEffort'); // unchanged from the Garmin-only classification
     });
+
+    it('applies activity override to correct Garmin misclassification (e.g. treadmill run logged as cardio)', () => {
+        const misclassified = activity({
+            activityId: 'garmin-cardio-1',
+            type: 'cardio',
+            durationMin: 50,
+            intensityTag: 'moderate',
+        });
+        const overrides = {
+            'garmin-cardio-1': {
+                activityId: 'garmin-cardio-1',
+                userId: 'athlete',
+                date: '2026-08-06',
+                originalType: 'cardio',
+                originalIntensityTag: 'moderate',
+                overriddenModality: 'Running' as const,
+                overriddenIntensity: 'hard' as const,
+                rpe: 8,
+                stimulusFocus: 'vo2MaxPower' as const,
+                notes: 'Actually 5x1000m intervals on treadmill',
+                createdAt: '2026-08-06T10:00:00Z',
+                updatedAt: '2026-08-06T10:00:00Z',
+            },
+        };
+        const events = reconcileCompletedTrainingEvents([misclassified], [], { activityOverrides: overrides });
+        expect(events).toHaveLength(1);
+        expect(events[0].modality).toBe('Running');
+        expect(events[0].intensity).toBe('hard');
+        expect(events[0].sources).toContain('manual');
+        expect(events[0].estimatedStimulus.vo2MaxPower).toBeGreaterThanOrEqual(0.8);
+        expect(events[0].athleteFeedback.notes).toBe('Actually 5x1000m intervals on treadmill');
+    });
 });

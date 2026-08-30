@@ -1,3 +1,4 @@
+from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,6 +12,12 @@ from garmin_sync.canonical import (
     CanonicalZoneBucket,
 )
 from garmin_sync.config import Settings
+from garmin_sync.fit_activity import (
+    FitActivityEvidence,
+    FitDeviceInventoryEntry,
+    FitRecordSample,
+    FitTimerEvent,
+)
 from garmin_sync.provider import (
     ProviderActivitiesResult,
     ProviderActivityDetailResult,
@@ -120,6 +127,39 @@ class DetailFakeProvider(FakeTestProvider):
             normalized_power_watts=230.0,
         )
         return ProviderActivityDetailResult(canonical=detail, raw_payloads={})
+
+
+class HrFidelityFakeProvider(DetailFakeProvider):
+    capabilities = ProviderCapabilities(
+        daily_summary=True,
+        sleep=True,
+        hrv=True,
+        activities=True,
+        activity_details=True,
+        activity_hr_fidelity=True,
+    )
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.hr_fidelity_calls: list[str] = []
+
+    def fetch_activity_hr_fidelity(self, activity_id: str) -> FitActivityEvidence:
+        self.hr_fidelity_calls.append(activity_id)
+        start = datetime(2026, 8, 6, 8, 0)
+        return FitActivityEvidence(
+            devices=(FitDeviceInventoryEntry(1, None, None, "heart_rate", None),),
+            records=tuple(
+                FitRecordSample(start + timedelta(seconds=second), 145.0, None, 200.0)
+                for second in range(3)
+            ),
+            average_heart_rate_bpm=145.0,
+            lap_average_heart_rate_bpm=(),
+            time_in_hr_zone_seconds=(),
+            timer_events=(
+                FitTimerEvent(start, "start"),
+                FitTimerEvent(start + timedelta(seconds=2), "stop"),
+            ),
+        )
 
 
 def _detail_service(provider: DetailFakeProvider, enabled: bool = True):
@@ -299,6 +339,70 @@ def test_backfill_uses_bulk_snapshot_lookup_without_per_date_reads():
     assert repo.get_historical_snapshots.call_count == 2
     repo.get_snapshot.assert_not_called()
     assert len(provider.fetch_daily_metrics_calls) == 3
+
+
+def test_backfill_paces_between_live_fetches_but_not_after_the_last_one(monkeypatch) -> None:
+    import garmin_sync.service as service_module
+
+    provider = DetailFakeProvider()
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_backfill_delay_min_seconds=1.0,
+        garmin_backfill_delay_max_seconds=2.0,
+    )
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {}
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(service_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    assert service.backfill(start_date_str="2026-08-06", end_date_str="2026-08-08", force=True)
+
+    assert len(provider.fetch_daily_metrics_calls) == 3
+    # 3 live fetches -> pace twice (between 1st/2nd and 2nd/3rd), never after the last date.
+    assert len(sleep_calls) == 2
+    assert all(1.0 <= s <= 2.0 for s in sleep_calls)
+
+
+def test_backfill_does_not_pace_dates_skipped_via_existing_snapshot(monkeypatch) -> None:
+    """Skipped (already-synced) dates never call Garmin -- pacing them would only slow
+    down the routine, mostly-already-synced case this exists to protect."""
+    import garmin_sync.service as service_module
+
+    provider = DetailFakeProvider()
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_backfill_delay_min_seconds=1.0,
+        garmin_backfill_delay_max_seconds=2.0,
+    )
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {
+        "2026-08-06": {"raw": {"sleepScore": 80}},
+        "2026-08-07": {"raw": {"sleepScore": 81}},
+        "2026-08-08": {"raw": {"sleepScore": 82}},
+    }
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+
+    sleep_calls: list[float] = []
+    monkeypatch.setattr(service_module.time, "sleep", lambda seconds: sleep_calls.append(seconds))
+
+    assert service.backfill(start_date_str="2026-08-06", end_date_str="2026-08-08", force=False)
+
+    assert provider.fetch_daily_metrics_calls == []
+    assert sleep_calls == []
+
+
+def test_backfill_delay_disabled_by_default_in_directly_constructed_settings() -> None:
+    """Settings() constructed directly (as every other test in this file does) defaults
+    to no backfill pacing -- only _load_base_settings (the real CLI path) turns it on by
+    default. This guards that default so test runs stay fast without every test needing
+    to know about the new fields."""
+    settings = Settings(app_user_id="test_uid_789")
+    assert settings.garmin_backfill_delay_min_seconds == 0.0
+    assert settings.garmin_backfill_delay_max_seconds == 0.0
 
 
 def test_push_workout_fails_when_garmin_does_not_return_a_workout_id():
@@ -876,6 +980,10 @@ class FakeStatefulRepository:
     def upsert_activity(self, activity_id: int, payload: dict) -> None:
         pass  # not exercised by this test
 
+    def upsert_activities(self, activities: list[tuple[str | int, dict]]) -> None:
+        for activity_id, payload in activities:
+            self.upsert_activity(activity_id, payload)
+
     def get_snapshot(self, date_iso: str) -> dict | None:
         return self.snapshots.get(date_iso)
 
@@ -1075,6 +1183,75 @@ def test_sync_service_fetches_activities_through_today_for_same_day_detection():
     saved_payload = mock_repo.upsert_snapshot.call_args[0][1]
     assert saved_payload["raw"]["todayTraining"] is not None
     assert saved_payload["raw"]["todayTraining"]["primaryActivity"]["type"] == "running"
+
+
+def test_hr_fidelity_is_target_only_and_never_blocks_base_activity_sync():
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_activity_hr_fidelity_enabled=True,
+    )
+    mock_repo = MagicMock()
+    mock_repo.is_fresh.return_value = False
+    mock_repo.get_historical_snapshots.return_value = {}
+    mock_client = MagicMock()
+    mock_client.get_stats.return_value = {"restingHeartRate": 55, "totalSteps": 10000}
+    mock_client.get_sleep_data.return_value = {"dailySleepDTO": {"sleepScores": {}}}
+    mock_client.get_hrv_data.return_value = {"hrvSummary": {"lastNightAvg": 65}}
+    mock_client.get_activities_window.return_value = [
+        {
+            "activityId": 100,
+            "startTimeLocal": "2026-08-05T08:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 1800,
+        },
+        {
+            "activityId": 101,
+            "startTimeLocal": "2026-08-06T08:00:00",
+            "activityType": {"typeKey": "running"},
+            "duration": 1800,
+        },
+    ]
+    mock_client.download_activity_original.side_effect = GarminConnectTooManyRequestsError("rate")
+
+    service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=mock_client)
+    assert service.sync_daily(target_date_str="2026-08-06", force=True, resync_lookback_days=0)
+
+    mock_client.download_activity_original.assert_called_once_with("101")
+    mock_repo.upsert_snapshot.assert_called_once()
+    payload = mock_repo.upsert_activities.call_args.args[0][1][1]
+    assert "hrMeasurement" not in payload
+
+
+def test_hr_fidelity_persists_compact_assessment_in_existing_activity_upsert() -> None:
+    provider = HrFidelityFakeProvider()
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_activity_hr_fidelity_enabled=True,
+    )
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {}
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+
+    assert provider.hr_fidelity_calls == ["1"]
+    payload = repo.upsert_activities.call_args.args[0][0][1]
+    assert payload["hrMeasurement"] == {
+        "externalHrSensorPresent": True,
+        "sourceForActivity": "mixed_possible",
+        "provenanceConfidence": "ambiguous",
+        "sensorTechnology": "external_unknown",
+        "activityMotionRisk": "moderate",
+        "coveragePct": 100.0,
+        "longestGapSeconds": 1.0,
+        "signalQuality": "clean",
+        "measurementConfidence": "moderate",
+        "summaryCompatibility": "unknown",
+        "artifactFlags": [],
+        "reasons": ["PROVENANCE_AMBIGUOUS"],
+        "diagnosticVersion": "1.0.0",
+    }
 
 
 def test_sync_service_skips_archiving_activity_with_missing_id():

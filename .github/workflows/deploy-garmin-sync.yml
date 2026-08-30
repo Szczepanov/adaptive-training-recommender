@@ -3,7 +3,12 @@ name: Deploy Garmin Sync
 # Deploys both sides of Garmin integration from one image:
 #   1. garmin-account-link: HTTPS service used by the app to establish per-user Garmin tokens.
 #   2. Three token-only Cloud Run Jobs that discover active links in Firestore at runtime.
-# No Garmin usernames/passwords and no static APP_USER_IDS list are GitHub secrets.
+# No Garmin usernames/passwords and no static APP_USER_IDS list are GitHub secrets for those
+# three multi-tenant Jobs. The optional fourth Job, eight-sleep-direct-sync (ES9), is a
+# deliberate exception: EIGHT_SLEEP_EMAIL/PASSWORD already only ever authenticate one single
+# Eight Sleep account (there is no self-service linking flow for it, unlike Garmin/Google
+# Health), so persisting its observations needs exactly one fixed APP_USER_ID -- not a
+# discovered list -- and that secret is scoped to this one Job only.
 on:
   workflow_dispatch:
     inputs:
@@ -46,6 +51,20 @@ on:
         required: true
       GCP_DEPLOYER_SA_EMAIL:
         required: true
+      GOOGLE_HEALTH_CLIENT_ID:
+        required: false
+      GOOGLE_HEALTH_CLIENT_SECRET:
+        required: false
+      EIGHT_SLEEP_EMAIL:
+        required: false
+      EIGHT_SLEEP_PASSWORD:
+        required: false
+      EIGHT_SLEEP_CLIENT_ID:
+        required: false
+      EIGHT_SLEEP_CLIENT_SECRET:
+        required: false
+      APP_USER_ID:
+        required: false
 
 permissions:
   contents: read
@@ -79,6 +98,22 @@ env:
   SCHEDULER_SA_EMAIL: garmin-scheduler-invoker@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   TOKEN_BUCKET: ${{ secrets.GCP_PROJECT_ID }}-garmin-tokens
   IMAGE_TAG: ${{ inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/garmin-sync/garmin-sync:${{ github.sha }}
+  # Google Health scopes are Restricted -- CASA/Restricted Scope verification is NOT done
+  # (see docs/plans/2026-08-27-real-google-health-ingestion.md). This deploy step is safe to
+  # run regardless (it just stands the linking service up), but every user who links through
+  # it will see Google's "unverified app" warning until verification completes.
+  GOOGLE_HEALTH_REDIRECT_URI: https://${{ secrets.GCP_PROJECT_ID }}.web.app/api/google-health/callback
+  APP_BASE_URL: https://${{ secrets.GCP_PROJECT_ID }}.web.app
+  # `secrets` is not a valid context in a step-level `if:` (actionlint-confirmed, and per
+  # GitHub's own context-availability docs) -- resolve the gate once here, at the only level
+  # where `secrets` is usable outside a step body, and reference `env.*` in the step `if:`s.
+  GOOGLE_HEALTH_LINKING_ENABLED: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID != '' && secrets.GOOGLE_HEALTH_CLIENT_SECRET != '' }}
+  # ES9 (docs/plans/eight-sleep-direct-recovery-ingestion.md): the direct Eight Sleep
+  # connector stays default-off in code (EIGHT_SLEEP_DIRECT_ENABLED) regardless of this --
+  # this only gates whether eight-sleep-direct-sync gets deployed at all, and its daily
+  # Cloud Scheduler job created. APP_USER_ID is required too: unlike the three multi-tenant
+  # Jobs above, this one persists to exactly one fixed user (see the top-of-file comment).
+  EIGHT_SLEEP_DIRECT_CONFIGURED: ${{ secrets.EIGHT_SLEEP_EMAIL != '' && secrets.EIGHT_SLEEP_PASSWORD != '' && secrets.EIGHT_SLEEP_CLIENT_ID != '' && secrets.EIGHT_SLEEP_CLIENT_SECRET != '' && secrets.APP_USER_ID != '' }}
 
 jobs:
   deploy:
@@ -132,6 +167,46 @@ jobs:
             --min-instances=0 --max-instances=1 \
             --allow-unauthenticated
 
+      - name: Deploy Google Health account linker
+        if: env.GOOGLE_HEALTH_LINKING_ENABLED == 'true'
+        env:
+          GOOGLE_HEALTH_CLIENT_ID: ${{ secrets.GOOGLE_HEALTH_CLIENT_ID }}
+          GOOGLE_HEALTH_CLIENT_SECRET: ${{ secrets.GOOGLE_HEALTH_CLIENT_SECRET }}
+        run: |
+          # Deliberately a SEPARATE service from garmin-account-link, with normal
+          # max-instances (no MFA-style in-memory session to pin to one instance) -- see
+          # docs/plans/2026-08-27-real-google-health-ingestion.md's plan for why. The token
+          # bucket is shared with Garmin's (google-health/ prefix keeps objects separated;
+          # google_health_account_link.py never writes into Garmin's garmin/ prefix).
+          cat > cloud-run-google-health.env.yaml <<EOF
+          GOOGLE_HEALTH_CLIENT_ID: "${GOOGLE_HEALTH_CLIENT_ID}"
+          GOOGLE_HEALTH_CLIENT_SECRET: "${GOOGLE_HEALTH_CLIENT_SECRET}"
+          GOOGLE_HEALTH_REDIRECT_URI: "${GOOGLE_HEALTH_REDIRECT_URI}"
+          GOOGLE_HEALTH_TOKEN_BUCKET: "${TOKEN_BUCKET}"
+          APP_BASE_URL: "${APP_BASE_URL}"
+          GCP_PROJECT_ID: "${GCP_PROJECT}"
+          EOF
+          gcloud run deploy google-health-account-link \
+            --image="${IMAGE_TAG}" --region="${REGION}" \
+            --service-account="${JOB_SA_EMAIL}" \
+            --env-vars-file=cloud-run-google-health.env.yaml \
+            --command=python --args=-m,garmin_sync.google_health_account_link_api \
+            --port=8080 --timeout=300 --concurrency=80 \
+            --min-instances=0 --max-instances=10 \
+            --allow-unauthenticated
+
+      - name: Smoke test google-health-account-link service health
+        if: env.GOOGLE_HEALTH_LINKING_ENABLED == 'true'
+        run: |
+          SERVICE_URL="$(gcloud run services describe google-health-account-link \
+            --region="${REGION}" --format='value(status.url)')"
+          if [ -z "${SERVICE_URL}" ]; then
+            echo "Cloud Run did not return a URL for google-health-account-link." >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
+            "${SERVICE_URL}/health"
+
       - name: Deploy token-only Cloud Run Jobs
         run: |
           gcloud run jobs deploy garmin-sync \
@@ -152,6 +227,46 @@ jobs:
             --env-vars-file=cloud-run-garmin.env.yaml \
             --args=poll-manual-sync-all --max-retries=0
 
+      - name: Deploy direct Eight Sleep sync Job (ES9, daily-scheduled backfill)
+        if: env.EIGHT_SLEEP_DIRECT_CONFIGURED == 'true'
+        env:
+          EIGHT_SLEEP_EMAIL: ${{ secrets.EIGHT_SLEEP_EMAIL }}
+          EIGHT_SLEEP_PASSWORD: ${{ secrets.EIGHT_SLEEP_PASSWORD }}
+          EIGHT_SLEEP_CLIENT_ID: ${{ secrets.EIGHT_SLEEP_CLIENT_ID }}
+          EIGHT_SLEEP_CLIENT_SECRET: ${{ secrets.EIGHT_SLEEP_CLIENT_SECRET }}
+          APP_USER_ID: ${{ secrets.APP_USER_ID }}
+        run: |
+          # Persistence only -- this Job still never flips production recommendation
+          # behavior; it only writes to the shadow health_observation_days collection (ES is
+          # still default-off/non-authoritative, docs/plans/eight-sleep-direct-recovery-ingestion.md).
+          # Default --args is a bounded 7-day trailing window sized for a DAILY scheduled
+          # run (see the eight-sleep-direct-sync-daily Scheduler job below) -- not the
+          # 56-day historical-backfill default, to keep each tick's Eight Sleep API call
+          # count small (~7 calls/day) rather than repeating a full historical fetch every
+          # day. Override --args at execution time for a one-off larger backfill or for the
+          # comparator, e.g.:
+          #   gcloud run jobs execute eight-sleep-direct-sync --region="${REGION}" \
+          #     --args=backfill-eight-sleep-direct,--days=60 --wait
+          #   gcloud run jobs execute eight-sleep-direct-sync --region="${REGION}" \
+          #     --args=compare-eight-sleep-transports,--days=60 --wait
+          cat > cloud-run-eight-sleep.env.yaml <<EOF
+          APP_TIMEZONE: "Europe/Warsaw"
+          GARMIN_TOKEN_STORE: "gcs"
+          GARMIN_TOKEN_BUCKET: "${TOKEN_BUCKET}"
+          GCP_PROJECT_ID: "${GCP_PROJECT}"
+          APP_USER_ID: "${APP_USER_ID}"
+          EIGHT_SLEEP_DIRECT_ENABLED: "true"
+          EIGHT_SLEEP_EMAIL: "${EIGHT_SLEEP_EMAIL}"
+          EIGHT_SLEEP_PASSWORD: "${EIGHT_SLEEP_PASSWORD}"
+          EIGHT_SLEEP_CLIENT_ID: "${EIGHT_SLEEP_CLIENT_ID}"
+          EIGHT_SLEEP_CLIENT_SECRET: "${EIGHT_SLEEP_CLIENT_SECRET}"
+          EOF
+          gcloud run jobs deploy eight-sleep-direct-sync \
+            --image="${IMAGE_TAG}" --region="${REGION}" \
+            --service-account="${JOB_SA_EMAIL}" \
+            --env-vars-file=cloud-run-eight-sleep.env.yaml \
+            --args=backfill-eight-sleep-direct,--days=7 --max-retries=0
+
       - name: Grant Cloud Scheduler permission to run the Jobs
         run: |
           gcloud run jobs add-iam-policy-binding garmin-sync \
@@ -163,6 +278,13 @@ jobs:
             --role="roles/run.invoker" >/dev/null
 
           gcloud run jobs add-iam-policy-binding garmin-manual-sync \
+            --region="${REGION}" --member="serviceAccount:${SCHEDULER_SA_EMAIL}" \
+            --role="roles/run.invoker" >/dev/null
+
+      - name: Grant Cloud Scheduler permission to run the Eight Sleep Job
+        if: env.EIGHT_SLEEP_DIRECT_CONFIGURED == 'true'
+        run: |
+          gcloud run jobs add-iam-policy-binding eight-sleep-direct-sync \
             --region="${REGION}" --member="serviceAccount:${SCHEDULER_SA_EMAIL}" \
             --role="roles/run.invoker" >/dev/null
 
@@ -193,6 +315,24 @@ jobs:
           || gcloud scheduler jobs create http garmin-manual-sync-poll --location="${REGION}" \
             --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
+            --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
+
+      - name: Create/update the Eight Sleep daily Scheduler job
+        if: env.EIGHT_SLEEP_DIRECT_CONFIGURED == 'true'
+        run: |
+          # Once daily, not a polling window like garmin-sync-morning-poll -- there is no
+          # cheap Firestore freshness pre-check here (unlike sync_daily's is_fresh gate), so
+          # every tick is a real Eight Sleep API call; a 15-min window would mean ~4x/hour of
+          # real calls for no benefit, since last night's trends don't change intraday. 8am
+          # Warsaw gives the night's data time to settle in Eight Sleep's own pipeline before
+          # the Job's bounded 7-day trailing window (deploy step above) picks it up.
+          gcloud scheduler jobs update http eight-sleep-direct-sync-daily --location="${REGION}" \
+            --schedule="0 8 * * *" --time-zone="Europe/Warsaw" \
+            --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/eight-sleep-direct-sync:run" \
+            --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}" \
+          || gcloud scheduler jobs create http eight-sleep-direct-sync-daily --location="${REGION}" \
+            --schedule="0 8 * * *" --time-zone="Europe/Warsaw" \
+            --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/eight-sleep-direct-sync:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
 
       # This is credential-free and safe on every deploy. It catches a container that pushed

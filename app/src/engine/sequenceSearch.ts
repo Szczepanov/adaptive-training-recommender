@@ -26,7 +26,7 @@ import { coverageNeedTierForTemplate } from './coverage';
 import { ENRICHED_TEMPLATES } from './templates';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { deriveObjectiveCreditFromProfile } from './stimulus';
-import { resolveMinimumDaysAfterHardLowerBody } from './planningCandidate';
+import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import type { PlannedObjectiveCredit, WeekAheadDay, WeekAheadOptions, WeekAheadPlan, WeekAheadPlanSeed } from './planner';
 import {
     applyProjectedObjectiveCredits,
@@ -277,7 +277,7 @@ export function beamSearchWeekAheadPlan(
                     plannedDose: resolvePlannedDoseForDate(periodization.phase, branch.microcycle.objectives, unresolved, planDefinition, date),
                 },
                 context, effectivePreferences, date,
-                { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, fatigueTier: fatigueTierFor(peakFatigue), authoredPlanBlocks: options.authoredPlanBlocks },
+                { anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier: fatigueTierFor(peakFatigue), authoredPlanBlocks: options.authoredPlanBlocks },
                 fixedActivities,
             );
 

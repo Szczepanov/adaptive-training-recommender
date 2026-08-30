@@ -14,6 +14,33 @@ import type {
 import { resolveInjuryRestrictions, resolveEffectiveInjuryConstraints } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
 import { getLocalDateString } from '../utils/localDate';
+import type { HealthSymptomType } from './healthAnomalyModels';
+
+/**
+ * Deliberately narrow presentation for which an athlete's self-attributed allergy cause may
+ * soften the legacy illness gate. Broader respiratory or systemic symptoms stay conservative:
+ * the check-in does not diagnose allergy or rule out infection/EIB/asthma.
+ */
+const ALLERGY_COMPATIBLE_SYMPTOM_TYPES: readonly HealthSymptomType[] = [
+    'congestion',
+    'runny_nose',
+    'sneezing',
+];
+
+/**
+ * Explicit mild/moderate nasal allergy symptoms don't get the same clinical restriction as an
+ * injury or undifferentiated illness. This is intentionally fail-closed: unknown severity,
+ * absent symptom detail, any non-nasal symptom type, an uncertain/infectious cause, or severe
+ * symptoms keep today's conservative `painFlag` behavior unchanged.
+ */
+function isAllergyLikeSymptomDay(checkin: DailySubjectiveCheckin): boolean {
+    const symptoms = checkin.healthContext?.symptoms;
+    if (!symptoms?.present || symptoms.suspectedCause !== 'allergy') return false;
+    if (symptoms.severity !== 'mild' && symptoms.severity !== 'moderate') return false;
+    if (!symptoms.types || symptoms.types.length === 0) return false;
+    if (!symptoms.types.every(type => ALLERGY_COMPATIBLE_SYMPTOM_TYPES.includes(type))) return false;
+    return true;
+}
 
 /** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
  * engine's TrainingRecord shape, or null if no qualifying activity data is present. */
@@ -63,6 +90,14 @@ export function mapSnapshotToEngineInput(
         && snapshot.derived.respiration28dMad !== null
         && snapshot.derived.respiration28dMad !== undefined;
 
+    // Phase 2 sleep-decision-authority fields (shadow/observation-only, feeds
+    // sleepRecoveryEvidence.ts only) -- absent entirely on documents predating
+    // baselineComputationVersion 6, not merely null, so gate on the version rather than
+    // trusting individual field presence.
+    const hasSleepDecisionAuthorityBaseline = (snapshot.derived.baselineComputationVersion ?? 0) >= 6;
+    const secToMin = (sec: number | null | undefined): number | null =>
+        sec === null || sec === undefined ? null : sec / 60;
+
     return {
         total_steps: snapshot.raw.totalSteps,
         sleep_score: snapshot.raw.sleepScore,
@@ -102,6 +137,39 @@ export function mapSnapshotToEngineInput(
         rhr_stdev_28d: snapshot.derived.restingHr28dStdev ?? null,
         sleep_score_stdev_28d: snapshot.derived.sleepScore28dStdev ?? null,
         steps_stdev_28d: snapshot.derived.steps28dStdev ?? null,
+
+        sleep_duration_delta_7d_min: hasSleepDecisionAuthorityBaseline
+            ? secToMin(snapshot.derived.deltas.sleepDurationVs7dMedian)
+            : null,
+        sleep_duration_delta_28d_min: hasSleepDecisionAuthorityBaseline
+            ? secToMin(snapshot.derived.deltas.sleepDurationVs28dMedian)
+            : null,
+        sleep_duration_accumulated_2d_deficit_min: hasSleepDecisionAuthorityBaseline
+            ? secToMin(snapshot.derived.sleepDurationAccumulated2dDeficitSec)
+            : null,
+        sleep_duration_accumulated_3d_deficit_min: hasSleepDecisionAuthorityBaseline
+            ? secToMin(snapshot.derived.sleepDurationAccumulated3dDeficitSec)
+            : null,
+        // Already minutes on the Python side (circular time-of-day arithmetic) -- no
+        // seconds-to-minutes conversion, unlike the duration/deficit fields above.
+        bedtime_deviation_7d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.bedtimeDeviationVs7dMinutes ?? null
+            : null,
+        bedtime_deviation_28d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.bedtimeDeviationVs28dMinutes ?? null
+            : null,
+        wake_time_deviation_7d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.wakeTimeDeviationVs7dMinutes ?? null
+            : null,
+        wake_time_deviation_28d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.wakeTimeDeviationVs28dMinutes ?? null
+            : null,
+        sleep_midpoint_deviation_7d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.sleepMidpointDeviationVs7dMinutes ?? null
+            : null,
+        sleep_midpoint_deviation_28d_min: hasSleepDecisionAuthorityBaseline
+            ? snapshot.derived.deltas.sleepMidpointDeviationVs28dMinutes ?? null
+            : null,
     };
 }
 
@@ -149,7 +217,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         stress: checkin.mentalStress ?? NEUTRAL_SCALE_VALUE,
         motivation: checkin.motivation ?? NEUTRAL_SCALE_VALUE,
         timeAvailable: checkin.availability?.timeAvailableMin ?? DEFAULT_TIME_AVAILABLE_MIN,
-        painFlag: checkin.painOrInjury || checkin.illnessSymptoms,
+        painFlag: checkin.painOrInjury || (checkin.illnessSymptoms && !isAllergyLikeSymptomDay(checkin)),
         alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
         preferredModalityToday: checkin.availability?.preferredModalityToday ?? null,
     };

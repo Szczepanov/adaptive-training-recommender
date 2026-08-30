@@ -163,8 +163,10 @@ protect when a week loses days.
 | `flexibility` | Meaning |
 |---|---|
 | `fixed` | Must fall on `preferredDay` (a group ride, a test, a class). |
-| `preferred` | Prefers `preferredDay`, may move within its week. |
-| `any_day` | No day preference; place it anywhere in the week. |
+| `preferred` | Prefers `preferredDay`, may move within its week (e.g. if rescheduled or missed). Multiple sessions authored with the same `preferredDay` remain co-located on that date (double training days). |
+| `any_day` | No day preference; place it anywhere in the week (spreads to unoccupied days). |
+
+Multiple sessions authored for the same `preferredDay` (e.g. an easy aerobic ride and an upper-body strength session) are placed together on that day as intentional double training days.
 
 | `ifMissed` | Behaviour when the day passes without the session |
 |---|---|

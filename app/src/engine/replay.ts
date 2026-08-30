@@ -4,6 +4,7 @@ import { computeContentHash } from './externalPlanHash';
 import { externalTemplateId, isExternalTemplateId } from './externalSessionProfiles';
 import { isHistoricalPolicyVersion, POLICY_VERSION } from './policy';
 import { subjectiveDriftAuditReplayErrors } from './subjectiveDriftAudit';
+import { identityDecisionProvenanceReplayErrors } from './identityProvenance';
 
 export interface RecommendationReplayResult {
     reproducible: boolean;
@@ -163,6 +164,7 @@ export function replayRecommendationAudit(
 
     const subjectiveDrift = (audit as typeof audit & { subjectiveDrift?: unknown }).subjectiveDrift;
     errors.push(...subjectiveDriftAuditReplayErrors(subjectiveDrift, recommendation.date));
+    errors.push(...identityDecisionProvenanceReplayErrors(audit.identityDecision));
 
     errors.push(...sessionBindingConsistencyErrors(recommendation));
     errors.push(...sessionBindingErrors(audit, sessionEvidence));
