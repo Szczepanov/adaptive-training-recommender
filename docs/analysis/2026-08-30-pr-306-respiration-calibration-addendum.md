@@ -1,7 +1,7 @@
 # PR #306 respiration calibration addendum
 
-**Date:** 2026-08-30  
-**Scope:** compliance check against the canonical cardiorespiratory knowledge pack plus targeted external-evidence review.  
+**Date:** 2026-08-30
+**Scope:** compliance check against the canonical cardiorespiratory knowledge pack plus targeted external-evidence review.
 **Decision effect:** none; respiration remains shadow/observation evidence.
 
 ## Compliance verdict
@@ -24,14 +24,14 @@ The numeric `6–35 br/min` acceptance range in `respirationElevation.ts` is an 
 
 The research supports the architecture more strongly than it supports any exact threshold.
 
-1. Longitudinal nocturnal respiratory rate can be estimated from wearables and can change during respiratory infection. A 2021 validation/infection study reported wearable-derived RR agreement around MAE 0.46 breaths/min and used longitudinal nocturnal changes to study COVID-19. This supports trend monitoring, while also showing that changes near fractions of a breath/min are close enough to measurement uncertainty that they should not be treated as universal clinical cut-points.  
+1. Longitudinal nocturnal respiratory rate can be estimated from wearables and can change during respiratory infection. A 2021 validation/infection study reported wearable-derived RR agreement around MAE 0.46 breaths/min and used longitudinal nocturnal changes to study COVID-19. This supports trend monitoring, while also showing that changes near fractions of a breath/min are close enough to measurement uncertainty that they should not be treated as universal clinical cut-points.
    https://pubmed.ncbi.nlm.nih.gov/34526602/
-2. A 2022 systematic review/meta-analysis of wearable/contactless RR validation found pooled wearable RR bias around 0.68 breaths/min with wide pooled limits of agreement and substantial study heterogeneity. Device-specific error therefore cannot be assumed away or transferred blindly between wearable platforms.  
+2. A 2022 systematic review/meta-analysis of wearable/contactless RR validation found pooled wearable RR bias around 0.68 breaths/min with wide pooled limits of agreement and substantial study heterogeneity. Device-specific error therefore cannot be assumed away or transferred blindly between wearable platforms.
    https://pubmed.ncbi.nlm.nih.gov/35947876/
-3. A prospective 2024 respiratory-infection validation study used **resting HR + respiratory rate + HRV during sleep** rather than respiration in isolation. This is directionally consistent with ADR-0025 and with treating corroborated/persistent cases differently from isolated one-night elevations.  
+3. A prospective 2024 respiratory-infection validation study used **resting HR + respiratory rate + HRV during sleep** rather than respiration in isolation. This is directionally consistent with ADR-0025 and with treating corroborated/persistent cases differently from isolated one-night elevations.
    https://pubmed.ncbi.nlm.nih.gov/39018555/
-4. Broader reviews of wearable infection detection conclude that physiological deviations can be useful early digital biomarkers, but real-world infection detection and generalizability remain imperfect. That supports a labelled prospective release gate rather than retrospective threshold fitting.  
-   https://pubmed.ncbi.nlm.nih.gov/35461692/  
+4. Broader reviews of wearable infection detection conclude that physiological deviations can be useful early digital biomarkers, but real-world infection detection and generalizability remain imperfect. That supports a labelled prospective release gate rather than retrospective threshold fitting.
+   https://pubmed.ncbi.nlm.nih.gov/35461692/
    https://pubmed.ncbi.nlm.nih.gov/34932906/
 
 ## Additional hardening in this commit
