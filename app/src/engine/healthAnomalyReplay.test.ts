@@ -7,7 +7,12 @@ function snapshot(date: string, rhr = 50, hrv = 60, respiration = 14): DailyReco
     return {
         userId: 'u1',
         date,
-        source: { garminSyncedAt: `${date}T06:00:00Z`, sourceSchemaVersion: 3, timezone: 'Europe/Warsaw' },
+        source: {
+            garminSyncedAt: `${date}T06:00:00Z`,
+            sourceSchemaVersion: 3,
+            timezone: 'Europe/Warsaw',
+            metricDates: { sleep: date },
+        },
         raw: {
             sleepScore: 85,
             sleepDurationSec: 8 * 3600,
@@ -115,6 +120,71 @@ describe('health anomaly replay', () => {
         expect(Object.values(symptomatic?.assessmentStates ?? {})[0]?.state).toBe('symptoms_reported');
     });
 
+    it('does not count unusually high HRV as adverse corroboration for elevated respiration', () => {
+        const history = Array.from({ length: 20 }, (_, index) => ({
+            date: dateAt(index),
+            recoverySnapshot: snapshot(dateAt(index), 50, 58 + (index % 5), 13.8 + (index % 4) * 0.1),
+            subjectiveCheckin: checkin(dateAt(index)),
+        }));
+        const elevatedDate = dateAt(20);
+        const report = runHealthAnomalyReplay({
+            days: [
+                ...history,
+                {
+                    date: elevatedDate,
+                    recoverySnapshot: snapshot(elevatedDate, 50, 95, 15.5),
+                    subjectiveCheckin: checkin(elevatedDate),
+                },
+            ],
+        });
+
+        const elevated = report.rows.find(row => row.date === elevatedDate);
+        expect(elevated?.respirationElevation?.status).toBe('elevated');
+        expect(elevated?.coreEvidence.find(item => item.signal === 'hrv')).toMatchObject({
+            status: 'strong_anomaly',
+            direction: 'two_sided',
+        });
+        expect(report.respirationElevationSummary).toMatchObject({
+            elevatedOrStrongDays: 1,
+            corroboratedDays: 0,
+            isolatedDays: 1,
+            robustDeviation: {
+                elevatedAvailableDays: 1,
+                elevatedMedian: expect.any(Number),
+                elevatedMin: expect.any(Number),
+                elevatedMax: expect.any(Number),
+            },
+        });
+    });
+
+    it('fails respiration closed when the selected sleep record belongs to another date', () => {
+        const history = Array.from({ length: 20 }, (_, index) => ({
+            date: dateAt(index),
+            recoverySnapshot: snapshot(dateAt(index), 50, 58 + (index % 5), 13.8 + (index % 4) * 0.1),
+            subjectiveCheckin: checkin(dateAt(index)),
+        }));
+        const targetDate = dateAt(20);
+        const stale = snapshot(targetDate, 50, 60, 15.5);
+        stale.source.metricDates = { sleep: dateAt(19) };
+        const report = runHealthAnomalyReplay({
+            days: [
+                ...history,
+                { date: targetDate, recoverySnapshot: stale, subjectiveCheckin: checkin(targetDate) },
+            ],
+        });
+
+        const row = report.rows.find(item => item.date === targetDate);
+        expect(row?.respirationElevation).toMatchObject({
+            status: 'unavailable',
+            reasonCodes: ['DATE_PROVENANCE_MISMATCH'],
+        });
+        expect(row?.coreEvidence.find(item => item.signal === 'respiration')?.status).toBe('unavailable');
+        expect(report.respirationElevationSummary.elevatedOrStrongDays).toBe(0);
+        expect(report.respirationElevationSummary.unavailableDays).toBeGreaterThan(0);
+        expect(report.respirationElevationSummary.unavailableRate).toBeGreaterThan(0);
+        expect(report.respirationElevationSummary.unavailableReasonCounts.DATE_PROVENANCE_MISMATCH).toBe(1);
+    });
+
     it('exports estimator candidates, context and machine-readable plus markdown states', () => {
         const days = Array.from({ length: 21 }, (_, index) => ({
             date: dateAt(index),
@@ -126,12 +196,22 @@ describe('health anomaly replay', () => {
         const last = report.rows.at(-1);
         expect(report.candidatePolicyVersions).toHaveLength(1);
         expect(last?.candidateEstimators.map(item => item.signal)).toEqual(['rhr', 'respiration', 'hrv']);
+        expect(last?.respirationElevation).toMatchObject({
+            status: expect.stringMatching(/^(normal|elevated|strongly_elevated|resolving)$/),
+            policyVersion: 'respiration-elevation/shadow-e2-s1-v1',
+        });
         expect(last?.healthContext.authoredTravelActive).toBe(true);
         expect(Object.keys(last?.assessmentStates ?? {})).toEqual(report.candidatePolicyVersions);
+        expect(report.respirationElevationSummary.statusCounts).toBeDefined();
+        expect(report.respirationElevationSummary.elevatedOrStrongDays).toBeGreaterThanOrEqual(0);
+        expect(report.respirationElevationSummary.robustDeviation.availableDays).toBeGreaterThan(0);
 
         const markdown = renderHealthAnomalyReplayMarkdown(report);
         expect(markdown).toContain('# Health anomaly shadow replay');
-        expect(markdown).toContain('| Date | RHR | Respiration | HRV |');
+        expect(markdown).toContain('| Date | RHR | Respiration | Resp. delta status | HRV |');
         expect(markdown).toContain('retrospective labels');
+        expect(markdown).toContain('Respiration elevation statuses:');
+        expect(markdown).toContain('Respiration unavailable:');
+        expect(markdown).toContain('MAD-normalized respiration deviation:');
     });
 });

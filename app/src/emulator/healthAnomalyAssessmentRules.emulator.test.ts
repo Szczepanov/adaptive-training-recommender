@@ -69,6 +69,19 @@ function revision() {
             episodeDay: 1,
             dataQuality: [],
             rationale: { facts: [], explanations: [], cautions: ['NOT_A_DIAGNOSIS'] },
+            respirationElevation: {
+                status: 'elevated',
+                currentValue: 14,
+                baseline7dValue: 13.5,
+                baseline28dValue: 13,
+                deltaVs7d: 0.5,
+                deltaVs28d: 1,
+                baselineVersion: 5,
+                historyCount: 28,
+                recentDayCoverage: 1,
+                reasonCodes: ['ABOVE_ELEVATED_PERSONAL_DELTAS'],
+                policyVersion: 'respiration-elevation/shadow-e2-s1-v1',
+            },
             policyVersion: 'health-anomaly/ha3-v1',
             thresholdPolicyVersion: 'health-anomaly-thresholds/shadow-candidate-v1',
             mode: 'shadow-v1',
@@ -123,6 +136,13 @@ emulatorDescribe('Health anomaly assessment revision rules (HA4)', () => {
         await assertFails(setDoc(doc(db, revisionPath), {
             ...base,
             assessment: { ...base.assessment, state: 'diagnosed_flu' },
+        }));
+        await assertFails(setDoc(doc(db, revisionPath), {
+            ...base,
+            assessment: {
+                ...base.assessment,
+                respirationElevation: { ...base.assessment.respirationElevation, unexpected: true },
+            },
         }));
         await assertFails(setDoc(doc(db, revisionPath), {
             ...base,

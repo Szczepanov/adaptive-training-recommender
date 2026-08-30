@@ -1255,7 +1255,6 @@ service cloud.firestore {
     function hasValidHealthAnomalyThresholdPolicy(policy) {
       return policy is map
         && policy.keys().hasOnly(['policyVersion', 'moderateDeviation', 'strongDeviation', 'minimumCoreSignalsForMultiSignal', 'persistenceDaysForEscalation', 'minimumHistoryCount', 'minimumRecentDayCoverage', 'maxBaselineAgeDays', 'estimatorBySignal'])
-        && policy.keys().hasAll(['policyVersion', 'moderateDeviation', 'strongDeviation', 'minimumCoreSignalsForMultiSignal', 'persistenceDaysForEscalation', 'minimumHistoryCount', 'minimumRecentDayCoverage', 'maxBaselineAgeDays', 'estimatorBySignal'])
         && policy.policyVersion is string && policy.policyVersion.size() > 0 && policy.policyVersion.size() <= 128
         && policy.moderateDeviation is number && policy.moderateDeviation > 0 && policy.moderateDeviation <= 20
         && policy.strongDeviation is number && policy.strongDeviation > policy.moderateDeviation && policy.strongDeviation <= 20
@@ -1278,7 +1277,6 @@ service cloud.firestore {
       let assessment = data.assessment;
       return isOwner(userId)
         && data.keys().hasOnly(['userId', 'date', 'revisionId', 'idempotencyKey', 'computedAt', 'policyVersion', 'thresholdPolicy', 'mode', 'source', 'assessment', 'schemaVersion'])
-        && data.keys().hasAll(['userId', 'date', 'revisionId', 'idempotencyKey', 'computedAt', 'policyVersion', 'thresholdPolicy', 'mode', 'source', 'assessment', 'schemaVersion'])
         && data.userId == userId
         && data.date == date
         && isValidActivityDate(data.date)
@@ -1302,7 +1300,7 @@ service cloud.firestore {
         && (source.travelContextRevision == null || source.travelContextRevision is string)
         && isValidActivityDate(source.persistenceLookbackStart)
         && assessment is map
-        && assessment.keys().hasOnly(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
+        && assessment.keys().hasOnly(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'respirationElevation', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
         && assessment.keys().hasAll(['state', 'evidenceLevel', 'coreSignals', 'supportingSignals', 'explanations', 'unexplainedEvidence', 'persistenceDays', 'episodeId', 'episodeDay', 'dataQuality', 'rationale', 'policyVersion', 'thresholdPolicyVersion', 'mode'])
         && assessment.state in ['normal', 'explained_recovery_strain', 'watch_unexplained', 'possible_illness_or_systemic_stress', 'symptoms_reported']
         && assessment.evidenceLevel in ['none', 'low', 'moderate', 'high']
@@ -1315,6 +1313,10 @@ service cloud.firestore {
         && (assessment.episodeDay == null || (assessment.episodeDay is int && assessment.episodeDay >= 1 && assessment.episodeDay <= 365))
         && assessment.dataQuality is list && assessment.dataQuality.size() <= 3
         && assessment.rationale is map
+        // The parent assessment rule is close to Firestore's 1,000-expression ceiling.
+        // Keep the server boundary bounded; the application parser validates every scalar.
+        && (!('respirationElevation' in assessment)
+          || (assessment.respirationElevation is map && assessment.respirationElevation.size() <= 11))
         && assessment.policyVersion == data.policyVersion
         && assessment.thresholdPolicyVersion == data.thresholdPolicy.policyVersion
         && assessment.mode == data.mode;
