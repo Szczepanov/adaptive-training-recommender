@@ -61,7 +61,7 @@ export const RUNNING_RACE_WORKOUTS: WorkoutDefinition[] = [
       { id: 'return_to_training', targetDurationMin: 40, loadMultiplier: 0.55, rationale: 'Use a single controlled effort at reduced intensity.', stepOverrides: [{ stepId: 'race_pace_main', sets: 1, durationSeconds: 300, target: { type: 'rpe', min: 4, max: 5 } }, { stepId: 'race_pace_cooldown', durationSeconds: 1200 }] }
     ],
     parameters: [
-      { id: 'repeat_count', label: 'Race-pace repeat count', unit: 'repetitions', defaultValue: 3, minimum: 1, maximum: 5, step: 1, appliesToStepIds: ['race_pace_main'], bindings: [{ stepId: 'race_pace_main', property: 'sets' }], description: 'Progress repeat count before making every effort harder.' }
+      { id: 'repeat_count', label: 'Race-pace repeat count', unit: 'repetitions', defaultValue: 3, minimum: 2, maximum: 6, step: 1, appliesToStepIds: ['race_pace_main'], bindings: [{ stepId: 'race_pace_main', property: 'sets' }], description: 'Progress repeat count before making every effort harder.' }
     ],
     regressions: ['running_tempo_01'], progressions: [], substitutions: [],
     garmin: { exportable: true, supportedSport: 'running' },
