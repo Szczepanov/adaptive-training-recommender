@@ -1,4 +1,8 @@
-import { evaluatePhysiologicalAnomaly, SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS } from './healthAnomaly';
+import {
+    evaluatePhysiologicalAnomaly,
+    isAdverseCoreSignalEvidence,
+    SHADOW_V1_HEALTH_ANOMALY_THRESHOLDS,
+} from './healthAnomaly';
 import { HEALTH_ANOMALY_BASELINE_WINDOW_DAYS, mapRecoverySnapshotToHealthAnomalyFeatures } from './healthAnomalyFeatures';
 import type {
     CoreSignalEvidence,
@@ -133,8 +137,7 @@ function summarizeRespirationElevation(rows: HealthAnomalyReplayRow[]): HealthAn
     const byDate = new Map(rows.map(row => [row.date, row]));
     const elevated = rows.filter(isElevatedRespiration);
     const corroborated = elevated.filter(row => row.coreEvidence.some(
-        evidence => evidence.signal !== 'respiration'
-            && (evidence.status === 'moderate_anomaly' || evidence.status === 'strong_anomaly'),
+        evidence => evidence.signal !== 'respiration' && isAdverseCoreSignalEvidence(evidence),
     ));
     return {
         statusCounts,
@@ -258,6 +261,7 @@ export function runHealthAnomalyReplay(
         limitations: [
             'Future 24/48/72h symptom flags are retrospective labels joined after evaluation and are never live evaluator input.',
             'Candidate thresholds are shadow calibration parameters, not validated diagnostic cutoffs.',
+            'Respiration corroboration counts only adverse non-respiratory core evidence; unusually high HRV is retained as telemetry but is not an adverse illness vote.',
             'Replay quality is limited by the completeness and correctness of supplied canonical recovery/check-in history.',
         ],
         rows,
