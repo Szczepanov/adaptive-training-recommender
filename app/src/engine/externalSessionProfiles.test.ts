@@ -59,7 +59,7 @@ describe('deriveExternalSessionProfiles', () => {
     });
 
     it('maps every authored modality to a real engine modality', () => {
-        const modalities: ExternalSessionModality[] = ['cycling', 'running', 'strength', 'field', 'mobility', 'cross_training'];
+        const modalities: ExternalSessionModality[] = ['cycling', 'running', 'swimming', 'strength', 'field', 'mobility', 'cross_training'];
         for (const modality of modalities) {
             const gateable = toGateableSession(session(modality, 'moderate'));
             expect(DEFAULT_COST_BY_MODALITY[gateable.modality], modality).toBeDefined();
