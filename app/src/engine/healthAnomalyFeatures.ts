@@ -67,7 +67,9 @@ export type ExtractedSignalObservations = {
 /**
  * Extract deduplicated, date-sorted observations for all core signals in a single pass.
  * Current/future rows are discarded, preserving the invariant that the current day
- * never enters its own reference baseline.
+ * never enters its own reference baseline. Respiration is keyed by the selected sleep
+ * record's metric date rather than the recovery document date so a D-1 sleep fallback is
+ * never silently re-labelled as a D observation.
  */
 export function extractSignalObservations(
     currentDate: string,
@@ -92,8 +94,20 @@ export function extractSignalObservations(
             byDateRhr.set(snapshot.date, { date: snapshot.date, day, value: rhrVal });
         }
         const respVal = finiteNumber(snapshot.raw.respirationAvg);
-        if (respVal !== null) {
-            byDateResp.set(snapshot.date, { date: snapshot.date, day, value: respVal });
+        const respirationDate = snapshot.source.metricDates?.sleep ?? null;
+        const respirationDay = respirationDate === null ? null : parseEpochDay(respirationDate);
+        if (
+            respVal !== null
+            && respirationDate !== null
+            && respirationDay !== null
+            && respirationDay >= startDay
+            && respirationDay < currentDay
+        ) {
+            byDateResp.set(respirationDate, {
+                date: respirationDate,
+                day: respirationDay,
+                value: respVal,
+            });
         }
         const hrvVal = finiteNumber(snapshot.raw.hrvOvernightAvg);
         if (hrvVal !== null) {
@@ -333,7 +347,10 @@ function buildRespirationFeatures(
     baselineVersion: number | null,
     preExtractedObservations?: SignalObservation[],
 ): HealthCoreSignalFeatures {
-    const current = finiteNumber(snapshot.raw.respirationAvg);
+    const measurementDate = snapshot.source.metricDates?.sleep ?? null;
+    const current = measurementDate === snapshot.date
+        ? finiteNumber(snapshot.raw.respirationAvg)
+        : null;
     const observations = preExtractedObservations ?? historyForSignal(snapshot.date, history, 'respiration');
     const scale = finiteNumber(snapshot.derived.respiration28dMad);
     const compatible = baselineVersion !== null && baselineVersion >= 3;
@@ -357,9 +374,10 @@ function buildRespirationFeatures(
             observations,
             [scale],
         ),
-        // The canonical snapshot currently stores the precise-or-fallback nightly value but
-        // not which path produced it. HA2 must preserve that missingness rather than guess.
-        measurementProvenance: null,
+        // Garmin respirationAvg is selected from the same sleep record as sleepScore;
+        // metricDates.sleep therefore supplies the bounded logical-date provenance needed
+        // to distinguish a target-date night from the backend's D-1 sleep fallback.
+        measurementProvenance: measurementDate === null ? null : `garmin:sleep:${measurementDate}`,
     };
 }
 
