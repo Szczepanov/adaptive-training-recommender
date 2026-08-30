@@ -148,27 +148,27 @@ function executableComparisonBaseRef() {
     const parents = git(['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(/\s+/);
     if (parents.length === 3) return parents[1];
   } catch (err) {
-    console.warn(`Could not isolate pull-request base parent for token comparison: ${err.message}`);
+    console.warn(`Could not isolate pull-request base parent for syntax comparison: ${err.message}`);
   }
   return baseRef;
 }
 
 /**
- * Produce a lexical signature that excludes comments and whitespace but preserves every
- * executable TypeScript token and literal. This is intentionally stricter than text-diff
- * heuristics: changing an operator, number, identifier, string or punctuation changes the
- * signature and therefore still requires a POLICY_VERSION bump.
+ * Normalize TypeScript syntax while removing comments. The printer preserves identifiers,
+ * literals, operators, types and statement structure, so a genuine source change cannot be
+ * hidden as a comment-only edit; whitespace and comments are intentionally erased.
  */
-function executableTokenSignature(source) {
-  const scanner = ts.createScanner(ts.ScriptTarget.Latest, true, ts.LanguageVariant.Standard, source);
-  const tokens = [];
-  for (let token = scanner.scan(); token !== ts.SyntaxKind.EndOfFileToken; token = scanner.scan()) {
-    tokens.push(`${token}:${scanner.getTokenText()}`);
+function executableSyntaxSignature(source, fileName) {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const diagnostics = sourceFile.parseDiagnostics ?? [];
+  if (diagnostics.length > 0) {
+    throw new Error(`TypeScript parse diagnostics: ${diagnostics.map(d => d.code).join(', ')}`);
   }
-  return tokens.join('\u0000');
+  const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed });
+  return printer.printFile(sourceFile);
 }
 
-/** Return true only when every changed decision file is lexically executable-identical. */
+/** Return true only when every changed decision file is syntax-identical without comments. */
 function isCommentOrWhitespaceOnlyDecisionChange() {
   if (changedDecisionFiles.length === 0) return false;
   const comparisonBase = executableComparisonBaseRef();
@@ -176,7 +176,7 @@ function isCommentOrWhitespaceOnlyDecisionChange() {
     try {
       const baseSource = git(['show', `${comparisonBase}:${file}`]);
       const currentSource = readFileSync(join(repoRoot, file), 'utf8');
-      return executableTokenSignature(baseSource) === executableTokenSignature(currentSource);
+      return executableSyntaxSignature(baseSource, file) === executableSyntaxSignature(currentSource, file);
     } catch (err) {
       console.warn(`Could not prove comment-only policy change for ${file}: ${err.message}`);
       return false;
@@ -370,7 +370,7 @@ if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
   if (isCommentOrWhitespaceOnlyDecisionChange()) {
     console.log(
       'POLICY DRIFT CHECK PASSED: decision-affecting files changed only in comments/whitespace; '
-      + `executable TypeScript tokens are identical and POLICY_VERSION correctly remains ${currentPolicyVersion}.`
+      + `normalized executable TypeScript syntax is identical and POLICY_VERSION correctly remains ${currentPolicyVersion}.`
     );
     process.exit(0);
   }
