@@ -120,7 +120,7 @@ describe('active persona AI-judge suite', () => {
     }
   });
 
-  it('adds an anonymized cycling-primary hybrid persona with explicit goal hierarchy and current cycling history', () => {
+  it('adds an anonymized cycling-primary hybrid persona with explicit hierarchy and evidence-backed mixed history', () => {
     const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_cycling_primary_hybrid');
     expect(family).toBeDefined();
     expect(family.cases).toHaveLength(5);
@@ -137,14 +137,24 @@ describe('active persona AI-judge suite', () => {
       expect(definition.scenario.context.trainingSettings.equipment.indoor_bike).toBe(true);
       expect(definition.scenario.context.trainingSettings.equipment.outdoor_bike).toBe(true);
       expect(definition.scenario.initialHistory).toHaveLength(12);
-      expect(definition.scenario.initialHistory.every((exposure) => exposure.modality === 'Cycling')).toBe(true);
+
+      const cyclingHistory = definition.scenario.initialHistory.filter((exposure) => exposure.modality === 'Cycling');
+      const strengthHistory = definition.scenario.initialHistory.filter((exposure) => exposure.modality === 'Strength');
+      expect(cyclingHistory).toHaveLength(8);
+      expect(strengthHistory).toHaveLength(4);
+      expect(cyclingHistory.length).toBeGreaterThan(strengthHistory.length);
+      expect(strengthHistory.every((exposure) => exposure.category === 'Full-body Strength')).toBe(true);
       expect(definition.scenario.event).toBeNull();
     }
 
     const tissueConflict = family.cases.find((definition) => definition.scenario.id === 'persona_cycling_hybrid_local_tissue_conflict');
-    expect(tissueConflict.scenario.readinessForWeek(0).subjective.painFlag).toBe(true);
+    const tissueReadiness = tissueConflict.scenario.readinessForWeek(0);
+    expect(tissueReadiness.subjective.painFlag).toBe(true);
     expect(tissueConflict.scenario.context.constraints.impliedGuardrails).toEqual(['avoid_high_impact', 'avoid_heavy_lower_body']);
-    expect(tissueConflict.scenario.readinessForWeek(0).objective.hrv_delta).toBe(0);
+    expect(tissueReadiness.objective.sleep_score).toBeGreaterThanOrEqual(90);
+    expect(tissueReadiness.objective.body_battery_wake).toBeGreaterThanOrEqual(80);
+    expect(tissueReadiness.objective.hrv_delta).toBeGreaterThan(0);
+    expect(tissueReadiness.objective.rhr_delta).toBeLessThan(0);
 
     const strengthPreference = family.cases.find((definition) => definition.scenario.id === 'persona_cycling_hybrid_strength_preference');
     expect(strengthPreference.scenario.readinessForWeek(0).subjective.preferredModalityToday).toBe('Strength');
