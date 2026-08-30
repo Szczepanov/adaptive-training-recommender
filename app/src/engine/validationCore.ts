@@ -792,7 +792,7 @@ export function validatePreferences(raw: any): ValidationResult<UserPreferences>
     }
 
     if (raw.unavailableModalities !== undefined) {
-        const validUnavailableModalities = ['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training'];
+        const validUnavailableModalities = ['Running', 'Cycling', 'Swimming', 'Strength', 'Field', 'Mobility', 'Cross Training', 'Rowing'];
         if (!Array.isArray(raw.unavailableModalities)) {
             errors.push({ field: 'unavailableModalities', message: 'Unavailable modalities must be an array' });
         } else if (!raw.unavailableModalities.every((m: any) => validUnavailableModalities.includes(m))) {
@@ -1386,13 +1386,13 @@ export function validateTrainingIntentProfile(raw: any): ValidationResult<Traini
 
 // --- Externally-authored plans (ADR-0019, Phase 8.1) ---
 
-const EXTERNAL_MODALITIES: ExternalSessionModality[] = ['cycling', 'running', 'strength', 'field', 'mobility', 'cross_training'];
+const EXTERNAL_MODALITIES: ExternalSessionModality[] = ['cycling', 'running', 'swimming', 'strength', 'field', 'mobility', 'cross_training'];
 const EXTERNAL_INTENSITIES: ExternalSessionIntensity[] = ['recovery', 'easy', 'moderate', 'hard', 'max'];
 const EXTERNAL_PRIORITIES: ExternalSessionPriority[] = ['key', 'supporting', 'optional'];
 const EXTERNAL_FLEXIBILITY: ExternalPlacementFlexibility[] = ['fixed', 'preferred', 'any_day'];
 const EXTERNAL_IF_MISSED: ExternalIfMissed[] = ['drop', 'reschedule_within_week', 'carry_forward'];
 const EXTERNAL_WEEKDAYS: ExternalWeekday[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-const EXTERNAL_EQUIPMENT: EquipmentKey[] = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar'];
+const EXTERNAL_EQUIPMENT: EquipmentKey[] = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar', 'outdoor_bike', 'swim_access'];
 const EXTERNAL_ENVIRONMENTS: TrainingEnvironment[] = ['indoor', 'outdoor', 'either'];
 const EXTERNAL_OBJECTIVES: ObjectiveKey[] = [
     'threshold_quality', 'surge_repeatability', 'zone2_aerobic', 'strength_maintenance',

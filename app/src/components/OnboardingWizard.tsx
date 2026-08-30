@@ -9,14 +9,15 @@ interface OnboardingWizardProps {
     onCompleted: () => void;
 }
 
-type GoalFocus = 'general_fitness' | 'running_10k_half' | 'cycling' | 'strength';
+type GoalFocus = 'general_fitness' | 'running' | 'cycling' | 'triathlon' | 'strength';
 type EquipmentTier = 'full_gym' | 'home_dumbbells' | 'minimal';
 
 export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompleted }: OnboardingWizardProps) {
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [focus, setFocus] = useState<GoalFocus>('general_fitness');
     const [equipment, setEquipment] = useState<EquipmentTier>('full_gym');
-    const [daysPerWeek, setDaysPerWeek] = useState<number>(4);
+    const [sessionsPerWeek, setSessionsPerWeek] = useState<number>(4);
+    const [sportAccess, setSportAccess] = useState({ outdoor_bike: false, swim_access: false });
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
 
@@ -27,12 +28,15 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
         try {
             let domain: 'endurance' | 'strength' | 'general_fitness' = 'general_fitness';
             let title = 'Cardiovascular Health & Functional Fitness';
-            if (focus === 'running_10k_half') {
+            if (focus === 'running') {
                 domain = 'endurance';
-                title = '10k / Half Marathon Preparation';
+                title = '5K / 10K / Half / Marathon Preparation';
             } else if (focus === 'cycling') {
                 domain = 'endurance';
                 title = 'Endurance Cycling Development';
+            } else if (focus === 'triathlon') {
+                domain = 'endurance';
+                title = 'Triathlon Preparation';
             } else if (focus === 'strength') {
                 domain = 'strength';
                 title = 'Full Body Strength & Muscle';
@@ -44,14 +48,16 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                 treadmill: equipment === 'full_gym',
                 indoor_bike: equipment === 'full_gym',
                 pullup_bar: equipment === 'full_gym' || equipment === 'home_dumbbells',
+                outdoor_bike: sportAccess.outdoor_bike,
+                swim_access: sportAccess.swim_access,
             };
 
             // Persist training settings and intent profile first before active goal creation.
             await trainingSettingsService.updateTrainingSettings(userId, {
                 equipment: equipmentMap,
                 defaults: {
-                    weekdayMaxMinutes: daysPerWeek >= 5 ? 60 : 45,
-                    weekendMaxMinutes: 90,
+                    weekdayMaxMinutes: sessionsPerWeek >= 5 ? 60 : 45,
+                    weekendMaxMinutes: focus === 'running' || focus === 'cycling' || focus === 'triathlon' ? 180 : 90,
                     environment: 'either',
                 },
             });
@@ -62,9 +68,9 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                     domain === 'endurance' ? 'endurance' : domain === 'strength' ? 'strength_muscle' : 'health',
                 ],
                 weeklyCommitment: {
-                    minSessions: Math.max(1, daysPerWeek - 1),
-                    targetSessions: daysPerWeek,
-                    maxSessions: Math.min(7, daysPerWeek + 1),
+                    minSessions: Math.max(1, sessionsPerWeek - 1),
+                    targetSessions: sessionsPerWeek,
+                    maxSessions: Math.min(14, sessionsPerWeek + 1),
                 },
                 organizationPreference: 'auto',
                 schemaVersion: 1,
@@ -120,15 +126,20 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                                 <strong>General Fitness & Health</strong>
                                 <p>Balanced aerobic conditioning, strength, and recovery.</p>
                             </button>
-                            <button type="button" className={`choice-card ${focus === 'running_10k_half' ? 'active' : ''}`} onClick={() => setFocus('running_10k_half')}>
+                            <button type="button" className={`choice-card ${focus === 'running' ? 'active' : ''}`} onClick={() => setFocus('running')}>
                                 <span className="choice-icon">🏃</span>
-                                <strong>Running (10k / Half / Marathon)</strong>
-                                <p>Pacing, lactate threshold, VO2 max, and aerobic volume.</p>
+                                <strong>Running (5K / 10K / Half / Marathon)</strong>
+                                <p>Aerobic volume, long-run durability, threshold, VO2 max, and race specificity.</p>
                             </button>
                             <button type="button" className={`choice-card ${focus === 'cycling' ? 'active' : ''}`} onClick={() => setFocus('cycling')}>
                                 <span className="choice-icon">🚴</span>
                                 <strong>Cycling & Endurance</strong>
                                 <p>Power zones, threshold development, and sustained output.</p>
+                            </button>
+                            <button type="button" className={`choice-card ${focus === 'triathlon' ? 'active' : ''}`} onClick={() => setFocus('triathlon')}>
+                                <span className="choice-icon">🏊</span>
+                                <strong>Triathlon</strong>
+                                <p>Swim, bike, and run exposure for short-course through half-distance racing.</p>
                             </button>
                             <button type="button" className={`choice-card ${focus === 'strength' ? 'active' : ''}`} onClick={() => setFocus('strength')}>
                                 <span className="choice-icon">🏋️</span>
@@ -165,11 +176,25 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                         </div>
 
                         <div className="choice-group">
-                            <label className="group-heading">Weekly Training Target:</label>
+                            <label className="group-heading">Sport access:</label>
+                            <div className="choice-grid-small">
+                                <label className="choice-card-mini">
+                                    <input type="checkbox" checked={sportAccess.outdoor_bike} onChange={(event) => setSportAccess(current => ({ ...current, outdoor_bike: event.target.checked }))} disabled={saving} />
+                                    🚴 Bicycle available for outdoor riding
+                                </label>
+                                <label className="choice-card-mini">
+                                    <input type="checkbox" checked={sportAccess.swim_access} onChange={(event) => setSportAccess(current => ({ ...current, swim_access: event.target.checked }))} disabled={saving} />
+                                    🏊 Pool / swim venue access
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="choice-group">
+                            <label className="group-heading">Weekly Training Sessions:</label>
                             <div className="days-selector-row">
-                                {[3, 4, 5, 6].map(days => (
-                                    <button key={days} type="button" className={`days-pill ${daysPerWeek === days ? 'active' : ''}`} onClick={() => setDaysPerWeek(days)} disabled={saving}>
-                                        {days} days / week
+                                {[3, 4, 5, 6, 7, 8, 9, 10].map(sessions => (
+                                    <button key={sessions} type="button" className={`days-pill ${sessionsPerWeek === sessions ? 'active' : ''}`} onClick={() => setSessionsPerWeek(sessions)} disabled={saving}>
+                                        {sessions} / week
                                     </button>
                                 ))}
                             </div>

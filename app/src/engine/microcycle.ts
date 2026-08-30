@@ -182,6 +182,22 @@ import { deriveObjectiveCreditFromProfile, readStimulusProfile, type StimulusCon
 export const LEGACY_KEYWORD_COMPATIBILITY_CREDIT = 0.5;
 export const COMPATIBILITY_CREDIT_PER_EXPOSURE = LEGACY_KEYWORD_COMPATIBILITY_CREDIT;
 
+const LEGACY_MODALITY_TOKENS: Partial<Record<SessionTemplate['modality'], string[]>> = {
+    Running: ['run'],
+    Cycling: ['cycl', 'bike'],
+    Swimming: ['swim'],
+    Strength: ['strength', 'weight', 'lift'],
+    Field: ['field', 'football', 'soccer'],
+    Mobility: ['mobility', 'yoga'],
+    'Cross Training': ['cross training', 'ellipt', 'row'],
+};
+
+function legacyTextCanCreditScopedObjective(activityType: string, objective: WeeklyObjective): boolean {
+    const allowed = objective.qualification?.allowedModalities;
+    if (!allowed || allowed.length === 0) return true;
+    return allowed.some(modality => (LEGACY_MODALITY_TOKENS[modality] ?? []).some(token => activityType.includes(token)));
+}
+
 /** One compatibility projection for both completed and forecast ledgers. Fractional V2
  * credit remains authoritative; this only preserves the legacy exposure display shape. */
 export function projectCompatibilityExposures(credit: number, targetExposures: number): number {
@@ -211,7 +227,7 @@ export function updateMicrocycleProgress(
             matched = true;
         }
 
-        if (matched) {
+        if (matched && legacyTextCanCreditScopedObjective(actType, obj)) {
             const requiredCredit = obj.requiredCredit ?? obj.targetExposures;
             const completedCredit = obj.completedCredit ?? obj.completedExposures;
             const nextCredit = Math.min(requiredCredit, completedCredit + LEGACY_KEYWORD_COMPATIBILITY_CREDIT);

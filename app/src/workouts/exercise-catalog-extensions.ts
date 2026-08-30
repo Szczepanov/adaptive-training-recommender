@@ -262,6 +262,7 @@ export const EXERCISE_FACET_OVERRIDES: Readonly<Record<string, ExerciseFacets>> 
   easy_continuous_run: runningDuration('easy_continuous_run'),
   run_tempo_interval: runningDuration('tempo_interval'),
   run_vo2_interval: runningDuration('vo2_interval', ['calf', 'hamstring', 'knee_extensor'], ['acute_hamstring_pain', 'worsening_achilles_pain', 'knee_swelling']),
+  run_race_pace_interval: runningDuration('race_pace_interval', ['calf', 'hamstring', 'knee_extensor'], ['knee_swelling', 'worsening_achilles_pain']),
   running_hill_repeat: runningDuration('hill_repeat', ['calf', 'hamstring', 'hip'], ['acute_hamstring_pain', 'worsening_achilles_pain', 'knee_swelling']),
   running_strides: runningDuration('strides', ['calf', 'hamstring', 'hip'], ['acute_hamstring_pain', 'worsening_achilles_pain']),
   running_drills: runningDuration('technical_drills', ['calf', 'hip'], ['worsening_achilles_pain']),

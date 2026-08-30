@@ -15,7 +15,9 @@ const ZERO_FATIGUE: FatigueState = {
 const AVAILABILITY: ResolvedAvailability = {
     date: '2026-08-24',
     maxTimeMinutes: 120,
-    availableEquipment: ['free_weights', 'indoor_bike', 'treadmill', 'cable_machine'],
+    // outdoor_bike: this fixture's history and candidates center on an outdoor race-simulation
+    // ride (end_race_sim_01), which now hard-requires declared outdoor bicycle access.
+    availableEquipment: ['free_weights', 'indoor_bike', 'treadmill', 'cable_machine', 'outdoor_bike'],
     fixedActivities: [],
     reservedCapacityCost: 0,
     reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },

@@ -112,6 +112,18 @@ export function beamSearchWeekAheadPlan(
     const effectivePreferences = preferences ?? { ...NEUTRAL_PREFERENCES, preferredRecoveryStyle: resolveRecoveryStyle(context) };
 
     const periodizationToday = evaluatePeriodizationPhase(events, todayDate);
+    // KNOWN GAP (tracked by sequenceSearch.test.ts's "degenerates to exactly the greedy
+    // algorithm" invariant): unlike generateWeekAheadPlan, this function never calls
+    // planner.ts's reconcileObjectivesForDate. When `seed.microcycle` was built against a
+    // different (or empty) `events` list than the `options.events` passed here -- exactly
+    // what the greedy/beam parity test does -- the greedy planner self-heals every day via
+    // reconcileObjectivesForDate (regenerating the objective skeleton from the *current*
+    // day's periodization/focusEvent and merging in any newly-relevant event-specific
+    // objectives), while this beam search stays on the stale seed skeleton for the whole
+    // horizon. Fixing this requires threading reconcileObjectivesForDate's per-branch state
+    // (a `creditMemory` map plus accumulated `droppedContributorObjectives`) through
+    // SearchBranch and cloning it correctly at every branch fork -- real surgery, not a
+    // one-line call, so it's left as a documented gap rather than a rushed partial fix.
     const initialMicrocycle: MicrocycleState = seed.microcycle ?? generateWeeklyObjectives(periodizationToday.phase, todayDate, periodizationToday.focusEvent);
     const internalStrain: DimensionalFatigue = seed.fatigue?.internalResponseStrain ?? ZERO_DIMENSIONAL;
     const internalStrainAsOf = todayDate;

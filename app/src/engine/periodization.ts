@@ -51,7 +51,7 @@ export function modalitiesForEventCategory(category: UserEvent['category']): Ses
     switch (category) {
         case 'cycling_event': return ['Cycling'];
         case 'running_race': return ['Running'];
-        case 'triathlon': return ['Cycling', 'Running'];
+        case 'triathlon': return ['Swimming', 'Cycling', 'Running'];
         case 'strength_meet': return ['Strength'];
         case 'general_target': return [];
     }
@@ -132,12 +132,41 @@ export function objectivesFromDemand(
     const objectives: WeeklyObjective[] = [];
 
     if (demand.aerobicEndurance >= 0.4) {
-        objectives.push({
-            id: 'obj_z2_aerobic', key: 'zone2_aerobic', title: 'Aerobic Base (Zone 2)',
-            targetExposures: demand.aerobicEndurance >= 0.7 ? 2 : 1,
-            completedExposures: 0,
-            targetStimulus: { aerobicEndurance: 0.8 },
-        });
+        if (category === 'triathlon' && !isPostEventRecovery) {
+            // A generic aerobic bucket lets a triathlete satisfy the entire week by cycling.
+            // Keep one low-intensity exposure per race discipline instead. Shared objective
+            // keys are safe because qualification is modality-scoped and each objective has
+            // a stable unique id.
+            for (const [id, modality, title] of [
+                ['obj_tri_swim_aerobic', 'Swimming', 'Triathlon Swim Aerobic Exposure'],
+                ['obj_tri_bike_aerobic', 'Cycling', 'Triathlon Bike Aerobic Exposure'],
+                ['obj_tri_run_aerobic', 'Running', 'Triathlon Run Aerobic Exposure'],
+            ] as const) {
+                objectives.push({
+                    id, key: 'zone2_aerobic', title,
+                    targetExposures: 1, completedExposures: 0,
+                    targetStimulus: { aerobicEndurance: 0.7 },
+                    qualification: {
+                        minimumStimulus: { aerobicEndurance: 0.45 },
+                        allowedModalities: [modality],
+                    },
+                });
+            }
+        } else {
+            // Deliberately unscoped: the triathlon branch above exists precisely because a
+            // single shared aerobic bucket lets one discipline silently satisfy every
+            // discipline's aerobic exposure. A single-sport event (running, cycling,
+            // strength, general) has no such cross-discipline substitution risk, so
+            // scoping this to the event's own modality only shrinks which historical
+            // exposures count as "aerobic base" without protecting anything -- and
+            // starves the week's coverage/anchor-day logic of credit it used to have.
+            objectives.push({
+                id: 'obj_z2_aerobic', key: 'zone2_aerobic', title: 'Aerobic Base (Zone 2)',
+                targetExposures: demand.aerobicEndurance >= 0.7 ? 2 : 1,
+                completedExposures: 0,
+                targetStimulus: { aerobicEndurance: 0.8 },
+            });
+        }
     }
 
     if (demand.thresholdPower >= 0.5 && !taperActive) {
@@ -216,6 +245,43 @@ export function objectivesFromDemand(
                 targetExposures: 1, completedExposures: 0,
                 targetStimulus: TAPER_SHARPENING_TARGET_STIMULUS,
                 qualification: TAPER_SHARPENING_QUALIFICATION,
+            });
+        }
+    }
+
+    if (category === 'running_race' && !isPostEventRecovery) {
+        if (taperActive) {
+            objectives.push({
+                id: 'obj_running_taper_sharpening', key: 'race_specific_endurance', title: 'Running Taper Sharpening',
+                targetExposures: 1, completedExposures: 0,
+                targetStimulus: { thresholdPower: 0.5, aerobicEndurance: 0.3 },
+                qualification: {
+                    minimumStimulus: { thresholdPower: 0.4 },
+                    allowedModalities: ['Running'],
+                    allowedCategories: ['Race-Specific Endurance'],
+                },
+            });
+        } else if (rawDemand.fatigueResistance >= 0.75 && rawDemand.aerobicEndurance >= 0.8) {
+            objectives.push({
+                id: 'obj_running_long_durability', key: 'race_specific_endurance', title: 'Running Long-Run Durability',
+                targetExposures: 1, completedExposures: 0,
+                targetStimulus: { aerobicEndurance: 0.85, fatigueResistance: 0.85 },
+                qualification: {
+                    minimumStimulus: { aerobicEndurance: 0.7, fatigueResistance: 0.65 },
+                    allowedModalities: ['Running'],
+                    allowedCategories: ['Race-Specific Endurance'],
+                },
+            });
+        } else if (rawDemand.thresholdPower >= 0.65 || rawDemand.vo2MaxPower >= 0.7) {
+            objectives.push({
+                id: 'obj_running_race_specific', key: 'race_specific_endurance', title: 'Running Race-Pace Specificity',
+                targetExposures: 1, completedExposures: 0,
+                targetStimulus: { thresholdPower: 0.75, aerobicEndurance: 0.5 },
+                qualification: {
+                    minimumStimulus: { thresholdPower: 0.6 },
+                    allowedModalities: ['Running'],
+                    allowedCategories: ['Race-Specific Endurance'],
+                },
             });
         }
     }

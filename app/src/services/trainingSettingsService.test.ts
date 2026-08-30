@@ -28,7 +28,7 @@ describe('training settings storage parsing', () => {
             { severity: 'limit', reviewBy: '2026-02-30' },
             { severity: 'limit', note: 42 },
             { severity: 'limit', restrictedModalities: 'Running' },
-            { severity: 'limit', restrictedModalities: ['Swimming'] },
+            { severity: 'limit', restrictedModalities: ['Unsupported'] },
         ];
 
         for (const injury of malformedInjuries) {

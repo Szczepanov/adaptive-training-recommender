@@ -476,9 +476,10 @@ function weeklyTrainingSettings(overrides: Partial<TrainingSettings['defaults']>
     return {
         userId: 'u1', schemaVersion: 2,
         // indoor_bike: the midweek "structured quality" templates (Tempo Ride / Bike VO2
-        // Intervals) require it -- the outdoor Race-Specific Endurance templates don't
-        // (requiredEquipment: []), so this only gates the quality-anchor side.
-        equipment: { free_weights: true, cable_machine: false, treadmill: false, indoor_bike: true, pullup_bar: false },
+        // Intervals) require it. outdoor_bike: this fixture represents a cyclist training
+        // for an outdoor Gran Fondo, so the outdoor Race-Specific Endurance templates
+        // (requiredEquipment: ['outdoor_bike']) are also feasible.
+        equipment: { free_weights: true, cable_machine: false, treadmill: false, indoor_bike: true, pullup_bar: false, outdoor_bike: true, swim_access: false },
         guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
         defaults: { weekdayMaxMinutes: 45, weekendMaxMinutes: 150, environment: 'either', ...overrides },
         preferences: { preferActiveRecovery: false },

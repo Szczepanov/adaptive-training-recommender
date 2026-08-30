@@ -15,6 +15,8 @@ const equipmentLabels: Record<keyof TrainingSettingsModel['equipment'], string> 
   treadmill: 'Treadmill',
   indoor_bike: 'Stationary bike',
   pullup_bar: 'Pull-up bar',
+  outdoor_bike: 'Bicycle (outdoor)',
+  swim_access: 'Pool / swim access',
 };
 
 const guardrailDetails: Record<GuardrailKey, { label: string; effect: string }> = {
@@ -30,7 +32,7 @@ const injuryRegions: Array<{ value: BodyRegion; label: string }> = [
   { value: 'adductor_groin', label: 'Adductor / groin' }, { value: 'hip', label: 'Hip' }, { value: 'lower_back', label: 'Lower back' },
   { value: 'shoulder', label: 'Shoulder' }, { value: 'elbow', label: 'Elbow' }, { value: 'wrist', label: 'Wrist' },
 ];
-const injuryModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Strength', 'Field', 'Mobility', 'Cross Training'];
+const injuryModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Swimming', 'Strength', 'Field', 'Mobility', 'Cross Training'];
 const emptyInjuryDraft = { region: '', severity: 'limit' as InjuryConstraint['severity'], restrictedModalities: [] as SessionTemplate['modality'][], reviewBy: '', note: '' };
 
 export function TrainingSettings({ userId }: TrainingSettingsProps) {
@@ -122,8 +124,8 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
       )}
 
       <section aria-labelledby="equipment-title">
-        <h2 id="equipment-title">Available equipment</h2>
-        <p className="section-intro">Turn on only equipment you can use for a typical session.</p>
+        <h2 id="equipment-title">Available equipment & sport access</h2>
+        <p className="section-intro">Turn on only equipment and venues you can reliably use for a typical session. Pool access may be indoor or outdoor.</p>
         <div className="settings-list">
           {Object.entries(equipmentLabels).map(([key, label]) => (
             <label className="setting-row" key={key}>

@@ -169,5 +169,41 @@ export const WORKOUT_PARAMETER_BINDINGS: WorkoutParameterBindingSet[] = [
       stepField('warmup_duration', ['race_day_warmup'], 'duration.seconds', { transform: 'minutes_to_seconds' }),
       stepField('finish_duration', ['race_day_finish'], 'duration.seconds')
     ]
+  },
+  {
+    workoutId: 'swimming_technique_01',
+    bindings: [
+      stepField('drill_count', ['swim_tech_drill'], 'sets')
+    ]
+  },
+  {
+    workoutId: 'swimming_easy_aerobic_01',
+    bindings: [
+      stepField('aerobic_duration', ['swim_easy_main'], 'duration.seconds', { transform: 'minutes_to_seconds' })
+    ]
+  },
+  {
+    workoutId: 'swimming_threshold_intervals_01',
+    bindings: [
+      stepField('interval_count', ['swim_thresh_main'], 'sets')
+    ]
+  },
+  {
+    workoutId: 'running_long_run_01',
+    bindings: [
+      stepField('long_run_duration', ['long_run_main'], 'duration.seconds', { transform: 'minutes_to_seconds' })
+    ]
+  },
+  {
+    workoutId: 'running_race_pace_01',
+    bindings: [
+      stepField('repeat_count', ['race_pace_main'], 'sets')
+    ]
+  },
+  {
+    workoutId: 'running_taper_sharpening_01',
+    bindings: [
+      stepField('sharpening_count', ['taper_run_efforts'], 'sets')
+    ]
   }
 ];

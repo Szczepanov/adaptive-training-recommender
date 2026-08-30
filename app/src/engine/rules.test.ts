@@ -232,11 +232,46 @@ describe('modality preferences', () => {
     });
 
     it('falls back with a distinct note when the requested modality has no matching template at all', () => {
+        // Every real modality (including Swimming, added for triathlon support) now has at
+        // least one catalog template, so the "no matching template type" branch is only
+        // reachable for a request that isn't a real modality at all.
+        const rec = evaluateTraining(
+            { subjective: greenSubjective({ preferredModalityToday: 'Underwater Basket Weaving' }), objective: quietObjective() },
+            baseContext(), '2026-08-01'
+        );
+        expect(rec.rationale).toContain("don't have a matching session type in the catalog yet");
+    });
+
+    it('falls back with the readiness/constraints note (not the "no matching template" note) when Swimming exists in the catalog but access is not declared', () => {
+        // baseContext() declares no trainingSettings at all, so swim_access -- which has no
+        // legacy constraints equivalent -- resolves to unavailable (fail-closed), same as an
+        // athlete who has never granted pool access.
         const rec = evaluateTraining(
             { subjective: greenSubjective({ preferredModalityToday: 'Swimming' }), objective: quietObjective() },
             baseContext(), '2026-08-01'
         );
-        expect(rec.rationale).toContain("don't have a matching session type in the catalog yet");
+        expect(rec.rationale).not.toContain("don't have a matching session type in the catalog yet");
+        expect(rec.rationale).toContain("don't support it");
+    });
+
+    it('honors a Swimming ask once swim_access is declared', () => {
+        const context = baseContext();
+        context.trainingSettings = {
+            userId: 'u1', schemaVersion: 3,
+            equipment: { free_weights: true, cable_machine: false, treadmill: false, indoor_bike: false, pullup_bar: false, outdoor_bike: false, swim_access: true },
+            guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
+            defaults: { environment: 'either', weekdayMaxMinutes: null, weekendMaxMinutes: null },
+            preferences: { preferActiveRecovery: false },
+            migration: { legacyReviewed: true, migratedAt: null },
+            createdAt: '', updatedAt: '',
+        };
+        const rec = evaluateTraining(
+            { subjective: greenSubjective({ preferredModalityToday: 'Swimming' }), objective: quietObjective() },
+            context, '2026-08-01'
+        );
+        expect(rec.template.modality).toBe('Swimming');
+        expect(rec.rationale).not.toContain("don't have a matching session type in the catalog yet");
+        expect(rec.rationale).not.toContain("don't support it");
     });
 
     it('avoidedModalities is a hard exclude across every mode', () => {

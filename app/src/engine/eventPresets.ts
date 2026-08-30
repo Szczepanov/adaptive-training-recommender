@@ -86,6 +86,16 @@ export const EVENT_PRESETS: Record<UserEvent['category'], EventPreset[]> = {
     ],
     triathlon: [
         {
+            id: 'eighth_im',
+            label: '1/8 distance (475 m / 22.5 km / 5.25 km)',
+            demandProfile: { aerobicEndurance: 0.6, thresholdPower: 0.75, vo2MaxPower: 0.65, repeatedSurges: 0.3, sprintPower: 0.2, fatigueResistance: 0.5, neuromuscular: 0.2 },
+        },
+        {
+            id: 'quarter_im',
+            label: '1/4 distance (950 m / 45 km / 10.55 km)',
+            demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.4, repeatedSurges: 0.2, sprintPower: 0.1, fatigueResistance: 0.7, neuromuscular: 0.15 },
+        },
+        {
             id: 'sprint',
             label: 'Sprint',
             demandProfile: { aerobicEndurance: 0.6, thresholdPower: 0.75, vo2MaxPower: 0.6, repeatedSurges: 0.3, sprintPower: 0.2, fatigueResistance: 0.5, neuromuscular: 0.2 },
@@ -97,7 +107,7 @@ export const EVENT_PRESETS: Record<UserEvent['category'], EventPreset[]> = {
         },
         {
             id: 'half_iron',
-            label: 'Half iron (70.3)',
+            label: '1/2 distance / 70.3 (1.9 km / 90 km / 21.1 km)',
             demandProfile: { aerobicEndurance: 0.9, thresholdPower: 0.7, vo2MaxPower: 0.25, repeatedSurges: 0.1, sprintPower: 0.05, fatigueResistance: 0.85, neuromuscular: 0.1 },
         },
         {

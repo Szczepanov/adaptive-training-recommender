@@ -48,11 +48,29 @@ const EQUIPMENT_CONSTRAINT_MAP: Record<string, keyof Pick<UserContext['constrain
  *  there's no real check-in either -- matches the previous unconfigured-schedule default. */
 const NO_CONTEXT_FALLBACK_MINUTES = 60;
 
-function resolveOwnedEquipment(constraints: UserContext['constraints'] | null | undefined): string[] {
-    if (!constraints) return [];
-    return Object.entries(EQUIPMENT_CONSTRAINT_MAP)
-        .filter(([, flag]) => constraints[flag])
-        .map(([equipment]) => equipment);
+/** Additive sport-access keys exist only on `TrainingSettings.equipment` -- there is no
+ *  legacy `UserContext.constraints` boolean for them (unlike free_weights/cable_machine/
+ *  treadmill/indoor_bike, which both shapes carry). Without this, granting
+ *  `outdoor_bike`/`swim_access` in Training Settings would never reach the schedule this
+ *  function builds, so every outdoor-cycling and swimming template stays permanently
+ *  unavailable regardless of what the athlete declared. */
+const ADDITIVE_SPORT_ACCESS_KEYS = ['outdoor_bike', 'swim_access'] as const;
+
+function resolveOwnedEquipment(
+    constraints: UserContext['constraints'] | null | undefined,
+    trainingSettings: UserContext['trainingSettings'] | null | undefined
+): string[] {
+    const owned = constraints
+        ? Object.entries(EQUIPMENT_CONSTRAINT_MAP)
+            .filter(([, flag]) => constraints[flag])
+            .map(([equipment]) => equipment)
+        : [];
+    if (trainingSettings?.equipment) {
+        for (const key of ADDITIVE_SPORT_ACCESS_KEYS) {
+            if (trainingSettings.equipment[key]) owned.push(key);
+        }
+    }
+    return owned;
 }
 
 const ZERO_COST_PROFILE: WorkoutCostProfile = {
@@ -172,7 +190,7 @@ export function resolveAvailability(
     // day (e.g. a hotel gym's limited rack); absent any override, standing equipment is
     // unrestricted, same as before.
     const dayContext = resolveDayContextOverride(daysFixed);
-    const ownedEquipment = resolveOwnedEquipment(userContext?.constraints);
+    const ownedEquipment = resolveOwnedEquipment(userContext?.constraints, userContext?.trainingSettings);
     const equipmentSet = new Set<string>(
         dayContext.equipment ? ownedEquipment.filter(item => dayContext.equipment!.includes(item)) : ownedEquipment
     );
