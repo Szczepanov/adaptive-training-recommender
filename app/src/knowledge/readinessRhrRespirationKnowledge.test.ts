@@ -1,7 +1,18 @@
 import { describe, expect, it } from 'vitest';
-import { getActiveKnowledgeClaim, getKnowledgeSource, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledge';
+import {
+    getActiveKnowledgeClaim,
+    getKnowledgeSource,
+    KNOWLEDGE_CLAIM_IDS,
+    validateCanonicalSportsKnowledgeRegistry,
+} from './sportsKnowledgeRegistry';
 
 describe('RHR and respiration readiness evidence boundaries', () => {
+    it('keeps the aggregate registry structurally valid across domain modules', () => {
+        const result = validateCanonicalSportsKnowledgeRegistry();
+        expect(result.errors).toEqual([]);
+        expect(result.valid).toBe(true);
+    });
+
     it('treats resting HR as an individualized contextual signal, not a standalone readiness diagnosis', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.rhrContextualMonitoring);
         expect(claim.claimType).toBe('prognostic');
