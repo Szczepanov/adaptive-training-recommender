@@ -85,6 +85,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0030: Direct Read-Only Eight Sleep Private-API Transport**](./adr/0030-eight-sleep-direct-private-api-transport.md) — *Proposed.* Direct read-only observation ingestion as `provider=eight_sleep`, `transport=eight_sleep_direct` using an owned minimal private-API connector; keeps Google Health as non-authoritative fallback and requires separate evidence for baseline/fusion activation under ADR-0027.
 * [**ADR-0031: Activity Heart-Rate Measurement Fidelity and Evidence Authority**](./adr/0031-activity-heart-rate-measurement-fidelity-and-evidence-authority.md) — *Accepted.* Separates HR sensor/source provenance from technical signal quality and makes downstream authority use-case-specific; low measurement confidence removes or bounds evidence rather than lowering athlete readiness.
 
+* [**ADR-0032: Cause-Aware Subjective Symptom Gating**](./adr/0032-cause-aware-subjective-symptom-gating.md) — *Accepted.* Connects subjective symptom check-ins to engine-aware cause categories to safely differentiate ambient fatigue from illness risk.
 ---
 
 ### 🔍 Reviews & Analysis
@@ -129,6 +130,24 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**AI plan judge tooling**](./analysis/ai-plan-judge.md) — Offline evaluation harness around the deterministic training-plan simulator to verify safety/capacity invariants and establish baselines.
 * [**AI plan judge: pairwise sensitivity contract**](./analysis/ai-plan-judge-pairwise.md) — Runtime contract for the pairwise sensitivity path introduced by `--pairwise` to evaluate structural quality over point-in-time invariants.
 * [**Phase 9.4 Subjective history integration**](./analysis/phase-9-4-subjective-history-integration.md) — Integration analysis for composition-boundary range reads and data-quality handling.
+
+* [**2026-08-28 Eight Sleep Extended Metrics Analysis**](./analysis/2026-08-28-eight-sleep-extended-metrics-analysis.md) — Evaluation of private API metrics against original ingestion schema.
+* [**2026-08-28 Garmin vs Eight Sleep Cross-Device Agreement**](./analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md) — Cross-device agreement study for overlapping metrics.
+* [**2026-08-29 Eight Sleep Stage Sum Invariant Check**](./analysis/2026-08-29-eight-sleep-stage-sum-invariant-check.md) — Validates the sum of stage durations against total sleep duration.
+* [**2026-08-29 Eight Sleep WASO Reinstated**](./analysis/2026-08-29-eight-sleep-waso-reinstated.md) — Verification of Wake After Sleep Onset metric restoration.
+* [**2026-08-29 Garmin Activity HR FIT Provenance Spike**](./analysis/2026-08-29-garmin-activity-hr-fit-provenance-spike.md) — FIT file trace analysis for sensor provenance.
+* [**2026-08-29 HRF3 Trace Diagnostics Hardening Review**](./analysis/2026-08-29-hrf3-trace-diagnostics-hardening-review.md) — Code review and hardening validation for HRF3 trace artifact diagnostics.
+* [**2026-08-29 HRF4 Persistence Review**](./analysis/2026-08-29-hrf4-persistence-review.md) — Code review for the HRF4 persistence layer.
+* [**2026-08-29 HRF5 Authority Review**](./analysis/2026-08-29-hrf5-authority-review.md) — Verification of downstream authority boundaries for HR fidelity.
+* [**2026-08-29 HRF6 HR Consumer Lineage Audit**](./analysis/2026-08-29-hrf6-hr-consumer-lineage-audit.md) — Traceability audit for HR measurement consumption and lineage.
+* [**2026-08-29 HRF7 Shadow Observability Review**](./analysis/2026-08-29-hrf7-shadow-observability-review.md) — Verification of shadow mode observability and telemetry.
+* [**2026-08-29 HRF8 Bounded Replay & Decoder Qualification**](./analysis/2026-08-29-hrf8-bounded-replay-and-decoder-qualification.md) — Validation of bounded replay logic and HR decoder behavior.
+* [**2026-08-29 PR #292 Evergreen Priority Time Cap Review**](./analysis/2026-08-29-pr-292-evergreen-priority-time-cap-review.md) — Code review of the priority time cap logic implemented in PR #292.
+* [**2026-08-29 PR #292 Finding 8 Health/Strength Floor**](./analysis/2026-08-29-pr-292-finding-8-health-strength-floor.md) — Resolution analysis for Finding 8 regarding the health/strength baseline floor.
+* [**2026-08-29 Sleep Data & Training Recommendations Analysis**](./analysis/2026-08-29-sleep-data-training-recommendations-analysis.md) — Cross-correlation analysis of sleep architectures vs optimal training outcomes.
+* [**2026-08-29 Sleep Decision Authority Phase 2 Implementation**](./analysis/2026-08-29-sleep-decision-authority-phase-2-implementation.md) — Progress review for Phase 2 of sleep decision authority decoupling.
+* [**2026-08-29 Sleep Decision Authority Phase 3 Implementation**](./analysis/2026-08-29-sleep-decision-authority-phase-3-implementation.md) — Progress review for Phase 3 of sleep decision authority decoupling.
+* [**2026-08-29 Sleep Decision Authority Phase 4 Status**](./analysis/2026-08-29-sleep-decision-authority-phase-4-status.md) — Status report for Phase 4 of sleep decision authority decoupling.
 
 ---
 

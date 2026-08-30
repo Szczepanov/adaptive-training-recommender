@@ -3,7 +3,7 @@
 Status: **implemented**. Worktree: `.claude/worktrees/symptom-reporting`,
 branch `feat/subjective-symptom-reporting`. See §7 for what shipped and how it differs from
 this document's original sketch. The final safety decision is recorded in
-[ADR-0031](../adr/0031-cause-aware-subjective-symptom-gating.md).
+[ADR-0032](../adr/0032-cause-aware-subjective-symptom-gating.md).
 
 ## 1. The gap, precisely
 
@@ -54,7 +54,7 @@ need to change how the engine reacts.
 like an injury.** Use the new cause/severity/type detail to soften the
 `painFlag`/`clinicalFlagActive` path only when the report is explicit enough to pass a
 fail-closed predicate. This changes actual recommendation output, so it requires a policy
-version, targeted regression coverage and policy-drift checks. See §5 and ADR-0031.
+version, targeted regression coverage and policy-drift checks. See §5 and ADR-0032.
 
 ## 3. Phase 1 — file-by-file
 
@@ -86,7 +86,7 @@ version, targeted regression coverage and policy-drift checks. See §5 and ADR-0
   explanation/label.
 - `feedbackValidation.test.ts` — covers the new `ModificationReason`.
 - [`adapters.test.ts`](../../app/src/engine/adapters.test.ts) — covers the complete decision
-  predicate described in §5/ADR-0031.
+  predicate described in §5/ADR-0032.
 
 A future cross-check test could additionally parse `firestore.rules` and compare its hardcoded
 symptom/explanation allow-lists with the TypeScript constants. Rules cannot import TypeScript,
@@ -146,7 +146,7 @@ early infection or an airway condition. IOC guidance explicitly distinguishes in
 non-infective respiratory illness in athletes, while EAACI guidance emphasizes accurate
 diagnosis and the possible coexistence of allergic rhinitis with asthma/exercise-induced
 bronchoconstriction. The app does not yet model enough respiratory red flags to safely relax
-cough/sore-throat/other presentations. ADR-0031 records that evidence and the resulting product
+cough/sore-throat/other presentations. ADR-0032 records that evidence and the resulting product
 boundary.
 
 ## 6. Suggested sequencing
@@ -159,7 +159,7 @@ The implementation followed this sequence:
 4. Add targeted decision and Firestore-rule tests.
 5. Add `adapters.ts` to the policy-drift decision-affecting file set and bump `POLICY_VERSION`.
 6. Deep-review the safety predicate, harden missing-detail and symptom-shape behavior, and record
-   the final decision in ADR-0031.
+   the final decision in ADR-0032.
 
 ## 7. What actually shipped
 
@@ -180,7 +180,7 @@ The review also closed the policy-drift coverage gap exposed by this feature:
 
 - `app/src/engine/adapters.ts` is now in `decisionAffectingFiles`.
 - `POLICY_VERSION` is `2026-08-allergy-symptom-gating-v1`.
-- [ADR-0031](../adr/0031-cause-aware-subjective-symptom-gating.md) records the final safety
+- [ADR-0032](../adr/0032-cause-aware-subjective-symptom-gating.md) records the final safety
   policy and evidence rationale.
 
 The initial implementation passed the full app and Firestore-rule suites before review. The
