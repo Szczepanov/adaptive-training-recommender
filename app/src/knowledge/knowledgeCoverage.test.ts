@@ -15,14 +15,14 @@ describe('engine knowledge coverage inventory', () => {
         expect(result.valid).toBe(true);
     });
 
-    it('keeps existing Sports Knowledge Registry migrations covered', () => {
+    it('keeps the original Sports Knowledge Registry migrations covered', () => {
         expect(byId('evergreen.adult_aerobic_weekly_volume')).toMatchObject({ coverage: 'covered', knowledgeRefs: ['health.adults.aerobic.weekly_volume'] });
         expect(byId('evergreen.adult_strength_weekly_frequency')).toMatchObject({ coverage: 'covered', knowledgeRefs: ['health.adults.strength.weekly_frequency'] });
         expect(byId('evergreen.strength_default_upper_target')).toMatchObject({ coverage: 'covered', knowledgeRefs: ['health.adults.strength.default_upper_target'] });
         expect(byId('evergreen.high_intensity_weekly_prior')).toMatchObject({ coverage: 'covered', knowledgeRefs: ['performance.high_intensity.conditional_weekly_prior'] });
     });
 
-    it('migrates the load, intensity and recovery evidence pack without pretending product cut-points are scientific', () => {
+    it('keeps the load, intensity and recovery evidence pack covered', () => {
         const covered = [
             'readiness.recent_hard_session_penalty',
             'fatigue.dimension_half_lives',
@@ -31,36 +31,46 @@ describe('engine knowledge coverage inventory', () => {
             'spacing.strength_key_cycling_adjacency',
             'optimizer.intensity_class_thresholds',
         ];
-        covered.forEach(id => {
-            const item = byId(id);
-            expect(item).toMatchObject({ coverage: 'covered', researchPriority: 'none' });
-            expect(item?.knowledgeRefs.length).toBeGreaterThanOrEqual(2);
-        });
-
-        expect(byId('spacing.hard_lower_body_recovery')).toMatchObject({
-            coverage: 'partial',
-            researchPriority: 'p1',
-            safetyImpact: 'high',
-        });
-        expect(byId('spacing.hard_lower_body_recovery')?.coverageRationale).toContain('catalog-specific');
+        covered.forEach(id => expect(byId(id)).toMatchObject({ coverage: 'covered', researchPriority: 'none' }));
+        expect(byId('spacing.hard_lower_body_recovery')).toMatchObject({ coverage: 'partial', researchPriority: 'p1', safetyImpact: 'high' });
     });
 
-    it('keeps the remaining highest-priority research gaps visible', () => {
-        const expectedP0Gaps = [
+    it('migrates the objective-readiness evidence pack while keeping exact cut-points explicitly heuristic', () => {
+        const covered = [
             'readiness.physiological_strain_model',
-            'readiness.subjective_mode_thresholds',
             'readiness.absolute_device_floors',
             'readiness.acute_biometric_floors',
             'readiness.mode_score_thresholds',
             'fatigue.internal_response_model',
+        ];
+        covered.forEach(id => {
+            const item = byId(id);
+            expect(item).toMatchObject({ classification: 'product_heuristic', coverage: 'covered', researchPriority: 'none' });
+            expect(item?.knowledgeRefs.length).toBeGreaterThanOrEqual(3);
+            expect(item?.coverageRationale).toMatch(/product|Product/);
+        });
+
+        expect(byId('readiness.physiological_strain_model')?.knowledgeRefs).toEqual(expect.arrayContaining([
+            'readiness.hrv.contextual_individualized_monitoring',
+            'readiness.rhr.contextual_individualized_monitoring',
+            'readiness.sleep.loss_impairs_performance',
+            'readiness.sleep.consumer_wearable_measurement_limits',
+            'readiness.respiration.longitudinal_contextual_signal',
+            'policy.readiness.physiological_strain_model_v1',
+        ]));
+        expect(byId('readiness.acute_biometric_floors')?.knowledgeRefs).toContain('readiness.rhr.contextual_individualized_monitoring');
+        expect(byId('readiness.mode_score_thresholds')?.knowledgeRefs).toContain('readiness.respiration.longitudinal_contextual_signal');
+    });
+
+    it('keeps the remaining P0 research gaps visible rather than laundering adjacent evidence into them', () => {
+        const expectedP0Gaps = [
+            'readiness.subjective_mode_thresholds',
             'injury.tissue_response_severity',
             'injury.region_restriction_mapping',
             'injury.pain_envelope_mapping',
             'periodization.taper_windows_volume',
         ];
-        expectedP0Gaps.forEach(id => {
-            expect(byId(id)).toMatchObject({ coverage: 'uncovered', researchPriority: 'p0' });
-        });
+        expectedP0Gaps.forEach(id => expect(byId(id)).toMatchObject({ coverage: 'uncovered', researchPriority: 'p0' }));
     });
 
     it('separates conservative software invariants from missing sports-science claims', () => {
@@ -70,13 +80,13 @@ describe('engine knowledge coverage inventory', () => {
         expect(byId('data_trust.identity_gated_source_fail_closed')).toMatchObject({ classification: 'safety_invariant', coverage: 'not_applicable' });
     });
 
-    it('reports the post-pack coverage and risk debt exactly', () => {
+    it('reports the post-readiness-pack coverage and risk debt exactly', () => {
         const summary = summarizeKnowledgeCoverage();
         expect(summary.total).toBe(47);
-        expect(summary.byCoverage).toEqual({ covered: 10, partial: 1, uncovered: 31, not_applicable: 5 });
-        expect(summary.byPriority).toEqual({ p0: 10, p1: 13, p2: 7, p3: 2, none: 15 });
-        expect(summary.highImpactUncovered).toBe(18);
-        expect(summary.highSafetyUncovered).toBe(5);
+        expect(summary.byCoverage).toEqual({ covered: 15, partial: 1, uncovered: 26, not_applicable: 5 });
+        expect(summary.byPriority).toEqual({ p0: 5, p1: 13, p2: 7, p3: 2, none: 20 });
+        expect(summary.highImpactUncovered).toBe(13);
+        expect(summary.highSafetyUncovered).toBe(4);
     });
 
     it('records shadow/observability models outside live decision coverage', () => {

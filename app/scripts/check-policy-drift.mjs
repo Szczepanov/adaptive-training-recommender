@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import ts from 'typescript';
 
 const baseRef = process.argv[2];
 
@@ -138,6 +139,50 @@ const sleepRecoveryEvidenceTestFile = 'app/src/engine/sleepRecoveryEvidence.test
 const sleepRecoveryPhase3Doc = 'docs/analysis/2026-08-29-sleep-decision-authority-phase-3-implementation.md';
 
 const changedDecisionFiles = changedFiles.filter((f) => decisionAffectingFiles.includes(f));
+
+/** Return the exact base commit whose tree should be compared with HEAD for this run. */
+function executableComparisonBaseRef() {
+  const eventName = process.env.GITHUB_EVENT_NAME;
+  if (eventName !== 'pull_request' && eventName !== 'pull_request_target') return baseRef;
+  try {
+    const parents = git(['rev-list', '--parents', '-n', '1', 'HEAD']).trim().split(/\s+/);
+    if (parents.length === 3) return parents[1];
+  } catch (err) {
+    console.warn(`Could not isolate pull-request base parent for syntax comparison: ${err.message}`);
+  }
+  return baseRef;
+}
+
+/**
+ * Normalize TypeScript syntax while removing comments. The printer preserves identifiers,
+ * literals, operators, types and statement structure, so a genuine source change cannot be
+ * hidden as a comment-only edit; whitespace and comments are intentionally erased.
+ */
+function executableSyntaxSignature(source, fileName) {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS);
+  const diagnostics = sourceFile.parseDiagnostics ?? [];
+  if (diagnostics.length > 0) {
+    throw new Error(`TypeScript parse diagnostics: ${diagnostics.map(d => d.code).join(', ')}`);
+  }
+  const printer = ts.createPrinter({ removeComments: true, newLine: ts.NewLineKind.LineFeed });
+  return printer.printFile(sourceFile);
+}
+
+/** Return true only when every changed decision file is syntax-identical without comments. */
+function isCommentOrWhitespaceOnlyDecisionChange() {
+  if (changedDecisionFiles.length === 0) return false;
+  const comparisonBase = executableComparisonBaseRef();
+  return changedDecisionFiles.every((file) => {
+    try {
+      const baseSource = git(['show', `${comparisonBase}:${file}`]);
+      const currentSource = readFileSync(join(repoRoot, file), 'utf8');
+      return executableSyntaxSignature(baseSource, file) === executableSyntaxSignature(currentSource, file);
+    } catch (err) {
+      console.warn(`Could not prove comment-only policy change for ${file}: ${err.message}`);
+      return false;
+    }
+  });
+}
 
 function extractPolicyVersion(source, label) {
   const match = source.match(/export const POLICY_VERSION\s*=\s*['"]([^'"]+)['"]/);
@@ -322,6 +367,13 @@ function isAcceptedDormantSleepRecoveryEvidenceChange() {
 }
 
 if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
+  if (isCommentOrWhitespaceOnlyDecisionChange()) {
+    console.log(
+      'POLICY DRIFT CHECK PASSED: decision-affecting files changed only in comments/whitespace; '
+      + `normalized executable TypeScript syntax is identical and POLICY_VERSION correctly remains ${currentPolicyVersion}.`
+    );
+    process.exit(0);
+  }
   if (isAcceptedDormantSubjectiveDriftChange()) {
     console.log(
       'POLICY DRIFT CHECK PASSED: ADR-0020 dormant subjective-drift implementation is default-off; '
