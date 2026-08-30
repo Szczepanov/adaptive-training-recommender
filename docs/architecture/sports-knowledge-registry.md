@@ -73,6 +73,8 @@ A source is not itself a claim. Consumers should not cite a source ID as a subst
 
 `product_policy` is a legitimate source type. It exists so a product default can be auditable **without pretending to be scientific evidence**.
 
+Source type is descriptive metadata, not an automatic certainty score. A systematic review can still be indirect, inconsistent or imprecise for a particular claim, while lower-level evidence can sometimes be more probative for a different question. `evidenceCertainty` remains an explicit human-reviewed claim-level judgment.
+
 ## Multi-axis interpretation
 
 Do not infer one dimension from another.
@@ -137,15 +139,20 @@ Its pre-existing coarse `confidence` remains for compatibility and should not be
 `validateSportsKnowledgeRegistry` currently checks:
 
 - source/claim ID format and uniqueness;
-- source title/citation and date shape;
-- claim version and review-date shape;
+- source title/citation and valid Gregorian publication/review dates in `YYYY-MM-DD` form;
+- claim version shape;
 - at least one source link per claim;
 - source/supersedes referential integrity;
+- circular `supersedes` lineage;
 - duplicate source links;
 - heuristic-vs-scientific-certainty category errors;
+- an explicit `product_policy` source for product heuristics;
+- at least one non-product-policy source before a claim can carry scientific certainty;
 - invalid strong authority from deprecated/rejected claims;
 - insufficient basis for high-safety strong policy;
 - governance warnings for contested claims or missing limitations.
+
+The source-authority rules are intentionally narrow. They do **not** infer certainty from a source's study design, and a heuristic may still cite external research as contextual/indirect support. Their purpose is only to prevent an internal product policy from being the sole basis for a scientific-certainty label and to keep the product decision itself explicitly auditable.
 
 These are structural/governance checks, not automated peer review. CI cannot determine whether a paper was interpreted correctly or whether all relevant literature was found.
 
@@ -175,6 +182,10 @@ Increment a claim version when the meaning materially changes, including:
 Pure spelling/formatting corrections do not need a claim-version bump if the proposition and interpretation remain identical.
 
 A claim version is not a decision-policy version. Historical recommendation replay still uses the engine `POLICY_VERSION`; persisted knowledge-version lineage is a follow-up to ADR-0033.
+
+The current registry resolves only the checked-in version of a stable claim ID. Older versions remain reconstructable from Git/build history, but the current runtime does not expose a historical `getKnowledgeClaim(id, version)` API. Persisted `{ claimId, version }` audit lineage and historical resolution are intentionally deferred together so the storage/replay contract is designed once.
+
+`supersedes` is replacement lineage between claim IDs, not a substitute for the integer version of the same stable claim ID. Cycles are invalid and fail validation.
 
 ## Current limitations
 
