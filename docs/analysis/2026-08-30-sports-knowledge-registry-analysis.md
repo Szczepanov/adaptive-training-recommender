@@ -68,6 +68,86 @@ The third guard is deliberately asymmetric. It does **not** infer certainty from
 
 These are structural integrity rules, not automatic evidence appraisal. Human review is still responsible for whether sources actually support the registered statement, whether directness is classified correctly, and whether the evidence body was searched adequately.
 
+## Follow-up research: systematic reviews and meta-analyses
+
+### Should PubMed meta-analyses be included?
+
+**Yes, when a product claim actually depends on them.** This is especially valuable for sport-performance questions where a current authoritative guideline often does not exist.
+
+However, "PubMed meta-analysis" combines three different concepts that should stay separate:
+
+1. **PubMed** — a literature index/discovery system. PubMed assigns stable PMIDs; indexing itself is not a quality grade.
+2. **Systematic review** — a review design with explicit search/selection/appraisal/synthesis methods.
+3. **Meta-analysis** — a quantitative synthesis method used within some systematic reviews when pooling is appropriate.
+
+NLM documents PMID as a stable PubMed citation identifier that does not change or get reused. This makes PMID useful registry identity metadata, alongside DOI/PMCID and review registration identifiers such as PROSPERO.
+
+Source:
+
+- https://pubmed.ncbi.nlm.nih.gov/help/
+
+### Why `meta_analysis` should not be a source type
+
+The initial registry schema treated `systematic_review` and `meta_analysis` as mutually exclusive source types. The deeper review found that this is epistemically inaccurate.
+
+The Cochrane Handbook explicitly treats meta-analysis as a synthesis step within systematic review methodology and warns that pooling can be misleading when studies should not be combined. A systematic review can validly use narrative synthesis instead; conversely, the presence of a pooled estimate does not guarantee low bias, consistency, precision or applicability.
+
+The implementation therefore now models:
+
+- `sourceType='systematic_review'` or `sourceType='umbrella_review'`; and
+- optional `synthesisMethods=['meta_analysis' | 'network_meta_analysis' | 'narrative_synthesis']`.
+
+Sources:
+
+- https://www.cochrane.org/authors/handbooks-and-manuals/handbook/current/chapter-10
+- https://www.cochrane.org/authors/handbooks-and-manuals/handbook/current/chapter-12
+
+### What should determine whether a meta-analysis is trusted?
+
+Not the label alone. For a claim that materially affects training prescription, reviewers should consider:
+
+- relevance/directness to the registered population, intervention/exposure, comparator and outcome;
+- risk of bias in the systematic-review process and included studies;
+- appropriateness of pooling;
+- heterogeneity/inconsistency and prediction intervals where relevant;
+- imprecision and sample/event counts;
+- publication/selective-reporting bias;
+- sensitivity to statistical model and influential decisions;
+- whether subgroup/meta-regression findings were prespecified;
+- overlapping primary studies when multiple reviews are linked;
+- recency and whether newer evidence materially changes the body.
+
+ROBIS is specifically designed to assess risk of bias in systematic reviews. AMSTAR 2 is a critical-appraisal tool for systematic reviews of randomized and non-randomized intervention studies and explicitly states that it should **not** be converted into an overall numeric score. This is consistent with the registry's multi-axis design.
+
+Sources:
+
+- https://www.bristol.ac.uk/population-health-sciences/projects/robis/robis-tool/
+- https://amstar.ca/Amstar-2.php
+
+PRISMA 2020 is also useful, but primarily as a **reporting guideline**. A review can report itself well and still contain biased evidence or inappropriate synthesis; PRISMA compliance should therefore not be treated as scientific certainty.
+
+Source:
+
+- https://www.prisma-statement.org/prisma-2020
+
+### Guideline versus systematic review precedence
+
+There should not be a universal "guideline beats review" or "meta-analysis beats guideline" rule.
+
+For a direct recommendation such as WHO's adult health activity target, a trustworthy current guideline is the most appropriate direct source because it contains both evidence appraisal and an explicit recommendation. Adding every underlying review would mostly duplicate lineage without improving the product claim.
+
+For sports-performance rules such as training-intensity distribution, strength transfer, tapering, interval design, load progression or durability, high-quality systematic reviews/meta-analyses may be the best available synthesis. They should be linked to an **atomic performance claim**, with certainty/applicability reviewed independently.
+
+If a newer systematic review conflicts with an older guideline, the registry should preserve that conflict rather than automatically choosing the newer publication. The appropriate action may be to change certainty/status, narrow applicability, or create a reviewed successor claim.
+
+### Why no bulk PubMed import now
+
+ADR-0033's demand-driven rule remains correct. The registry should not ingest thousands of papers or even all available meta-analyses simply because they exist.
+
+A source should enter the registry when application behavior, validation or explanation depends on a claim it supports. This keeps the system auditable and avoids confusing "we indexed a paper" with "we reviewed and accepted a proposition."
+
+Automatic PubMed/Crossref/Cochrane discovery may later create **review candidates**, but it should not silently create or upgrade active claims.
+
 ## Architectural conclusion
 
 Use a demand-driven Git-backed Sports Knowledge Registry:
@@ -85,6 +165,18 @@ athlete measurements/history
 
 Do not preload a universal sports ontology. Add a claim when application behavior, validation or explanation depends on it.
 
+The source model now additionally follows:
+
+```text
+publication/review design: systematic_review / umbrella_review / randomized_trial / ...
+                         +
+review synthesis method: meta_analysis / network_meta_analysis / narrative_synthesis
+                         +
+stable identity: PMID / PMCID / DOI / PROSPERO / ISBN
+                         ≠
+claim evidence certainty
+```
+
 ## Initial scope
 
 The first migration covers only existing Evergreen assumptions:
@@ -94,4 +186,4 @@ The first migration covers only existing Evergreen assumptions:
 3. three-session strength upper target — explicit product heuristic;
 4. conditional one-to-two high-intensity weekly prior — explicit product heuristic.
 
-Future high-value migrations should target readiness interpretation, hard-session density, progression/load management, tapering, fueling, strength-performance prescriptions and injury/safety rules.
+No unused meta-analysis sources are added merely for completeness. Future high-value migrations should search and critically review relevant systematic reviews/meta-analyses for readiness interpretation, hard-session density, progression/load management, tapering, fueling, strength-performance prescriptions and injury/safety rules.
