@@ -93,12 +93,14 @@ This pack should separate validated symptom/return-to-sport principles from cons
 
 Analysis: `docs/analysis/2026-08-30-evidence-pack-strength-concurrent-training.md`
 
-Added two focused scientific claims:
+Added two focused scientific claims with deliberately different evidence boundaries:
 
-- supplemental strength training can improve endurance performance and economy/efficiency in trained runners and cyclists without reliably increasing VO2max;
-- concurrent endurance and resistance training can develop both domains, while exercise order should be goal/session-quality aware rather than treated as one universal sequence rule.
+- supplemental strength training can improve endurance performance and economy/efficiency in trained runners and cyclists without reliably increasing VO2max; the cross-sport claim is **low-certainty / conditional** because cycling certainty is low, running evidence ranges from very low to moderate, and the umbrella review reports low or critically low confidence for most included reviews;
+- concurrent endurance and resistance training can develop both domains; for chronic adaptation, resistance-before-endurance is the better-supported order when lower-body strength or hypertrophy is the primary target, while sequence appears less important for aerobic development. The evidence does not establish one universal order or a full-calendar-day separation requirement.
 
-The pack adds current running, cycling and umbrella-review evidence while preserving the existing scientific/product boundary. It does **not** relabel the product's three-session strength upper target, 0–1-day heavy-strength/key-cycling exclusion, systemic-cost thresholds, or workout recovery metadata as scientific constants.
+The concurrent claim is explicitly **chronic**. Acute residual fatigue and the quality of a subsequent key cycling/running session are separate questions and are not treated as directly quantified by the umbrella/sequence syntheses. The pack also links the existing elite-athlete consensus as partially direct support for individualized same-day multimodal programming without converting consensus into a fixed recovery interval.
+
+The pack preserves the existing scientific/product boundary. It does **not** relabel the product's three-session strength upper target, 0–1-day heavy-strength/key-cycling exclusion, systemic-cost thresholds, or workout recovery metadata as scientific constants.
 
 This is a lineage-deepening pack rather than a coverage-inflation pack. `spacing.hard_lower_body_recovery` remains **partial / P1** because workout-specific recovery metadata still requires catalog-level audit, and `optimizer.stimulus_benefit_weights` remains **uncovered / P2** because pooled strength-training effects are not optimizer utility coefficients.
 
