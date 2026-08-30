@@ -17,21 +17,15 @@ ADR-0033 establishes the first claim registry and migrates Evergreen provenance 
 
 **Status:** Complete (2026-08-30)
 
-- Inventory decision-affecting numeric thresholds and training-policy assumptions.
-- Classify each as scientific claim, product heuristic, athlete-specific rule, safety invariant or pure implementation constant.
-- Report uncovered decision-affecting assumptions without requiring immediate migration of low-impact display-only logic.
-
 Implemented by `app/src/knowledge/knowledgeCoverage.ts`, validated in CI, with the baseline audit recorded in `docs/analysis/2026-08-30-engine-knowledge-coverage-inventory.md`.
 
-Initial baseline: 47 policy families — 4 covered, 38 uncovered and 5 deliberately not applicable to sports-science provenance. The research backlog was 16 P0 / 13 P1 / 7 P2 / 2 P3, including 7 uncovered high-safety families. Shadow/observability-only models are explicitly separated from live decision authority so provisional thresholds do not inflate coverage debt.
+Initial baseline: 47 policy families — 4 covered, 38 uncovered and 5 deliberately not applicable to sports-science provenance. The research backlog was 16 P0 / 13 P1 / 7 P2 / 2 P3, including 7 uncovered high-safety families.
 
 ## SKR3 — Migrate high-impact training policy
 
 **Status:** In progress
 
-For each migration, define the atomic claim first and then search the best applicable evidence. Performance claims should explicitly consider current systematic reviews/meta-analyses and relevant primary studies rather than relying on a generic hierarchy label.
-
-Each migration should be behavior-preserving unless the evidence review explicitly justifies a separate policy change and `POLICY_VERSION` bump.
+For each migration, define the atomic claim first and then search the best applicable evidence. Each migration should be behavior-preserving unless the evidence review explicitly justifies a separate policy change and `POLICY_VERSION` bump.
 
 ### Evidence Pack 1 — Load + Intensity + Recovery
 
@@ -39,56 +33,67 @@ Each migration should be behavior-preserving unless the evidence review explicit
 
 Analysis: `docs/analysis/2026-08-30-evidence-pack-load-intensity-recovery.md`
 
+Migrated internal intensity semantics, rolling hard density, anchor spacing, recent-hard readiness penalty, fatigue half-lives, strength/endurance adjacency and the default hard-lower-body recovery rule. `spacing.hard_lower_body_recovery` remains **partial / P1** because workout-specific recovery metadata still requires catalog-level audit.
+
+Post-pack inventory: 10 covered / 1 partial / 31 uncovered / 5 not applicable. P0 / P1 / P2 / P3 = 10 / 13 / 7 / 2.
+
+### Evidence Pack 2 — Readiness + Sleep + HRV
+
+**Status:** Complete (2026-08-30)
+
+Analysis: `docs/analysis/2026-08-30-evidence-pack-readiness-sleep-hrv.md`
+
 Migrated:
 
-- internal hard/moderate intensity classification semantics;
-- rolling hard-session density cap;
-- next-day anchor/quality spacing;
-- recent-hard-session readiness penalty;
-- dimensional fatigue half-life model;
-- heavy lower-body strength vs key-cycling adjacency;
-- default hard-lower-body recovery rule (partial coverage only).
+- contextual/longitudinal HRV interpretation;
+- conditional HRV-guided training authority;
+- sleep-loss/performance relevance;
+- consumer wearable sleep-measurement limitations;
+- the live HRV/RHR/sleep/respiration strain model;
+- absolute sleep-score / Body Battery floors;
+- acute HRV/RHR modify floors;
+- composite train/modify/recover score thresholds;
+- internal-response HRV/RHR/sleep normalization and fusion model.
 
-The pack deliberately uses dual lineage where evidence supports the general training/recovery principle but not the exact internal product scalar. Exact `systemicCost` thresholds, count windows and fatigue half-lives remain explicit product heuristics rather than inheriting scientific certainty.
+The pack explicitly does **not** treat HRV as standalone readiness truth, consumer sleep estimates as polysomnography, or proprietary Body Battery/sleep scores as independently validated physiological cut-points. Exact app weights and thresholds remain product heuristics with `not_applicable` scientific certainty.
 
-`spacing.hard_lower_body_recovery` remains **partial / P1** because active workout-specific `recoveryHours` and `minimumDaysAfterHardLowerBody` values can override the default and still require a catalog-by-catalog audit.
+`readiness.subjective_mode_thresholds` remains **uncovered / P0** because evidence about HRV and sleep must not be used to legitimize subjective cut-points by proximity.
 
-Post-pack inventory: 10 covered / 1 partial / 31 uncovered / 5 not applicable. P0 / P1 / P2 / P3 = 10 / 13 / 7 / 2. High-impact uncovered falls from 25 to 18; high-safety uncovered from 7 to 5.
+Post-pack inventory: 15 covered / 1 partial / 26 uncovered / 5 not applicable. P0 / P1 / P2 / P3 = 5 / 13 / 7 / 2. High-impact uncovered falls to 13 and high-safety uncovered to 4.
 
 No recommendation behavior changes were made, so this pack does not bump the global recommendation `POLICY_VERSION`.
 
-### Evidence Pack 2 — Readiness + HRV/RHR/Sleep + Internal Fatigue
+### Evidence Pack 3 — Subjective Readiness + Injury/Pain Safety
 
 **Status:** Next
 
 Priority families:
 
-1. `readiness.physiological_strain_model`;
-2. `readiness.subjective_mode_thresholds`;
-3. `readiness.absolute_device_floors`;
-4. `readiness.acute_biometric_floors`;
-5. `readiness.mode_score_thresholds`;
-6. `fatigue.internal_response_model`.
+1. `readiness.subjective_mode_thresholds`;
+2. `injury.tissue_response_severity`;
+3. `injury.region_restriction_mapping`;
+4. `injury.pain_envelope_mapping`.
 
-The key epistemic question is expected to be whether research supports within-athlete interpretation while exact device-score/biomarker cut-points remain product calibration or need athlete-specific evidence.
+This pack should separate validated symptom/return-to-sport principles from conservative product action mappings. Because three families are high-safety, it should prefer guideline/consensus/rehabilitation evidence and preserve explicit uncertainty rather than manufacturing universal pain thresholds.
+
+### Evidence Pack 4 — Taper + Event Preparation
+
+**Status:** Planned
+
+Start with `periodization.taper_windows_volume` (remaining non-injury P0), then reconcile pre-event strength/hard/exhaustive restrictions and taper sharpening targets against event type and training status.
 
 ### Later SKR3 packs
 
-After Pack 2, prioritize:
-
-1. tapering and event-preparation rules;
-2. injury/pain safety constraints whose behavior depends on general sports/rehab knowledge;
-3. periodization objectives and sport/event demand profiles;
-4. stimulus-credit and optimizer calibration;
-5. fueling/recovery recommendations as those features gain decision authority.
+- periodization objectives and sport/event demand profiles;
+- stimulus-credit and optimizer calibration;
+- workout-specific recovery metadata audit;
+- fueling/recovery recommendations as those features gain decision authority.
 
 ## SKR4 — Athlete-specific evidence boundary
 
 **Status:** Planned
 
 Design an identity-scoped athlete evidence model for repeated personal response patterns. It must remain separate from global Sports Knowledge Registry claims and from raw decision evidence.
-
-Candidate lineage:
 
 ```text
 general KnowledgeClaim (prior)
@@ -103,8 +108,6 @@ Do not store personal measurements in the global registry.
 
 **Status:** Planned
 
-Add review-frequency metadata only after enough claims exist to justify the operational cost. Candidate rules:
-
 - high-safety or rapidly evolving claims reviewed more frequently;
 - stable guideline definitions reviewed less frequently;
 - stale review dates create warnings first, not automatic scientific invalidation;
@@ -112,20 +115,18 @@ Add review-frequency metadata only after enough claims exist to justify the oper
 
 ## SKR6 — Evidence-synthesis review workflow
 
-**Status:** Planned after the coverage inventory creates enough demand.
+**Status:** Planned after the registry creates enough demand.
 
 Build a lightweight review workflow around claims rather than bulk literature ingestion:
 
-- search PubMed and appropriate domain sources (for example Cochrane, society guidelines and journal databases) for candidate systematic reviews/meta-analyses;
+- search PubMed and appropriate domain sources for candidate guidelines/reviews;
 - retain stable source identity using PMID/PMCID/DOI/PROSPERO where available;
-- record review design separately from synthesis method (`systematic_review` + `meta_analysis`, rather than treating meta-analysis as an evidence tier);
-- record whether the source directly, partially or indirectly answers the registered claim;
-- for decision-important syntheses, capture a concise human-reviewed appraisal covering relevance, review risk of bias, heterogeneity, imprecision, publication/reporting bias, pooling appropriateness and important sensitivity analyses;
-- detect obvious duplicate source identity and, later if needed, overlapping primary studies across reviews;
-- treat ROBIS/AMSTAR 2/PRISMA/GRADE as complementary tools with different purposes, not interchangeable scores;
-- allow automated discovery to open a review candidate/task, but require human review before adding/changing active claim certainty, status or recommendation authority.
+- record review design separately from synthesis method;
+- record directness to the actual claim;
+- for decision-important syntheses, capture a concise human-reviewed appraisal of relevance, bias, heterogeneity, imprecision and reporting bias;
+- require human review before changing active claim certainty/status/recommendation authority.
 
-Do not build this as a citation warehouse. The output of the workflow is still a reviewed `KnowledgeClaim` with a bounded set of materially relevant sources.
+Do not build this as a citation warehouse.
 
 ## Explicitly deferred
 
