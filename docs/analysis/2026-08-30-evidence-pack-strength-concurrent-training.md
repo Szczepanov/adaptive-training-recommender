@@ -34,24 +34,24 @@ Appraisal emphasized:
 
 ### Supplemental strength training for endurance athletes
 
-**Ramos-Campo et al., 2025 — endurance-strength umbrella review**  
+**Ramos-Campo et al., 2025 — endurance-strength umbrella review**
 PMID 40153564; DOI `10.1519/JSC.0000000000005056`.
 
 The umbrella review synthesized 17 systematic reviews, 12 of which included meta-analysis. Supplemental strength training was generally favorable for endurance performance and running economy, while VO2max was not consistently improved. Most included reviews were rated low or critically low confidence, which limits certainty and prevents a universal strength prescription.
 
-**Llanos-Lagos et al., 2024 — running systematic review/meta-analysis**  
+**Llanos-Lagos et al., 2024 — running systematic review/meta-analysis**
 PMID 38627351; PMCID PMC11258194; DOI `10.1007/s40279-024-02018-z`.
 
 High-load and combined strength methods improved middle- and long-distance running performance. VO2max, vVO2max and maximum metabolic steady-state outcomes were not significantly improved. Programs were heterogeneous in frequency, duration and method, and certainty ranged from very low to moderate.
 
-**Llanos-Lagos et al., 2026 — cycling systematic review/meta-analysis**  
+**Llanos-Lagos et al., 2026 — cycling systematic review/meta-analysis**
 PMID 40632222; PMCID PMC12881108; DOI `10.1007/s00421-025-05883-2`.
 
 Across 17 studies / 262 endurance cyclists, heavy strength training improved cycling efficiency, anaerobic power and pooled cycling performance. VO2max, pVO2max and MMSS were not significantly improved. The authors rated certainty low, so the review supports the direction of benefit more strongly than any exact prescription.
 
 ### Concurrent endurance + resistance training
 
-**Held et al., 2026 — concurrent-training umbrella review**  
+**Held et al., 2026 — concurrent-training umbrella review**
 PMID 41762427; DOI `10.1007/s40279-026-02401-y`; PROSPERO CRD42025646460.
 
 The umbrella review synthesized 17 meta-analyses covering 144 studies and 1,492 healthy participants. Concurrent training broadly developed aerobic and strength-related qualities, with pooled strength, power and hypertrophy outcomes generally comparable with resistance training alone.
@@ -60,12 +60,12 @@ Training modality — simultaneous, same day or different day — did not signif
 
 This is evidence about **chronic adaptation**. It does not quantify how much acute fatigue is acceptable before a particular key cycling/running session.
 
-**Eddens et al., 2018 — concurrent sequence meta-analysis**  
+**Eddens et al., 2018 — concurrent sequence meta-analysis**
 PMID 28917030; PMCID PMC5752732; DOI `10.1007/s40279-017-0784-1`.
 
 The sequence-specific synthesis found a lower-body dynamic-strength benefit from resistance-before-endurance, while several other outcomes did not show a sequence effect. It did not establish that all athletes need a full-calendar-day separation between modalities.
 
-**Bangsbo et al., 2025 — elite-athlete consensus**  
+**Bangsbo et al., 2025 — elite-athlete consensus**
 PMID 40781883; PMCID PMC12334928; DOI `10.1111/sms.70112`.
 
 The consensus supports individualized concurrent programming in elite sport and explicitly permits multiple training modalities on the same day. It is useful practical context for athlete-specific scheduling, but it is not a randomized estimate of acute residual fatigue and is therefore linked as partially direct evidence rather than used to manufacture a fixed recovery interval.
