@@ -205,8 +205,25 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
 ];
 
 const ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const ISO_DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
+/** Validate both ISO date shape and Gregorian calendar validity without timezone-dependent parsing. */
+function isIsoCalendarDate(value: string): boolean {
+    const match = ISO_DATE_PATTERN.exec(value);
+    if (!match) return false;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    if (month < 1 || month > 12 || day < 1) return false;
+    const leapYear = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
+    const daysInMonth = [31, leapYear ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    return day <= daysInMonth[month - 1];
+}
+
+/**
+ * Validate referential, lifecycle, and epistemic invariants for a candidate sports knowledge registry.
+ * This deliberately checks structure and category errors; it does not replace scientific peer review.
+ */
 export function validateSportsKnowledgeRegistry(
     sources: readonly KnowledgeSource[] = SPORTS_KNOWLEDGE_SOURCES,
     claims: readonly KnowledgeClaim[] = SPORTS_KNOWLEDGE_CLAIMS,
@@ -214,16 +231,18 @@ export function validateSportsKnowledgeRegistry(
     const errors: string[] = [];
     const warnings: string[] = [];
     const sourceIds = new Set<string>();
+    const sourceById = new Map<string, KnowledgeSource>();
     const claimIds = new Set<string>();
 
     for (const source of sources) {
         if (!ID_PATTERN.test(source.id)) errors.push(`source ${source.id}: id must be stable and machine-safe`);
         if (sourceIds.has(source.id)) errors.push(`duplicate source id: ${source.id}`);
         sourceIds.add(source.id);
+        sourceById.set(source.id, source);
         if (!source.title.trim()) errors.push(`source ${source.id}: title is required`);
         if (!source.citation.trim()) errors.push(`source ${source.id}: citation is required`);
-        if (source.publishedOn && !ISO_DATE_PATTERN.test(source.publishedOn)) {
-            errors.push(`source ${source.id}: publishedOn must use YYYY-MM-DD`);
+        if (source.publishedOn && !isIsoCalendarDate(source.publishedOn)) {
+            errors.push(`source ${source.id}: publishedOn must be a valid YYYY-MM-DD calendar date`);
         }
     }
 
@@ -233,23 +252,49 @@ export function validateSportsKnowledgeRegistry(
         claimIds.add(claim.id);
     }
 
+    const claimById = new Map(claims.map(claim => [claim.id, claim]));
+
     for (const claim of claims) {
         if (!claim.statement.trim()) errors.push(`claim ${claim.id}: statement is required`);
         if (!Number.isInteger(claim.version) || claim.version < 1) errors.push(`claim ${claim.id}: version must be a positive integer`);
-        if (!ISO_DATE_PATTERN.test(claim.reviewedOn)) errors.push(`claim ${claim.id}: reviewedOn must use YYYY-MM-DD`);
+        if (!isIsoCalendarDate(claim.reviewedOn)) errors.push(`claim ${claim.id}: reviewedOn must be a valid YYYY-MM-DD calendar date`);
         if (claim.evidence.length === 0) errors.push(`claim ${claim.id}: at least one evidence/source link is required`);
         if (claim.supersedes === claim.id) errors.push(`claim ${claim.id}: cannot supersede itself`);
         if (claim.supersedes && !claimIds.has(claim.supersedes)) errors.push(`claim ${claim.id}: supersedes unknown claim ${claim.supersedes}`);
 
+        if (claim.supersedes !== claim.id) {
+            const lineage = new Set<string>([claim.id]);
+            let predecessor = claim.supersedes;
+            while (predecessor) {
+                if (lineage.has(predecessor)) {
+                    errors.push(`claim ${claim.id}: supersedes chain contains a cycle`);
+                    break;
+                }
+                lineage.add(predecessor);
+                predecessor = claimById.get(predecessor)?.supersedes;
+            }
+        }
+
         const linkedSources = new Set<string>();
+        let hasProductPolicySource = false;
+        let hasNonProductPolicySource = false;
         for (const link of claim.evidence) {
-            if (!sourceIds.has(link.sourceId)) errors.push(`claim ${claim.id}: unknown source ${link.sourceId}`);
+            const source = sourceById.get(link.sourceId);
+            if (!source) errors.push(`claim ${claim.id}: unknown source ${link.sourceId}`);
             if (linkedSources.has(link.sourceId)) errors.push(`claim ${claim.id}: duplicate source link ${link.sourceId}`);
             linkedSources.add(link.sourceId);
+            hasProductPolicySource ||= source?.sourceType === 'product_policy';
+            hasNonProductPolicySource ||= source !== undefined && source.sourceType !== 'product_policy';
         }
 
         if (claim.maturity === 'heuristic' && claim.evidenceCertainty !== 'not_applicable') {
             errors.push(`claim ${claim.id}: heuristic maturity must not masquerade as scientific certainty`);
+        }
+        if (claim.maturity === 'heuristic' && !hasProductPolicySource) {
+            errors.push(`claim ${claim.id}: heuristic maturity requires an explicit product_policy source`);
+        }
+        if (claim.evidenceCertainty !== 'not_applicable' && !hasNonProductPolicySource) {
+            errors.push(`claim ${claim.id}: scientific certainty requires at least one non-product-policy source`);
         }
         if (claim.evidenceCertainty === 'not_applicable' && claim.maturity !== 'heuristic' && claim.maturity !== 'foundational') {
             errors.push(`claim ${claim.id}: not_applicable certainty is reserved for heuristic/foundational claims`);
@@ -271,12 +316,14 @@ export function validateSportsKnowledgeRegistry(
     return { valid: errors.length === 0, errors, warnings };
 }
 
+/** Return a registered claim regardless of lifecycle status, or throw for an unknown ID. */
 export function getKnowledgeClaim(id: string): KnowledgeClaim {
     const claim = SPORTS_KNOWLEDGE_CLAIMS.find(candidate => candidate.id === id);
     if (!claim) throw new Error(`Unknown sports knowledge claim: ${id}`);
     return claim;
 }
 
+/** Return an active claim for production-policy consumption and fail closed for any other status. */
 export function getActiveKnowledgeClaim(id: string): KnowledgeClaim {
     const claim = getKnowledgeClaim(id);
     if (claim.status !== 'active') {
@@ -285,6 +332,7 @@ export function getActiveKnowledgeClaim(id: string): KnowledgeClaim {
     return claim;
 }
 
+/** Return a normalized knowledge source, or throw for an unknown source ID. */
 export function getKnowledgeSource(id: string): KnowledgeSource {
     const source = SPORTS_KNOWLEDGE_SOURCES.find(candidate => candidate.id === id);
     if (!source) throw new Error(`Unknown sports knowledge source: ${id}`);
