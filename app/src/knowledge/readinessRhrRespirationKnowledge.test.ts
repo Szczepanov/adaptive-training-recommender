@@ -41,14 +41,14 @@ describe('RHR and respiration readiness evidence boundaries', () => {
         expect(claim.limitations.join(' ')).toContain('population');
     });
 
-    it('treats respiration as moderate-certainty conditional anomaly evidence without granting standalone authority', () => {
+    it('treats respiration as moderate-certainty anomaly evidence while keeping training action authority heuristic', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.respirationLongitudinalContext);
         expect(claim.claimType).toBe('prognostic');
         expect(claim.evidenceCertainty).toBe('moderate');
-        expect(claim.recommendationStrength).toBe('conditional');
-        expect(claim.statement).toContain('conservative readiness adjustment');
-        expect(claim.statement).toContain('not a specific illness diagnosis');
-        expect(claim.limitations.join(' ')).toContain('standalone');
+        expect(claim.recommendationStrength).toBe('informational');
+        expect(claim.statement).toContain('early but nonspecific anomaly signal');
+        expect(claim.statement).toContain('standalone illness diagnosis');
+        expect(claim.limitations.join(' ')).toContain('conditional product-policy inference');
         expect(claim.limitations.join(' ')).toContain('1 br/min');
         expect(claim.limitations.join(' ')).toContain('0.3');
     });
@@ -71,6 +71,30 @@ describe('RHR and respiration readiness evidence boundaries', () => {
         expect(source.synthesisMethods).toContain('narrative_synthesis');
         expect(source.notes).toContain('varied widely');
         expect(source.notes).toContain('not a universal RR threshold');
+    });
+
+    it('records Galpin-relevant evidence that higher nightly RR also tracks non-infectious stress', () => {
+        const source = getKnowledgeSource('BLOOMFIELD-2024-NOCTURNAL-RR-STRESS-COHORT');
+        expect(source.sourceType).toBe('cohort');
+        expect(source.notes).toContain('23%');
+        expect(source.notes).toContain('not infection-specific');
+        expect(source.externalIds).toEqual(expect.arrayContaining([
+            { type: 'pmid', value: '38602898' },
+            { type: 'pmcid', value: 'PMC11008774' },
+            { type: 'doi', value: '10.1371/journal.pdig.0000473' },
+        ]));
+    });
+
+    it('keeps athlete overload evidence multivariate instead of laundering a composite into RR authority', () => {
+        const source = getKnowledgeSource('NUUTTILA-2025-NIGHTLY-RECOVERY-OVERLOAD');
+        expect(source.sourceType).toBe('cohort');
+        expect(source.notes).toContain('breathing rate');
+        expect(source.notes).toContain('does not isolate respiratory rate');
+        expect(source.externalIds).toEqual(expect.arrayContaining([
+            { type: 'pmid', value: '39860902' },
+            { type: 'pmcid', value: 'PMC11768492' },
+            { type: 'doi', value: '10.3390/s25020533' },
+        ]));
     });
 
     it('preserves the non-specificity seen in prospective wearable infection validation', () => {
