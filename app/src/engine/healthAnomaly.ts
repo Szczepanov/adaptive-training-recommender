@@ -437,7 +437,7 @@ export function evaluatePhysiologicalAnomaly(
     const respirationQuality = dataQuality.find(quality => quality.signal === 'respiration');
     const respirationElevation = evaluateRespirationElevation({
         targetDate: input.date,
-        measurementDate: input.recoverySnapshot?.date ?? null,
+        measurementDate: input.recoverySnapshot?.source.metricDates?.sleep ?? null,
         timezone: input.timezone,
         currentValue: input.recoverySnapshot?.raw.respirationAvg ?? null,
         baseline7dValue: input.recoverySnapshot?.derived.respiration7dAvg ?? null,
