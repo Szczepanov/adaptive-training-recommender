@@ -10,9 +10,9 @@
 
 ## Evidence appraisal
 
-The taper review prioritized endurance-specific systematic reviews/meta-analyses. Fueling used a large acute-carbohydrate meta-analysis, recognized sports-nutrition guidance, a 2026 contemporary endurance-carbohydrate review and the international exercise-associated hyponatremia consensus. The review kept intervention efficacy separate from practical dose guidance and from safety boundaries.
+The taper review prioritized endurance-specific systematic reviews/meta-analyses. Fueling used a large acute-carbohydrate meta-analysis, recognized sports-nutrition guidance, two contemporary 2026 reviews of higher carbohydrate intake and the international exercise-associated hyponatremia consensus. The review kept intervention efficacy separate from practical dose guidance and from safety boundaries.
 
-A specific 2026 update was important because current elite endurance practice increasingly experiments with >90 g/h carbohydrate intake. Contemporary review evidence supports greater carbohydrate oxidation at some higher intakes in trained athletes, but does **not** yet establish a general performance advantage above the established <=90 g/h framework. The registry therefore keeps 30-60 / up-to-90 g/h as contextual practice guidance and records >90 g/h as an emerging, athlete-specific boundary rather than silently treating current peloton practice as validated universal dosing.
+A specific 2026 update was important because current elite endurance practice increasingly experiments with >90 g/h carbohydrate intake. Contemporary reviews support greater carbohydrate oxidation at some higher intakes in trained athletes, but do **not** establish a general performance advantage above the established <=90 g/h framework. A June 2026 Sports Medicine current-opinion review focused specifically on ultra-high intake likewise concludes that broad >90 g/h recommendations are premature, particularly for amateur/recreational athletes. The registry therefore keeps 30-60 / up-to-90 g/h as contextual practice guidance and records >90 g/h as an emerging, athlete-specific boundary rather than silently treating current elite practice as validated universal dosing.
 
 ## Taper
 
@@ -62,7 +62,7 @@ A follow-up inventory refactor should split the family into `periodization.pre_e
 **Ramos-Campo et al., 2024 — systematic review/meta-analysis/meta-regression**  
 PMID 37449467; DOI `10.1080/10408398.2023.2233633`.
 
-The analysis included 136 studies and found carbohydrate ingestion during endurance exercise improved performance compared with placebo/control. Benefits were larger as event duration increased. PubMed records the electronic publication date as **2023-07-14**; the final journal issue is 2024, and the registry now stores those two facts consistently rather than using an off-by-one date.
+The analysis included 136 studies and found carbohydrate ingestion during endurance exercise improved performance compared with placebo/control. Benefits were larger as event duration increased. PubMed records the electronic publication date as **2023-07-14**; the final journal issue is 2024, and the registry stores those two facts consistently.
 
 This supports:
 
@@ -87,6 +87,11 @@ PMID 41759826; PMCID PMC13197957; DOI `10.1016/j.tjnut.2026.101442`.
 
 The review explicitly revisits the <=90 g/h framework in light of current practice. It notes that 120 g/h can increase exogenous and whole-body carbohydrate oxidation in some trained athletes, but that the **performance efficacy of doses above 90 g/h is not yet sufficiently substantiated** to support a broad recommendation. It also highlights limited female evidence and the need for ecologically valid research.
 
+**Plews et al., 2026 — focused current opinion on ultra-high carbohydrate intake**  
+PMID 42258036; DOI `10.1007/s40279-026-02462-z`.
+
+This June 2026 Sports Medicine paper defines ultra-high intake as >90 g/h and audits why such strategies have spread among elite endurance athletes. It finds a mismatch between real-world adoption and direct performance evidence: higher intakes can increase exogenous carbohydrate oxidation, but studies do not show a consistent dose-response performance benefit beyond roughly 60-90 g/h. The authors conclude that broad ultra-high recommendations are premature, especially for amateur/recreational athletes, while acknowledging possible niche use in selected elite athletes or recovery/multistage contexts. Because this is a current-opinion/narrative synthesis rather than a meta-analysis or guideline, the registry uses it as **supporting context**, not primary efficacy evidence.
+
 Together these support:
 
 `nutrition.endurance.carbohydrate_during_exercise.event_scaled_dose`
@@ -97,7 +102,8 @@ The updated evidence boundary is deliberate:
 
 - the registry does **not** downgrade the established up-to-90 g/h guidance merely because elite cyclists increasingly report 90-120+ g/h;
 - the registry also does **not** claim that 90 g/h is a proven physiological ceiling;
-- >90 g/h is represented as a plausible specialist strategy for selected trained athletes, with performance superiority and generalizability still uncertain.
+- >90 g/h is represented as a plausible specialist strategy for selected trained athletes, with performance superiority and generalizability still uncertain;
+- the newest focused review explicitly argues against copying ultra-high intake as a default gold standard for amateur/recreational athletes.
 
 This prevents a future runtime consumer from turning elite-practice observations into a universal 120 g/h prescription.
 
@@ -137,6 +143,7 @@ Tests verify:
 - carbohydrate efficacy is separated from event-scaled dose guidance;
 - the corrected Ramos-Campo electronic-publication date;
 - contemporary 2026 carbohydrate lineage and the explicit >90 g/h uncertainty boundary;
+- the focused June 2026 ultra-high-carbohydrate source remains supporting context and explicitly cautions against an amateur/recreational 120 g/h default;
 - the hydration safety claim explicitly rejects blanket fluid rates;
 - fueling is not inserted into the current engine coverage inventory;
 - the still-bundled taper family remains uncovered until pre- and post-event policies are separated.

@@ -67,6 +67,7 @@ describe('taper and fueling evidence pack', () => {
         expect(dose.statement).toContain('not mandatory universal doses');
         expect(dose.limitations.join(' ')).toContain('120 g/h');
         expect(dose.limitations.join(' ')).toContain('not sufficiently substantiated');
+        expect(dose.limitations.join(' ')).toContain('amateur/recreational');
 
         const meta = getKnowledgeSource('RAMOS-CAMPO-2024-CARBOHYDRATE-META');
         expect(meta.publishedOn).toBe('2023-07-14');
@@ -80,6 +81,15 @@ describe('taper and fueling evidence pack', () => {
             { type: 'doi', value: '10.1016/j.tjnut.2026.101442' },
         ]));
         expect(contemporary.notes).toContain('not yet substantiated');
+
+        const ultraHigh = getKnowledgeSource('PLEWS-2026-ULTRA-HIGH-CARBOHYDRATE-OPINION');
+        expect(ultraHigh.sourceType).toBe('expert_practice');
+        expect(ultraHigh.externalIds).toEqual(expect.arrayContaining([
+            { type: 'pmid', value: '42258036' },
+            { type: 'doi', value: '10.1007/s40279-026-02462-z' },
+        ]));
+        expect(ultraHigh.notes).toContain('supporting context rather than primary efficacy evidence');
+        expect(ultraHigh.notes).toContain('amateur and recreational');
     });
 
     it('treats avoidance of overdrinking as a high-safety hydration boundary', () => {
