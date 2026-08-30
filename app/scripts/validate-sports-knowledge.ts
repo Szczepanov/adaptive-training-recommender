@@ -1,10 +1,10 @@
 import {
     SPORTS_KNOWLEDGE_CLAIMS,
     SPORTS_KNOWLEDGE_SOURCES,
-    validateSportsKnowledgeRegistry,
-} from '../src/knowledge/sportsKnowledge.ts';
+    validateCanonicalSportsKnowledgeRegistry,
+} from '../src/knowledge/sportsKnowledgeRegistry.ts';
 
-const result = validateSportsKnowledgeRegistry();
+const result = validateCanonicalSportsKnowledgeRegistry();
 
 for (const warning of result.warnings) {
     console.warn(`sports-knowledge warning: ${warning}`);
