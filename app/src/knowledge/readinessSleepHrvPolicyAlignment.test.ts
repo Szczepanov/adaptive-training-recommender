@@ -51,6 +51,9 @@ function objective(overrides: Partial<EngineObjectiveInput> = {}): EngineObjecti
         hrv_stdev_28d: 8.5,
         rhr_stdev_28d: 3.5,
         sleep_score_stdev_28d: 7.8,
+        respiration_delta: 0,
+        respiration_delta_28d: 0,
+        respiration_mad_28d: 1,
         ...overrides,
     };
 }
@@ -66,6 +69,12 @@ describe('readiness evidence pack aligns with current decision policy', () => {
         expect(state.telemetry.metricStrain.acuteDeviation).toBeLessThan(1);
     });
 
+    it('keeps a small RHR elevation contextual when it remains inside personal variability', () => {
+        const state = evaluateReadinessAndSafetyEnvelope(readiness({ rhr_delta: 2, rhr_delta_28d: 2, rhr_stdev_28d: 3.5 }), context());
+        expect(state.mode).toBe('train');
+        expect(state.telemetry.metricStrain.acuteDeviation).toBeCloseTo(0.17, 2);
+    });
+
     it('pins the current RHR and HRV acute modify floors as product policy', () => {
         const elevatedRhr = evaluateReadinessAndSafetyEnvelope(readiness({ rhr_delta: 6, rhr_delta_28d: 6, rhr_stdev_28d: 3 }), context());
         expect(elevatedRhr.telemetry.metricStrain.acuteDeviation).toBe(0.6);
@@ -74,6 +83,16 @@ describe('readiness evidence pack aligns with current decision policy', () => {
         const depressedHrv = evaluateReadinessAndSafetyEnvelope(readiness({ hrv_delta: -15, hrv_delta_28d: -15, hrv_stdev_28d: 7.5 }), context());
         expect(depressedHrv.telemetry.metricStrain.acuteDeviation).toBe(1);
         expect(depressedHrv.mode).toBe('modify');
+    });
+
+    it('pins respiration as a bounded contextual contribution rather than a standalone hard stop', () => {
+        const elevatedRespiration = evaluateReadinessAndSafetyEnvelope(readiness({
+            respiration_delta: 2,
+            respiration_delta_28d: 2,
+            respiration_mad_28d: 1,
+        }), context());
+        expect(elevatedRespiration.telemetry.metricStrain.acuteDeviation).toBe(0.6);
+        expect(elevatedRespiration.mode).toBe('train');
     });
 
     it('pins the absolute sleep-score penalty boundary without claiming it is a clinical threshold', () => {
