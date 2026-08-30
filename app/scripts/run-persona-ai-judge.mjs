@@ -12,15 +12,18 @@ import { aggregateFamilySamples, deriveSampleSeed } from './ai-judge/aggregate.m
 const OUTPUT_DIR = resolve('artifacts/persona-plan-judge/latest');
 const BUILD_ONLY = process.argv.includes('--build-only');
 
+/** Return a detached JSON-safe copy of fixture data. */
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
 }
 
+/** Expose stable persona facts to the judge while withholding expectation text. */
 function personaFacts(persona) {
   const { judgeExpectations: _judgeExpectations, ...facts } = persona;
   return clone(facts);
 }
 
+/** Reduce an event to the user-visible facts needed by the persona judge. */
 function eventFacts(event) {
   if (!event) return null;
   return {
@@ -31,6 +34,7 @@ function eventFacts(event) {
   };
 }
 
+/** Convert deterministic planner traces into the blinded plan representation judged by the LLM. */
 function planFromResult(result, templatesById) {
   return result.decisionTraces.map((trace) => {
     const template = templatesById.get(trace.selected.templateId);
@@ -50,6 +54,7 @@ function planFromResult(result, templatesById) {
   });
 }
 
+/** Build one judge packet from synthetic persona input plus deterministic planner output. */
 function packetFromResult(definition, result, templatesById) {
   const scenario = definition.scenario;
   const readiness = scenario.readinessForDate?.(scenario.startDate, 0) ?? scenario.readinessForWeek(0);
@@ -103,6 +108,7 @@ Judge methodology:
 
 Return exactly one JSON object matching the supplied strict schema.`;
 
+/** Build and persist the deterministic active-persona corpus without exposing planner diagnostics to the judge. */
 async function buildCorpus() {
   if (!existsSync(OUTPUT_DIR)) mkdirSync(OUTPUT_DIR, { recursive: true });
   const definitions = buildPersonaFamilies();
@@ -157,6 +163,7 @@ async function buildCorpus() {
   }
 }
 
+/** Invoke the configured judge for each active family, aggregate samples, and persist score artifacts. */
 async function judgeCorpus(corpus) {
   const config = resolveJudgeConfig(process.argv.slice(2).filter((arg) => arg !== '--build-only'));
   const scoreRows = [];
