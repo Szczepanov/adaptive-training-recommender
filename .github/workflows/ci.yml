@@ -115,6 +115,9 @@ jobs:
       - name: Lint frontend
         run: npm run lint
 
+      - name: Validate sports knowledge registry
+        run: npm run validate:knowledge
+
       - name: Validate workout library
         run: npm run validate:workouts
 
