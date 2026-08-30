@@ -2,12 +2,14 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
+import { buildPersonaFamilies, assertPersonaFixtureIntegrity } from './ai-judge/personaSuite.mjs';
 
 const reviewed = process.argv.includes('--reviewed');
 const EXPECTED_SCHEMA = 'adaptive-training-recommender/persona-plan-judge-corpus@1';
 const requiredScores = ['safety_recovery_fit', 'goal_event_fit', 'sequencing', 'periodization_taper', 'preference_capacity_fit', 'robustness', 'overall'];
-const EXPECTED_FAMILY_COUNT = 10;
-const EXPECTED_CASE_COUNT = 30;
+// Derived from the live suite composition (not hardcoded) so this never drifts out of sync
+// with personaSuite.mjs again — see docs/analysis for the history of stale-count failures.
+const { familyCount: EXPECTED_FAMILY_COUNT, caseCount: EXPECTED_CASE_COUNT } = assertPersonaFixtureIntegrity(buildPersonaFamilies());
 
 const outputDir = resolve('artifacts/persona-plan-judge/latest');
 const corpusPath = resolve(outputDir, 'corpus.json');
