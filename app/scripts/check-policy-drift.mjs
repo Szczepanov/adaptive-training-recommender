@@ -102,6 +102,27 @@ const decisionAffectingFiles = [
   'app/src/engine/subjectiveBaseline.ts',
   // ADR-0023: authored session replacement and addition gates directly alter live recommendations.
   'app/src/engine/authoredSessionGates.ts',
+  // PR #292/#295: the evergreen requirement/packing/coverage pipeline decides which
+  // adaptations are required vs droppable and which concrete workouts satisfy them --
+  // that is exactly a persisted-decision policy, even though it sits outside rules.ts.
+  // Findings 4 and 8 both changed live recommendations by editing only these files, and
+  // the drift gate did not previously notice because none of them were listed here.
+  'app/src/engine/evergreenStrategy.ts',
+  'app/src/engine/weeklyDosePacking.ts',
+  'app/src/engine/coverage.ts',
+  'app/src/engine/evergreenPlanning.ts',
+  'app/src/engine/planSchedule.ts',
+  // trainingIntent.ts/trainingHistorySnapshot.ts decide which history window feeds
+  // athlete-state inference and fatigue/objective bookkeeping -- the established-history
+  // fix changed live recommendations here without ever touching rules.ts.
+  'app/src/engine/trainingIntent.ts',
+  'app/src/engine/trainingHistorySnapshot.ts',
+  // The legacy template catalog and the coverage-role-to-workout mapping decide which
+  // concrete sessions can satisfy a required adaptation at all (the Walking and Running
+  // coverage-floor fixes both lived here).
+  'app/src/engine/templates.ts',
+  'app/src/workouts/event-plan.ts',
+  'app/src/workouts/prescription.ts',
 ];
 
 const policyFile = 'app/src/engine/policy.ts';
