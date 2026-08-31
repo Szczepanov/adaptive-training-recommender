@@ -142,38 +142,46 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
         }
     }
 
+    // Garmin Body Battery is a proprietary composite of HRV, stress, sleep and activity.
+    // Its inclusion here is useful context, but this mapping and its thresholds are product
+    // calibration rather than a diagnosis or a validated universal training-readiness rule.
     const bbDepletion = objective.body_battery_wake !== null && objective.body_battery_wake < 50
         ? Math.min(1, Math.max(0, (50 - objective.body_battery_wake) / 30))
         : 0;
 
-    // Acute non-diluted floors for single-axis subjective distress and severe autonomic collapse:
-    // 1. High subjective fatigue (>= 8/10) directly limits systemic capacity.
-    // When accompanied by low readiness (<= 4) or high stress (>= 8), it triggers recover-tier strain.
+    // Conservative non-diluted product floors. Athlete self-report and longitudinal
+    // autonomic signals are useful monitoring inputs, but the exact 8/9/10 cut-points and
+    // 0.60-0.80 floors below are policy calibration, not physiological constants.
+    // 1. High subjective fatigue (>= 8/10) directly limits systemic capacity in the model.
+    // When accompanied by low readiness (<= 4) or high stress (>= 8), use the stronger floor.
     const severeSubjectiveDistress = (subjective.fatigue >= 8 && subjective.readiness <= 4) ||
         (subjective.readiness <= 3 && subjective.stress >= 8) ||
         (subjective.fatigue >= 8 && subjective.stress >= 8);
     const acuteSubjectiveFatigueFloor = severeSubjectiveDistress ? 0.65 : (subjective.fatigue >= 8 ? 0.60 : 0);
 
-    // 2. High life stress (>= 9/10) impairs autonomic recovery and heightens injury risk.
+    // 2. Very high self-reported life stress gets a conservative non-diluted floor. The
+    // exact >=9 threshold is not a universal injury-risk or autonomic-dysfunction boundary.
     const acuteSubjectiveStressFloor = subjective.stress >= 9 ? 0.60 : 0;
 
-    // 3. Severe autonomic collapse: simultaneous acute collapse across HRV, RHR, and Body Battery.
-    const severeAutonomicCollapse = (
+    // 3. Concordant HRV/RHR/Body-Battery deterioration gets a stronger multi-signal floor.
+    // This is intentionally a recovery-planning heuristic, not a diagnosis of "autonomic collapse".
+    const combinedAcuteRecoveryFlag = (
         objective.hrv_delta !== null && objective.hrv_delta <= -10 &&
         objective.rhr_delta !== null && objective.rhr_delta >= 5 &&
         objective.body_battery_wake !== null && objective.body_battery_wake <= 35
     ) || (hrvDrop >= 0.8 && rhrElevated >= 0.6 && bbDepletion >= 0.7);
-    const autonomicCollapseFloor = severeAutonomicCollapse ? 0.80 : 0;
+    const acuteBiometricFloor = combinedAcuteRecoveryFlag ? 0.80 : 0;
 
-    // 4. Acute tissue soreness: soreness >= 8/10 represents substantial muscular breakdown
-    // requiring 48h to clear below modify/recover thresholds.
+    // 4. Very high soreness gets a conservative tissue-strain floor. The 0.88 value and
+    // the dimensional decay half-lives are product planning parameters; soreness >=8 does
+    // not by itself establish muscle breakdown or a biologically mandatory 48-hour recovery.
     const acuteTissueStrain = subjective.soreness >= 8 ? 0.88 : subSoreness;
 
     const baseSystemic = 0.3 * subFatigue + 0.25 * hrvDrop + 0.25 * sleepDeficit + 0.2 * bbDepletion;
-    const systemic = Math.min(1, Math.max(baseSystemic, acuteSubjectiveFatigueFloor, acuteSubjectiveStressFloor, autonomicCollapseFloor));
+    const systemic = Math.min(1, Math.max(baseSystemic, acuteSubjectiveFatigueFloor, acuteSubjectiveStressFloor, acuteBiometricFloor));
 
     const baseCardiovascular = 0.5 * rhrElevated + 0.5 * hrvDrop;
-    const cardiovascular = Math.min(1, Math.max(baseCardiovascular, autonomicCollapseFloor));
+    const cardiovascular = Math.min(1, Math.max(baseCardiovascular, acuteBiometricFloor));
 
     const lowerBody = Math.min(1, acuteTissueStrain + ambulatoryTissueStrain);
     const upperBody = acuteTissueStrain * 0.7; // default soreness split
