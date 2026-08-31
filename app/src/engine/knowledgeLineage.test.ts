@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { DailyReadiness, UserContext, UserEvent } from './models';
+import type { DailyReadiness, TrainingIntentProfile, UserContext, UserEvent } from './models';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 import {
     compareKnowledgeLineage,
@@ -7,6 +7,7 @@ import {
     snapshotKnowledgeLineage,
     trainingIntentKnowledgeRefs,
 } from './knowledgeLineage';
+import { evaluateTrainingWithIntent, type ExternalPlanContext } from './rules';
 
 function readiness(overrides: Partial<DailyReadiness['objective']> = {}): DailyReadiness {
     return {
@@ -29,6 +30,8 @@ function readiness(overrides: Partial<DailyReadiness['objective']> = {}): DailyR
 }
 
 const context = {
+    goals: { shortTerm: '', midTerm: '', longTerm: '' },
+    constraints: { hasCableMachine: false, hasFreeWeights: true, hasTreadmill: false, hasIndoorBike: true, restrictedModalities: [], maxTimeMinutes: 180 },
     preferences: {
         avoidedModalities: [], deprioritizedModalities: [], preferredModalities: [], conservativeBias: false,
     },
@@ -111,5 +114,52 @@ describe('recommendation knowledge lineage', () => {
             KNOWLEDGE_CLAIM_IDS.strengthEnduranceAdjacency,
         ]));
         expect(withHistory).not.toContain(KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper);
+    });
+
+    it('merges training-intent lineage into external-plan recommendations', async () => {
+        const focusEvent = {
+            id: 'race',
+            title: 'Road Race',
+            date: '2026-08-31',
+            priority: 'A',
+            lifecycle: 'scheduled',
+            category: 'cycling_event',
+            demandProfile: {
+                aerobicEndurance: 0.9, thresholdPower: 0.8, vo2MaxPower: 0.5, repeatedSurges: 0.8,
+                sprintPower: 0.4, fatigueResistance: 0.9, neuromuscular: 0.4,
+            },
+        } as UserEvent;
+        const externalPlan: ExternalPlanContext = {
+            planId: 'autumn-block',
+            revision: 1,
+            contentHash: 'hash-1',
+            session: {
+                id: 'w1-threshold',
+                title: 'Threshold 3x12',
+                priority: 'key',
+                placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' },
+                gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: [] },
+                prescription: { summary: '3x12 at threshold.' },
+            } as unknown as ExternalPlanContext['session'],
+        };
+        const trainingIntentProfile: TrainingIntentProfile = {
+            userId: 'u1',
+            planningMode: 'externally_planned',
+            priorities: ['balanced_performance'],
+            weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 },
+            organizationPreference: 'auto',
+            schemaVersion: 1,
+            createdAt: '',
+            updatedAt: '',
+        };
+        const rec = await evaluateTrainingWithIntent(
+            'u1', readiness(), context, [focusEvent], '2026-08-31', undefined, undefined, null, [], [],
+            trainingIntentProfile, null, 'max', externalPlan,
+        );
+        expect(rec.knowledgeRefs).toEqual(expect.arrayContaining([
+            KNOWLEDGE_CLAIM_IDS.enduranceIntensityDistribution,
+            KNOWLEDGE_CLAIM_IDS.internalLoadIntensityBands,
+            KNOWLEDGE_CLAIM_IDS.internalResponseStrainModel,
+        ]));
     });
 });

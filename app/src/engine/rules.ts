@@ -541,7 +541,10 @@ function adjudicatedExternalRecommendation(
         mode: actionable ? envelopeState.mode : 'recover',
         envelopes: envelopeState.envelopes,
         telemetry: envelopeState.telemetry,
-        knowledgeRefs: envelopeState.knowledgeRefs,
+        knowledgeRefs: mergeKnowledgeRefs(
+            envelopeState.knowledgeRefs,
+            trainingIntentKnowledgeRefs(intent),
+        ),
         externalPrescription: externalPrescriptionFor(externalPlan),
         externalVerdict: verdict,
         decisionTrace: {

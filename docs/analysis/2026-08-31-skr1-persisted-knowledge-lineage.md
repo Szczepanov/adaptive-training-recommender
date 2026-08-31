@@ -71,7 +71,7 @@ A new or materially changed decision gets a fresh v4 audit. Re-saving an unchang
 
 ### 4. Immutability
 
-Firestore previously treated the audit as write-once operationally but the rule compared only `policyVersion` and `evaluatedAt` on a same-decision update. SKR1 tightens that boundary with explicit `Map.diff(...).affectedKeys()` checks requiring zero changed audit keys. Archived revisions use the same full-audit diff invariant against the prior decision audit.
+Firestore previously treated the audit as write-once operationally but the rule compared only `policyVersion` and `evaluatedAt` on a same-decision update. SKR1 tightens that boundary to whole-audit equality (`recommendationAudit == resource.data.recommendationAudit`). Archived revisions use the same full-audit equality invariant against the prior decision audit.
 
 That makes `{ claimId, version }` lineage genuinely historical rather than mutable metadata.
 
@@ -106,6 +106,13 @@ The implementation adds tests for:
 - replay knowledge drift separated from reproducibility;
 - v4 lineage requirement;
 - local recommendation validation and Firestore schema/rule compatibility through the existing CI gates.
+
+## Review hardening: persistence and consumed-branch semantics
+
+- `knowledgeLineage` records claims materially consumed by the executed decision path, not every contextual field merely present in the input. Long-horizon readiness context is attributed only when the corresponding 7-day anchor causes the strain branch to read it.
+- External-plan recommendations merge applicable training-intent lineage before their early return, matching internally optimized recommendations.
+- Schema-v4 Firestore writes fail closed unless each lineage ref has exactly `claimId` (non-empty string) and `version` (positive integer), the list is at most 64 refs, and `claimId` values are unique. Application validation remains defense in depth rather than the security boundary.
+- Firestore persists compact identity/version only; statements, citations, evidence grades, and registry source metadata remain version-controlled in Git.
 
 ## Follow-up
 
