@@ -142,7 +142,11 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
         }
     }
 
-    const systemic = Math.min(1, 0.4 * subFatigue + 0.3 * hrvDrop + 0.3 * sleepDeficit);
+    const bbDepletion = objective.body_battery_wake !== null && objective.body_battery_wake < 50
+        ? Math.min(1, Math.max(0, (50 - objective.body_battery_wake) / 30))
+        : 0;
+
+    const systemic = Math.min(1, 0.3 * subFatigue + 0.25 * hrvDrop + 0.25 * sleepDeficit + 0.2 * bbDepletion);
     const cardiovascular = Math.min(1, 0.5 * rhrElevated + 0.5 * hrvDrop);
     const lowerBody = Math.min(1, subSoreness + ambulatoryTissueStrain);
     const upperBody = subSoreness * 0.7; // default soreness split

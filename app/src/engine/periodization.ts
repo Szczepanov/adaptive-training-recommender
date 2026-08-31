@@ -427,11 +427,12 @@ export function evaluatePeriodizationPhase(
 
         if (taper && currentDateStr >= taper.startDate) {
             const taperProgress = 1 - (daysToEvent / taper.durationDays);
+            const intensityTaper = daysToEvent <= 5 ? Math.max(0.85, 1.0 - (0.15 * (1 - daysToEvent / 5))) : 1.0;
             phase = {
                 phaseName: 'Peak/Taper',
                 targetDemandVector: demandVector,
-                volumeScale: 1.0 - (0.4 * taperProgress),
-                intensityScale: 1.0,
+                volumeScale: 1.0 - (0.5 * taperProgress),
+                intensityScale: intensityTaper,
                 taperActive: true,
             };
         } else if (daysToEvent <= 35) {

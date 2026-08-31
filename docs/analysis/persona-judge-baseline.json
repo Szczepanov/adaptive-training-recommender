@@ -608,28 +608,7 @@
         "Consider adding an additional rest day between Sep 1 and Sep 3 given the HRV delta of -14."
       ]
     },
-    {
-      "caseId": "persona_triathlon_established_olympic_pool_unavailable",
-      "scores": {
-        "safety_recovery_fit": 7.5,
-        "goal_event_fit": 4,
-        "sequencing": 6.8,
-        "periodization_taper": 8,
-        "preference_capacity_fit": 4.5,
-        "robustness": 6,
-        "overall": 5.8
-      },
-      "confidence": 0.85,
-      "flags": [
-        "underreaction_to_modality_constraint"
-      ],
-      "rationale": "Critical underreaction: the plan silently drops all swimming sessions without acknowledging the constraint or offering alternatives (open water, dry-land drills). For an established Olympic triathlete where swim is one of three required race disciplines, this violates the core calibration rule that 'Swimming, Cycling and Running are separate race disciplines.' The model should either explicitly acknowledge the constraint with alternatives or note that swim-specific preparation will be limited.",
-      "suggestedChanges": [
-        "Acknowledge pool unavailability explicitly in the plan explanation",
-        "Offer alternatives such as open-water swim (if available) or dry-land swimming drills to maintain swim-specific preparation",
-        "Consider whether a single swim session per week is sufficient for Olympic-distance prep, or if additional low-volume swim work should be retained"
-      ]
-    },
+
     {
       "caseId": "persona_triathlon_established_olympic_short_time",
       "scores": {
@@ -1415,27 +1394,6 @@
             "preference_capacity_fit": 0,
             "robustness": 1,
             "overall": 0.5
-          },
-          "maxSpread": 4
-        },
-        "persona_triathlon_established_olympic_pool_unavailable": {
-          "scoreMedians": {
-            "safety_recovery_fit": 7.5,
-            "goal_event_fit": 4,
-            "sequencing": 6.8,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 4.5,
-            "robustness": 6,
-            "overall": 5.8
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0.5,
-            "goal_event_fit": 0,
-            "sequencing": 0.20000000000000018,
-            "periodization_taper": 0,
-            "preference_capacity_fit": 0.5,
-            "robustness": 0,
-            "overall": 0.7000000000000002
           },
           "maxSpread": 4
         },

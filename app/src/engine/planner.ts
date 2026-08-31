@@ -991,7 +991,14 @@ export function generateWeekAheadPlan(
     seed: WeekAheadPlanSeed,
     options: WeekAheadOptions = {}
 ): WeekAheadPlan {
-    void todayReadiness;
+    const obj = todayReadiness?.objective ?? {};
+    let adverseSignalCount = 0;
+    if (obj.hrv_delta !== null && obj.hrv_delta !== undefined && obj.hrv_delta <= -10) adverseSignalCount++;
+    if (obj.rhr_delta !== null && obj.rhr_delta !== undefined && obj.rhr_delta >= 5) adverseSignalCount++;
+    if (obj.body_battery_wake !== null && obj.body_battery_wake !== undefined && obj.body_battery_wake <= 35) adverseSignalCount++;
+    if (obj.sleep_score !== null && obj.sleep_score !== undefined && obj.sleep_score <= 55) adverseSignalCount++;
+    const isSevereAdverseRecovery = todayRec.mode === 'recover' && adverseSignalCount >= 2;
+
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
     const fixedActivities = options.fixedActivities ?? [];
@@ -1015,6 +1022,7 @@ export function generateWeekAheadPlan(
     const resultDays: WeekAheadDay[] = [];
     const objectiveCredits: PlannedObjectiveCredit[] = [];
     const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality);
+
     const beganAfterHardRaceSpecificExposure = todayRec.mode === 'recover' && (seed.trailingHistory ?? []).some(entry =>
         entry.date === addDaysToLocalDateString(todayDate, -1)
         && entry.category === 'Race-Specific Endurance'
@@ -1314,9 +1322,14 @@ export function generateWeekAheadPlan(
                 || template.category === 'Moderate Endurance')
             && coverageNeedTierForTemplate(optContext.coverageState, template, anchorRole) <= 1
         );
-        let rankingCandidates = hasFatigueGatedRequiredCoverage
+        const isRecoveryPersistedDate = isSevereAdverseRecovery && offset <= 2;
+        let rankingCandidates = isRecoveryPersistedDate && offset === 1
             ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
-            : fatigueGated;
+            : (isRecoveryPersistedDate && offset === 2
+                ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery' || template.systemicCost <= PROJECTED_MODIFY_MAX_SYSTEMIC_COST)
+                : (hasFatigueGatedRequiredCoverage
+                    ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
+                    : fatigueGated));
 
         // On a reserved date, rank only the candidates that fulfil the reserved occurrence.
         // If the dynamic state has made all of them unsafe, fall back to the ordinary set:

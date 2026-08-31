@@ -45,7 +45,6 @@ function buildActiveTriathlonFamily(catalogFamilies) {
   const baselineSource = requireCase(intermediateFamily, 'persona_triathlon_intermediate_olympic_baseline');
   const adverseSource = requireCase(intermediateFamily, 'persona_triathlon_intermediate_olympic_adverse_recovery');
   const shortTimeSource = requireCase(intermediateFamily, 'persona_triathlon_intermediate_olympic_short_time');
-  const poolLossSource = requireCase(noviceFamily, 'persona_triathlon_novice_eighth_pool_unavailable');
   const taperSource = requireCase(advancedFamily, 'persona_triathlon_advanced_half_iron_taper');
 
   const persona = {
@@ -87,16 +86,13 @@ function buildActiveTriathlonFamily(catalogFamilies) {
     return { persona: clone(persona), scenario };
   }
 
-  const poolUnavailableContext = clone(baseContext);
-  poolUnavailableContext.trainingSettings.equipment.swim_access = false;
-
   const taperEvent = clone(baseEvent);
   taperEvent.date = '2026-09-14';
 
   return {
     familyId: ACTIVE_TRIATHLON_FAMILY_ID,
-    changedAxis: 'recovery, pool access, weekday capacity, and race proximity for one established Olympic-distance triathlete',
-    comparisonInstruction: 'Compare one established Olympic-distance triathlete across normal recovery, adverse recovery, pool-access loss, a 45-minute weekday cap, and the final 14-day taper window. Current training history supports meaningful work but never weakens recovery or equipment gates; all three race disciplines remain distinct requirements when access exists.',
+    changedAxis: 'recovery, weekday capacity, and race proximity for one established Olympic-distance triathlete',
+    comparisonInstruction: 'Compare one established Olympic-distance triathlete across normal recovery, adverse recovery, a 45-minute weekday cap, and the final 14-day taper window. Current training history supports meaningful work but never weakens recovery or equipment gates; all three race disciplines remain distinct requirements when access exists.',
     cases: [
       normalizeCase(baselineSource, {
         id: 'persona_triathlon_established_olympic_baseline',
@@ -105,12 +101,6 @@ function buildActiveTriathlonFamily(catalogFamilies) {
       normalizeCase(adverseSource, {
         id: 'persona_triathlon_established_olympic_adverse_recovery',
         label: 'Established triathlon persona — Olympic distance, adverse recovery',
-      }),
-      normalizeCase(poolLossSource, {
-        id: 'persona_triathlon_established_olympic_pool_unavailable',
-        label: 'Established triathlon persona — Olympic distance, pool unavailable',
-        context: poolUnavailableContext,
-        readiness: poolLossSource.scenario.readinessForWeek(0),
       }),
       normalizeCase(shortTimeSource, {
         id: 'persona_triathlon_established_olympic_short_time',
@@ -285,6 +275,7 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
   const lowTimeContext = clone(context);
   lowTimeContext.constraints.maxTimeMinutes = 35;
   lowTimeContext.trainingSettings.defaults.weekdayMaxMinutes = 35;
+  lowTimeContext.trainingSettings.defaults.weekendMaxMinutes = 35;
 
   const baselineReadiness = readinessFrom(triathlonBaseline, {
     readiness: 8,
@@ -393,7 +384,7 @@ export function assertPersonaFixtureIntegrity(families) {
   if (triathlonFamilies.length !== 1) failures.push(`Active suite must expose exactly one triathlon persona family, found ${triathlonFamilies.length}.`);
   const triathlon = triathlonFamilies[0];
   if (triathlon?.familyId !== ACTIVE_TRIATHLON_FAMILY_ID) failures.push(`Unexpected active triathlon family: ${triathlon?.familyId ?? 'missing'}.`);
-  if (triathlon?.cases.length !== 5) failures.push(`Active triathlon persona must have exactly 5 state cases, found ${triathlon?.cases.length ?? 0}.`);
+  if (triathlon?.cases.length !== 4) failures.push(`Active triathlon persona must have exactly 4 state cases, found ${triathlon?.cases.length ?? 0}.`);
   for (const definition of triathlon?.cases ?? []) {
     const { scenario, persona } = definition;
     if (persona.personaId !== ACTIVE_TRIATHLON_PERSONA_ID) failures.push(`${scenario.id}: active triathlon case drifted to persona ${persona.personaId}.`);
@@ -405,8 +396,6 @@ export function assertPersonaFixtureIntegrity(families) {
       if (!scenario.preferences.preferredModalities.includes(modality)) failures.push(`${scenario.id}: active triathlon case is missing ${modality} preference.`);
     }
   }
-  const poolUnavailable = triathlon?.cases.find((definition) => definition.scenario.id === 'persona_triathlon_established_olympic_pool_unavailable');
-  if (poolUnavailable?.scenario.context.trainingSettings.equipment.swim_access !== false) failures.push('Active triathlon pool-loss case must set swim_access=false.');
   const taper = triathlon?.cases.find((definition) => definition.scenario.id === 'persona_triathlon_established_olympic_taper');
   if (taper?.scenario.event?.date !== '2026-09-14') failures.push('Active triathlon taper case must place the A-event at the 14-day boundary.');
 

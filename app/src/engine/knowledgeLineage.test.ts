@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DailyReadiness, TrainingIntentProfile, UserContext, UserEvent } from './models';
+import type { TrainingHistoryProvider } from './trainingHistory';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 import {
     compareKnowledgeLineage,
@@ -152,8 +153,24 @@ describe('recommendation knowledge lineage', () => {
             createdAt: '',
             updatedAt: '',
         };
+        const inMemoryHistoryProvider: TrainingHistoryProvider = {
+            reconstruct: async () => [],
+            getSnapshot: async (_u, throughDateExclusive, windowDays) => ({
+                throughDateExclusive,
+                windowDays,
+                completedEvents: [],
+                exposures: [],
+                sourceStates: {
+                    activities: { status: 'AVAILABLE', revision: 'test' },
+                    recommendations: { status: 'AVAILABLE', revision: 'test' },
+                    manualTraining: { status: 'MISSING' },
+                },
+                generatedAt: new Date().toISOString(),
+                revision: 'test',
+            }),
+        };
         const rec = await evaluateTrainingWithIntent(
-            'u1', readiness(), context, [focusEvent], '2026-08-31', undefined, undefined, null, [], [],
+            'u1', readiness(), context, [focusEvent], '2026-08-31', undefined, inMemoryHistoryProvider, null, [], [],
             trainingIntentProfile, null, 'max', externalPlan,
         );
         expect(rec.knowledgeRefs).toEqual(expect.arrayContaining([

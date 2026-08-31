@@ -338,13 +338,17 @@ export function evaluateReadinessAndSafetyEnvelope(
     const strainForThresholds = objectiveStrain + subjectiveDrift;
 
     const lowBodyBatteryRecovery = objective.body_battery_wake !== null && objective.body_battery_wake <= BODY_BATTERY_RECOVER_THRESHOLD;
-    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || strainForThresholds >= STRAIN_RECOVER_THRESHOLD;
+    const combinedAcuteBiometricRecover =
+        objective.hrv_delta !== null && objective.hrv_delta <= -10 &&
+        objective.rhr_delta !== null && objective.rhr_delta >= 5 &&
+        objective.body_battery_wake !== null && objective.body_battery_wake <= 35;
+    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || strainForThresholds >= STRAIN_RECOVER_THRESHOLD;
     let mode: 'train' | 'modify' | 'recover' = fatigueTriggeredRecover
         ? 'recover'
         : (overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || strainForThresholds >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
 
     const strainWithoutDrift = objectiveStrain - totalMultiDayDrift;
-    const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
+    const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
     const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
     const counterfactualModeWithoutDrift = counterfactualRecover ? 'recover' : (counterfactualModify ? 'modify' : 'train');
     const multiDayDriftIsDecisionRelevant = (mode !== 'train') && (mode !== counterfactualModeWithoutDrift);
@@ -354,7 +358,7 @@ export function evaluateReadinessAndSafetyEnvelope(
     // objective multi-day-drift axis) through the same threshold logic, so a caller can tell
     // whether subjective drift specifically changed the mode. Inert under 'off' (subjectiveDrift
     // is always 0 there, so modeWithoutSubjectiveDrift always equals mode).
-    const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
+    const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
     const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
     const modeWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift ? 'recover' : (modifyWithoutSubjectiveDrift ? 'modify' : 'train');
     const subjectiveDriftIsDecisionRelevant = (mode !== 'train') && (mode !== modeWithoutSubjectiveDrift);
@@ -886,9 +890,19 @@ export function buildNextDayScenarios(
         || todayRec.template.category === 'Upper-body Strength';
     const recentHardSessions = todayReadiness.objective.last_3_days_hard_sessions_count || 0;
     const isCumulativeOverload = recentHardSessions >= 2 && isTodayHardSession;
+
+    const obj = todayReadiness.objective;
+    let adverseSignalCount = 0;
+    if (obj.hrv_delta !== null && obj.hrv_delta <= -10) adverseSignalCount++;
+    if (obj.rhr_delta !== null && obj.rhr_delta >= 5) adverseSignalCount++;
+    if (obj.body_battery_wake !== null && obj.body_battery_wake <= 35) adverseSignalCount++;
+    if (obj.sleep_score !== null && obj.sleep_score <= 55) adverseSignalCount++;
+    const isSevereAdverseRecovery = todayRec.mode === 'recover' && adverseSignalCount >= 2;
+
     let singlePlanReason: string | undefined;
     if (isPainOrInjury) singlePlanReason = 'Active pain/injury reported today. Tomorrow requires dedicated recovery regardless of morning metrics.';
     else if (isCumulativeOverload) singlePlanReason = 'High cumulative load (multiple hard sessions back-to-back). Tomorrow is locked to active recovery to prevent overtraining.';
+    else if (isSevereAdverseRecovery) singlePlanReason = 'Severe physiological strain detected today (depleted recovery markers). Tomorrow requires sustained recovery to prevent overtraining.';
 
     if (singlePlanReason) {
         const syntheticRecoveryReadiness: DailyReadiness = {
