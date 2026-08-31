@@ -86,6 +86,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0031: Activity Heart-Rate Measurement Fidelity and Evidence Authority**](./adr/0031-activity-heart-rate-measurement-fidelity-and-evidence-authority.md) — *Accepted.* Separates HR sensor/source provenance from technical signal quality and makes downstream authority use-case-specific; low measurement confidence removes or bounds evidence rather than lowering athlete readiness.
 
 * [**ADR-0032: Cause-Aware Subjective Symptom Gating**](./adr/0032-cause-aware-subjective-symptom-gating.md) — *Accepted.* Connects subjective symptom check-ins to engine-aware cause categories to safely differentiate ambient fatigue from illness risk.
+* [**ADR-0033: Versioned Sports Knowledge Registry and Claim-Level Evidence Lineage**](./adr/0033-sports-knowledge-registry.md) — *Accepted.* Claim-level evidence lineage, separating sports knowledge from athlete observations.
 ---
 
 ### 🔍 Reviews & Analysis
@@ -150,6 +151,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-29 Sleep Decision Authority Phase 4 Status**](./analysis/2026-08-29-sleep-decision-authority-phase-4-status.md) — Status report for Phase 4 of sleep decision authority decoupling.
 * [**2026-08-30 Running + triathlon athlete support audit**](./analysis/2026-08-30-running-triathlon-support-audit.md) — Pre/post-change support audit for 5K/10K/half/marathon and 1/8–1/2/70.3 triathlon: Swimming as a first-class modality, hard-gated outdoor bicycle/pool access, independent per-discipline triathlon aerobic exposure, and running long-run/race-pace/taper templates.
 * [**2026-08-30 Triathlon scenario and persona corpus**](./analysis/2026-08-30-triathlon-persona-corpus.md) — Synthetic novice/intermediate/advanced triathlon coverage, including access constraints, recovery perturbations, time caps, and a 14-day 70.3 taper horizon.
+* [**Engine Knowledge Coverage Inventory — 2026-08-30**](./analysis/2026-08-30-engine-knowledge-coverage-inventory.md) — Audit of engine knowledge coverage after ADR-0033.
+* [**2026-08-30 Sports Knowledge Registry Analysis**](./analysis/2026-08-30-sports-knowledge-registry-analysis.md) — Analysis leading to ADR-0033 and the knowledge registry.
 
 ---
 
@@ -181,6 +184,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Health anomaly causality & canonicalization cleanup**](./plans/health-anomaly-causality-cleanup.md) — *Implemented.* Shared health-context defaults, temporal causality, and adverse physiology persistence under explanatory context.
 * [**Multisource Health & Recovery Ingestion**](./plans/multisource-health-and-recovery-ingestion.md) — *Approved (MS0 ready).* Source-aware observation contract, Google Health raw ingestion, Eight Sleep export probing, transport-equivalence testing, and evidence-gated recovery fusion (ADR-0027).
 * [**Physiological Identity Passport & Measurement Trust**](./plans/physiological-identity-passport-and-measurement-trust.md) — *Approved, in progress (PI0–PI7 done, PI8/PI9/PI10 partial).* Provider-neutral identity-attribution/measurement-trust layer (ADR-0028) between shared-source observations and baseline/fusion logic; a production activation decision remains explicitly open pending real historical/prospective evidence.
+* [**Sports Knowledge Registry Follow-up**](./plans/sports-knowledge-registry-follow-up.md) — *In progress.* Follow-up to ADR-0033.
 
 ---
 
@@ -197,6 +201,7 @@ In-depth technical design documents covering system subsystems:
 * [**External Plan Import Schema**](./external-plan-schema.md) — *Implemented.* JSON contract for importing an externally-authored plan, plus the placement/revision scheduling model.
 * [**Sustained Multidirectional Field Macrocycle (v5)**](./macrocycle-v5.md) — Target multidirectional speed, strength, and endurance field macrocycle specification.
 * [**Visual Review Workflow**](./visual-review.md) — Visual regression and layout review test harness using Playwright.
+* [**Sports Knowledge Registry**](./architecture/sports-knowledge-registry.md) — Implementation details of the versioned sports knowledge layer.
 
 ---
 
