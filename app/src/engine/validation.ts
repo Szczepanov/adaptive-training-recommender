@@ -1,6 +1,7 @@
-import type { DailySubjectiveCheckin } from './models';
+import type { DailyRecommendation, DailySubjectiveCheckin } from './models';
 import {
     validateCheckin as validateCoreCheckin,
+    validateRecommendation as validateCoreRecommendation,
     type ValidationResult,
 } from './validationCore';
 import {
@@ -86,4 +87,32 @@ export function validateCheckin(raw: unknown): ValidationResult<DailySubjectiveC
             dataQuality,
         },
     };
+}
+
+/**
+ * Defensive compatibility wrapper for the historical recommendation validator.
+ *
+ * `validationCore.ts` predates the v4 audit and assumes its input is already object-like.
+ * Recommendation persistence and Firestore parsing, however, are trust boundaries: a
+ * malformed cached/client document must return a validation error, not throw while
+ * dereferencing `recommendationAudit.knowledgeLineage`. Keep the legacy validator's normal
+ * behavior unchanged while rejecting malformed root/audit containers before delegation.
+ */
+export function validateRecommendation(raw: unknown): ValidationResult<DailyRecommendation> {
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return {
+            isValid: false,
+            errors: [{ field: 'recommendation', message: 'Recommendation must be an object' }],
+        };
+    }
+
+    const audit = (raw as Record<string, unknown>).recommendationAudit;
+    if (audit !== undefined && (audit === null || typeof audit !== 'object' || Array.isArray(audit))) {
+        return {
+            isValid: false,
+            errors: [{ field: 'recommendationAudit', message: 'Recommendation audit must be an object' }],
+        };
+    }
+
+    return validateCoreRecommendation(raw);
 }
