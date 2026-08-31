@@ -1,8 +1,8 @@
 # Safety Evidence Pack — Subjective Readiness + Injury/Pain
 
-**Date:** 2026-08-31  
-**Status:** Implementation plan; no recommendation behavior changes in this PR.  
-**Priority:** P0 / high-safety debt.  
+**Date:** 2026-08-31
+**Status:** Implementation plan; no recommendation behavior changes in this PR.
+**Priority:** P0 / high-safety debt.
 **Prerequisite for runtime lineage:** merge SKR1 persisted recommendation lineage (PR #312) before the implementation PRs are finalized.
 
 ## 1. Executive summary
@@ -345,38 +345,38 @@ These sources are useful starting anchors for the implementation review. Their p
 
 ### 6.1 Athlete self-report monitoring
 
-**Saw, Main & Gastin, 2016 — systematic review**  
+**Saw, Main & Gastin, 2016 — systematic review**
 PMID `26423706`; PMCID `PMC4789708`; DOI `10.1136/bjsports-2015-094758`.
 
 Useful because the review directly compares athlete subjective and objective monitoring measures and reports that subjective well-being measures were responsive to acute and chronic training load. It supports researching subjective monitoring as legitimate evidence, but it does not by itself validate the app's exact composite or cut-points.
 
-**Saw et al., 2017 — athlete self-report measure implementation/psychometric considerations**  
+**Saw et al., 2017 — athlete self-report measure implementation/psychometric considerations**
 PMID `27834546`; DOI `10.1123/ijspp.2016-0395`.
 
 Useful for the measurement-quality boundary: construct validity, reliability, responsiveness, administration consistency and practical implementation must be considered before treating a score as decision authority.
 
 ### 6.2 Return to sport as risk management
 
-**Ardern et al., 2016 — Bern return-to-sport consensus**  
+**Ardern et al., 2016 — Bern return-to-sport consensus**
 PMID `27226389`; DOI `10.1136/bjsports-2016-096278`.
 
 Useful for the broad architecture: return to sport is a continuum and a multifactorial risk-management decision rather than a single end-stage pain or time threshold. The consensus itself states that research supporting many return-to-sport decisions is limited, so it should not be inflated into numeric product cut-points.
 
-**Panther Symposium ACL Return-to-Sport Consensus, 2020**  
+**Panther Symposium ACL Return-to-Sport Consensus, 2020**
 PMID `32647735`.
 
 Useful as a condition-specific example of criteria-based progression incorporating physical examination, functional testing, psychological readiness and contextual factors instead of purely time-based clearance. It must not be generalized to all body regions as an exact rule.
 
 ### 6.3 Symptom-guided loading
 
-**Silbernagel et al., 2007 — Achilles tendinopathy RCT**  
+**Silbernagel et al., 2007 — Achilles tendinopathy RCT**
 PMID `17307888`; DOI `10.1177/0363546506298279`.
 
 Useful because continued tendon-loading activity under a pain-monitoring model was prospectively evaluated during Achilles rehabilitation. It is strong evidence against a simplistic universal assumption that any musculoskeletal pain requires complete avoidance of the provoking modality. It remains Achilles-tendinopathy-specific and cannot validate the app's generic pain envelope or every region mapping.
 
 ### 6.4 Region-specific guidance
 
-**Martin et al., 2021 — lateral ankle sprain clinical practice guideline**  
+**Martin et al., 2021 — lateral ankle sprain clinical practice guideline**
 PMID `33789434`; DOI `10.2519/jospt.2021.0302`.
 
 Useful as a model for how a region-specific restriction should be evaluated: diagnosis/context, impairments, interventions and return criteria are more specific than the app's single `ankle` label.
