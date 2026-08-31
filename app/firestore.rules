@@ -124,28 +124,223 @@ service cloud.firestore {
         );
     }
 
-    function hasValidRecommendationAudit(userId, audit) {
+    function isValidKnowledgeLineageRef(ref) {
+      return ref is map
+        && ref.keys().hasOnly(['claimId', 'version'])
+        && ref.keys().hasAll(['claimId', 'version'])
+        && ref.claimId is string
+        && ref.claimId.size() > 0
+        && ref.version is int
+        && ref.version >= 1;
+    }
+
+    function hasValidKnowledgeLineageEntries0(lineage) {
+      let sz = lineage.size();
+      return         (sz <= 0 || isValidKnowledgeLineageRef(lineage[0]))
+        && (sz <= 1 || isValidKnowledgeLineageRef(lineage[1]))
+        && (sz <= 2 || isValidKnowledgeLineageRef(lineage[2]))
+        && (sz <= 3 || isValidKnowledgeLineageRef(lineage[3]))
+        && (sz <= 4 || isValidKnowledgeLineageRef(lineage[4]))
+        && (sz <= 5 || isValidKnowledgeLineageRef(lineage[5]))
+        && (sz <= 6 || isValidKnowledgeLineageRef(lineage[6]))
+        && (sz <= 7 || isValidKnowledgeLineageRef(lineage[7]));
+    }
+
+    function hasValidKnowledgeLineageEntries1(lineage) {
+      let sz = lineage.size();
+      return         (sz <= 8 || isValidKnowledgeLineageRef(lineage[8]))
+        && (sz <= 9 || isValidKnowledgeLineageRef(lineage[9]))
+        && (sz <= 10 || isValidKnowledgeLineageRef(lineage[10]))
+        && (sz <= 11 || isValidKnowledgeLineageRef(lineage[11]))
+        && (sz <= 12 || isValidKnowledgeLineageRef(lineage[12]))
+        && (sz <= 13 || isValidKnowledgeLineageRef(lineage[13]))
+        && (sz <= 14 || isValidKnowledgeLineageRef(lineage[14]))
+        && (sz <= 15 || isValidKnowledgeLineageRef(lineage[15]));
+    }
+
+    function hasValidKnowledgeLineageEntries2(lineage) {
+      let sz = lineage.size();
+      return         (sz <= 16 || isValidKnowledgeLineageRef(lineage[16]))
+        && (sz <= 17 || isValidKnowledgeLineageRef(lineage[17]))
+        && (sz <= 18 || isValidKnowledgeLineageRef(lineage[18]))
+        && (sz <= 19 || isValidKnowledgeLineageRef(lineage[19]))
+        && (sz <= 20 || isValidKnowledgeLineageRef(lineage[20]))
+        && (sz <= 21 || isValidKnowledgeLineageRef(lineage[21]))
+        && (sz <= 22 || isValidKnowledgeLineageRef(lineage[22]))
+        && (sz <= 23 || isValidKnowledgeLineageRef(lineage[23]));
+    }
+
+    function hasValidKnowledgeLineageEntries3(lineage) {
+      let sz = lineage.size();
+      return         (sz <= 24 || isValidKnowledgeLineageRef(lineage[24]))
+        && (sz <= 25 || isValidKnowledgeLineageRef(lineage[25]))
+        && (sz <= 26 || isValidKnowledgeLineageRef(lineage[26]))
+        && (sz <= 27 || isValidKnowledgeLineageRef(lineage[27]))
+        && (sz <= 28 || isValidKnowledgeLineageRef(lineage[28]))
+        && (sz <= 29 || isValidKnowledgeLineageRef(lineage[29]))
+        && (sz <= 30 || isValidKnowledgeLineageRef(lineage[30]))
+        && (sz <= 31 || isValidKnowledgeLineageRef(lineage[31]));
+    }
+
+    function hasValidKnowledgeLineageEntries4(lineage) {
+      let sz = lineage.size();
+      return         (sz <= 32 || isValidKnowledgeLineageRef(lineage[32]))
+        && (sz <= 33 || isValidKnowledgeLineageRef(lineage[33]))
+        && (sz <= 34 || isValidKnowledgeLineageRef(lineage[34]))
+        && (sz <= 35 || isValidKnowledgeLineageRef(lineage[35]))
+        && (sz <= 36 || isValidKnowledgeLineageRef(lineage[36]))
+        && (sz <= 37 || isValidKnowledgeLineageRef(lineage[37]))
+        && (sz <= 38 || isValidKnowledgeLineageRef(lineage[38]))
+        && (sz <= 39 || isValidKnowledgeLineageRef(lineage[39]));
+    }
+
+    function hasValidKnowledgeLineageEntries5(lineage) {
+      let sz = lineage.size();
+      return         (sz <= 40 || isValidKnowledgeLineageRef(lineage[40]))
+        && (sz <= 41 || isValidKnowledgeLineageRef(lineage[41]))
+        && (sz <= 42 || isValidKnowledgeLineageRef(lineage[42]))
+        && (sz <= 43 || isValidKnowledgeLineageRef(lineage[43]))
+        && (sz <= 44 || isValidKnowledgeLineageRef(lineage[44]))
+        && (sz <= 45 || isValidKnowledgeLineageRef(lineage[45]))
+        && (sz <= 46 || isValidKnowledgeLineageRef(lineage[46]))
+        && (sz <= 47 || isValidKnowledgeLineageRef(lineage[47]));
+    }
+
+    function hasValidKnowledgeLineageEntries6(lineage) {
+      let sz = lineage.size();
+      return         (sz <= 48 || isValidKnowledgeLineageRef(lineage[48]))
+        && (sz <= 49 || isValidKnowledgeLineageRef(lineage[49]))
+        && (sz <= 50 || isValidKnowledgeLineageRef(lineage[50]))
+        && (sz <= 51 || isValidKnowledgeLineageRef(lineage[51]))
+        && (sz <= 52 || isValidKnowledgeLineageRef(lineage[52]))
+        && (sz <= 53 || isValidKnowledgeLineageRef(lineage[53]))
+        && (sz <= 54 || isValidKnowledgeLineageRef(lineage[54]))
+        && (sz <= 55 || isValidKnowledgeLineageRef(lineage[55]));
+    }
+
+    function hasValidKnowledgeLineageEntries7(lineage) {
+      let sz = lineage.size();
+      return         (sz <= 56 || isValidKnowledgeLineageRef(lineage[56]))
+        && (sz <= 57 || isValidKnowledgeLineageRef(lineage[57]))
+        && (sz <= 58 || isValidKnowledgeLineageRef(lineage[58]))
+        && (sz <= 59 || isValidKnowledgeLineageRef(lineage[59]))
+        && (sz <= 60 || isValidKnowledgeLineageRef(lineage[60]))
+        && (sz <= 61 || isValidKnowledgeLineageRef(lineage[61]))
+        && (sz <= 62 || isValidKnowledgeLineageRef(lineage[62]))
+        && (sz <= 63 || isValidKnowledgeLineageRef(lineage[63]));
+    }
+
+    function hasValidKnowledgeLineageEntries(lineage) {
+      let sz = lineage.size();
+      return hasValidKnowledgeLineageEntries0(lineage)
+        && (sz <= 8 || hasValidKnowledgeLineageEntries1(lineage))
+        && (sz <= 16 || hasValidKnowledgeLineageEntries2(lineage))
+        && (sz <= 24 || hasValidKnowledgeLineageEntries3(lineage))
+        && (sz <= 32 || hasValidKnowledgeLineageEntries4(lineage))
+        && (sz <= 40 || hasValidKnowledgeLineageEntries5(lineage))
+        && (sz <= 48 || hasValidKnowledgeLineageEntries6(lineage))
+        && (sz <= 56 || hasValidKnowledgeLineageEntries7(lineage));
+    }
+
+    function hasUniqueKnowledgeLineageClaimIds(lineage) {
+      return [
+        lineage.size() > 0 ? lineage[0].claimId : '__knowledge_lineage_absent_0__',
+        lineage.size() > 1 ? lineage[1].claimId : '__knowledge_lineage_absent_1__',
+        lineage.size() > 2 ? lineage[2].claimId : '__knowledge_lineage_absent_2__',
+        lineage.size() > 3 ? lineage[3].claimId : '__knowledge_lineage_absent_3__',
+        lineage.size() > 4 ? lineage[4].claimId : '__knowledge_lineage_absent_4__',
+        lineage.size() > 5 ? lineage[5].claimId : '__knowledge_lineage_absent_5__',
+        lineage.size() > 6 ? lineage[6].claimId : '__knowledge_lineage_absent_6__',
+        lineage.size() > 7 ? lineage[7].claimId : '__knowledge_lineage_absent_7__',
+        lineage.size() > 8 ? lineage[8].claimId : '__knowledge_lineage_absent_8__',
+        lineage.size() > 9 ? lineage[9].claimId : '__knowledge_lineage_absent_9__',
+        lineage.size() > 10 ? lineage[10].claimId : '__knowledge_lineage_absent_10__',
+        lineage.size() > 11 ? lineage[11].claimId : '__knowledge_lineage_absent_11__',
+        lineage.size() > 12 ? lineage[12].claimId : '__knowledge_lineage_absent_12__',
+        lineage.size() > 13 ? lineage[13].claimId : '__knowledge_lineage_absent_13__',
+        lineage.size() > 14 ? lineage[14].claimId : '__knowledge_lineage_absent_14__',
+        lineage.size() > 15 ? lineage[15].claimId : '__knowledge_lineage_absent_15__',
+        lineage.size() > 16 ? lineage[16].claimId : '__knowledge_lineage_absent_16__',
+        lineage.size() > 17 ? lineage[17].claimId : '__knowledge_lineage_absent_17__',
+        lineage.size() > 18 ? lineage[18].claimId : '__knowledge_lineage_absent_18__',
+        lineage.size() > 19 ? lineage[19].claimId : '__knowledge_lineage_absent_19__',
+        lineage.size() > 20 ? lineage[20].claimId : '__knowledge_lineage_absent_20__',
+        lineage.size() > 21 ? lineage[21].claimId : '__knowledge_lineage_absent_21__',
+        lineage.size() > 22 ? lineage[22].claimId : '__knowledge_lineage_absent_22__',
+        lineage.size() > 23 ? lineage[23].claimId : '__knowledge_lineage_absent_23__',
+        lineage.size() > 24 ? lineage[24].claimId : '__knowledge_lineage_absent_24__',
+        lineage.size() > 25 ? lineage[25].claimId : '__knowledge_lineage_absent_25__',
+        lineage.size() > 26 ? lineage[26].claimId : '__knowledge_lineage_absent_26__',
+        lineage.size() > 27 ? lineage[27].claimId : '__knowledge_lineage_absent_27__',
+        lineage.size() > 28 ? lineage[28].claimId : '__knowledge_lineage_absent_28__',
+        lineage.size() > 29 ? lineage[29].claimId : '__knowledge_lineage_absent_29__',
+        lineage.size() > 30 ? lineage[30].claimId : '__knowledge_lineage_absent_30__',
+        lineage.size() > 31 ? lineage[31].claimId : '__knowledge_lineage_absent_31__',
+        lineage.size() > 32 ? lineage[32].claimId : '__knowledge_lineage_absent_32__',
+        lineage.size() > 33 ? lineage[33].claimId : '__knowledge_lineage_absent_33__',
+        lineage.size() > 34 ? lineage[34].claimId : '__knowledge_lineage_absent_34__',
+        lineage.size() > 35 ? lineage[35].claimId : '__knowledge_lineage_absent_35__',
+        lineage.size() > 36 ? lineage[36].claimId : '__knowledge_lineage_absent_36__',
+        lineage.size() > 37 ? lineage[37].claimId : '__knowledge_lineage_absent_37__',
+        lineage.size() > 38 ? lineage[38].claimId : '__knowledge_lineage_absent_38__',
+        lineage.size() > 39 ? lineage[39].claimId : '__knowledge_lineage_absent_39__',
+        lineage.size() > 40 ? lineage[40].claimId : '__knowledge_lineage_absent_40__',
+        lineage.size() > 41 ? lineage[41].claimId : '__knowledge_lineage_absent_41__',
+        lineage.size() > 42 ? lineage[42].claimId : '__knowledge_lineage_absent_42__',
+        lineage.size() > 43 ? lineage[43].claimId : '__knowledge_lineage_absent_43__',
+        lineage.size() > 44 ? lineage[44].claimId : '__knowledge_lineage_absent_44__',
+        lineage.size() > 45 ? lineage[45].claimId : '__knowledge_lineage_absent_45__',
+        lineage.size() > 46 ? lineage[46].claimId : '__knowledge_lineage_absent_46__',
+        lineage.size() > 47 ? lineage[47].claimId : '__knowledge_lineage_absent_47__',
+        lineage.size() > 48 ? lineage[48].claimId : '__knowledge_lineage_absent_48__',
+        lineage.size() > 49 ? lineage[49].claimId : '__knowledge_lineage_absent_49__',
+        lineage.size() > 50 ? lineage[50].claimId : '__knowledge_lineage_absent_50__',
+        lineage.size() > 51 ? lineage[51].claimId : '__knowledge_lineage_absent_51__',
+        lineage.size() > 52 ? lineage[52].claimId : '__knowledge_lineage_absent_52__',
+        lineage.size() > 53 ? lineage[53].claimId : '__knowledge_lineage_absent_53__',
+        lineage.size() > 54 ? lineage[54].claimId : '__knowledge_lineage_absent_54__',
+        lineage.size() > 55 ? lineage[55].claimId : '__knowledge_lineage_absent_55__',
+        lineage.size() > 56 ? lineage[56].claimId : '__knowledge_lineage_absent_56__',
+        lineage.size() > 57 ? lineage[57].claimId : '__knowledge_lineage_absent_57__',
+        lineage.size() > 58 ? lineage[58].claimId : '__knowledge_lineage_absent_58__',
+        lineage.size() > 59 ? lineage[59].claimId : '__knowledge_lineage_absent_59__',
+        lineage.size() > 60 ? lineage[60].claimId : '__knowledge_lineage_absent_60__',
+        lineage.size() > 61 ? lineage[61].claimId : '__knowledge_lineage_absent_61__',
+        lineage.size() > 62 ? lineage[62].claimId : '__knowledge_lineage_absent_62__',
+        lineage.size() > 63 ? lineage[63].claimId : '__knowledge_lineage_absent_63__'
+      ].toSet().size() == 64;
+    }
+
+    function hasValidKnowledgeLineage(lineage) {
+      return lineage is list
+        && lineage.size() <= 64
+        && hasValidKnowledgeLineageEntries(lineage)
+        && (lineage.size() <= 1 || hasUniqueKnowledgeLineageClaimIds(lineage));
+    }
+
+    function hasValidRecommendationAudit(userId, audit, version) {
+      let hasLineage = 'knowledgeLineage' in audit;
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision'])
-        && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
+        && (
+          (version < 4 && !hasLineage)
+          || (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage))
+        )
         && audit.policyVersion is string
         && audit.evaluatedAt is string
         && audit.decisionContextRevision is string
         && audit.safetyStatus == 'complete'
         && audit.history is map
         && audit.history.keys().hasOnly(['completedEventCount', 'unmatchedEventCount', 'sourceStatuses'])
-        && audit.history.keys().hasAll(['completedEventCount', 'unmatchedEventCount', 'sourceStatuses'])
         && audit.history.completedEventCount is int && audit.history.completedEventCount >= 0
         && audit.history.unmatchedEventCount is int && audit.history.unmatchedEventCount >= 0
         && audit.history.sourceStatuses is map
         && audit.history.sourceStatuses.keys().hasOnly(['activities', 'recommendations', 'manualTraining'])
-        && audit.history.sourceStatuses.keys().hasAll(['activities', 'recommendations', 'manualTraining'])
         && audit.history.sourceStatuses.activities in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE']
         && audit.history.sourceStatuses.recommendations in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE']
         && audit.history.sourceStatuses.manualTraining in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE']
         && audit.envelope is map
         && audit.envelope.keys().hasOnly(['safetyRestrictedModalityCount', 'planMaxAllowableTier'])
-        && audit.envelope.keys().hasAll(['safetyRestrictedModalityCount', 'planMaxAllowableTier'])
         && audit.envelope.safetyRestrictedModalityCount is int && audit.envelope.safetyRestrictedModalityCount >= 0
         && audit.envelope.planMaxAllowableTier in ['Rest', 'Mobility', 'Easy', 'Moderate', 'Hard']
         && (!('plannedDose' in audit) || hasValidDose(audit.plannedDose))
@@ -178,7 +373,6 @@ service cloud.firestore {
       return hasOwnedUserId(userId)
         && isDateDocument(date)
         && request.resource.data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
-        && request.resource.data.keys().hasAll(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adherence'])
         && request.resource.data.templateId is string
         && request.resource.data.templateTitle is string
         && request.resource.data.category is string
@@ -188,13 +382,13 @@ service cloud.firestore {
         && request.resource.data.rationale is string
         && request.resource.data.createdAt is string
         && request.resource.data.updatedAt is string
-        && request.resource.data.schemaVersion in [1, 2, 3]
+        && request.resource.data.schemaVersion in [1, 2, 3, 4]
         && (!('revision' in request.resource.data) || (request.resource.data.revision is int && request.resource.data.revision >= 1))
         && hasValidAdherence(request.resource.data.adherence)
         && (!('primarySession' in request.resource.data) || hasValidSessionReferenceBinding(request.resource.data.primarySession))
         && (!('additionalSessions' in request.resource.data) || hasValidAdditionalSessions(request.resource.data.additionalSessions))
-        && (request.resource.data.schemaVersion != 3
-          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit)));
+        && (request.resource.data.schemaVersion < 3
+          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit, request.resource.data.schemaVersion)));
     }
 
     function schemaRatchets() {
@@ -205,8 +399,7 @@ service cloud.firestore {
       return !('recommendationAudit' in resource.data)
         || decisionChanged
         || (('recommendationAudit' in request.resource.data)
-          && request.resource.data.recommendationAudit.policyVersion == resource.data.recommendationAudit.policyVersion
-          && request.resource.data.recommendationAudit.evaluatedAt == resource.data.recommendationAudit.evaluatedAt);
+          && request.resource.data.recommendationAudit == resource.data.recommendationAudit);
     }
 
     function decisionFieldsUnchanged() {
@@ -244,7 +437,7 @@ service cloud.firestore {
         && (!('primarySession' in resource.data) || prior.primarySession == resource.data.primarySession)
         && (('additionalSessions' in prior) == ('additionalSessions' in resource.data))
         && (!('additionalSessions' in resource.data) || prior.additionalSessions == resource.data.additionalSessions)
-        && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit.policyVersion == resource.data.recommendationAudit.policyVersion && prior.recommendationAudit.evaluatedAt == resource.data.recommendationAudit.evaluatedAt));
+        && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit == resource.data.recommendationAudit));
     }
 
     function canUpdateRecommendation(userId, date) {
@@ -953,6 +1146,7 @@ service cloud.firestore {
       match /entries/{entryId} {
         allow read: if isOwner(userId);
         allow create, update, delete: if isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId))
           && get(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)).data.state == 'in_progress'
           && (request.method == 'delete' || hasValidSessionEntry(executionId, entryId));
       }
