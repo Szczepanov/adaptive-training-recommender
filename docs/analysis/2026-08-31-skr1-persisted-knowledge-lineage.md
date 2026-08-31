@@ -71,7 +71,7 @@ A new or materially changed decision gets a fresh v4 audit. Re-saving an unchang
 
 ### 4. Immutability
 
-Firestore previously treated the audit as write-once operationally but the rule compared only `policyVersion` and `evaluatedAt` on a same-decision update. SKR1 tightens that boundary to whole-map equality. Archived revisions likewise require the archived audit map to equal the prior decision audit exactly.
+Firestore previously treated the audit as write-once operationally but the rule compared only `policyVersion` and `evaluatedAt` on a same-decision update. SKR1 tightens that boundary with explicit `Map.diff(...).affectedKeys()` checks requiring zero changed audit keys. Archived revisions use the same full-audit diff invariant against the prior decision audit.
 
 That makes `{ claimId, version }` lineage genuinely historical rather than mutable metadata.
 
