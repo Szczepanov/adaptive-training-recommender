@@ -76,6 +76,20 @@ describe('recommendation knowledge lineage', () => {
         expect(refs).not.toContain('readiness.subjective_mode_thresholds');
     });
 
+    it('does not attribute 28-day-only biometric context when metricStrain short-circuits without a 7-day anchor', () => {
+        const refs = readinessKnowledgeRefs(readiness({
+            hrv_delta_28d: -8,
+            rhr_delta_28d: 5,
+            sleep_score_delta_28d: -12,
+            respiration_delta_28d: 1.5,
+            hrv_stdev_28d: 6,
+            rhr_stdev_28d: 2,
+            sleep_score_stdev_28d: 5,
+            respiration_mad_28d: 0.8,
+        }), context);
+        expect(refs).toEqual([]);
+    });
+
     it('adds taper lineage only for an active endurance taper and spacing lineage only when history exists', () => {
         const focusEvent = { category: 'cycling_event' } as UserEvent;
         const noHistory = trainingIntentKnowledgeRefs({
