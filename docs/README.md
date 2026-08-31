@@ -153,6 +153,15 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-30 Triathlon scenario and persona corpus**](./analysis/2026-08-30-triathlon-persona-corpus.md) — Synthetic novice/intermediate/advanced triathlon coverage, including access constraints, recovery perturbations, time caps, and a 14-day 70.3 taper horizon.
 * [**Engine Knowledge Coverage Inventory — 2026-08-30**](./analysis/2026-08-30-engine-knowledge-coverage-inventory.md) — Audit of engine knowledge coverage after ADR-0033.
 * [**2026-08-30 Sports Knowledge Registry Analysis**](./analysis/2026-08-30-sports-knowledge-registry-analysis.md) — Analysis leading to ADR-0033 and the knowledge registry.
+* [**2026-08-29 PR #295 Persona Coverage Expansion Review**](./analysis/2026-08-29-pr-295-persona-coverage-review.md) — Evergreen AI-judge persona coverage expansion.
+* [**2026-08-30 Evidence Pack — Load + Intensity + Recovery**](./analysis/2026-08-30-evidence-pack-load-intensity-recovery.md) — The first SKR3 evidence-migration pack for load, intensity, and recovery rules.
+* [**2026-08-30 Evidence Pack — Readiness, Sleep, HRV**](./analysis/2026-08-30-evidence-pack-readiness-sleep-hrv.md) — SKR3 evidence migration covering readiness, sleep, HRV, RHR, and respiration.
+* [**2026-08-30 Evidence Pack — Strength + Concurrent Training**](./analysis/2026-08-30-evidence-pack-strength-concurrent-training.md) — SKR3 evidence migration covering strength training and concurrent sequencing.
+* [**2026-08-30 Evidence Pack — Taper + Fueling**](./analysis/2026-08-30-evidence-pack-taper-fueling.md) — SKR3 evidence migration covering pre-event taper principles and endurance fueling.
+* [**2026-08-30 PR #306 Respiration Calibration Addendum**](./analysis/2026-08-30-pr-306-respiration-calibration-addendum.md) — Compliance check against cardiorespiratory knowledge for respiration shadow-evidence.
+* [**2026-08-30 PR #306 Respiration Shadow-Evidence Hardening**](./analysis/2026-08-30-pr-306-respiration-shadow-review.md) — Engineering and replay semantics review for respiration elevation shadow evidence.
+* [**2026-08-31 Safety Evidence Pack Implementation-Plan Review**](./analysis/2026-08-31-safety-evidence-pack-plan-review.md) — Normative amendments for subjective readiness and injury/pain safety evidence implementation.
+* [**2026-08-31 SKR1 — Persisted Recommendation Knowledge Lineage**](./analysis/2026-08-31-skr1-persisted-knowledge-lineage.md) — Architecture analysis for persisting sports-knowledge identity in historical recommendation audits.
 
 ---
 
