@@ -3,6 +3,7 @@ import { EXTERNAL_PLAN_SCHEMA, type DailyRecommendation, type ExternalTrainingPl
 import type { SessionReferenceBinding } from '../sessions/models';
 import { POLICY_VERSION } from './policy';
 import { externalTemplateId } from './externalSessionProfiles';
+import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 
 const services = vi.hoisted(() => ({
     prescription: { getPrescription: vi.fn() },
@@ -79,6 +80,32 @@ describe('recommendation audit replay', () => {
         const record = auditedRecommendation();
         record.recommendationAudit!.candidateScores[1].utilityScore = 2;
         expect(replayRecommendationAudit(record)).toMatchObject({ reproducible: false, errors: ['Persisted template was not the highest-utility audited candidate.'] });
+    });
+
+    it('reports knowledge-version drift without rewriting the historical decision as non-reproducible', () => {
+        const record = auditedRecommendation();
+        const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring);
+        record.schemaVersion = 4;
+        record.recommendationAudit!.knowledgeLineage = [{ claimId: claim.id, version: claim.version + 1 }];
+
+        expect(replayRecommendationAudit(record)).toMatchObject({
+            reproducible: true,
+            policyMatchesCurrent: true,
+            knowledgeStatus: 'drifted',
+            knowledgeDrift: [{
+                claimId: claim.id, recordedVersion: claim.version + 1, currentVersion: claim.version, currentStatus: 'active',
+            }],
+            errors: [],
+        });
+    });
+
+    it('fails closed when a v4 audit has lost its required knowledge lineage', () => {
+        const record = auditedRecommendation();
+        record.schemaVersion = 4;
+        expect(replayRecommendationAudit(record)).toMatchObject({
+            reproducible: false, knowledgeStatus: 'lineage_unavailable',
+            errors: ['Schema version 4 recommendation is missing knowledge lineage.'],
+        });
     });
 });
 

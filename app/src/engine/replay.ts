@@ -5,11 +5,14 @@ import { externalTemplateId, isExternalTemplateId } from './externalSessionProfi
 import { isHistoricalPolicyVersion, POLICY_VERSION } from './policy';
 import { subjectiveDriftAuditReplayErrors } from './subjectiveDriftAudit';
 import { identityDecisionProvenanceReplayErrors } from './identityProvenance';
+import { compareKnowledgeLineage, type KnowledgeLineageDrift, type KnowledgeLineageStatus } from './knowledgeLineage';
 
 export interface RecommendationReplayResult {
     reproducible: boolean;
     policyMatchesCurrent: boolean;
     errors: string[];
+    knowledgeStatus?: KnowledgeLineageStatus;
+    knowledgeDrift?: KnowledgeLineageDrift[];
 }
 
 /**
@@ -149,8 +152,13 @@ export function replayRecommendationAudit(
 ): RecommendationReplayResult {
     const errors: string[] = [];
     const audit = recommendation.recommendationAudit;
-    if (recommendation.schemaVersion !== 3 || !audit) {
-        return { reproducible: false, policyMatchesCurrent: false, errors: ['Recommendation does not contain a v3 audit.'] };
+    if (![3, 4].includes(recommendation.schemaVersion) || !audit) {
+        return { reproducible: false, policyMatchesCurrent: false, errors: ['Recommendation does not contain a replayable v3/v4 audit.'] };
+    }
+    const knowledgeComparison = compareKnowledgeLineage(audit.knowledgeLineage);
+    const includeKnowledgeDiagnostics = recommendation.schemaVersion === 4 || audit.knowledgeLineage !== undefined;
+    if (recommendation.schemaVersion === 4 && knowledgeComparison.status === 'lineage_unavailable') {
+        errors.push('Schema version 4 recommendation is missing knowledge lineage.');
     }
     const policyMatchesCurrent = audit.policyVersion === POLICY_VERSION;
     if (!policyMatchesCurrent) {
@@ -178,7 +186,15 @@ export function replayRecommendationAudit(
         errors.push(...authoredOccurrenceDecisionErrors(recommendation));
     }
 
-    return { reproducible: errors.length === 0, policyMatchesCurrent, errors };
+    return {
+        reproducible: errors.length === 0,
+        policyMatchesCurrent,
+        errors,
+        ...(includeKnowledgeDiagnostics ? {
+            knowledgeStatus: knowledgeComparison.status,
+            knowledgeDrift: knowledgeComparison.drift,
+        } : {}),
+    };
 }
 
 function externalDecisionErrors(

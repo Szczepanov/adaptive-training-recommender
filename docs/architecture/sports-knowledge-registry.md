@@ -244,9 +244,19 @@ Increment a claim version when the meaning materially changes, including:
 
 Pure spelling/formatting corrections do not need a claim-version bump if the proposition and interpretation remain identical.
 
-A claim version is not a decision-policy version. Historical recommendation replay still uses the engine `POLICY_VERSION`; persisted knowledge-version lineage is a follow-up to ADR-0033.
+A claim version is not a decision-policy version. Recommendation schema v4 persists the exact materially consumed `{ claimId, version }` set alongside `POLICY_VERSION`, so replay can distinguish decision-logic drift from knowledge-contract drift.
 
-The current registry resolves only the checked-in version of a stable claim ID. Older versions remain reconstructable from Git/build history, but the current runtime does not expose a historical `getKnowledgeClaim(id, version)` API. Persisted `{ claimId, version }` audit lineage and historical resolution are intentionally deferred together so the storage/replay contract is designed once.
+The current registry still resolves only the checked-in version of a stable claim ID. Older versions remain reconstructable from Git/build history; runtime replay compares persisted identity/version against the current registry but does not pretend the current build can execute or reconstruct an old claim body.
+
+## Persisted recommendation lineage
+
+New recommendation audits freeze only compact claim identity:
+
+```ts
+knowledgeLineage: Array<{ claimId: string; version: number }>;
+```
+
+Runtime policy carries stable IDs while evaluating a decision. `buildRecommendationAudit` resolves active registry versions once, de-duplicates and sorts them, and stores the snapshot. Historical v3 recommendations are deliberately not backfilled from today's coverage map because doing so would manufacture provenance that the old build never recorded. Knowledge drift is a replay diagnostic, not by itself evidence that the historical decision record is internally inconsistent.
 
 `supersedes` is replacement lineage between claim IDs, not a substitute for the integer version of the same stable claim ID. Cycles are invalid and fail validation.
 
@@ -255,7 +265,6 @@ The current registry resolves only the checked-in version of a stable claim ID. 
 The registry is intentionally small. It does not yet provide:
 
 - complete coverage of all sports-science assumptions in the engine;
-- persisted claim/version lineage in `RecommendationAudit`;
 - athlete-specific learned evidence;
 - automatic PubMed/Crossref/Cochrane literature ingestion or freshness monitoring;
 - structured ROBIS/AMSTAR 2 appraisal records;

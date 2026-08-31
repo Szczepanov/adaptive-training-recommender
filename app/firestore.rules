@@ -124,9 +124,13 @@ service cloud.firestore {
         );
     }
 
+    function hasValidKnowledgeLineage(lineage) {
+      return lineage is list && lineage.size() <= 64;
+    }
+
     function hasValidRecommendationAudit(userId, audit) {
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
         && audit.keys().hasAll(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'candidateScores'])
         && audit.policyVersion is string
         && audit.evaluatedAt is string
@@ -171,7 +175,8 @@ service cloud.firestore {
           && audit.authoredOccurrence.decision in ['proceed', 'scale']
         ))
         && (!('subjectiveDrift' in audit) || hasValidSubjectiveDriftAudit(audit.subjectiveDrift))
-        && (!('identityDecision' in audit) || hasValidIdentityDecisionProvenance(userId, audit.identityDecision));
+        && (!('identityDecision' in audit) || hasValidIdentityDecisionProvenance(userId, audit.identityDecision))
+        && (!('knowledgeLineage' in audit) || hasValidKnowledgeLineage(audit.knowledgeLineage));
     }
 
     function hasValidRecommendation(userId, date) {
@@ -188,13 +193,15 @@ service cloud.firestore {
         && request.resource.data.rationale is string
         && request.resource.data.createdAt is string
         && request.resource.data.updatedAt is string
-        && request.resource.data.schemaVersion in [1, 2, 3]
+        && request.resource.data.schemaVersion in [1, 2, 3, 4]
         && (!('revision' in request.resource.data) || (request.resource.data.revision is int && request.resource.data.revision >= 1))
         && hasValidAdherence(request.resource.data.adherence)
         && (!('primarySession' in request.resource.data) || hasValidSessionReferenceBinding(request.resource.data.primarySession))
         && (!('additionalSessions' in request.resource.data) || hasValidAdditionalSessions(request.resource.data.additionalSessions))
-        && (request.resource.data.schemaVersion != 3
-          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit)));
+        && ((request.resource.data.schemaVersion != 3 && request.resource.data.schemaVersion != 4)
+          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit)))
+        && (request.resource.data.schemaVersion != 4
+          || ('knowledgeLineage' in request.resource.data.recommendationAudit && hasValidKnowledgeLineage(request.resource.data.recommendationAudit.knowledgeLineage)));
     }
 
     function schemaRatchets() {
@@ -205,8 +212,7 @@ service cloud.firestore {
       return !('recommendationAudit' in resource.data)
         || decisionChanged
         || (('recommendationAudit' in request.resource.data)
-          && request.resource.data.recommendationAudit.policyVersion == resource.data.recommendationAudit.policyVersion
-          && request.resource.data.recommendationAudit.evaluatedAt == resource.data.recommendationAudit.evaluatedAt);
+          && request.resource.data.recommendationAudit.diff(resource.data.recommendationAudit).affectedKeys().size() == 0);
     }
 
     function decisionFieldsUnchanged() {
@@ -244,7 +250,7 @@ service cloud.firestore {
         && (!('primarySession' in resource.data) || prior.primarySession == resource.data.primarySession)
         && (('additionalSessions' in prior) == ('additionalSessions' in resource.data))
         && (!('additionalSessions' in resource.data) || prior.additionalSessions == resource.data.additionalSessions)
-        && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit.policyVersion == resource.data.recommendationAudit.policyVersion && prior.recommendationAudit.evaluatedAt == resource.data.recommendationAudit.evaluatedAt));
+        && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit.diff(resource.data.recommendationAudit).affectedKeys().size() == 0));
     }
 
     function canUpdateRecommendation(userId, date) {

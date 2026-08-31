@@ -5,6 +5,7 @@ import { TEMPLATES } from './templates';
 import { POLICY_VERSION } from './policy';
 import { buildRecommendationAudit } from './provenance';
 import { buildTrainingHistorySnapshot } from './trainingHistorySnapshot';
+import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 
 describe('recommendation provenance', () => {
     it('stores compact decision facts without raw health fields or athlete notes', () => {
@@ -16,6 +17,7 @@ describe('recommendation provenance', () => {
             rationale: 'This should never be copied into the audit.',
             plannedDose: { volume: 0.6, intensity: 1 },
             executionDose: { volume: 0.5, intensity: 1 },
+            knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring],
             envelopes: {
                 safety: { clinicalFlagActive: false, restrictedModalities: [] },
                 plan: { maxAllowableTier: 'Easy', taperActive: false },
@@ -47,6 +49,10 @@ describe('recommendation provenance', () => {
             envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Easy' },
             plannedDose: { volume: 0.6, intensity: 1 },
             executionDose: { volume: 0.5, intensity: 1 },
+            knowledgeLineage: [{
+                claimId: KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring,
+                version: getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring).version,
+            }],
             candidateScores: [{ templateId: template.id, utilityScore: 1.25, excludedReasons: [] }],
             droppedContributorObjectives: [],
         });

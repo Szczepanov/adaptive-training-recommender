@@ -761,6 +761,9 @@ export interface Recommendation {
     /** Multidomain session bindings (M3.2 / ADR-0023 D-MSNAP). */
     primarySession?: SessionReferenceBinding;
     additionalSessions?: SessionReferenceBinding[];
+    /** Runtime-only claim IDs materially consumed by this decision. The persistence
+     * boundary snapshots their current registry versions into RecommendationAudit. */
+    knowledgeRefs?: string[];
     /** Assigned at the composition boundary immediately before persistence. */
     recommendationAudit?: RecommendationAudit;
     /** Engine trace retained only long enough to create the compact persisted audit. */
@@ -1673,6 +1676,11 @@ export interface CompletedTrainingEvent {
     };
 }
 
+export interface KnowledgeLineageRef {
+    claimId: string;
+    version: number;
+}
+
 export interface RecommendationAudit {
     policyVersion: string;
     evaluatedAt: string;
@@ -1709,6 +1717,8 @@ export interface RecommendationAudit {
     additionalSessions?: SessionReferenceBinding[];
     /** Present once multisource evidence influenced the recommendation input (PI6/ADR-0028). */
     identityDecision?: IdentityDecisionProvenance;
+    /** Exact reviewed knowledge versions materially consumed by this historical decision. */
+    knowledgeLineage?: KnowledgeLineageRef[];
 }
 
 /** A compact, replayable record that a replacement occurrence, not catalog ranking,
