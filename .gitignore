@@ -231,5 +231,3 @@ artifacts/respiration-baseline-evidence/
 # on demand via `export-identity-replay` + `npm run evidence:identity-replay`.
 artifacts/identity-replay/
 artifacts/identity-replay-reports/
-
-artifacts/*
