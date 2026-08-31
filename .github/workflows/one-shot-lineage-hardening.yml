@@ -10,7 +10,6 @@ permissions:
 
 jobs:
   harden:
-    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -30,7 +29,6 @@ jobs:
           python3 <<'PY'
           from pathlib import Path
 
-          # 1. External-plan early return must carry the same applicable intent lineage.
           rules_ts = Path('app/src/engine/rules.ts')
           text = rules_ts.read_text()
           marker = 'function adjudicatedExternalRecommendation('
@@ -44,7 +42,6 @@ jobs:
           text = text[:start] + chunk.replace(old, new, 1) + text[end:]
           rules_ts.write_text(text)
 
-          # 2. Firestore is a persistence boundary: validate every bounded ref and unique claim IDs.
           firestore = Path('app/firestore.rules')
           text = firestore.read_text()
           marker = '    function hasValidKnowledgeLineageFields(audit, version) {'
@@ -53,8 +50,7 @@ jobs:
           depth = 0
           end = None
           for i in range(brace, len(text)):
-              if text[i] == '{':
-                  depth += 1
+              if text[i] == '{': depth += 1
               elif text[i] == '}':
                   depth -= 1
                   if depth == 0:
@@ -65,20 +61,9 @@ jobs:
 
           groups = []
           for group in range(8):
-              checks = []
-              for index in range(group * 8, group * 8 + 8):
-                  checks.append(f'        && (lineage.size() <= {index} || isValidKnowledgeLineageRef(lineage[{index}]))')
-              groups.append(
-                  f'    function hasValidKnowledgeLineageEntries{group}(lineage) {{\n'
-                  f'      return true\n' + '\n'.join(checks) + ';\n'
-                  f'    }}\n'
-              )
-
-          projected = []
-          for index in range(64):
-              projected.append(
-                  f"        lineage.size() > {index} ? lineage[{index}].claimId : '__knowledge_lineage_absent_{index}__'"
-              )
+              checks = [f'        && (lineage.size() <= {index} || isValidKnowledgeLineageRef(lineage[{index}]))' for index in range(group * 8, group * 8 + 8)]
+              groups.append(f'    function hasValidKnowledgeLineageEntries{group}(lineage) {{\n      return true\n' + '\n'.join(checks) + ';\n    }\n')
+          projected = [f"        lineage.size() > {index} ? lineage[{index}].claimId : '__knowledge_lineage_absent_{index}__'" for index in range(64)]
 
           replacement = '''    function isValidKnowledgeLineageRef(ref) {
       return ref is map
@@ -102,9 +87,7 @@ jobs:
         && hasValidKnowledgeLineageEntries7(lineage);
     }
 
-    // Security Rules cannot map arbitrary lists. Build a bounded claim-ID projection instead:
-    // real entries use claimId; absent slots use distinct sentinels. Any duplicate real claimId
-    // therefore reduces the set cardinality below 64 and fails closed.
+    // Security Rules cannot map arbitrary lists. Build a bounded claim-ID projection instead.
     function hasUniqueKnowledgeLineageClaimIds(lineage) {
       return [
 ''' + ',\n'.join(projected) + '''
@@ -122,17 +105,19 @@ jobs:
           && audit.knowledgeLineageCatalog == 'sports-science-v1'
         );
     }'''
-          text = text[:start] + replacement + text[end:]
-          firestore.write_text(text)
+          firestore.write_text(text[:start] + replacement + text[end:])
 
-          # 3. Record the boundary semantics in the SKR1 design record.
           doc = Path('docs/analysis/2026-08-31-skr1-persisted-knowledge-lineage.md')
           text = doc.read_text()
           heading = '## Review hardening: persistence and consumed-branch semantics'
           if heading not in text:
-              text += f'''\n\n{heading}\n\n- `knowledgeLineage` records claims materially consumed by the executed decision path, not every contextual field merely present in the input. In particular, long-horizon readiness context is attributed only when the corresponding 7-day anchor causes the strain branch to read it.\n- External-plan recommendations merge applicable training-intent lineage before their early return, matching internally optimized recommendations.\n- Schema-v4 Firestore writes fail closed unless each lineage ref has exactly `claimId` (non-empty string) and `version` (positive integer), the list is at most 64 refs, and `claimId` values are unique. Application validation remains defense in depth rather than the security boundary.\n- Firestore persists compact identity/version only; statements, citations, evidence grades, and registry source metadata remain version-controlled in Git.\n'''
-              doc.write_text(text)
+              doc.write_text(text + f'''\n\n{heading}\n\n- `knowledgeLineage` records claims materially consumed by the executed decision path, not every contextual field merely present in the input. Long-horizon readiness context is attributed only when the corresponding 7-day anchor causes the strain branch to read it.\n- External-plan recommendations merge applicable training-intent lineage before their early return, matching internally optimized recommendations.\n- Schema-v4 Firestore writes fail closed unless each lineage ref has exactly `claimId` (non-empty string) and `version` (positive integer), the list is at most 64 refs, and `claimId` values are unique. Application validation remains defense in depth rather than the security boundary.\n- Firestore persists compact identity/version only; statements, citations, evidence grades, and registry source metadata remain version-controlled in Git.\n''')
           PY
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
 
       - name: Install dependencies
         working-directory: app
@@ -140,9 +125,7 @@ jobs:
 
       - name: Validate TypeScript and lint
         working-directory: app
-        run: |
-          npm run typecheck
-          npm run lint
+        run: npm run typecheck && npm run lint
 
       - name: Run focused lineage unit tests
         working-directory: app
@@ -157,7 +140,6 @@ jobs:
         run: npm run build:bundle
 
       - name: Commit validated hardening and remove one-shot workflow
-        shell: bash
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
