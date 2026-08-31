@@ -111,7 +111,7 @@ describe('readiness evidence pack aligns with current decision policy', () => {
 
     it('pins the internal-response normalization and fusion coefficients', () => {
         const strain = computeInternalResponseStrain(readiness(
-            { hrv_delta: -15, rhr_delta: 10, sleep_score: 25 },
+            { hrv_delta: -15, rhr_delta: 10, sleep_score: 25, body_battery_wake: 20 },
             { fatigue: 10, soreness: 1, motivation: 10 },
         ));
         expect(strain).toEqual({

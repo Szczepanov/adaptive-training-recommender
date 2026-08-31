@@ -134,4 +134,78 @@ describe('macrocycle v5 recovery and strength contracts', () => {
         expect(strain.impactTissue).toBe(0);
         expect(strain.lowerBody).toBe(0);
     });
+
+    it('enforces non-diluted acute strain floors for isolated high subjective fatigue and stress', () => {
+        const neutralObjective = {
+            total_steps: 5000, sleep_score: 80, sleep_duration_min: 480, rhr: 50, rhr_7d_avg: 50, rhr_delta: 0,
+            hrv_weekly_avg: 50, hrv_last_night: 50, hrv_delta: 0, respiration: 14, body_battery_wake: 80,
+            last_3_days_hard_sessions_count: 0, yesterday_training: null, today_training: null,
+            sleep_score_delta_7d: 0, rhr_delta_28d: 0, hrv_delta_28d: 0, sleep_score_delta_28d: 0,
+            hrv_stdev_28d: 8, rhr_stdev_28d: 3, sleep_score_stdev_28d: 7,
+            steps_7d_avg: 5000, steps_28d_avg: 5500, steps_delta_7d: 0, steps_delta_28d: 0, steps_stdev_28d: 800,
+        };
+
+        // 1. Fatigue = 8/10 alone with neutral wearable metrics
+        const fatigue8Readiness = {
+            subjective: {
+                readiness: 7, sleepQuality: 7, fatigue: 8, soreness: 2, stress: 2, motivation: 7,
+                timeAvailable: 90, painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null,
+            },
+            objective: neutralObjective,
+        };
+        const fatigue8Strain = computeInternalResponseStrain(fatigue8Readiness);
+        expect(fatigue8Strain.systemic).toBeGreaterThanOrEqual(0.60);
+
+        // 2. Severe distress: Fatigue = 8 with low readiness = 3
+        const severeDistressReadiness = {
+            subjective: {
+                readiness: 3, sleepQuality: 4, fatigue: 8, soreness: 3, stress: 5, motivation: 4,
+                timeAvailable: 90, painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null,
+            },
+            objective: neutralObjective,
+        };
+        const severeStrain = computeInternalResponseStrain(severeDistressReadiness);
+        expect(severeStrain.systemic).toBeGreaterThanOrEqual(0.65);
+
+        // 3. Stress = 9 alone
+        const stress9Readiness = {
+            subjective: {
+                readiness: 6, sleepQuality: 6, fatigue: 3, soreness: 1, stress: 9, motivation: 5,
+                timeAvailable: 90, painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null,
+            },
+            objective: neutralObjective,
+        };
+        const stressStrain = computeInternalResponseStrain(stress9Readiness);
+        expect(stressStrain.systemic).toBeGreaterThanOrEqual(0.60);
+
+        // 4. Severe autonomic collapse: HRV drop -17, RHR +7, Body Battery 22
+        const autonomicCrashReadiness = {
+            subjective: {
+                readiness: 7, sleepQuality: 7, fatigue: 3, soreness: 1, stress: 2, motivation: 7,
+                timeAvailable: 90, painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null,
+            },
+            objective: {
+                ...neutralObjective,
+                hrv_delta: -17, rhr_delta: 7, body_battery_wake: 22, sleep_score: 50,
+            },
+        };
+        const crashStrain = computeInternalResponseStrain(autonomicCrashReadiness);
+        expect(crashStrain.systemic).toBeGreaterThanOrEqual(0.80);
+        expect(crashStrain.cardiovascular).toBeGreaterThanOrEqual(0.80);
+
+        // 5. Soreness = 8: takes 48h to clear below modify threshold (0.60)
+        const sore8Readiness = {
+            subjective: {
+                readiness: 6, sleepQuality: 7, fatigue: 3, soreness: 8, stress: 2, motivation: 7,
+                timeAvailable: 90, painFlag: false, alreadyTrainedToday: false, preferredModalityToday: null,
+            },
+            objective: neutralObjective,
+        };
+        const soreStrain = computeInternalResponseStrain(sore8Readiness);
+        expect(soreStrain.lowerBody).toBeGreaterThanOrEqual(0.88);
+        const after24h = decayFatigue(soreStrain, 24);
+        const after48h = decayFatigue(soreStrain, 48);
+        expect(after24h.lowerBody).toBeGreaterThanOrEqual(0.60);
+        expect(after48h.lowerBody).toBeLessThan(0.60);
+    });
 });

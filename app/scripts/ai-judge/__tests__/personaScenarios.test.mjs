@@ -13,7 +13,7 @@ const EXPECTED_FAMILY_CASE_COUNTS = new Map([
   ['persona_walking_preferred', 3],
   ['persona_established_history', 3],
   ['persona_cycling_primary_hybrid', 5],
-  ['persona_triathlon_established_olympic', 5],
+  ['persona_triathlon_established_olympic', 4],
 ]);
 
 const EXPECTED_FAMILY_IDS = [...EXPECTED_FAMILY_CASE_COUNTS.keys()];
@@ -167,7 +167,7 @@ describe('active persona AI-judge suite', () => {
 
     const family = triathlonFamilies[0];
     expect(family.familyId).toBe('persona_triathlon_established_olympic');
-    expect(family.cases).toHaveLength(5);
+    expect(family.cases).toHaveLength(4);
     const expectedPreset = EVENT_PRESETS.triathlon.find((preset) => preset.id === 'olympic');
 
     for (const definition of family.cases) {
@@ -181,11 +181,8 @@ describe('active persona AI-judge suite', () => {
     }
   });
 
-  it('keeps pool-access loss and taper proximity explicit on the same triathlon persona', () => {
+  it('keeps taper proximity explicit on the triathlon persona', () => {
     const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_triathlon_established_olympic');
-    const poolUnavailable = family.cases.find((definition) => definition.scenario.id === 'persona_triathlon_established_olympic_pool_unavailable');
-    expect(poolUnavailable.scenario.context.trainingSettings.equipment.swim_access).toBe(false);
-
     const taper = family.cases.find((definition) => definition.scenario.id === 'persona_triathlon_established_olympic_taper');
     expect(taper.scenario.event.date).toBe('2026-09-14');
     expect(taper.scenario.weeks).toBe(2);
@@ -207,9 +204,7 @@ describe('active persona AI-judge suite', () => {
     for (const definition of family.cases) {
       const result = await runScenario(definition.scenario);
       const selectedModalities = new Set(result.decisionTraces.map((trace) => trace.selected.modality));
-      if (definition.scenario.id === 'persona_triathlon_established_olympic_pool_unavailable') {
-        expect(selectedModalities.has('Swimming'), definition.scenario.id).toBe(false);
-      } else if (!definition.scenario.id.endsWith('_adverse_recovery')) {
+      if (!definition.scenario.id.endsWith('_adverse_recovery')) {
         for (const modality of ['Swimming', 'Cycling', 'Running']) {
           expect(selectedModalities.has(modality), definition.scenario.id).toBe(true);
         }
