@@ -6,6 +6,7 @@ import {
     type SubjectiveDriftAudit,
     type SubjectiveDriftAuditSource,
 } from './subjectiveDriftAudit';
+import { snapshotKnowledgeLineage } from './knowledgeLineage';
 
 export type RecommendationAuditWithSubjectiveDrift = RecommendationAudit & {
     /** Present only when an explicitly measured/enabled subjective-drift path supplied
@@ -48,6 +49,7 @@ export function buildRecommendationAudit(
             safetyRestrictedModalityCount: envelopes.safety.restrictedModalities.length,
             planMaxAllowableTier: envelopes.plan.maxAllowableTier,
         },
+        knowledgeLineage: snapshotKnowledgeLineage(recommendation.knowledgeRefs ?? []),
         ...(recommendation.plannedDose ? { plannedDose: recommendation.plannedDose } : {}),
         ...(recommendation.executionDose ? { executionDose: recommendation.executionDose } : {}),
         candidateScores: trace.candidateScores,

@@ -114,7 +114,7 @@ export class RecommendationService {
                 // rule on every save after the first.
                 ...(recommendationAudit ? { recommendationAudit } : {}),
                 schemaVersion: recommendationAudit
-                    ? Math.max(existing?.schemaVersion ?? 1, 3)
+                    ? Math.max(existing?.schemaVersion ?? 1, Array.isArray(recommendationAudit.knowledgeLineage) ? 4 : 3)
                     : (rec.prescription ? Math.max(existing?.schemaVersion ?? 1, 2) : (existing?.schemaVersion ?? 1)),
                 createdAt: existing?.createdAt,
                 revision: nextRevision,

@@ -15,6 +15,7 @@ export interface ResolvedEvergreenPlan {
     planDefinition: PlanDefinition;
     microcycle: MicrocycleState;
     budget: WeeklyBudget;
+    knowledgeRefs: string[];
 }
 
 /** The sole bridge from durable evergreen inputs to an executable rolling plan. It is
@@ -55,5 +56,6 @@ export function resolveEvergreenPlan(
         planDefinition: result.data,
         microcycle: buildMicrocycleState(phase, addDaysToLocalDateString(date, -7), [...history], null, result.data, date),
         budget,
+        knowledgeRefs: [...new Set(strategy.requirements.flatMap(requirement => requirement.knowledgeRefs))].sort(),
     };
 }

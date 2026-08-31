@@ -18,12 +18,12 @@ A specific 2026 update was important because current elite endurance practice in
 
 ### Evidence
 
-**Wang et al., 2023 — endurance taper systematic review/meta-analysis**  
+**Wang et al., 2023 — endurance taper systematic review/meta-analysis**
 PMID 37163550; PMCID PMC10171681; DOI `10.1371/journal.pone.0282838`.
 
 Fourteen studies were included. Time-trial and time-to-exhaustion performance improved after tapering. Subgroup analyses supported reducing training volume by roughly 41-60% while maintaining intensity/frequency, with effective tapers observed across <=7, 8-14 and 15-21 day windows. The authors concluded that a progressive volume reduction over <=21 days is effective on average.
 
-**Bosquet et al., 2007 — taper meta-analysis**  
+**Bosquet et al., 2007 — taper meta-analysis**
 PMID 17762369; DOI `10.1249/mss.0b013e31806010e0`.
 
 Across 27 studies, the best average strategy was approximately two weeks with an exponential 41-60% volume reduction and no reduction in training intensity or frequency.
@@ -59,7 +59,7 @@ A follow-up inventory refactor should split the family into `periodization.pre_e
 
 ### Carbohydrate efficacy
 
-**Ramos-Campo et al., 2024 — systematic review/meta-analysis/meta-regression**  
+**Ramos-Campo et al., 2024 — systematic review/meta-analysis/meta-regression**
 PMID 37449467; DOI `10.1080/10408398.2023.2233633`.
 
 The analysis included 136 studies and found carbohydrate ingestion during endurance exercise improved performance compared with placebo/control. Benefits were larger as event duration increased. PubMed records the electronic publication date as **2023-07-14**; the final journal issue is 2024, and the registry stores those two facts consistently.
@@ -72,22 +72,22 @@ The claim is **high-certainty / strong** for the direction that carbohydrate dur
 
 ### Event-scaled carbohydrate dose
 
-**Burke et al., 2011 — carbohydrate training/competition practice framework**  
+**Burke et al., 2011 — carbohydrate training/competition practice framework**
 PMID 21660838; DOI `10.1080/02640414.2011.585473`.
 
 The framework recommends scaling intake to event demands: small amounts can help around one hour, approximately 30-60 g/h is appropriate for longer events, and events beyond about 2.5 hours may benefit from intakes up to roughly 90 g/h using multiple transportable carbohydrates.
 
-**Thomas, Erdman & Burke, 2016 — joint sports-nutrition position statement**  
+**Thomas, Erdman & Burke, 2016 — joint sports-nutrition position statement**
 PMID 26920240; DOI `10.1016/j.jand.2015.12.006`.
 
 The position statement supports individualized selection, amount and timing of food and fluid across training and competition contexts.
 
-**Morton et al., 2026 — contemporary endurance-carbohydrate review**  
+**Morton et al., 2026 — contemporary endurance-carbohydrate review**
 PMID 41759826; PMCID PMC13197957; DOI `10.1016/j.tjnut.2026.101442`.
 
 The review explicitly revisits the <=90 g/h framework in light of current practice. It notes that 120 g/h can increase exogenous and whole-body carbohydrate oxidation in some trained athletes, but that the **performance efficacy of doses above 90 g/h is not yet sufficiently substantiated** to support a broad recommendation. It also highlights limited female evidence and the need for ecologically valid research.
 
-**Plews et al., 2026 — focused current opinion on ultra-high carbohydrate intake**  
+**Plews et al., 2026 — focused current opinion on ultra-high carbohydrate intake**
 PMID 42258036; DOI `10.1007/s40279-026-02462-z`.
 
 This June 2026 Sports Medicine paper defines ultra-high intake as >90 g/h and audits why such strategies have spread among elite endurance athletes. It finds a mismatch between real-world adoption and direct performance evidence: higher intakes can increase exogenous carbohydrate oxidation, but studies do not show a consistent dose-response performance benefit beyond roughly 60-90 g/h. The authors conclude that broad ultra-high recommendations are premature, especially for amateur/recreational athletes, while acknowledging possible niche use in selected elite athletes or recovery/multistage contexts. Because this is a current-opinion/narrative synthesis rather than a meta-analysis or guideline, the registry uses it as **supporting context**, not primary efficacy evidence.
@@ -109,7 +109,7 @@ This prevents a future runtime consumer from turning elite-practice observations
 
 ### Hydration safety
 
-**Hew-Butler et al., 2015 — Third International Exercise-Associated Hyponatremia Consensus**  
+**Hew-Butler et al., 2015 — Third International Exercise-Associated Hyponatremia Consensus**
 PMID 26102445; DOI `10.1097/JSM.0000000000000221`.
 
 The key safety boundary is not “replace every millilitre lost.” Excessive fluid consumption is the principal modifiable behavioral driver of exercise-associated hyponatremia. Fluid strategy must account for sweat rate, environment, duration and individual context without encouraging weight gain from overdrinking.

@@ -6,12 +6,18 @@ ADR-0033 establishes the first claim registry and migrates Evergreen provenance 
 
 ## SKR1 — Persist claim lineage in recommendation audit
 
-**Status:** Planned
+**Status:** Complete (2026-08-31)
 
-- Extend the recommendation audit with the materially consumed `{ claimId, version }` set.
-- Keep the audit compact; do not copy claim statements or source metadata into Firestore.
-- Update replay to distinguish policy-version drift from knowledge-version drift.
-- Review Firestore schema/rules implications under ADR-0010 before implementation.
+Implemented as schema-version-4 recommendation audits:
+
+- runtime decision paths emit stable claim IDs only for covered policy families actually evaluated with applicable inputs;
+- the composition boundary resolves and persists a deterministic, de-duplicated `{ claimId, version }` set;
+- statements, citations and source metadata remain in the Git-backed registry rather than being copied into Firestore;
+- unchanged legacy v3 decisions are not backfilled; their historical knowledge lineage remains unavailable rather than reconstructed from current evidence;
+- replay reports knowledge-version/status drift separately from policy-version drift and does not mark an otherwise internally reproducible historical decision invalid merely because the evidence contract has since evolved;
+- Firestore v4 validation requires the lineage field and audit immutability now compares the complete audit map, protecting claim lineage from same-decision mutation.
+
+Analysis/implementation record: `docs/analysis/2026-08-31-skr1-persisted-knowledge-lineage.md`.
 
 ## SKR2 — Add knowledge coverage inventory
 

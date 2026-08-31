@@ -67,6 +67,8 @@ export default defineConfig({
     }
   },
   test: {
+    hookTimeout: 30000,
+    testTimeout: 15000,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],

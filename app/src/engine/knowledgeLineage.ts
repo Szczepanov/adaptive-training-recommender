@@ -1,0 +1,154 @@
+import type { DailyReadiness, KnowledgeLineageRef, UserContext, UserEvent } from './models';
+import type { KnowledgeStatus } from '../knowledge/sportsKnowledge';
+import {
+    getActiveKnowledgeClaim,
+    getKnowledgeClaim,
+    KNOWLEDGE_CLAIM_IDS,
+} from '../knowledge/sportsKnowledgeRegistry';
+
+export const MAX_KNOWLEDGE_LINEAGE_REFS = 64;
+
+export type KnowledgeLineageStatus = 'matches_current' | 'drifted' | 'lineage_unavailable';
+
+export interface KnowledgeLineageDrift {
+    claimId: string;
+    recordedVersion: number;
+    currentVersion?: number;
+    currentStatus: KnowledgeStatus | 'missing';
+}
+
+/** Stable, deterministic union used before a decision crosses the persistence boundary. */
+export function mergeKnowledgeRefs(
+    ...groups: Array<readonly string[] | null | undefined>
+): string[] {
+    return [...new Set(groups.flatMap(group => group ?? []))].sort();
+}
+
+/**
+ * Freeze the currently active registry versions for the claims materially consumed by one decision.
+ * Statements, citations and source metadata deliberately remain in Git rather than being copied to Firestore.
+ */
+export function snapshotKnowledgeLineage(refs: readonly string[]): KnowledgeLineageRef[] {
+    const claimIds = mergeKnowledgeRefs(refs);
+    if (claimIds.length > MAX_KNOWLEDGE_LINEAGE_REFS) {
+        throw new Error(`Recommendation knowledge lineage exceeds ${MAX_KNOWLEDGE_LINEAGE_REFS} claims`);
+    }
+    return claimIds.map(claimId => {
+        const claim = getActiveKnowledgeClaim(claimId);
+        return { claimId: claim.id, version: claim.version };
+    });
+}
+
+/** Compare persisted knowledge identity with the registry bundled in the current build. */
+export function compareKnowledgeLineage(
+    lineage: readonly KnowledgeLineageRef[] | undefined,
+): { status: KnowledgeLineageStatus; drift: KnowledgeLineageDrift[] } {
+    if (lineage === undefined) return { status: 'lineage_unavailable', drift: [] };
+
+    const drift: KnowledgeLineageDrift[] = [];
+    for (const ref of lineage) {
+        try {
+            const current = getKnowledgeClaim(ref.claimId);
+            if (current.version !== ref.version || current.status !== 'active') {
+                drift.push({
+                    claimId: ref.claimId,
+                    recordedVersion: ref.version,
+                    currentVersion: current.version,
+                    currentStatus: current.status,
+                });
+            }
+        } catch {
+            drift.push({
+                claimId: ref.claimId,
+                recordedVersion: ref.version,
+                currentStatus: 'missing',
+            });
+        }
+    }
+    return { status: drift.length > 0 ? 'drifted' : 'matches_current', drift };
+}
+
+/**
+ * Claim IDs for the covered objective-readiness policies actually evaluated for this input.
+ * A long-horizon value is only consumed by metricStrain when its 7-day anchor exists, so
+ * 28-day-only fields must not create lineage for a branch that returned before reading them.
+ * Subjective mode cut-points are intentionally absent: that family remains uncovered/P0.
+ */
+export function readinessKnowledgeRefs(readiness: DailyReadiness, context: UserContext): string[] {
+    const objective = readiness.objective;
+    const hasHrv = objective.hrv_delta !== null;
+    const hasRhr = objective.rhr_delta !== null;
+    const hasSleepRelative = objective.sleep_score_delta_7d !== null;
+    const hasSleepAbsolute = objective.sleep_score !== null;
+    const hasRespiration = (objective.respiration_delta ?? null) !== null;
+    const hasBodyBattery = objective.body_battery_wake !== null;
+    const hasRecentHardPenalty = (objective.last_3_days_hard_sessions_count || 0) >= 2;
+    const hasPhysiologicalStrainInput = hasHrv || hasRhr || hasSleepRelative || hasRespiration;
+    const hasObjectiveDecisionInput = hasPhysiologicalStrainInput
+        || hasSleepAbsolute
+        || hasBodyBattery
+        || hasRecentHardPenalty
+        || context.preferences.conservativeBias;
+
+    const refs: string[] = [];
+    if (hasHrv) refs.push(KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.hrvGuidedTrainingConditional);
+    if (hasRhr) refs.push(KNOWLEDGE_CLAIM_IDS.rhrContextualMonitoring);
+    if (hasSleepRelative || hasSleepAbsolute) {
+        refs.push(KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.wearableSleepMeasurementLimits);
+    }
+    if (hasRespiration) refs.push(KNOWLEDGE_CLAIM_IDS.respirationLongitudinalContext);
+    if (hasPhysiologicalStrainInput) refs.push(KNOWLEDGE_CLAIM_IDS.readinessPhysiologicalStrainModel);
+    if (hasSleepAbsolute || hasBodyBattery) refs.push(KNOWLEDGE_CLAIM_IDS.readinessAbsoluteDeviceFloors);
+    if (hasHrv || hasRhr) refs.push(KNOWLEDGE_CLAIM_IDS.readinessAcuteBiometricFloors);
+    if (hasRecentHardPenalty) {
+        refs.push(KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.recentHardReadinessPenalty);
+    }
+    if (hasObjectiveDecisionInput) refs.push(KNOWLEDGE_CLAIM_IDS.readinessModeThresholds);
+    return mergeKnowledgeRefs(refs);
+}
+
+function isEnduranceEvent(event: UserEvent | null | undefined): boolean {
+    return event?.category === 'running_race'
+        || event?.category === 'cycling_event'
+        || event?.category === 'triathlon';
+}
+
+/**
+ * Covered intent-aware ranking policies whose gates/costs are evaluated for the supplied plan state.
+ * Uncovered optimizer coefficients and pre-event restriction windows are intentionally not attributed.
+ */
+export function trainingIntentKnowledgeRefs(intent: {
+    history: readonly unknown[];
+    periodization: {
+        focusEvent: UserEvent | null;
+        phase: { taperActive: boolean };
+    };
+}): string[] {
+    const refs: string[] = [
+        KNOWLEDGE_CLAIM_IDS.enduranceIntensityDistribution,
+        KNOWLEDGE_CLAIM_IDS.internalLoadIntensityBands,
+        KNOWLEDGE_CLAIM_IDS.internalResponseStrainModel,
+    ];
+
+    if (intent.history.length > 0) {
+        refs.push(
+            KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance,
+            KNOWLEDGE_CLAIM_IDS.fatigueDecayHalfLives,
+            KNOWLEDGE_CLAIM_IDS.strenuousLowerBodyResidualFatigue,
+            KNOWLEDGE_CLAIM_IDS.anchorSpacing,
+            KNOWLEDGE_CLAIM_IDS.rollingHardDensityCap,
+            KNOWLEDGE_CLAIM_IDS.hardLowerBodySpacing,
+            KNOWLEDGE_CLAIM_IDS.concurrentStrengthEnduranceContext,
+            KNOWLEDGE_CLAIM_IDS.strengthEnduranceAdjacency,
+        );
+    }
+
+    if (intent.periodization.phase.taperActive && isEnduranceEvent(intent.periodization.focusEvent)) {
+        refs.push(
+            KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper,
+            KNOWLEDGE_CLAIM_IDS.taperWindowsVolumePolicy,
+            KNOWLEDGE_CLAIM_IDS.taperSharpeningPolicy,
+        );
+    }
+    return mergeKnowledgeRefs(refs);
+}

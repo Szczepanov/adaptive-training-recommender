@@ -1149,6 +1149,9 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
     if (typeof raw.rationale !== 'string') {
         errors.push({ field: 'rationale', message: 'Rationale must be a string' });
     }
+    if (raw.schemaVersion !== undefined && ![1, 2, 3, 4].includes(raw.schemaVersion)) {
+        errors.push({ field: 'schemaVersion', message: 'Recommendation schema version must be 1, 2, 3, or 4' });
+    }
     if (raw.prescription !== undefined) {
         if (typeof raw.prescription !== 'object' || !raw.prescription.workoutId || !Array.isArray(raw.prescription.displayBlocks)) {
             errors.push({ field: 'prescription', message: 'Prescription must include a workout id and display blocks' });
@@ -1182,6 +1185,14 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && Number.isFinite((dose as Record<string, number>).intensity)
             && (dose as Record<string, number>).intensity >= 0
             && (dose as Record<string, number>).intensity <= 1.2;
+        const validKnowledgeLineage = audit.knowledgeLineage === undefined || (
+            Array.isArray(audit.knowledgeLineage)
+            && audit.knowledgeLineage.length <= 64
+            && audit.knowledgeLineage.every((ref: any) => ref
+                && typeof ref.claimId === 'string' && ref.claimId.length > 0
+                && Number.isInteger(ref.version) && ref.version >= 1)
+            && new Set(audit.knowledgeLineage.map((ref: any) => ref.claimId)).size === audit.knowledgeLineage.length
+        );
         const validAudit = audit && typeof audit === 'object'
             && typeof audit.policyVersion === 'string'
             && typeof audit.evaluatedAt === 'string'
@@ -1218,15 +1229,19 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
                         && typeof objective.objectiveKey === 'string'
                         && typeof objective.reason === 'string'
                         && typeof objective.message === 'string'
-                        && typeof objective.date === 'string')));
+                        && typeof objective.date === 'string')))
+            && validKnowledgeLineage;
         if (!validAudit) {
             errors.push({ field: 'recommendationAudit', message: 'Recommendation audit has an invalid shape' });
         } else {
             recommendationAudit = audit as DailyRecommendation['recommendationAudit'];
         }
     }
-    if (raw.schemaVersion === 3 && !recommendationAudit) {
-        errors.push({ field: 'recommendationAudit', message: 'Schema version 3 requires a recommendation audit' });
+    if ((raw.schemaVersion === 3 || raw.schemaVersion === 4) && !recommendationAudit) {
+        errors.push({ field: 'recommendationAudit', message: `Schema version ${raw.schemaVersion} requires a recommendation audit` });
+    }
+    if (raw.schemaVersion === 4 && !Array.isArray(recommendationAudit?.knowledgeLineage)) {
+        errors.push({ field: 'recommendationAudit.knowledgeLineage', message: 'Schema version 4 requires recommendation knowledge lineage' });
     }
 
     if (raw.revision !== undefined) {
@@ -1262,7 +1277,9 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         modality: raw.modality,
         mode: raw.mode,
         rationale: raw.rationale,
-        schemaVersion: raw.schemaVersion ?? (recommendationAudit ? 3 : (raw.prescription ? 2 : 1)),
+        schemaVersion: raw.schemaVersion ?? (recommendationAudit
+            ? (Array.isArray(recommendationAudit.knowledgeLineage) ? 4 : 3)
+            : (raw.prescription ? 2 : 1)),
         ...(raw.revision !== undefined ? { revision: raw.revision } : {}),
         createdAt: raw.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),

@@ -44,6 +44,7 @@ import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { buildCoverageState } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
+import { mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -286,8 +287,10 @@ export function evaluateReadinessAndSafetyEnvelope(
     multiDayDriftIsDecisionRelevant: boolean;
     subjectiveDriftIsDecisionRelevant: boolean;
     postRecoverBufferApplied: boolean;
+    knowledgeRefs: string[];
 } {
     const { subjective, objective } = readiness;
+    const knowledgeRefs = readinessKnowledgeRefs(readiness, context);
     const invertedMotivation = 10 - subjective.motivation;
     const invertedSleepQual = 10 - subjective.sleepQuality;
     const invertedReadiness = 10 - subjective.readiness;
@@ -390,6 +393,7 @@ export function evaluateReadinessAndSafetyEnvelope(
         multiDayDriftIsDecisionRelevant,
         subjectiveDriftIsDecisionRelevant,
         postRecoverBufferApplied,
+        knowledgeRefs,
     };
 }
 
@@ -465,7 +469,7 @@ export function evaluateTraining(
         selectedTemplate = getCanonicalRestTemplate();
         rationale += ' (Defaulted to Rest/Mobility due to severe time/equipment constraints).';
     }
-    return { template: selectedTemplate, rationale, mode, envelopes, telemetry };
+    return { template: selectedTemplate, rationale, mode, envelopes, telemetry, knowledgeRefs: state.knowledgeRefs };
 }
 
 /** Identifies which imported session is placed on the evaluation date. */
@@ -537,6 +541,10 @@ function adjudicatedExternalRecommendation(
         mode: actionable ? envelopeState.mode : 'recover',
         envelopes: envelopeState.envelopes,
         telemetry: envelopeState.telemetry,
+        knowledgeRefs: mergeKnowledgeRefs(
+            envelopeState.knowledgeRefs,
+            trainingIntentKnowledgeRefs(intent),
+        ),
         externalPrescription: externalPrescriptionFor(externalPlan),
         externalVerdict: verdict,
         decisionTrace: {
@@ -641,6 +649,12 @@ export async function evaluateTrainingWithIntent(
         };
     }
 
+    const decisionKnowledgeRefs = mergeKnowledgeRefs(
+        envelopeState.knowledgeRefs,
+        trainingIntentKnowledgeRefs(intent),
+        evergreen?.knowledgeRefs,
+    );
+
     const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
     const maxCost = PLAN_TIER_SYSTEMIC_COST_CEILING[envelopes.plan.maxAllowableTier];
     const candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
@@ -702,6 +716,7 @@ export async function evaluateTrainingWithIntent(
             template: safeRecovery,
             rationale: `${externalFallbackPrefix}${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`,
             mode: 'recover', envelopes, telemetry,
+            knowledgeRefs: decisionKnowledgeRefs,
             ...(externalEventAdvisory ? {
                 externalPrescription: externalEventAdvisory.prescription,
                 externalVerdict: externalEventAdvisory.verdict,
@@ -721,6 +736,7 @@ export async function evaluateTrainingWithIntent(
         executionDose: resolveExecutionDose(intent.plannedDose, envelopes.plan, null),
         rationale: doseAdjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${doseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
         mode, envelopes, telemetry,
+        knowledgeRefs: decisionKnowledgeRefs,
         ...(doseAdjustment ?? {}),
         ...(externalEventAdvisory ? {
             externalPrescription: externalEventAdvisory.prescription,
