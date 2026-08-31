@@ -66,7 +66,8 @@ describe('recommendation validation boundary', () => {
 
     it('requires lineage for schema v4 while retaining the v3 compatibility contract', () => {
         const v4 = validV4Recommendation();
-        const { knowledgeLineage: _lineage, ...legacyAudit } = v4.recommendationAudit;
+        const legacyAudit: Record<string, unknown> = { ...v4.recommendationAudit };
+        delete legacyAudit.knowledgeLineage;
 
         const invalidV4 = validateRecommendation({ ...v4, recommendationAudit: legacyAudit });
         expect(invalidV4.isValid).toBe(false);
