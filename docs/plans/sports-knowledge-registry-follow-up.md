@@ -108,22 +108,15 @@ Post-pack inventory therefore remains 15 covered / 1 partial / 26 uncovered / 5 
 
 ### Evidence Pack 5 — Taper + Fueling
 
-**Status:** Next
+**Status:** Complete (2026-08-30)
 
-Taper scope:
+Analysis: `docs/analysis/2026-08-30-evidence-pack-taper-fueling.md`
 
-- start with `periodization.taper_windows_volume`, the remaining non-injury P0 family;
-- separate evidence-supported **pre-event taper** from the current product's distinct post-event recovery rule rather than laundering both through one claim;
-- reconcile pre-event strength/hard/exhaustive restrictions and taper-sharpening targets against taper evidence while keeping exact day windows/thresholds explicit product calibration;
-- leave unrelated phase-boundary and multi-event heuristics visible if the taper evidence does not directly answer them.
+Taper work separates direct scientific support for a pre-event volume-reduction taper from the app's exact scheduling, restriction windows and sharpening values. The bundled `periodization.taper_windows_volume` family intentionally remains uncovered because it also contains an independently calibrated three-day post-event recovery rule that taper meta-analysis does not justify.
 
-Fueling scope:
+Fueling work establishes reusable claims for carbohydrate efficacy, event-scaled carbohydrate intake and hydration/overdrinking safety without pretending that the current recommendation engine already has fueling decision authority. The dose boundary now includes contemporary 2026 evidence: >90 g/h can be physiologically plausible for selected trained endurance athletes, but performance superiority is not sufficiently established to make 120 g/h a universal recommendation.
 
-- establish reusable endurance-fueling claims for carbohydrate during exercise, event-duration-scaled carbohydrate intake and hydration/overdrinking safety;
-- distinguish consensus/guideline recommendations from intervention effect evidence and from exact athlete-specific tolerance;
-- do **not** mark an engine policy covered merely because fueling science is strong: the current recommendation engine does not yet give fueling advice decision authority.
-
-A fueling feature can later consume these claims with explicit lineage instead of embedding uncited numbers in UI or prescription text.
+No executable recommendation behavior changes are made and `POLICY_VERSION` remains unchanged.
 
 ### Later SKR3 packs
 

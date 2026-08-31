@@ -17,6 +17,11 @@ import {
     STRENGTH_CONCURRENT_CLAIMS,
     STRENGTH_CONCURRENT_SOURCES,
 } from './strengthConcurrentKnowledge.ts';
+import {
+    TAPER_FUELING_CLAIM_IDS,
+    TAPER_FUELING_CLAIMS,
+    TAPER_FUELING_SOURCES,
+} from './taperFuelingKnowledge.ts';
 
 /**
  * Canonical aggregate registry.
@@ -30,18 +35,21 @@ export const SPORTS_KNOWLEDGE_SOURCES: readonly KnowledgeSource[] = [
     ...CORE_SPORTS_KNOWLEDGE_SOURCES,
     ...READINESS_CARDIORESPIRATORY_SOURCES,
     ...STRENGTH_CONCURRENT_SOURCES,
+    ...TAPER_FUELING_SOURCES,
 ];
 
 export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     ...CORE_SPORTS_KNOWLEDGE_CLAIMS,
     ...READINESS_CARDIORESPIRATORY_CLAIMS,
     ...STRENGTH_CONCURRENT_CLAIMS,
+    ...TAPER_FUELING_CLAIMS,
 ];
 
 export const KNOWLEDGE_CLAIM_IDS = {
     ...CORE_KNOWLEDGE_CLAIM_IDS,
     ...READINESS_CARDIORESPIRATORY_CLAIM_IDS,
     ...STRENGTH_CONCURRENT_CLAIM_IDS,
+    ...TAPER_FUELING_CLAIM_IDS,
 } as const;
 
 /** Validate the complete cross-domain registry, including duplicate identifiers and lineage. */
