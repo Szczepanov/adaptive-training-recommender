@@ -146,12 +146,41 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
         ? Math.min(1, Math.max(0, (50 - objective.body_battery_wake) / 30))
         : 0;
 
-    const systemic = Math.min(1, 0.3 * subFatigue + 0.25 * hrvDrop + 0.25 * sleepDeficit + 0.2 * bbDepletion);
-    const cardiovascular = Math.min(1, 0.5 * rhrElevated + 0.5 * hrvDrop);
-    const lowerBody = Math.min(1, subSoreness + ambulatoryTissueStrain);
-    const upperBody = subSoreness * 0.7; // default soreness split
-    const impactTissue = Math.min(1, subSoreness + ambulatoryTissueStrain);
-    const neuromuscular = Math.min(1, 0.5 * subFatigue + 0.5 * (1 - (subjective.motivation / 10)));
+    // Acute non-diluted floors for single-axis subjective distress and severe autonomic collapse:
+    // 1. High subjective fatigue (>= 8/10) directly limits systemic capacity.
+    // When accompanied by low readiness (<= 4) or high stress (>= 8), it triggers recover-tier strain.
+    const severeSubjectiveDistress = (subjective.fatigue >= 8 && subjective.readiness <= 4) ||
+        (subjective.readiness <= 3 && subjective.stress >= 8) ||
+        (subjective.fatigue >= 8 && subjective.stress >= 8);
+    const acuteSubjectiveFatigueFloor = severeSubjectiveDistress ? 0.65 : (subjective.fatigue >= 8 ? 0.60 : 0);
+
+    // 2. High life stress (>= 9/10) impairs autonomic recovery and heightens injury risk.
+    const acuteSubjectiveStressFloor = subjective.stress >= 9 ? 0.60 : 0;
+
+    // 3. Severe autonomic collapse: simultaneous acute collapse across HRV, RHR, and Body Battery.
+    const severeAutonomicCollapse = (
+        objective.hrv_delta !== null && objective.hrv_delta <= -10 &&
+        objective.rhr_delta !== null && objective.rhr_delta >= 5 &&
+        objective.body_battery_wake !== null && objective.body_battery_wake <= 35
+    ) || (hrvDrop >= 0.8 && rhrElevated >= 0.6 && bbDepletion >= 0.7);
+    const autonomicCollapseFloor = severeAutonomicCollapse ? 0.80 : 0;
+
+    // 4. Acute tissue soreness: soreness >= 8/10 represents substantial muscular breakdown
+    // requiring 48h to clear below modify/recover thresholds.
+    const acuteTissueStrain = subjective.soreness >= 8 ? 0.88 : subSoreness;
+
+    const baseSystemic = 0.3 * subFatigue + 0.25 * hrvDrop + 0.25 * sleepDeficit + 0.2 * bbDepletion;
+    const systemic = Math.min(1, Math.max(baseSystemic, acuteSubjectiveFatigueFloor, acuteSubjectiveStressFloor, autonomicCollapseFloor));
+
+    const baseCardiovascular = 0.5 * rhrElevated + 0.5 * hrvDrop;
+    const cardiovascular = Math.min(1, Math.max(baseCardiovascular, autonomicCollapseFloor));
+
+    const lowerBody = Math.min(1, acuteTissueStrain + ambulatoryTissueStrain);
+    const upperBody = acuteTissueStrain * 0.7; // default soreness split
+    const impactTissue = Math.min(1, acuteTissueStrain + ambulatoryTissueStrain);
+
+    const baseNeuromuscular = 0.5 * subFatigue + 0.5 * (1 - (subjective.motivation / 10));
+    const neuromuscular = Math.min(1, baseNeuromuscular);
 
     return {
         systemic,
