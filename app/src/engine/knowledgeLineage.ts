@@ -70,15 +70,17 @@ export function compareKnowledgeLineage(
 
 /**
  * Claim IDs for the covered objective-readiness policies actually evaluated for this input.
+ * A long-horizon value is only consumed by metricStrain when its 7-day anchor exists, so
+ * 28-day-only fields must not create lineage for a branch that returned before reading them.
  * Subjective mode cut-points are intentionally absent: that family remains uncovered/P0.
  */
 export function readinessKnowledgeRefs(readiness: DailyReadiness, context: UserContext): string[] {
     const objective = readiness.objective;
-    const hasHrv = objective.hrv_delta !== null || objective.hrv_delta_28d !== null;
-    const hasRhr = objective.rhr_delta !== null || objective.rhr_delta_28d !== null;
-    const hasSleepRelative = objective.sleep_score_delta_7d !== null || objective.sleep_score_delta_28d !== null;
+    const hasHrv = objective.hrv_delta !== null;
+    const hasRhr = objective.rhr_delta !== null;
+    const hasSleepRelative = objective.sleep_score_delta_7d !== null;
     const hasSleepAbsolute = objective.sleep_score !== null;
-    const hasRespiration = (objective.respiration_delta ?? null) !== null || (objective.respiration_delta_28d ?? null) !== null;
+    const hasRespiration = (objective.respiration_delta ?? null) !== null;
     const hasBodyBattery = objective.body_battery_wake !== null;
     const hasRecentHardPenalty = (objective.last_3_days_hard_sessions_count || 0) >= 2;
     const hasPhysiologicalStrainInput = hasHrv || hasRhr || hasSleepRelative || hasRespiration;
