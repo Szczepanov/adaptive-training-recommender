@@ -105,6 +105,30 @@ emulatorDescribe('Firestore v4 recommendation knowledge lineage', () => {
         await assertFails(setDoc(doc(ownerDb, recommendationPath), validV4Recommendation(lineage)));
     });
 
+    it('rejects malformed lineage refs at the Firestore boundary', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const recommendation = validV4Recommendation();
+        const malformedAudit = {
+            ...recommendation.recommendationAudit,
+            knowledgeLineage: [{ claimId: 'readiness.objective_mode_thresholds' }],
+        };
+        await assertFails(setDoc(doc(ownerDb, recommendationPath), {
+            ...recommendation,
+            recommendationAudit: malformedAudit,
+        }));
+    });
+
+    it('rejects duplicate claim ids even when versions differ', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(
+            doc(ownerDb, recommendationPath),
+            validV4Recommendation([
+                { claimId: 'readiness.objective_mode_thresholds', version: 1 },
+                { claimId: 'readiness.objective_mode_thresholds', version: 2 },
+            ]),
+        ));
+    });
+
     it('rejects mutating an audit when decision fields and revision are unchanged', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const original = validV4Recommendation([{ claimId: 'readiness.objective_mode_thresholds', version: 1 }]);
