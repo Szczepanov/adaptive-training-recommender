@@ -1146,6 +1146,7 @@ service cloud.firestore {
       match /entries/{entryId} {
         allow read: if isOwner(userId);
         allow create, update, delete: if isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId))
           && get(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)).data.state == 'in_progress'
           && (request.method == 'delete' || hasValidSessionEntry(executionId, entryId));
       }

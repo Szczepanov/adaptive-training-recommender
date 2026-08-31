@@ -64,7 +64,7 @@ function validV4Recommendation(knowledgeLineage: Array<{ claimId: string; versio
 emulatorDescribe('Firestore v4 recommendation knowledge lineage', () => {
     beforeAll(async () => {
         testEnvironment = await initializeTestEnvironment({
-            projectId: 'demo-adaptive-training',
+            projectId: 'demo-adaptive-training-knowledge-lineage',
             firestore: { rules: readFileSync('firestore.rules', 'utf8') },
         });
     });
