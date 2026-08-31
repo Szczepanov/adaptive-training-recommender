@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { DailyReadiness, TrainingIntentProfile, UserContext, UserEvent } from './models';
+import type { TrainingHistoryProvider } from './trainingHistory';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from '../knowledge/sportsKnowledgeRegistry';
 import {
     compareKnowledgeLineage,
@@ -152,8 +153,9 @@ describe('recommendation knowledge lineage', () => {
             createdAt: '',
             updatedAt: '',
         };
+        const emptyHistory: TrainingHistoryProvider = { reconstruct: async () => [] };
         const rec = await evaluateTrainingWithIntent(
-            'u1', readiness(), context, [focusEvent], '2026-08-31', undefined, undefined, null, [], [],
+            'u1', readiness(), context, [focusEvent], '2026-08-31', undefined, emptyHistory, null, [], [],
             trainingIntentProfile, null, 'max', externalPlan,
         );
         expect(rec.knowledgeRefs).toEqual(expect.arrayContaining([
