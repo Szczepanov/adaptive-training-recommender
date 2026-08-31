@@ -74,9 +74,9 @@ Post-pack inventory remains 15 covered / 1 partial / 26 uncovered / 5 not applic
 
 No numeric recommendation behavior changes were made, so this pack does not bump the global recommendation `POLICY_VERSION`. The stale `rules.ts` respiration comment was corrected as a syntax-identical documentation change; the policy-drift gate now proves comment/whitespace-only decision-file edits by comparing normalized TypeScript syntax with comments removed. A future persistence/corroboration escalation policy for RR would be a separate behavior-changing PR with simulation and athlete-outcome calibration.
 
-### Evidence Pack 3 — Subjective Readiness + Injury/Pain Safety
+### Safety Evidence Pack — Subjective Readiness + Injury/Pain Safety
 
-**Status:** Next
+**Status:** Planned — high-safety debt remains open
 
 Priority families:
 
@@ -85,20 +85,52 @@ Priority families:
 3. `injury.region_restriction_mapping`;
 4. `injury.pain_envelope_mapping`.
 
-This pack should separate validated symptom/return-to-sport principles from conservative product action mappings. Because three families are high-safety, it should prefer guideline/consensus/rehabilitation evidence and preserve explicit uncertainty rather than manufacturing universal pain thresholds.
+This pack should separate validated symptom/return-to-sport principles from conservative product action mappings. Because three families are high-safety, it should prefer guideline/consensus/rehabilitation evidence and preserve explicit uncertainty rather than manufacturing universal pain thresholds. Reordering the evidence-pack sequence does not reduce this priority or make these families covered.
 
-### Evidence Pack 4 — Taper + Event Preparation
+### Evidence Pack 4 — Strength + Concurrent Training
 
-**Status:** Planned
+**Status:** Complete (2026-08-30)
 
-Start with `periodization.taper_windows_volume` (remaining non-injury P0), then reconcile pre-event strength/hard/exhaustive restrictions and taper sharpening targets against event type and training status.
+Analysis: `docs/analysis/2026-08-30-evidence-pack-strength-concurrent-training.md`
+
+Added two focused scientific claims with deliberately different evidence boundaries:
+
+- supplemental strength training can improve endurance performance and economy/efficiency in trained runners and cyclists without reliably increasing VO2max; the cross-sport claim is **low-certainty / conditional** because cycling certainty is low, running evidence ranges from very low to moderate, and the umbrella review reports low or critically low confidence for most included reviews;
+- concurrent endurance and resistance training can develop both domains; for chronic adaptation, resistance-before-endurance is the better-supported order when lower-body strength or hypertrophy is the primary target, while sequence appears less important for aerobic development. The evidence does not establish one universal order or a full-calendar-day separation requirement.
+
+The concurrent claim is explicitly **chronic**. Acute residual fatigue and the quality of a subsequent key cycling/running session are separate questions and are not treated as directly quantified by the umbrella/sequence syntheses. The pack also links the existing elite-athlete consensus as partially direct support for individualized same-day multimodal programming without converting consensus into a fixed recovery interval.
+
+The pack preserves the existing scientific/product boundary. It does **not** relabel the product's three-session strength upper target, 0–1-day heavy-strength/key-cycling exclusion, systemic-cost thresholds, or workout recovery metadata as scientific constants.
+
+This is a lineage-deepening pack rather than a coverage-inflation pack. `spacing.hard_lower_body_recovery` remains **partial / P1** because workout-specific recovery metadata still requires catalog-level audit, and `optimizer.stimulus_benefit_weights` remains **uncovered / P2** because pooled strength-training effects are not optimizer utility coefficients.
+
+Post-pack inventory therefore remains 15 covered / 1 partial / 26 uncovered / 5 not applicable. No executable recommendation behavior changes are made and `POLICY_VERSION` remains unchanged.
+
+### Evidence Pack 5 — Taper + Fueling
+
+**Status:** Next
+
+Taper scope:
+
+- start with `periodization.taper_windows_volume`, the remaining non-injury P0 family;
+- separate evidence-supported **pre-event taper** from the current product's distinct post-event recovery rule rather than laundering both through one claim;
+- reconcile pre-event strength/hard/exhaustive restrictions and taper-sharpening targets against taper evidence while keeping exact day windows/thresholds explicit product calibration;
+- leave unrelated phase-boundary and multi-event heuristics visible if the taper evidence does not directly answer them.
+
+Fueling scope:
+
+- establish reusable endurance-fueling claims for carbohydrate during exercise, event-duration-scaled carbohydrate intake and hydration/overdrinking safety;
+- distinguish consensus/guideline recommendations from intervention effect evidence and from exact athlete-specific tolerance;
+- do **not** mark an engine policy covered merely because fueling science is strong: the current recommendation engine does not yet give fueling advice decision authority.
+
+A fueling feature can later consume these claims with explicit lineage instead of embedding uncited numbers in UI or prescription text.
 
 ### Later SKR3 packs
 
 - periodization objectives and sport/event demand profiles;
 - stimulus-credit and optimizer calibration;
 - workout-specific recovery metadata audit;
-- fueling/recovery recommendations as those features gain decision authority.
+- fueling/recovery policy migration when those features gain live decision authority.
 
 ## SKR4 — Athlete-specific evidence boundary
 
