@@ -88,7 +88,8 @@ emulatorDescribe('Firestore v4 recommendation knowledge lineage', () => {
     it('rejects schema v4 when knowledge lineage is omitted', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const recommendation = validV4Recommendation();
-        const { knowledgeLineage: _lineage, ...auditWithoutLineage } = recommendation.recommendationAudit;
+        const auditWithoutLineage: Record<string, unknown> = { ...recommendation.recommendationAudit };
+        delete auditWithoutLineage.knowledgeLineage;
         await assertFails(setDoc(doc(ownerDb, recommendationPath), {
             ...recommendation,
             recommendationAudit: auditWithoutLineage,
