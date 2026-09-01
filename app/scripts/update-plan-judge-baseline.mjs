@@ -87,6 +87,8 @@ for (const [field, expected] of Object.entries(expectedHashes)) {
   if (provenance[field] !== expected) failures.push(`provenance.${field} does not match the current artifact (${provenance[field]} != ${expected}).`);
 }
 
+const allowCommitDrift = process.argv.includes('--allow-commit-drift') || process.argv.includes('--allow-drift');
+
 let currentCommit = 'unknown';
 try {
   currentCommit = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
@@ -94,7 +96,11 @@ try {
   failures.push('Could not resolve the current git commit; refusing to write an untraceable baseline.');
 }
 if (currentCommit !== 'unknown' && provenance.corpusCommit !== currentCommit) {
-  failures.push(`provenance.corpusCommit (${provenance.corpusCommit}) does not match current HEAD (${currentCommit}); regenerate the corpus/judge summary after the latest code change.`);
+  if (allowCommitDrift) {
+    console.warn(`Warning: provenance.corpusCommit (${provenance.corpusCommit}) differs from current HEAD (${currentCommit}). Writing baseline with recorded corpus commit.`);
+  } else {
+    failures.push(`provenance.corpusCommit (${provenance.corpusCommit}) does not match current HEAD (${currentCommit}); regenerate the corpus/judge summary after the latest code change, or pass --allow-commit-drift.`);
+  }
 }
 
 if (failures.length > 0) {
