@@ -44,3 +44,5 @@ Supporting background retained in the knowledge pack includes Fradkin et al. 201
 ## Merge gate
 
 The branch should merge only after the updated CI run is green. Existing catalog validation, policy drift checks, knowledge validation, type/lint/build checks and scenario simulations remain the primary repository gates; the follow-up tests above close the execution ambiguities found during manual review.
+
+A green run from an earlier head is not sufficient evidence for the follow-up. Verification must be attached to the commit that contains the runtime hardening and evidence refresh (or a later descendant containing the same code).
