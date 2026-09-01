@@ -4,7 +4,9 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _freeze_sync_service_fixture_clock(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch):
+def _freeze_sync_service_fixture_clock(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+):
     """Keep sync-service tests with fixed 2026 fixture dates deterministic.
 
     Several tests in test_sync_service.py intentionally use August/September 2026
