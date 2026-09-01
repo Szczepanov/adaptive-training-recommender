@@ -53,24 +53,48 @@ describe('subjective readiness policy alignment', () => {
             dimensions: { fatigue: 'direct', soreness: 'direct', readiness: 'inverted', sleepQuality: 'inverted', motivation: 'inverted' },
             modifyWhen: '> 5', recoverWhen: '> 7',
         });
+        // Exactly 5 remains train; the smallest integer movement above 5 modifies.
         expect(mode({ readiness: 5, sleepQuality: 5, fatigue: 5, soreness: 5, motivation: 5 })).toBe('train');
         expect(mode({ readiness: 4, sleepQuality: 5, fatigue: 5, soreness: 5, motivation: 5 })).toBe('modify');
+        // Exactly 7 does not recover; the smallest integer movement above 7 does.
         expect(mode({ readiness: 3, sleepQuality: 3, fatigue: 7, soreness: 7, motivation: 3 })).toBe('modify');
         expect(mode({ readiness: 2, sleepQuality: 3, fatigue: 7, soreness: 7, motivation: 3 })).toBe('recover');
     });
 
-    it('pins independent and combination trigger equality boundaries', () => {
+    it('pins independent strict trigger boundaries on both sides', () => {
         expect(mode({ soreness: 6 })).toBe('train');
         expect(mode({ soreness: 7 })).toBe('modify');
+        expect(mode({ soreness: 8 })).toBe('modify');
+        expect(mode({ soreness: 9 })).toBe('recover');
         expect(mode({ fatigue: 8 })).toBe('modify');
         expect(mode({ fatigue: 9 })).toBe('recover');
-        expect(mode({ fatigue: 8, readiness: 4 })).toBe('recover');
-        expect(mode({ readiness: 3, stress: 7 })).toBe('modify');
-        expect(mode({ readiness: 3, stress: 8 })).toBe('recover');
-        expect(mode({ fatigue: 7, stress: 8 })).toBe('train');
-        expect(mode({ fatigue: 8, stress: 8 })).toBe('recover');
-        expect(mode({ readiness: 4, fatigue: 6 })).toBe('modify');
+        expect(mode({ readiness: 4 })).toBe('train');
+        expect(mode({ readiness: 3 })).toBe('modify');
+        expect(mode({ stress: 8 })).toBe('train');
         expect(mode({ stress: 9 })).toBe('modify');
+    });
+
+    it('isolates every severe-distress recover conjunction at its inclusive boundaries', () => {
+        // fatigue >= 8 && readiness <= 4
+        expect(mode({ fatigue: 8, readiness: 4 })).toBe('recover');
+        expect(mode({ fatigue: 7, readiness: 4 })).toBe('modify');
+        expect(mode({ fatigue: 8, readiness: 5 })).toBe('modify');
+
+        // readiness <= 3 && stress >= 8
+        expect(mode({ readiness: 3, stress: 8 })).toBe('recover');
+        expect(mode({ readiness: 4, stress: 8 })).toBe('train');
+        expect(mode({ readiness: 3, stress: 7 })).toBe('modify');
+
+        // fatigue >= 8 && stress >= 8
+        expect(mode({ fatigue: 8, stress: 8 })).toBe('recover');
+        expect(mode({ fatigue: 7, stress: 8 })).toBe('train');
+        expect(mode({ fatigue: 8, stress: 7 })).toBe('modify');
+    });
+
+    it('isolates the readiness/fatigue acute-modify conjunction at both inclusive boundaries', () => {
+        expect(mode({ readiness: 4, fatigue: 6 })).toBe('modify');
+        expect(mode({ readiness: 5, fatigue: 6 })).toBe('train');
+        expect(mode({ readiness: 4, fatigue: 5 })).toBe('train');
     });
 
     it('documents a complete minimum-safety partial check-in as neutral-default classifier participation', () => {
@@ -83,9 +107,18 @@ describe('subjective readiness policy alignment', () => {
         expect(mode(mapCheckinToSubjectiveInput(partial))).toBe('modify');
     });
 
-    it('keeps pain, illness and subjective drift outside the SEP-A descriptor', () => {
+    it('keeps nearby pain/illness behavior conservative without claiming it as SEP-A threshold authority', () => {
         expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR.excludedFromThisPolicySurface).toEqual([
             'painFlag', 'illnessSymptoms', 'subjectiveDrift',
         ]);
+        expect(mode({ painFlag: true })).toBe('recover');
+        const illnessInput = mapCheckinToSubjectiveInput(checkin({ illnessSymptoms: true }));
+        expect(illnessInput.painFlag).toBe(true);
+        expect(mode(illnessInput)).toBe('recover');
+    });
+
+    it('keeps the already-trained terminal override separate from the subjective threshold table', () => {
+        expect(mode({ alreadyTrainedToday: false })).toBe('train');
+        expect(mode({ alreadyTrainedToday: true })).toBe('recover');
     });
 });
