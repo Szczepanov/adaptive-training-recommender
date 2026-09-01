@@ -2,9 +2,9 @@
   "schema": "adaptive-training-recommender/ai-plan-judge-summary@3",
   "source": "artifacts/ai-plan-judge/latest/judge-scores.jsonl",
   "provenance": {
-    "corpusCommit": "605da6ccce421531c341471fe936a96d507ec490",
+    "corpusCommit": "f4b923626bb4e3d072a26bd611931c8f61410686",
     "corpusSchema": "adaptive-training-recommender/ai-plan-judge-corpus@3",
-    "corpusSha256": "054627d65fec33e478c0b96a9d22e17ba5197a779b31687b36480c7481d0e90d",
+    "corpusSha256": "ed9eccc9342c31579a81530dde02eeb8b1872d2e0f96adda6facbd9c812e1763",
     "familiesSha256": "b39318c9c53f6108dd2ea192d4864e7ecf7a8838d962216f60b83f8795f819b0",
     "caseSetSha256": "26415bb41b7612f26ee5f8c783e36ff7e049968b34ce4e391cb90797a11d6e0e",
     "promptSha256": "21acc629e5710e513359c080de4ec5cf8fb56557f6e53af4b9bedcadd1b70f3c",
@@ -12,7 +12,7 @@
     "judgeScoresSha256": "c339c413aabb6783a5bae9f71324346321a59d59ec39b1709aeb629e1a91ff5a",
     "judgeModel": "hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF",
     "judgeProvider": "local",
-    "analyzedAt": "2026-09-01T12:54:11.931Z",
+    "analyzedAt": "2026-09-01T19:04:20.420Z",
     "judgeSettings": {
       "provider": "local",
       "model": "hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF",
