@@ -69,10 +69,25 @@ export function compareKnowledgeLineage(
 }
 
 /**
- * Claim IDs for the covered objective-readiness policies actually evaluated for this input.
+ * Claim IDs for the subjective classifier evaluated by every normal readiness decision.
+ * `SubjectiveInput` is normalized before it reaches the engine: a complete minimum-safety
+ * check-in can therefore include neutral defaults for other scale dimensions. The product
+ * policy claim documents that participation without misrepresenting the defaults as measured
+ * evidence. Provisional safety fallbacks do not call this helper or create an audit.
+ */
+export function subjectiveReadinessKnowledgeRefs(): string[] {
+    return mergeKnowledgeRefs([
+        KNOWLEDGE_CLAIM_IDS.contextualMonitoring,
+        KNOWLEDGE_CLAIM_IDS.measurementQualityLimits,
+        KNOWLEDGE_CLAIM_IDS.exactCutpointLimits,
+        KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy,
+    ]);
+}
+
+/**
+ * Claim IDs for the covered objective- and subjective-readiness policies actually evaluated for this input.
  * A long-horizon value is only consumed by metricStrain when its 7-day anchor exists, so
  * 28-day-only fields must not create lineage for a branch that returned before reading them.
- * Subjective mode cut-points are intentionally absent: that family remains uncovered/P0.
  */
 export function readinessKnowledgeRefs(readiness: DailyReadiness, context: UserContext): string[] {
     const objective = readiness.objective;
@@ -90,7 +105,7 @@ export function readinessKnowledgeRefs(readiness: DailyReadiness, context: UserC
         || hasRecentHardPenalty
         || context.preferences.conservativeBias;
 
-    const refs: string[] = [];
+    const refs: string[] = [...subjectiveReadinessKnowledgeRefs()];
     if (hasHrv) refs.push(KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.hrvGuidedTrainingConditional);
     if (hasRhr) refs.push(KNOWLEDGE_CLAIM_IDS.rhrContextualMonitoring);
     if (hasSleepRelative || hasSleepAbsolute) {

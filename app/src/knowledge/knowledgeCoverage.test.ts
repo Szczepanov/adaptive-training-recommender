@@ -62,15 +62,15 @@ describe('engine knowledge coverage inventory', () => {
         expect(byId('readiness.mode_score_thresholds')?.knowledgeRefs).toContain('readiness.respiration.longitudinal_contextual_signal');
     });
 
-    it('keeps the remaining P0 research gaps visible rather than laundering adjacent evidence into them', () => {
+    it('keeps the remaining P0 research gaps visible and subjective readiness partial', () => {
         const expectedP0Gaps = [
-            'readiness.subjective_mode_thresholds',
             'injury.tissue_response_severity',
             'injury.region_restriction_mapping',
             'injury.pain_envelope_mapping',
             'periodization.taper_windows_volume',
         ];
         expectedP0Gaps.forEach(id => expect(byId(id)).toMatchObject({ coverage: 'uncovered', researchPriority: 'p0' }));
+        expect(byId('readiness.subjective_mode_thresholds')).toMatchObject({ coverage: 'partial', researchPriority: 'p0', safetyImpact: 'high' });
     });
 
     it('separates conservative software invariants from missing sports-science claims', () => {
@@ -83,10 +83,10 @@ describe('engine knowledge coverage inventory', () => {
     it('reports the post-readiness-pack coverage and risk debt exactly', () => {
         const summary = summarizeKnowledgeCoverage();
         expect(summary.total).toBe(47);
-        expect(summary.byCoverage).toEqual({ covered: 15, partial: 1, uncovered: 26, not_applicable: 5 });
+        expect(summary.byCoverage).toEqual({ covered: 15, partial: 2, uncovered: 25, not_applicable: 5 });
         expect(summary.byPriority).toEqual({ p0: 5, p1: 13, p2: 7, p3: 2, none: 20 });
-        expect(summary.highImpactUncovered).toBe(13);
-        expect(summary.highSafetyUncovered).toBe(4);
+        expect(summary.highImpactUncovered).toBe(12);
+        expect(summary.highSafetyUncovered).toBe(3);
     });
 
     it('records shadow/observability models outside live decision coverage', () => {

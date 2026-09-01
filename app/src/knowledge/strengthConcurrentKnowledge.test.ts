@@ -89,12 +89,12 @@ describe('strength and concurrent training evidence pack', () => {
         });
     });
 
-    it('leaves coverage totals unchanged because this pack deepens an already-covered boundary', () => {
+    it('preserves this pack’s coverage state while later migrations update the global inventory', () => {
         expect(summarizeKnowledgeCoverage()).toMatchObject({
             total: 47,
-            byCoverage: { covered: 15, partial: 1, uncovered: 26, not_applicable: 5 },
-            highImpactUncovered: 13,
-            highSafetyUncovered: 4,
+            byCoverage: { covered: 15, partial: 2, uncovered: 25, not_applicable: 5 },
+            highImpactUncovered: 12,
+            highSafetyUncovered: 3,
         });
     });
 });

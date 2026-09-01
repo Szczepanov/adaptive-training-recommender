@@ -22,6 +22,11 @@ import {
     TAPER_FUELING_CLAIMS,
     TAPER_FUELING_SOURCES,
 } from './taperFuelingKnowledge.ts';
+import {
+    SUBJECTIVE_READINESS_CLAIM_IDS,
+    SUBJECTIVE_READINESS_CLAIMS,
+    SUBJECTIVE_READINESS_SOURCES,
+} from './subjectiveReadinessKnowledge.ts';
 
 /**
  * Canonical aggregate registry.
@@ -36,6 +41,7 @@ export const SPORTS_KNOWLEDGE_SOURCES: readonly KnowledgeSource[] = [
     ...READINESS_CARDIORESPIRATORY_SOURCES,
     ...STRENGTH_CONCURRENT_SOURCES,
     ...TAPER_FUELING_SOURCES,
+    ...SUBJECTIVE_READINESS_SOURCES,
 ];
 
 export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
@@ -43,6 +49,7 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     ...READINESS_CARDIORESPIRATORY_CLAIMS,
     ...STRENGTH_CONCURRENT_CLAIMS,
     ...TAPER_FUELING_CLAIMS,
+    ...SUBJECTIVE_READINESS_CLAIMS,
 ];
 
 export const KNOWLEDGE_CLAIM_IDS = {
@@ -50,6 +57,7 @@ export const KNOWLEDGE_CLAIM_IDS = {
     ...READINESS_CARDIORESPIRATORY_CLAIM_IDS,
     ...STRENGTH_CONCURRENT_CLAIM_IDS,
     ...TAPER_FUELING_CLAIM_IDS,
+    ...SUBJECTIVE_READINESS_CLAIM_IDS,
 } as const;
 
 export const SPORTS_KNOWLEDGE_SOURCES_BY_ID: ReadonlyMap<string, KnowledgeSource> = new Map(
