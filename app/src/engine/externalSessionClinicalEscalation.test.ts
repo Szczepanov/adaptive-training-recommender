@@ -168,6 +168,10 @@ describe('SEP-C4 imported-session clinical escalation', () => {
         expect(verdict.executionDose).toBeUndefined();
         expect(verdict.rationale).toContain('cannot clear you to start');
         expect(verdict.rationale).toContain('medical evaluation');
+        expect(verdict.rationale).toContain('acute chest pain/pressure');
+        expect(verdict.rationale).toContain('unexplained shortness of breath');
+        expect(verdict.rationale).toContain('fainting/near-fainting');
+        expect(verdict.rationale).toContain('new neurologic symptoms');
         expect(verdict.rationale).not.toContain('decision to start is yours');
     });
 });
