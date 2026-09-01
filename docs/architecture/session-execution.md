@@ -43,6 +43,11 @@ the execution UI, before the asynchronous write. A delayed write completion ther
 a timer that the athlete has already skipped or adjusted. The timer remains advisory and does not lock
 the set form.
 
+Rest omission is block-aware. Authored rest is always preserved. Outside warm-up blocks, a step with
+no authored rest retains the runner's legacy 60-second advisory fallback. Inside a structured warm-up,
+omission means no countdown is invented: simple preparation drills flow directly into the next drill,
+while lift-specific rehearsal that needs recovery must carry an explicit authored rest value.
+
 ## Custom-template lifecycle
 
 The collection document is a mutable `SessionDefinitionHeader`; definition revisions are
