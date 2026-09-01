@@ -15,20 +15,20 @@ The review asked four atomic questions before source selection:
 
 This is a **targeted evidence appraisal**, not a de-novo PRISMA systematic review. PubMed was searched on 2026-09-01, synthesis/reference trails were checked for directly relevant measurement studies, and the final registry set intentionally favors higher-level/current evidence over keeping every historical cohort. No included study tested this application's wording, scales, missing-data handling, candidate alternatives, or train/modify/recover outcomes.
 
-### Reproducible search and screening log
+### Search and screening log
 
-The exact search strings used were:
+The exact PubMed search strings used were:
 
-| Search | Query | Candidate records carried into screening |
-| --- | --- | ---: |
-| Q1 | `athlete self-report wellness training response systematic review` | 3 |
-| Q2 | `single-item wellness training load systematic review` | 2 |
-| Q3 | `athlete-reported outcome measurement properties COSMIN` | 2 |
-| Q4 | `wellness predictive capacity training load` | 2 |
-| Q5 | `football load acute psychophysiological responses meta-analysis` | 1 |
-| Q6 | `ARSS SRSS psychometric athletes recovery stress` | 3 |
+- `athlete self-report wellness training response systematic review`
+- `single-item wellness training load systematic review`
+- `athlete-reported outcome measurement properties COSMIN`
+- `wellness predictive capacity training load`
+- `football load acute psychophysiological responses meta-analysis`
+- `ARSS SRSS psychometric athletes recovery stress`
 
-Counts above are the records **carried forward into this bounded appraisal from each query**, not the mutable total number of PubMed hits. Query overlap was expected. After title/abstract deduplication plus the reference-trail candidate, **9 unique records** were screened. Six were retained as registered scientific sources; three were excluded from the registry after abstract/full-text appraisal because they added no unique authority beyond a newer included source:
+The first implementation pass did **not** preserve the raw PubMed result-total count displayed for each query. Those totals are mutable and cannot be reconstructed honestly from the retained PR artifacts, so this appraisal does not invent them. That is a reproducibility limitation against the umbrella plan's stricter search-log requirement. What is reproducible from the retained work is the exact query set, the deduplicated candidate set actually appraised, the final inclusion decision, and the reason for each exclusion. Future evidence-pack searches should capture raw result counts at search time.
+
+Nine unique candidate records were appraised in this bounded review. Six are registered as scientific sources; three were excluded from the registry because a newer included source supplied the same authority more directly.
 
 | Record | Screening decision | Reason |
 | --- | --- | --- |
