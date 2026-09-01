@@ -132,10 +132,10 @@ function applyResolvedAvailability(
  *
  *   clinical/safety → feasibility → readiness ceiling → dose
  *
- * Two short-circuits sit on top, both from ADR-0019:
- *   - `isEvent` returns `advisory` and can never skip, defer or scale (D-EVENT).
- *   - `reducible: false` escalates straight to `defer` rather than prescribing a
- *     compromise the author explicitly said has no value (D-IRREDUCIBLE).
+ * The event path remains advisory rather than executable (D-EVENT), but SEP-C4 clinical
+ * escalation outranks the usual neutral event language. A red-flag event is never presented
+ * as "your decision to start"; the advisory explicitly says the engine cannot clear a start
+ * until medical evaluation.
  */
 export function adjudicateExternalSession(
     session: ExternalPlanSession,
@@ -161,6 +161,24 @@ export function adjudicateExternalSession(
     applyResolvedAvailability(gateable, resolvedAvailability, gateFailures);
     if (safetyRestricted) pushReason(gateFailures, 'restricted_modality');
     const feasible = gateFailures.length === 0;
+
+    // ---- SEP-C4: clinical escalation outranks all imported-plan shortcuts ------------
+    if (envelopes.safety.clinicalEscalationRequired) {
+        const reason = envelopes.safety.clinicalReason ?? 'A red-flag clinical finding was reported.';
+        if (session.isEvent) {
+            return {
+                decision: 'advisory',
+                gateFailures,
+                rationale: `${reason} This event remains on your calendar, but the recommender cannot clear you to start it. Do not use the training plan as medical clearance; obtain appropriate medical evaluation first. If symptoms include chest pain, severe shortness of breath, fainting, or another emergency concern, seek emergency care now.`,
+            };
+        }
+        return {
+            decision: 'skip',
+            gateFailures,
+            ...(session.scaling?.fallback ? { fallbackSuggestion: session.scaling.fallback } : {}),
+            rationale: `${reason} Automated training prescriptions are paused until appropriate medical evaluation.`,
+        };
+    }
 
     // ---- D-EVENT: an event is a commitment. Advise, never instruct. -------------------
     if (session.isEvent) {
