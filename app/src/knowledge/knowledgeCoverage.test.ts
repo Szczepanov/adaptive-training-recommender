@@ -87,9 +87,9 @@ describe('engine knowledge coverage inventory', () => {
 
     it('reports the post-SEP-B coverage and risk debt exactly', () => {
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(51);
-        expect(summary.byCoverage).toEqual({ covered: 15, partial: 8, uncovered: 22, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 13, p2: 7, p3: 2, none: 21 });
+        expect(summary.total).toBe(52);
+        expect(summary.byCoverage).toEqual({ covered: 16, partial: 8, uncovered: 22, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 8, p1: 13, p2: 7, p3: 2, none: 22 });
         expect(summary.highImpactUncovered).toBe(9);
         expect(summary.highSafetyUncovered).toBe(0);
     });

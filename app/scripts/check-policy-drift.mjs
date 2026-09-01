@@ -128,6 +128,8 @@ const decisionAffectingFiles = [
   'app/src/engine/templates.ts',
   'app/src/workouts/event-plan.ts',
   'app/src/workouts/prescription.ts',
+  'app/src/workouts/models.ts',
+  'app/src/sessions/catalogSessionAdapter.ts',
 ];
 
 const policyFile = 'app/src/engine/policy.ts';
@@ -145,7 +147,11 @@ const sleepRecoveryEvidenceFile = 'app/src/engine/sleepRecoveryEvidence.ts';
 const sleepRecoveryEvidenceTestFile = 'app/src/engine/sleepRecoveryEvidence.test.ts';
 const sleepRecoveryPhase3Doc = 'docs/analysis/2026-08-29-sleep-decision-authority-phase-3-implementation.md';
 
-const changedDecisionFiles = changedFiles.filter((f) => decisionAffectingFiles.includes(f));
+// Catalog definitions are executable recommendation content: changing one can alter the
+// persisted primarySession/prescription without touching the selection algorithm.
+const changedDecisionFiles = changedFiles.filter((f) =>
+  decisionAffectingFiles.includes(f) || f.startsWith('app/src/workouts/catalog/'),
+);
 
 /** Return the exact base commit whose tree should be compared with HEAD for this run. */
 function executableComparisonBaseRef() {

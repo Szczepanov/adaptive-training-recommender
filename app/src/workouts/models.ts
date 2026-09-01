@@ -185,6 +185,16 @@ export interface TechnicalRequirements {
   stopConditions: string[];
 }
 
+/** Explicit catalog-authored load instruction. Keep this narrower than `SessionLoad`: the
+ * catalog only needs forms that are stable before a session starts and never has to infer a
+ * load from the athlete's history or from display prose. */
+export type WorkoutStepLoad =
+  | { kind: 'bodyweight' }
+  | { kind: 'unloaded' }
+  | { kind: 'descriptive'; display: string }
+  | { kind: 'percent_one_rm'; percent: number; exerciseId?: string }
+  | { kind: 'percent_max'; percent: number; exerciseId?: string };
+
 export interface WorkoutStep {
   id: string;
   exerciseId: string;
@@ -193,6 +203,7 @@ export interface WorkoutStep {
   target?: IntensityTarget;
   targets?: StepTarget[];
   sets?: number;
+  load?: WorkoutStepLoad;
   restAfterSec?: number;
   notes?: string[];
   optional?: boolean;
@@ -352,6 +363,8 @@ export interface WorkoutDefinition {
   engineTemplatePriority?: number;
   /** Kept out of automatic recommendations until the athlete confirms the setting. */
   manualOnly?: boolean;
+  /** Active strength catalog entries cite the bounded evidence used for their warm-up rule. */
+  warmupKnowledgeClaimIds?: string[];
   blocks: WorkoutBlock[];
   variants: WorkoutVariant[];
   parameters?: WorkoutParameter[];

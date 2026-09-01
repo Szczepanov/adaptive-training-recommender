@@ -21,6 +21,20 @@ resolution, and active-session restoration. Existing correctly written revisions
 migration: their storage shape is decoded as an envelope rather than mistaken for domain
 content.
 
+## Catalog warm-ups and execution logging
+
+Catalog strength prescriptions begin with an explicit `warmup` block. The catalog adapter preserves
+that role, step dose/rest, and any bounded structured load into the content-addressed execution
+prescription. The runner shows the load instruction as stored; it does not derive a kilogram target
+from a percentage or profile during rendering.
+
+For a repetition step, `SessionRunner` passes the active block role into `RepetitionInputCard`.
+Entries from a prescribed `warmup` block default to `isWarmup: true`; other blocks default to false.
+The athlete can correct the checkbox before logging, and the recorded value remains the historical
+fact used by downstream strength-volume and estimated-1RM exclusion filters. Stored execution
+prescriptions carry their blocks and display metadata, so a later catalog warm-up revision cannot
+rewrite an already-started or historical session.
+
 ## Custom-template lifecycle
 
 The collection document is a mutable `SessionDefinitionHeader`; definition revisions are

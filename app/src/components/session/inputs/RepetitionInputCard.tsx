@@ -6,6 +6,7 @@ interface RepetitionInputCardProps {
     step: SessionStep;
     suggestedWeightKg?: number;
     suggestedReps?: number;
+    defaultIsWarmup?: boolean;
     onSubmit: (payload: RepetitionEntryPayload) => void;
 }
 
@@ -15,13 +16,14 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     step,
     suggestedWeightKg,
     suggestedReps,
+    defaultIsWarmup = false,
     onSubmit,
 }) => {
     const dose = step.dose;
     const defaultReps = suggestedReps ?? (dose?.kind === 'repetition' && typeof dose.reps === 'number' ? dose.reps : (dose?.kind === 'repetition' && typeof dose.reps === 'object' ? dose.reps.min : 8));
     const [reps, setReps] = useState<string>(String(defaultReps));
     const [weight, setWeight] = useState<string>(suggestedWeightKg !== undefined ? String(suggestedWeightKg) : '');
-    const [isWarmup, setIsWarmup] = useState<boolean>(false);
+    const [isWarmup, setIsWarmup] = useState<boolean>(defaultIsWarmup);
 
     // Gauge state
     const [gaugeScale, setGaugeScale] = useState<GaugeScaleType>('rpe');
@@ -43,7 +45,8 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     useEffect(() => {
         setReps(String(defaultReps));
         setWeight(suggestedWeightKg !== undefined ? String(suggestedWeightKg) : '');
-    }, [step.id, defaultReps, suggestedWeightKg]);
+        setIsWarmup(defaultIsWarmup);
+    }, [step.id, defaultReps, suggestedWeightKg, defaultIsWarmup]);
 
     useEffect(() => {
         if (weightRef.current) {

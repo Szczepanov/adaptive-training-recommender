@@ -26,6 +26,23 @@ The snapshot contains presentation-ready blocks and steps for Today’s Plan:
 - exercise instructions and step-specific cues;
 - technical success criteria, common faults, and stop conditions when a step uses a `technical_quality` target.
 
+### Strength warm-ups
+
+Every active, non-manual catalog strength workout begins with a non-empty `warmup` block. The
+block supplies brief, low-fatigue movement preparation and, where needed, an explicit light
+rehearsal before the existing activation or working sets. Activation remains a separate block;
+neither it nor the warm-up is a promise of potentiation or injury prevention.
+
+Catalog steps may carry a bounded structured load (`bodyweight`, `unloaded`, `descriptive`,
+`percent_one_rm`, or `percent_max`). The catalog-to-session adapter preserves that instruction and
+the runner displays it without inventing kilograms. Warm-up repetitions default to `isWarmup: true`
+when logged, so downstream working-set tonnage and estimated-1RM paths continue to exclude them.
+
+The first-block and evidence-lineage rule is enforced by `validateWorkoutLibrary`. Full, reduced,
+and return-to-training variants retain appropriate preparation inside their existing advertised
+duration; a return variant omits a lift-specific rehearsal when it omits that high-coordination
+movement.
+
 The snapshot is written with the daily recommendation at `users/{userId}/daily_recommendations/{date}`. It is not rebuilt from a later catalogue version when historical recommendations are read.
 
 ## Athlete-specific targets

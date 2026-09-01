@@ -6,11 +6,13 @@ import { useOverloadHistory } from '../../hooks/useOverloadHistory';
 import type { ExerciseIdentity } from '../../workouts/overloadHistory';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
 import { comparePlannedVsPerformed } from '../../sessions/performedComparison';
+import { formatSessionLoad } from '../../sessions/loadDisplay';
 import { RepetitionInputCard } from './inputs/RepetitionInputCard';
 import { DurationInputCard } from './inputs/DurationInputCard';
 import { DistanceInputCard } from './inputs/DistanceInputCard';
 import { CheckoffInputCard } from './inputs/CheckoffInputCard';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
+
 import { sessionDefinitionService, type SessionDefinitionHeader } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { archivedSavedDefinitionError } from '../../sessions/sessionLaunch';
@@ -810,28 +812,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 </div>
             </div>
 
-            {/* Rest Timer Banner */}
-            {runner.isRestRunning && (
-                <div className="rest-timer-banner" role="status" aria-live="polite">
-                    <div className="rest-timer-info">
-                        <span>☕ Rest: <strong>{runner.restSecondsRemaining}s</strong></span>
-                        {restNextStep && (
-                            <span className="rest-next-preview">
-                                Next: {stepName(restNextStep)}
-                            </span>
-                        )}
-                    </div>
-                    <div className="rest-timer-actions">
-                        <button type="button" className="rest-adjust-btn" onClick={() => runner.addRestSeconds(30)}>
-                            +30s
-                        </button>
-                        <button type="button" className="skip-rest-btn" onClick={runner.skipRestTimer}>
-                            Skip Rest
-                        </button>
-                    </div>
-                </div>
-            )}
-
             {/* Undo Banner */}
             {runner.canUndo && (
                 <div className="undo-toast-banner" role="alert">
@@ -911,8 +891,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             {activeStep.laterality === 'per_side' && (
                                 <span className="laterality-tag">Unilateral (Left &amp; Right)</span>
                             )}
-                            {activeEffort && <span>Effort: {activeEffort}</span>}
-                            {activeStep.rest !== undefined && <span>Rest: {formatRange(activeStep.rest)} sec</span>}
+                             {activeEffort && <span>Effort: {activeEffort}</span>}
+                             {activeStep.load && <span>Load: {formatSessionLoad(activeStep.load)}</span>}
+                             {activeStep.rest !== undefined && <span>Rest: {formatRange(activeStep.rest)} sec</span>}
                             {activeStep.tempo && <span>Tempo: {formatTempoBreakdown(activeStep.tempo)}</span>}
                         </div>
                     </div>
@@ -942,12 +923,35 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     ) : (
                         /* Step Input Card */
                         <div className="input-card-container">
+                            {/* A rest is advisory, not a lock. Keep the countdown and its controls
+                             * alongside the active logging form until it reaches zero or is skipped. */}
+                            {runner.isRestRunning && (
+                                <div className="rest-timer-banner" role="status" aria-live="polite">
+                                    <div className="rest-timer-info">
+                                        <span>☕ Rest: <strong>{runner.restSecondsRemaining}s</strong></span>
+                                        {restNextStep && (
+                                            <span className="rest-next-preview">
+                                                Next: {stepName(restNextStep)}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="rest-timer-actions">
+                                        <button type="button" className="rest-adjust-btn" onClick={() => runner.addRestSeconds(30)}>
+                                            +30s
+                                        </button>
+                                        <button type="button" className="skip-rest-btn" onClick={runner.skipRestTimer}>
+                                            Skip Rest
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             {inputProfile === 'repetition_mass' || inputProfile === 'repetition_bodyweight' ? (
                                 <RepetitionInputCard
                                     key={activeStep.id}
                                     step={activeStep}
                                     suggestedWeightKg={suggestedWeightKg}
                                     suggestedReps={suggestedReps}
+                                    defaultIsWarmup={activeBlock?.role === 'warmup'}
                                     onSubmit={handleEntrySubmit}
                                 />
                             ) : inputProfile === 'duration_hold' ? (

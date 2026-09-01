@@ -1,4 +1,4 @@
-import type { WorkoutPrescription, PrescriptionBlock, PrescriptionStep, WorkoutBlock, WorkoutStep } from '../workouts/models';
+import type { WorkoutPrescription, PrescriptionBlock, PrescriptionStep, WorkoutBlock, WorkoutStep, WorkoutStepLoad } from '../workouts/models';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import type {
     SessionDefinition,
@@ -8,6 +8,7 @@ import type {
     BlockRole,
     SessionIntent,
     SessionDose,
+    SessionLoad,
 } from './models';
 import { hashExecutionPrescription } from './sessionDefinitionHash';
 
@@ -122,16 +123,31 @@ function doseFromWorkoutStep(step: WorkoutStep): SessionDose | undefined {
     return undefined;
 }
 
+/** Catalog loads are already bounded and explicit. This mapper intentionally does not infer
+ * load from an exercise, target, note, or performance profile. */
+export function loadFromWorkoutStep(load: WorkoutStepLoad | undefined): SessionLoad | undefined {
+    if (!load) return undefined;
+    switch (load.kind) {
+        case 'bodyweight': return { kind: 'bodyweight' };
+        case 'unloaded': return { kind: 'unloaded' };
+        case 'descriptive': return { kind: 'descriptive', display: load.display };
+        case 'percent_one_rm': return { kind: 'percent_one_rm', percent: load.percent, ...(load.exerciseId ? { exerciseId: load.exerciseId } : {}) };
+        case 'percent_max': return { kind: 'percent_max', percent: load.percent, ...(load.exerciseId ? { exerciseId: load.exerciseId } : {}) };
+    }
+}
+
 function adaptCatalogWorkoutStep(step: WorkoutStep, display?: PrescriptionStep): SessionStep {
     const technicalStopConditions = step.target?.type === 'technical_quality'
         ? step.target.stopConditions
         : undefined;
+    const load = loadFromWorkoutStep(step.load);
     return {
         id: step.id,
         kind: 'exercise',
         title: step.name,
         exerciseRef: { kind: 'catalog', exerciseId: step.exerciseId },
         ...(doseFromWorkoutStep(step) ? { dose: doseFromWorkoutStep(step) } : {}),
+        ...(load ? { load } : {}),
         ...(step.restAfterSec !== undefined ? { rest: step.restAfterSec } : {}),
         ...(step.target?.type === 'rpe' ? { effort: { rpe: { min: step.target.min, max: step.target.max } } } : {}),
         ...(step.target?.type === 'reps_in_reserve' ? { effort: { rir: { min: step.target.min, max: step.target.max } } } : {}),

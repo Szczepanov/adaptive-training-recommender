@@ -11,6 +11,7 @@ import type {
   WorkoutParameterStepField,
   WorkoutParameterUnit
 } from './models.ts';
+import { getActiveKnowledgeClaim } from '../knowledge/sportsKnowledgeRegistry.ts';
 
 export interface WorkoutLibraryValidationResult {
   valid: boolean;
@@ -270,6 +271,20 @@ export function validateWorkoutLibrary(
 
     const stepIds = new Set<string>();
     let hasTechnicalTarget = false;
+    if (workout.status === 'active' && workout.modality === 'strength' && !workout.manualOnly) {
+      const firstBlock = workout.blocks[0];
+      if (!firstBlock || firstBlock.role !== 'warmup' || firstBlock.steps.length === 0) {
+        errors.push(`${prefix}: active catalog strength workout must begin with a non-empty warmup block`);
+      }
+      if (!workout.warmupKnowledgeClaimIds?.length) {
+        errors.push(`${prefix}: active catalog strength workout must cite warmupKnowledgeClaimIds`);
+      } else {
+        for (const claimId of workout.warmupKnowledgeClaimIds) {
+          try { getActiveKnowledgeClaim(claimId); }
+          catch (error) { errors.push(`${prefix}: warmup knowledge claim ${claimId} is not active (${error instanceof Error ? error.message : String(error)})`); }
+        }
+      }
+    }
     for (const block of workout.blocks) {
       if (block.steps.length === 0) errors.push(`${prefix}/${block.id}: block must contain at least one step`);
       for (const step of block.steps) {
@@ -289,6 +304,11 @@ export function validateWorkoutLibrary(
         if (step.duration.type === 'time' && step.duration.seconds <= 0) errors.push(`${stepPath}: time duration must be positive`);
         if (step.duration.type === 'distance' && step.duration.meters <= 0) errors.push(`${stepPath}: distance must be positive`);
         if (step.duration.type === 'repetitions' && step.duration.repetitions <= 0) errors.push(`${stepPath}: repetitions must be positive`);
+        if (step.load?.kind === 'descriptive' && !step.load.display.trim()) errors.push(`${stepPath}: descriptive load display is required`);
+        if ((step.load?.kind === 'percent_one_rm' || step.load?.kind === 'percent_max')
+          && (!Number.isFinite(step.load.percent) || step.load.percent <= 0 || step.load.percent > 100)) {
+          errors.push(`${stepPath}: percentage load must be finite and between 0 and 100`);
+        }
         if (step.target) {
           validateTarget(step.target, stepPath, errors);
           if (step.target.type === 'technical_quality') hasTechnicalTarget = true;
