@@ -216,7 +216,7 @@ describe('injury-policy lineage equivalence', () => {
         for (const region of REGIONS) {
             for (const signal of TISSUE_SIGNALS) {
                 for (const level of TISSUE_LEVELS) {
-                    const response = { region, [signal]: level } as RegionTissueResponse;
+                    const response = { region, morningState: 'normal', [signal]: level } as RegionTissueResponse;
                     for (const standingSeverity of [undefined, ...SEVERITIES] as const) {
                         const injuries = standingSeverity === undefined
                             ? undefined
@@ -241,7 +241,7 @@ describe('injury-policy lineage equivalence', () => {
         ];
         const responses = {
             knee: { region: 'knee' as const, morningState: 'moderate' as const },
-            shoulder: { region: 'shoulder' as const, nextMorningReaction: 'severe' as const },
+            shoulder: { region: 'shoulder' as const, morningState: 'normal' as const, nextMorningReaction: 'severe' as const },
         };
         const legacyEffective = legacyResolveEffectiveInjuryConstraints(injuries, responses, TODAY);
         const resolved = resolveInjuryPolicy(injuries, responses, TODAY);
