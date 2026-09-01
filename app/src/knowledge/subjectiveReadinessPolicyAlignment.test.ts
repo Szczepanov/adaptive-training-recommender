@@ -21,18 +21,19 @@ function subjective(overrides: Partial<SubjectiveInput> = {}): SubjectiveInput {
     };
 }
 
-function objective(): EngineObjectiveInput {
+function objective(overrides: Partial<EngineObjectiveInput> = {}): EngineObjectiveInput {
     return {
         total_steps: null, sleep_score: null, sleep_duration_min: null, rhr: null, rhr_7d_avg: null, rhr_delta: null,
         hrv_weekly_avg: null, hrv_last_night: null, hrv_delta: null, respiration: null, body_battery_wake: null,
         last_3_days_hard_sessions_count: 0, yesterday_training: null, today_training: null, sleep_score_delta_7d: null,
         rhr_delta_28d: null, hrv_delta_28d: null, sleep_score_delta_28d: null, hrv_stdev_28d: null,
         rhr_stdev_28d: null, sleep_score_stdev_28d: null,
+        ...overrides,
     };
 }
 
-function mode(overrides: Partial<SubjectiveInput>): string {
-    const readiness: DailyReadiness = { subjective: subjective(overrides), objective: objective() };
+function mode(subjectiveOverrides: Partial<SubjectiveInput>, objectiveOverrides: Partial<EngineObjectiveInput> = {}): string {
+    const readiness: DailyReadiness = { subjective: subjective(subjectiveOverrides), objective: objective(objectiveOverrides) };
     return evaluateReadinessAndSafetyEnvelope(readiness, context()).mode;
 }
 
@@ -109,7 +110,7 @@ describe('subjective readiness policy alignment', () => {
 
     it('keeps nearby pain/illness behavior conservative without claiming it as SEP-A threshold authority', () => {
         expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR.excludedFromThisPolicySurface).toEqual([
-            'painFlag', 'illnessSymptoms', 'subjectiveDrift',
+            'painFlag', 'illnessSymptoms', 'subjectiveDrift', 'alreadyTrainedToday', 'objective.today_training',
         ]);
         expect(mode({ painFlag: true })).toBe('recover');
         const illnessInput = mapCheckinToSubjectiveInput(checkin({ illnessSymptoms: true }));
@@ -117,8 +118,11 @@ describe('subjective readiness policy alignment', () => {
         expect(mode(illnessInput)).toBe('recover');
     });
 
-    it('keeps the already-trained terminal override separate from the subjective threshold table', () => {
+    it('keeps terminal already-trained overrides separate from the subjective threshold table', () => {
         expect(mode({ alreadyTrainedToday: false })).toBe('train');
         expect(mode({ alreadyTrainedToday: true })).toBe('recover');
+        expect(mode({}, {
+            today_training: { type: 'Cycling', duration_min: 45, training_effect: 3, intensity_tag: 'moderate/easy' },
+        })).toBe('recover');
     });
 });
