@@ -35,6 +35,14 @@ fact used by downstream strength-volume and estimated-1RM exclusion filters. Sto
 prescriptions carry their blocks and display metadata, so a later catalog warm-up revision cannot
 rewrite an already-started or historical session.
 
+Repetition submission is single-flight at the input surface: while one set is being persisted, a
+second Enter/click is ignored and the log button is disabled. This prevents rapid duplicate submits
+from deriving the same ordinal `setIndex` from one rendered entry snapshot. Rest timing is deliberately
+separate from persistence timing: the countdown starts when the set is optimistically accepted into
+the execution UI, before the asynchronous write. A delayed write completion therefore cannot restart
+a timer that the athlete has already skipped or adjusted. The timer remains advisory and does not lock
+the set form.
+
 ## Custom-template lifecycle
 
 The collection document is a mutable `SessionDefinitionHeader`; definition revisions are
