@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useRef, lazy, Suspense } from 'react';
 import './App.css';
 import './index.css';
-import { Home } from './components/Home';
+const Home = lazy(() => import('./components/Home').then(m => ({ default: m.Home })));
 import type { PreparedSessionLaunch } from './components/session/SessionDestinationSheet';
 import { decisionComposer } from './engine/composer';
 import { hasCompletedSubjectiveCheckinForDecision } from './engine/checkinCompletion';
