@@ -760,7 +760,23 @@ export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContex
     const isPain = readiness.subjective.painFlag;
     const restrictedModalities = [...(context.constraints.restrictedModalities ?? [])];
     const hasActiveInjury = restrictedModalities.length > 0 || (context.constraints.impliedGuardrails ?? []).length > 0 || (context.constraints.restrictedCategories ?? []).length > 0;
-    if (isPain && !restrictedModalities.includes('Running')) restrictedModalities.push('Running');
+
+    // Check if pain/injury source is specifically reported
+    const sources = readiness.subjective.clinicalEnvelopeSources ?? (isPain ? ['pain_or_injury'] : []);
+    const hasPainOrInjury = sources.includes('pain_or_injury');
+
+    // When pain/injury is present, restrict Running if:
+    // 1. No structured region mapping families are active (unknown origin / fail-closed), OR
+    // 2. An active lower-limb impact family is present.
+    // If only upper-limb, lumbar, or lower-limb strength constraints are active, Running is not unconditionally banned.
+    if (hasPainOrInjury && !restrictedModalities.includes('Running')) {
+        const traceFamilies = context.injuryPolicyTrace?.regionMappingFamilies ?? [];
+        const hasSpecificNonImpactFamilies = traceFamilies.length > 0 && !traceFamilies.includes('lower_limb_impact');
+        if (!hasSpecificNonImpactFamilies) {
+            restrictedModalities.push('Running');
+        }
+    }
+
     const clinicalFlagActive = isPain || hasActiveInjury;
     let maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard' = 'Hard';
     if (readiness.subjective.alreadyTrainedToday) maxAllowableTier = 'Rest';

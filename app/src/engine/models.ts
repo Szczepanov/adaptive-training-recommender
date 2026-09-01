@@ -15,6 +15,7 @@ export interface SubjectiveInput {
     motivation: number; // 1-10
     timeAvailable: number; // Minutes
     painFlag: boolean;     // Injury/Pain flag
+    clinicalEnvelopeSources?: ClinicalEnvelopeSource[];
     alreadyTrainedToday: boolean; // User-reported: a session was already completed today
     /** Today's explicit modality ask from the check-in (e.g. 'Running', 'Strength',
      *  'Mobility'), or null for no preference. Compared case-insensitively against
