@@ -15,13 +15,17 @@ describe('subjective readiness knowledge pack', () => {
         const contextual = getActiveKnowledgeClaim(SUBJECTIVE_READINESS_CLAIM_IDS.contextualMonitoring);
         const measurement = getActiveKnowledgeClaim(SUBJECTIVE_READINESS_CLAIM_IDS.measurementQualityLimits);
         const cutpoints = getActiveKnowledgeClaim(SUBJECTIVE_READINESS_CLAIM_IDS.exactCutpointLimits);
-        expect(contextual).toMatchObject({ maturity: 'supported', evidenceCertainty: 'moderate', recommendationStrength: 'informational', safetyImpact: 'high' });
+        expect(contextual).toMatchObject({ maturity: 'supported', evidenceCertainty: 'low', recommendationStrength: 'informational', safetyImpact: 'high' });
         expect(contextual.statement).toContain('do not independently establish medical cause');
+        expect(contextual.limitations.some(limit => limit.includes('very low'))).toBe(true);
         expect(measurement.statement).toContain('incompletely established measurement properties');
+        expect(measurement.limitations.some(limit => limit.includes('instrument-specific'))).toBe(true);
         expect(cutpoints.statement).toContain('does not validate');
         [contextual, measurement, cutpoints].forEach(claim => {
             expect(claim.evidence.some(link => getKnowledgeSource(link.sourceId).sourceType === 'product_policy')).toBe(false);
         });
+        expect(contextual.evidence.some(link => getKnowledgeSource(link.sourceId).externalIds?.some(id => id.type === 'pmid' && id.value === '40159621'))).toBe(true);
+        expect(measurement.evidence.some(link => getKnowledgeSource(link.sourceId).externalIds?.some(id => id.type === 'pmid' && id.value === '38451830'))).toBe(true);
     });
 
     it('records the live classifier as high-safety product policy rather than scientific threshold authority', () => {
