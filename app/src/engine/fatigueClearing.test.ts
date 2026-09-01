@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DimensionalFatigue, FatigueState, UserPreferences } from './models';
 import type { ResolvedAvailability } from './schedule';
 import { combineFatigue, computeInternalResponseStrain, decayFatigue } from './fatigue';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { rankCandidates } from './optimizer';
 import { workoutForTemplate } from '../workouts/prescription';
 
@@ -41,8 +41,8 @@ describe('macrocycle v5 recovery and strength contracts', () => {
     });
 
     it('prefers complete rest for passive/mixed recover-tier days and active recovery only when explicitly active', () => {
-        const rest = ENRICHED_TEMPLATES.find(template => template.id === 'rest_01');
-        const mobility = ENRICHED_TEMPLATES.find(template => template.id === 'mob_01');
+        const rest = ENRICHED_TEMPLATES_BY_ID.get('rest_01');
+        const mobility = ENRICHED_TEMPLATES_BY_ID.get('mob_01');
         if (!rest || !mobility) throw new Error('recovery templates missing');
 
         const rank = (style: UserPreferences['preferredRecoveryStyle']) => rankCandidates(
@@ -64,7 +64,7 @@ describe('macrocycle v5 recovery and strength contracts', () => {
     });
 
     it('keeps primary full-body strength reachable inside the modify ceiling without relaxing recover', () => {
-        const reduced = ENRICHED_TEMPLATES.find(template => template.id === 'str_full_03');
+        const reduced = ENRICHED_TEMPLATES_BY_ID.get('str_full_03');
         if (!reduced) throw new Error('str_full_03 missing');
         expect(reduced.category).toBe('Full-body Strength');
         expect(reduced.systemicCost).toBeLessThanOrEqual(0.5);

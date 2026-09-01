@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateWeekAheadPlanWithIntent } from './planner';
-import { TEMPLATES } from './templates';
+import { TEMPLATES_BY_ID } from './templates';
 import { DEFAULT_BASE_DEMAND } from './periodization';
 import type { DailyReadiness, Recommendation, TrainingIntentProfile, UserContext, UserEvent, UserPreferences } from './models';
 import type { TrainingHistoryProvider } from './trainingHistory';
@@ -14,7 +14,7 @@ const context: UserContext = { goals: { shortTerm: '', midTerm: '', longTerm: ''
 const preferences: UserPreferences = { userId: 'u1', preferredRecoveryStyle: 'mixed', defaultWeekdayTimeMin: 60, defaultWeekendTimeMin: 60, preferredTimeOfDay: 'flexible', preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [], explanationVerbosity: 'detailed', conservativeBias: false, preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' }, schemaVersion: 1, createdAt: '', updatedAt: '' };
 const profile: TrainingIntentProfile = { userId: 'u1', planningMode: 'evergreen', priorities: ['health'], weeklyCommitment: { minSessions: 2, targetSessions: 3, maxSessions: 4 }, organizationPreference: 'auto', schemaVersion: 1, createdAt: '', updatedAt: '' };
 const cyclingEvent: UserEvent = { id: 'race', title: 'Ignored by evergreen', date: '2026-09-13', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event', demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.7, repeatedSurges: 0.7, sprintPower: 0.3, fatigueResistance: 0.8, neuromuscular: 0.3 } };
-const today: Recommendation = { template: TEMPLATES.find(template => template.id === 'rest_01')!, rationale: 'fixture', mode: 'recover' };
+const today: Recommendation = { template: TEMPLATES_BY_ID.get('rest_01')!, rationale: 'fixture', mode: 'recover' };
 
 describe('evergreen week-ahead integration', () => {
     it('uses packed evergreen objectives instead of an event demand vector', async () => {

@@ -8,7 +8,7 @@ import type {
     WorkoutStimulusProfile,
 } from './models';
 import { WORKOUTS } from '../workouts/catalog';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { ANCHOR_HISTORY_CATEGORIES } from './optimizer';
 
 /**
@@ -81,10 +81,14 @@ function staticSessionRole(category: SessionTemplate['category']): SessionRole {
  */
 export function derivePlanningCandidate(
     workout: WorkoutDefinition,
-    templates: SessionTemplate[]
+    templates: readonly SessionTemplate[] | ReadonlyMap<string, SessionTemplate>
 ): PlanningCandidate | null {
     const templateId = workout.engineTemplateIds?.[0];
-    const template = templateId ? templates.find(t => t.id === templateId) : undefined;
+    const template = templateId
+        ? (templates instanceof Map
+            ? templates.get(templateId)
+            : (templates as readonly SessionTemplate[]).find(t => t.id === templateId))
+        : undefined;
     if (!template) return null;
 
     const environment: TrainingEnvironment[] = workout.technicalRequirements?.environment.length
@@ -117,13 +121,18 @@ export function derivePlanningCandidate(
  *  what detail they carry. Built once at module load, same convention as
  *  `ENRICHED_TEMPLATES` -- the catalog and template roster are both static data. */
 export function buildPlanningCandidateIndex(
-    workouts: WorkoutDefinition[],
-    templates: SessionTemplate[]
+    workouts: readonly WorkoutDefinition[],
+    templates: readonly SessionTemplate[] | ReadonlyMap<string, SessionTemplate>
 ): Map<string, PlanningCandidate> {
     const index = new Map<string, PlanningCandidate>();
+    const templatesById: ReadonlyMap<string, SessionTemplate> = templates instanceof Map
+        ? templates
+        : new Map((templates as readonly SessionTemplate[]).map(t => [t.id, t]));
+    const workoutsById = new Map(workouts.map(w => [w.id, w]));
+
     for (const workout of workouts) {
         if (workout.status !== 'active' || workout.manualOnly) continue;
-        const candidate = derivePlanningCandidate(workout, templates);
+        const candidate = derivePlanningCandidate(workout, templatesById);
         if (!candidate) continue;
         const templateId = workout.engineTemplateIds?.[0];
         if (!templateId) continue;
@@ -134,7 +143,7 @@ export function buildPlanningCandidateIndex(
         // "which workout represents this template" answers would otherwise disagree the
         // moment more than one workout links to the same template id.
         const existingWorkout = index.has(templateId)
-            ? workouts.find(w => w.id === index.get(templateId)!.workoutId)
+            ? workoutsById.get(index.get(templateId)!.workoutId)
             : undefined;
         if (existingWorkout && (workout.engineTemplatePriority ?? 1) >= (existingWorkout.engineTemplatePriority ?? 1)) continue;
         index.set(templateId, candidate);
@@ -142,7 +151,7 @@ export function buildPlanningCandidateIndex(
     return index;
 }
 
-export const PLANNING_CANDIDATE_INDEX: Map<string, PlanningCandidate> = buildPlanningCandidateIndex(WORKOUTS, ENRICHED_TEMPLATES);
+export const PLANNING_CANDIDATE_INDEX: Map<string, PlanningCandidate> = buildPlanningCandidateIndex(WORKOUTS, ENRICHED_TEMPLATES_BY_ID);
 
 /** Convenience resolver matching optimizer.ts's `OptimizationOptions.resolveMinimumDaysAfterHardLowerBody`
  *  shape -- looks up the per-workout spacing requirement for a given engine template id,

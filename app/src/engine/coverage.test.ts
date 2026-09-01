@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveDemandProfile } from './eventPresets';
 import { buildCyclingEventPlan } from './planSchedule';
 import {
@@ -39,8 +39,8 @@ describe('Phase 6.2c explicit weekly coverage', () => {
     });
 
     it('keeps the Running legacy bridge reachable without weakening the aerobic-volume duration floor', () => {
-        const running = ENRICHED_TEMPLATES.find(template => template.id === 'end_easy_02');
-        const cycling = ENRICHED_TEMPLATES.find(template => template.id === 'end_easy_01');
+        const running = ENRICHED_TEMPLATES_BY_ID.get('end_easy_02');
+        const cycling = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01');
         if (!running || !cycling) throw new Error('Continuous aerobic engine templates missing');
 
         expect(running.durationMin).toBe(30);
@@ -59,7 +59,7 @@ describe('Phase 6.2c explicit weekly coverage', () => {
         // walking_brisk_continuous_01 close that gap the same way end_easy_02 closed it for
         // Running: a genuinely purposeful continuous exposure, distinct from generic
         // recovery walking, at or above the shared 30-minute continuous-aerobic floor.
-        const walking = ENRICHED_TEMPLATES.find(template => template.id === 'end_walk_01');
+        const walking = ENRICHED_TEMPLATES_BY_ID.get('end_walk_01');
         if (!walking) throw new Error('Continuous walking engine template missing');
 
         expect(walking.modality).toBe('Walking');

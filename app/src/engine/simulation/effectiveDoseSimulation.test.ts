@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import type { Recommendation } from '../models';
-import { ENRICHED_TEMPLATES } from '../templates';
+import { ENRICHED_TEMPLATES_BY_ID } from '../templates';
 import { materializeEffectiveSimulationTemplate, recommendationAsDay, toCompletedExposure, traceFromRecommendation } from './analyze';
 
 describe('effective-dose simulation evidence', () => {
     it('carries an automatic easier dose into traces and accumulated simulation history', () => {
-        const template = ENRICHED_TEMPLATES.find(item => item.id === 'mob_01');
+        const template = ENRICHED_TEMPLATES_BY_ID.get('mob_01');
         expect(template?.easierDose).toBeDefined();
         if (!template?.easierDose) throw new Error('mob_01 must expose easierDose for this regression fixture');
 

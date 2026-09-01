@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
-import { TEMPLATES } from './templates';
+import { TEMPLATES, TEMPLATES_BY_ID } from './templates';
 import type { SessionTemplate, TrainingSettings, UserContext } from './models';
 
 function settings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
@@ -26,7 +26,7 @@ function context(trainingSettings: TrainingSettings): UserContext {
 
 describe('training-settings eligibility', () => {
     it('requires a pull-up bar for the pull-up strength template', () => {
-        const result = evaluateTemplateEligibility(TEMPLATES.find(t => t.id === 'str_upper_pull_01')!, context(settings()), 60, '2026-08-07');
+        const result = evaluateTemplateEligibility(TEMPLATES_BY_ID.get('str_upper_pull_01')!, context(settings()), 60, '2026-08-07');
         expect(result.eligible).toBe(false);
         expect(result.reasons).toContain('equipment');
     });
@@ -41,7 +41,7 @@ describe('training-settings eligibility', () => {
         const ctx = context(profile);
         ctx.constraints.restrictedModalities = ['Cycling'];
 
-        const result = evaluateTemplateEligibility(TEMPLATES.find(t => t.id === 'cycling_technical_01')!, ctx, 60, '2026-08-07');
+        const result = evaluateTemplateEligibility(TEMPLATES_BY_ID.get('cycling_technical_01')!, ctx, 60, '2026-08-07');
         expect(result.eligible).toBe(false);
         expect(result.reasons).toContain('restricted_modality');
         expect(eligibleTemplates(TEMPLATES, ctx, 60, '2026-08-07').some(t => t.modality === 'Cycling')).toBe(false);
@@ -113,7 +113,7 @@ describe('training-settings eligibility', () => {
         const ctx = context(profile);
         ctx.constraints.restrictedCategories = ['Upper-body Strength'];
 
-        const result = evaluateTemplateEligibility(TEMPLATES.find(t => t.id === 'str_upper_pull_01')!, ctx, 60, '2026-08-07');
+        const result = evaluateTemplateEligibility(TEMPLATES_BY_ID.get('str_upper_pull_01')!, ctx, 60, '2026-08-07');
         expect(result.eligible).toBe(false);
         expect(result.reasons).toContain('restricted_category');
 

@@ -5,7 +5,7 @@ import type { SessionTemplate, TrainingSettings, UserContext, UserEvent, UserGoa
 import { rankCandidates, rankCandidatesByUtility } from './optimizer';
 import { deriveEventPriority, deriveGoalCategory, evaluatePeriodizationPhase, getDaysToEvent, goalToUserEvent, isTemplatePhaseEligible } from './periodization';
 import { resolveAvailability } from './schedule';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { eligibleTemplates } from './eligibility';
 
@@ -542,7 +542,7 @@ describe('Architecture & Phased Engine Integration', () => {
 
         it('excludes every Race-Specific Endurance template when no focus event governs the day', () => {
             const noEvent = evaluatePeriodizationPhase([], '2026-08-07');
-            raceSpecificIds.forEach(id => expect(isTemplatePhaseEligible(ENRICHED_TEMPLATES.find(t => t.id === id)!, noEvent)).toBe(false));
+            raceSpecificIds.forEach(id => expect(isTemplatePhaseEligible(ENRICHED_TEMPLATES_BY_ID.get(id)!, noEvent)).toBe(false));
         });
 
         it('progresses eligibility from event-specific endurance -> race simulation -> taper sharpening -> pre-race openers as the event approaches', () => {
@@ -550,7 +550,7 @@ describe('Architecture & Phased Engine Integration', () => {
             const specificityPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-27')], '2026-08-07');
             const taperPhase = evaluatePeriodizationPhase([cyclingEvent('2026-08-14', { startDate: '2026-08-07' })], '2026-08-07');
             const finalDays = evaluatePeriodizationPhase([cyclingEvent('2026-08-09', { startDate: '2026-08-07' })], '2026-08-07');
-            const eligible = (result: typeof buildPhase, id: string) => isTemplatePhaseEligible(ENRICHED_TEMPLATES.find(t => t.id === id)!, result);
+            const eligible = (result: typeof buildPhase, id: string) => isTemplatePhaseEligible(ENRICHED_TEMPLATES_BY_ID.get(id)!, result);
             expect(eligible(buildPhase, 'end_race_specific_01')).toBe(true);
             expect(eligible(buildPhase, 'end_race_sim_01')).toBe(false);
             expect(eligible(buildPhase, 'end_taper_sharpen_01')).toBe(false);

@@ -52,6 +52,14 @@ export const KNOWLEDGE_CLAIM_IDS = {
     ...TAPER_FUELING_CLAIM_IDS,
 } as const;
 
+export const SPORTS_KNOWLEDGE_SOURCES_BY_ID: ReadonlyMap<string, KnowledgeSource> = new Map(
+    SPORTS_KNOWLEDGE_SOURCES.map(source => [source.id, source])
+);
+
+export const SPORTS_KNOWLEDGE_CLAIMS_BY_ID: ReadonlyMap<string, KnowledgeClaim> = new Map(
+    SPORTS_KNOWLEDGE_CLAIMS.map(claim => [claim.id, claim])
+);
+
 /** Validate the complete cross-domain registry, including duplicate identifiers and lineage. */
 export function validateCanonicalSportsKnowledgeRegistry(): KnowledgeRegistryValidation {
     return validateSportsKnowledgeRegistry(SPORTS_KNOWLEDGE_SOURCES, SPORTS_KNOWLEDGE_CLAIMS);
@@ -59,7 +67,7 @@ export function validateCanonicalSportsKnowledgeRegistry(): KnowledgeRegistryVal
 
 /** Resolve a claim from the canonical registry or fail closed for an unknown identifier. */
 export function getKnowledgeClaim(id: string): KnowledgeClaim {
-    const claim = SPORTS_KNOWLEDGE_CLAIMS.find(candidate => candidate.id === id);
+    const claim = SPORTS_KNOWLEDGE_CLAIMS_BY_ID.get(id);
     if (!claim) throw new Error(`Unknown sports knowledge claim: ${id}`);
     return claim;
 }
@@ -75,7 +83,7 @@ export function getActiveKnowledgeClaim(id: string): KnowledgeClaim {
 
 /** Resolve a source from the canonical cross-domain registry. */
 export function getKnowledgeSource(id: string): KnowledgeSource {
-    const source = SPORTS_KNOWLEDGE_SOURCES.find(candidate => candidate.id === id);
+    const source = SPORTS_KNOWLEDGE_SOURCES_BY_ID.get(id);
     if (!source) throw new Error(`Unknown sports knowledge source: ${id}`);
     return source;
 }

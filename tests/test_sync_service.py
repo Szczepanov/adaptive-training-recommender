@@ -416,7 +416,7 @@ def test_push_workout_fails_when_garmin_does_not_return_a_workout_id():
     )
 
     result = service.push_workout(
-        date_str="2026-08-17",
+        date_str="2026-09-01",
         workout_payload={"title": "Easy ride", "modality": "cycling", "blocks": []},
     )
 
@@ -429,7 +429,7 @@ def test_push_workout_does_not_authenticate_when_the_queue_is_empty():
     service = GarminSyncService(settings=settings, repository=MagicMock(db=None))
     service._init_garmin_client = MagicMock()
 
-    result = service.push_workout(date_str="2026-08-17")
+    result = service.push_workout(date_str="2026-09-01")
 
     assert result is False
     service._init_garmin_client.assert_not_called()
@@ -451,7 +451,7 @@ def test_push_workout_skips_already_synced_queue_item():
     client = MagicMock()
     service = GarminSyncService(settings=settings, repository=mock_repo, garmin_client=client)
 
-    result = service.push_workout(date_str="2026-08-17")
+    result = service.push_workout(date_str="2026-09-01")
 
     assert result is True
     client.upload_workout.assert_not_called()
@@ -473,17 +473,17 @@ def test_push_pending_workouts_pushes_each_pending_item_and_marks_synced():
     mock_repo = MagicMock()
     docs = [
         _FakeQueueDoc(
-            "2026-08-17",
+            "2026-09-01",
             {
-                "date": "2026-08-17",
+                "date": "2026-09-01",
                 "status": "pending",
                 "payload": {"title": "Ride A", "modality": "cycling", "blocks": []},
             },
         ),
         _FakeQueueDoc(
-            "2026-08-18",
+            "2026-09-02",
             {
-                "date": "2026-08-18",
+                "date": "2026-09-02",
                 "status": "pending",
                 "payload": {"title": "Ride B", "modality": "cycling", "blocks": []},
             },
