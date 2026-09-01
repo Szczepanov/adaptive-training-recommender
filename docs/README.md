@@ -162,6 +162,11 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-08-30 PR #306 Respiration Shadow-Evidence Hardening**](./analysis/2026-08-30-pr-306-respiration-shadow-review.md) — Engineering and replay semantics review for respiration elevation shadow evidence.
 * [**2026-08-31 Safety Evidence Pack Implementation-Plan Review**](./analysis/2026-08-31-safety-evidence-pack-plan-review.md) — Normative amendments for subjective readiness and injury/pain safety evidence implementation.
 * [**2026-08-31 SKR1 — Persisted Recommendation Knowledge Lineage**](./analysis/2026-08-31-skr1-persisted-knowledge-lineage.md) — Architecture analysis for persisting sports-knowledge identity in historical recommendation audits.
+* [**2026-09-01 Evidence Pack — Injury + Pain**](./analysis/2026-09-01-evidence-pack-injury-pain.md) — SKR3 evidence migration covering injury-constraint, tissue-response, and clinical-symptom policy.
+* [**2026-09-01 Evidence Pack — Subjective Readiness**](./analysis/2026-09-01-evidence-pack-subjective-readiness.md) — Targeted evidence appraisal for the live current-day subjective classifier.
+* [**2026-09-01 PR #321 Structured Strength Warm-ups Review**](./analysis/2026-09-01-pr-321-structured-strength-warmups-review.md) — Follow-up review of structured strength warm-ups and concurrent rest logging.
+* [**2026-09-01 SEP-C1 — Contextual Clinical Envelope Remediation**](./analysis/2026-09-01-sep-c1-contextual-clinical-envelope-remediation.md) — Remediation for decoupling non-allergy illness from the generic Running restriction.
+* [**Structured Strength and Garmin Activity Reconciliation Analysis**](./analysis/structured-strength-garmin-activity-reconciliation-analysis.md) — Architectural analysis for reconciling structured strength executions and Garmin activities into a canonical training occurrence.
 
 ---
 
