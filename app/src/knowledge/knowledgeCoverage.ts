@@ -13,7 +13,7 @@ export type KnowledgeResearchPriority = 'p0' | 'p1' | 'p2' | 'p3' | 'none';
 export type KnowledgeCoverageDomain =
     | 'evergreen_dose' | 'readiness_recovery' | 'fatigue_load' | 'injury_safety'
     | 'session_spacing' | 'optimizer_scoring' | 'periodization_taper' | 'event_demand'
-    | 'stimulus_credit' | 'data_trust' | 'planning_capacity';
+    | 'stimulus_credit' | 'data_trust' | 'planning_capacity' | 'workout_catalog';
 
 export interface EngineKnowledgeCoverageItem {
     /** Stable audit identity. Do not encode file names or line numbers into the id. */
@@ -55,6 +55,13 @@ export interface KnowledgeCoverageSummary {
  * therefore must keep a research priority.
  */
 export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] = [
+    {
+        id: 'workout_catalog.strength_warmup_invariant', domain: 'workout_catalog', title: 'Catalog strength warm-up invariant',
+        currentRule: 'Every active non-manual catalog strength workout begins with a non-empty warm-up block that remains inside its advertised session duration.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
+        codeRefs: ['workouts/validation.ts:validateWorkoutLibrary', 'workouts/catalog/*.ts'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.contextualPreparation, KNOWLEDGE_CLAIM_IDS.specificRehearsal],
+        coverageRationale: 'The rule is a cautious product implementation of conditional acute preparation and rehearsal evidence; it deliberately avoids a universal dose or injury-prevention claim.',
+    },
     {
         id: 'evergreen.adult_aerobic_weekly_volume', domain: 'evergreen_dose', title: 'Adult aerobic health-volume floor and range',
         currentRule: 'Evergreen health/balanced planning uses 150 min/week as the non-droppable aerobic floor and a 150-300 min target range.',

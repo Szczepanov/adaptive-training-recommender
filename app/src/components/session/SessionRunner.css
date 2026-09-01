@@ -300,6 +300,7 @@
     display: flex;
     gap: 0.4rem;
     flex-wrap: wrap;
+    margin-bottom: 0.75rem;
 }
 
 .step-nav-pill {

@@ -6,7 +6,8 @@ interface RepetitionInputCardProps {
     step: SessionStep;
     suggestedWeightKg?: number;
     suggestedReps?: number;
-    onSubmit: (payload: RepetitionEntryPayload) => void;
+    defaultIsWarmup?: boolean;
+    onSubmit: (payload: RepetitionEntryPayload) => void | Promise<void>;
 }
 
 type GaugeScaleType = 'none' | 'rpe' | 'rir' | 'velocity_loss' | 'technical';
@@ -15,13 +16,15 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
     step,
     suggestedWeightKg,
     suggestedReps,
+    defaultIsWarmup = false,
     onSubmit,
 }) => {
     const dose = step.dose;
     const defaultReps = suggestedReps ?? (dose?.kind === 'repetition' && typeof dose.reps === 'number' ? dose.reps : (dose?.kind === 'repetition' && typeof dose.reps === 'object' ? dose.reps.min : 8));
     const [reps, setReps] = useState<string>(String(defaultReps));
     const [weight, setWeight] = useState<string>(suggestedWeightKg !== undefined ? String(suggestedWeightKg) : '');
-    const [isWarmup, setIsWarmup] = useState<boolean>(false);
+    const [isWarmup, setIsWarmup] = useState<boolean>(defaultIsWarmup);
+    const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
     // Gauge state
     const [gaugeScale, setGaugeScale] = useState<GaugeScaleType>('rpe');
@@ -39,11 +42,15 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
             : 'e.g. 7';
 
     const weightRef = useRef<HTMLInputElement>(null);
+    // React state is not synchronous enough to guard two submit events in the same tick. The ref
+    // serializes writes so two rapid Enter/click events cannot receive the same persisted setIndex.
+    const submitInFlightRef = useRef(false);
 
     useEffect(() => {
         setReps(String(defaultReps));
         setWeight(suggestedWeightKg !== undefined ? String(suggestedWeightKg) : '');
-    }, [step.id, defaultReps, suggestedWeightKg]);
+        setIsWarmup(defaultIsWarmup);
+    }, [step.id, defaultReps, suggestedWeightKg, defaultIsWarmup]);
 
     useEffect(() => {
         if (weightRef.current) {
@@ -78,31 +85,40 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
         return undefined;
     };
 
-    const handleSubmit = (e: React.FormEvent) => {
+    const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
+        if (submitInFlightRef.current) return;
+
         const parsedReps = parseInt(reps, 10);
         if (isNaN(parsedReps) || parsedReps <= 0) return;
 
         const parsedWeight = weight.trim().length > 0 ? parseFloat(weight) : undefined;
         const gauge = buildGauge();
 
-        onSubmit({
-            kind: 'repetition',
-            setIndex: 1, // dynamically indexed by caller
-            reps: parsedReps,
-            ...(parsedWeight !== undefined ? { weightKg: parsedWeight } : {}),
-            isWarmup,
-            ...(gauge ? { gauge } : {}),
-        });
+        submitInFlightRef.current = true;
+        setIsSubmitting(true);
+        try {
+            await onSubmit({
+                kind: 'repetition',
+                setIndex: 1, // dynamically indexed by caller
+                reps: parsedReps,
+                ...(parsedWeight !== undefined ? { weightKg: parsedWeight } : {}),
+                isWarmup,
+                ...(gauge ? { gauge } : {}),
+            });
 
-        // Reset gauge value for next set
-        setGaugeVal('');
-        setTechnicalNote('');
+            // Reset gauge value for next set only after the write lifecycle has completed.
+            setGaugeVal('');
+            setTechnicalNote('');
 
-        // Refocus weight input for next set
-        if (weightRef.current) {
-            weightRef.current.focus();
-            weightRef.current.select();
+            // Refocus weight input for next set.
+            if (weightRef.current) {
+                weightRef.current.focus();
+                weightRef.current.select();
+            }
+        } finally {
+            submitInFlightRef.current = false;
+            setIsSubmitting(false);
         }
     };
 
@@ -231,8 +247,8 @@ export const RepetitionInputCard: React.FC<RepetitionInputCardProps> = ({
                 </div>
             </div>
 
-            <button type="submit" className="log-set-btn">
-                Log Set ⏎
+            <button type="submit" className="log-set-btn" disabled={isSubmitting}>
+                {isSubmitting ? 'Logging…' : 'Log Set ⏎'}
             </button>
         </form>
     );
