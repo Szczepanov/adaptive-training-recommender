@@ -1,11 +1,11 @@
 # Analysis — SEP-C3: Tissue Response Severity Latency & Lumbar Axial Guardrail Precision
 
 **Date:** 2026-09-01
-**Status:** In implementation
-**Branch:** `feat/sep-c3-tissue-response-severity`
+**Status:** Implemented and safety-hardened in PR #320
+**Branch:** `feat/sep-c4-clinical-escalation-protocol`
 **Supersedes:** `policy.injury.tissue_response_severity_v1`, `policy.injury.region_lumbar_loading_v1`
-**Policy Version:** `2026-09-safety-policy-remediation-sep-c3`
-**Prerequisites:** SEP-C1 (merged PR #319), SEP-C2 (commit `c89f1e41`)
+**Policy Version:** `2026-09-safety-policy-remediation-sep-c4`
+**Prerequisites:** SEP-C1 (merged PR #319), SEP-C2
 
 ---
 
@@ -20,68 +20,75 @@ if (worst === 'severe') return 'exclude';
 if (worst === 'moderate') return 'limit';
 if (worst === 'mild') return 'monitor';
 ```
-This naive worst-of aggregation ignored the well-established **24-hour response latency** in athletic load-management and tendinopathy progression frameworks (Escriche-Escuder et al. 2020 *BMJ Open*, Silbernagel et al. pain-monitoring model):
-- Mild to moderate discomfort during loading (e.g. pain level <= 5/10) is a normal physiological and rehabilitation response, **provided that symptoms settle promptly after the session and next-morning state returns to baseline (normal or mild)**.
-- If an athlete reports `painDuringTraining: 'moderate'` but both `afterTrainingState` and `nextMorningReaction` are `normal` (or `mild`), the tissue tolerated the training stimulus.
-- Under legacy logic, however, `painDuringTraining: 'moderate'` immediately produced `severity: 'limit'`, artificially imposing hard guardrails (`avoid_high_impact` or `avoid_heavy_lower_body`) and restricting progressive rehabilitation.
+This ignored response latency used in lower-limb tendinopathy load-progression and pain-monitoring frameworks (Escriche-Escuder et al. 2020; Silbernagel et al.). In those contexts, some discomfort during loading can be acceptable when symptoms settle and the next-morning response returns to the accepted range.
 
-### 1.2 Missing High-Impact Axial Guardrail for Severe Lumbar Constraints
-In `resolveInjuryRestrictions`:
-- For lower-limb impact regions (`knee`, `achilles`, `ankle`, `calf`), `limit` imposes `avoid_high_impact`, and `exclude` imposes `avoid_high_impact` plus restricts `Running`.
-- For `lower_back`:
-  - `limit` added `avoid_heavy_spinal_loading`.
-  - `exclude` added `avoid_heavy_spinal_loading` + `avoid_heavy_lower_body`.
-- However, severe lumbar injury (e.g. acute disc herniation, severe radiculopathy, acute facet lock; Herring et al. 2024 Initial MSK Assessment Consensus) contraindicates repetitive high-impact axial shock (`avoid_high_impact`), while permitting low-impact cross-training (walking, gentle cycling, swimming).
-- Leaving `avoid_high_impact` off `lower_back: exclude` allowed high-impact bounding/running workouts to be eligible unless the athlete manually configured preferences or explicit modality blocks.
+That evidence does **not** establish that every tissue, diagnosis, or acute injury can safely tolerate the same pain dose. SEP-C3 therefore uses the next-morning concept only as a conservative load-management heuristic. It does not diagnose tendinopathy and it does not use a numeric pain threshold as universal clinical permission.
+
+### 1.2 Missing Follow-up Was Initially Fail-Open
+The first SEP-C3 implementation correctly documented that transient moderate during-session discomfort should only resolve to `monitor` when post-session **and** next-morning observations are normal/mild. However, the implementation did not require those later observations to exist. A response with only `painDuringTraining: 'moderate'` could therefore be treated as settled.
+
+That is unsafe because absence of follow-up is unknown, not evidence of recovery. PR #320 now fails closed:
+- moderate during-session discomfort with incomplete post-session or next-morning follow-up -> `limit`;
+- downgrade to `monitor` only after both later observations are explicitly present and each is `normal` or `mild`.
+
+### 1.3 Missing High-Impact Axial Guardrail for Severe Lumbar Constraints
+For `lower_back: exclude`, the policy now adds `avoid_high_impact` alongside `avoid_heavy_spinal_loading` and `avoid_heavy_lower_body`. This is a product guardrail for a severe lumbar constraint, not a diagnosis-specific treatment recommendation. Individual lumbar presentations vary, and red-flag neurological/systemic symptoms are handled separately by SEP-C4 clinical escalation.
 
 ---
 
 ## 2. Policy Specifications (SEP-C3 V2)
 
 ### 2.1 24-Hour Latency-Aware Tissue Severity Resolver (`deriveTissueSeverity`)
-The refined `deriveTissueSeverity` evaluator distinguishes between transient during-session discomfort and persistent post-training or delayed next-morning reactivity:
 
-1. **Severe Persistence or Reactivity** (`exclude`):
-   - Any report of `severe` across `morningState`, `painDuringTraining`, `afterTrainingState`, or `nextMorningReaction` yields `'exclude'`.
-2. **Persistent or Delayed Moderate Irritation** (`limit`):
-   - If `morningState === 'moderate'`, `afterTrainingState === 'moderate'`, or `nextMorningReaction === 'moderate'`, the tissue exhibits persistent or delayed irritation -> `'limit'`.
-3. **Transient During-Session Loading Discomfort** (`monitor`):
-   - If `painDuringTraining === 'moderate'` BUT post-session state (`afterTrainingState`) and delayed reaction (`nextMorningReaction`) settled to `normal` or `mild` (and waking `morningState` is not moderate/severe), the loading was tolerated -> `'monitor'`.
-4. **Mild Response** (`monitor`):
-   - Any remaining signal that is `'mild'` -> `'monitor'`.
-5. **Normal or Absent** (`null`):
-   - All observed signals `'normal'` (or unentered) -> `null` (no derived constraint).
+1. **Severe observation (`exclude`)**
+   - Any `severe` observation across `morningState`, `painDuringTraining`, `afterTrainingState`, or `nextMorningReaction` crosses the automated-training exclusion boundary.
+2. **Persistent or delayed moderate response (`limit`)**
+   - `morningState === 'moderate'`, `afterTrainingState === 'moderate'`, or `nextMorningReaction === 'moderate'` -> `limit`.
+3. **Moderate during-session discomfort with complete settled follow-up (`monitor`)**
+   - `painDuringTraining === 'moderate'` may resolve to `monitor` only when both `afterTrainingState` and `nextMorningReaction` are explicitly recorded and each is `normal` or `mild`.
+4. **Moderate during-session discomfort with incomplete follow-up (`limit`)**
+   - Missing post-session or next-morning observation remains `limit` until the response latency is actually observed.
+5. **Mild response (`monitor`)**
+   - Any remaining `mild` signal -> `monitor`.
+6. **Normal or absent (`null`)**
+   - No adverse observed signal -> no derived constraint.
 
-### 2.2 Lumbar Axial Shock Offloading (`resolveInjuryRestrictions`)
+### 2.2 Lumbar Loading Guardrails (`resolveInjuryRestrictions`)
 For `region === 'lower_back'`:
-- `severity === 'limit'`: `impliedGuardrails: ['avoid_heavy_spinal_loading']`.
-- `severity === 'exclude'`: `impliedGuardrails: ['avoid_heavy_spinal_loading', 'avoid_heavy_lower_body', 'avoid_high_impact']`.
+- `severity === 'limit'`: `avoid_heavy_spinal_loading`.
+- `severity === 'exclude'`: `avoid_heavy_spinal_loading`, `avoid_heavy_lower_body`, `avoid_high_impact`.
 
 ---
 
 ## 3. Behavior Comparison Matrix
 
-| Scenario | Pre-SEP-C3 Severity | SEP-C3 V2 Severity | Clinical / Evidence Rationale |
+| Scenario | Pre-SEP-C3 | SEP-C3 V2 | Safety rationale |
 |---|---|---|---|
-| During: moderate; Post: normal; Next morning: normal | `limit` | `monitor` | Tolerable loading; discomfort resolved within 24h window (Escriche-Escuder 2020). |
-| During: moderate; Post: moderate; Next morning: normal | `limit` | `limit` | Post-session persistence demonstrates excessive tissue stress. |
-| During: moderate; Post: normal; Next morning: moderate | `limit` | `limit` | Delayed next-morning flare demonstrates failure of load tolerance. |
-| During: severe; Post: normal; Next morning: normal | `exclude` | `exclude` | Severe pain during session is an acute red-flag signal. |
-| Waking morningState: moderate | `limit` | `limit` | Baseline active symptoms require load bounding. |
-| Waking morningState: severe | `exclude` | `exclude` | Acute irritability requires complete regional offloading. |
-| Lower back: exclude | `avoid_heavy_spinal_loading`, `avoid_heavy_lower_body` | `avoid_heavy_spinal_loading`, `avoid_heavy_lower_body`, `avoid_high_impact` | Offloads repetitive high-impact axial shock in acute lumbar injury (Herring 2024). |
+| During moderate; post normal; next morning normal | `limit` | `monitor` | Later observations explicitly settled. |
+| During moderate; post mild; next morning mild | `limit` | `monitor` | Later observations explicitly settled within the configured response scale. |
+| During moderate; post missing; next morning normal | `limit` | `limit` | Missing post-session observation is unknown. |
+| During moderate; post normal; next morning missing | `limit` | `limit` | 24-hour response has not yet been observed. |
+| During moderate; post moderate | `limit` | `limit` | Persistent response. |
+| During moderate; next morning moderate | `limit` | `limit` | Delayed reactivity. |
+| Any severe observation | `exclude` | `exclude` | Automated training is stopped for that regional constraint. |
+| Lower back `exclude` | two loading guardrails | three loading guardrails including `avoid_high_impact` | Conservative severe-lumbar loading boundary. |
 
 ---
 
-## 4. Knowledge Registry & Versioning Lineage
+## 4. Evidence Interpretation
 
-1. **`app/src/knowledge/injuryPainKnowledge.ts`**:
-   - Register `policy.injury.tissue_response_severity_v2` (supersedes `_v1`).
-   - Register `policy.injury.region_lumbar_loading_v2` (supersedes `_v1`).
-   - Deprecate `policy.injury.tissue_response_severity_v1` and `policy.injury.region_lumbar_loading_v1`.
-   - Update `INJURY_PAIN_POLICY_DESCRIPTOR`.
-2. **`app/src/knowledge/knowledgeCoverage.ts`**:
-   - Update `injury.tissue_response_severity` and `injury.region_mapping.lumbar_loading` rules and rationales.
-3. **`app/src/engine/policy.ts`**:
-   - Bump `POLICY_VERSION` to `'2026-09-safety-policy-remediation-sep-c3'`.
-   - Add `'2026-09-safety-policy-remediation-sep-c2'` to `HISTORICAL_POLICY_VERSIONS`.
+- Escriche-Escuder A, Casaña J, Cuesta-Vargas AI. *Load progression criteria in exercise programmes in lower limb tendinopathy: a systematic review.* BMJ Open. 2020;10:e041433. The review supports symptom-response/load-progression monitoring but also shows heterogeneous criteria; it does not validate a universal tissue-severity classifier.
+- Silbernagel-style pain-monitoring work in Achilles tendinopathy permits continued loading within a monitored symptom envelope and requires symptoms to settle by the following morning. This is condition-specific rehabilitation evidence and must not be generalized into a diagnosis claim.
+- Herring et al. 2024 provides consensus guidance for initial musculoskeletal assessment. It supports conservative escalation when significant structural/neurological findings are suspected but does not provide the exact software guardrail mapping used here.
+
+**Product-policy boundary:** `monitor`, `limit`, `exclude`, and the exact guardrail mappings are application policy choices informed by evidence. They are not evidence-derived clinical diagnoses or validated medical-device thresholds.
+
+---
+
+## 5. Verification Added in PR #320
+
+`app/src/engine/injuryPolicyLatencySafety.test.ts` covers the previously untested missing-follow-up states:
+- missing post-session observation -> `limit`;
+- missing next-morning observation -> `limit`;
+- complete normal/mild follow-up -> `monitor`;
+- delayed moderate flare -> `limit`.
