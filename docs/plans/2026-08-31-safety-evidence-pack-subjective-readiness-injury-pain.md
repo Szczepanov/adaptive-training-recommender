@@ -1,7 +1,7 @@
 # Safety Evidence Pack — Subjective Readiness + Injury/Pain
 
 **Date:** 2026-08-31
-**Status:** In progress — SEP-A, SEP-B, and SEP-C1 merged on `main`; SEP-C2 and SEP-C3 (tissue response severity latency & lumbar guardrail precision) implemented locally.
+**Status:** Implemented — SEP-A, SEP-B, and SEP-C1 merged on `main`; SEP-C2, SEP-C3, and SEP-C4 implemented and verified.
 **Blocked by:** None. SKR1 (PR #312), SEP-A (PR #317), SEP-B (PR #318), and SEP-C1 (PR #319) are on `main`.
 **Unlocks:** SEP-C behavior remediation and versioned policy releases.
 **Priority:** P0 / high-safety debt.
@@ -954,11 +954,10 @@ Reason to split from SEP-A: clinical directness and region heterogeneity make th
 
 Possible independent PRs:
 
-- replace generic pain->Running/Mobility mapping with structured pain context;
-- recalibrate subjective thresholds;
-- change tissue severity semantics;
-- refine one region cluster's restriction rules;
-- add clinical escalation/red-flag flow.
+- replace generic pain->Running/Mobility mapping with structured pain context (**SEP-C1 — PR #319 merged**);
+- recalibrate subjective thresholds (**SEP-C2 — implemented & verified**);
+- change tissue severity semantics & lumbar guardrails (**SEP-C3 — implemented & verified**);
+- add clinical escalation/red-flag flow (**SEP-C4 — implemented & verified**).
 
 Each behavior PR requires:
 
