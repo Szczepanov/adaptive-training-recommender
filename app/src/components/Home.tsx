@@ -54,7 +54,7 @@ import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { activityOverrideService } from '../services/activityOverrideService';
 import { activityService } from '../services/activityService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
-import { TEMPLATES } from '../engine/templates';
+import { TEMPLATES, TEMPLATES_BY_ID } from '../engine/templates';
 import type { ActivityOverride, DailyRecoverySnapshot, NormalizedGarminActivity } from '../engine/models';
 import type { ErrorRepairAction } from './errorRepairAction';
 import { useAutoGarminSync } from '../hooks/useAutoGarminSync';
@@ -650,7 +650,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     // Apply situational alternative if active
     if (alternativeId) {
       if (alternativeId === 'mobility') {
-        const mobTemplate = TEMPLATES.find(t => t.id === 'mob_01') ?? TEMPLATES.find(t => t.modality === 'Mobility') ?? base.template;
+        // Optimization: Use O(1) Map lookup instead of O(N) array .find()
+        const mobTemplate = TEMPLATES_BY_ID.get('mob_01') ?? TEMPLATES.find(t => t.modality === 'Mobility') ?? base.template;
         base = {
           ...base,
           template: mobTemplate,
@@ -660,7 +661,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           primarySession: undefined,
         };
       } else if (alternativeId === 'recovery-walk') {
-        const recTemplate = TEMPLATES.find(t => t.id === 'mob_01') ?? base.template;
+        // Optimization: Use O(1) Map lookup instead of O(N) array .find()
+        const recTemplate = TEMPLATES_BY_ID.get('mob_01') ?? base.template;
         base = {
           ...base,
           template: {
@@ -676,7 +678,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           primarySession: undefined,
         };
       } else if (alternativeId === 'home-bodyweight') {
-        const bwTemplate = TEMPLATES.find(t => t.id === 'mob_travel_flow_01') ?? TEMPLATES.find(t => t.id === 'mob_01') ?? base.template;
+        // Optimization: Use O(1) Map lookup instead of O(N) array .find()
+        const bwTemplate = TEMPLATES_BY_ID.get('mob_travel_flow_01') ?? TEMPLATES_BY_ID.get('mob_01') ?? base.template;
         base = {
           ...base,
           template: bwTemplate,

@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import type { SessionStep } from '../../sessions/models';
-import { EXERCISES } from '../../workouts/exercises';
+import { EXERCISES, EXERCISES_BY_ID } from '../../workouts/exercises';
 import { stepName } from '../../sessions/stepDisplay';
 import './ExerciseSwapModal.css';
 
@@ -59,7 +59,8 @@ export const ExerciseSwapModal: React.FC<ExerciseSwapModalProps> = ({
         }
 
         if (!selectedExerciseId) return;
-        const exercise = EXERCISES.find(e => e.id === selectedExerciseId);
+        // Optimization: Use O(1) Map lookup instead of O(N) array .find()
+        const exercise = EXERCISES_BY_ID.get(selectedExerciseId);
         if (!exercise) return;
 
         onSwap({
