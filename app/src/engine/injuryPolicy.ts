@@ -138,11 +138,16 @@ function moreSevere(a: InjuryConstraint['severity'], b: InjuryConstraint['severi
  * Evaluates today's tissue-response observations with 24-hour response latency:
  * 1. Severe at any point (morning, during, post, or next morning) -> 'exclude'.
  * 2. Persistent post-session or next-morning irritability (or waking morningState) at moderate -> 'limit'.
- * 3. Transient during-session loading discomfort (painDuringTraining === 'moderate') that
- *    settles post-session and next morning (normal/mild) -> 'monitor' (tolerable load response,
- *    Escriche-Escuder 2020).
+ * 3. Transient during-session loading discomfort (painDuringTraining === 'moderate') is
+ *    downgraded to 'monitor' only when BOTH post-session and next-morning observations
+ *    are explicitly present and normal/mild. Missing follow-up is unknown, not evidence
+ *    that the response settled, so it remains 'limit' until the latency window is observed.
  * 4. Mild at any point -> 'monitor'.
  * 5. Normal or absent -> null.
+ *
+ * The settle-by-next-morning rule is adapted from pain-monitoring/load-progression work in
+ * lower-limb tendinopathy. It is a conservative load-management heuristic here, not a
+ * diagnosis or evidence that every tissue/condition can safely tolerate the same pain dose.
  */
 export function deriveTissueSeverity(response: RegionTissueResponse): InjuryConstraint['severity'] | null {
     const { morningState, painDuringTraining, afterTrainingState, nextMorningReaction } = response;
@@ -150,22 +155,27 @@ export function deriveTissueSeverity(response: RegionTissueResponse): InjuryCons
         .filter((level): level is TissueResponseLevel => level !== undefined);
     if (levels.length === 0) return null;
 
-    // Any severe signal is an acute red-flag/exclusion boundary
+    // Any severe signal crosses the automated-training exclusion boundary.
     if (levels.some((level) => level === 'severe')) {
         return 'exclude';
     }
 
-    // Persistent or delayed moderate irritability: waking morningState, post-exercise, or next morning
+    // Persistent or delayed moderate irritability: waking morningState, post-exercise, or next morning.
     if (morningState === 'moderate' || afterTrainingState === 'moderate' || nextMorningReaction === 'moderate') {
         return 'limit';
     }
 
-    // Transient during-session moderate discomfort that settled (post-training and next morning are normal/mild)
     if (painDuringTraining === 'moderate') {
-        return 'monitor';
+        const settledLevel = (level: TissueResponseLevel | undefined): boolean =>
+            level === 'normal' || level === 'mild';
+        const completeSettledFollowup = settledLevel(afterTrainingState) && settledLevel(nextMorningReaction);
+
+        // Do not infer recovery from absent observations. The evidence-backed latency rule
+        // requires the later response to be known before relaxing the restriction.
+        return completeSettledFollowup ? 'monitor' : 'limit';
     }
 
-    // Mild signal at any point
+    // Mild signal at any point.
     if (levels.some((level) => level === 'mild')) {
         return 'monitor';
     }
