@@ -188,6 +188,9 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                     <p className="escalation-text">
                                         {recommendation.envelopes.safety.clinicalReason ?? 'Red-flag symptoms reported. Training recommendations are paused until medical evaluation.'}
                                     </p>
+                                    <p className="escalation-text">
+                                        If you have chest pain, severe shortness of breath, fainting, or believe this may be an emergency, seek emergency medical care now.
+                                    </p>
                                 </div>
                             </div>
                         )}
