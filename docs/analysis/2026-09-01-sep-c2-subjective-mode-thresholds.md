@@ -1,7 +1,7 @@
 # SEP-C2 — Subjective Mode Threshold & Neutral-Default Calibration
 
 **Date:** 2026-09-01
-**Scope:** Recalibrate `readiness.subjective_mode_thresholds` (`rules.ts`, `adapters.ts`, `models.ts`), decouple `motivation` from the physical fatigue average, calculate adverse score dynamically across answered physical dimensions for partial check-ins, and decouple `painFlag` from fatigue semantics.
+**Scope:** Recalibrate `readiness.subjective_mode_thresholds` (`rules.ts:evaluateReadinessAndSafetyEnvelope`, `adapters.ts:mapCheckinToSubjectiveInput`, `models.ts:SubjectiveInput`), decouple `motivation` from the physical fatigue average, calculate adverse score dynamically across answered physical dimensions for partial check-ins, and decouple `painFlag` from fatigue semantics.
 
 ## Problem found during review
 

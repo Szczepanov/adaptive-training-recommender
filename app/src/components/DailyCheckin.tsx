@@ -301,6 +301,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     setCheckin({
       ...checkin,
       redFlags: {
+        ...checkin.redFlags,
         present: nextCategories.length > 0,
         categories: nextCategories,
       },

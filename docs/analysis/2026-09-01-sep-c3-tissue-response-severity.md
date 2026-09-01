@@ -68,7 +68,7 @@ For `region === 'lower_back'`:
 | During moderate; post mild; next morning mild | `limit` | `monitor` | Later observations explicitly settled within the configured response scale. |
 | During moderate; post missing; next morning normal | `limit` | `limit` | Missing post-session observation is unknown. |
 | During moderate; post normal; next morning missing | `limit` | `limit` | 24-hour response has not yet been observed. |
-| During moderate; post moderate | `limit` | `limit` | Persistent response. |
+| During moderate; post-session moderate | `limit` | `limit` | Persistent response. |
 | During moderate; next morning moderate | `limit` | `limit` | Delayed reactivity. |
 | Any severe observation | `exclude` | `exclude` | Automated training is stopped for that regional constraint. |
 | Lower back `exclude` | two loading guardrails | three loading guardrails including `avoid_high_impact` | Conservative severe-lumbar loading boundary. |

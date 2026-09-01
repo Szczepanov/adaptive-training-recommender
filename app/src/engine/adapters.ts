@@ -95,7 +95,9 @@ export function resolveClinicalEnvelopeSources(
     if (!checkin) return [];
     const sources: ClinicalEnvelopeSource[] = [];
     const redFlags = resolveRedFlagFindings(checkin);
-    if (redFlags.length > 0) sources.push('red_flag');
+    // A disclosed red flag with no resolved category still requires escalation; do not
+    // rely solely on `redFlags.length`, which stays empty when `categories` is omitted.
+    if (checkin.redFlags?.present || redFlags.length > 0) sources.push('red_flag');
     if (checkin.painOrInjury) sources.push('pain_or_injury');
     if (checkin.illnessSymptoms && !isAllergyLikeSymptomDay(checkin)) sources.push('non_allergy_illness');
     return sources;

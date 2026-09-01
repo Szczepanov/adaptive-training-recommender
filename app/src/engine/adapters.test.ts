@@ -481,6 +481,18 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
             expect(subjective.redFlagFindings).toEqual(findings);
         });
 
+        it('fails closed when redFlags.present is true but categories is empty/absent', () => {
+            const checkin = testCheckin({
+                painOrInjury: true,
+                redFlags: { present: true, categories: [] },
+            });
+            // No resolved category finding: categories is empty, so resolveRedFlagFindings
+            // has nothing to map. The disclosed present flag must still surface as a red
+            // flag source rather than silently disappearing.
+            expect(resolveRedFlagFindings(checkin)).toEqual([]);
+            expect(resolveClinicalEnvelopeSources(checkin)).toContain('red_flag');
+        });
+
         it('does not treat mild or non-fever symptoms as red flags', () => {
             const checkin = testCheckin({
                 illnessSymptoms: true,

@@ -38,7 +38,7 @@ PR #320 now treats these as independent channels:
 - turning the pain/injury toggle off no longer erases an explicit red-flag disclosure;
 - adapter normalization still sets the legacy aggregate `SubjectiveInput.painFlag` when any clinical source is active, preserving backward compatibility while `clinicalEnvelopeSources` retains the true source.
 
-Regression coverage: `app/src/engine/redFlagIndependence.test.ts`.
+Regression coverage: `redFlagIndependence.test.ts:mapCheckinToSubjectiveInput`.
 
 ## 4. Engine invariants
 
@@ -67,7 +67,7 @@ Behavior:
 - the Morning Decision clinical-escalation banner uses the same urgent warning set rather than the narrower former wording that mentioned only chest pain, severe dyspnea, and fainting;
 - the permissive “decision to start is yours” copy is not used under clinical escalation.
 
-Regression coverage: `app/src/engine/externalSessionClinicalEscalation.test.ts`, including the emergency-warning wording above.
+Regression coverage: `externalSessionClinicalEscalation.test.ts:adjudicate`, including the emergency-warning wording above.
 
 ## 6. Evidence interpretation
 
@@ -81,8 +81,8 @@ Regression coverage: `app/src/engine/externalSessionClinicalEscalation.test.ts`,
 ## 7. Verification additions in PR #320
 
 Focused regression tests added during review:
-- `injuryPolicyLatencySafety.test.ts` — missing latency follow-up fails closed;
-- `subjectiveThresholdSafety.test.ts` — 8/10 fatigue or soreness cannot be diluted by other good answers;
-- `externalSessionClinicalEscalation.test.ts` — imported sessions/events cannot bypass escalation and the imported-event copy retains the urgent cardiopulmonary/neurological warning language;
-- `redFlagIndependence.test.ts` — explicit red flags remain independent from the pain/injury toggle;
-- `redFlagReasonLabel.test.ts` — the `systemic_infection` storage key renders as the non-diagnostic “systemic / cardiopulmonary warning” in user-facing clinical rationale.
+- `injuryPolicyLatencySafety.test.ts:deriveTissueSeverity` — missing latency follow-up fails closed;
+- `subjectiveThresholdSafety.test.ts:evaluateReadinessAndSafetyEnvelope` — 8/10 fatigue or soreness cannot be diluted by other good answers;
+- `externalSessionClinicalEscalation.test.ts:adjudicate` — imported sessions/events cannot bypass escalation and the imported-event copy retains the urgent cardiopulmonary/neurological warning language;
+- `redFlagIndependence.test.ts:mapCheckinToSubjectiveInput` — explicit red flags remain independent from the pain/injury toggle;
+- `redFlagReasonLabel.test.ts:evaluateEnvelopes` — the `systemic_infection` storage key renders as the non-diagnostic “systemic / cardiopulmonary warning” in user-facing clinical rationale.

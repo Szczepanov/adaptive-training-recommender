@@ -386,7 +386,12 @@ export function evaluateReadinessAndSafetyEnvelope(
     const postRecoverBufferApplied = mode === 'train' && previousMode === 'recover';
     if (postRecoverBufferApplied) mode = 'modify';
     const alreadyTrainedOverride = subjective.alreadyTrainedToday === true || objective.today_training !== null;
-    const redFlagOverride = (subjective.redFlagFindings?.length ?? 0) > 0;
+    // Mirror evaluateEnvelopes' red-flag predicate: a disclosed red flag that resolved to
+    // no findings still surfaces as clinicalEnvelopeSources: ['red_flag'] and must force
+    // recover, not just a non-empty redFlagFindings list.
+    const redFlagOverride =
+        (subjective.redFlagFindings?.length ?? 0) > 0
+        || subjective.clinicalEnvelopeSources?.includes('red_flag') === true;
     if (alreadyTrainedOverride || redFlagOverride) mode = 'recover';
 
     const round2 = (val: number) => Math.round(val * 100) / 100;

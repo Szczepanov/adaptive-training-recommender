@@ -222,7 +222,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         currentRule: 'Red-flag presentations (neurological deficit, acute traumatic non-weight-bearing / instability, severe systemic infection with high fever, or rapidly worsening symptoms) halt all physical training recommendations, cap the plan envelope at Rest, and mandate medical evaluation before resuming physical loading.',
         classification: 'safety_invariant', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
         codeRefs: ['engine/models.ts:RedFlagFinding', 'engine/adapters.ts:resolveRedFlagFindings', 'engine/rules.ts:evaluateEnvelopes'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.clinicalEscalationProtocol],
-        coverageRationale: 'Sports medicine consensus (Hainline 2017 IOC Pain Consensus, Herring 2024 Initial MSK Assessment) mandates that automated athletic prescription must defer to medical evaluation upon detecting red flags.',
+        coverageRationale: 'The specific red-flag categories, the Rest cap, and the mandatory-referral routing are conservative product policy (CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE, SEP-C4). Hainline 2017 IOC Pain Consensus and Herring 2024 Initial MSK Assessment support only the boundary that automated athletic prescription must defer to medical evaluation; neither validates this specific routing protocol.',
     },
     {
         id: 'injury.tissue_response_severity', domain: 'injury_safety', title: 'Tissue-response to restriction severity mapping',
@@ -257,7 +257,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         currentRule: 'Lower-back limit/exclude constraints imply avoid-heavy-spinal-loading; exclude additionally implies avoid-heavy-lower-body and avoid-high-impact.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:resolveInjuryRestrictions'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement, KNOWLEDGE_CLAIM_IDS.lumbarLoadingPolicy],
-        coverageRationale: 'SEP-C3 adds avoid-high-impact to severe lower-back exclusions to offload repetitive axial shock in acute lumbar injury (Herring 2024). Lower-back symptoms are heterogeneous, so this remains partial P0 debt.',
+        coverageRationale: 'SEP-C3 adds avoid-high-impact to severe lower-back exclusions as conservative product policy (LUMBAR_LOADING_PRODUCT_POLICY_V2_SOURCE) to offload repetitive axial shock. Herring 2024 supports deferring to clinical assessment for lumbar injury, not this specific mapping; lower-back symptoms are heterogeneous, so this remains partial P0 debt.',
     },
     {
         id: 'injury.region_mapping.upper_limb_loading', domain: 'injury_safety', title: 'Upper-limb loading restriction mapping',

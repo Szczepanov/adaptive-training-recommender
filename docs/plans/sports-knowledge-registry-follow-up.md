@@ -82,7 +82,7 @@ No numeric recommendation behavior changes were made, so this pack does not bump
 
 ### Safety Evidence Pack — Subjective Readiness + Injury/Pain Safety
 
-**Status:** Implemented — SEP-A, SEP-B, and SEP-C1 merged on `main`; SEP-C2, SEP-C3, and SEP-C4 implemented and verified.
+**Status:** Implemented — SEP-A, SEP-B, and SEP-C1 merged on `main`; SEP-C2, SEP-C3, and SEP-C4 implemented; focused regression tests added.
 
 Umbrella plan: [`2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md`](./2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md). Focused SEP-B plan: [`2026-09-01-safety-evidence-pack-injury-pain-sep-b.md`](./2026-09-01-safety-evidence-pack-injury-pain-sep-b.md). SKR1 is complete. SEP-A covered the absolute subjective classifier, SEP-B covered injury/clinical lineage without behavior change, and SEP-C implements behavioral policy remediations.
 

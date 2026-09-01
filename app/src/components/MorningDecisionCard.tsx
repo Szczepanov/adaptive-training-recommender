@@ -86,6 +86,10 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
 
         if (!recommendation) return;
 
+        // Clinical escalation pauses all training launch paths, including adjusted
+        // bindings and the original prescription, until medical evaluation clears it.
+        if (recommendation.envelopes?.safety.clinicalEscalationRequired) return;
+
         // A recommendation's primarySession is an immutable binding for the original
         // authored prescription. Once the athlete selects a one-tap alternative or load
         // adjustment, launch the currently displayed prescription instead of silently
@@ -222,7 +226,8 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                         </div>
 
                         <div className="hero-cta-wrap">
-                            {(canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession)) ? (
+                            {!recommendation.envelopes?.safety.clinicalEscalationRequired
+                            && (canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession)) ? (
                                 <button
                                     type="button"
                                     className="btn-hero-primary"

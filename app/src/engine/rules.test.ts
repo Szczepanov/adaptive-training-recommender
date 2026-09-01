@@ -862,6 +862,27 @@ describe('session adjustment engine', () => {
             expect(adjustSessionRecommendation(baseRec, 'easier', readiness, context, '2026-09-01')).toBeNull();
             expect(adjustSessionRecommendation(baseRec, 'harder', readiness, context, '2026-09-01')).toBeNull();
         });
+
+        it('forces recover mode from clinicalEnvelopeSources red_flag alone, without a resolved redFlagFindings entry', () => {
+            // A disclosed red flag with no resolved category (e.g. `redFlags.present` true but
+            // `categories` empty) reaches the engine as clinicalEnvelopeSources: ['red_flag']
+            // with an empty redFlagFindings array. evaluateEnvelopes already treats that as an
+            // active red flag; evaluateTraining's mode-selection override must match, or an
+            // active template could still be selected instead of Rest.
+            const readiness: DailyReadiness = {
+                subjective: neutralSubjective({
+                    painFlag: true,
+                    clinicalEnvelopeSources: ['red_flag'],
+                    redFlagFindings: [],
+                }),
+                objective: quietObjective(),
+            };
+            const context = baseContext();
+
+            const baseRec = evaluateTraining(readiness, context, '2026-09-01');
+            expect(baseRec.mode).toBe('recover');
+            expect(baseRec.template.category).toBe('Rest');
+        });
     });
 
     it('Non-transferable objective (Hill Repeats) skips Tier 4 cross-modal substitution', () => {
