@@ -169,7 +169,7 @@ export function adjudicateExternalSession(
             return {
                 decision: 'advisory',
                 gateFailures,
-                rationale: `${reason} This event remains on your calendar, but the recommender cannot clear you to start it. Do not use the training plan as medical clearance; obtain appropriate medical evaluation first. If symptoms include chest pain, severe shortness of breath, fainting, or another emergency concern, seek emergency care now.`,
+                rationale: `${reason} This event remains on your calendar, but the recommender cannot clear you to start it. Do not use the training plan as medical clearance; obtain appropriate medical evaluation first. If symptoms include acute chest pain/pressure, unexplained shortness of breath, fainting/near-fainting, new neurologic symptoms, or another emergency concern, seek urgent or emergency medical care now.`,
             };
         }
         return {
