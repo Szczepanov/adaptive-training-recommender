@@ -438,9 +438,13 @@ export function evaluateTraining(
             const sessionDescription = loggedSession
                 ? `Garmin shows you already completed a ${loggedSession.type} session today (~${loggedSession.duration_min} min).`
                 : "You've already logged a training session today.";
-            const cautionNote = subjective.painFlag
+            const hasCurrentPainOrInjury = subjective.clinicalEnvelopeSources?.includes('pain_or_injury') ?? subjective.painFlag;
+            const hasCurrentIllness = subjective.clinicalEnvelopeSources?.includes('non_allergy_illness') ?? false;
+            const cautionNote = hasCurrentPainOrInjury
                 ? "You're also flagging pain or injury today, so prioritize recovery and get it checked out if it persists."
-                : "Your fatigue markers are also elevated today, so prioritize recovery (hydration, nutrition, sleep) rather than adding anything further.";
+                : hasCurrentIllness
+                    ? "You're also flagging illness symptoms today, so prioritize recovery and return to training progressively as symptoms resolve."
+                    : "Your fatigue markers are also elevated today, so prioritize recovery (hydration, nutrition, sleep) rather than adding anything further.";
             rationale = fatigueTriggeredRecover ? `${sessionDescription} ${cautionNote}` : `${sessionDescription} Nice work -- no further training is needed. Focus on recovery (hydration, nutrition, sleep) for the rest of the day.`;
         } else {
             rationale = 'Your overall fatigue markers are high today (combining subjective feel with drops in objective baselines). Pushing hard could be counter-productive; focus on active or passive recovery.';
@@ -757,38 +761,53 @@ export async function evaluateTrainingWithIntent(
 }
 
 export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContext): { safety: SafetyEnvelope; plan: PlanEnvelope } {
-    const isPain = readiness.subjective.painFlag;
+    const legacyClinicalFlag = readiness.subjective.painFlag;
     const restrictedModalities = [...(context.constraints.restrictedModalities ?? [])];
     const hasActiveInjury = restrictedModalities.length > 0 || (context.constraints.impliedGuardrails ?? []).length > 0 || (context.constraints.restrictedCategories ?? []).length > 0;
 
-    // Check if pain/injury source is specifically reported
-    const sources = readiness.subjective.clinicalEnvelopeSources ?? (isPain ? ['pain_or_injury'] : []);
+    // `painFlag` is retained as a backward-compatible aggregate. New inputs name their
+    // clinical origin explicitly; a legacy true flag with no source fails closed as pain/injury.
+    const sources: NonNullable<typeof readiness.subjective.clinicalEnvelopeSources> =
+        readiness.subjective.clinicalEnvelopeSources ?? (legacyClinicalFlag ? ['pain_or_injury'] : []);
     const hasPainOrInjury = sources.includes('pain_or_injury');
+    const hasNonAllergyIllness = sources.includes('non_allergy_illness');
+    const hasCurrentClinicalSymptoms = legacyClinicalFlag || sources.length > 0;
 
-    // When pain/injury is present, restrict Running if:
-    // 1. No structured region mapping families are active (unknown origin / fail-closed), OR
-    // 2. An active lower-limb impact family is present.
-    // If only upper-limb, lumbar, or lower-limb strength constraints are active, Running is not unconditionally banned.
-    if (hasPainOrInjury && !restrictedModalities.includes('Running')) {
-        const traceFamilies = context.injuryPolicyTrace?.regionMappingFamilies ?? [];
-        const hasSpecificNonImpactFamilies = traceFamilies.length > 0 && !traceFamilies.includes('lower_limb_impact');
-        if (!hasSpecificNonImpactFamilies) {
-            restrictedModalities.push('Running');
-        }
+    // The generic Running restriction belongs to the pain/injury branch only. Current
+    // structured tissue-response regions may contextualize that fallback; standing injury
+    // trace facts are intentionally NOT consulted because provenance must not become policy
+    // authority and an unrelated old shoulder/hip/back constraint cannot locate today's pain.
+    const currentPainFamilies = readiness.subjective.painOrInjuryRegionFamilies ?? [];
+    const hasStructuredCurrentPainLocation = currentPainFamilies.length > 0;
+    const hasLowerLimbImpactPain = currentPainFamilies.includes('lower_limb_impact');
+    if (
+        hasPainOrInjury
+        && !restrictedModalities.includes('Running')
+        && (!hasStructuredCurrentPainLocation || hasLowerLimbImpactPain)
+    ) {
+        restrictedModalities.push('Running');
     }
 
-    const clinicalFlagActive = isPain || hasActiveInjury;
+    const clinicalFlagActive = hasCurrentClinicalSymptoms || hasActiveInjury;
     let maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard' = 'Hard';
     if (readiness.subjective.alreadyTrainedToday) maxAllowableTier = 'Rest';
-    else if (isPain) maxAllowableTier = 'Mobility';
+    else if (hasCurrentClinicalSymptoms) maxAllowableTier = 'Mobility';
     else if (
         (readiness.objective.body_battery_wake !== null && readiness.objective.body_battery_wake < 30) ||
         (readiness.objective.sleep_score !== null && readiness.objective.sleep_score < 55)
     ) {
         maxAllowableTier = 'Easy';
     }
+
+    let clinicalReason: string | null = null;
+    if (hasPainOrInjury && hasNonAllergyIllness) clinicalReason = 'Pain/injury and non-allergy illness symptoms reported.';
+    else if (hasPainOrInjury) clinicalReason = 'Pain or injury reported.';
+    else if (hasNonAllergyIllness) clinicalReason = 'Non-allergy illness symptoms reported.';
+    else if (legacyClinicalFlag) clinicalReason = 'Active legacy clinical symptom flag reported.';
+    else if (hasActiveInjury) clinicalReason = 'Active injury restriction is in effect.';
+
     return {
-        safety: { clinicalFlagActive, clinicalReason: clinicalFlagActive ? 'Active pain or injury flag reported.' : null, restrictedModalities },
+        safety: { clinicalFlagActive, clinicalReason, restrictedModalities },
         plan: { maxAllowableTier, taperActive: false, reason: null },
     };
 }
@@ -899,7 +918,8 @@ export function buildNextDayScenarios(
 ): NextDayScenarioSet {
     void context;
     const tomorrowDate = addDaysToLocalDateString(todayDate, 1);
-    const isPainOrInjury = todayReadiness.subjective.painFlag;
+    const hasClinicalSymptoms = todayReadiness.subjective.painFlag
+        || (todayReadiness.subjective.clinicalEnvelopeSources?.length ?? 0) > 0;
     const isTodayHardSession = todayRec.template.category === 'Hard Endurance'
         || todayRec.template.category === 'Full-body Strength'
         || todayRec.template.category === 'Lower-body Strength'
@@ -916,7 +936,7 @@ export function buildNextDayScenarios(
     const isSevereAdverseRecovery = todayRec.mode === 'recover' && adverseSignalCount >= 2;
 
     let singlePlanReason: string | undefined;
-    if (isPainOrInjury) singlePlanReason = 'Active pain/injury reported today. Tomorrow requires dedicated recovery regardless of morning metrics.';
+    if (hasClinicalSymptoms) singlePlanReason = 'Active clinical symptoms reported today. Tomorrow requires dedicated recovery regardless of morning metrics.';
     else if (isCumulativeOverload) singlePlanReason = 'High cumulative load (multiple hard sessions back-to-back). Tomorrow is locked to active recovery to prevent overtraining.';
     else if (isSevereAdverseRecovery) singlePlanReason = 'Severe physiological strain detected today (depleted recovery markers). Tomorrow requires sustained recovery to prevent overtraining.';
 
