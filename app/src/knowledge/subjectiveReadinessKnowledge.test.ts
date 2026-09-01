@@ -33,6 +33,7 @@ describe('subjective readiness knowledge pack', () => {
         expect(policy).toMatchObject({ claimType: 'heuristic', maturity: 'heuristic', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high' });
         expect(policy.statement).toContain('above 5');
         expect(policy.statement).toContain('neutral 5');
+        expect(policy.limitations.some(limit => limit.includes('already-trained overrides'))).toBe(true);
         expect(policy.evidence.some(link => getKnowledgeSource(link.sourceId).sourceType === 'product_policy')).toBe(true);
     });
 
@@ -43,7 +44,7 @@ describe('subjective readiness knowledge pack', () => {
             independentTriggers: { sorenessModifyWhen: '> 6', fatigueRecoverWhen: '> 8', sorenessRecoverWhen: '> 8' },
         });
         expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR.excludedFromThisPolicySurface).toEqual([
-            'painFlag', 'illnessSymptoms', 'subjectiveDrift',
+            'painFlag', 'illnessSymptoms', 'subjectiveDrift', 'alreadyTrainedToday', 'objective.today_training',
         ]);
     });
 });
