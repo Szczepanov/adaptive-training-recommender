@@ -1,80 +1,91 @@
 # SEP-C2 — Subjective Mode Threshold & Neutral-Default Calibration
 
 **Date:** 2026-09-01
-**Scope:** Recalibrate `readiness.subjective_mode_thresholds` (`rules.ts`, `adapters.ts`, `models.ts`), decouple `motivation` from the physical fatigue average, calculate adverse score dynamically across answered physical dimensions for partial check-ins, and decouple `painFlag` from `extremeFatigue`.
+**Scope:** Recalibrate `readiness.subjective_mode_thresholds` (`rules.ts`, `adapters.ts`, `models.ts`), decouple `motivation` from the physical fatigue average, calculate adverse score dynamically across answered physical dimensions for partial check-ins, and decouple `painFlag` from fatigue semantics.
 
 ## Problem found during review
 
-The SEP-A evidence review ([`docs/analysis/2026-09-01-evidence-pack-subjective-readiness.md`](./2026-09-01-evidence-pack-subjective-readiness.md)) identified several structural defects in the legacy subjective classifier:
+The SEP-A evidence review identified several structural defects in the legacy subjective classifier:
 
-1. **Conflating psychological drive with physical strain**:
-   The legacy composite averaged five items with equal weight (0.2 each):
-   $$\text{overallFatigueScore} = \frac{\text{fatigue} + \text{soreness} + (10 - \text{readiness}) + (10 - \text{sleepQuality}) + (10 - \text{motivation})}{5}$$
-   Evidence (Saw 2016, Duignan 2020, Brauers 2026) indicates that fatigue, muscle soreness, and sleep quality reflect training load and physiological recovery, whereas motivation exhibits high non-load psychological variance and weak correlation with objective strain. Poor motivation alone should not artificially inflate physiological fatigue scores.
+1. **Psychological drive was conflated with physical strain.** The legacy composite averaged fatigue, soreness, inverted readiness, inverted sleep quality, and inverted motivation with equal weight. Subjective fatigue, soreness, sleep and readiness are useful athlete-monitoring signals, but motivation has substantial non-load variance and should not silently inflate a physiological-fatigue score.
 
-2. **Artificial neutral-default imputation**:
-   `safetyCheckin.ts` `getMinimumSafetyCheckinStatus` permits an athlete to complete a check-in with only boolean safety flags plus either `fatigue` or `soreness`.
-   Previously, `adapters.ts` `mapCheckinToSubjectiveInput` imputed `5` for every omitted dimension (`readiness`, `sleepQuality`, `motivation`, `stress`).
-   - If an athlete reported `fatigue: 8` and left the rest blank:
-     $$\text{score} = \frac{8 + 5 + 5 + 5 + 5}{5} = 5.6 \implies \text{modify}$$
-     The severe fatigue was diluted by unentered questions, avoiding the `> 7` recover threshold!
-   - Conversely, entering `fatigue: 6` with all 5s produced $26 / 5 = 5.2 > 5$, forcing `modify` even though 6 was only slightly elevated.
+2. **Unanswered fields were imputed as neutral 5/10.** A minimum check-in can contain only safety flags plus fatigue or soreness. Filling omitted fields with 5 diluted a severe single answer and could also push borderline answers across a mode boundary for reasons unrelated to what the athlete actually reported.
 
-3. **Coupling `painFlag` into `extremeFatigue`**:
-   `rules.ts` defined:
-   ```ts
-   const extremeFatigue = subjective.fatigue > 8 || subjective.soreness > 8 || subjective.painFlag;
-   ```
-   Musculoskeletal pain and clinical illness flags were embedded into a variable named `extremeFatigue`, triggering `fatigueTriggeredRecover` and masking whether recovery was caused by clinical symptoms or physiological fatigue.
+3. **Pain/injury was embedded inside a variable called `extremeFatigue`.** Clinical symptoms and training fatigue are separate policy axes and need separate provenance even when both can force recovery.
+
+4. **Implementation/body mismatch for the absolute severe threshold.** PR #320 specified `fatigue > 7` or `soreness > 7` as an acute recovery override, but the initial implementation used `> 8`. The averaged composite recovered some 8/10 cases, yet an 8/10 report could still be diluted by simultaneously good readiness/sleep answers. The implementation is now aligned with the declared policy: **8/10 or higher fatigue or soreness independently forces recovery**.
 
 ## Corrected architecture
 
-### 1. Four physical recovery dimensions
-The primary adverse physiological composite now comprises the four physical recovery dimensions:
-- `fatigue` (direct)
-- `soreness` (direct)
-- `readiness` (inverted: $10 - \text{readiness}$)
-- `sleepQuality` (inverted: $10 - \text{sleepQuality}$)
+### Four physical recovery dimensions
+The adverse physical composite uses:
+- `fatigue` (direct),
+- `soreness` (direct),
+- `readiness` (inverted: `10 - readiness`),
+- `sleepQuality` (inverted: `10 - sleepQuality`).
 
-`motivation` is removed from this physical fatigue average. It remains available in `SubjectiveInput` for neuromuscular modeling (`fatigue.ts`), session duration preferences, and modality preference.
+`motivation` is excluded from this physical average. It remains available elsewhere as a psychological/preference/performance-context signal.
 
-### 2. Answered-dimension dynamic averaging
-`SubjectiveInput.answeredDimensions` records which dimensions were explicitly answered by the athlete.
-- When `answeredDimensions` is present, the composite averages only the *answered physical dimensions* among the four.
-- If only `fatigue: 6` was answered:
-  $$\text{score} = \frac{6}{1} = 6.0 > 5 \implies \text{modify}$$
-- If `fatigue: 8` was answered:
-  $$\text{score} = \frac{8}{1} = 8.0 > 7 \implies \text{recover}$$
-- If `fatigue: 3` was answered:
-  $$\text{score} = \frac{3}{1} = 3.0 \le 5 \implies \text{train}$$
-- When all 4 physical dimensions are answered (or when `answeredDimensions` is absent in legacy fixtures), the denominator is 4.
+### Answered-dimension averaging
+`SubjectiveInput.answeredDimensions` records which dimensions were actually answered. When present, only answered physical dimensions participate.
 
-### 3. Decoupling clinical recover override from severe fatigue
-- `clinicalRecoverOverride` explicitly isolates `subjective.painFlag`.
-- `severeFatigue` is strictly `subjective.fatigue > 8 || subjective.soreness > 8`.
-- Both contribute cleanly to `fatigueTriggeredRecover` to preserve backward-compatible safety invariants, but telemetry and rationale can distinguish the two.
+Examples:
+- fatigue 6 only -> score 6.0 -> `modify`;
+- fatigue 8 only -> score 8.0 -> `recover`;
+- fatigue 3 only -> score 3.0 -> no composite escalation.
+
+Legacy callers without `answeredDimensions` retain the four-dimension fallback average.
+
+### Absolute severe subjective override
+In addition to the composite, an explicit absolute rule prevents dilution:
+
+```ts
+const severeFatigue = subjective.fatigue > 7 || subjective.soreness > 7;
+```
+
+Thus fatigue 8/10 or soreness 8/10 forces `recover` even when all other answered physical dimensions are excellent. A 7/10 value does not cross this *absolute* recovery rule by itself; other composite/objective/context rules may still modify or recover the day.
+
+### Clinical symptoms are separate
+`clinicalRecoverOverride` carries the legacy aggregate clinical flag separately from `severeFatigue`. Clinical lineage is handled through `clinicalEnvelopeSources` / SEP-C4 rather than being relabeled as physiological fatigue.
+
+## Evidence boundary
+
+The literature supports subjective self-report as a useful and often sensitive component of athlete monitoring (for example, Saw et al. 2016 and subsequent athlete-monitoring reviews). It does **not** establish a universally validated 1–10 threshold at which every athlete should automatically stop training.
+
+Therefore:
+- the **structure** of using athlete-reported fatigue/soreness and avoiding artificial neutral imputation is evidence-informed;
+- the exact `>7` absolute boundary is a **conservative product calibration**, not a clinical diagnostic cutoff;
+- it should remain versioned, observable, and open to later calibration against outcome/simulation data rather than being described as a medical threshold.
 
 ## Behaviour matrix
 
-| Input scenario | Legacy mode | SEP-C2 mode | Reason |
-|---|---|---|---|
-| All 4 physical dimensions = 5 | train (score 5.0) | train (score 5.0) | $20/4 = 5.0 \le 5$ |
-| Readiness = 4, others = 5 | modify (score 5.2) | modify (score 5.25) | $(6 + 5 + 5 + 5)/4 = 5.25 > 5$ |
-| Low motivation (1/10), good physicals (2/10) | modify (score 3.0 + 9/5 = 4.8, or modify if others 4) | train | Low motivation does not inflate physical fatigue |
-| Partial check-in: fatigue = 8 only | modify (score 5.6) | **recover** (score 8.0) | Severe fatigue no longer diluted by neutral defaults |
-| Partial check-in: fatigue = 4 only | train (score 4.8) | train (score 4.0) | Clean single-dimension evaluation |
-| PainFlag = true | recover | recover | Preserved clinical override; decoupled from fatigue |
+| Input scenario | SEP-C2 behavior | Reason |
+|---|---|---|
+| All 4 physical dimensions = 5 | `train` absent other signals | Composite = 5.0 |
+| Readiness = 4, others = 5 | `modify` | Composite = 5.25 |
+| Low motivation, physical dimensions good | no physical-fatigue escalation | Motivation excluded from physical composite |
+| Partial check-in: fatigue = 8 only | `recover` | Composite 8.0 + absolute override |
+| All dimensions answered; fatigue = 8, others excellent | `recover` | Absolute override prevents dilution |
+| All dimensions answered; soreness = 8, others excellent | `recover` | Absolute override prevents dilution |
+| Fatigue = 7 with otherwise excellent inputs | not `recover` from the absolute rule alone | Boundary is strictly `>7` |
+| Pain/red flag | handled by clinical policy | Separate clinical axis |
 
-## Knowledge-lineage change
+## Verification added in PR #320
 
-`policy.readiness.subjective_mode_thresholds_v1` is deprecated.
-Decisions under SEP-C2 consume `policy.readiness.subjective_mode_thresholds_v2`.
-Lineage records:
-- 4-item physical composite;
-- motivation decoupled from physical fatigue score;
-- dynamic answered-dimension participation for partial check-ins;
-- clinical override decoupled from extreme fatigue.
+`app/src/engine/subjectiveThresholdSafety.test.ts` pins the safety boundary:
+- fatigue 8/10 + otherwise excellent answered dimensions -> `recover`;
+- soreness 8/10 + otherwise excellent answered dimensions -> `recover`;
+- fatigue 7/10 does not independently trigger the absolute recovery override.
 
-## Policy Version
+## Knowledge lineage
 
-`POLICY_VERSION` is incremented to `'2026-09-safety-policy-remediation-sep-c2'`.
+`policy.readiness.subjective_mode_thresholds_v1` is deprecated. Decisions under SEP-C2 consume `policy.readiness.subjective_mode_thresholds_v2`, which records:
+- four-item physical composite;
+- motivation decoupling;
+- dynamic answered-dimension participation;
+- absolute `>7` fatigue/soreness recovery calibration;
+- separate clinical override semantics.
+
+## Policy version
+
+The combined PR ultimately publishes `POLICY_VERSION = '2026-09-safety-policy-remediation-sep-c4'`; SEP-C2 remains a named policy component within that release.
