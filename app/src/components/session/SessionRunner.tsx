@@ -6,11 +6,13 @@ import { useOverloadHistory } from '../../hooks/useOverloadHistory';
 import type { ExerciseIdentity } from '../../workouts/overloadHistory';
 import { resolveStepInputProfile } from '../../sessions/inputProfiles';
 import { comparePlannedVsPerformed } from '../../sessions/performedComparison';
+import { formatSessionLoad } from '../../sessions/loadDisplay';
 import { RepetitionInputCard } from './inputs/RepetitionInputCard';
 import { DurationInputCard } from './inputs/DurationInputCard';
 import { DistanceInputCard } from './inputs/DistanceInputCard';
 import { CheckoffInputCard } from './inputs/CheckoffInputCard';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
+
 import { sessionDefinitionService, type SessionDefinitionHeader } from '../../services/sessionDefinitionService';
 import { prepareUnplannedSessionLaunch } from '../../services/sessionAuthoringService';
 import { archivedSavedDefinitionError } from '../../sessions/sessionLaunch';
@@ -77,6 +79,57 @@ function formatTempoBreakdown(tempo: string): string {
         return `${tempo} (${ecc}s Lower · ${pauseBottom}s Pause · ${conText} Lift · ${pauseTop}s Top)`;
     }
     return tempo;
+}
+
+/**
+ * A prescribed load is stronger information than a historical overload suggestion. Keep an
+ * athlete-entered value across consecutive sets and allow an exact authored mass to populate the
+ * field, but never turn bodyweight/descriptive/percentage instructions into unrelated kilograms.
+ */
+export function resolveRepetitionWeightSuggestion(
+    step: SessionStep,
+    latestWeightKg?: number,
+    historicalWeightKg?: number,
+): number | undefined {
+    if (latestWeightKg !== undefined) return latestWeightKg;
+    if (step.load?.kind === 'mass' && typeof step.load.kg === 'number') return step.load.kg;
+    if (step.load !== undefined) return undefined;
+    return historicalWeightKg;
+}
+
+/**
+ * Resolve the work that is actually due when the advisory rest timer is visible. Sequential
+ * multi-set work stays on the current exercise until its sets are complete; rotating groups use
+ * persisted group progress before falling through to the next block.
+ */
+export function resolveRestPreviewStep(
+    definition: SessionDefinition,
+    entries: readonly SessionEntry[],
+    activeBlockIndex: number,
+    activeStepIndex: number,
+): SessionStep | null {
+    const activeBlock = definition.blocks[activeBlockIndex];
+    const activeStep = activeBlock?.steps[activeStepIndex];
+    if (!activeBlock || !activeStep) return null;
+
+    const completedForActiveStep = entries.reduce(
+        (count, entry) => count + (entry.stepId === activeStep.id && entry.payload.kind !== 'choice' ? 1 : 0),
+        0,
+    );
+    const targetForActiveStep = targetEntriesForGroupStep(activeBlock, activeStep);
+    if (completedForActiveStep < targetForActiveStep) return activeStep;
+
+    const groupProgress = getGroupProgress(activeBlock, entries, activeStepIndex);
+    if (groupProgress?.nextStepIndex !== null && groupProgress?.nextStepIndex !== undefined) {
+        return activeBlock.steps[groupProgress.nextStepIndex] ?? null;
+    }
+    if (activeStepIndex + 1 < activeBlock.steps.length) {
+        return activeBlock.steps[activeStepIndex + 1];
+    }
+    const nextBlock = definition.blocks.find(
+        (candidate, index) => index > activeBlockIndex && candidate.steps.length > 0,
+    );
+    return nextBlock?.steps[0] ?? null;
 }
 
 interface SessionRunnerProps {
@@ -199,13 +252,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
 
     const suggestedWeightKg = useMemo(() => {
         if (!activeStep) return undefined;
-        if (latestActiveEntry?.payload.kind === 'repetition' && latestActiveEntry.payload.weightKg !== undefined) {
-            return latestActiveEntry.payload.weightKg;
-        }
-        if (pastSummary?.weightKg !== null && pastSummary?.weightKg !== undefined) {
-            return pastSummary.weightKg;
-        }
-        return undefined;
+        const latestWeightKg = latestActiveEntry?.payload.kind === 'repetition'
+            ? latestActiveEntry.payload.weightKg
+            : undefined;
+        const historicalWeightKg = pastSummary?.weightKg ?? undefined;
+        return resolveRepetitionWeightSuggestion(activeStep, latestWeightKg, historicalWeightKg);
     }, [activeStep, latestActiveEntry, pastSummary]);
 
     const suggestedReps = useMemo(() => {
@@ -498,22 +549,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         return counts;
     }, [entries]);
 
-    // The rest banner previews the next step, including rotation within circuits and
-    // supersets, instead of naming the set that was just logged.
-    const restNextStep = useMemo(() => {
-        if (!definition || !activeBlock) return null;
-        const groupProgress = getGroupProgress(activeBlock, entries, runner.activeStepIndex);
-        if (groupProgress) {
-            return groupProgress.nextStepIndex !== null ? activeBlock.steps[groupProgress.nextStepIndex] : null;
-        }
-        if (runner.activeStepIndex + 1 < activeBlock.steps.length) {
-            return activeBlock.steps[runner.activeStepIndex + 1];
-        }
-        const nextBlock = definition.blocks.find(
-            (candidate, index) => index > runner.activeBlockIndex && candidate.steps.length > 0,
-        );
-        return nextBlock ? nextBlock.steps[0] : null;
-    }, [definition, activeBlock, entries, runner.activeStepIndex, runner.activeBlockIndex]);
+    // The advisory rest banner follows the next actually due work rather than authored list order.
+    const restNextStep = useMemo(
+        () => definition
+            ? resolveRestPreviewStep(definition, entries, runner.activeBlockIndex, runner.activeStepIndex)
+            : null,
+        [definition, entries, runner.activeBlockIndex, runner.activeStepIndex],
+    );
 
     // If no active session, show fixture picker to start an unplanned session
     if (runner.isRestoring) {
@@ -810,28 +852,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 </div>
             </div>
 
-            {/* Rest Timer Banner */}
-            {runner.isRestRunning && (
-                <div className="rest-timer-banner" role="status" aria-live="polite">
-                    <div className="rest-timer-info">
-                        <span>☕ Rest: <strong>{runner.restSecondsRemaining}s</strong></span>
-                        {restNextStep && (
-                            <span className="rest-next-preview">
-                                Next: {stepName(restNextStep)}
-                            </span>
-                        )}
-                    </div>
-                    <div className="rest-timer-actions">
-                        <button type="button" className="rest-adjust-btn" onClick={() => runner.addRestSeconds(30)}>
-                            +30s
-                        </button>
-                        <button type="button" className="skip-rest-btn" onClick={runner.skipRestTimer}>
-                            Skip Rest
-                        </button>
-                    </div>
-                </div>
-            )}
-
             {/* Undo Banner */}
             {runner.canUndo && (
                 <div className="undo-toast-banner" role="alert">
@@ -912,6 +932,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 <span className="laterality-tag">Unilateral (Left &amp; Right)</span>
                             )}
                             {activeEffort && <span>Effort: {activeEffort}</span>}
+                            {activeStep.load && <span>Load: {formatSessionLoad(activeStep.load)}</span>}
                             {activeStep.rest !== undefined && <span>Rest: {formatRange(activeStep.rest)} sec</span>}
                             {activeStep.tempo && <span>Tempo: {formatTempoBreakdown(activeStep.tempo)}</span>}
                         </div>
@@ -942,12 +963,35 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     ) : (
                         /* Step Input Card */
                         <div className="input-card-container">
+                            {/* A rest is advisory, not a lock. Keep the countdown and its controls
+                             * alongside the active logging form until it reaches zero or is skipped. */}
+                            {runner.isRestRunning && (
+                                <div className="rest-timer-banner" role="status" aria-live="polite">
+                                    <div className="rest-timer-info">
+                                        <span>☕ Rest: <strong>{runner.restSecondsRemaining}s</strong></span>
+                                        {restNextStep && (
+                                            <span className="rest-next-preview">
+                                                Next: {stepName(restNextStep)}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="rest-timer-actions">
+                                        <button type="button" className="rest-adjust-btn" onClick={() => runner.addRestSeconds(30)}>
+                                            +30s
+                                        </button>
+                                        <button type="button" className="skip-rest-btn" onClick={runner.skipRestTimer}>
+                                            Skip Rest
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
                             {inputProfile === 'repetition_mass' || inputProfile === 'repetition_bodyweight' ? (
                                 <RepetitionInputCard
                                     key={activeStep.id}
                                     step={activeStep}
                                     suggestedWeightKg={suggestedWeightKg}
                                     suggestedReps={suggestedReps}
+                                    defaultIsWarmup={activeBlock?.role === 'warmup'}
                                     onSubmit={handleEntrySubmit}
                                 />
                             ) : inputProfile === 'duration_hold' ? (

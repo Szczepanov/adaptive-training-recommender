@@ -32,6 +32,11 @@ import {
     INJURY_PAIN_CLAIMS,
     INJURY_PAIN_SOURCES,
 } from './injuryPainKnowledge.ts';
+import {
+    STRENGTH_WARMUP_CLAIM_IDS,
+    STRENGTH_WARMUP_CLAIMS,
+    STRENGTH_WARMUP_SOURCES,
+} from './strengthWarmupKnowledge.ts';
 
 /**
  * Canonical aggregate registry.
@@ -48,6 +53,7 @@ export const SPORTS_KNOWLEDGE_SOURCES: readonly KnowledgeSource[] = [
     ...TAPER_FUELING_SOURCES,
     ...SUBJECTIVE_READINESS_SOURCES,
     ...INJURY_PAIN_SOURCES,
+    ...STRENGTH_WARMUP_SOURCES,
 ];
 
 export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
@@ -57,6 +63,7 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     ...TAPER_FUELING_CLAIMS,
     ...SUBJECTIVE_READINESS_CLAIMS,
     ...INJURY_PAIN_CLAIMS,
+    ...STRENGTH_WARMUP_CLAIMS,
 ];
 
 export const KNOWLEDGE_CLAIM_IDS = {
@@ -66,6 +73,7 @@ export const KNOWLEDGE_CLAIM_IDS = {
     ...TAPER_FUELING_CLAIM_IDS,
     ...SUBJECTIVE_READINESS_CLAIM_IDS,
     ...INJURY_PAIN_CLAIM_IDS,
+    ...STRENGTH_WARMUP_CLAIM_IDS,
 } as const;
 
 export const SPORTS_KNOWLEDGE_SOURCES_BY_ID: ReadonlyMap<string, KnowledgeSource> = new Map(

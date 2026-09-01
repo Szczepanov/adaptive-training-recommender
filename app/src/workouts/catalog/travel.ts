@@ -31,15 +31,20 @@ export const TRAVEL_WORKOUTS: WorkoutDefinition[] = [
     sourceNotes: ['Covers the planned 30–45-minute aerobic hotel session during travel.']
   },
   {
-    id: 'travel_strength_maintenance_01', version: 1, status: 'active',
+    id: 'travel_strength_maintenance_01', version: 2, status: 'active',
     name: 'Travel Strength Maintenance',
     description: 'Adjustable hotel-gym circuit preserving strength and tissue capacity without creating soreness.',
     modality: 'strength', category: 'full_body_strength', objectives: ['strength_maintenance', 'tissue_capacity', 'travel_maintenance'],
     duration: { defaultMin: 35, minimumMin: 20, maximumMin: 40 },
     loadProfile: { cardiovascular: 2, muscular: 3, mechanical: 2, eccentric: 2, coordination: 2, recoveryHours: 24 },
     eligibility: { minimumReadiness: 5, maximumSoreness: 7, forbiddenPainFlags: ['knee_swelling'] },
-    equipment: ['hotel_gym'], contraindicationTags: ['knee_swelling'],
+    equipment: ['hotel_gym'], contraindicationTags: ['knee_swelling'], warmupKnowledgeClaimIds: ['strength.warmup.contextual_preparation', 'strength.warmup.specific_rehearsal'],
     blocks: [
+      { id: 'warmup', name: 'Full-body pattern rehearsal', role: 'warmup', steps: [
+        repsStep('travel_warmup_squat', 'bodyweight_squat', 'Easy bodyweight squat', 6, { load: { kind: 'bodyweight' } }),
+        repsStep('travel_warmup_pushup', 'push_up', 'Easy push-up rehearsal', 5, { load: { kind: 'bodyweight' }, notes: ['Leave plenty in reserve.'] }),
+        repsStep('travel_warmup_hinge', 'bodyweight_hip_hinge', 'Easy bodyweight hip hinge', 6, { load: { kind: 'bodyweight' } })
+      ]},
       { id: 'main', name: 'Adjustable maintenance circuit', role: 'main', steps: [
         repsStep('travel_squat', 'goblet_squat', 'Goblet squat or comfortable squat pattern', 8, { sets: 3, restAfterSec: 60, target: { type: 'reps_in_reserve', min: 4, max: 6 } }),
         repsStep('travel_push', 'push_up', 'Push-up or machine press', 10, { sets: 3, restAfterSec: 45, target: { type: 'reps_in_reserve', min: 3, max: 6 } }),

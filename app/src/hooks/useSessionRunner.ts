@@ -20,6 +20,7 @@ import { sessionDefinitionService } from '../services/sessionDefinitionService';
 import { playRestCompleteSound } from '../utils/audioFeedback';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { resolveEffectiveSession } from '../sessions/choiceResolution';
+import { resolvePostEntryRestSeconds } from '../sessions/restTiming';
 import { resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibility';
 import type { BodyRegion, RegionTissueResponse } from '../engine/models';
@@ -344,22 +345,23 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         setEntries(prev => [...prev, entry]);
         setSyncStatus('pending');
 
+        // Rest belongs to the performed set, not to persistence completion. Start it at the same
+        // optimistic boundary as the entry so a slow write can never resurrect a timer the athlete
+        // already skipped or adjusted while the write was in flight. Structured warm-up steps do
+        // not inherit the generic fallback when their author intentionally omitted rest.
+        const restSec = resolvePostEntryRestSeconds(activeStep, activeBlock?.role);
+        if (restSec > 0) {
+            setRestSecondsRemaining(restSec);
+            setIsRestRunning(true);
+        }
+
         try {
             await sessionExecutionService.logEntry(userId, execution.executionId, entry);
             setSyncStatus('synced');
         } catch {
             setSyncStatus('unavailable');
         }
-
-        // Trigger rest timer immediately after logging a set (prescribed step rest or 60s default)
-        const restSec = activeStep.rest
-            ? (typeof activeStep.rest === 'number' ? activeStep.rest : activeStep.rest.min)
-            : 60;
-        if (restSec > 0) {
-            setRestSecondsRemaining(restSec);
-            setIsRestRunning(true);
-        }
-    }, [execution, activeStep, entries, userId]);
+    }, [execution, activeStep, activeBlock, entries, userId]);
 
     const logChoice = useCallback(async (choiceId: string, optionId: string, reason?: string) => {
         if (!execution || execution.state !== 'in_progress' || !activeBlock) return;

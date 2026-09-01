@@ -39,6 +39,9 @@ describe('Catalog Session Adapter (M3.1 / ADR-0023)', () => {
         const firstStep = sessionDef.blocks[0].steps[0];
         expect(firstStep.exerciseRef).toEqual({ kind: 'catalog', exerciseId: presc.adjustedBlocks[0].steps[0].exerciseId });
         expect(firstStep.rest).toBe(presc.adjustedBlocks[0].steps[0].restAfterSec);
+        expect(sessionDef.blocks.map(block => block.role)).toEqual(['warmup', 'main', 'main', 'accessory']);
+        const ramp = sessionDef.blocks[0].steps.find(step => step.id === 'full_warmup_clean_ramp');
+        expect(ramp?.load).toEqual({ kind: 'descriptive', display: 'Empty bar, then light rehearsal load' });
 
         const validation = validateSessionDefinition(sessionDef);
         expect(validation.ok).toBe(true);
@@ -54,5 +57,17 @@ describe('Catalog Session Adapter (M3.1 / ADR-0023)', () => {
         expect(execPresc.definitionHash).toBe('def-hash-xyz');
         expect(execPresc.prescriptionHash).toMatch(/^[0-9a-f]{64}$/);
         expect(execPresc.blocks.length).toBeGreaterThan(0);
+    });
+
+    it('hashes the explicit catalog ramp load into a new execution prescription', async () => {
+        const presc = makeTestPrescription('str_full_01');
+        const original = await createExecutionPrescriptionFromCatalog(presc, 'def-hash-xyz');
+        const changed = structuredClone(presc);
+        const step = changed.adjustedBlocks[0].steps.find(item => item.id === 'full_warmup_clean_ramp');
+        if (!step) throw new Error('Missing primary warm-up ramp');
+        step.load = { kind: 'descriptive', display: 'Different ramp instruction' };
+        const changedExecution = await createExecutionPrescriptionFromCatalog(changed, 'def-hash-xyz');
+
+        expect(changedExecution.prescriptionHash).not.toBe(original.prescriptionHash);
     });
 });

@@ -67,15 +67,19 @@ export const TAPER_RACE_WORKOUTS: WorkoutDefinition[] = [
     sourceNotes: ['Covers the short openers-or-rest decision immediately before the event.']
   },
   {
-    id: 'strength_race_week_primer_01', version: 1, status: 'active',
+    id: 'strength_race_week_primer_01', version: 2, status: 'active',
     name: 'Race-week Strength Primer',
     description: 'Short early-week neural and strength-maintenance session with sharply reduced volume and no grinding.',
     modality: 'strength', category: 'power_maintenance', objectives: ['power_maintenance', 'strength_maintenance', 'freshness'],
     duration: { defaultMin: 30, minimumMin: 18, maximumMin: 35 },
     loadProfile: { cardiovascular: 1, muscular: 2, mechanical: 2, eccentric: 1, coordination: 3, recoveryHours: 24 },
     eligibility: { minimumReadiness: 5, maximumSoreness: 5, minimumDaysAfterHardLowerBody: 1, forbiddenPainFlags: ['knee_swelling', 'worsening_achilles_pain'] },
-    equipment: ['medicine_ball', 'barbell', 'rack', 'bench', 'pullup_bar'], contraindicationTags: ['knee_swelling'],
+    equipment: ['medicine_ball', 'barbell', 'rack', 'bench', 'pullup_bar', 'bodyweight'], contraindicationTags: ['knee_swelling'], warmupKnowledgeClaimIds: ['strength.warmup.contextual_preparation', 'strength.warmup.specific_rehearsal'],
     blocks: [
+      { id: 'warmup', name: 'Brief movement rehearsal', role: 'warmup', steps: [
+        repsStep('primer_warmup_squat', 'bodyweight_squat', 'Easy bodyweight squat', 5, { load: { kind: 'bodyweight' }, notes: ['Keep the range comfortable and effort very easy.'] }),
+        repsStep('primer_warmup_pushup', 'scapular_push_up', 'Scapular push-up', 5, { load: { kind: 'bodyweight' } })
+      ]},
       { id: 'activation', name: 'Fast activation', role: 'activation', steps: [ repsStep('primer_slam', 'medicine_ball_slam', 'Medicine-ball slam', 4, { sets: 3, restAfterSec: 60, target: { type: 'technical_quality', cue: 'Fast, crisp and clearly submaximal.' } }) ]},
       { id: 'main', name: 'Low-volume maintenance', role: 'main', steps: [
         repsStep('primer_squat', 'front_squat', 'Front squat', 3, { sets: 2, restAfterSec: 120, target: { type: 'reps_in_reserve', min: 5, max: 7 } }),
