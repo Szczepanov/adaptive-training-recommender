@@ -32,7 +32,7 @@ function checkin(overrides: Partial<DailySubjectiveCheckin> = {}): DailySubjecti
 }
 
 describe('SEP-C1 clinical-envelope normalization', () => {
-    it('maps today's shoulder tissue response to upper-limb current-pain context', () => {
+    it('maps today\'s shoulder tissue response to upper-limb current-pain context', () => {
         const today = checkin({
             painOrInjury: true,
             tissueResponses: {

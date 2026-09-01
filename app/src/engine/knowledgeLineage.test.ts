@@ -129,7 +129,10 @@ describe('recommendation knowledge lineage', () => {
             ...traced,
             injuryPolicyTrace: { ...traced.injuryPolicyTrace!, tissueSeverityApplied: false, regionMappingFamilies: [], clinicalEnvelopeSources: ['non_allergy_illness'] },
         } as UserContext;
-        const illnessRefs = readinessKnowledgeRefs(painReadiness, illnessOnly);
+        const illnessReadiness = readiness();
+        illnessReadiness.subjective.painFlag = true;
+        illnessReadiness.subjective.clinicalEnvelopeSources = ['non_allergy_illness'];
+        const illnessRefs = readinessKnowledgeRefs(illnessReadiness, illnessOnly);
         expect(illnessRefs).toContain(KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy);
         expect(illnessRefs).not.toContain(KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment);
         expect(illnessRefs).not.toContain(KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement);

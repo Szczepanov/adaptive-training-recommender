@@ -1,6 +1,6 @@
 # SEP-C1 — Contextual clinical envelope remediation
 
-**Date:** 2026-09-01  
+**Date:** 2026-09-01
 **Scope:** PR #319 — decouple non-allergy illness from the generic Running restriction while preserving conservative systemic symptom handling and injury restrictions.
 
 ## Problem found during review

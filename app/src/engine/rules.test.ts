@@ -765,7 +765,11 @@ describe('session adjustment engine', () => {
 
         it('does NOT restrict Running when pain has active upper-limb region mapping only', () => {
             const readiness: DailyReadiness = {
-                subjective: neutralSubjective({ painFlag: true, clinicalEnvelopeSources: ['pain_or_injury'] }),
+                subjective: neutralSubjective({
+                    painFlag: true,
+                    clinicalEnvelopeSources: ['pain_or_injury'],
+                    painOrInjuryRegionFamilies: ['upper_limb_loading'],
+                }),
                 objective: quietObjective(),
             };
             const context: UserContext = {
@@ -789,7 +793,11 @@ describe('session adjustment engine', () => {
 
         it('restricts Running when pain has active lower-limb impact region mapping', () => {
             const readiness: DailyReadiness = {
-                subjective: neutralSubjective({ painFlag: true, clinicalEnvelopeSources: ['pain_or_injury'] }),
+                subjective: neutralSubjective({
+                    painFlag: true,
+                    clinicalEnvelopeSources: ['pain_or_injury'],
+                    painOrInjuryRegionFamilies: ['lower_limb_impact'],
+                }),
                 objective: quietObjective(),
             };
             const context: UserContext = {
