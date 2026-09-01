@@ -189,7 +189,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                         {recommendation.envelopes.safety.clinicalReason ?? 'Red-flag symptoms reported. Training recommendations are paused until medical evaluation.'}
                                     </p>
                                     <p className="escalation-text">
-                                        If you have chest pain, severe shortness of breath, fainting, or believe this may be an emergency, seek emergency medical care now.
+                                        If you have acute chest pain/pressure, unexplained shortness of breath, fainting/near-fainting, new neurological symptoms, or believe this may be an emergency, seek urgent or emergency medical care now.
                                     </p>
                                 </div>
                             </div>
