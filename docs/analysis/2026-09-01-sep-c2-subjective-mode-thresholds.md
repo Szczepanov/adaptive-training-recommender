@@ -13,7 +13,7 @@ The SEP-A evidence review identified several structural defects in the legacy su
 
 3. **Pain/injury was embedded inside a variable called `extremeFatigue`.** Clinical symptoms and training fatigue are separate policy axes and need separate provenance even when both can force recovery.
 
-4. **Extreme fatigue threshold separation.** Extreme single-dimension reports (fatigue 9–10/10 or soreness 9–10/10, `> 8`) independently force recovery even when other answered physical dimensions are green. Moderate-to-severe fatigue (8/10) independently enforces `modify` via `acuteSubjectiveModify` (`fatigue >= 8`) and escalates to `recover` when paired with reduced readiness (`readiness <= 4`) or high stress (`stress >= 8`), preventing dilution while respecting multi-factor balance.
+4. **The pre-SEP-C2 absolute boundary was too narrow.** Before the safety hardening in this PR, the legacy condition used `> 8`, so only fatigue/soreness 9–10/10 independently forced recovery. An 8/10 report could therefore be diluted by otherwise green answers. SEP-C2 deliberately changes that boundary to `>= 8`; the new 8/10 recovery behavior is product calibration and is pinned by regression tests below.
 
 ## Corrected architecture
 
@@ -54,7 +54,7 @@ The literature supports subjective self-report as a useful and often sensitive c
 
 Therefore:
 - the **structure** of using athlete-reported fatigue/soreness and avoiding artificial neutral imputation is evidence-informed;
-- the exact `>7` absolute boundary is a **conservative product calibration**, not a clinical diagnostic cutoff;
+- the exact `>= 8` absolute boundary is a **conservative product calibration**, not a clinical diagnostic cutoff;
 - it should remain versioned, observable, and open to later calibration against outcome/simulation data rather than being described as a medical threshold.
 
 ## Behaviour matrix
@@ -67,7 +67,7 @@ Therefore:
 | Partial check-in: fatigue = 8 only | `recover` | Composite 8.0 + absolute override |
 | All dimensions answered; fatigue = 8, others excellent | `recover` | Absolute override prevents dilution |
 | All dimensions answered; soreness = 8, others excellent | `recover` | Absolute override prevents dilution |
-| Fatigue = 7 with otherwise excellent inputs | not `recover` from the absolute rule alone | Boundary is strictly `>7` |
+| Fatigue = 7 with otherwise excellent inputs | not `recover` from the absolute rule alone | Boundary is `>= 8` |
 | Pain/red flag | handled by clinical policy | Separate clinical axis |
 
 ## Verification added in PR #320
@@ -83,7 +83,7 @@ Therefore:
 - four-item physical composite;
 - motivation decoupling;
 - dynamic answered-dimension participation;
-- absolute `>7` fatigue/soreness recovery calibration;
+- absolute `>= 8` fatigue/soreness recovery calibration;
 - separate clinical override semantics.
 
 ## Policy version
