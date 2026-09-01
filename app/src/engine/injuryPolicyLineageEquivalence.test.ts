@@ -105,7 +105,12 @@ function legacyDeriveTissueSeverity(response: RegionTissueResponse): InjuryConst
 
     if (levels.some((level) => level === 'severe')) return 'exclude';
     if (morningState === 'moderate' || afterTrainingState === 'moderate' || nextMorningReaction === 'moderate') return 'limit';
-    if (painDuringTraining === 'moderate') return 'monitor';
+    if (painDuringTraining === 'moderate') {
+        const settledLevel = (level: TissueResponseLevel | undefined): boolean =>
+            level === 'normal' || level === 'mild';
+        const completeSettledFollowup = settledLevel(afterTrainingState) && settledLevel(nextMorningReaction);
+        return completeSettledFollowup ? 'monitor' : 'limit';
+    }
     if (levels.some((level) => level === 'mild')) return 'monitor';
     return null;
 }

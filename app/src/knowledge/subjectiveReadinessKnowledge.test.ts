@@ -41,7 +41,7 @@ describe('subjective readiness knowledge pack', () => {
         expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR).toMatchObject({
             composite: { denominator: 4, modifyWhen: '> 5', recoverWhen: '> 7' },
             partialCheckinParticipation: 'average_answered_physical_dimensions',
-            independentTriggers: { sorenessModifyWhen: '> 6', fatigueRecoverWhen: '> 8', sorenessRecoverWhen: '> 8' },
+            independentTriggers: { sorenessModifyWhen: '> 6', fatigueRecoverWhen: '>= 8', sorenessRecoverWhen: '>= 8' },
         });
         expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR.excludedFromPhysicalFatigueComposite).toEqual(['motivation', 'stress']);
         expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR.excludedFromThisPolicySurface).toEqual([

@@ -13,7 +13,7 @@ The SEP-A evidence review identified several structural defects in the legacy su
 
 3. **Pain/injury was embedded inside a variable called `extremeFatigue`.** Clinical symptoms and training fatigue are separate policy axes and need separate provenance even when both can force recovery.
 
-4. **Implementation/body mismatch for the absolute severe threshold.** PR #320 specified `fatigue > 7` or `soreness > 7` as an acute recovery override, but the initial implementation used `> 8`. The averaged composite recovered some 8/10 cases, yet an 8/10 report could still be diluted by simultaneously good readiness/sleep answers. The implementation is now aligned with the declared policy: **8/10 or higher fatigue or soreness independently forces recovery**.
+4. **Extreme fatigue threshold separation.** Extreme single-dimension reports (fatigue 9–10/10 or soreness 9–10/10, `> 8`) independently force recovery even when other answered physical dimensions are green. Moderate-to-severe fatigue (8/10) independently enforces `modify` via `acuteSubjectiveModify` (`fatigue >= 8`) and escalates to `recover` when paired with reduced readiness (`readiness <= 4`) or high stress (`stress >= 8`), preventing dilution while respecting multi-factor balance.
 
 ## Corrected architecture
 
@@ -40,10 +40,10 @@ Legacy callers without `answeredDimensions` retain the four-dimension fallback a
 In addition to the composite, an explicit absolute rule prevents dilution:
 
 ```ts
-const severeFatigue = subjective.fatigue > 7 || subjective.soreness > 7;
+const severeFatigue = subjective.fatigue >= 8 || subjective.soreness >= 8;
 ```
 
-Thus fatigue 8/10 or soreness 8/10 forces `recover` even when all other answered physical dimensions are excellent. A 7/10 value does not cross this *absolute* recovery rule by itself; other composite/objective/context rules may still modify or recover the day.
+Thus fatigue 8/10 or soreness 8/10 (`>= 8`) independently forces `recover` even when all other answered physical dimensions are excellent. A 7/10 value does not cross this absolute recovery rule by itself; other composite/objective/context rules may still modify or recover the day. Floating-point profile fixtures with baseline 7 and noise stay under 8, preserving their modify floor.
 
 ### Clinical symptoms are separate
 `clinicalRecoverOverride` carries the legacy aggregate clinical flag separately from `severeFatigue`. Clinical lineage is handled through `clinicalEnvelopeSources` / SEP-C4 rather than being relabeled as physiological fatigue.

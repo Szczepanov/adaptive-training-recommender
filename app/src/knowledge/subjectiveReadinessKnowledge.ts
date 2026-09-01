@@ -75,8 +75,8 @@ export const SUBJECTIVE_READINESS_POLICY_DESCRIPTOR = {
     partialCheckinParticipation: 'average_answered_physical_dimensions',
     independentTriggers: {
         sorenessModifyWhen: '> 6',
-        fatigueRecoverWhen: '> 8',
-        sorenessRecoverWhen: '> 8',
+        fatigueRecoverWhen: '>= 8',
+        sorenessRecoverWhen: '>= 8',
     },
     severeDistressRecoverWhenAny: [
         'fatigue >= 8 && readiness <= 4',

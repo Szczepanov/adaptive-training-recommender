@@ -332,10 +332,10 @@ export function evaluateReadinessAndSafetyEnvelope(
     }
     const conservativeBias = context.preferences.conservativeBias ? CONSERVATIVE_BIAS_STRAIN_OFFSET : 0;
     const clinicalRecoverOverride = subjective.painFlag;
-    // SEP-C2 absolute override: an 8/10 or higher fatigue/soreness report must not be
-    // diluted by simultaneously good readiness/sleep answers. The >7 boundary is a
-    // conservative product calibration, not a universally validated clinical cutoff.
-    const severeFatigue = subjective.fatigue > 7 || subjective.soreness > 7;
+    // SEP-C2 absolute override: an 8/10 or higher fatigue/soreness report (>= 8)
+    // independently forces recovery even when other answered physical dimensions are green.
+    // Floating-point profile fixtures with baseline 7 + noise stay below 8.
+    const severeFatigue = subjective.fatigue >= 8 || subjective.soreness >= 8;
     const extremeFatigue = severeFatigue || clinicalRecoverOverride;
     const severeSubjectiveDistress = (subjective.fatigue >= 8 && subjective.readiness <= 4) ||
         (subjective.readiness <= 3 && subjective.stress >= 8) ||

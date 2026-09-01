@@ -69,9 +69,10 @@ describe('subjective readiness policy alignment', () => {
     it('pins independent strict trigger boundaries on both sides', () => {
         expect(mode({ soreness: 6 })).toBe('train');
         expect(mode({ soreness: 7 })).toBe('modify');
-        expect(mode({ soreness: 8 })).toBe('modify');
+        expect(mode({ soreness: 8 })).toBe('recover');
         expect(mode({ soreness: 9 })).toBe('recover');
-        expect(mode({ fatigue: 8 })).toBe('modify');
+        expect(mode({ fatigue: 7 })).toBe('train');
+        expect(mode({ fatigue: 8 })).toBe('recover');
         expect(mode({ fatigue: 9 })).toBe('recover');
         expect(mode({ readiness: 4 })).toBe('train');
         expect(mode({ readiness: 3 })).toBe('modify');
@@ -80,20 +81,20 @@ describe('subjective readiness policy alignment', () => {
     });
 
     it('isolates every severe-distress recover conjunction at its inclusive boundaries', () => {
-        // fatigue >= 8 && readiness <= 4
+        // fatigue >= 8 independently forces recover under SEP-C2; fatigue = 7 modifies with reduced readiness
         expect(mode({ fatigue: 8, readiness: 4 })).toBe('recover');
         expect(mode({ fatigue: 7, readiness: 4 })).toBe('modify');
-        expect(mode({ fatigue: 8, readiness: 5 })).toBe('modify');
+        expect(mode({ fatigue: 8, readiness: 5 })).toBe('recover');
 
         // readiness <= 3 && stress >= 8
         expect(mode({ readiness: 3, stress: 8 })).toBe('recover');
         expect(mode({ readiness: 4, stress: 8 })).toBe('train');
         expect(mode({ readiness: 3, stress: 7 })).toBe('modify');
 
-        // fatigue >= 8 && stress >= 8
+        // fatigue >= 8 && stress >= 8 (fatigue >= 8 independently forces recover)
         expect(mode({ fatigue: 8, stress: 8 })).toBe('recover');
         expect(mode({ fatigue: 7, stress: 8 })).toBe('train');
-        expect(mode({ fatigue: 8, stress: 7 })).toBe('modify');
+        expect(mode({ fatigue: 8, stress: 7 })).toBe('recover');
     });
 
     it('isolates the readiness/fatigue acute-modify conjunction at both inclusive boundaries', () => {
