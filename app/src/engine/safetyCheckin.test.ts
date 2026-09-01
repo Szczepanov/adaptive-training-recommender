@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { DailySubjectiveCheckin } from './models';
+import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
+import { buildRecommendationAudit } from './provenance';
 import {
     canGenerateNormalRecommendation,
     createProvisionalSafetyRecommendation,
@@ -58,5 +60,7 @@ describe('minimum safety check-in', () => {
         expect(recommendation.template.category).toBe('Rest');
         expect(recommendation.mode).toBe('recover');
         expect(recommendation.envelopes?.plan.maxAllowableTier).toBe('Rest');
+        expect(recommendation.knowledgeRefs).toBeUndefined();
+        expect(buildRecommendationAudit(recommendation, {} as TrainingHistorySnapshot)).toBeNull();
     });
 });

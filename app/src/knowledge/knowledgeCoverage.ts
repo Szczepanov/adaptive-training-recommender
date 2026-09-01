@@ -114,10 +114,11 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'readiness.subjective_mode_thresholds', domain: 'readiness_recovery', title: 'Subjective readiness mode thresholds',
-        currentRule: 'Five-item fatigue average >5 modifies and >7 recovers; additional fatigue/soreness/readiness/stress combinations at 3/4/6/8/9 thresholds can force modify/recover.',
-        classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
-        codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope'], knowledgeRefs: [],
-        coverageRationale: 'Subjective readiness thresholds remain a separate P0 evidence/calibration problem; this pack does not use HRV/sleep evidence to legitimize them by proximity.',
+        currentRule: 'Five-item equal-weight fatigue average (fatigue, soreness, inverted readiness/sleep quality/motivation) >5 modifies and >7 recovers; additional fatigue/soreness/readiness/stress combinations at 3/4/6/8/9 thresholds can force modify/recover. Missing non-safety scale dimensions normalize to 5 after minimum-safety completion.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
+        codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope', 'engine/adapters.ts:mapCheckinToSubjectiveInput', 'engine/safetyCheckin.ts:getMinimumSafetyCheckinStatus'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.contextualMonitoring, KNOWLEDGE_CLAIM_IDS.measurementQualityLimits, KNOWLEDGE_CLAIM_IDS.exactCutpointLimits, KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy],
+        coverageRationale: 'SEP-A supports repeated subjective measures as contextual monitoring and explicitly records the classifier as product policy. The reviewed evidence does not validate the equal-weight composite, exact cut-points, combinations, or neutral-default participation as universal readiness thresholds; outcome-linked calibration and partial-check-in review remain P0 debt.',
     },
     {
         id: 'readiness.absolute_device_floors', domain: 'readiness_recovery', title: 'Absolute sleep-score and Body Battery floors',

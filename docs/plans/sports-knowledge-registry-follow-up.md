@@ -82,7 +82,9 @@ No numeric recommendation behavior changes were made, so this pack does not bump
 
 ### Safety Evidence Pack — Subjective Readiness + Injury/Pain Safety
 
-**Status:** Planned — high-safety debt remains open
+**Status:** In progress — SEP-A subjective-readiness migration complete; SEP-B injury/pain remains open
+
+Execution plan: [`2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md`](./2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md). SKR1 is complete, so there is no remaining runtime-lineage blocker. SEP-A covers only the live absolute current-day subjective classifier; generic pain/illness authority and injury mappings remain SEP-B.
 
 Priority families:
 
@@ -91,7 +93,11 @@ Priority families:
 3. `injury.region_restriction_mapping`;
 4. `injury.pain_envelope_mapping`.
 
-This pack should separate validated symptom/return-to-sport principles from conservative product action mappings. Because three families are high-safety, it should prefer guideline/consensus/rehabilitation evidence and preserve explicit uncertainty rather than manufacturing universal pain thresholds. Reordering the evidence-pack sequence does not reduce this priority or make these families covered.
+SEP-A analysis: `docs/analysis/2026-09-01-evidence-pack-subjective-readiness.md`.
+
+SEP-A adds a contextual self-report monitoring boundary, measurement-quality limitation, explicit no-cutpoint-validation boundary, and a separate current product-policy record. It extends normal readiness audit lineage through SKR1 without changing recommendation behavior. `readiness.subjective_mode_thresholds` is **partial / P0**, not covered: the five-item equal-weight score, exact comparisons, and partial-check-in neutral defaults remain unvalidated calibration debt.
+
+SEP-B should separately review injury/pain authority. Because its three families are high-safety, it should prefer guideline/consensus/rehabilitation evidence and preserve explicit uncertainty rather than manufacturing universal pain thresholds. Reordering the evidence-pack sequence does not reduce this priority or make these families covered.
 
 ### Evidence Pack 4 — Strength + Concurrent Training
 

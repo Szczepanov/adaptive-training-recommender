@@ -6,6 +6,7 @@ import {
     compareKnowledgeLineage,
     readinessKnowledgeRefs,
     snapshotKnowledgeLineage,
+    subjectiveReadinessKnowledgeRefs,
     trainingIntentKnowledgeRefs,
 } from './knowledgeLineage';
 import { evaluateTrainingWithIntent, type ExternalPlanContext } from './rules';
@@ -63,7 +64,7 @@ describe('recommendation knowledge lineage', () => {
             .toMatchObject({ status: 'drifted', drift: [{ claimId: claim.id, recordedVersion: claim.version + 1, currentVersion: claim.version }] });
     });
 
-    it('attributes only covered objective-readiness families that have applicable inputs', () => {
+    it('attributes subjective classifier evidence on every normal readiness evaluation and objective families only when applicable', () => {
         const refs = readinessKnowledgeRefs(readiness({
             hrv_delta: -8, hrv_delta_28d: -4, hrv_stdev_28d: 6,
             last_3_days_hard_sessions_count: 2,
@@ -76,8 +77,13 @@ describe('recommendation knowledge lineage', () => {
             KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance,
             KNOWLEDGE_CLAIM_IDS.recentHardReadinessPenalty,
             KNOWLEDGE_CLAIM_IDS.readinessModeThresholds,
+            KNOWLEDGE_CLAIM_IDS.contextualMonitoring,
+            KNOWLEDGE_CLAIM_IDS.measurementQualityLimits,
+            KNOWLEDGE_CLAIM_IDS.exactCutpointLimits,
+            KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy,
         ]));
-        expect(refs).not.toContain('readiness.subjective_mode_thresholds');
+        expect(refs).toEqual([...refs].sort());
+        expect(refs).toEqual([...new Set(refs)]);
     });
 
     it('does not attribute 28-day-only biometric context when metricStrain short-circuits without a 7-day anchor', () => {
@@ -91,7 +97,22 @@ describe('recommendation knowledge lineage', () => {
             sleep_score_stdev_28d: 5,
             respiration_mad_28d: 0.8,
         }), context);
-        expect(refs).toEqual([]);
+        expect(refs).toEqual(subjectiveReadinessKnowledgeRefs());
+    });
+
+    it('keeps the subjective readiness evidence set deterministic and independent from pain or forecast-only paths', () => {
+        const ids = [
+            KNOWLEDGE_CLAIM_IDS.contextualMonitoring,
+            KNOWLEDGE_CLAIM_IDS.measurementQualityLimits,
+            KNOWLEDGE_CLAIM_IDS.exactCutpointLimits,
+            KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy,
+        ].sort();
+        expect(subjectiveReadinessKnowledgeRefs()).toEqual(ids);
+        expect(snapshotKnowledgeLineage(subjectiveReadinessKnowledgeRefs())).toEqual(ids.map(claimId => ({
+            claimId,
+            version: getActiveKnowledgeClaim(claimId).version,
+        })));
+        expect(subjectiveReadinessKnowledgeRefs()).not.toContain('injury.pain_envelope_mapping');
     });
 
     it('adds taper lineage only for an active endurance taper and spacing lineage only when history exists', () => {

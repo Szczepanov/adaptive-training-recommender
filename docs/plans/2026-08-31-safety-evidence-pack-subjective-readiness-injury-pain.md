@@ -1,9 +1,11 @@
 # Safety Evidence Pack — Subjective Readiness + Injury/Pain
 
 **Date:** 2026-08-31
-**Status:** Implementation plan; no recommendation behavior changes in this PR.
+**Status:** In progress — SEP-A implemented; SEP-B and SEP-C remain open.
+**Blocked by:** None. SKR1 persisted recommendation lineage (PR #312) is on `main`.
+**Unlocks:** SEP-B implementation; SEP-A establishes the reviewed safety-evidence pattern reused by SEP-B.
 **Priority:** P0 / high-safety debt.
-**Prerequisite for runtime lineage:** merge SKR1 persisted recommendation lineage (PR #312) before the implementation PRs are finalized.
+**Execution cutline:** The next implementation PR is SEP-A only. SEP-B remains a separate review and implementation PR.
 
 ## 1. Executive summary
 
@@ -37,10 +39,27 @@ The evidence pack itself should be behavior-preserving. If the review finds that
 
 The recommended execution is two reviewable evidence migrations under one umbrella pack:
 
-- **SEP-A — Subjective readiness**: athlete self-report evidence, psychometric/measurement boundary, exact product threshold registration, coverage migration, and post-SKR1 runtime lineage.
-- **SEP-B — Injury/pain safety**: return-to-sport/load-management boundary, tissue-response semantics, region mapping decomposition, generic pain-envelope review, product-policy registration, coverage migration, and post-SKR1 runtime lineage.
+- **SEP-A — Subjective readiness**: athlete self-report evidence, psychometric/measurement boundary, exact product threshold registration, coverage migration, and runtime lineage on the existing SKR1 contract.
+- **SEP-B — Injury/pain safety**: return-to-sport/load-management boundary, tissue-response semantics, region mapping decomposition, generic pain-envelope review, product-policy registration, coverage migration, and runtime lineage on the existing SKR1 contract.
 
 Any actual threshold or restriction change becomes **SEP-C — Safety policy remediation**, split further by policy family if needed.
+
+### 1.1 SEP-A readiness review against current `main` (2026-09-01)
+
+The original plan predated the merged SKR1 runtime. The current repository now has:
+
+- schema-v4 `RecommendationAudit.knowledgeLineage` with central `{claimId, version}` snapshotting in `provenance.ts` `buildRecommendationAudit`;
+- `knowledgeLineage.ts` `readinessKnowledgeRefs`, which deliberately excludes subjective claims while the coverage family remains unresolved;
+- a valid 47-family coverage inventory with `readiness.subjective_mode_thresholds` still `uncovered / P0 / high decision impact / high safety impact`;
+- the production subjective-drift selector still default-off under ADR-0020;
+- cause-aware symptom mapping in `adapters.ts` `mapCheckinToSubjectiveInput` under ADR-0032.
+
+SEP-A therefore does not need a schema or persistence migration. It needs one bounded evidence migration: review and register the current-day absolute subjective classifier, decide coverage honestly, and add material-use IDs through the existing v4 lineage path.
+
+Two scope corrections are required:
+
+1. `painFlag` is not part of the SEP-A subjective-threshold policy claim. It is a separate injury/illness safety input whose exact action belongs to `injury.pain_envelope_mapping` and SEP-B. SEP-A must preserve its behavior, but must not use subjective-readiness evidence to justify it.
+2. The default-off subjective-drift estimator is outside SEP-A. ADR-0020 and Phase 9 own its estimator, evidence and production activation. SEP-A covers only the live absolute current-day score/combination thresholds.
 
 ---
 
@@ -70,9 +89,11 @@ Current policy in `engine/rules.ts`:
   - `readiness <= 4 && fatigue >= 6`;
 - `soreness > 6` can independently force `modify`.
 
-Coverage today: **uncovered / P0 / high decision impact / high safety impact**.
+SEP-A outcome: **partial / P0 / high decision impact / high safety impact**. Analysis: `docs/analysis/2026-09-01-evidence-pack-subjective-readiness.md`.
 
 The exact numerical cut-points are product-authored. Earlier HRV/sleep evidence must not be used to legitimize these subjective thresholds by proximity.
+
+`painFlag` appears in the same live function but remains a separate policy family. It must be locked by behavior-preservation tests during SEP-A and receive no SEP-A claim attribution.
 
 ### 2.2 `injury.tissue_response_severity`
 
@@ -175,7 +196,7 @@ The evidence-pack PRs may add:
 - limitations;
 - coverage references;
 - policy-alignment tests;
-- runtime provenance/knowledge refs after SKR1.
+- runtime provenance/knowledge refs through the existing SKR1 mechanism.
 
 They must not change:
 
@@ -206,7 +227,7 @@ The Safety Evidence Pack is complete when all four P0 families have:
 6. documented contested and unsupported conclusions;
 7. updated coverage state with a rationale that explains any remaining gap;
 8. policy-alignment tests proving the registered product policy still matches the executable rule;
-9. after SKR1, runtime claim attribution only when the corresponding policy materially participates;
+9. runtime claim attribution through the existing SKR1 path only when the corresponding policy is evaluated with applicable input;
 10. no recommendation behavior delta in the evidence migration itself.
 
 The pack is **not** complete merely because a policy has citations.
@@ -355,6 +376,23 @@ PMID `27834546`; DOI `10.1123/ijspp.2016-0395`.
 
 Useful for the measurement-quality boundary: construct validity, reliability, responsiveness, administration consistency and practical implementation must be considered before treating a score as decision authority.
 
+**Duignan et al., 2020 — single-item team-sport wellbeing systematic review**
+PMID `32991706`; PMCID `PMC7534939`; DOI `10.4085/1062-6050-0528.19`.
+
+Required for SEP-A because it directly reviews the kind of single-item wellness components used by the app. It found heterogeneous instruments, scoring methods and associations with training load, and did not establish clinically meaningful traffic-light action cut-points. Its team-sport population also limits direct transfer to a general multisport product.
+
+**Jeffries et al., 2020 — COSMIN review of athlete-reported outcome measures**
+PMID `32957081`; DOI `10.1123/ijspp.2020-0386`.
+
+Required for the measurement-validity boundary. The review found that commonly used single-item athlete-reported measures lacked adequate validation evidence, while even multi-item measures had content-validity and measurement-error limitations. This is direct evidence against treating the app's bespoke six-item input surface or five-item equal-weight composite as a validated instrument.
+
+**Campbell et al., 2021 — predictive capacity of wellness measures**
+PMID `33404378`; DOI `10.1080/02640414.2020.1870303`.
+
+Useful contested evidence: across a large multisport observation set, wellness items explained little variance in load measures. It does not prove that wellness is useless, because training load is not the same outcome as readiness, safety or successful session completion, but it prevents the pack from presenting responsiveness findings as settled predictive action authority.
+
+The implementation review must also reconcile the more recent item-specific studies already summarized in ADR-0020 and verify whether a newer guideline or systematic review supersedes these anchors. The PR #314 evidence note is prior reconnaissance, not a completed SEP-A appraisal; its PMID `32991706` attribution must be corrected from Jeffries to Duignan when that note is next touched.
+
 ### 6.2 Return to sport as risk management
 
 **Ardern et al., 2016 — Bern return-to-sport consensus**
@@ -393,6 +431,15 @@ Determine what the literature supports about repeated athlete self-report monito
 
 The primary risk is false precision: a strong evidence base for subjective monitoring could be misrepresented as validation of a specific arithmetic average and a series of hard cut-points.
 
+The review must answer four questions separately:
+
+1. **Measurement validity:** are the app's individual 1-10 items sufficiently defined, repeatable and responsive for repeated use?
+2. **Composite validity:** is equal weighting of fatigue, soreness, inverted readiness, inverted sleep quality and inverted motivation defensible, while stress remains outside that average?
+3. **Action validity:** does acting on adverse scores improve safety, adherence, health or performance compared with monitoring/context gathering alone?
+4. **Threshold validity:** has any source prospectively validated the app's exact operators and cut-points (`>5`, `>7`, `>8`, `>6`, `>=6`, `>=8`, `<=3`, `<=4`, `>=9`) for the same action and population?
+
+The analysis must include a reproducible search log: databases, search date, exact queries, result counts, duplicate handling, full-text inclusion/exclusion reasons and the final selected-source set. A narrative claim that a "full review" was performed is not sufficient.
+
 ### 7.2 Candidate claim slots
 
 Final wording must be written only after appraisal. Candidate IDs/namespaces to reserve conceptually:
@@ -416,11 +463,13 @@ This claim should record the exact live product behavior, including:
 
 - five-item average construction;
 - `>5` / `>7` transitions;
-- independent soreness/fatigue thresholds;
+- independent soreness/fatigue thresholds, preserving every strict (`>`) versus inclusive (`>=`/`<=`) boundary;
 - stress/readiness/fatigue combinations;
-- the interaction with `painFlag`.
+- terminal readiness overrides that are explicitly outside the claim, including `alreadyTrainedToday` and objective `today_training`.
 
 Its scientific certainty should be `not_applicable` if it remains product calibration. It should explicitly cite the scientific boundary claims as context rather than pretending the numbers were validated externally.
+
+Do not include `painFlag`, illness interpretation, subjective drift or generic injury behavior in this product claim. Their proximity in `evaluateReadinessAndSafetyEnvelope` does not make them one epistemic family.
 
 ### 7.3 Required conclusions in the analysis document
 
@@ -461,15 +510,22 @@ After evidence review:
 - update `knowledgeCoverage.ts` for `readiness.subjective_mode_thresholds`;
 - update `knowledgeCoverage.test.ts`;
 - add the evidence analysis document under `docs/analysis/`;
-- after SKR1, extend runtime lineage attribution for the subjective policy.
+- extend the existing SKR1 runtime lineage attribution for the subjective policy without changing the v4 audit schema.
 
 ### 7.6 Policy-alignment test requirements
 
 The test must fail if registered `policy.readiness.subjective_mode_thresholds_v1` stops matching executable policy.
 
-Do not merely test that the claim exists. Assert the material constants/conditions, ideally through exported constants or a normalized policy representation rather than brittle source-text matching.
+Do not merely test that the claim exists. Add a normalized policy descriptor in the SEP-A knowledge module and drive executable boundary cases against `rules.ts` `evaluateReadinessAndSafetyEnvelope`. The table must cover the exact equality boundary on both sides of every strict/inclusive operator and isolate each severe/acute combination.
 
-If the current rule remains inline and cannot be aligned robustly, a small behavior-identical refactor to named constants may be acceptable, provided the policy-drift guard proves semantic equivalence.
+Do not refactor the inline thresholds into named constants during SEP-A. The current policy-drift guard only exempts comment/whitespace-only changes in `rules.ts`; an executable refactor would require a global `POLICY_VERSION` change even if intended to be behavior-identical. If robust alignment cannot be achieved through the descriptor-driven boundary matrix, stop and move the refactor to a separately reviewed provenance/policy PR.
+
+The alignment suite must also prove scope separation:
+
+- `stress` participates in independent combinations but not the five-item average;
+- `painFlag` behavior remains unchanged but is absent from the SEP-A product claim;
+- default-off subjective drift neither changes these boundaries nor receives SEP-A threshold authority;
+- a provisional safety recommendation created without the ordinary evaluator receives no SEP-A lineage.
 
 ---
 
@@ -618,7 +674,7 @@ Splitting product claims is preferred over one giant region claim because future
 - aggregate in `sportsKnowledgeRegistry.ts`;
 - update `knowledgeCoverage.ts` and coverage tests;
 - add `docs/analysis/<date>-evidence-pack-subjective-readiness-injury-pain.md` or two linked analysis documents if the source volume becomes unwieldy;
-- after SKR1, extend material-use lineage for tissue/region/pain policies.
+- extend the existing SKR1 material-use lineage for tissue/region/pain policies.
 
 ---
 
@@ -655,13 +711,13 @@ These claims prevent future code from inheriting scientific authority it does no
 
 ---
 
-## 10. Post-SKR1 runtime lineage integration
+## 10. Runtime lineage integration on the existing SKR1 contract
 
-PR #312 introduces recommendation-level stable claim IDs and freezes `{claimId, version}` at the audit boundary. The Safety Evidence Pack should use that mechanism rather than invent a second provenance path.
+PR #312 is merged. Recommendation-level code now carries stable claim IDs and freezes `{claimId, version}` at the audit boundary. The Safety Evidence Pack must use that mechanism rather than invent a second provenance path.
 
 ### 10.1 Subjective readiness attribution
 
-Extend the post-SKR1 readiness lineage helper rather than importing registry resolution directly into `rules.ts`.
+Extend `knowledgeLineage.ts` `readinessKnowledgeRefs` rather than importing registry resolution directly into `rules.ts`.
 
 Suggested shape:
 
@@ -679,10 +735,20 @@ with the newly registered subjective scientific-boundary and product-policy IDs.
 
 Materiality rule:
 
-- include subjective monitoring/boundary claims when the production readiness classifier evaluates the supplied subjective inputs;
-- include `policy.readiness.subjective_mode_thresholds_v1` when that threshold family is in the active decision path;
+- include the SEP-A scientific boundary claims and `policy.readiness.subjective_mode_thresholds_v1` whenever the ordinary production readiness classifier evaluates the normalized subjective vector;
+- use "evaluated with applicable normalized input", the existing SKR1 meaning, rather than claiming that a ref appears only when the family counterfactually changes the final mode;
 - do not add unrelated injury claims merely because `soreness` is present;
-- if an independent hard override bypasses normal readiness classification, prefer a counterfactual/material-use test or clearly document why the classifier is still considered consumed.
+- do not attach SEP-A refs to `safetyCheckin.ts` `createProvisionalSafetyRecommendation`, which bypasses the ordinary evaluator and is not persisted as an engine-generated decision;
+- do not persist forecast-only lineage: the planner may evaluate synthetic readiness scenarios, but architecture guarantees that nothing beyond today is persisted.
+
+The production boundary needs an explicit test for partial check-ins. `safetyCheckin.ts` permits an ordinary recommendation once the three safety booleans and either fatigue or soreness are supplied; `adapters.ts` then maps any unanswered 1-10 dimensions to neutral `5`. The lineage helper sees only that normalized numeric vector. SEP-A must therefore:
+
+- document neutral-default normalization in the product-policy claim and analysis;
+- include the product-policy ref when that normalized classifier runs, even if some components were defaults;
+- avoid wording any scientific claim as proof that every component was actually measured on that day;
+- record a remediation/calibration question if review concludes that a five-item composite with defaulted components should not authorize an ordinary recommendation.
+
+Changing minimum-safety completeness or neutral-default behavior is a recommendation behavior change and belongs in SEP-C, not SEP-A.
 
 ### 10.2 Injury/tissue attribution
 
@@ -713,7 +779,8 @@ When `painFlag` activates the generic pain envelope, include exactly the claims 
 - adding a new scientific source without changing claim meaning does not automatically require a new policy version;
 - materially changing a claim statement/authority requires a claim version increment under ADR-0033;
 - changing executable recommendation behavior requires a separate `POLICY_VERSION` decision;
-- runtime lineage-only wiring is provenance behavior, not training prescription behavior; follow the post-SKR1 policy-drift convention established by #312 rather than changing thresholds to satisfy the guard.
+- additive refs inside the existing v4 lineage schema are identified by their own claim IDs/versions and do not by themselves require a `POLICY_VERSION` bump when no decision-affecting file or executable behavior changes;
+- any need to touch `rules.ts`, `adapters.ts`, or another file guarded by `check-policy-drift.mjs` reopens the global version decision and should be split from SEP-A unless it is comment-only.
 
 ---
 
@@ -729,6 +796,8 @@ May become `covered` only when:
 - policy-alignment tests prove claim ↔ code consistency.
 
 If the high-safety threshold rationale remains too weak, mark `partial` and retain P0/P1 follow-up rather than using the presence of a product claim alone to close debt.
+
+For SEP-A the default migration decision is `partial / P0` until the review explicitly accepts the safety rationale for both the exact threshold table and neutral-default participation. A product-policy claim proves auditability, not adequacy. Moving directly to `covered` requires a written reviewer decision in the evidence analysis; silence or the mere existence of tests is not acceptance.
 
 ### 11.2 `injury.tissue_response_severity`
 
@@ -777,7 +846,9 @@ Assert the registered policy representation matches:
 - soreness/fatigue independent thresholds;
 - severe distress combinations;
 - acute modify combinations;
-- pain interaction if it remains in the same family.
+- strict-versus-inclusive equality boundaries for every operator;
+- neutral-default behavior for a minimum-safety but otherwise partial check-in;
+- explicit exclusion of pain/illness and default-off subjective drift from the registered SEP-A policy surface.
 
 ### 12.3 Injury policy-alignment tests
 
@@ -801,12 +872,15 @@ Assert the evidence pack does not accidentally change:
 
 If the evidence review recommends changing these, the test should document current behavior and the separate remediation PR should intentionally update it with a policy-version change.
 
-### 12.5 Runtime lineage tests after #312
+### 12.5 Runtime lineage tests
 
 Add tests proving:
 
 - subjective claim refs are deterministic and deduplicated;
-- no subjective refs on a path that truly bypasses the subjective classifier;
+- ordinary normalized subjective classification receives SEP-A refs, including the documented partial-input/default case;
+- provisional safety fallback receives no SEP-A refs and no persisted audit;
+- pain/illness behavior does not acquire SEP-A authority merely because it is evaluated nearby;
+- forecast-only refs are never persisted as a future-day audit;
 - tissue severity refs appear only when tissue response is present/used;
 - region-specific refs match the active region cluster only;
 - generic pain does not claim region-specific evidence;
@@ -840,7 +914,7 @@ Deliverables:
 - registry module/tests;
 - policy-alignment test;
 - coverage migration decision;
-- post-SKR1 runtime lineage;
+- runtime lineage on the existing SKR1 helper;
 - analysis doc with supported/contested/unsupported sections.
 
 Reason to land first: the family is one coherent readiness classifier and has fewer condition-specific evidence branches than injury mapping.
@@ -906,20 +980,21 @@ docs/analysis/<date>-evidence-pack-injury-pain.md
 
 A single combined analysis doc is acceptable if it stays readable, but separate analysis files are preferred because the evidence methods/populations are different.
 
+For the next SEP-A PR, only the three subjective-readiness files and the subjective-readiness analysis document are in scope. The injury/pain files are reserved for SEP-B.
+
 ### Existing files likely changed
 
 ```text
 app/src/knowledge/sportsKnowledgeRegistry.ts
 app/src/knowledge/knowledgeCoverage.ts
 app/src/knowledge/knowledgeCoverage.test.ts
-app/src/engine/knowledgeLineage.ts          # after #312
-app/src/engine/knowledgeLineage.test.ts     # after #312
-app/src/engine/rules.ts                     # only if lineage plumbing/alignment needs it
+app/src/engine/knowledgeLineage.ts
+app/src/engine/knowledgeLineage.test.ts
 app/src/engine/injuryPolicy.ts              # only behavior-identical provenance/refactor if necessary
 docs/plans/sports-knowledge-registry-follow-up.md
 ```
 
-No Firestore schema change should be required after #312; new claims should flow through the existing v4 `{claimId, version}` lineage mechanism.
+`rules.ts` and `adapters.ts` are explicitly out of the SEP-A file map. No Firestore schema change is required; new claims flow through the existing v4 `{claimId, version}` lineage mechanism.
 
 ---
 
@@ -991,6 +1066,8 @@ Before an active claim is merged, reviewer must be able to answer yes to all app
 
 ## 17. Acceptance criteria for the implementation PRs
 
+The next SEP-A PR applies these criteria only to `readiness.subjective_mode_thresholds`. It must not alter the other three safety-pack coverage rows or add injury/pain claim lineage. The umbrella pack reaches completion only after SEP-B later satisfies the remaining criteria.
+
 ### Evidence quality
 
 - [ ] Search/appraisal method documented.
@@ -1015,7 +1092,7 @@ Before an active claim is merged, reviewer must be able to answer yes to all app
 - [ ] Coverage states reflect evidence honestly.
 - [ ] Any remaining `partial/uncovered` debt retains priority and rationale.
 
-### Runtime lineage after SKR1
+### Runtime lineage
 
 - [ ] Subjective lineage only for subjective readiness policy participation.
 - [ ] Tissue-response lineage only when tissue response is used.
@@ -1037,22 +1114,24 @@ Before an active claim is merged, reviewer must be able to answer yes to all app
 
 ### Phase 0 — reconcile repository state
 
-- [ ] Merge/rebase onto current `main` after #312.
-- [ ] Re-run `ENGINE_KNOWLEDGE_COVERAGE` summary and confirm the four target families still have the expected state.
-- [ ] Re-read live `rules.ts`, `injuryPolicy.ts`, models and safety check-in composition to catch any intervening behavior changes.
+- [x] Create the SEP-A worktree from current `main`, which already contains PR #312.
+- [x] Re-run `ENGINE_KNOWLEDGE_COVERAGE`: 47 families; 15 covered, 1 partial, 26 uncovered, 5 not applicable; the four safety-pack families remain the four high-safety uncovered rows.
+- [x] Re-read live `rules.ts`, `knowledgeLineage.ts`, `adapters.ts`, `safetyCheckin.ts`, ADR-0020 and ADR-0032; the scope corrections are recorded in section 1.1.
 
 ### Phase 1 — subjective readiness research
 
-- [ ] Define atomic questions before searching.
-- [ ] Review athlete self-report syntheses.
-- [ ] Review psychometric/measurement guidance.
-- [ ] Review intervention/decision-guidance evidence, if any.
-- [ ] Search specifically for validated absolute cut-points matching live product thresholds.
-- [ ] Record negative result if no direct threshold validation exists.
-- [ ] Draft scientific boundary claims.
-- [ ] Draft exact product-policy claim.
+- [x] Define atomic questions before searching.
+- [x] Review athlete self-report syntheses.
+- [x] Review psychometric/measurement guidance.
+- [x] Reconcile Duignan 2020, Jeffries 2020, Campbell 2021 and item-specific athlete evidence.
+- [x] Review decision-guidance evidence and record its limitation.
+- [x] Search specifically for validated absolute cut-points matching live product thresholds.
+- [x] Record the negative result: no direct threshold validation found in the selected review scope.
+- [x] Draft scientific boundary claims.
+- [x] Draft exact product-policy claim.
+- [x] Include partial-check-in neutral-default semantics in the product-policy appraisal.
 
-### Phase 2 — injury/pain research
+### Phase 2 — injury/pain research (SEP-B; not part of the SEP-A PR)
 
 - [ ] Review return-to-sport consensus/guidelines.
 - [ ] Review symptom-guided loading/pain-monitoring evidence by tissue/condition.
@@ -1070,39 +1149,41 @@ Before an active claim is merged, reviewer must be able to answer yes to all app
 
 ### Phase 4 — registry and coverage implementation
 
-- [ ] Add domain modules and sources.
-- [ ] Aggregate registry.
-- [ ] Add policy-alignment tests.
-- [ ] Update coverage inventory.
-- [ ] Split region coverage family.
-- [ ] Update analysis docs and roadmap.
+- [x] Add the SEP-A domain module and sources.
+- [x] Aggregate registry.
+- [x] Add descriptor-driven SEP-A policy-alignment tests without editing `rules.ts`.
+- [x] Update `readiness.subjective_mode_thresholds` with the explicit **partial / P0** reviewer decision.
+- [x] Update the SEP-A analysis document and roadmap.
+- [ ] Leave region coverage splitting to SEP-B.
 
 ### Phase 5 — runtime lineage
 
-- [ ] Extend post-SKR1 lineage helpers.
-- [ ] Add materiality tests.
-- [ ] Verify v4 audit snapshots exact claim versions.
-- [ ] Verify no unrelated claim leakage.
+- [x] Extend the existing `readinessKnowledgeRefs` path.
+- [x] Add materiality tests.
+- [x] Verify v4 audit snapshots exact claim versions through the existing SKR1 boundary.
+- [x] Verify no unrelated injury/pain claim leakage.
 
 ### Phase 6 — validation
 
-- [ ] Typecheck/lint.
-- [ ] Sports Knowledge Registry validation.
-- [ ] Knowledge Coverage validation.
-- [ ] Unit tests.
-- [ ] Policy-alignment tests.
-- [ ] Policy-drift guard.
-- [ ] Firestore/replay tests affected by lineage.
+- [x] Typecheck/lint.
+- [x] Sports Knowledge Registry validation.
+- [x] Knowledge Coverage validation.
+- [x] Unit tests.
+- [x] Policy-alignment tests.
+- [x] Policy-drift guard.
+- [x] Firestore/replay tests affected by lineage.
 - [ ] Simulation semantic diff = no behavior change.
-- [ ] Deterministic judge gates = no evidence-migration regression.
+- [x] Deterministic judge gates = no evidence-migration regression.
+
+`npm run simulate:diff` was executed on 2026-09-01 but its committed baseline already differs broadly from current `main`; it cannot certify SEP-A's zero behavior delta. SEP-A changes no decision-affecting engine file, and `check-policy-drift.mjs` against `main` passes. Refreshing or reconciling that baseline is separate simulation-governance work, not an evidence-pack behavior change.
 
 ### Phase 7 — remediation decision
 
-For each family, record one of:
+For SEP-A, record one of:
 
 - [ ] **retain** — evidence boundary + product policy accepted;
 - [ ] **retain + calibrate** — safe enough to keep, exact threshold needs outcome calibration;
-- [ ] **partial** — evidence insufficient for one material sub-surface;
+- [x] **partial** — evidence insufficient for the exact threshold and neutral-default sub-surfaces; retain P0 calibration debt;
 - [ ] **remediate** — separate behavior-changing PR required;
 - [ ] **escalate clinically** — product should collect/route context rather than infer a training prescription.
 
@@ -1110,7 +1191,7 @@ For each family, record one of:
 
 ## 19. Recommended immediate next action after this plan PR
 
-After PR #312 is merged, start **SEP-A — Subjective Readiness** first. It is the smallest high-safety surface and will exercise the complete end-to-end pattern:
+Start **SEP-A — Subjective Readiness** from the current worktree. It is the smallest high-safety surface and will exercise the complete end-to-end pattern:
 
 ```text
 research -> claim boundary -> product-policy claim -> coverage -> runtime lineage -> audit
