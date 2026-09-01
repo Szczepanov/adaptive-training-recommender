@@ -291,10 +291,25 @@ export function evaluateReadinessAndSafetyEnvelope(
 } {
     const { subjective, objective } = readiness;
     const knowledgeRefs = readinessKnowledgeRefs(readiness, context);
-    const invertedMotivation = 10 - subjective.motivation;
     const invertedSleepQual = 10 - subjective.sleepQuality;
     const invertedReadiness = 10 - subjective.readiness;
-    const overallFatigueScore = (subjective.fatigue + subjective.soreness + invertedReadiness + invertedSleepQual + invertedMotivation) / 5;
+
+    // SEP-C2: Motivation is excluded from the physical fatigue composite.
+    // When answeredDimensions is provided (e.g. from check-in), average only the answered physical dimensions.
+    // When omitted/undefined (e.g. in legacy fixtures), average all 4 physical dimensions.
+    let overallFatigueScore: number;
+    if (subjective.answeredDimensions && subjective.answeredDimensions.length > 0) {
+        const physicalEntries: number[] = [];
+        if (subjective.answeredDimensions.includes('fatigue')) physicalEntries.push(subjective.fatigue);
+        if (subjective.answeredDimensions.includes('soreness')) physicalEntries.push(subjective.soreness);
+        if (subjective.answeredDimensions.includes('readiness')) physicalEntries.push(invertedReadiness);
+        if (subjective.answeredDimensions.includes('sleepQuality')) physicalEntries.push(invertedSleepQual);
+        overallFatigueScore = physicalEntries.length > 0
+            ? physicalEntries.reduce((sum, val) => sum + val, 0) / physicalEntries.length
+            : (subjective.fatigue + subjective.soreness + invertedReadiness + invertedSleepQual) / 4;
+    } else {
+        overallFatigueScore = (subjective.fatigue + subjective.soreness + invertedReadiness + invertedSleepQual) / 4;
+    }
 
     const hrvStrain = metricStrain(objective.hrv_delta, objective.hrv_delta_28d, objective.hrv_stdev_28d, HRV_STDEV_FLOOR_MS, HRV_STRAIN_WEIGHT, 1);
     const rhrStrain = metricStrain(objective.rhr_delta, objective.rhr_delta_28d, objective.rhr_stdev_28d, RHR_STDEV_FLOOR_BPM, RHR_STRAIN_WEIGHT, -1);
@@ -316,7 +331,9 @@ export function evaluateReadinessAndSafetyEnvelope(
         bodyBatteryDeficit = clamp(deficit / range, 0, 1) * BODY_BATTERY_MAX_STRAIN;
     }
     const conservativeBias = context.preferences.conservativeBias ? CONSERVATIVE_BIAS_STRAIN_OFFSET : 0;
-    const extremeFatigue = subjective.fatigue > 8 || subjective.soreness > 8 || subjective.painFlag;
+    const clinicalRecoverOverride = subjective.painFlag;
+    const severeFatigue = subjective.fatigue > 8 || subjective.soreness > 8;
+    const extremeFatigue = severeFatigue || clinicalRecoverOverride;
     const severeSubjectiveDistress = (subjective.fatigue >= 8 && subjective.readiness <= 4) ||
         (subjective.readiness <= 3 && subjective.stress >= 8) ||
         (subjective.fatigue >= 8 && subjective.stress >= 8);

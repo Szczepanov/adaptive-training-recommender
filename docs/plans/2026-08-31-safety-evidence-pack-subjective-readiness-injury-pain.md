@@ -1,8 +1,8 @@
 # Safety Evidence Pack — Subjective Readiness + Injury/Pain
 
 **Date:** 2026-08-31
-**Status:** In progress — SEP-A and SEP-B merged on `main`; SEP-C1 (clinical envelope decoupling & running restriction contextualization) implemented.
-**Blocked by:** None. SKR1 (PR #312), SEP-A (PR #317), and SEP-B (PR #318) are on `main`.
+**Status:** In progress — SEP-A, SEP-B, and SEP-C1 merged on `main`; SEP-C2 (subjective threshold & answered-dimension calibration) implemented locally.
+**Blocked by:** None. SKR1 (PR #312), SEP-A (PR #317), SEP-B (PR #318), and SEP-C1 (PR #319) are on `main`.
 **Unlocks:** SEP-C behavior remediation and versioned policy releases.
 **Priority:** P0 / high-safety debt.
 **Execution cutline:** SEP-B was behavior-identical lineage. Executable policy changes are delivered via versioned SEP-C PRs.

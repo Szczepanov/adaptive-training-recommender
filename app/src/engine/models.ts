@@ -5,6 +5,14 @@ import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import type { SubjectiveBaseline } from './subjectiveBaseline';
 import type { DataConfidenceScore } from './dataConfidence';
 
+export type SubjectiveDimensionKey =
+    | 'readiness'
+    | 'sleepQuality'
+    | 'fatigue'
+    | 'soreness'
+    | 'stress'
+    | 'motivation';
+
 // --- Engine Input Models ---
 export interface SubjectiveInput {
     readiness: number; // 1-10
@@ -14,6 +22,8 @@ export interface SubjectiveInput {
     stress: number; // 1-10
     motivation: number; // 1-10
     timeAvailable: number; // Minutes
+    /** Dimensions explicitly provided by the athlete in the check-in (vs defaulted). */
+    answeredDimensions?: SubjectiveDimensionKey[];
     /** Legacy aggregate clinical flag. True for pain/injury or non-allergy illness after normalization. */
     painFlag: boolean;
     /** Compact source categories for the aggregate clinical flag; no raw symptom detail or diagnosis. */

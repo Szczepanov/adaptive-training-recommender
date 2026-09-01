@@ -32,17 +32,18 @@ describe('subjective readiness knowledge pack', () => {
         const policy = getActiveKnowledgeClaim(SUBJECTIVE_READINESS_CLAIM_IDS.modeThresholdsPolicy);
         expect(policy).toMatchObject({ claimType: 'heuristic', maturity: 'heuristic', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high' });
         expect(policy.statement).toContain('above 5');
-        expect(policy.statement).toContain('neutral 5');
+        expect(policy.statement).toContain('answered physical dimensions');
         expect(policy.limitations.some(limit => limit.includes('already-trained overrides'))).toBe(true);
         expect(policy.evidence.some(link => getKnowledgeSource(link.sourceId).sourceType === 'product_policy')).toBe(true);
     });
 
     it('makes the descriptor’s exclusions and boundary operators reviewable', () => {
         expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR).toMatchObject({
-            neutralDefaultForMissingScaleDimensions: 5,
-            composite: { denominator: 5, modifyWhen: '> 5', recoverWhen: '> 7' },
+            composite: { denominator: 4, modifyWhen: '> 5', recoverWhen: '> 7' },
+            partialCheckinParticipation: 'average_answered_physical_dimensions',
             independentTriggers: { sorenessModifyWhen: '> 6', fatigueRecoverWhen: '> 8', sorenessRecoverWhen: '> 8' },
         });
+        expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR.excludedFromPhysicalFatigueComposite).toEqual(['motivation', 'stress']);
         expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR.excludedFromThisPolicySurface).toEqual([
             'painFlag', 'illnessSymptoms', 'subjectiveDrift', 'alreadyTrainedToday', 'objective.today_training',
         ]);

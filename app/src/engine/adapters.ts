@@ -6,6 +6,7 @@ import type {
     EngineObjectiveInput,
     InjuryRegionMappingFamily,
     RawActivitySummary,
+    SubjectiveDimensionKey,
     SubjectiveInput,
     TrainingRecord,
     UserContext,
@@ -237,6 +238,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
             stress: NEUTRAL_SCALE_VALUE,
             motivation: NEUTRAL_SCALE_VALUE,
             timeAvailable: DEFAULT_TIME_AVAILABLE_MIN,
+            answeredDimensions: [],
             painFlag: false,
             clinicalEnvelopeSources: [],
             painOrInjuryRegionFamilies: [],
@@ -244,6 +246,14 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
             preferredModalityToday: null,
         };
     }
+
+    const answeredDimensions: SubjectiveDimensionKey[] = [];
+    if (checkin.readiness !== null && checkin.readiness !== undefined) answeredDimensions.push('readiness');
+    if (checkin.sleepQuality !== null && checkin.sleepQuality !== undefined) answeredDimensions.push('sleepQuality');
+    if (checkin.fatigue !== null && checkin.fatigue !== undefined) answeredDimensions.push('fatigue');
+    if (checkin.soreness !== null && checkin.soreness !== undefined) answeredDimensions.push('soreness');
+    if (checkin.mentalStress !== null && checkin.mentalStress !== undefined) answeredDimensions.push('stress');
+    if (checkin.motivation !== null && checkin.motivation !== undefined) answeredDimensions.push('motivation');
 
     const clinicalEnvelopeSources = resolveClinicalEnvelopeSources(checkin);
     return {
@@ -254,6 +264,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         stress: checkin.mentalStress ?? NEUTRAL_SCALE_VALUE,
         motivation: checkin.motivation ?? NEUTRAL_SCALE_VALUE,
         timeAvailable: checkin.availability?.timeAvailableMin ?? DEFAULT_TIME_AVAILABLE_MIN,
+        answeredDimensions,
         painFlag: clinicalEnvelopeSources.length > 0,
         clinicalEnvelopeSources,
         painOrInjuryRegionFamilies: resolvePainOrInjuryRegionFamilies(checkin),

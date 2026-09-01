@@ -48,18 +48,22 @@ function checkin(overrides: Partial<DailySubjectiveCheckin> = {}): DailySubjecti
 }
 
 describe('subjective readiness policy alignment', () => {
-    it('pins five equal-weight dimensions, inversions, and strict composite thresholds', () => {
+    it('pins four physical dimensions, inversions, and strict composite thresholds with motivation decoupled', () => {
         expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR.composite).toEqual({
-            denominator: 5,
-            dimensions: { fatigue: 'direct', soreness: 'direct', readiness: 'inverted', sleepQuality: 'inverted', motivation: 'inverted' },
+            denominator: 4,
+            dimensions: { fatigue: 'direct', soreness: 'direct', readiness: 'inverted', sleepQuality: 'inverted' },
             modifyWhen: '> 5', recoverWhen: '> 7',
         });
+        expect(SUBJECTIVE_READINESS_POLICY_DESCRIPTOR.excludedFromPhysicalFatigueComposite).toEqual(['motivation', 'stress']);
         // Exactly 5 remains train; the smallest integer movement above 5 modifies.
-        expect(mode({ readiness: 5, sleepQuality: 5, fatigue: 5, soreness: 5, motivation: 5 })).toBe('train');
-        expect(mode({ readiness: 4, sleepQuality: 5, fatigue: 5, soreness: 5, motivation: 5 })).toBe('modify');
+        expect(mode({ readiness: 5, sleepQuality: 5, fatigue: 5, soreness: 5 })).toBe('train');
+        expect(mode({ readiness: 4, sleepQuality: 5, fatigue: 5, soreness: 5 })).toBe('modify');
         // Exactly 7 does not recover; the smallest integer movement above 7 does.
-        expect(mode({ readiness: 3, sleepQuality: 3, fatigue: 7, soreness: 7, motivation: 3 })).toBe('modify');
-        expect(mode({ readiness: 2, sleepQuality: 3, fatigue: 7, soreness: 7, motivation: 3 })).toBe('recover');
+        expect(mode({ readiness: 3, sleepQuality: 3, fatigue: 7, soreness: 7 })).toBe('modify');
+        expect(mode({ readiness: 2, sleepQuality: 3, fatigue: 7, soreness: 7 })).toBe('recover');
+
+        // Motivation is decoupled: low motivation alone does not turn an otherwise solid physical readiness day into modify
+        expect(mode({ readiness: 8, sleepQuality: 8, fatigue: 2, soreness: 2, motivation: 1 })).toBe('train');
     });
 
     it('pins independent strict trigger boundaries on both sides', () => {
@@ -98,14 +102,25 @@ describe('subjective readiness policy alignment', () => {
         expect(mode({ readiness: 4, fatigue: 5 })).toBe('train');
     });
 
-    it('documents a complete minimum-safety partial check-in as neutral-default classifier participation', () => {
-        const partial = checkin();
+    it('documents a complete minimum-safety partial check-in with dynamic answered-dimension participation', () => {
+        const partial = checkin({ fatigue: 6 });
         expect(getMinimumSafetyCheckinStatus(partial)).toBe('complete');
         expect(canGenerateNormalRecommendation(getMinimumSafetyCheckinStatus(partial))).toBe(true);
-        expect(mapCheckinToSubjectiveInput(partial)).toMatchObject({
-            fatigue: 6, soreness: 5, readiness: 5, sleepQuality: 5, stress: 5, motivation: 5,
-        });
-        expect(mode(mapCheckinToSubjectiveInput(partial))).toBe('modify');
+        const mapped = mapCheckinToSubjectiveInput(partial);
+        expect(mapped.answeredDimensions).toEqual(['fatigue']);
+        expect(mapped.fatigue).toBe(6);
+        // Only fatigue was answered (6/1 = 6.0 > 5), which modifies without dilution
+        expect(mode(mapped)).toBe('modify');
+
+        // Partial check-in with fatigue 4/1 = 4.0 <= 5 trains
+        const partialGood = mapCheckinToSubjectiveInput(checkin({ fatigue: 4 }));
+        expect(partialGood.answeredDimensions).toEqual(['fatigue']);
+        expect(mode(partialGood)).toBe('train');
+
+        // Partial check-in with fatigue 8/1 = 8.0 > 7 recovers without dilution
+        const partialHigh = mapCheckinToSubjectiveInput(checkin({ fatigue: 8 }));
+        expect(partialHigh.answeredDimensions).toEqual(['fatigue']);
+        expect(mode(partialHigh)).toBe('recover');
     });
 
     it('keeps nearby pain/illness behavior conservative without claiming it as SEP-A threshold authority', () => {

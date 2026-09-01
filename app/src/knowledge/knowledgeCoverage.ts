@@ -114,11 +114,11 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'readiness.subjective_mode_thresholds', domain: 'readiness_recovery', title: 'Subjective readiness mode thresholds',
-        currentRule: 'Five-item equal-weight fatigue average (fatigue, soreness, inverted readiness/sleep quality/motivation) >5 modifies and >7 recovers; additional fatigue/soreness/readiness/stress combinations at 3/4/6/8/9 thresholds can force modify/recover. Missing non-safety scale dimensions normalize to 5 after minimum-safety completion.',
+        currentRule: 'Four-item physical fatigue average (fatigue, soreness, inverted readiness/sleep quality) >5 modifies and >7 recovers; motivation is excluded from the physical composite. Complete minimum-safety check-ins average only answered physical dimensions without neutral-default imputation. Additional fatigue/soreness/readiness/stress combinations at 3/4/6/8/9 thresholds can force modify/recover.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope', 'engine/adapters.ts:mapCheckinToSubjectiveInput', 'engine/safetyCheckin.ts:getMinimumSafetyCheckinStatus'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.contextualMonitoring, KNOWLEDGE_CLAIM_IDS.measurementQualityLimits, KNOWLEDGE_CLAIM_IDS.exactCutpointLimits, KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy],
-        coverageRationale: 'SEP-A supports repeated subjective measures as contextual monitoring and explicitly records the classifier as product policy. The reviewed evidence does not validate the equal-weight composite, exact cut-points, combinations, or neutral-default participation as universal readiness thresholds; outcome-linked calibration and partial-check-in review remain P0 debt.',
+        coverageRationale: 'SEP-C2 recalibrates the subjective classifier: motivation is decoupled from physical fatigue, unmeasured dimensions in partial check-ins participate dynamically without neutral-5 dilution, and clinical painFlag is decoupled from extreme fatigue. Direct action thresholds remain an explicit product heuristic rather than a universal constant; outcome-linked calibration remains P0 research debt.',
     },
     {
         id: 'readiness.absolute_device_floors', domain: 'readiness_recovery', title: 'Absolute sleep-score and Body Battery floors',
