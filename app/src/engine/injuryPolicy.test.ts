@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveTissueSeverity, migrateLegacyInjuries, resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from './injuryPolicy';
+import { deriveTissueSeverity, migrateLegacyInjuries, resolveEffectiveInjuryConstraints, resolveInjuryPolicy, resolveInjuryRestrictions } from './injuryPolicy';
 import type { InjuryConstraint, RegionTissueResponse } from './models';
 
 describe('injuryPolicy', () => {
@@ -264,6 +264,42 @@ describe('injuryPolicy', () => {
             const explicitLimit = kneeConstraints.find(i => i.note === 'no running on knee');
             expect(explicitLimit?.severity).toBe('limit');
             expect(explicitLimit?.restrictedModalities).toEqual(['Running']);
+        });
+    });
+
+    describe('resolveInjuryPolicy lineage trace', () => {
+        it('records a tissue-derived region mapping only when today’s response creates or tightens state', () => {
+            const resolved = resolveInjuryPolicy(
+                [{ region: 'knee', severity: 'monitor' }],
+                { knee: { region: 'knee', morningState: 'severe' } },
+                '2026-08-08',
+            );
+            expect(resolved.trace).toEqual({
+                tissueSeverityApplied: true,
+                regionMappingFamilies: ['lower_limb_impact'],
+                clinicalEnvelopeSources: [],
+            });
+            expect(resolved.restrictions).toEqual(resolveInjuryRestrictions(resolved.effectiveInjuries, '2026-08-08'));
+        });
+
+        it('does not claim tissue severity materiality when a standing constraint is already stricter', () => {
+            const resolved = resolveInjuryPolicy(
+                [{ region: 'shoulder', severity: 'exclude' }],
+                { shoulder: { region: 'shoulder', morningState: 'moderate' } },
+                '2026-08-08',
+            );
+            expect(resolved.trace).toEqual({
+                tissueSeverityApplied: false,
+                regionMappingFamilies: ['upper_limb_loading'],
+                clinicalEnvelopeSources: [],
+            });
+        });
+
+        it('does not attach a region family to monitor-only or expired constraints', () => {
+            const monitor = resolveInjuryPolicy([{ region: 'ankle', severity: 'monitor' }], undefined, '2026-08-08');
+            const expired = resolveInjuryPolicy([{ region: 'ankle', severity: 'exclude', reviewBy: '2026-08-01' }], undefined, '2026-08-08');
+            expect(monitor.trace.regionMappingFamilies).toEqual([]);
+            expect(expired.trace.regionMappingFamilies).toEqual([]);
         });
     });
 });

@@ -1,6 +1,6 @@
 # SEP-B — Injury, Tissue-Response, and Clinical-Symptom Evidence Pack
 
-**Status:** Ready after SEP-A merges
+**Status:** Implemented locally — PR pending review
 
 **Prerequisite:** Merge PR #317 (`codex/sep-a-plan-review`) and rebase this work on `main`
 
@@ -12,14 +12,14 @@
 
 ---
 
-## 1. Outcome and delivery shape
+## 1. Delivered outcome
 
 SEP-B makes every scientific and product-policy premise materially used by the current injury and clinical-symptom path explicit, reviewable, and replayable without changing the selected recommendation.
 
-Deliver it in two pull requests:
+The implementation was delivered in two reviewable workstreams within this stacked PR:
 
-1. **SEP-B1 — evidence and policy inventory:** appraise evidence, register claims and exact product-policy descriptors, correct coverage taxonomy, and pin current behavior with alignment tests.
-2. **SEP-B2 — material-use lineage:** carry an ephemeral, behavior-neutral trace from check-in/injury composition into `RecommendationAudit.knowledgeRefs`, then prove decision equivalence across every recommendation path.
+1. **SEP-B1 — evidence and policy inventory:** registered 48 claims and 53 sources, corrected the coverage taxonomy to 51 rows, and added alignment tests for the current policy.
+2. **SEP-B2 — material-use lineage:** carries an ephemeral trace from check-in/injury composition into `RecommendationAudit.knowledgeRefs` and proves constraint/envelope/recommendation equivalence when that trace is removed.
 
 Any executable restriction or ceiling change belongs in SEP-C. It must not be hidden inside evidence or lineage work.
 
@@ -286,9 +286,9 @@ The appraisal, not these planning defaults, determines committed confidence and 
 
 ---
 
-## 6. SEP-B1 — Evidence and policy inventory
+## 6. SEP-B1 — Implemented evidence and policy inventory
 
-### B1.1 Appraise evidence
+### B1.1 Appraised evidence
 
 - Retrieve full text and record metadata and tier.
 - Extract claims only at supported population/condition granularity.
@@ -296,7 +296,7 @@ The appraisal, not these planning defaults, determines committed confidence and 
 - Separate diagnosis-specific guidance from broad region-level product choices.
 - Complete red-flag boundary analysis without adding diagnosis or treatment behavior.
 
-### B1.2 Register and classify
+### B1.2 Registered and classified
 
 - Add scientific claims with explicit applicability and limitations.
 - Add all six product descriptors.
@@ -304,7 +304,7 @@ The appraisal, not these planning defaults, determines committed confidence and 
 - Apply the 51-row migration and recompute statistics/backlog.
 - Keep unsupported or partial P0 rows visible.
 
-### B1.3 Pin implementation alignment
+### B1.3 Pinned implementation alignment
 
 Cover:
 
@@ -318,26 +318,26 @@ Cover:
 - today-only response absent from forecasts while standing constraints remain;
 - exact descriptor/executable-mapping parity.
 
-**B1 exit criteria**
+**B1 completion evidence**
 
-- Registry validation passes.
-- Coverage has 51 uniquely counted rows.
-- Descriptors are pinned to implementation.
-- No production decision file changes except adding `injuryPolicy.ts` to the policy-drift guard.
-- No recommendation, restriction, ceiling, or `POLICY_VERSION` change.
+- [x] Registry validation passes.
+- [x] Coverage has 51 uniquely counted rows.
+- [x] Descriptors are pinned to implementation.
+- [x] `injuryPolicy.ts` is added to the policy-drift guard.
+- [x] No recommendation, restriction, ceiling, or `POLICY_VERSION` change.
 
 ---
 
-## 7. SEP-B2 — Material-use lineage
+## 7. SEP-B2 — Implemented material-use lineage
 
-### B2.1 Add behavior-neutral trace
+### B2.1 Added behavior-neutral trace
 
 - Refactor pure composition helpers to return the existing result plus optional trace facts.
 - Preserve public behavior and backward-compatible inputs.
 - Carry trace through `UserContext` only for the in-memory decision.
 - Persist only resolved `KnowledgeRef` entries, never raw trace.
 
-### B2.2 Map facts to refs
+### B2.2 Mapped facts to refs
 
 Extend `knowledgeLineage.ts` so:
 
@@ -353,7 +353,7 @@ Extend `knowledgeLineage.ts` so:
 
 Use existing deterministic sort, dedupe, and registry validation.
 
-### B2.3 Prove equivalence
+### B2.3 Proved equivalence
 
 The frozen-oracle corpus covers the B1 matrix, shared envelope, Path A, Path B, imported sessions, authored gates, today/forecast composition, low readiness, already-trained, and no-injury controls.
 
@@ -365,7 +365,7 @@ Assert equality of:
 - eligibility and candidate set;
 - recommendation and rationale, excluding new refs.
 
-### B2.4 Persistence and replay
+### B2.4 Verified persistence and replay
 
 - Assert only resolved refs enter `RecommendationAudit`.
 - Assert no raw tissue or source trace is persisted.
@@ -373,13 +373,13 @@ Assert equality of:
 - Replay a pre-SEP-B audit without trace or injury refs.
 - Validate the provenance-only drift exception against the equivalence corpus.
 
-**B2 exit criteria**
+**B2 completion evidence**
 
-- Material branches emit correct refs; non-material branches do not.
-- Decision-equivalence corpus is identical.
-- Replay is backward compatible.
-- Policy drift fails closed for any executable difference.
-- `POLICY_VERSION` stays unchanged only because equivalence is proven.
+- [x] Material branches emit correct refs; non-material branches do not.
+- [x] Decision-equivalence corpus is identical.
+- [x] Replay accepts new lineage and remains backward compatible for audits without it.
+- [x] Policy drift fails closed for executable differences outside the trace boundary.
+- [x] `POLICY_VERSION` stays unchanged because equivalence is proven.
 
 ---
 
@@ -431,6 +431,6 @@ Also run `node app/scripts/check-policy-drift.mjs <base-sha>` with the actual PR
 
 ---
 
-## 10. Immediate next action
+## 10. Next action
 
-After PR #317 merges, rebase this branch on `main` and start SEP-B1. Do not begin runtime lineage plumbing until B1 claim boundaries, descriptors, and coverage migration are reviewed and stable.
+Review and merge this stacked PR after SEP-A PR #317. Then rebase or retarget onto `main` as required by the merge order. Any policy behavior change remains SEP-C.

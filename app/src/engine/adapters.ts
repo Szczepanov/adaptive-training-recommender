@@ -1,6 +1,7 @@
 import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
+    ClinicalEnvelopeSource,
     EngineObjectiveInput,
     RawActivitySummary,
     SubjectiveInput,
@@ -11,7 +12,7 @@ import type {
     UserPreferences,
     TrainingSettings,
 } from './models';
-import { resolveInjuryRestrictions, resolveEffectiveInjuryConstraints } from './injuryPolicy';
+import { resolveInjuryPolicy } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
 import { getLocalDateString } from '../utils/localDate';
 import type { HealthSymptomType } from './healthAnomalyModels';
@@ -40,6 +41,18 @@ function isAllergyLikeSymptomDay(checkin: DailySubjectiveCheckin): boolean {
     if (!symptoms.types || symptoms.types.length === 0) return false;
     if (!symptoms.types.every(type => ALLERGY_COMPATIBLE_SYMPTOM_TYPES.includes(type))) return false;
     return true;
+}
+
+/** Compact origin facts for the normalized clinical envelope. This deliberately records
+ * only the branch category, not raw symptoms, severity, text, or a diagnosis. */
+export function resolveClinicalEnvelopeSources(
+    checkin: DailySubjectiveCheckin | null | undefined,
+): ClinicalEnvelopeSource[] {
+    if (!checkin) return [];
+    const sources: ClinicalEnvelopeSource[] = [];
+    if (checkin.painOrInjury) sources.push('pain_or_injury');
+    if (checkin.illnessSymptoms && !isAllergyLikeSymptomDay(checkin)) sources.push('non_allergy_illness');
+    return sources;
 }
 
 /** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
@@ -217,7 +230,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         stress: checkin.mentalStress ?? NEUTRAL_SCALE_VALUE,
         motivation: checkin.motivation ?? NEUTRAL_SCALE_VALUE,
         timeAvailable: checkin.availability?.timeAvailableMin ?? DEFAULT_TIME_AVAILABLE_MIN,
-        painFlag: checkin.painOrInjury || (checkin.illnessSymptoms && !isAllergyLikeSymptomDay(checkin)),
+        painFlag: resolveClinicalEnvelopeSources(checkin).length > 0,
         alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
         preferredModalityToday: checkin.availability?.preferredModalityToday ?? null,
     };
@@ -254,10 +267,9 @@ export function mapContextFromGoalsAndTrainingSettings(
     };
 
     const dateStr = today ?? getLocalDateString();
-    const effectiveInjuries = resolveEffectiveInjuryConstraints(trainingSettings.injuries, todaysCheckin?.tissueResponses, dateStr);
-    const resolvedInjuries = resolveInjuryRestrictions(effectiveInjuries, dateStr);
+    const injuryPolicy = resolveInjuryPolicy(trainingSettings.injuries, todaysCheckin?.tissueResponses, dateStr);
     const restrictedModalities = Array.from(new Set([
-        ...resolvedInjuries.restrictedModalities,
+        ...injuryPolicy.restrictions.restrictedModalities,
         ...(preferences?.unavailableModalities ?? []),
     ]));
 
@@ -273,8 +285,8 @@ export function mapContextFromGoalsAndTrainingSettings(
             hasTreadmill: trainingSettings.equipment.treadmill,
             hasIndoorBike: trainingSettings.equipment.indoor_bike,
             restrictedModalities,
-            impliedGuardrails: resolvedInjuries.impliedGuardrails,
-            restrictedCategories: resolvedInjuries.restrictedCategories,
+            impliedGuardrails: injuryPolicy.restrictions.impliedGuardrails,
+            restrictedCategories: injuryPolicy.restrictions.restrictedCategories,
             maxTimeMinutes: trainingSettings.defaults.weekdayMaxMinutes ?? trainingSettings.defaults.weekendMaxMinutes ?? DEFAULT_MAX_TIME_MINUTES,
         },
         preferences: {
@@ -283,6 +295,10 @@ export function mapContextFromGoalsAndTrainingSettings(
             preferredModalities: preferences?.preferredModalities ?? [],
             conservativeBias: preferences?.conservativeBias ?? false,
             preferredRecoveryStyle: preferences?.preferredRecoveryStyle,
+        },
+        injuryPolicyTrace: {
+            ...injuryPolicy.trace,
+            clinicalEnvelopeSources: resolveClinicalEnvelopeSources(todaysCheckin),
         },
         trainingSettings,
     };

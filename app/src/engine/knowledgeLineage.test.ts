@@ -100,6 +100,49 @@ describe('recommendation knowledge lineage', () => {
         expect(refs).toEqual(subjectiveReadinessKnowledgeRefs());
     });
 
+    it('attributes only materially applied injury-policy families and preserves pain versus illness boundaries', () => {
+        const traced = {
+            ...context,
+            injuryPolicyTrace: {
+                tissueSeverityApplied: true,
+                regionMappingFamilies: ['lower_limb_impact', 'upper_limb_loading'],
+                clinicalEnvelopeSources: ['pain_or_injury'],
+            },
+        } as UserContext;
+        const painReadiness = readiness();
+        painReadiness.subjective.painFlag = true;
+        const refs = readinessKnowledgeRefs(painReadiness, traced);
+        expect(refs).toEqual(expect.arrayContaining([
+            KNOWLEDGE_CLAIM_IDS.tissueResponseTemporalMonitoring,
+            KNOWLEDGE_CLAIM_IDS.tissueResponseSeverityPolicy,
+            KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement,
+            KNOWLEDGE_CLAIM_IDS.lowerLimbImpactPolicy,
+            KNOWLEDGE_CLAIM_IDS.upperLimbLoadingPolicy,
+            KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy,
+            KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment,
+        ]));
+        expect(refs).not.toContain(KNOWLEDGE_CLAIM_IDS.lowerLimbStrengthPolicy);
+        expect(refs).toEqual([...refs].sort());
+        expect(refs).toEqual([...new Set(refs)]);
+
+        const illnessOnly = {
+            ...traced,
+            injuryPolicyTrace: { ...traced.injuryPolicyTrace!, tissueSeverityApplied: false, regionMappingFamilies: [], clinicalEnvelopeSources: ['non_allergy_illness'] },
+        } as UserContext;
+        const illnessRefs = readinessKnowledgeRefs(painReadiness, illnessOnly);
+        expect(illnessRefs).toContain(KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy);
+        expect(illnessRefs).not.toContain(KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment);
+        expect(illnessRefs).not.toContain(KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement);
+    });
+
+    it('does not infer injury policy lineage from flattened legacy restrictions', () => {
+        const legacy = {
+            ...context,
+            constraints: { ...context.constraints, restrictedModalities: ['Running'] },
+        } as UserContext;
+        expect(readinessKnowledgeRefs(readiness(), legacy)).toEqual(subjectiveReadinessKnowledgeRefs());
+    });
+
     it('keeps the subjective readiness evidence set deterministic and independent from pain or forecast-only paths', () => {
         const ids = [
             KNOWLEDGE_CLAIM_IDS.contextualMonitoring,

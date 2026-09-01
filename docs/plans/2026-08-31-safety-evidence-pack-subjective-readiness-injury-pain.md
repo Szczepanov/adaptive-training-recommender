@@ -1,8 +1,8 @@
 # Safety Evidence Pack — Subjective Readiness + Injury/Pain
 
 **Date:** 2026-08-31
-**Status:** In progress — SEP-A implemented; SEP-B reviewed and ready after SEP-A merges; SEP-C remains open.
-**Blocked by:** SEP-B execution waits for SEP-A PR #317 to merge. SKR1 persisted recommendation lineage (PR #312) is on `main`.
+**Status:** In progress — SEP-A implemented; SEP-B implemented locally and pending stacked PR review; SEP-C remains open.
+**Blocked by:** SEP-B PR depends on SEP-A PR #317. SKR1 persisted recommendation lineage (PR #312) is on `main`.
 **Unlocks:** SEP-B implementation; SEP-A establishes the reviewed safety-evidence pattern reused by SEP-B.
 **Priority:** P0 / high-safety debt.
 **Execution cutline:** SEP-B is split into an evidence/policy PR and a behavior-identical lineage PR. Executable policy changes remain SEP-C.

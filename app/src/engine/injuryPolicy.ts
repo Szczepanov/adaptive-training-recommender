@@ -1,9 +1,40 @@
-import type { BodyRegion, GuardrailKey, InjuryConstraint, RegionTissueResponse, SessionTemplate, TissueResponseLevel } from './models.ts';
+import type { BodyRegion, GuardrailKey, InjuryConstraint, InjuryPolicyTrace, InjuryRegionMappingFamily, RegionTissueResponse, SessionTemplate, TissueResponseLevel } from './models.ts';
 
 export interface InjuryRestrictions {
     restrictedModalities: SessionTemplate['modality'][];
     impliedGuardrails: GuardrailKey[];
     restrictedCategories: SessionTemplate['category'][];
+}
+
+export interface ResolvedInjuryPolicy {
+    effectiveInjuries: InjuryConstraint[];
+    restrictions: InjuryRestrictions;
+    trace: InjuryPolicyTrace;
+}
+
+function isActiveConstraint(injury: InjuryConstraint, today: string): boolean {
+    return injury.reviewBy === undefined || injury.reviewBy >= today;
+}
+
+export function injuryRegionMappingFamily(region: BodyRegion): InjuryRegionMappingFamily {
+    switch (region) {
+        case 'knee':
+        case 'achilles':
+        case 'ankle':
+        case 'calf':
+            return 'lower_limb_impact';
+        case 'hamstring':
+        case 'quadriceps':
+        case 'adductor_groin':
+        case 'hip':
+            return 'lower_limb_strength';
+        case 'lower_back':
+            return 'lumbar_loading';
+        case 'shoulder':
+        case 'elbow':
+        case 'wrist':
+            return 'upper_limb_loading';
+    }
 }
 
 /**
@@ -28,7 +59,7 @@ export function resolveInjuryRestrictions(
 
     for (const injury of injuries) {
         // Skip expired injuries
-        if (injury.reviewBy && injury.reviewBy < today) {
+        if (!isActiveConstraint(injury, today)) {
             continue;
         }
 
@@ -186,6 +217,53 @@ export function resolveEffectiveInjuryConstraints(
     }
 
     return merged;
+}
+
+/** True only when today's tissue input creates a new effective constraint or tightens an
+ * active one. A normal response and a response no worse than every active constraint are
+ * intentionally absent from lineage because they do not change the composed policy state. */
+function tissueSeverityMateriallyApplied(
+    baseInjuries: InjuryConstraint[] | undefined,
+    tissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
+    today: string,
+): boolean {
+    if (!tissueResponses) return false;
+    const base = baseInjuries ?? [];
+    return Object.values(tissueResponses).some(response => {
+        if (!response) return false;
+        const derived = deriveTissueSeverity(response);
+        if (!derived) return false;
+        const activeForRegion = base.filter(injury => injury.region === response.region && isActiveConstraint(injury, today));
+        return activeForRegion.length === 0 || activeForRegion.some(injury => SEVERITY_RANK[injury.severity] < SEVERITY_RANK[derived]);
+    });
+}
+
+/**
+ * Resolves the existing injury policy with compact lineage facts. The restrictions and
+ * effective constraints are exactly those returned by the pre-existing public resolvers;
+ * trace facts are observational and must never influence the policy calculation.
+ */
+export function resolveInjuryPolicy(
+    baseInjuries: InjuryConstraint[] | undefined,
+    tissueResponses: Partial<Record<BodyRegion, RegionTissueResponse>> | undefined,
+    today: string,
+): ResolvedInjuryPolicy {
+    const effectiveInjuries = resolveEffectiveInjuryConstraints(baseInjuries, tissueResponses, today);
+    const restrictions = resolveInjuryRestrictions(effectiveInjuries, today);
+    const regionMappingFamilies = [...new Set(
+        effectiveInjuries
+            .filter(injury => Boolean(injury.region) && injury.severity !== 'monitor' && isActiveConstraint(injury, today))
+            .map(injury => injuryRegionMappingFamily(injury.region!)),
+    )].sort() as InjuryRegionMappingFamily[];
+    return {
+        effectiveInjuries,
+        restrictions,
+        trace: {
+            tissueSeverityApplied: tissueSeverityMateriallyApplied(baseInjuries, tissueResponses, today),
+            regionMappingFamilies,
+            clinicalEnvelopeSources: [],
+        },
+    };
 }
 
 /**
