@@ -27,6 +27,15 @@ export default defineConfig([
     },
   },
   {
+    // SessionRunner exports two pure deterministic guidance helpers solely so the runner's
+    // load/rest semantics can be regression-tested without mounting session persistence.
+    // Keep the Fast Refresh exception scoped to this file rather than weakening the rule globally.
+    files: ['src/components/session/SessionRunner.tsx'],
+    rules: {
+      'react-refresh/only-export-components': 'off',
+    },
+  },
+  {
     // POLICY_VERSION drift protection treats any rules.ts edit as decision-affecting.
     // Keep the engine byte-stable for this lint-only migration instead of creating a false policy bump.
     files: ['src/engine/rules.ts'],
