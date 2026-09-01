@@ -9,7 +9,7 @@
 
 The adaptive training recommender is a workload-planning system. It is **not** a diagnostic device, emergency-triage service, or rehabilitation prescriber. Its job at the clinical boundary is deliberately narrow: recognize configured warning disclosures, stop generating exercise prescriptions, and direct the athlete out of the training workflow when evaluation is needed.
 
-Sports-medicine consensus supports conservative assessment of significant musculoskeletal/neurological findings, while acute chest pain and significant breathing difficulty require a substantially stronger urgency message than ordinary training-load symptoms. American Heart Association chest-pain guidance explicitly advises immediate emergency evaluation for acute chest pain/chest-pain equivalents such as shortness of breath. The application therefore must not present a target event as something the athlete is neutrally “cleared to decide” when a clinical-escalation flag is active.
+Sports-medicine consensus supports conservative assessment of significant musculoskeletal/neurological findings, while acute cardiopulmonary warning symptoms require a substantially stronger urgency message than ordinary training-load symptoms. The 2021 AHA/ACC chest-pain guideline treats acute chest pain/chest-pain equivalents such as shortness of breath as symptoms that warrant immediate medical evaluation. The 2025 AHA/ACC scientific statement for competitive athletes likewise treats cardiopulmonary symptoms including chest pain/tightness, dyspnea, palpitations, and presyncope/syncope as clinically important in sports-participation assessment. The application therefore must not present a target event as something the athlete is neutrally “cleared to decide” when a clinical-escalation flag is active.
 
 ## 2. Operational taxonomy
 
@@ -19,12 +19,14 @@ The taxonomy below is a **product screening taxonomy**, not a diagnosis. Its exa
 |---|---|---|
 | `neurological` | Numbness/paresthesia, radiating weakness, or other concerning neurological change | Rest-only envelope; prescriptions and adjustments blocked; clinical evaluation message |
 | `acute_trauma_structural` | Cannot bear weight after trauma, visible deformity, gross joint give-way/instability | Rest-only envelope; prescriptions and adjustments blocked; clinical evaluation message |
-| `systemic_infection` | Severe fever/chills; legacy bucket also carries explicit cardiopulmonary warning disclosure such as unexplained chest pain or shortness of breath | Rest-only envelope; prescriptions and adjustments blocked; clinical evaluation message; emergency-care wording when emergency symptoms are present |
+| `systemic_infection` | Severe fever/chills; compatibility bucket may also carry an explicit cardiopulmonary warning disclosure such as acute chest pain/pressure, unexplained dyspnea, or fainting/near-fainting | Rest-only envelope; prescriptions and adjustments blocked; clinical evaluation message; urgent/emergency-care wording for emergency warning symptoms |
 | `rapidly_worsening` | Rapid symptom progression or loss of basic function despite rest | Rest-only envelope; prescriptions and adjustments blocked; clinical evaluation message |
 
 ### Naming caveat
 
-`systemic_infection` predates the current UI copy and is retained in this PR to avoid widening the persistence/migration surface. The user-facing label is now **“Systemic / cardiopulmonary warning”** so chest pain or dyspnea are not mislabeled as infection. A later schema migration can split this bucket into separate systemic-infectious and cardiopulmonary categories without weakening the current fail-safe behavior.
+`systemic_infection` predates the current UI copy and is retained in this PR to avoid widening the persistence/migration surface. It is therefore a **compatibility/storage bucket, not a diagnostic attribution**: a cardiopulmonary disclosure stored under this key is not being classified as an infection. The user-facing label is **“Systemic / cardiopulmonary warning”** so chest pain or dyspnea are not mislabeled in the interface. A later schema migration can split this bucket into separate systemic-infectious and cardiopulmonary categories without weakening the current fail-safe behavior.
+
+The recommender also does not diagnose the cause of dyspnea, chest symptoms, presyncope/syncope, or neurological symptoms. The safety contract is only that configured warning disclosures suspend automated exercise prescription and direct the athlete toward appropriate clinical care.
 
 ## 3. Independent red-flag disclosure
 
@@ -61,23 +63,24 @@ The adjudication order is now:
 
 Behavior:
 - imported **training sessions** under clinical escalation return `skip`, with no execution dose;
-- imported **events** remain represented as `advisory` so the recommender does not silently delete a real-world commitment, but the advisory explicitly says the engine **cannot clear the athlete to start**, requires medical evaluation first, and tells the athlete to seek emergency care for chest pain, severe shortness of breath, fainting, or another emergency concern;
+- imported **events** remain represented as `advisory` so the recommender does not silently delete a real-world commitment, but the advisory explicitly says the engine **cannot clear the athlete to start**, requires medical evaluation first, and tells the athlete to seek urgent or emergency medical care for acute chest pain/pressure, unexplained shortness of breath, fainting/near-fainting, new neurological symptoms, or another emergency concern;
 - the permissive “decision to start is yours” copy is not used under clinical escalation.
 
-Regression coverage: `app/src/engine/externalSessionClinicalEscalation.test.ts`.
+Regression coverage: `app/src/engine/externalSessionClinicalEscalation.test.ts`, including the emergency-warning wording above.
 
 ## 6. Evidence interpretation
 
 - Herring SA et al. *Initial Assessment and Management of Select Musculoskeletal Injuries: A Team Physician Consensus Statement.* Med Sci Sports Exerc. 2024. Supports appropriate initial assessment/management of significant sports injuries; it does not validate this software taxonomy verbatim.
 - Hainline B et al. IOC consensus on pain management in elite athletes. Supports separating pain management from serious pathology assessment; again, it does not turn application labels into diagnoses.
-- American Heart Association chest-pain guidance: acute chest pain/chest-pain equivalents, including shortness of breath, warrant immediate medical care. This supports stronger emergency wording for cardiopulmonary warning symptoms rather than generic “monitor/rest” language.
+- Gulati M et al. *2021 AHA/ACC Guideline for the Evaluation and Diagnosis of Chest Pain.* Circulation. 2021. Acute chest pain/chest-pain equivalents, including shortness of breath, warrant immediate medical evaluation; this supports stronger emergency wording rather than generic “monitor/rest” language.
+- Kim JH et al. *Clinical Considerations for Competitive Sports Participation for Athletes With Cardiovascular Abnormalities: A Scientific Statement From the American Heart Association and American College of Cardiology.* Circulation. 2025;151:e716–e761. Cardiopulmonary symptoms relevant to sports-participation assessment include chest pain/tightness, dyspnea, palpitations, and presyncope/syncope. This supports routing such disclosures out of automated training clearance while clinical evaluation is pending.
 
-**Product-policy boundary:** the application stops training recommendations when configured warning findings are reported. It does not determine the underlying diagnosis, severity, or fitness to return to sport.
+**Product-policy boundary:** the application stops training recommendations when configured warning findings are reported. It does not determine the underlying diagnosis, severity, cause, or fitness to return to sport.
 
 ## 7. Verification additions in PR #320
 
 Focused regression tests added during review:
 - `injuryPolicyLatencySafety.test.ts` — missing latency follow-up fails closed;
 - `subjectiveThresholdSafety.test.ts` — 8/10 fatigue or soreness cannot be diluted by other good answers;
-- `externalSessionClinicalEscalation.test.ts` — imported sessions/events cannot bypass escalation;
+- `externalSessionClinicalEscalation.test.ts` — imported sessions/events cannot bypass escalation and the imported-event copy retains the urgent cardiopulmonary/neurological warning language;
 - `redFlagIndependence.test.ts` — explicit red flags remain independent from the pain/injury toggle.
