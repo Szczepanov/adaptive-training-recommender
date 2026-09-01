@@ -28,6 +28,8 @@ export interface SubjectiveInput {
     painFlag: boolean;
     /** Compact source categories for the aggregate clinical flag; no raw symptom detail or diagnosis. */
     clinicalEnvelopeSources?: ClinicalEnvelopeSource[];
+    /** Active red-flag findings requiring clinical evaluation and prohibiting physical training (SEP-C4). */
+    redFlagFindings?: RedFlagFinding[];
     /**
      * Region families derived only from today's structured pain/injury tissue responses.
      * This is a decision input for contextualizing the generic Running fallback; unlike
@@ -153,7 +155,25 @@ export interface DailyReadiness {
  * injury composition to `knowledgeLineage.ts`. They are not a diagnosis or persisted health
  * record. */
 export type InjuryRegionMappingFamily = 'lower_limb_impact' | 'lower_limb_strength' | 'lumbar_loading' | 'upper_limb_loading';
-export type ClinicalEnvelopeSource = 'pain_or_injury' | 'non_allergy_illness';
+export type ClinicalEnvelopeSource = 'pain_or_injury' | 'non_allergy_illness' | 'red_flag';
+
+export type RedFlagCategory =
+    | 'neurological'
+    | 'acute_trauma_structural'
+    | 'systemic_infection'
+    | 'rapidly_worsening';
+
+export interface RedFlagCheckin {
+    present: boolean;
+    categories?: RedFlagCategory[];
+    notes?: string | null;
+}
+
+export interface RedFlagFinding {
+    category: RedFlagCategory;
+    source: 'explicit_checkin' | 'severe_systemic_symptoms';
+    description: string;
+}
 
 export interface InjuryPolicyTrace {
     tissueSeverityApplied: boolean;
@@ -734,6 +754,9 @@ export interface SafetyEnvelope {
     clinicalFlagActive: boolean;
     clinicalReason?: string | null;
     restrictedModalities: SessionTemplate['modality'][];
+    redFlagActive?: boolean;
+    clinicalEscalationRequired?: boolean;
+    redFlagCategories?: RedFlagCategory[];
 }
 
 export interface PlanEnvelope {
@@ -1134,6 +1157,8 @@ export interface DailySubjectiveCheckin {
     illnessSymptoms: boolean;
     unusuallyLimitedTime: boolean;
     alreadyTrainedToday: boolean; // Already completed a session today -- recommendation should be rest/recovery only
+    /** Clinical red flags requiring medical referral (SEP-C4). */
+    redFlags?: RedFlagCheckin;
     /** Per-region detail (Phase 5.4), populated when painOrInjury is flagged. Keyed by
      *  BodyRegion; see injuryPolicy.ts resolveEffectiveInjuryConstraints for how this
      *  combines with the athlete's standing InjuryConstraint[]. */

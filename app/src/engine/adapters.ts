@@ -3,6 +3,7 @@ import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     ClinicalEnvelopeSource,
+    RedFlagFinding,
     EngineObjectiveInput,
     InjuryRegionMappingFamily,
     RawActivitySummary,
@@ -46,6 +47,46 @@ function isAllergyLikeSymptomDay(checkin: DailySubjectiveCheckin): boolean {
     return true;
 }
 
+/**
+ * Identifies active clinical red-flag findings that require medical evaluation
+ * and prohibit automated training prescriptions (Hainline 2017, Herring 2024).
+ */
+export function resolveRedFlagFindings(
+    checkin: DailySubjectiveCheckin | null | undefined,
+): RedFlagFinding[] {
+    if (!checkin) return [];
+    const findings: RedFlagFinding[] = [];
+
+    // 1. Explicit check-in red flags
+    if (checkin.redFlags?.present && checkin.redFlags.categories) {
+        for (const category of checkin.redFlags.categories) {
+            findings.push({
+                category,
+                source: 'explicit_checkin',
+                description: `Athlete reported red-flag symptom: ${category.replace(/_/g, ' ')}.`,
+            });
+        }
+    }
+
+    // 2. Implicit systemic red flags: severe fever/chills presentation
+    const symptoms = checkin.healthContext?.symptoms;
+    if (
+        symptoms?.present
+        && symptoms.severity === 'severe'
+        && symptoms.types?.includes('fever_or_chills')
+    ) {
+        if (!findings.some((f) => f.category === 'systemic_infection')) {
+            findings.push({
+                category: 'systemic_infection',
+                source: 'severe_systemic_symptoms',
+                description: 'Severe fever or chills reported in health symptoms.',
+            });
+        }
+    }
+
+    return findings;
+}
+
 /** Compact origin facts for the normalized clinical envelope. This deliberately records
  * only the branch category, not raw symptoms, severity, text, or a diagnosis. */
 export function resolveClinicalEnvelopeSources(
@@ -53,6 +94,8 @@ export function resolveClinicalEnvelopeSources(
 ): ClinicalEnvelopeSource[] {
     if (!checkin) return [];
     const sources: ClinicalEnvelopeSource[] = [];
+    const redFlags = resolveRedFlagFindings(checkin);
+    if (redFlags.length > 0) sources.push('red_flag');
     if (checkin.painOrInjury) sources.push('pain_or_injury');
     if (checkin.illnessSymptoms && !isAllergyLikeSymptomDay(checkin)) sources.push('non_allergy_illness');
     return sources;
@@ -241,6 +284,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
             answeredDimensions: [],
             painFlag: false,
             clinicalEnvelopeSources: [],
+            redFlagFindings: [],
             painOrInjuryRegionFamilies: [],
             alreadyTrainedToday: false,
             preferredModalityToday: null,
@@ -256,6 +300,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
     if (checkin.motivation !== null && checkin.motivation !== undefined) answeredDimensions.push('motivation');
 
     const clinicalEnvelopeSources = resolveClinicalEnvelopeSources(checkin);
+    const redFlagFindings = resolveRedFlagFindings(checkin);
     return {
         readiness: checkin.readiness ?? NEUTRAL_SCALE_VALUE,
         sleepQuality: checkin.sleepQuality ?? NEUTRAL_SCALE_VALUE,
@@ -267,6 +312,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         answeredDimensions,
         painFlag: clinicalEnvelopeSources.length > 0,
         clinicalEnvelopeSources,
+        redFlagFindings,
         painOrInjuryRegionFamilies: resolvePainOrInjuryRegionFamilies(checkin),
         alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
         preferredModalityToday: checkin.availability?.preferredModalityToday ?? null,

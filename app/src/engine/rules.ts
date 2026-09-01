@@ -383,7 +383,8 @@ export function evaluateReadinessAndSafetyEnvelope(
     const postRecoverBufferApplied = mode === 'train' && previousMode === 'recover';
     if (postRecoverBufferApplied) mode = 'modify';
     const alreadyTrainedOverride = subjective.alreadyTrainedToday === true || objective.today_training !== null;
-    if (alreadyTrainedOverride) mode = 'recover';
+    const redFlagOverride = (subjective.redFlagFindings?.length ?? 0) > 0;
+    if (alreadyTrainedOverride || redFlagOverride) mode = 'recover';
 
     const round2 = (val: number) => Math.round(val * 100) / 100;
     const telemetry: DecisionScoreTelemetry = {
@@ -450,7 +451,10 @@ export function evaluateTraining(
             return Number(b.category === preferredCategory) - Number(a.category === preferredCategory);
         });
         if (rankedRecoverOptions.length > 0) selectedTemplate = pickTemplate(rankedRecoverOptions, date)!;
-        if (alreadyTrainedOverride) {
+        if (envelopes.safety.redFlagActive) {
+            selectedTemplate = availableTemplates.find(t => t.category === 'Rest') || getCanonicalRestTemplate();
+            rationale = `${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`;
+        } else if (alreadyTrainedOverride) {
             const loggedSession = objective.today_training;
             const sessionDescription = loggedSession
                 ? `Garmin shows you already completed a ${loggedSession.type} session today (~${loggedSession.duration_min} min).`
@@ -737,9 +741,12 @@ export async function evaluateTrainingWithIntent(
     if (!pick) {
         const safeRecovery = candidates.find(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
             ?? getCanonicalRestTemplate();
+        const fallbackRationale = envelopes.safety.redFlagActive
+            ? `${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
+            : `${externalFallbackPrefix}${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`;
         return {
             template: safeRecovery,
-            rationale: `${externalFallbackPrefix}${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`,
+            rationale: fallbackRationale,
             mode: 'recover', envelopes, telemetry,
             knowledgeRefs: decisionKnowledgeRefs,
             ...(externalEventAdvisory ? {
@@ -755,11 +762,14 @@ export async function evaluateTrainingWithIntent(
             },
         };
     }
+    const finalRationale = envelopes.safety.redFlagActive
+        ? `${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
+        : doseAdjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${doseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`;
     return {
         template: pick.template,
         plannedDose: intent.plannedDose,
         executionDose: resolveExecutionDose(intent.plannedDose, envelopes.plan, null),
-        rationale: doseAdjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${doseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`,
+        rationale: finalRationale,
         mode, envelopes, telemetry,
         knowledgeRefs: decisionKnowledgeRefs,
         ...(doseAdjustment ?? {}),
@@ -788,7 +798,11 @@ export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContex
         readiness.subjective.clinicalEnvelopeSources ?? (legacyClinicalFlag ? ['pain_or_injury'] : []);
     const hasPainOrInjury = sources.includes('pain_or_injury');
     const hasNonAllergyIllness = sources.includes('non_allergy_illness');
-    const hasCurrentClinicalSymptoms = legacyClinicalFlag || sources.length > 0;
+    const redFlagFindings = readiness.subjective.redFlagFindings ?? [];
+    const redFlagActive = redFlagFindings.length > 0 || sources.includes('red_flag');
+    const clinicalEscalationRequired = redFlagActive;
+    const redFlagCategories = redFlagFindings.map(f => f.category);
+    const hasCurrentClinicalSymptoms = legacyClinicalFlag || sources.length > 0 || redFlagActive;
 
     // The generic Running restriction belongs to the pain/injury branch only. Current
     // structured tissue-response regions may contextualize that fallback; standing injury
@@ -807,7 +821,7 @@ export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContex
 
     const clinicalFlagActive = hasCurrentClinicalSymptoms || hasActiveInjury;
     let maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard' = 'Hard';
-    if (readiness.subjective.alreadyTrainedToday) maxAllowableTier = 'Rest';
+    if (readiness.subjective.alreadyTrainedToday || redFlagActive) maxAllowableTier = 'Rest';
     else if (hasCurrentClinicalSymptoms) maxAllowableTier = 'Mobility';
     else if (
         (readiness.objective.body_battery_wake !== null && readiness.objective.body_battery_wake < 30) ||
@@ -817,15 +831,32 @@ export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContex
     }
 
     let clinicalReason: string | null = null;
-    if (hasPainOrInjury && hasNonAllergyIllness) clinicalReason = 'Pain/injury and non-allergy illness symptoms reported.';
+    if (redFlagActive) {
+        const categoriesText = redFlagCategories.length > 0
+            ? ` (${Array.from(new Set(redFlagCategories)).map(c => c.replace(/_/g, ' ')).join(', ')})`
+            : '';
+        clinicalReason = `Clinical evaluation recommended: red-flag finding reported${categoriesText}. Training recommendations are paused until medical evaluation.`;
+    }
+    else if (hasPainOrInjury && hasNonAllergyIllness) clinicalReason = 'Pain/injury and non-allergy illness symptoms reported.';
     else if (hasPainOrInjury) clinicalReason = 'Pain or injury reported.';
     else if (hasNonAllergyIllness) clinicalReason = 'Non-allergy illness symptoms reported.';
     else if (legacyClinicalFlag) clinicalReason = 'Active legacy clinical symptom flag reported.';
     else if (hasActiveInjury) clinicalReason = 'Active injury restriction is in effect.';
 
     return {
-        safety: { clinicalFlagActive, clinicalReason, restrictedModalities },
-        plan: { maxAllowableTier, taperActive: false, reason: null },
+        safety: {
+            clinicalFlagActive,
+            clinicalReason,
+            restrictedModalities,
+            redFlagActive,
+            clinicalEscalationRequired,
+            redFlagCategories: redFlagActive ? redFlagCategories : undefined,
+        },
+        plan: {
+            maxAllowableTier,
+            taperActive: false,
+            reason: redFlagActive ? 'Red-flag clinical escalation protocol active.' : null,
+        },
     };
 }
 
@@ -845,6 +876,7 @@ export function adjustSessionRecommendation(
 ): Recommendation | null {
     const envelopes = evaluateEnvelopes(readiness, context);
     const { safety, plan } = envelopes;
+    if (safety.clinicalEscalationRequired) return null;
     if (direction === 'harder' && safety.clinicalFlagActive) return null;
     const baseTemplate = baseRec.template;
     const baseTemplateEligible = evaluateTemplateEligibility(baseTemplate, context, readiness.subjective.timeAvailable, date).eligible;

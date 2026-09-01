@@ -180,6 +180,17 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                     </div>
                 ) : recommendation ? (
                     <div className="hero-recommendation-content">
+                        {recommendation.envelopes?.safety.clinicalEscalationRequired && (
+                            <div className="clinical-escalation-hero-banner" role="alert">
+                                <span className="escalation-icon" aria-hidden="true">⚠️</span>
+                                <div className="escalation-content">
+                                    <strong className="escalation-title">Clinical Evaluation Recommended</strong>
+                                    <p className="escalation-text">
+                                        {recommendation.envelopes.safety.clinicalReason ?? 'Red-flag symptoms reported. Training recommendations are paused until medical evaluation.'}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
                         <div className="headline-meta-row">
                             <h2 className="hero-headline">
                                 {recommendation.template.title}

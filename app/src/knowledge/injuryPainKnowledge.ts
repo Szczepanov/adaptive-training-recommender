@@ -13,6 +13,7 @@ export const INJURY_PAIN_CLAIM_IDS = {
     upperLimbLoadingPolicy: 'policy.injury.region_upper_limb_loading_v1',
     genericClinicalEnvelopePolicyV1: 'policy.injury.generic_clinical_envelope_v1',
     genericClinicalEnvelopePolicy: 'policy.injury.contextual_clinical_envelope_v2',
+    clinicalEscalationProtocol: 'policy.safety.clinical_escalation_protocol',
 } as const;
 
 const IOC_PAIN_CONSENSUS_SOURCE = 'HAINLINE-2017-IOC-PAIN-CONSENSUS';
@@ -23,6 +24,7 @@ const INJURY_PRODUCT_POLICY_SOURCE = 'PRODUCT-INJURY-CLINICAL-SYMPTOM-POLICY-V1'
 const CONTEXTUAL_CLINICAL_PRODUCT_POLICY_SOURCE = 'PRODUCT-INJURY-CLINICAL-SYMPTOM-POLICY-V2';
 const TISSUE_RESPONSE_SEVERITY_PRODUCT_POLICY_V2_SOURCE = 'PRODUCT-TISSUE-RESPONSE-SEVERITY-POLICY-V2';
 const LUMBAR_LOADING_PRODUCT_POLICY_V2_SOURCE = 'PRODUCT-LUMBAR-LOADING-POLICY-V2';
+const CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE = 'PRODUCT-CLINICAL-ESCALATION-POLICY-V1';
 
 /**
  * Exact descriptor of the current injury and clinical-symptom product policy. It is
@@ -75,6 +77,13 @@ export const INJURY_PAIN_POLICY_DESCRIPTOR = {
             noGenericRestrictionForIsolatedFamilies: ['lower_limb_strength', 'lumbar_loading', 'upper_limb_loading'],
             provenanceTraceMayControlPolicy: false,
         },
+    },
+    clinicalEscalationProtocol: {
+        redFlagCategories: ['neurological', 'acute_trauma_structural', 'systemic_infection', 'rapidly_worsening'],
+        maxTierWhenRedFlag: 'Rest',
+        enforceMode: 'recover',
+        requiresMedicalReferral: true,
+        prohibitsPhysicalTraining: true,
     },
 } as const;
 
@@ -147,6 +156,13 @@ export const INJURY_PAIN_SOURCES: readonly KnowledgeSource[] = [
         sourceType: 'product_policy',
         citation: 'Adaptive Training Recommender product policy: lumbar-loading-v2 (SEP-C3).',
         notes: 'For lower-back constraints, limit applies avoid-heavy-spinal-loading, while exclude applies avoid-heavy-spinal-loading, avoid-heavy-lower-body, and avoid-high-impact to offload high-impact axial shock.',
+    },
+    {
+        id: CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE,
+        title: 'Red-flag & clinical escalation protocol policy v1 (SEP-C4)',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy: clinical-escalation-protocol-v1 (SEP-C4).',
+        notes: 'Red-flag presentations (neurological deficit, acute traumatic instability, severe systemic infection/fever, or rapidly worsening symptoms) halt training prescriptions, cap the plan envelope at Rest, and mandate clinical evaluation.',
     },
 ];
 
@@ -294,5 +310,17 @@ export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
         ],
         reviewedOn: '2026-09-01', version: 1,
         supersedes: INJURY_PAIN_CLAIM_IDS.genericClinicalEnvelopePolicyV1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.clinicalEscalationProtocol,
+        statement: 'Red-flag findings (neurological symptoms, acute traumatic structural instability, severe systemic infection with high fever, or rapidly worsening symptoms) halt all physical training recommendations, cap the plan envelope at Rest, and mandate medical evaluation before resuming physical loading.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'injury_safety'], sports: ['all_supported_sports'], populations: ['product_users_with_red_flag_symptoms'], outcomes: ['daily_training_ceiling', 'clinical_escalation_referral'], horizon: 'acute' },
+        evidence: [{ sourceId: CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: [
+            'Check-in screening relies on self-reported athlete symptoms and does not replace medical history, physical examination, or diagnostic imaging.',
+            'Enforcing a Rest ceiling does not provide clinical treatment or rehabilitation advice; it safely halts automated exercise prescription.',
+        ],
+        reviewedOn: '2026-09-01', version: 1,
     },
 ];

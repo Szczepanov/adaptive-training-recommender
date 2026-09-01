@@ -211,6 +211,13 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'This is conservative missing-data behavior, not a physiological threshold. Scientific evidence may inform which fields are useful, but fail-closed handling is a product safety contract.',
     },
     {
+        id: 'safety.clinical_escalation_protocol', domain: 'injury_safety', title: 'Red-flag and clinical escalation protocol',
+        currentRule: 'Red-flag presentations (neurological deficit, acute traumatic non-weight-bearing / instability, severe systemic infection with high fever, or rapidly worsening symptoms) halt all physical training recommendations, cap the plan envelope at Rest, and mandate medical evaluation before resuming physical loading.',
+        classification: 'safety_invariant', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
+        codeRefs: ['engine/models.ts:RedFlagFinding', 'engine/adapters.ts:resolveRedFlagFindings', 'engine/rules.ts:evaluateEnvelopes'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.clinicalEscalationProtocol],
+        coverageRationale: 'Sports medicine consensus (Hainline 2017 IOC Pain Consensus, Herring 2024 Initial MSK Assessment) mandates that automated athletic prescription must defer to medical evaluation upon detecting red flags.',
+    },
+    {
         id: 'injury.tissue_response_severity', domain: 'injury_safety', title: 'Tissue-response to restriction severity mapping',
         currentRule: 'Tissue response evaluates 24-hour response latency: severe at any point maps to exclude; persistent post-session or delayed next-morning moderate irritability (or waking state) maps to limit; transient during-session moderate loading discomfort that settles by next morning maps to monitor (tolerable loading, Escriche-Escuder 2020); mild maps to monitor; normal maps to null. Observed response can only preserve or tighten standing constraints.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',

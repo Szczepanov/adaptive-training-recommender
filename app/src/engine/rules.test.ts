@@ -831,6 +831,37 @@ describe('session adjustment engine', () => {
             expect(envelopes.safety.restrictedModalities).not.toContain('Running');
             expect(envelopes.plan.maxAllowableTier).toBe('Mobility');
         });
+
+        it('applies strict Rest ceiling, clinical escalation, and pauses training when red flags are reported', () => {
+            const readiness: DailyReadiness = {
+                subjective: neutralSubjective({
+                    painFlag: true,
+                    clinicalEnvelopeSources: ['red_flag', 'pain_or_injury'],
+                    redFlagFindings: [
+                        { category: 'neurological', source: 'explicit_checkin', description: 'Numbness reported' },
+                    ],
+                }),
+                objective: quietObjective(),
+            };
+            const context = baseContext();
+            const envelopes = evaluateEnvelopes(readiness, context);
+
+            expect(envelopes.safety.clinicalFlagActive).toBe(true);
+            expect(envelopes.safety.redFlagActive).toBe(true);
+            expect(envelopes.safety.clinicalEscalationRequired).toBe(true);
+            expect(envelopes.safety.redFlagCategories).toEqual(['neurological']);
+            expect(envelopes.safety.clinicalReason).toContain('Clinical evaluation recommended');
+            expect(envelopes.safety.clinicalReason).toContain('neurological');
+            expect(envelopes.plan.maxAllowableTier).toBe('Rest');
+            expect(envelopes.plan.reason).toContain('Red-flag clinical escalation protocol active');
+
+            const baseRec = evaluateTraining(readiness, context, '2026-09-01');
+            expect(baseRec.mode).toBe('recover');
+            expect(baseRec.template.category).toBe('Rest');
+            expect(baseRec.rationale).toContain('Clinical evaluation recommended');
+            expect(adjustSessionRecommendation(baseRec, 'easier', readiness, context, '2026-09-01')).toBeNull();
+            expect(adjustSessionRecommendation(baseRec, 'harder', readiness, context, '2026-09-01')).toBeNull();
+        });
     });
 
     it('Non-transferable objective (Hill Repeats) skips Tier 4 cross-modal substitution', () => {

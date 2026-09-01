@@ -1,10 +1,11 @@
 /** Increment whenever a change can alter a persisted recommendation decision. (Refactoring does not require a bump) */
-export const POLICY_VERSION = '2026-09-safety-policy-remediation-sep-c3';
+export const POLICY_VERSION = '2026-09-safety-policy-remediation-sep-c4';
 
 /** Historical versions are intentionally not re-executed by this build. Their compact
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-09-safety-policy-remediation-sep-c3',
     '2026-09-safety-policy-remediation-sep-c2',
     '2026-09-safety-policy-remediation-sep-c1',
     '2026-09-catalogue-lookup-indexes-v1',
