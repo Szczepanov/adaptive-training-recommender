@@ -2,7 +2,7 @@
 
 * **Status:** In progress
 * **Date:** 2026-09-01
-* **Blocked by:** Nothing
+* **Blocked by:** Catalog-specific visual capture and full host-window verification
 * **Unlocks:** Complete, executable warm-up prescriptions for every active catalog strength session
 * **Decision boundary:** Catalog execution content changes; recommendation selection, fatigue cost,
   stimulus credit, and automatic warm-up-response coaching do not change
@@ -340,9 +340,9 @@ warm-up state remains the only open verification item.
 
 | Item | Status | Depends on | Result |
 |---|---|---|---|
-| WU0 Evidence and invariant | `[ ]` | — | Not started |
-| WU1 Structured load path | `[ ]` | WU0 | Not started |
-| WU2 Primary full-body repair | `[ ]` | WU0, WU1 | Not started |
-| WU3 Remaining strength catalog | `[ ]` | WU2 | Not started |
-| WU4 Safe logging default | `[ ]` | WU2 | Not started |
-| WU5 Enforcement and rollout | `[ ]` | WU1–WU4 | Not started |
+| WU0 Evidence and invariant | `[x]` | — | Complete |
+| WU1 Structured load path | `[x]` | WU0 | Complete |
+| WU2 Primary full-body repair | `[x]` | WU0, WU1 | Complete |
+| WU3 Remaining strength catalog | `[x]` | WU2 | Complete |
+| WU4 Safe logging default | `[x]` | WU2 | Complete |
+| WU5 Enforcement and rollout | `[~]` | WU1–WU4 | Partial — visual coverage capture outstanding |
