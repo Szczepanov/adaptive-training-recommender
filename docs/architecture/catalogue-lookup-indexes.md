@@ -1,9 +1,9 @@
 # Catalogue lookup indexes
 
-Static catalogues such as `TEMPLATES` and `EXERCISES` serve two different access patterns:
+Static catalogues such as `TEMPLATES`, `ENRICHED_TEMPLATES`, `EXERCISES`, and `WORKOUTS` serve two different access patterns:
 
 1. **ordered iteration/filtering** — keep using the source arrays;
-2. **repeated exact-ID resolution** — use the module-scoped `ReadonlyMap` indexes (`TEMPLATES_BY_ID` and `EXERCISES_BY_ID`).
+2. **repeated exact-ID resolution** — use the module-scoped `ReadonlyMap` indexes (`TEMPLATES_BY_ID`, `ENRICHED_TEMPLATES_BY_ID`, `EXERCISES_BY_ID`, and `WORKOUTS_BY_ID`).
 
 ## Why this pattern
 

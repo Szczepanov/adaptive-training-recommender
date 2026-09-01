@@ -278,8 +278,12 @@ export const PERFORMANCE_TEST_DEFINITIONS: readonly PerformanceTestDefinition[] 
     },
 ];
 
+export const PERFORMANCE_TEST_DEFINITIONS_BY_ID: ReadonlyMap<string, PerformanceTestDefinition> = new Map(
+    PERFORMANCE_TEST_DEFINITIONS.map(candidate => [candidate.id, candidate])
+);
+
 export function getPerformanceTestDefinition(id: string): PerformanceTestDefinition {
-    const definition = PERFORMANCE_TEST_DEFINITIONS.find(candidate => candidate.id === id);
+    const definition = PERFORMANCE_TEST_DEFINITIONS_BY_ID.get(id);
     if (!definition) throw new Error(`Unknown performance test definition: ${id}`);
     return definition;
 }

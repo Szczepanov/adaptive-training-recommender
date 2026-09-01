@@ -4,7 +4,7 @@ import type { EvidenceBackedStrategy } from './evergreenStrategy';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import type { WeeklyBudget } from './weeklyDosePacking';
 import { buildCoverageState, coverageNeedTierForTemplate } from './coverage';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 
 const strategy: EvidenceBackedStrategy = {
     requirements: [{
@@ -52,7 +52,7 @@ describe('evergreen plan definition', () => {
         const state = buildCoverageState(result.data, '2026-08-12');
         expect(state).toMatchObject({ phase: 'general', coverageSetId: 'evergreen_general' });
         expect(state.requirements.map(requirement => requirement.key)).toContain('aerobic_volume');
-        const zone2 = ENRICHED_TEMPLATES.find(template => template.id === 'end_easy_01');
+        const zone2 = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01');
         if (!zone2) throw new Error('Zone 2 template fixture missing');
         expect(coverageNeedTierForTemplate(state, zone2)).not.toBe(3);
     });

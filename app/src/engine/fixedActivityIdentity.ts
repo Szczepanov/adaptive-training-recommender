@@ -1,4 +1,4 @@
-import { WORKOUTS } from '../workouts/catalog';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
 import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import type { FixedActivity, SessionTemplate } from './models';
@@ -105,7 +105,10 @@ export function resolveFixedActivityIdentity(activity: FixedActivity): ResolvedF
         };
     }
 
-    const workout = WORKOUTS.find(item => item.id === declaredWorkoutId && item.status === 'active' && !item.manualOnly);
+    const candidate = declaredWorkoutId ? WORKOUTS_BY_ID.get(declaredWorkoutId) : undefined;
+    const workout = candidate && candidate.status === 'active' && !candidate.manualOnly
+        ? candidate
+        : undefined;
     const template = workout
         ? ENRICHED_TEMPLATES.find(candidate => workoutForTemplate(candidate.id)?.id === workout.id)
         : undefined;

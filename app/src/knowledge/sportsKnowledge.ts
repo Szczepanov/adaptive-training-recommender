@@ -726,9 +726,17 @@ export function validateSportsKnowledgeRegistry(
     return { valid: errors.length === 0, errors, warnings };
 }
 
+export const SPORTS_KNOWLEDGE_SOURCES_BY_ID: ReadonlyMap<string, KnowledgeSource> = new Map(
+    SPORTS_KNOWLEDGE_SOURCES.map(source => [source.id, source])
+);
+
+export const SPORTS_KNOWLEDGE_CLAIMS_BY_ID: ReadonlyMap<string, KnowledgeClaim> = new Map(
+    SPORTS_KNOWLEDGE_CLAIMS.map(claim => [claim.id, claim])
+);
+
 /** Return a registered claim regardless of lifecycle status, or throw for an unknown ID. */
 export function getKnowledgeClaim(id: string): KnowledgeClaim {
-    const claim = SPORTS_KNOWLEDGE_CLAIMS.find(candidate => candidate.id === id);
+    const claim = SPORTS_KNOWLEDGE_CLAIMS_BY_ID.get(id);
     if (!claim) throw new Error(`Unknown sports knowledge claim: ${id}`);
     return claim;
 }
@@ -742,7 +750,7 @@ export function getActiveKnowledgeClaim(id: string): KnowledgeClaim {
 
 /** Return a normalized knowledge source, or throw for an unknown source ID. */
 export function getKnowledgeSource(id: string): KnowledgeSource {
-    const source = SPORTS_KNOWLEDGE_SOURCES.find(candidate => candidate.id === id);
+    const source = SPORTS_KNOWLEDGE_SOURCES_BY_ID.get(id);
     if (!source) throw new Error(`Unknown sports knowledge source: ${id}`);
     return source;
 }

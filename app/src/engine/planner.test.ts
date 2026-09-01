@@ -7,7 +7,7 @@ import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueSt
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import { rankCandidatesByUtility } from './optimizer';
 import { resolveAvailability } from './schedule';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { generateWeeklyObjectives } from './microcycle';
 import { evaluatePeriodizationPhase } from './periodization';
 import { addDaysToLocalDateString } from '../utils/localDate';
@@ -296,7 +296,7 @@ describe('generateWeekAheadPlan', () => {
     it('suppresses a hard Cycling candidate at a fresh plan boundary when real trailing history has two hard Cycling days', () => {
         const context = baseContext({ hasIndoorBike: true });
         const availability = resolveAvailability('2026-08-08', null, [], context);
-        const bikeVo2 = ENRICHED_TEMPLATES.find(template => template.id === 'end_hard_02')!;
+        const bikeVo2 = ENRICHED_TEMPLATES_BY_ID.get('end_hard_02')!;
         const fatigue: FatigueState = {
             lastUpdatedDate: '2026-08-08',
             externalLoadFatigue: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },

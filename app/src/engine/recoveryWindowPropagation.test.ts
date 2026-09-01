@@ -3,7 +3,7 @@ import type { FatigueState, UserPreferences } from './models';
 import { rankCandidates, type RecentHistoryEntry } from './optimizer';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import type { ResolvedAvailability } from './schedule';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 
 const ZERO_FATIGUE: FatigueState = {
     lastUpdatedDate: '2026-08-23',
@@ -42,12 +42,12 @@ const PREFERENCES: UserPreferences = {
 };
 
 describe('declared recovery window propagation (Issue #212)', () => {
-    const hardCycling = ENRICHED_TEMPLATES.find(t => t.id === 'end_hard_02');
-    const raceSimulation = ENRICHED_TEMPLATES.find(t => t.id === 'end_race_sim_01');
-    const easySpin = ENRICHED_TEMPLATES.find(t => t.id === 'end_easy_01');
-    const easyRun = ENRICHED_TEMPLATES.find(t => t.id === 'end_easy_02');
-    const mobility = ENRICHED_TEMPLATES.find(t => t.id === 'mob_01');
-    const rest = ENRICHED_TEMPLATES.find(t => t.id === 'rest_01');
+    const hardCycling = ENRICHED_TEMPLATES_BY_ID.get('end_hard_02');
+    const raceSimulation = ENRICHED_TEMPLATES_BY_ID.get('end_race_sim_01');
+    const easySpin = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01');
+    const easyRun = ENRICHED_TEMPLATES_BY_ID.get('end_easy_02');
+    const mobility = ENRICHED_TEMPLATES_BY_ID.get('mob_01');
+    const rest = ENRICHED_TEMPLATES_BY_ID.get('rest_01');
 
     if (!hardCycling || !raceSimulation || !easySpin || !easyRun || !mobility || !rest) {
         throw new Error('Missing test template fixtures');
