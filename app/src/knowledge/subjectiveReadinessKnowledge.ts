@@ -11,7 +11,8 @@ const SAW_SUBJECTIVE_MONITORING_SOURCE = 'SAW-2016-SUBJECTIVE-MONITORING-REVIEW'
 const DUIGNAN_SINGLE_ITEM_SOURCE = 'DUIGNAN-2020-SINGLE-ITEM-WELLNESS-REVIEW';
 const JEFFRIES_AROM_COSMIN_SOURCE = 'JEFFRIES-2020-AROM-COSMIN-REVIEW';
 const CAMPBELL_WELLNESS_PREDICTION_SOURCE = 'CAMPBELL-2021-WELLNESS-LOAD-PREDICTION';
-const THORPE_MORNING_FATIGUE_SOURCE = 'THORPE-2016-MORNING-FATIGUE-SOCCER';
+const BRAUERS_ARSS_SRSS_VALIDATION_SOURCE = 'BRAUERS-2024-ARSS-SRSS-VALIDATION';
+const BRAUERS_FOOTBALL_RESPONSE_META_SOURCE = 'BRAUERS-2026-FOOTBALL-LOAD-RESPONSE-META';
 const SUBJECTIVE_READINESS_PRODUCT_POLICY_SOURCE = 'PRODUCT-SUBJECTIVE-READINESS-MODE-V1';
 
 /**
@@ -99,6 +100,33 @@ export const SUBJECTIVE_READINESS_SOURCES: readonly KnowledgeSource[] = [
         notes: 'COSMIN review found 46.1% of athlete-reported outcome measures were single items. Apart from two reliability/responsiveness studies, it found no validity studies for the frequent single-item measures and identified important content-validity and measurement-error limitations.',
     },
     {
+        id: BRAUERS_ARSS_SRSS_VALIDATION_SOURCE,
+        title: 'Monitoring the recovery-stress states of athletes: Psychometric properties of the acute recovery and stress scale and short recovery stress scale among Dutch and Flemish athletes',
+        sourceType: 'cross_sectional',
+        citation: 'Brauers JJ, Den Hartigh RJR, Jakowski S, et al. J Sports Sci. 2024;42(2):189-199. doi:10.1080/02640414.2024.2325783.',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/38451830/',
+        publishedOn: '2024-03-07',
+        externalIds: [
+            { type: 'pmid', value: '38451830' },
+            { type: 'doi', value: '10.1080/02640414.2024.2325783' },
+        ],
+        notes: 'Instrument-specific psychometric study in 385 Dutch/Flemish athletes found satisfactory internal consistency and construct-validity support for the named ARSS/SRSS instruments, while a combined recovery-stress factor model fit less well. It demonstrates that later, instrument-specific validation exists without validating this product\'s bespoke single items, composite, defaults, or thresholds.',
+    },
+    {
+        id: BRAUERS_FOOTBALL_RESPONSE_META_SOURCE,
+        title: 'The short-term relation between load and acute psychophysiological responses in football: a meta-analysis and methodological considerations',
+        sourceType: 'systematic_review',
+        citation: 'Brauers JJ, Den Hartigh RJR, Klooster D, et al. Sci Med Footb. 2026;10(1):105-125. doi:10.1080/24733938.2025.2476474.',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/40159621/',
+        publishedOn: '2025-03-30',
+        externalIds: [
+            { type: 'pmid', value: '40159621' },
+            { type: 'doi', value: '10.1080/24733938.2025.2476474' },
+        ],
+        synthesisMethods: ['meta_analysis'],
+        notes: 'Meta-analysis of 62 articles and 1,474 football-code athletes found modest short-term associations between load and overall wellbeing, soreness, fatigue, sleep quality and stress. High risk of bias, inconsistency and imprecision produced very-low GRADE certainty, so this source supports contextual monitoring only and argues against high-confidence prescriptive thresholds.',
+    },
+    {
         id: CAMPBELL_WELLNESS_PREDICTION_SOURCE,
         title: 'Analysing the predictive capacity and dose-response of wellness in load monitoring',
         sourceType: 'cohort',
@@ -110,19 +138,6 @@ export const SUBJECTIVE_READINESS_SOURCES: readonly KnowledgeSource[] = [
             { type: 'doi', value: '10.1080/02640414.2020.1870303' },
         ],
         notes: '14,109 observations across cricket, rugby league and football found limited predictive capacity of wellness questionnaires for load measures. It informs a limitation boundary only: load prediction is not equivalent to readiness, safety, injury risk, or benefit from a particular session.',
-    },
-    {
-        id: THORPE_MORNING_FATIGUE_SOURCE,
-        title: 'Tracking Morning Fatigue Status Across In-Season Training Weeks in Elite Soccer Players',
-        sourceType: 'cohort',
-        citation: 'Thorpe RT, Strudwick AJ, Buchheit M, et al. Int J Sports Physiol Perform. 2016;11(7):947-952. doi:10.1123/ijspp.2015-0490.',
-        url: 'https://pubmed.ncbi.nlm.nih.gov/26816390/',
-        publishedOn: '2016-08-24',
-        externalIds: [
-            { type: 'pmid', value: '26816390' },
-            { type: 'doi', value: '10.1123/ijspp.2015-0490' },
-        ],
-        notes: 'Small, single-team elite-soccer cohort in which morning fatigue, sleep quality and soreness tracked in-season session-load fluctuation more clearly than the measured HR-derived indices. It is direct only for those items and population, not for readiness, motivation, stress, a composite, or a prescription rule.',
     },
     {
         id: SUBJECTIVE_READINESS_PRODUCT_POLICY_SOURCE,
@@ -137,15 +152,16 @@ export const SUBJECTIVE_READINESS_CLAIMS: readonly KnowledgeClaim[] = [
     {
         id: SUBJECTIVE_READINESS_CLAIM_IDS.contextualMonitoring,
         statement: 'Repeated athlete self-reports of fatigue, soreness and perceived sleep/well-being can contribute contextual information about recent training response, particularly when interpreted alongside training history and other signals; they do not independently establish medical cause, injury status, or suitability for a specific session.',
-        claimType: 'prognostic', maturity: 'supported', status: 'active', evidenceCertainty: 'moderate', recommendationStrength: 'informational', safetyImpact: 'high',
+        claimType: 'prognostic', maturity: 'supported', status: 'active', evidenceCertainty: 'low', recommendationStrength: 'informational', safetyImpact: 'high',
         applicability: { contexts: ['daily_readiness', 'training_monitoring', 'recovery'], sports: ['team_sports_and_other_athlete_monitoring_contexts'], populations: ['athletes_with_repeated_self_report_collection'], outcomes: ['training_response_context', 'wellbeing_context'], horizon: 'both' },
         evidence: [
             { sourceId: SAW_SUBJECTIVE_MONITORING_SOURCE, directness: 'direct' },
             { sourceId: DUIGNAN_SINGLE_ITEM_SOURCE, directness: 'direct', note: 'Direct for adult field/court team-sport single-item wellness, with heterogeneous instruments and associations.' },
-            { sourceId: THORPE_MORNING_FATIGUE_SOURCE, directness: 'partially_direct', note: 'Direct athlete cohort for fatigue, sleep quality and soreness over a short elite-soccer microcycle.' },
+            { sourceId: BRAUERS_FOOTBALL_RESPONSE_META_SOURCE, directness: 'direct', note: 'Current quantitative synthesis for short-term load-response associations in football codes; GRADE certainty was very low because of bias, inconsistency and imprecision.' },
         ],
         limitations: [
             'The literature primarily concerns repeated monitoring in team-sport cohorts, not consumer-app prescriptions across all supported sports or health conditions.',
+            'The 2026 football meta-analysis found only modest associations and rated certainty very low; the claim is therefore intentionally informational and low-certainty rather than prescriptive.',
             'Self-reported changes are nonspecific and can reflect training, life stress, sleep, illness, expectation, response style and measurement context.',
             'The supported items do not validate this product\'s readiness or motivation items, equal weights, missing-value defaults, or a single-day train/modify/recover action.',
             'This claim is contextual monitoring authority only; pain, illness and injury use separate safety-policy surfaces.',
@@ -160,10 +176,12 @@ export const SUBJECTIVE_READINESS_CLAIMS: readonly KnowledgeClaim[] = [
         evidence: [
             { sourceId: JEFFRIES_AROM_COSMIN_SOURCE, directness: 'direct' },
             { sourceId: DUIGNAN_SINGLE_ITEM_SOURCE, directness: 'direct' },
+            { sourceId: BRAUERS_ARSS_SRSS_VALIDATION_SOURCE, directness: 'partially_direct', note: 'Shows that named recovery/stress instruments can receive later psychometric support; it does not validate the app\'s bespoke single items or composite.' },
         ],
         limitations: [
-            'The COSMIN review is a 2020 evidence snapshot; it does not prove every individual item is invalid or rule out later, instrument-specific validation.',
-            'The reviews do not establish that an arbitrary neutral midpoint is measurement-equivalent to an answered item.',
+            'The COSMIN review is a 2020 evidence snapshot; later instrument-specific studies, including 2024 ARSS/SRSS work, show that some named instruments have psychometric support.',
+            'Instrument-specific validation does not transfer automatically to different wording, single items, scale anchors, composites, populations, administration contexts or missing-value policies.',
+            'The evidence does not establish that an arbitrary neutral midpoint is measurement-equivalent to an answered item.',
             'Measurement-quality limits do not imply that self-report must be ignored; they limit the certainty and action authority assigned to it.',
             'This claim does not assess clinical screening tools or diagnose injury, illness, overtraining or mental-health conditions.',
         ],
@@ -178,6 +196,7 @@ export const SUBJECTIVE_READINESS_CLAIMS: readonly KnowledgeClaim[] = [
             { sourceId: DUIGNAN_SINGLE_ITEM_SOURCE, directness: 'partially_direct', note: 'Reviews heterogeneous single-item wellness instruments and calls for clinically meaningful outcomes rather than supplying product-matching cut-points.' },
             { sourceId: JEFFRIES_AROM_COSMIN_SOURCE, directness: 'partially_direct', note: 'Documents absent/limited validation for frequent single-item AROMs rather than testing this product composite.' },
             { sourceId: CAMPBELL_WELLNESS_PREDICTION_SOURCE, directness: 'indirect', note: 'Reinforces limited predictive authority for load measures; it is not a test of the product classifier or readiness outcome.' },
+            { sourceId: BRAUERS_FOOTBALL_RESPONSE_META_SOURCE, directness: 'indirect', note: 'Quantifies load-response associations but does not test a train/modify/recover classifier or product-matching cut-points.' },
         ],
         limitations: [
             'This is a negative boundary from the scoped review, not proof that every threshold is ineffective or unsafe for every athlete.',
