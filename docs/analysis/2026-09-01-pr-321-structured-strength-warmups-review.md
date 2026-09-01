@@ -1,6 +1,6 @@
 # PR #321 review — structured strength warm-ups and concurrent rest logging
 
-**Date:** 2026-09-01  
+**Date:** 2026-09-01
 **Scope:** follow-up review of `feat: add structured strength warm-ups and concurrent rest logging`
 
 ## Review outcome
