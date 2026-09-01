@@ -82,22 +82,22 @@ No numeric recommendation behavior changes were made, so this pack does not bump
 
 ### Safety Evidence Pack — Subjective Readiness + Injury/Pain Safety
 
-**Status:** In progress — SEP-A subjective-readiness migration complete; SEP-B injury/pain remains open
+**Status:** In progress — SEP-A subjective-readiness migration complete; SEP-B implementation plan reviewed
 
-Execution plan: [`2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md`](./2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md). SKR1 is complete, so there is no remaining runtime-lineage blocker. SEP-A covers only the live absolute current-day subjective classifier; generic pain/illness authority and injury mappings remain SEP-B.
+Umbrella plan: [`2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md`](./2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md). Focused SEP-B plan: [`2026-09-01-safety-evidence-pack-injury-pain-sep-b.md`](./2026-09-01-safety-evidence-pack-injury-pain-sep-b.md). SKR1 is complete. SEP-A covers only the live absolute current-day subjective classifier; the combined clinical-symptom authority and injury mappings remain SEP-B.
 
 Priority families:
 
 1. `readiness.subjective_mode_thresholds`;
 2. `injury.tissue_response_severity`;
-3. `injury.region_restriction_mapping`;
+3. four independently counted `injury.region_mapping.*` product-policy families;
 4. `injury.pain_envelope_mapping`.
 
 SEP-A analysis: `docs/analysis/2026-09-01-evidence-pack-subjective-readiness.md`.
 
 SEP-A adds a contextual self-report monitoring boundary, measurement-quality limitation, explicit no-cutpoint-validation boundary, and a separate current product-policy record. It extends normal readiness audit lineage through SKR1 without changing recommendation behavior. `readiness.subjective_mode_thresholds` is **partial / P0**, not covered: the five-item equal-weight score, exact comparisons, and partial-check-in neutral defaults remain unvalidated calibration debt.
 
-SEP-B should separately review injury/pain authority. Because its three families are high-safety, it should prefer guideline/consensus/rehabilitation evidence and preserve explicit uncertainty rather than manufacturing universal pain thresholds. Reordering the evidence-pack sequence does not reduce this priority or make these families covered.
+SEP-B is sequenced as SEP-B1 (evidence, product descriptors, coverage migration, alignment tests) followed by SEP-B2 (behavior-identical trace and material-use lineage). Because its three semantic families are high-safety, it should prefer guideline/consensus/rehabilitation evidence and preserve explicit uncertainty rather than manufacturing universal pain thresholds. The current `painFlag` combines pain/injury with non-allergy illness, structured tissue input stacks with that generic branch, and region labels are not diagnoses; the focused plan makes those boundaries mandatory. Reordering the evidence-pack sequence does not reduce this priority or make these families covered.
 
 ### Evidence Pack 4 — Strength + Concurrent Training
 
