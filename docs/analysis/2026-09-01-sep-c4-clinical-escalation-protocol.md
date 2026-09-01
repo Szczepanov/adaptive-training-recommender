@@ -24,7 +24,7 @@ The taxonomy below is a **product screening taxonomy**, not a diagnosis. Its exa
 
 ### Naming caveat
 
-`systemic_infection` predates the current UI copy and is retained in this PR to avoid widening the persistence/migration surface. It is therefore a **compatibility/storage bucket, not a diagnostic attribution**: a cardiopulmonary disclosure stored under this key is not being classified as an infection. The user-facing label is **“Systemic / cardiopulmonary warning”** so chest pain or dyspnea are not mislabeled in the interface. A later schema migration can split this bucket into separate systemic-infectious and cardiopulmonary categories without weakening the current fail-safe behavior.
+`systemic_infection` predates the current UI copy and is retained in this PR to avoid widening the persistence/migration surface. It is therefore a **compatibility/storage bucket, not a diagnostic attribution**: a cardiopulmonary disclosure stored under this key is not being classified as an infection. The user-facing label and engine rationale now render this bucket as **“Systemic / cardiopulmonary warning”** so chest pain or dyspnea are not echoed back to the athlete as “systemic infection.” The structured key remains unchanged for persistence and audit compatibility. A later schema migration can split this bucket into separate systemic-infectious and cardiopulmonary categories without weakening the current fail-safe behavior.
 
 The recommender also does not diagnose the cause of dyspnea, chest symptoms, presyncope/syncope, or neurological symptoms. The safety contract is only that configured warning disclosures suspend automated exercise prescription and direct the athlete toward appropriate clinical care.
 
@@ -64,6 +64,7 @@ The adjudication order is now:
 Behavior:
 - imported **training sessions** under clinical escalation return `skip`, with no execution dose;
 - imported **events** remain represented as `advisory` so the recommender does not silently delete a real-world commitment, but the advisory explicitly says the engine **cannot clear the athlete to start**, requires medical evaluation first, and tells the athlete to seek urgent or emergency medical care for acute chest pain/pressure, unexplained shortness of breath, fainting/near-fainting, new neurological symptoms, or another emergency concern;
+- the Morning Decision clinical-escalation banner uses the same urgent warning set rather than the narrower former wording that mentioned only chest pain, severe dyspnea, and fainting;
 - the permissive “decision to start is yours” copy is not used under clinical escalation.
 
 Regression coverage: `app/src/engine/externalSessionClinicalEscalation.test.ts`, including the emergency-warning wording above.
@@ -83,4 +84,5 @@ Focused regression tests added during review:
 - `injuryPolicyLatencySafety.test.ts` — missing latency follow-up fails closed;
 - `subjectiveThresholdSafety.test.ts` — 8/10 fatigue or soreness cannot be diluted by other good answers;
 - `externalSessionClinicalEscalation.test.ts` — imported sessions/events cannot bypass escalation and the imported-event copy retains the urgent cardiopulmonary/neurological warning language;
-- `redFlagIndependence.test.ts` — explicit red flags remain independent from the pain/injury toggle.
+- `redFlagIndependence.test.ts` — explicit red flags remain independent from the pain/injury toggle;
+- `redFlagReasonLabel.test.ts` — the `systemic_infection` storage key renders as the non-diagnostic “systemic / cardiopulmonary warning” in user-facing clinical rationale.
