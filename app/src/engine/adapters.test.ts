@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapSnapshotToEngineInput } from './adapters';
+import { mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapSnapshotToEngineInput, resolveClinicalEnvelopeSources } from './adapters';
 import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
@@ -229,6 +229,11 @@ describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiri
         const context = mapContextFromGoalsAndTrainingSettings([], settings, null, '2026-08-08', checkin);
 
         expect(context.constraints.restrictedModalities).toContain('Running');
+        expect(context.injuryPolicyTrace).toEqual({
+            tissueSeverityApplied: true,
+            regionMappingFamilies: ['lower_limb_impact'],
+            clinicalEnvelopeSources: ['pain_or_injury'],
+        });
     });
 
     it("a high-readiness, no-pain check-in leaves an existing constraint's restrictions exactly as they were", () => {
@@ -268,6 +273,13 @@ describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiri
 });
 
 describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', () => {
+    it('records compact clinical-envelope origins without raw symptom detail', () => {
+        expect(resolveClinicalEnvelopeSources(testCheckin({ painOrInjury: true }))).toEqual(['pain_or_injury']);
+        expect(resolveClinicalEnvelopeSources(testCheckin({ illnessSymptoms: true }))).toEqual(['non_allergy_illness']);
+        expect(resolveClinicalEnvelopeSources(testCheckin({ painOrInjury: true, illnessSymptoms: true })))
+            .toEqual(['pain_or_injury', 'non_allergy_illness']);
+    });
+
     it('sets painFlag when illnessSymptoms is true and no healthContext detail is supplied (unchanged default)', () => {
         const checkin = testCheckin({ illnessSymptoms: true });
         expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);

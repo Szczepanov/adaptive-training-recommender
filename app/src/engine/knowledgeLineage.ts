@@ -84,6 +84,35 @@ export function subjectiveReadinessKnowledgeRefs(): string[] {
     ]);
 }
 
+/** Claim IDs for the compact injury/symptom-policy facts captured at composition time.
+ * A legacy/manual `UserContext` can omit the trace; in that case only the generic policy
+ * branch visible in `SubjectiveInput` is attributed and no source-specific science is
+ * inferred from flattened restrictions. */
+export function injuryPolicyKnowledgeRefs(readiness: DailyReadiness, context: UserContext): string[] {
+    const trace = context.injuryPolicyTrace;
+    const refs: string[] = [];
+    if (trace?.tissueSeverityApplied) {
+        refs.push(
+            KNOWLEDGE_CLAIM_IDS.tissueResponseTemporalMonitoring,
+            KNOWLEDGE_CLAIM_IDS.tissueResponseSeverityPolicy,
+        );
+    }
+    for (const family of trace?.regionMappingFamilies ?? []) {
+        refs.push(KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement);
+        if (family === 'lower_limb_impact') refs.push(KNOWLEDGE_CLAIM_IDS.lowerLimbImpactPolicy);
+        if (family === 'lower_limb_strength') refs.push(KNOWLEDGE_CLAIM_IDS.lowerLimbStrengthPolicy);
+        if (family === 'lumbar_loading') refs.push(KNOWLEDGE_CLAIM_IDS.lumbarLoadingPolicy);
+        if (family === 'upper_limb_loading') refs.push(KNOWLEDGE_CLAIM_IDS.upperLimbLoadingPolicy);
+    }
+    if (readiness.subjective.painFlag) {
+        refs.push(KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy);
+        if (trace?.clinicalEnvelopeSources.includes('pain_or_injury')) {
+            refs.push(KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment);
+        }
+    }
+    return mergeKnowledgeRefs(refs);
+}
+
 /**
  * Claim IDs for the covered objective- and subjective-readiness policies actually evaluated for this input.
  * A long-horizon value is only consumed by metricStrain when its 7-day anchor exists, so
@@ -119,7 +148,7 @@ export function readinessKnowledgeRefs(readiness: DailyReadiness, context: UserC
         refs.push(KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.recentHardReadinessPenalty);
     }
     if (hasObjectiveDecisionInput) refs.push(KNOWLEDGE_CLAIM_IDS.readinessModeThresholds);
-    return mergeKnowledgeRefs(refs);
+    return mergeKnowledgeRefs(refs, injuryPolicyKnowledgeRefs(readiness, context));
 }
 
 function isEnduranceEvent(event: UserEvent | null | undefined): boolean {

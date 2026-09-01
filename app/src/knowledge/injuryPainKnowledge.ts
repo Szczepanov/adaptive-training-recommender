@@ -1,0 +1,210 @@
+import type { KnowledgeClaim, KnowledgeSource } from './sportsKnowledge';
+
+export const INJURY_PAIN_CLAIM_IDS = {
+    symptomsRequireContextualAssessment: 'injury.symptoms.require_contextual_assessment',
+    returnToSportCriteriaBasedRiskManagement: 'injury.return_to_sport.criteria_based_risk_management',
+    tissueResponseTemporalMonitoring: 'injury.tissue_response.temporal_monitoring_condition_specific',
+    tissueResponseSeverityPolicy: 'policy.injury.tissue_response_severity_v1',
+    lowerLimbImpactPolicy: 'policy.injury.region_lower_limb_impact_v1',
+    lowerLimbStrengthPolicy: 'policy.injury.region_lower_limb_strength_v1',
+    lumbarLoadingPolicy: 'policy.injury.region_lumbar_loading_v1',
+    upperLimbLoadingPolicy: 'policy.injury.region_upper_limb_loading_v1',
+    genericClinicalEnvelopePolicy: 'policy.injury.generic_clinical_envelope_v1',
+} as const;
+
+const IOC_PAIN_CONSENSUS_SOURCE = 'HAINLINE-2017-IOC-PAIN-CONSENSUS';
+const RETURN_TO_SPORT_CONSENSUS_SOURCE = 'HERRING-2024-RETURN-TO-SPORT-CONSENSUS';
+const TENDINOPATHY_PROGRESSION_REVIEW_SOURCE = 'ESCRICHE-ESCUDER-2020-LOWER-LIMB-TENDINOPATHY-PROGRESSION-REVIEW';
+const INITIAL_MSK_ASSESSMENT_CONSENSUS_SOURCE = 'HERRING-2024-INITIAL-MSK-ASSESSMENT-CONSENSUS';
+const INJURY_PRODUCT_POLICY_SOURCE = 'PRODUCT-INJURY-CLINICAL-SYMPTOM-POLICY-V1';
+
+/**
+ * Exact descriptor of the existing injury and clinical-symptom policy. It is deliberately
+ * data-only: alignment tests compare it with `injuryPolicy.ts` and `rules.ts`, while the
+ * executable policy remains independent of the evidence registry.
+ */
+export const INJURY_PAIN_POLICY_DESCRIPTOR = {
+    tissueResponseSeverity: {
+        sourceSignals: ['morningState', 'painDuringTraining', 'afterTrainingState', 'nextMorningReaction'],
+        worstSignalMapping: { severe: 'exclude', moderate: 'limit', mild: 'monitor', normal: null },
+        standingConstraintRule: 'preserve_or_tighten',
+        derivedConstraintScope: 'today_only',
+    },
+    regionMappings: {
+        lowerLimbImpact: {
+            regions: ['knee', 'achilles', 'ankle', 'calf'],
+            limit: { restrictedModalities: [], impliedGuardrails: ['avoid_high_impact'], restrictedCategories: [] },
+            exclude: { restrictedModalities: ['Running'], impliedGuardrails: ['avoid_high_impact'], restrictedCategories: [] },
+        },
+        lowerLimbStrength: {
+            regions: ['hamstring', 'quadriceps', 'adductor_groin', 'hip'],
+            limit: { restrictedModalities: [], impliedGuardrails: ['avoid_heavy_lower_body'], restrictedCategories: [] },
+            exclude: { restrictedModalities: [], impliedGuardrails: ['avoid_heavy_lower_body'], restrictedCategories: ['Lower-body Strength', 'Full-body Strength'] },
+        },
+        lumbarLoading: {
+            regions: ['lower_back'],
+            limit: { restrictedModalities: [], impliedGuardrails: ['avoid_heavy_spinal_loading'], restrictedCategories: [] },
+            exclude: { restrictedModalities: [], impliedGuardrails: ['avoid_heavy_spinal_loading', 'avoid_heavy_lower_body'], restrictedCategories: [] },
+        },
+        upperLimbLoading: {
+            regions: ['shoulder', 'elbow', 'wrist'],
+            limit: { restrictedModalities: [], impliedGuardrails: ['avoid_overhead_pressing'], restrictedCategories: [] },
+            exclude: { restrictedModalities: [], impliedGuardrails: ['avoid_overhead_pressing'], restrictedCategories: ['Upper-body Strength'] },
+        },
+    },
+    genericClinicalEnvelope: {
+        painFlag: 'painOrInjury || (illnessSymptoms && !allergyLikeSymptomDay)',
+        painFlagRestriction: 'Running',
+        maxTierWhenPainFlag: 'Mobility',
+        maxTierWhenPainFlagAndAlreadyTrained: 'Rest',
+    },
+} as const;
+
+export const INJURY_PAIN_SOURCES: readonly KnowledgeSource[] = [
+    {
+        id: IOC_PAIN_CONSENSUS_SOURCE,
+        title: 'International Olympic Committee consensus statement on pain management in elite athletes',
+        sourceType: 'consensus',
+        citation: 'Hainline B, et al. Br J Sports Med. 2017;51(17):1245-1258. doi:10.1136/bjsports-2017-097884.',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/28827314/',
+        publishedOn: '2017-09-01',
+        externalIds: [{ type: 'pmid', value: '28827314' }, { type: 'doi', value: '10.1136/bjsports-2017-097884' }],
+        notes: 'Elite-athlete consensus. It describes pain as multifactorial and supports a contextual assessment approach; it does not establish an anatomy-agnostic training restriction, severity threshold, or consumer-app return-to-sport rule.',
+    },
+    {
+        id: RETURN_TO_SPORT_CONSENSUS_SOURCE,
+        title: 'Team Physician Consensus Statement: Return to Sport/Return to Play and the Team Physician: A Team Physician Consensus Statement-2023 Update',
+        sourceType: 'consensus',
+        citation: 'Herring SA, et al. Curr Sports Med Rep. 2024;23(5):183-191. doi:10.1249/JSR.0000000000001169.',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/38709944/',
+        publishedOn: '2024-05-01',
+        externalIds: [{ type: 'pmid', value: '38709944' }, { type: 'doi', value: '10.1249/JSR.0000000000001169' }],
+        notes: 'Team-physician consensus about return-to-sport decision-making. It supports a clinician-led, contextual risk-management boundary; it does not validate a body-region lookup table or replace individual assessment.',
+    },
+    {
+        id: TENDINOPATHY_PROGRESSION_REVIEW_SOURCE,
+        title: 'Load progression criteria in exercise programmes in lower limb tendinopathy: a systematic review',
+        sourceType: 'systematic_review',
+        citation: 'Escriche-Escuder A, Casaña J, Cuesta-Vargas AI. BMJ Open. 2020;10:e041433. doi:10.1136/bmjopen-2020-041433.',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/33444210/',
+        publishedOn: '2020-11-19',
+        externalIds: [{ type: 'pmid', value: '33444210' }, { type: 'pmcid', value: 'PMC7678382' }, { type: 'doi', value: '10.1136/bmjopen-2020-041433' }],
+        synthesisMethods: ['narrative_synthesis'],
+        notes: 'Thirty lower-limb tendinopathy exercise trials frequently used pain-based progression criteria, but the review found their use was not supported by strong comparative evidence. It is condition- and population-limited and does not validate the product severity state machine.',
+    },
+    {
+        id: INITIAL_MSK_ASSESSMENT_CONSENSUS_SOURCE,
+        title: 'Initial Assessment and Management of Select Musculoskeletal Injuries: A Team Physician Consensus Statement',
+        sourceType: 'consensus',
+        citation: 'Herring SA, et al. Curr Sports Med Rep. 2024;23(3):86-104. doi:10.1249/JSR.0000000000001151.',
+        url: 'https://pubmed.ncbi.nlm.nih.gov/38437494/',
+        publishedOn: '2024-03-01',
+        externalIds: [{ type: 'pmid', value: '38437494' }, { type: 'doi', value: '10.1249/JSR.0000000000001151' }],
+        notes: 'Team-physician consensus for initial assessment and management of selected musculoskeletal injuries. It supports the boundary that clinical assessment is distinct from automated training advice; it does not supply a universal self-report routing algorithm.',
+    },
+    {
+        id: INJURY_PRODUCT_POLICY_SOURCE,
+        title: 'Injury and clinical-symptom policy v1',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy: injury-clinical-symptom-v1.',
+        notes: 'Records the existing tissue severity translation, four region-family restriction mappings, and combined pain/injury/non-allergy-illness envelope. These are conservative product choices, not clinically validated diagnostic or treatment rules.',
+    },
+];
+
+export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
+    {
+        id: INJURY_PAIN_CLAIM_IDS.symptomsRequireContextualAssessment,
+        statement: 'Pain and symptom reports in athletes require contextual assessment of contributing factors and functional impact; they do not independently establish a diagnosis, tissue pathology, injury severity, or suitability for a particular training session.',
+        claimType: 'safety', maturity: 'supported', status: 'active', evidenceCertainty: 'moderate', recommendationStrength: 'informational', safetyImpact: 'high',
+        applicability: { contexts: ['pain_or_symptom_checkin', 'training_safety'], sports: ['athlete_contexts'], populations: ['athletes_reporting_pain_or_symptoms'], outcomes: ['assessment_boundary'], horizon: 'acute' },
+        evidence: [
+            { sourceId: IOC_PAIN_CONSENSUS_SOURCE, directness: 'partially_direct', note: 'Direct elite-athlete pain-management consensus; it does not evaluate this product or general consumer users.' },
+            { sourceId: INITIAL_MSK_ASSESSMENT_CONSENSUS_SOURCE, directness: 'partially_direct', note: 'Supports a clinical-assessment boundary for selected athletic musculoskeletal injuries.' },
+        ],
+        limitations: [
+            'The sources concern clinical and elite/team-athlete settings, not autonomous consumer-app diagnosis or training prescription.',
+            'This boundary does not determine a safe activity dose, identify red flags, or authorize return to sport.',
+            'Illness symptoms and musculoskeletal pain may share the product flag but have different causes and should not be represented as the same condition.',
+        ],
+        reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement,
+        statement: 'Return-to-sport decisions after injury are contextual risk-management decisions that require condition-, athlete-, and activity-specific assessment rather than a body-region label or a single symptom response alone.',
+        claimType: 'safety', maturity: 'supported', status: 'active', evidenceCertainty: 'moderate', recommendationStrength: 'informational', safetyImpact: 'high',
+        applicability: { contexts: ['return_to_sport_boundary', 'injury_safety'], sports: ['athlete_contexts'], populations: ['athletes_returning_after_injury'], outcomes: ['risk_management_boundary'], horizon: 'both' },
+        evidence: [{ sourceId: RETURN_TO_SPORT_CONSENSUS_SOURCE, directness: 'partially_direct', note: 'Consensus is direct to team-physician return-to-sport decision-making, not a body-region-only automated rule.' }],
+        limitations: [
+            'The product does not collect the examination, diagnosis, functional testing, imaging, sport demands, or shared decision-making inputs required for clinical return-to-sport decisions.',
+            'This claim does not validate any current region-family restriction or imply that a non-restricted category is medically safe.',
+        ],
+        reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.tissueResponseTemporalMonitoring,
+        statement: 'In lower-limb tendinopathy exercise programmes, pain and symptom response during and around loading are commonly used as progression criteria, but comparative evidence is insufficient to establish one universal response threshold or severity-to-restriction translation.',
+        claimType: 'descriptive', maturity: 'supported', status: 'active', evidenceCertainty: 'low', recommendationStrength: 'informational', safetyImpact: 'high',
+        applicability: { contexts: ['tissue_response_monitoring', 'load_progression'], sports: ['lower_limb_loading_contexts'], populations: ['people_with_midportion_achilles_patellar_or_gluteal_tendinopathy'], outcomes: ['exercise_progression_criteria'], horizon: 'acute' },
+        evidence: [{ sourceId: TENDINOPATHY_PROGRESSION_REVIEW_SOURCE, directness: 'direct' }],
+        limitations: [
+            'The review is limited to specified lower-limb tendinopathies and exercise programmes; it does not cover undiagnosed symptoms, acute injury, lumbar, upper-limb, illness, or all supported sports.',
+            'Predominant use of pain criteria is not strong evidence that a particular criterion is effective or safe.',
+            'This claim does not validate the product normal/mild/moderate/severe labels, worst-signal rule, or monitor/limit/exclude mapping.',
+        ],
+        reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.tissueResponseSeverityPolicy,
+        statement: 'The product takes the worst available daily tissue-response signal, maps severe/moderate/mild to exclude/limit/monitor, preserves or tightens active standing constraints, and scopes a newly inferred constraint to the current local day.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'tissue_response_monitoring'], sports: ['all_supported_sports'], populations: ['product_users_with_structured_tissue_response'], outcomes: ['injury_constraint_severity'], horizon: 'acute' },
+        evidence: [{ sourceId: INJURY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['The severity vocabulary and state translation are product policy, not externally validated clinical thresholds.', 'A tissue response neither diagnoses a condition nor clears a standing constraint.', 'This policy does not provide medical escalation, treatment, or return-to-sport clearance.'],
+        reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.lowerLimbImpactPolicy,
+        statement: 'For knee, Achilles, ankle, and calf constraints, the product applies avoid-high-impact at limit/exclude and additionally restricts Running at exclude.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'injury_safety'], sports: ['all_supported_sports'], populations: ['product_users_with_matching_active_constraint'], outcomes: ['restriction_mapping'], horizon: 'acute' },
+        evidence: [{ sourceId: INJURY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['A body region is not a diagnosis and does not establish the safe amount or type of impact exposure.', 'The mapping is conservative product policy and is not condition-specific rehabilitation authority.', 'Explicit athlete modality restrictions pass through independently of this mapping.'],
+        reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.lowerLimbStrengthPolicy,
+        statement: 'For hamstring, quadriceps, adductor/groin, and hip constraints, the product applies avoid-heavy-lower-body at limit/exclude and additionally restricts Lower-body Strength and Full-body Strength at exclude.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'injury_safety'], sports: ['all_supported_sports'], populations: ['product_users_with_matching_active_constraint'], outcomes: ['restriction_mapping'], horizon: 'acute' },
+        evidence: [{ sourceId: INJURY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['A body region is not a diagnosis and does not establish the safe load, range, or exercise variant.', 'The mapping is conservative product policy and is not condition-specific rehabilitation authority.', 'Explicit athlete modality restrictions pass through independently of this mapping.'],
+        reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.lumbarLoadingPolicy,
+        statement: 'For lower-back constraints, the product applies avoid-heavy-spinal-loading at limit/exclude and additionally applies avoid-heavy-lower-body at exclude.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'injury_safety'], sports: ['all_supported_sports'], populations: ['product_users_with_matching_active_constraint'], outcomes: ['restriction_mapping'], horizon: 'acute' },
+        evidence: [{ sourceId: INJURY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['Lower-back symptoms have heterogeneous causes and require contextual assessment.', 'The mapping is conservative product policy, not diagnosis-specific rehabilitation authority.', 'Explicit athlete modality restrictions pass through independently of this mapping.'],
+        reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.upperLimbLoadingPolicy,
+        statement: 'For shoulder, elbow, and wrist constraints, the product applies avoid-overhead-pressing at limit/exclude and additionally restricts Upper-body Strength at exclude.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'injury_safety'], sports: ['all_supported_sports'], populations: ['product_users_with_matching_active_constraint'], outcomes: ['restriction_mapping'], horizon: 'acute' },
+        evidence: [{ sourceId: INJURY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['A body region is not a diagnosis and does not establish safe loading across upper-limb activities.', 'The mapping is conservative product policy and is not condition-specific rehabilitation authority.', 'Explicit athlete modality restrictions pass through independently of this mapping.'],
+        reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.genericClinicalEnvelopePolicy,
+        statement: 'When the normalized pain flag is true from pain/injury or non-allergy illness symptoms, the product restricts Running and caps the day at Mobility, or Rest when already trained today.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'clinical_symptom_envelope'], sports: ['all_supported_sports'], populations: ['product_users_with_normalized_pain_flag'], outcomes: ['daily_training_ceiling'], horizon: 'acute' },
+        evidence: [{ sourceId: INJURY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: ['The normalized flag combines pain/injury and non-allergy illness pathways; it is not a diagnosis or a common clinical condition.', 'No source in this pack validates an anatomy-agnostic Running restriction or Mobility ceiling as a universal clinical rule.', 'Allergy-like symptom days are excluded by ADR-0032 cause-aware mapping; unknown or severe symptoms remain conservative.'],
+        reviewedOn: '2026-09-01', version: 1,
+    },
+];

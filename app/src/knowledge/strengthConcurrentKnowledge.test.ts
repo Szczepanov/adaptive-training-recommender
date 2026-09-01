@@ -91,10 +91,10 @@ describe('strength and concurrent training evidence pack', () => {
 
     it('preserves this pack’s coverage state while later migrations update the global inventory', () => {
         expect(summarizeKnowledgeCoverage()).toMatchObject({
-            total: 47,
-            byCoverage: { covered: 15, partial: 2, uncovered: 25, not_applicable: 5 },
-            highImpactUncovered: 12,
-            highSafetyUncovered: 3,
+            total: 51,
+            byCoverage: { covered: 15, partial: 8, uncovered: 22, not_applicable: 6 },
+            highImpactUncovered: 9,
+            highSafetyUncovered: 0,
         });
     });
 });

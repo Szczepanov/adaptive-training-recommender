@@ -1,11 +1,17 @@
 # Safety Evidence Pack — Subjective Readiness + Injury/Pain
 
 **Date:** 2026-08-31
-**Status:** In progress — SEP-A implemented; SEP-B and SEP-C remain open.
-**Blocked by:** None. SKR1 persisted recommendation lineage (PR #312) is on `main`.
+**Status:** In progress — SEP-A implemented; SEP-B implemented locally and pending stacked PR review; SEP-C remains open.
+**Blocked by:** SEP-B PR depends on SEP-A PR #317. SKR1 persisted recommendation lineage (PR #312) is on `main`.
 **Unlocks:** SEP-B implementation; SEP-A establishes the reviewed safety-evidence pattern reused by SEP-B.
 **Priority:** P0 / high-safety debt.
-**Execution cutline:** The next implementation PR is SEP-A only. SEP-B remains a separate review and implementation PR.
+**Execution cutline:** SEP-B is split into an evidence/policy PR and a behavior-identical lineage PR. Executable policy changes remain SEP-C.
+
+> **SEP-B execution plan:** Use
+> [`2026-09-01-safety-evidence-pack-injury-pain-sep-b.md`](./2026-09-01-safety-evidence-pack-injury-pain-sep-b.md)
+> for current scope, reconciled behavior, claim boundaries, coverage migration,
+> pull-request sequencing, and exit criteria. It takes precedence over older SEP-B
+> shorthand in this parent plan.
 
 ## 1. Executive summary
 
@@ -530,6 +536,13 @@ The alignment suite must also prove scope separation:
 ---
 
 ## 8. Workstream SEP-B — Injury and pain safety
+
+**Execution note:** This section preserves the original decomposition and review
+history. The focused
+[`SEP-B implementation plan`](./2026-09-01-safety-evidence-pack-injury-pain-sep-b.md)
+corrects the combined pain/injury/illness flag semantics, separates product policy
+from safety invariants, removes aggregate-region double counting, and defines the
+behavior-equivalence gate for runtime lineage.
 
 ### 8.1 Split `injury.tissue_response_severity` into evidence boundary + product translation
 
@@ -1191,12 +1204,15 @@ For SEP-A, record one of:
 
 ## 19. Recommended immediate next action
 
-**SEP-A — Subjective Readiness** is implemented. The evidence boundary, product-policy claim, coverage migration, runtime lineage, and analysis document are all merged. SEP-A exercised the complete end-to-end pattern:
+**SEP-A — Subjective Readiness** is implemented. The evidence boundary,
+product-policy claim, coverage migration, runtime lineage, and analysis document are
+all merged. SEP-B uses the focused implementation plan's two reviewable workstreams:
 
-```text
-research -> claim boundary -> product-policy claim -> coverage -> runtime lineage -> audit
-```
+1. evidence appraisal, exact product descriptors, coverage-taxonomy repair, and
+   implementation-alignment tests;
+2. behavior-identical trace and material-use lineage, gated by a decision-equivalence
+   corpus.
 
-The next open workstream is **SEP-B — Injury/Pain**. Apply the same pattern with stricter condition-specific directness and region decomposition, as specified in section 8 of this plan.
+Move every executable policy change discovered during appraisal to SEP-C.
 
 The most important success criterion is not the number of P0 rows closed. It is that an historical recommendation can say exactly which reviewed evidence boundary and which explicit product safety policy participated, while the registry remains honest about what science does and does not validate.

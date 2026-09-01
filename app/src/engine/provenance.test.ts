@@ -120,6 +120,38 @@ describe('recommendation provenance', () => {
         expect(audit?.envelope.safetyRestrictedModalityCount).toBe(1);
     });
 
+    it('persists resolved SEP-B lineage identities without the runtime symptom trace', () => {
+        const template = TEMPLATES.find(item => item.category === 'Rest');
+        if (!template) throw new Error('Test fixture requires a rest template');
+        const recommendation: Recommendation = {
+            template,
+            mode: 'recover',
+            rationale: 'Clinical-symptom envelope.',
+            knowledgeRefs: [
+                KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy,
+                KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment,
+            ],
+            envelopes: {
+                safety: { clinicalFlagActive: true, restrictedModalities: ['Running'] },
+                plan: { maxAllowableTier: 'Mobility', taperActive: false },
+            },
+            decisionTrace: { policyVersion: POLICY_VERSION, candidateScores: [], droppedContributorObjectives: [] },
+        };
+        const snapshot = buildTrainingHistorySnapshot(
+            '2026-08-07', 7,
+            { status: 'AVAILABLE', revision: 'activities-r1', data: [] },
+            { status: 'AVAILABLE', revision: 'recommendations-r1', data: [] },
+            '2026-08-07T08:00:00Z',
+        );
+        const audit = buildRecommendationAudit(recommendation, snapshot, '2026-08-07T09:00:00Z');
+        expect(audit?.knowledgeLineage).toEqual([
+            KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy,
+            KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment,
+        ].sort().map(claimId => ({ claimId, version: getActiveKnowledgeClaim(claimId).version })));
+        expect(JSON.stringify(audit)).not.toContain('pain_or_injury');
+        expect(JSON.stringify(audit)).not.toContain('clinicalEnvelopeSources');
+    });
+
     it('carries compact identity evidence into the recommendation audit verbatim', () => {
         const template = TEMPLATES.find(item => item.category === 'Rest');
         if (!template) throw new Error('Test fixture requires a rest template');

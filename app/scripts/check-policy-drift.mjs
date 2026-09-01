@@ -92,6 +92,10 @@ const decisionAffectingFiles = [
   // it before rules.ts ever runs, so a change here can alter a persisted decision exactly as
   // a change to rules.ts does, even though it sits upstream of the ranking modules.
   'app/src/engine/adapters.ts',
+  // Structured injury composition creates hard modality/category/guardrail restrictions before
+  // `rules.ts` evaluates the shared safety envelope. Guard it beside the adapter so an injury
+  // mapping change cannot silently retain an old persisted policy identity.
+  'app/src/engine/injuryPolicy.ts',
   // ADR-0019: adjudication decides what an externally-planned athlete is told to do, so a
   // change here alters a persisted decision exactly as a change to rules.ts does. The
   // profile derivation is included because the cost it produces feeds the ceilings.
@@ -129,6 +133,9 @@ const decisionAffectingFiles = [
 const policyFile = 'app/src/engine/policy.ts';
 const rulesFile = 'app/src/engine/rules.ts';
 const adaptersFile = 'app/src/engine/adapters.ts';
+const injuryPolicyFile = 'app/src/engine/injuryPolicy.ts';
+const injuryLineageEquivalenceTestFile = 'app/src/engine/injuryPolicyLineageEquivalence.test.ts';
+const injuryLineageAnalysisFile = 'docs/analysis/2026-09-01-evidence-pack-injury-pain.md';
 const subjectiveBaselineFile = 'app/src/engine/subjectiveBaseline.ts';
 const adr20File = 'docs/adr/0020-subjective-baselines-in-readiness-mode.md';
 const completedTrainingFile = 'app/src/engine/completedTraining.ts';
@@ -151,6 +158,11 @@ function executableComparisonBaseRef() {
     console.warn(`Could not isolate pull-request base parent for syntax comparison: ${err.message}`);
   }
   return baseRef;
+}
+
+/** True only when a path exists in the selected comparison-base tree. */
+function pathExistsAtRef(ref, path) {
+  return git(['ls-tree', '--name-only', ref, '--', path]).trim() === path;
 }
 
 /**
@@ -366,6 +378,78 @@ function isAcceptedDormantSleepRecoveryEvidenceChange() {
   return true;
 }
 
+/**
+ * SEP-B adds compact, runtime-only evidence lineage to the existing injury composition path.
+ * This is deliberately a one-shot migration exception, not a reusable provenance label: it
+ * permits only the two policy owners plus their trace carrier/registry files, requires the
+ * frozen pre-SEP-B behavior oracle to be part of the change, rejects a trace consumer anywhere
+ * outside the adapter -> lineage boundary, and is accepted only while the oracle and appraisal
+ * files are absent from the comparison-base tree. Once SEP-B lands, any later executable change
+ * to these decision owners must use the normal POLICY_VERSION path.
+ */
+function isAcceptedBehaviorIdenticalInjuryLineageChange() {
+  const allowedDecisionFiles = new Set([adaptersFile, injuryPolicyFile]);
+  if (changedDecisionFiles.length === 0 || !changedDecisionFiles.every(file => allowedDecisionFiles.has(file))) {
+    return false;
+  }
+  if (!changedDecisionFiles.includes(adaptersFile) || !changedDecisionFiles.includes(injuryPolicyFile)) {
+    return false;
+  }
+
+  const comparisonBase = executableComparisonBaseRef();
+  try {
+    if (pathExistsAtRef(comparisonBase, injuryLineageEquivalenceTestFile)
+        || pathExistsAtRef(comparisonBase, injuryLineageAnalysisFile)) {
+      return false;
+    }
+  } catch (err) {
+    console.warn(`Could not prove SEP-B lineage artifacts are new at ${comparisonBase}: ${err.message}`);
+    return false;
+  }
+
+  const allowedProductionSources = new Set([
+    adaptersFile,
+    injuryPolicyFile,
+    'app/src/engine/models.ts',
+    'app/src/engine/knowledgeLineage.ts',
+    'app/src/knowledge/injuryPainKnowledge.ts',
+    'app/src/knowledge/sportsKnowledgeRegistry.ts',
+    'app/src/knowledge/knowledgeCoverage.ts',
+  ]);
+  const changedProductionSources = changedFiles.filter(file =>
+    file.startsWith('app/src/')
+    && !file.endsWith('.test.ts')
+    && !file.includes('/simulation/')
+    && !allowedProductionSources.has(file),
+  );
+  if (changedProductionSources.length > 0) return false;
+  if (!changedFiles.includes(injuryLineageEquivalenceTestFile) || !changedFiles.includes(injuryLineageAnalysisFile)) return false;
+
+  const traceReferences = gitGrepFiles('resolveInjuryPolicy|injuryPolicyTrace|resolveClinicalEnvelopeSources');
+  const allowedTraceReferences = new Set([
+    adaptersFile,
+    'app/src/engine/adapters.test.ts',
+    injuryPolicyFile,
+    'app/src/engine/injuryPolicy.test.ts',
+    injuryLineageEquivalenceTestFile,
+    'app/src/engine/models.ts',
+    'app/src/engine/knowledgeLineage.ts',
+    'app/src/engine/knowledgeLineage.test.ts',
+  ]);
+  if (traceReferences.length === 0 || traceReferences.some(file => !allowedTraceReferences.has(file))) return false;
+
+  const equivalenceTest = readFileSync(join(repoRoot, injuryLineageEquivalenceTestFile), 'utf8');
+  const hasFrozenOracle = /Frozen pre-SEP-B oracle/.test(equivalenceTest)
+    && /legacyResolveInjuryRestrictions/.test(equivalenceTest)
+    && /legacyResolveEffectiveInjuryConstraints/.test(equivalenceTest);
+  if (!hasFrozenOracle) return false;
+
+  const analysis = readFileSync(join(repoRoot, injuryLineageAnalysisFile), 'utf8');
+  return /behavior-identical/i.test(analysis)
+    && /POLICY_VERSION remains unchanged/.test(analysis)
+    && /Any future change to restriction thresholds/.test(analysis);
+}
+
 if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
   if (isCommentOrWhitespaceOnlyDecisionChange()) {
     console.log(
@@ -392,6 +476,13 @@ if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
     console.log(
       'POLICY DRIFT CHECK PASSED: Phase 3 sleep recovery evidence has no production decision caller; '
       + `POLICY_VERSION correctly remains ${currentPolicyVersion}.`
+    );
+    process.exit(0);
+  }
+  if (isAcceptedBehaviorIdenticalInjuryLineageChange()) {
+    console.log(
+      'POLICY DRIFT CHECK PASSED: SEP-B injury lineage is behavior-identical; '
+      + `POLICY_VERSION correctly remains ${currentPolicyVersion} after the one-shot frozen-oracle contract.`
     );
     process.exit(0);
   }

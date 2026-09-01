@@ -129,6 +129,18 @@ export interface DailyReadiness {
     subjectiveBaseline?: SubjectiveBaseline | null;
 }
 
+/** Stable policy families used only to carry compact, in-memory evidence lineage facts from
+ * injury composition to `knowledgeLineage.ts`. They are not a diagnosis or persisted health
+ * record. */
+export type InjuryRegionMappingFamily = 'lower_limb_impact' | 'lower_limb_strength' | 'lumbar_loading' | 'upper_limb_loading';
+export type ClinicalEnvelopeSource = 'pain_or_injury' | 'non_allergy_illness';
+
+export interface InjuryPolicyTrace {
+    tissueSeverityApplied: boolean;
+    regionMappingFamilies: InjuryRegionMappingFamily[];
+    clinicalEnvelopeSources: ClinicalEnvelopeSource[];
+}
+
 export interface UserContext {
     goals: {
         shortTerm: string;
@@ -162,6 +174,9 @@ export interface UserContext {
          * may only supply a fallback when no explicit preference record exists. */
         preferredRecoveryStyle?: UserPreferences['preferredRecoveryStyle'];
     };
+    /** Runtime-only facts explaining which injury/symptom policy families were evaluated.
+     * The trace is translated into versioned claim references and is never persisted itself. */
+    injuryPolicyTrace?: InjuryPolicyTrace;
     /** Optional only for legacy engine callers; composed recommendations always provide it. */
     trainingSettings?: TrainingSettings;
 }
