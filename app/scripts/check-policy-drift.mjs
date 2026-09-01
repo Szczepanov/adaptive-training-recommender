@@ -160,6 +160,11 @@ function executableComparisonBaseRef() {
   return baseRef;
 }
 
+/** True only when a path exists in the selected comparison-base tree. */
+function pathExistsAtRef(ref, path) {
+  return git(['ls-tree', '--name-only', ref, '--', path]).trim() === path;
+}
+
 /**
  * Normalize TypeScript syntax while removing comments. The printer preserves identifiers,
  * literals, operators, types and statement structure, so a genuine source change cannot be
@@ -375,11 +380,12 @@ function isAcceptedDormantSleepRecoveryEvidenceChange() {
 
 /**
  * SEP-B adds compact, runtime-only evidence lineage to the existing injury composition path.
- * The exception is deliberately narrower than a generic "provenance" label: it permits only
- * the two policy owners plus their trace carrier/registry files, requires the exhaustive
- * resolver-equivalence test to be part of the change, and rejects a trace consumer anywhere
- * outside the adapter -> lineage boundary. Any restriction, envelope, candidate, or selection
- * change must therefore use the normal POLICY_VERSION path.
+ * This is deliberately a one-shot migration exception, not a reusable provenance label: it
+ * permits only the two policy owners plus their trace carrier/registry files, requires the
+ * frozen pre-SEP-B behavior oracle to be part of the change, rejects a trace consumer anywhere
+ * outside the adapter -> lineage boundary, and is accepted only while the oracle and appraisal
+ * files are absent from the comparison-base tree. Once SEP-B lands, any later executable change
+ * to these decision owners must use the normal POLICY_VERSION path.
  */
 function isAcceptedBehaviorIdenticalInjuryLineageChange() {
   const allowedDecisionFiles = new Set([adaptersFile, injuryPolicyFile]);
@@ -387,6 +393,17 @@ function isAcceptedBehaviorIdenticalInjuryLineageChange() {
     return false;
   }
   if (!changedDecisionFiles.includes(adaptersFile) || !changedDecisionFiles.includes(injuryPolicyFile)) {
+    return false;
+  }
+
+  const comparisonBase = executableComparisonBaseRef();
+  try {
+    if (pathExistsAtRef(comparisonBase, injuryLineageEquivalenceTestFile)
+        || pathExistsAtRef(comparisonBase, injuryLineageAnalysisFile)) {
+      return false;
+    }
+  } catch (err) {
+    console.warn(`Could not prove SEP-B lineage artifacts are new at ${comparisonBase}: ${err.message}`);
     return false;
   }
 
@@ -420,6 +437,12 @@ function isAcceptedBehaviorIdenticalInjuryLineageChange() {
     'app/src/engine/knowledgeLineage.test.ts',
   ]);
   if (traceReferences.length === 0 || traceReferences.some(file => !allowedTraceReferences.has(file))) return false;
+
+  const equivalenceTest = readFileSync(join(repoRoot, injuryLineageEquivalenceTestFile), 'utf8');
+  const hasFrozenOracle = /Frozen pre-SEP-B oracle/.test(equivalenceTest)
+    && /legacyResolveInjuryRestrictions/.test(equivalenceTest)
+    && /legacyResolveEffectiveInjuryConstraints/.test(equivalenceTest);
+  if (!hasFrozenOracle) return false;
 
   const analysis = readFileSync(join(repoRoot, injuryLineageAnalysisFile), 'utf8');
   return /behavior-identical/i.test(analysis)
@@ -459,7 +482,7 @@ if (changedDecisionFiles.length > 0 && !policyVersionChanged) {
   if (isAcceptedBehaviorIdenticalInjuryLineageChange()) {
     console.log(
       'POLICY DRIFT CHECK PASSED: SEP-B injury lineage is behavior-identical; '
-      + `POLICY_VERSION correctly remains ${currentPolicyVersion} after the restricted trace/equivalence contract.`
+      + `POLICY_VERSION correctly remains ${currentPolicyVersion} after the one-shot frozen-oracle contract.`
     );
     process.exit(0);
   }
