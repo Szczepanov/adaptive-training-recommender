@@ -63,6 +63,8 @@
     "persona:local:quick": "node scripts/run-persona-ai-judge.mjs --provider local --quick --fresh",
     "persona:local:stability": "node scripts/run-persona-ai-judge.mjs --provider local --fresh --samples 5",
     "persona:gemini": "node scripts/run-persona-ai-judge.mjs --provider gemini --fresh --samples 3",
+    "persona:diff": "node scripts/check-persona-judge-drift.mjs",
+    "persona:e2e": "npm run persona:local:stability && npm run persona:diff",
     "persona:update-baseline": "node scripts/update-persona-judge-baseline.mjs",
     "simulate:fatigue-fusion": "node scripts/simulate-fatigue-fusion.mjs",
     "simulate:subjective-drift": "node scripts/simulate-subjective-drift.mjs",

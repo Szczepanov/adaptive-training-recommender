@@ -749,6 +749,90 @@ describe('session adjustment engine', () => {
         expect(adjusted).toBeNull();
     });
 
+    describe('evaluateEnvelopes clinical & modality contextualization', () => {
+        it('restricts Running when pain is reported without structured region trace (fail-closed)', () => {
+            const readiness: DailyReadiness = {
+                subjective: neutralSubjective({ painFlag: true, clinicalEnvelopeSources: ['pain_or_injury'] }),
+                objective: quietObjective(),
+            };
+            const context = baseContext();
+            const envelopes = evaluateEnvelopes(readiness, context);
+
+            expect(envelopes.safety.clinicalFlagActive).toBe(true);
+            expect(envelopes.safety.restrictedModalities).toContain('Running');
+            expect(envelopes.plan.maxAllowableTier).toBe('Mobility');
+        });
+
+        it('does NOT restrict Running when pain has active upper-limb region mapping only', () => {
+            const readiness: DailyReadiness = {
+                subjective: neutralSubjective({
+                    painFlag: true,
+                    clinicalEnvelopeSources: ['pain_or_injury'],
+                    painOrInjuryRegionFamilies: ['upper_limb_loading'],
+                }),
+                objective: quietObjective(),
+            };
+            const context: UserContext = {
+                ...baseContext(),
+                constraints: {
+                    ...baseContext().constraints,
+                    impliedGuardrails: ['avoid_overhead_pressing'],
+                },
+                injuryPolicyTrace: {
+                    tissueSeverityApplied: false,
+                    regionMappingFamilies: ['upper_limb_loading'],
+                    clinicalEnvelopeSources: ['pain_or_injury'],
+                },
+            };
+            const envelopes = evaluateEnvelopes(readiness, context);
+
+            expect(envelopes.safety.clinicalFlagActive).toBe(true);
+            expect(envelopes.safety.restrictedModalities).not.toContain('Running');
+            expect(envelopes.plan.maxAllowableTier).toBe('Mobility');
+        });
+
+        it('restricts Running when pain has active lower-limb impact region mapping', () => {
+            const readiness: DailyReadiness = {
+                subjective: neutralSubjective({
+                    painFlag: true,
+                    clinicalEnvelopeSources: ['pain_or_injury'],
+                    painOrInjuryRegionFamilies: ['lower_limb_impact'],
+                }),
+                objective: quietObjective(),
+            };
+            const context: UserContext = {
+                ...baseContext(),
+                constraints: {
+                    ...baseContext().constraints,
+                    impliedGuardrails: ['avoid_high_impact'],
+                },
+                injuryPolicyTrace: {
+                    tissueSeverityApplied: false,
+                    regionMappingFamilies: ['lower_limb_impact'],
+                    clinicalEnvelopeSources: ['pain_or_injury'],
+                },
+            };
+            const envelopes = evaluateEnvelopes(readiness, context);
+
+            expect(envelopes.safety.clinicalFlagActive).toBe(true);
+            expect(envelopes.safety.restrictedModalities).toContain('Running');
+            expect(envelopes.plan.maxAllowableTier).toBe('Mobility');
+        });
+
+        it('applies systemic Mobility ceiling without Running biomechanical ban on non-allergy illness only', () => {
+            const readiness: DailyReadiness = {
+                subjective: neutralSubjective({ painFlag: true, clinicalEnvelopeSources: ['non_allergy_illness'] }),
+                objective: quietObjective(),
+            };
+            const context = baseContext();
+            const envelopes = evaluateEnvelopes(readiness, context);
+
+            expect(envelopes.safety.clinicalFlagActive).toBe(true);
+            expect(envelopes.safety.restrictedModalities).not.toContain('Running');
+            expect(envelopes.plan.maxAllowableTier).toBe('Mobility');
+        });
+    });
+
     it('Non-transferable objective (Hill Repeats) skips Tier 4 cross-modal substitution', () => {
         const readiness: DailyReadiness = { subjective: greenSubjective(), objective: quietObjective() };
         // Restrict running via injury so Tier 1-3 in running fail

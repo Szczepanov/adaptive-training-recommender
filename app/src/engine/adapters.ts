@@ -1,8 +1,10 @@
 import type {
+    BodyRegion,
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
     ClinicalEnvelopeSource,
     EngineObjectiveInput,
+    InjuryRegionMappingFamily,
     RawActivitySummary,
     SubjectiveInput,
     TrainingRecord,
@@ -12,7 +14,7 @@ import type {
     UserPreferences,
     TrainingSettings,
 } from './models';
-import { resolveInjuryPolicy } from './injuryPolicy';
+import { injuryRegionMappingFamily, resolveInjuryPolicy } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
 import { getLocalDateString } from '../utils/localDate';
 import type { HealthSymptomType } from './healthAnomalyModels';
@@ -53,6 +55,25 @@ export function resolveClinicalEnvelopeSources(
     if (checkin.painOrInjury) sources.push('pain_or_injury');
     if (checkin.illnessSymptoms && !isAllergyLikeSymptomDay(checkin)) sources.push('non_allergy_illness');
     return sources;
+}
+
+/**
+ * Decision-facing location context for the *current* pain/injury report only.
+ *
+ * Standing InjuryConstraint[] deliberately do not enter this value: they already produce
+ * their own hard restrictions through resolveInjuryPolicy and are retained separately in
+ * InjuryPolicyTrace for evidence lineage. This prevents an unrelated standing shoulder,
+ * hip, or back constraint from being mistaken for the location of a new unstructured pain
+ * report and accidentally clearing the generic Running fallback.
+ */
+export function resolvePainOrInjuryRegionFamilies(
+    checkin: DailySubjectiveCheckin | null | undefined,
+): InjuryRegionMappingFamily[] {
+    if (!checkin?.painOrInjury || !checkin.tissueResponses) return [];
+    const families = Object.entries(checkin.tissueResponses)
+        .filter(([, response]) => response !== undefined)
+        .map(([region]) => injuryRegionMappingFamily(region as BodyRegion));
+    return Array.from(new Set(families)).sort();
 }
 
 /** Normalizes a raw Garmin per-day activity summary (yesterday's or today's) into the
@@ -217,11 +238,14 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
             motivation: NEUTRAL_SCALE_VALUE,
             timeAvailable: DEFAULT_TIME_AVAILABLE_MIN,
             painFlag: false,
+            clinicalEnvelopeSources: [],
+            painOrInjuryRegionFamilies: [],
             alreadyTrainedToday: false,
             preferredModalityToday: null,
         };
     }
 
+    const clinicalEnvelopeSources = resolveClinicalEnvelopeSources(checkin);
     return {
         readiness: checkin.readiness ?? NEUTRAL_SCALE_VALUE,
         sleepQuality: checkin.sleepQuality ?? NEUTRAL_SCALE_VALUE,
@@ -230,7 +254,9 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         stress: checkin.mentalStress ?? NEUTRAL_SCALE_VALUE,
         motivation: checkin.motivation ?? NEUTRAL_SCALE_VALUE,
         timeAvailable: checkin.availability?.timeAvailableMin ?? DEFAULT_TIME_AVAILABLE_MIN,
-        painFlag: resolveClinicalEnvelopeSources(checkin).length > 0,
+        painFlag: clinicalEnvelopeSources.length > 0,
+        clinicalEnvelopeSources,
+        painOrInjuryRegionFamilies: resolvePainOrInjuryRegionFamilies(checkin),
         alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
         preferredModalityToday: checkin.availability?.preferredModalityToday ?? null,
     };

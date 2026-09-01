@@ -14,7 +14,17 @@ export interface SubjectiveInput {
     stress: number; // 1-10
     motivation: number; // 1-10
     timeAvailable: number; // Minutes
-    painFlag: boolean;     // Injury/Pain flag
+    /** Legacy aggregate clinical flag. True for pain/injury or non-allergy illness after normalization. */
+    painFlag: boolean;
+    /** Compact source categories for the aggregate clinical flag; no raw symptom detail or diagnosis. */
+    clinicalEnvelopeSources?: ClinicalEnvelopeSource[];
+    /**
+     * Region families derived only from today's structured pain/injury tissue responses.
+     * This is a decision input for contextualizing the generic Running fallback; unlike
+     * `UserContext.injuryPolicyTrace`, it never includes unrelated standing injuries.
+     * Empty/absent means the current pain location is unknown and must fail closed.
+     */
+    painOrInjuryRegionFamilies?: InjuryRegionMappingFamily[];
     alreadyTrainedToday: boolean; // User-reported: a session was already completed today
     /** Today's explicit modality ask from the check-in (e.g. 'Running', 'Strength',
      *  'Mobility'), or null for no preference. Compared case-insensitively against
@@ -239,7 +249,7 @@ export interface EventDemandProfile {
 
 export interface EventTiming {
     earliestDate: string; // YYYY-MM-DD
-    latestDate: string;   // YYYY-MM-DD
+    latestDate: string; // YYYY-MM-DD
     planningDate: string; // = earliestDate until confirmed
     confirmedDate?: string; // YYYY-MM-DD
 }

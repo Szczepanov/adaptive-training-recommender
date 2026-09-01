@@ -85,9 +85,9 @@ export function subjectiveReadinessKnowledgeRefs(): string[] {
 }
 
 /** Claim IDs for the compact injury/symptom-policy facts captured at composition time.
- * A legacy/manual `UserContext` can omit the trace; in that case only the generic policy
- * branch visible in `SubjectiveInput` is attributed and no source-specific science is
- * inferred from flattened restrictions. */
+ * Standing-injury region families are read from the trace because they are provenance facts.
+ * Current clinical source attribution is read from `SubjectiveInput`, the same decision input
+ * consumed by `rules.ts`; trace data must not be promoted into current-pain policy authority. */
 export function injuryPolicyKnowledgeRefs(readiness: DailyReadiness, context: UserContext): string[] {
     const trace = context.injuryPolicyTrace;
     const refs: string[] = [];
@@ -104,9 +104,12 @@ export function injuryPolicyKnowledgeRefs(readiness: DailyReadiness, context: Us
         if (family === 'lumbar_loading') refs.push(KNOWLEDGE_CLAIM_IDS.lumbarLoadingPolicy);
         if (family === 'upper_limb_loading') refs.push(KNOWLEDGE_CLAIM_IDS.upperLimbLoadingPolicy);
     }
-    if (readiness.subjective.painFlag) {
+
+    const currentClinicalSources = readiness.subjective.clinicalEnvelopeSources
+        ?? (readiness.subjective.painFlag ? ['pain_or_injury'] as const : []);
+    if (readiness.subjective.painFlag || currentClinicalSources.length > 0) {
         refs.push(KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy);
-        if (trace?.clinicalEnvelopeSources.includes('pain_or_injury')) {
+        if (currentClinicalSources.includes('pain_or_injury')) {
             refs.push(KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment);
         }
     }

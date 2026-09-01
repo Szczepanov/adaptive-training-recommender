@@ -9,7 +9,8 @@ export const INJURY_PAIN_CLAIM_IDS = {
     lowerLimbStrengthPolicy: 'policy.injury.region_lower_limb_strength_v1',
     lumbarLoadingPolicy: 'policy.injury.region_lumbar_loading_v1',
     upperLimbLoadingPolicy: 'policy.injury.region_upper_limb_loading_v1',
-    genericClinicalEnvelopePolicy: 'policy.injury.generic_clinical_envelope_v1',
+    genericClinicalEnvelopePolicyV1: 'policy.injury.generic_clinical_envelope_v1',
+    genericClinicalEnvelopePolicy: 'policy.injury.contextual_clinical_envelope_v2',
 } as const;
 
 const IOC_PAIN_CONSENSUS_SOURCE = 'HAINLINE-2017-IOC-PAIN-CONSENSUS';
@@ -17,11 +18,12 @@ const RETURN_TO_SPORT_CONSENSUS_SOURCE = 'HERRING-2024-RETURN-TO-SPORT-CONSENSUS
 const TENDINOPATHY_PROGRESSION_REVIEW_SOURCE = 'ESCRICHE-ESCUDER-2020-LOWER-LIMB-TENDINOPATHY-PROGRESSION-REVIEW';
 const INITIAL_MSK_ASSESSMENT_CONSENSUS_SOURCE = 'HERRING-2024-INITIAL-MSK-ASSESSMENT-CONSENSUS';
 const INJURY_PRODUCT_POLICY_SOURCE = 'PRODUCT-INJURY-CLINICAL-SYMPTOM-POLICY-V1';
+const CONTEXTUAL_CLINICAL_PRODUCT_POLICY_SOURCE = 'PRODUCT-INJURY-CLINICAL-SYMPTOM-POLICY-V2';
 
 /**
- * Exact descriptor of the existing injury and clinical-symptom policy. It is deliberately
- * data-only: alignment tests compare it with `injuryPolicy.ts` and `rules.ts`, while the
- * executable policy remains independent of the evidence registry.
+ * Exact descriptor of the current injury and clinical-symptom product policy. It is
+ * deliberately data-only: alignment tests compare it with `injuryPolicy.ts`, `adapters.ts`
+ * and `rules.ts`, while the executable policy remains independent of the evidence registry.
  */
 export const INJURY_PAIN_POLICY_DESCRIPTOR = {
     tissueResponseSeverity: {
@@ -53,10 +55,18 @@ export const INJURY_PAIN_POLICY_DESCRIPTOR = {
         },
     },
     genericClinicalEnvelope: {
-        painFlag: 'painOrInjury || (illnessSymptoms && !allergyLikeSymptomDay)',
-        painFlagRestriction: 'Running',
-        maxTierWhenPainFlag: 'Mobility',
-        maxTierWhenPainFlagAndAlreadyTrained: 'Rest',
+        aggregateFlag: 'painOrInjury || (illnessSymptoms && !allergyLikeSymptomDay)',
+        sourceCategories: ['pain_or_injury', 'non_allergy_illness'],
+        maxTierWhenCurrentClinicalSymptoms: 'Mobility',
+        maxTierWhenAlreadyTrained: 'Rest',
+        genericRunningRestriction: {
+            appliesToSource: 'pain_or_injury',
+            currentPainLocationSource: 'today_structured_tissue_responses_only',
+            restrictWhenLocationUnknown: true,
+            restrictWhenRegionFamilyIncludes: ['lower_limb_impact'],
+            noGenericRestrictionForIsolatedFamilies: ['lower_limb_strength', 'lumbar_loading', 'upper_limb_loading'],
+            provenanceTraceMayControlPolicy: false,
+        },
     },
 } as const;
 
@@ -107,7 +117,14 @@ export const INJURY_PAIN_SOURCES: readonly KnowledgeSource[] = [
         title: 'Injury and clinical-symptom policy v1',
         sourceType: 'product_policy',
         citation: 'Adaptive Training Recommender product policy: injury-clinical-symptom-v1.',
-        notes: 'Records the existing tissue severity translation, four region-family restriction mappings, and combined pain/injury/non-allergy-illness envelope. These are conservative product choices, not clinically validated diagnostic or treatment rules.',
+        notes: 'Historical policy that coupled the aggregate pain/injury/non-allergy-illness flag to both the Mobility ceiling and a generic Running restriction. Retained so persisted v1 lineage remains resolvable after SEP-C1.',
+    },
+    {
+        id: CONTEXTUAL_CLINICAL_PRODUCT_POLICY_SOURCE,
+        title: 'Injury and clinical-symptom policy v2 (SEP-C1 contextual clinical envelope)',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy: injury-clinical-symptom-v2 / SEP-C1.',
+        notes: 'Separates the systemic current-clinical-symptom ceiling from the pain/injury-specific generic Running fallback. Current pain location comes only from today structured tissue responses; standing-injury trace remains provenance and cannot loosen policy.',
     },
 ];
 
@@ -124,7 +141,7 @@ export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
         limitations: [
             'The sources concern clinical and elite/team-athlete settings, not autonomous consumer-app diagnosis or training prescription.',
             'This boundary does not determine a safe activity dose, identify red flags, or authorize return to sport.',
-            'Illness symptoms and musculoskeletal pain may share the product flag but have different causes and should not be represented as the same condition.',
+            'Illness symptoms and musculoskeletal pain can both reduce training suitability but have different causes and must not be represented as the same condition.',
         ],
         reviewedOn: '2026-09-01', version: 1,
     },
@@ -199,12 +216,27 @@ export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
         reviewedOn: '2026-09-01', version: 1,
     },
     {
-        id: INJURY_PAIN_CLAIM_IDS.genericClinicalEnvelopePolicy,
+        id: INJURY_PAIN_CLAIM_IDS.genericClinicalEnvelopePolicyV1,
         statement: 'When the normalized pain flag is true from pain/injury or non-allergy illness symptoms, the product restricts Running and caps the day at Mobility, or Rest when already trained today.',
-        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'deprecated', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
         applicability: { contexts: ['recommendation_engine', 'clinical_symptom_envelope'], sports: ['all_supported_sports'], populations: ['product_users_with_normalized_pain_flag'], outcomes: ['daily_training_ceiling'], horizon: 'acute' },
         evidence: [{ sourceId: INJURY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['The normalized flag combines pain/injury and non-allergy illness pathways; it is not a diagnosis or a common clinical condition.', 'No source in this pack validates an anatomy-agnostic Running restriction or Mobility ceiling as a universal clinical rule.', 'Allergy-like symptom days are excluded by ADR-0032 cause-aware mapping; unknown or severe symptoms remain conservative.'],
+        limitations: ['Superseded by SEP-C1 because it coupled non-allergy illness to an anatomy-specific Running restriction.', 'Retained only so historical recommendation lineage remains interpretable.'],
         reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.genericClinicalEnvelopePolicy,
+        statement: 'Current pain/injury and non-allergy illness symptoms both cap the day at Mobility (or Rest when already trained), but only current pain/injury adds the generic Running fallback; that fallback applies when current pain location is unknown or includes a lower-limb-impact family, while isolated current upper-limb, lumbar, or lower-limb-strength context does not add a generic Running restriction.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'clinical_symptom_envelope'], sports: ['all_supported_sports'], populations: ['product_users_with_current_clinical_symptoms'], outcomes: ['daily_training_ceiling', 'generic_running_fallback'], horizon: 'acute' },
+        evidence: [{ sourceId: CONTEXTUAL_CLINICAL_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: [
+            'This is conservative product policy, not a diagnosis, treatment protocol, or medical/return-to-sport clearance.',
+            'Removing a generic Running fallback does not assert that Running is clinically safe; explicit athlete restrictions and standing/today-derived injury constraints remain additive and can still prohibit it.',
+            'Current-pain location is accepted only from today structured tissue responses. Standing-injury provenance is not allowed to explain away an otherwise unlocated current pain report.',
+            'Allergy-like symptom days are excluded by ADR-0032 cause-aware mapping; unknown or severe symptom presentations remain conservative.',
+        ],
+        reviewedOn: '2026-09-01', version: 1,
+        supersedes: INJURY_PAIN_CLAIM_IDS.genericClinicalEnvelopePolicyV1,
     },
 ];
