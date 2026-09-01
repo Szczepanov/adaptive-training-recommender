@@ -4,13 +4,19 @@ import { INJURY_PAIN_POLICY_DESCRIPTOR } from './injuryPainKnowledge';
 
 const TODAY = '2026-09-01';
 
+type RegionMappingFamilyKey = keyof typeof INJURY_PAIN_POLICY_DESCRIPTOR.regionMappings;
+
+const REGION_ALIGNMENT_CASES = (
+    Object.entries(INJURY_PAIN_POLICY_DESCRIPTOR.regionMappings) as [
+        RegionMappingFamilyKey,
+        (typeof INJURY_PAIN_POLICY_DESCRIPTOR.regionMappings)[RegionMappingFamilyKey],
+    ][]
+).flatMap(([family, descriptor]) =>
+    descriptor.regions.map((region) => [family, region] as const),
+);
+
 describe('injury and clinical-symptom policy alignment', () => {
-    it.each([
-        ['lowerLimbImpact', 'knee'],
-        ['lowerLimbStrength', 'hamstring'],
-        ['lumbarLoading', 'lower_back'],
-        ['upperLimbLoading', 'shoulder'],
-    ] as const)('pins %s restrictions for limit and exclude', (family, region) => {
+    it.each(REGION_ALIGNMENT_CASES)('pins %s (%s) restrictions for limit and exclude', (family, region) => {
         const descriptor = INJURY_PAIN_POLICY_DESCRIPTOR.regionMappings[family];
         const limit = resolveInjuryRestrictions([{ region, severity: 'limit' }], TODAY);
         const exclude = resolveInjuryRestrictions([{ region, severity: 'exclude' }], TODAY);
