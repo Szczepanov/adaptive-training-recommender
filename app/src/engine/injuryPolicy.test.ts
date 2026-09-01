@@ -84,7 +84,7 @@ describe('injuryPolicy', () => {
                 '2026-08-08'
             );
             expect(excludeBack.impliedGuardrails.sort()).toEqual(
-                ['avoid_heavy_spinal_loading', 'avoid_heavy_lower_body'].sort()
+                ['avoid_heavy_spinal_loading', 'avoid_heavy_lower_body', 'avoid_high_impact'].sort()
             );
         });
 
@@ -157,9 +157,49 @@ describe('injuryPolicy', () => {
             expect(deriveTissueSeverity(response)).toBe('exclude');
         });
 
-        it('maps mild -> monitor and moderate -> limit', () => {
+        it('maps mild -> monitor and waking moderate -> limit', () => {
             expect(deriveTissueSeverity({ region: 'calf', morningState: 'mild' })).toBe('monitor');
             expect(deriveTissueSeverity({ region: 'calf', morningState: 'moderate' })).toBe('limit');
+        });
+
+        it('maps transient during-session moderate discomfort to monitor when settled post-session and next morning', () => {
+            const settledResponse: RegionTissueResponse = {
+                region: 'achilles',
+                morningState: 'normal',
+                painDuringTraining: 'moderate',
+                afterTrainingState: 'normal',
+                nextMorningReaction: 'normal',
+            };
+            expect(deriveTissueSeverity(settledResponse)).toBe('monitor');
+
+            const mildSettledResponse: RegionTissueResponse = {
+                region: 'achilles',
+                morningState: 'normal',
+                painDuringTraining: 'moderate',
+                afterTrainingState: 'mild',
+                nextMorningReaction: 'mild',
+            };
+            expect(deriveTissueSeverity(mildSettledResponse)).toBe('monitor');
+        });
+
+        it('escalates to limit when post-session or next-morning symptoms remain moderate', () => {
+            const persistentPostResponse: RegionTissueResponse = {
+                region: 'achilles',
+                morningState: 'normal',
+                painDuringTraining: 'moderate',
+                afterTrainingState: 'moderate',
+                nextMorningReaction: 'normal',
+            };
+            expect(deriveTissueSeverity(persistentPostResponse)).toBe('limit');
+
+            const delayedFlareResponse: RegionTissueResponse = {
+                region: 'achilles',
+                morningState: 'normal',
+                painDuringTraining: 'moderate',
+                afterTrainingState: 'normal',
+                nextMorningReaction: 'moderate',
+            };
+            expect(deriveTissueSeverity(delayedFlareResponse)).toBe('limit');
         });
     });
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { resolveInjuryRestrictions } from '../engine/injuryPolicy';
+import { deriveTissueSeverity, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { INJURY_PAIN_POLICY_DESCRIPTOR } from './injuryPainKnowledge';
 
 const TODAY = '2026-09-01';
@@ -35,5 +35,33 @@ describe('injury and clinical-symptom policy alignment', () => {
         expect(resolveInjuryRestrictions([{ region: 'knee', severity: 'exclude', reviewBy: '2026-08-31' }], TODAY)).toEqual({
             restrictedModalities: [], impliedGuardrails: [], restrictedCategories: [],
         });
+    });
+
+    it('pins 24-hour latency-aware tissue response severity mapping', () => {
+        // Severe at any signal -> exclude
+        expect(deriveTissueSeverity({ region: 'knee', morningState: 'severe' })).toBe('exclude');
+        expect(deriveTissueSeverity({ region: 'knee', morningState: 'normal', painDuringTraining: 'severe' })).toBe('exclude');
+        expect(deriveTissueSeverity({ region: 'knee', morningState: 'normal', nextMorningReaction: 'severe' })).toBe('exclude');
+
+        // Persistent / delayed moderate -> limit
+        expect(deriveTissueSeverity({ region: 'knee', morningState: 'moderate' })).toBe('limit');
+        expect(deriveTissueSeverity({ region: 'knee', morningState: 'normal', afterTrainingState: 'moderate' })).toBe('limit');
+        expect(deriveTissueSeverity({ region: 'knee', morningState: 'normal', nextMorningReaction: 'moderate' })).toBe('limit');
+
+        // Transient moderate loading discomfort settled post-session & next morning -> monitor (tolerable loading)
+        expect(deriveTissueSeverity({
+            region: 'achilles', morningState: 'normal', painDuringTraining: 'moderate',
+            afterTrainingState: 'normal', nextMorningReaction: 'normal',
+        })).toBe('monitor');
+        expect(deriveTissueSeverity({
+            region: 'achilles', morningState: 'normal', painDuringTraining: 'moderate',
+            afterTrainingState: 'mild', nextMorningReaction: 'normal',
+        })).toBe('monitor');
+
+        // Mild -> monitor
+        expect(deriveTissueSeverity({ region: 'ankle', morningState: 'mild' })).toBe('monitor');
+
+        // Normal -> null
+        expect(deriveTissueSeverity({ region: 'knee', morningState: 'normal' })).toBeNull();
     });
 });

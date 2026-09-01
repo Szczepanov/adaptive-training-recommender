@@ -212,10 +212,10 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'injury.tissue_response_severity', domain: 'injury_safety', title: 'Tissue-response to restriction severity mapping',
-        currentRule: 'Worst daily tissue response maps severe -> exclude, moderate -> limit, mild -> monitor, normal -> no added restriction; observed response can only preserve or tighten a standing constraint.',
+        currentRule: 'Tissue response evaluates 24-hour response latency: severe at any point maps to exclude; persistent post-session or delayed next-morning moderate irritability (or waking state) maps to limit; transient during-session moderate loading discomfort that settles by next morning maps to monitor (tolerable loading, Escriche-Escuder 2020); mild maps to monitor; normal maps to null. Observed response can only preserve or tighten standing constraints.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:deriveTissueSeverity', 'engine/injuryPolicy.ts:resolveEffectiveInjuryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.tissueResponseTemporalMonitoring, KNOWLEDGE_CLAIM_IDS.tissueResponseSeverityPolicy],
-        coverageRationale: 'SEP-B records condition-specific lower-limb tendinopathy evidence that symptom criteria are commonly used but weakly compared, plus the exact product state machine. The evidence does not validate the cross-tissue normal/mild/moderate/severe or monitor/limit/exclude translation, so this high-safety mapping remains partial P0 debt.',
+        coverageRationale: 'SEP-C3 refines the latency model to distinguish tolerable during-session loading from persistent or delayed irritability using tendinopathy load-tolerance criteria. Comparative evidence across multiple tissues remains limited, so this high-safety mapping remains partial P0 debt.',
     },
     {
         id: 'injury.standing_constraint_preserve_or_tighten', domain: 'injury_safety', title: 'Standing injury constraint preserve-or-tighten invariant',
@@ -240,10 +240,10 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'injury.region_mapping.lumbar_loading', domain: 'injury_safety', title: 'Lumbar loading restriction mapping',
-        currentRule: 'Lower-back limit/exclude constraints imply avoid-heavy-spinal-loading; exclude additionally implies avoid-heavy-lower-body.',
+        currentRule: 'Lower-back limit/exclude constraints imply avoid-heavy-spinal-loading; exclude additionally implies avoid-heavy-lower-body and avoid-high-impact.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:resolveInjuryRestrictions'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement, KNOWLEDGE_CLAIM_IDS.lumbarLoadingPolicy],
-        coverageRationale: 'SEP-B records the return-to-sport assessment boundary and exact policy mapping. Lower-back symptoms are heterogeneous and the product does not collect diagnosis or functional testing, so this remains partial P0 debt.',
+        coverageRationale: 'SEP-C3 adds avoid-high-impact to severe lower-back exclusions to offload repetitive axial shock in acute lumbar injury (Herring 2024). Lower-back symptoms are heterogeneous, so this remains partial P0 debt.',
     },
     {
         id: 'injury.region_mapping.upper_limb_loading', domain: 'injury_safety', title: 'Upper-limb loading restriction mapping',

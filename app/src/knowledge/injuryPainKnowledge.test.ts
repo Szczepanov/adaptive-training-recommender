@@ -48,6 +48,20 @@ describe('injury and clinical-symptom knowledge pack', () => {
         expect(current.limitations.join(' ')).toContain('not a diagnosis');
     });
 
+    it('retires the legacy v1 tissue severity and lumbar loading policies without erasing historical lineage', () => {
+        const tissuePrior = getKnowledgeClaim(INJURY_PAIN_CLAIM_IDS.tissueResponseSeverityPolicyV1);
+        const tissueCurrent = getActiveKnowledgeClaim(INJURY_PAIN_CLAIM_IDS.tissueResponseSeverityPolicy);
+        expect(tissuePrior.status).toBe('deprecated');
+        expect(tissueCurrent.supersedes).toBe(tissuePrior.id);
+        expect(tissueCurrent.statement).toContain('24-hour response latency');
+
+        const lumbarPrior = getKnowledgeClaim(INJURY_PAIN_CLAIM_IDS.lumbarLoadingPolicyV1);
+        const lumbarCurrent = getActiveKnowledgeClaim(INJURY_PAIN_CLAIM_IDS.lumbarLoadingPolicy);
+        expect(lumbarPrior.status).toBe('deprecated');
+        expect(lumbarCurrent.supersedes).toBe(lumbarPrior.id);
+        expect(lumbarCurrent.statement).toContain('avoid-high-impact');
+    });
+
     it('keeps systemic symptom handling separate from contextual Running fallback semantics', () => {
         expect(INJURY_PAIN_POLICY_DESCRIPTOR.genericClinicalEnvelope).toEqual({
             aggregateFlag: 'painOrInjury || (illnessSymptoms && !allergyLikeSymptomDay)',

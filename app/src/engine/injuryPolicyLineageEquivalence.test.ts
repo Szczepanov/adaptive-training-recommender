@@ -32,7 +32,6 @@ interface LegacyInjuryRestrictions {
 }
 
 const LEGACY_SEVERITY_RANK: Record<InjuryConstraint['severity'], number> = { monitor: 0, limit: 1, exclude: 2 };
-const LEGACY_TISSUE_LEVEL_RANK: Record<TissueResponseLevel, number> = { normal: 0, mild: 1, moderate: 2, severe: 3 };
 
 /** Frozen pre-SEP-B oracle copied from the behavior-owning implementation before lineage was added.
  * Do not refactor this helper to call production injury resolvers: its independence is the proof. */
@@ -75,7 +74,10 @@ function legacyResolveInjuryRestrictions(
                 break;
             case 'lower_back':
                 guardrailsSet.add('avoid_heavy_spinal_loading');
-                if (isExclude) guardrailsSet.add('avoid_heavy_lower_body');
+                if (isExclude) {
+                    guardrailsSet.add('avoid_heavy_lower_body');
+                    guardrailsSet.add('avoid_high_impact');
+                }
                 break;
             case 'shoulder':
             case 'elbow':
@@ -96,15 +98,15 @@ function legacyResolveInjuryRestrictions(
 }
 
 function legacyDeriveTissueSeverity(response: RegionTissueResponse): InjuryConstraint['severity'] | null {
-    const levels = [response.morningState, response.painDuringTraining, response.afterTrainingState, response.nextMorningReaction]
+    const { morningState, painDuringTraining, afterTrainingState, nextMorningReaction } = response;
+    const levels = [morningState, painDuringTraining, afterTrainingState, nextMorningReaction]
         .filter((level): level is TissueResponseLevel => level !== undefined);
     if (levels.length === 0) return null;
-    const worst = levels.reduce((currentWorst, level) => (
-        LEGACY_TISSUE_LEVEL_RANK[level] > LEGACY_TISSUE_LEVEL_RANK[currentWorst] ? level : currentWorst
-    ));
-    if (worst === 'severe') return 'exclude';
-    if (worst === 'moderate') return 'limit';
-    if (worst === 'mild') return 'monitor';
+
+    if (levels.some((level) => level === 'severe')) return 'exclude';
+    if (morningState === 'moderate' || afterTrainingState === 'moderate' || nextMorningReaction === 'moderate') return 'limit';
+    if (painDuringTraining === 'moderate') return 'monitor';
+    if (levels.some((level) => level === 'mild')) return 'monitor';
     return null;
 }
 
