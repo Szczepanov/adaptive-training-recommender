@@ -51,7 +51,9 @@ export const SUBJECTIVE_READINESS_POLICY_DESCRIPTOR = {
         'stress >= 9',
         'readiness <= 4 && fatigue >= 6',
     ],
-    excludedFromThisPolicySurface: ['painFlag', 'illnessSymptoms', 'subjectiveDrift'],
+    excludedFromThisPolicySurface: [
+        'painFlag', 'illnessSymptoms', 'subjectiveDrift', 'alreadyTrainedToday', 'objective.today_training',
+    ],
 } as const;
 
 export const SUBJECTIVE_READINESS_SOURCES: readonly KnowledgeSource[] = [
@@ -215,6 +217,7 @@ export const SUBJECTIVE_READINESS_CLAIMS: readonly KnowledgeClaim[] = [
             'The equal weights, >5/>7 thresholds, 3/4/6/8/9 comparisons, combination triggers and neutral midpoint are product calibration rather than externally validated clinical or physiological constants.',
             'Minimum-safety completeness requires answered pain/injury, illness and already-trained flags plus fatigue or soreness; other scale dimensions can be neutral defaults and were not necessarily measured that day.',
             'Pain/illness mapping and default-off subjective-drift logic are intentionally excluded from this claim and retain their separate policy/evidence status.',
+            'Terminal already-trained overrides (`alreadyTrainedToday` and objective `today_training`) are evaluated after the threshold classifier and are outside this threshold claim.',
             'A recover/modify output is conservative product guidance, not a diagnosis, return-to-sport clearance, or substitute for medical assessment.',
         ],
         reviewedOn: '2026-09-01', version: 1,
