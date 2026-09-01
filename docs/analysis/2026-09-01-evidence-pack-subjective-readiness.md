@@ -28,7 +28,7 @@ The exact PubMed search strings used were:
 
 The first implementation pass did **not** preserve the raw PubMed result-total count displayed for each query. Those totals are mutable and cannot be reconstructed honestly from the retained PR artifacts, so this appraisal does not invent them. That is a reproducibility limitation against the umbrella plan's stricter search-log requirement. What is reproducible from the retained work is the exact query set, the deduplicated candidate set actually appraised, the final inclusion decision, and the reason for each exclusion. Future evidence-pack searches should capture raw result counts at search time.
 
-Nine unique candidate records were appraised in this bounded review. Six are registered as scientific sources; three were excluded from the registry because a newer included source supplied the same authority more directly.
+- Nine unique candidate records were appraised in this bounded review. Six are registered as scientific sources; three were excluded from the registry because a newer included source supplied the same authority more directly.
 
 | Record | Screening decision | Reason |
 | --- | --- | --- |

@@ -1189,14 +1189,14 @@ For SEP-A, record one of:
 
 ---
 
-## 19. Recommended immediate next action after this plan PR
+## 19. Recommended immediate next action
 
-Start **SEP-A — Subjective Readiness** from the current worktree. It is the smallest high-safety surface and will exercise the complete end-to-end pattern:
+**SEP-A — Subjective Readiness** is implemented. The evidence boundary, product-policy claim, coverage migration, runtime lineage, and analysis document are all merged. SEP-A exercised the complete end-to-end pattern:
 
 ```text
 research -> claim boundary -> product-policy claim -> coverage -> runtime lineage -> audit
 ```
 
-Then use the same pattern for **SEP-B — Injury/Pain**, with stricter condition-specific directness and region decomposition.
+The next open workstream is **SEP-B — Injury/Pain**. Apply the same pattern with stricter condition-specific directness and region decomposition, as specified in section 8 of this plan.
 
 The most important success criterion is not the number of P0 rows closed. It is that an historical recommendation can say exactly which reviewed evidence boundary and which explicit product safety policy participated, while the registry remains honest about what science does and does not validate.
