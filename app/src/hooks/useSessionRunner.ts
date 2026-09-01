@@ -344,20 +344,22 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         setEntries(prev => [...prev, entry]);
         setSyncStatus('pending');
 
-        try {
-            await sessionExecutionService.logEntry(userId, execution.executionId, entry);
-            setSyncStatus('synced');
-        } catch {
-            setSyncStatus('unavailable');
-        }
-
-        // Trigger rest timer immediately after logging a set (prescribed step rest or 60s default)
+        // Rest belongs to the performed set, not to persistence completion. Start it at the same
+        // optimistic boundary as the entry so a slow write can never resurrect a timer the athlete
+        // already skipped or adjusted while the write was in flight.
         const restSec = activeStep.rest
             ? (typeof activeStep.rest === 'number' ? activeStep.rest : activeStep.rest.min)
             : 60;
         if (restSec > 0) {
             setRestSecondsRemaining(restSec);
             setIsRestRunning(true);
+        }
+
+        try {
+            await sessionExecutionService.logEntry(userId, execution.executionId, entry);
+            setSyncStatus('synced');
+        } catch {
+            setSyncStatus('unavailable');
         }
     }, [execution, activeStep, entries, userId]);
 
