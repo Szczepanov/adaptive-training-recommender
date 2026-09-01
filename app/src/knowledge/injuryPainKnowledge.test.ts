@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { getActiveKnowledgeClaim, getKnowledgeSource, validateCanonicalSportsKnowledgeRegistry } from './sportsKnowledgeRegistry';
+import { getActiveKnowledgeClaim, getKnowledgeClaim, getKnowledgeSource, validateCanonicalSportsKnowledgeRegistry } from './sportsKnowledgeRegistry';
 import { INJURY_PAIN_CLAIM_IDS, INJURY_PAIN_POLICY_DESCRIPTOR } from './injuryPainKnowledge';
 
 describe('injury and clinical-symptom knowledge pack', () => {
@@ -38,12 +38,30 @@ describe('injury and clinical-symptom knowledge pack', () => {
         });
     });
 
-    it('keeps the combined clinical-symptom semantics and all four region families reviewable', () => {
+    it('retires the coupled v1 clinical envelope without erasing historical lineage', () => {
+        const prior = getKnowledgeClaim(INJURY_PAIN_CLAIM_IDS.genericClinicalEnvelopePolicyV1);
+        const current = getActiveKnowledgeClaim(INJURY_PAIN_CLAIM_IDS.genericClinicalEnvelopePolicy);
+
+        expect(prior.status).toBe('deprecated');
+        expect(current.supersedes).toBe(prior.id);
+        expect(current.statement).toContain('only current pain/injury adds the generic Running fallback');
+        expect(current.limitations.join(' ')).toContain('not a diagnosis');
+    });
+
+    it('keeps systemic symptom handling separate from contextual Running fallback semantics', () => {
         expect(INJURY_PAIN_POLICY_DESCRIPTOR.genericClinicalEnvelope).toEqual({
-            painFlag: 'painOrInjury || (illnessSymptoms && !allergyLikeSymptomDay)',
-            painFlagRestriction: 'Running',
-            maxTierWhenPainFlag: 'Mobility',
-            maxTierWhenPainFlagAndAlreadyTrained: 'Rest',
+            aggregateFlag: 'painOrInjury || (illnessSymptoms && !allergyLikeSymptomDay)',
+            sourceCategories: ['pain_or_injury', 'non_allergy_illness'],
+            maxTierWhenCurrentClinicalSymptoms: 'Mobility',
+            maxTierWhenAlreadyTrained: 'Rest',
+            genericRunningRestriction: {
+                appliesToSource: 'pain_or_injury',
+                currentPainLocationSource: 'today_structured_tissue_responses_only',
+                restrictWhenLocationUnknown: true,
+                restrictWhenRegionFamilyIncludes: ['lower_limb_impact'],
+                noGenericRestrictionForIsolatedFamilies: ['lower_limb_strength', 'lumbar_loading', 'upper_limb_loading'],
+                provenanceTraceMayControlPolicy: false,
+            },
         });
         expect(Object.keys(INJURY_PAIN_POLICY_DESCRIPTOR.regionMappings)).toEqual([
             'lowerLimbImpact', 'lowerLimbStrength', 'lumbarLoading', 'upperLimbLoading',
