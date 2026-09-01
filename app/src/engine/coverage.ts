@@ -1,6 +1,6 @@
 import type { CoverageSetDescriptor, CoverageSetId, EventPlanCoverageKey, EventPlanRequirement, PlanCoverageKey, PlanPhase } from '../workouts/event-plan';
 import { coverageSetFor, SEPTEMBER_CYCLING_EVENT_COVERAGE_SET } from '../workouts/event-plan';
-import { WORKOUTS } from '../workouts/catalog';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
 import type { ObjectivePriority, SessionTemplate } from './models';
 import type { PlanDefinition } from './planSchedule';
@@ -125,7 +125,7 @@ export function coverageKeysForExposure(
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
         .filter(item => {
             if (item.key !== 'aerobic_volume') return true;
-            const minimumDuration = WORKOUTS.find(workout => workout.id === workoutId)?.duration.minimumMin;
+            const minimumDuration = WORKOUTS_BY_ID.get(workoutId)?.duration.minimumMin;
             return typeof minimumDuration === 'number'
                 && typeof identity.durationMin === 'number'
                 && Number.isFinite(identity.durationMin)

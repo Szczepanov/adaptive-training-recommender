@@ -1,7 +1,7 @@
 import type { AdaptationDoseRequirement, AdaptationKey, EvidenceBackedStrategy } from './evergreenStrategy';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
-import { WORKOUTS } from '../workouts/catalog';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { getDayDiff } from '../utils/localDate';
 
 export interface CoverageRoleDescriptor {
@@ -30,11 +30,6 @@ export const LEGACY_SESSION_COUNT_TIE_BREAKER = {
     5: { preferredSpacingDays: 1 },
     6: { preferredSpacingDays: 1 },
 } as const;
-
-// ⚡ Bolt Performance Optimization:
-// Created a Map for O(1) workout lookups instead of O(n) array scans.
-// Expected Impact: Significantly speeds up minimum duration calculation and permitted workout filtering during weekly dose packing.
-const WORKOUTS_BY_ID = new Map(WORKOUTS.map(w => [w.id, w]));
 
 function minimumDuration(workoutIds: readonly string[]): number {
     return Math.min(...workoutIds.map(id => WORKOUTS_BY_ID.get(id)?.duration.minimumMin ?? Number.POSITIVE_INFINITY));
