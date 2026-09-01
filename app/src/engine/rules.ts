@@ -836,7 +836,7 @@ export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContex
     let clinicalReason: string | null = null;
     if (redFlagActive) {
         const categoriesText = redFlagCategories.length > 0
-            ? ` (${Array.from(new Set(redFlagCategories)).map(c => c.replace(/_/g, ' ')).join(', ')})`
+            ? ` (${Array.from(new Set(redFlagCategories)).map(c => c === 'systemic_infection' ? 'systemic / cardiopulmonary warning' : c.replace(/_/g, ' ')).join(', ')})`
             : '';
         clinicalReason = `Clinical evaluation recommended: red-flag finding reported${categoriesText}. Training recommendations are paused until medical evaluation.`;
     }
