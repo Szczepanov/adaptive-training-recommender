@@ -21,7 +21,7 @@ const recommendation = {
             clinicalReason: 'Systemic / cardiopulmonary warning reported.',
         },
     },
-} as Recommendation;
+} as unknown as Recommendation;
 
 const evidence = {
     confidence: {
@@ -32,12 +32,12 @@ const evidence = {
         harderAdjustmentAllowed: false,
         hardGates: [],
     },
-} as MorningDecisionEvidence;
+} as unknown as MorningDecisionEvidence;
 
 const prescription = {
     targetDurationMin: 30,
     displayBlocks: [],
-} as WorkoutPrescription;
+} as unknown as WorkoutPrescription;
 
 describe('MorningDecisionCard clinical escalation', () => {
     it('keeps explanation visible while suppressing every executable prescription surface', () => {
