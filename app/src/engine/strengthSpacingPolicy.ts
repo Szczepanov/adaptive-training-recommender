@@ -100,22 +100,24 @@ export function evaluateStrengthSpacingStatus(
         return { isRestricted: false };
     }
 
-    const mostRecent = strengthExposures[0];
-
-    if (mostRecent.diffDays === 0) {
+    const sameDay = strengthExposures.find(exp => exp.diffDays === 0);
+    if (sameDay) {
         return {
             isRestricted: true,
             reasonCode: 'SAME_DAY_STRENGTH_VIOLATION',
-            rationale: `Strength is already recorded on the target local date (${mostRecent.date}); the automatic recommender will not schedule a second strength session on that date.`,
-            lastStrengthLocalDate: mostRecent.date,
+            rationale: `Strength is already recorded on the target local date (${sameDay.date}); the automatic recommender will not schedule a second strength session on that date.`,
+            lastStrengthLocalDate: sameDay.date,
             daysSinceLastStrength: 0,
-            mostRecentOccurrenceId: mostRecent.performedOccurrenceId,
+            mostRecentOccurrenceId: sameDay.performedOccurrenceId,
         };
     }
 
-    // Upper-body-only is the explicit later-date exception. Likewise, a proven upper-body-only
-    // prior session does not by itself suppress a fresh full/lower-body candidate.
-    if (candidateClass === 'upper_body' || mostRecent.priorClass === 'upper_body') {
+    // Upper-body-only is the explicit later-date candidate exception. For a broad/full/lower
+    // candidate, a proven prior upper-body-only session is ignored for suppression, but it must
+    // not hide an earlier still-relevant broad strength exposure when a workout uses a longer
+    // configured spacing interval.
+    if (candidateClass === 'upper_body') {
+        const mostRecent = strengthExposures[0];
         return {
             isRestricted: false,
             daysSinceLastStrength: mostRecent.diffDays,
@@ -124,22 +126,27 @@ export function evaluateStrengthSpacingStatus(
         };
     }
 
+    const mostRecentRelevant = strengthExposures.find(exp => exp.priorClass !== 'upper_body');
+    if (!mostRecentRelevant) {
+        return { isRestricted: false };
+    }
+
     const minimumGapDays = normalizedMinimumGapDays(options.minimumGapDays);
-    if (mostRecent.diffDays < minimumGapDays) {
+    if (mostRecentRelevant.diffDays < minimumGapDays) {
         return {
             isRestricted: true,
             reasonCode: 'RECENT_STRENGTH_SPACING_VIOLATION',
-            rationale: `Strength exposure completed on ${mostRecent.date}; this candidate requires a minimum ${minimumGapDays}-day athlete-local date gap under the planner spacing policy.`,
-            lastStrengthLocalDate: mostRecent.date,
-            daysSinceLastStrength: mostRecent.diffDays,
-            mostRecentOccurrenceId: mostRecent.performedOccurrenceId,
+            rationale: `Strength exposure completed on ${mostRecentRelevant.date}; this candidate requires a minimum ${minimumGapDays}-day athlete-local date gap under the planner spacing policy.`,
+            lastStrengthLocalDate: mostRecentRelevant.date,
+            daysSinceLastStrength: mostRecentRelevant.diffDays,
+            mostRecentOccurrenceId: mostRecentRelevant.performedOccurrenceId,
         };
     }
 
     return {
         isRestricted: false,
-        daysSinceLastStrength: mostRecent.diffDays,
-        lastStrengthLocalDate: mostRecent.date,
-        mostRecentOccurrenceId: mostRecent.performedOccurrenceId,
+        daysSinceLastStrength: mostRecentRelevant.diffDays,
+        lastStrengthLocalDate: mostRecentRelevant.date,
+        mostRecentOccurrenceId: mostRecentRelevant.performedOccurrenceId,
     };
 }
