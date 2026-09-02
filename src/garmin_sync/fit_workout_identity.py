@@ -73,7 +73,8 @@ def compute_fit_workout_fingerprint(
     Workout Step definitions take precedence over observed step indexes. With definitions
     present, steps are normalized into canonical message-index order so equivalent files
     with harmless message-order differences converge. Without definitions, distinct
-    observed indexes retain first-seen order as weaker execution-linkage evidence.
+    observed indexes retain the pre-v2 sorted-set normalization as weaker execution
+    linkage evidence.
 
     `FitActivityEvidence.workout_step_indices` is a tuple-compatible value that can carry
     its decoded Workout Step definitions as metadata. Reading that metadata here keeps the
@@ -105,7 +106,7 @@ def compute_fit_workout_fingerprint(
             "steps": normalized_steps,
         }
     else:
-        observed_steps = list(dict.fromkeys(workout_step_indices))
+        observed_steps = sorted(set(workout_step_indices))
         if not normalized_name and not observed_steps:
             return None
         payload = {
