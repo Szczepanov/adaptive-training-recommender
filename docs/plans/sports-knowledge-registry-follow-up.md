@@ -29,11 +29,11 @@ Initial baseline: 47 policy families — 4 covered, 38 uncovered and 5 deliberat
 
 ## SKR3 — Migrate high-impact training policy
 
-**Status:** In progress
+**Status:** Complete (W0–W3 complete; W4 deferred)
 
 For each migration, define the atomic claim first and then search the best applicable evidence. Each migration should be behavior-preserving unless the evidence review explicitly justifies a separate policy change and `POLICY_VERSION` bump.
 
-**Current totals (2026-09-02, post SKR3-W1):** 54 families — 18 covered / 14 partial / 16 uncovered / 6 not applicable. P0 / P1 / P2 / P3 = 7 / 13 / 8 / 2. High-impact uncovered = 4, high-safety uncovered = 0. The "Post-pack inventory" lines below are historical snapshots as of each pack's own merge, not a running total; several later packs (the SEP subjective/injury safety pack in particular) added coverage rows without restating a new running total, so those older snapshots should not be read as current. Scoping and rationale for the remaining SKR3 work: [`2026-09-02-skr3-completion-plan.md`](./2026-09-02-skr3-completion-plan.md).
+**Current totals (2026-09-02, post SKR3 W0–W3):** 54 families — 33 covered / 14 partial / 1 uncovered / 6 not applicable. P0 / P1 / P2 / P3 = 7 / 6 / 2 / 0. High-impact uncovered = 0, high-safety uncovered = 0. Zero high-impact or high-safety uncovered risk debt remains. The remaining uncovered family is `periodization.post_event_recovery_window` (P1/moderate-impact). Scoping and audit records: [`2026-09-02-skr3-completion-plan.md`](./2026-09-02-skr3-completion-plan.md) and [`2026-09-02-workout-catalog-recovery-metadata-audit.md`](../analysis/2026-09-02-workout-catalog-recovery-metadata-audit.md).
 
 ### Evidence Pack 1 — Load + Intensity + Recovery
 
@@ -150,11 +150,14 @@ Two families in this pack (`periodization.objective_thresholds`, `periodization.
 
 Post-pack inventory: 54 families — 18 covered / 14 partial / 16 uncovered / 6 not applicable. High-impact uncovered falls from 7 to 4; the research backlog is deliberately unchanged (P0/P1/P2/P3 = 7/13/8/2), because these families moved from "no provenance" to "provenance recorded, calibration still owed". No executable recommendation behavior changed and `POLICY_VERSION` remains unchanged.
 
-### Later SKR3 packs
+### Later SKR3 packs (Completed Workstreams)
 
-- stimulus-credit and optimizer calibration;
-- workout-specific recovery metadata audit;
-- fueling/recovery policy migration when those features gain live decision authority.
+The completion workstreams scoped in [`2026-09-02-skr3-completion-plan.md`](./2026-09-02-skr3-completion-plan.md) are complete:
+
+- **W2a — Optimizer Scoring Heuristics (4 families)**: **Complete**. Product-policy claims registered in `app/src/knowledge/optimizerScoringKnowledge.ts` with alignment tests in `optimizerScoringPolicyAlignment.test.ts` pinning fatigue-cost weights, recovery streak heuristics, stimulus benefit weights, and event priority multipliers.
+- **W2b — Stimulus Credit & Remaining Heuristics (11 families)**: **Complete**. Product-policy claims registered in `app/src/knowledge/stimulusHeuristicsKnowledge.ts` with alignment tests in `stimulusHeuristicsPolicyAlignment.test.ts` pinning stimulus confidence discounting, race-specific credit formulas, stimulus coverage thresholds, legacy keyword credit, fatigue max fusion, ambient step surge scaling, plan-tier cost caps, post-recover buffer, training history qualification, default commitment priors, and session spacing tie-breaks.
+- **W3 — Workout-Specific Recovery Metadata Audit (1 family)**: **Complete**. Audit recorded in [`2026-09-02-workout-catalog-recovery-metadata-audit.md`](../analysis/2026-09-02-workout-catalog-recovery-metadata-audit.md), bounds validation added to `app/src/workouts/validation.ts`, and test assertions added in `app/src/workouts/workoutRecoveryMetadata.test.ts`. `spacing.hard_lower_body_recovery` stays partial at P1 because 10 workouts with lowerBodyCost >=0.6 declare 1-day spacing overrides that require separate behavior remediation.
+- **W4 — Fueling/recovery policy migration**: Deferred until fueling gains live decision authority.
 
 ## SKR4 — Athlete-specific evidence boundary
 

@@ -91,12 +91,53 @@ describe('engine knowledge coverage inventory', () => {
         expect(byId('data_trust.identity_gated_source_fail_closed')).toMatchObject({ classification: 'safety_invariant', coverage: 'not_applicable' });
     });
 
-    it('reports the post-SKR3-W1 coverage and risk debt exactly', () => {
+    it('keeps optimizer scoring heuristics covered with explicit product policy (SKR3 W2a)', () => {
+        const optimizerCovered = [
+            'optimizer.fatigue_cost_weights',
+            'optimizer.stimulus_benefit_weights',
+            'optimizer.event_priority_multipliers',
+            'optimizer.recovery_streak_heuristics',
+        ];
+        optimizerCovered.forEach(id => {
+            expect(byId(id)).toMatchObject({
+                coverage: 'covered',
+                classification: 'product_heuristic',
+                researchPriority: 'none',
+            });
+            expect(byId(id)?.knowledgeRefs.length).toBeGreaterThanOrEqual(1);
+        });
+    });
+
+    it('keeps stimulus credit, fatigue heuristics, and planning priors covered with product policy (SKR3 W2b)', () => {
+        const w2bCovered = [
+            'stimulus.objective_credit_confidence',
+            'stimulus.legacy_keyword_credit',
+            'stimulus.race_specific_credit_formula',
+            'stimulus.coverage_threshold',
+            'fatigue.ambient_step_surge',
+            'fatigue.max_fusion_policy',
+            'readiness.post_recover_buffer',
+            'readiness.plan_tier_cost_ceilings',
+            'evergreen.default_weekly_commitment',
+            'evergreen.training_history_qualification',
+            'packing.legacy_session_spacing_tiebreak',
+        ];
+        w2bCovered.forEach(id => {
+            expect(byId(id)).toMatchObject({
+                coverage: 'covered',
+                classification: 'product_heuristic',
+                researchPriority: 'none',
+            });
+            expect(byId(id)?.knowledgeRefs.length).toBeGreaterThanOrEqual(1);
+        });
+    });
+
+    it('reports the post-SKR3-W2b coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
         const summary = summarizeKnowledgeCoverage();
         expect(summary.total).toBe(54);
-        expect(summary.byCoverage).toEqual({ covered: 18, partial: 14, uncovered: 16, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 7, p1: 13, p2: 8, p3: 2, none: 24 });
-        expect(summary.highImpactUncovered).toBe(4);
+        expect(summary.byCoverage).toEqual({ covered: 33, partial: 14, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 7, p1: 6, p2: 2, p3: 0, none: 39 });
+        expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });
 

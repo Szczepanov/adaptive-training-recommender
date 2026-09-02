@@ -1,10 +1,10 @@
 # SKR3 Completion Plan — Migrating the Remaining High-Impact Training Policy
 
 **Date:** 2026-09-02
-**Status:** Proposed
+**Status:** Implemented
 **Parent plan:** [`sports-knowledge-registry-follow-up.md`](./sports-knowledge-registry-follow-up.md) — SKR3
 **Related:** ADR-0033 (claim registry), SKR1 (persisted lineage), SKR2 (coverage inventory)
-**Policy version impact:** registry migration is behavior-preserving by default; W0 review exposed one live taper-resolution defect, corrected in this PR with `POLICY_VERSION` bumped to `2026-09-skr3-taper-resolution-v1`
+**Policy version impact:** registry migration is behavior-preserving by default; W0 review exposed one live taper-resolution defect, corrected in W0 with `POLICY_VERSION` bumped to `2026-09-skr3-taper-resolution-v1`
 
 ## 1. Purpose
 
@@ -13,17 +13,17 @@ them. This plan scopes them against the **actual** current state of the inventor
 work by *kind* (registry reconciliation vs. literature review vs. product-policy registration vs.
 catalog data audit), and states what SKR3 must deliberately **not** attempt.
 
-## 2. Current state
+## 2. Completed State
 
-Measured from `knowledgeCoverage.ts:summarizeKnowledgeCoverage` on `main` at the SEP-C4 merge:
+Measured from `knowledgeCoverage.ts:summarizeKnowledgeCoverage` on completion of W0 through W3:
 
-| Metric | Value |
-|---|---|
-| Families inventoried | 53 |
-| covered / partial / uncovered / not_applicable | 17 / 8 / 22 / 6 |
-| Research backlog P0 / P1 / P2 / P3 | 8 / 13 / 7 / 2 |
-| High-impact uncovered | 9 |
-| High-safety uncovered | 0 |
+| Metric | Pre-SKR3 Baseline | Post-SKR3 Final |
+|---|---|---|
+| Families inventoried | 53 | **54** |
+| covered / partial / uncovered / not_applicable | 17 / 8 / 22 / 6 | **33 / 14 / 1 / 6** |
+| Research backlog P0 / P1 / P2 / P3 | 8 / 13 / 7 / 2 | **7 / 6 / 2 / 0** |
+| High-impact uncovered | 9 | **0** |
+| High-safety uncovered | 0 | **0** |
 
 Five evidence packs are complete (load/intensity/recovery, readiness/sleep/HRV/RHR/respiration,
 the subjective+injury safety pack SEP-A→C4, strength/concurrent, taper/fueling). The parent plan

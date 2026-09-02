@@ -237,6 +237,12 @@ export function validateWorkoutLibrary(
     if (workout.duration.minimumMin > workout.duration.defaultMin || workout.duration.defaultMin > workout.duration.maximumMin) errors.push(`${prefix}: duration must satisfy minimum <= default <= maximum`);
     if (!isCompleteRest && workout.duration.minimumMin === 0) errors.push(`${prefix}: only complete rest may have a zero-minute minimum duration`);
     if (workout.loadProfile.recoveryHours < 0) errors.push(`${prefix}: recoveryHours cannot be negative`);
+    if (workout.loadProfile.recoveryHours > 168) errors.push(`${prefix}: recoveryHours cannot exceed 168 hours (7 days)`);
+    if (workout.eligibility.minimumDaysAfterHardLowerBody !== undefined) {
+      if (!Number.isInteger(workout.eligibility.minimumDaysAfterHardLowerBody) || workout.eligibility.minimumDaysAfterHardLowerBody < 1 || workout.eligibility.minimumDaysAfterHardLowerBody > 7) {
+        errors.push(`${prefix}: minimumDaysAfterHardLowerBody must be an integer between 1 and 7`);
+      }
+    }
     if (workout.blocks.length === 0) errors.push(`${prefix}: at least one workout block is required`);
     if (workout.objectives.length === 0) errors.push(`${prefix}: at least one objective is required`);
     if (workout.sourceNotes.length === 0) warnings.push(`${prefix}: add sourceNotes for coaching provenance`);

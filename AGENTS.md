@@ -251,6 +251,18 @@ app/src/outcomes/
   blockProcessEvidence.ts # OV: deriveBlockProcessEvidence -- key-role/completed-session process evidence
   feedbackLoopEvidence.ts # OV: deriveFeedbackLoopEvidence -- decision-action & counterfactual-regret counts
   policySegments.ts       # OV: policy-version/planning-mode segment bookkeeping for evaluation windows
+
+app/src/knowledge/
+  sportsKnowledge.ts   # Core schema, validation, and foundational load/intensity/readiness claims (ADR-0033)
+  sportsKnowledgeRegistry.ts # Canonical aggregate registry of all Git-backed domain knowledge modules
+  knowledgeCoverage.ts # 54-family engine coverage inventory, classification, and research backlog (SKR2)
+  optimizerScoringKnowledge.ts # Product-policy claims for candidate selection and fatigue/stimulus weights (SKR3 W2a)
+  stimulusHeuristicsKnowledge.ts # Product-policy claims for stimulus credit, fatigue fusion, and planning priors (SKR3 W2b)
+  periodizationEventDemandKnowledge.ts # Scientific boundaries and product presets for periodization (SKR3 W1)
+  injuryPainKnowledge.ts # Tissue-response, severity scaling, and standing injury restriction claims (SEP)
+  readinessSleepHrvKnowledge.ts # Scientific and heuristic claims for HRV, sleep, and recovery balance
+  strengthWarmupKnowledge.ts # General and specific warm-up protocol claims
+  taperFuelingKnowledge.ts # Pre-event taper boundaries and fueling/hydration claims
 ```
 
 This map is a routing aid, not a complete file listing. Where it disagrees with the
