@@ -48,6 +48,7 @@ def normalize_activity(
     sync_run_id: str,
     detail: CanonicalActivityDetail | None = None,
     hr_measurement: CanonicalHrMeasurementQuality | None = None,
+    fit_workout_fingerprint: str | None = None,
 ) -> dict[str, Any]:
     """Normalize a canonical activity into the standalone per-activity record stored at
     users/{userId}/activities/{activityId} -- decoupled from any one day's recovery
@@ -58,6 +59,11 @@ def normalize_activity(
         "date": activity.date or None,
         "type": activity.type,
         "durationMin": activity.duration_min,
+        # Absolute UTC instants for reconciliation (docs/adr/0034); omitted rather than
+        # null when Garmin supplied no startTimeGMT, matching the optional-field pattern
+        # used elsewhere in this payload.
+        **({"startedAt": activity.started_at} if activity.started_at is not None else {}),
+        **({"endedAt": activity.ended_at} if activity.ended_at is not None else {}),
         "trainingEffectAerobic": activity.training_effect_aerobic,
         "trainingEffectAnaerobic": activity.training_effect_anaerobic,
         "averageHr": activity.average_hr,
@@ -77,6 +83,15 @@ def normalize_activity(
         **(
             {"trainingEffectLabel": activity.training_effect_label}
             if activity.training_effect_label is not None
+            else {}
+        ),
+        # PR 5 (training-occurrence plan, ADR-0034): a device-recorded FIT workout
+        # structure fingerprint, only when one was decodable (requires HR fidelity FIT
+        # decode to be enabled and to have found workout_name/workout_step evidence).
+        # No reconciliation consumer reads this yet -- see fit_workout_identity.py.
+        **(
+            {"fitWorkoutFingerprint": fit_workout_fingerprint}
+            if fit_workout_fingerprint is not None
             else {}
         ),
         "syncRunId": sync_run_id,

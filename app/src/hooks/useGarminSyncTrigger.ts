@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { garminSyncRequestService, type GarminSyncRequest } from '../services/garminSyncRequestService';
 import { isAwaitedSyncTerminal } from '../utils/garminSyncRequestState';
 import { isSyncRequestInFlight, isSyncRequestStale } from '../utils/garminSyncStaleness';
+import { triggerGarminShadowReconciliationSweep } from '../training-occurrence';
 
 export interface UseGarminSyncTriggerResult {
     request: GarminSyncRequest | null;
@@ -60,6 +61,12 @@ export function useGarminSyncTrigger(
                 if (isAwaitedSyncTerminal(next, awaitingRequestedAtRef.current)) {
                     awaitingRequestedAtRef.current = null;
                     onSyncedRef.current?.();
+                    if (next?.status === 'completed') {
+                        // PR 1 (ADR-0034) shadow reconciliation: fire-and-forget, never
+                        // affects sync UX.
+                        void triggerGarminShadowReconciliationSweep(userId)
+                            .catch(sweepErr => console.warn('[training-occurrence] shadow reconciliation sweep failed', sweepErr));
+                    }
                 }
             },
             (err) => {
@@ -105,6 +112,10 @@ export function useGarminSyncTrigger(
                 ) {
                     awaitingRequestedAtRef.current = null;
                     onSyncedRef.current?.();
+                    if (current?.status === 'completed') {
+                        void triggerGarminShadowReconciliationSweep(userId)
+                            .catch(sweepErr => console.warn('[training-occurrence] shadow reconciliation sweep failed', sweepErr));
+                    }
                 }
             } catch (reconcileErr) {
                 // The realtime subscription remains the primary completion path; a

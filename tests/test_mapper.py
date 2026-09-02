@@ -312,6 +312,34 @@ def test_normalize_activity_maps_canonical_fields():
     assert normalized["intensityTag"] == "hard"
     assert normalized["syncRunId"] == "run-abc"
     assert "syncedAt" in normalized
+    assert "startedAt" not in normalized
+    assert "endedAt" not in normalized
+
+
+def test_normalize_activity_maps_started_and_ended_at_when_present() -> None:
+    """ADR-0034 reconciliation needs absolute instants, not just the Warsaw-local `date`
+    -- normalize_activity must carry started_at/ended_at through when the canonical layer
+    computed them, and omit them (not null) when it didn't, matching every other optional
+    field in this payload."""
+    activity = CanonicalActivity(
+        activity_id="999",
+        date="2026-08-05",
+        type="strength_training",
+        duration_min=40,
+        duration_seconds=2400,
+        training_effect_aerobic=3.8,
+        training_effect_anaerobic=1.2,
+        average_hr=150,
+        training_load=120.0,
+        intensity_tag="hard",
+        started_at="2026-08-05T06:52:30+00:00",
+        ended_at="2026-08-05T07:32:30+00:00",
+    )
+
+    normalized = normalize_activity(activity, sync_run_id="run-abc")
+
+    assert normalized["startedAt"] == "2026-08-05T06:52:30+00:00"
+    assert normalized["endedAt"] == "2026-08-05T07:32:30+00:00"
 
 
 def test_normalize_activity_adds_detail_without_schema_version_or_null_fields():

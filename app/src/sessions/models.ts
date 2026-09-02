@@ -366,3 +366,30 @@ export interface SessionEntry {
     updatedAt: string;
     payload: SessionEntryPayload;
 }
+
+/**
+ * PR 3 (training-occurrence plan, "Performed rest and execution timeline"): a durable
+ * record of one performed rest interval, distinct from `SessionStep.rest` (prescribed).
+ * The interval between two `SessionEntry.completedAt` timestamps can include setup,
+ * equipment changes, or the next work set itself -- only an explicit `startedAt`/`endedAt`
+ * pair tied to the rest itself is trustworthy evidence of actual rest duration. See
+ * `sessions/restEventTiming.ts` for the pure start/adjust/close state transitions that
+ * produce this record.
+ */
+export type RestEndReason = 'timer_elapsed' | 'skipped' | 'next_set_started' | 'session_ended';
+
+export interface SessionRestEvent {
+    id: string;
+    executionId: string;
+    /** The `SessionEntry.id` whose completion started this rest. */
+    afterEntryId: string;
+    prescribedSeconds?: number;
+    startedAt: string;
+    endedAt: string;
+    actualSeconds: number;
+    endReason: RestEndReason;
+    /** Net seconds added (`addRestSeconds`) while the timer ran; omitted when zero. */
+    adjustmentSeconds?: number;
+    createdAt: string;
+    updatedAt: string;
+}

@@ -580,6 +580,45 @@ def test_canonicalize_activities_handles_missing_activity_id():
     assert act.activity_id is None
 
 
+def test_canonicalize_activity_derives_started_and_ended_at_from_start_time_gmt() -> None:
+    """ADR-0034 reconciliation needs absolute instants -- canonicalization must derive
+    started_at/ended_at from startTimeGMT + duration, distinct from the Warsaw-local
+    `date` (derived from startTimeLocal)."""
+    raw = [
+        {
+            "activityId": "555",
+            "startTimeLocal": "2026-08-05 20:52:30",
+            "startTimeGMT": "2026-08-05 18:52:30",
+            "activityType": {"typeKey": "strength_training"},
+            "duration": 2400,
+            "aerobicTrainingEffect": 1.0,
+        }
+    ]
+
+    act = canonicalize_activities(raw)[0]
+
+    assert act.date == "2026-08-05"
+    assert act.started_at == "2026-08-05T18:52:30+00:00"
+    assert act.ended_at == "2026-08-05T19:32:30+00:00"
+
+
+def test_canonicalize_activity_started_at_none_when_start_time_gmt_missing() -> None:
+    raw = [
+        {
+            "activityId": "556",
+            "startTimeLocal": "2026-08-05 20:52:30",
+            "activityType": {"typeKey": "strength_training"},
+            "duration": 2400,
+            "aerobicTrainingEffect": 1.0,
+        }
+    ]
+
+    act = canonicalize_activities(raw)[0]
+
+    assert act.started_at is None
+    assert act.ended_at is None
+
+
 def test_provider_adapter_reuses_cached_stats_and_sleep_across_overlapping_dates():
     """Regression test: a backfill's chronological date loop reuses the same
     GarminProviderAdapter instance across dates whose fetch_daily_metrics windows

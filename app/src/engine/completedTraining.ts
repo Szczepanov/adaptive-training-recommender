@@ -133,7 +133,7 @@ function intensityFromGarmin(activity: NormalizedGarminActivity): CompletedTrain
  *  consulted: a single session-average HR number without zone/interval context isn't
  *  meaningfully more informative than trainingEffect, and treating it as if it were would
  *  overclaim precision this data doesn't have. */
-interface GarminEvidenceSignals {
+export interface GarminEvidenceSignals {
     trainingEffectAerobic: number | null;
     trainingEffectAnaerobic: number | null;
     intensityTag: string;
@@ -141,7 +141,12 @@ interface GarminEvidenceSignals {
     modalityKnown: boolean;
 }
 
-function classifyGarminTier(signals: GarminEvidenceSignals): EvidenceTier {
+/** Exported for `training-occurrence/historyShadowDiff.ts` (PR 4, ADR-0034), which reuses
+ * this classifier for its canonical-side evidence-tier estimate rather than duplicating
+ * it -- the same "one matcher, not two" principle ADR-0034 applies to reconciliation also
+ * applies to evidence-tier classification consistency between the live and shadow paths.
+ * Purely additive (no behavior change to this file's own live callers). */
+export function classifyGarminTier(signals: GarminEvidenceSignals): EvidenceTier {
     const hasTrainingEffect = (signals.trainingEffectAerobic ?? 0) > 0 || (signals.trainingEffectAnaerobic ?? 0) > 0;
     const hasTrainingLoad = signals.activityTrainingLoad !== null && signals.activityTrainingLoad > 0;
     if (hasTrainingEffect && hasTrainingLoad) return 'measuredEffort';

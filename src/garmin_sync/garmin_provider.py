@@ -6,7 +6,7 @@ recommendation engine) operates on canonical.py types only."""
 import logging
 import math
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, TypeVar
 
 from .canonical import (
@@ -27,7 +27,7 @@ from .canonical import (
     CanonicalTrainingStatus,
     CanonicalZoneBucket,
 )
-from .dates import get_date_string, local_today, n_days_ago
+from .dates import get_date_string, local_today, n_days_ago, parse_garmin_gmt_timestamp
 from .fit_activity import FitActivityEvidence, decode_activity_original
 from .garmin_client import GarminClientWrapper
 from .metrics import classify_activity_intensity
@@ -1395,6 +1395,14 @@ def _canonicalize_activity(
         explicit_hours = _non_negative_number(act.get("recoveryTimeHours"))
         act_rec_hours = round(explicit_hours) if explicit_hours is not None else None
 
+    started_at_dt = parse_garmin_gmt_timestamp(act.get("startTimeGMT"))
+    started_at = started_at_dt.isoformat() if started_at_dt is not None else None
+    ended_at = (
+        (started_at_dt + timedelta(seconds=duration_sec)).isoformat()
+        if started_at_dt is not None and duration_sec
+        else None
+    )
+
     return CanonicalActivity(
         activity_id=str(raw_activity_id) if raw_activity_id is not None else None,
         date=act.get("startTimeLocal", "")[:10] or "",
@@ -1411,6 +1419,8 @@ def _canonicalize_activity(
         epoc=epoc_val,
         recovery_time_hours=act_rec_hours,
         training_effect_label=te_label_str,
+        started_at=started_at,
+        ended_at=ended_at,
     )
 
 

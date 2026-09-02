@@ -1132,6 +1132,25 @@ service cloud.firestore {
         );
     }
 
+    // PR 3 (training-occurrence plan, "Performed rest and execution timeline"): a durable
+    // performed-rest record, distinct from a step's prescribed rest. See
+    // sessions/restEventTiming.ts for the pure logic that produces these fields.
+    function hasValidSessionRestEvent(executionId, restEventId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['id', 'executionId', 'afterEntryId', 'prescribedSeconds', 'startedAt', 'endedAt', 'actualSeconds', 'endReason', 'adjustmentSeconds', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['id', 'executionId', 'afterEntryId', 'startedAt', 'endedAt', 'actualSeconds', 'endReason', 'createdAt', 'updatedAt'])
+        && data.id == restEventId
+        && data.executionId == executionId
+        && data.afterEntryId is string && data.afterEntryId.size() > 0
+        && data.startedAt is string && data.endedAt is string
+        && data.actualSeconds is number && data.actualSeconds >= 0
+        && data.endReason in ['timer_elapsed', 'skipped', 'next_set_started', 'session_ended']
+        && (!('prescribedSeconds' in data) || (data.prescribedSeconds is number && data.prescribedSeconds >= 0))
+        && (!('adjustmentSeconds' in data) || data.adjustmentSeconds is number)
+        && data.createdAt is string
+        && data.updatedAt is string;
+    }
+
     match /users/{userId}/session_executions/{executionId} {
       allow read: if isOwner(userId);
       allow create: if hasValidSessionExecution(userId, executionId)
@@ -1150,6 +1169,134 @@ service cloud.firestore {
           && get(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)).data.state == 'in_progress'
           && (request.method == 'delete' || hasValidSessionEntry(executionId, entryId));
       }
+
+      // A session-ending rest event must be written before the execution's own
+      // 'completed'/'abandoned' transition commits (the hook awaits this write first),
+      // so 'in_progress' remains the correct gate here, matching /entries/ above.
+      match /restEvents/{restEventId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && exists(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId))
+          && get(/databases/$(database)/documents/users/$(userId)/session_executions/$(executionId)).data.state == 'in_progress'
+          && hasValidSessionRestEvent(executionId, restEventId);
+        // Update is allowed only to support the "retry after partial failure converges
+        // safely" requirement (the caller re-sends the exact same restEventId) -- content
+        // must still validate and afterEntryId/startedAt/endReason (the rest's identity)
+        // are immutable so a retry can never silently rewrite which rest instance this is.
+        allow update: if isOwner(userId)
+          && hasValidSessionRestEvent(executionId, restEventId)
+          && request.resource.data.afterEntryId == resource.data.afterEntryId
+          && request.resource.data.startedAt == resource.data.startedAt
+          && request.resource.data.endReason == resource.data.endReason
+          && request.resource.data.createdAt == resource.data.createdAt;
+        allow delete: if false;
+      }
+    }
+
+    // --- PR 1 (ADR-0034): canonical performed-training-occurrence shadow reconciliation.
+    // Written by the client SDK (shadow-mode reconciliation runs in-browser -- see
+    // training-occurrence/reconciliationService.ts), so this needs real schema validation
+    // rather than an Admin-SDK-only `allow write: if false` block. Rules cannot iterate an
+    // arbitrary-length list<map>, so `sourceRefs` element validation is bounded to the
+    // first 4 entries (mirrors `hasValidAdditionalSessions` above) -- full structural
+    // correctness for any list this rule can't fully cover is enforced by
+    // `training-occurrence/validation.ts` plus its unit/emulator tests, not by rules
+    // alone.
+    function hasValidPerformedOccurrenceSourceRef(ref) {
+      return ref is map && (
+        (ref.kind == 'structured_execution'
+          && ref.keys().hasOnly(['kind', 'executionId', 'sessionOccurrenceId', 'prescriptionHash'])
+          && ref.keys().hasAll(['kind', 'executionId'])
+          && ref.executionId is string
+          && (!('sessionOccurrenceId' in ref) || ref.sessionOccurrenceId is string)
+          && (!('prescriptionHash' in ref) || ref.prescriptionHash is string))
+        || (ref.kind == 'provider_activity'
+          && ref.keys().hasOnly(['kind', 'provider', 'activityId', 'deviceId'])
+          && ref.keys().hasAll(['kind', 'provider', 'activityId'])
+          && ref.provider is string
+          && ref.activityId is string
+          && (!('deviceId' in ref) || ref.deviceId is string))
+      );
+    }
+
+    function hasValidReconciliationManualDecision(decision) {
+      return decision is map
+        && decision.decision in ['link', 'unlink', 'keep_separate']
+        && decision.actor is string
+        && decision.decidedAt is string;
+    }
+
+    function hasValidReconciliation(reconciliation) {
+      return reconciliation is map
+        && reconciliation.state in ['single_source', 'matched', 'ambiguous']
+        && (!('confidence' in reconciliation) || (reconciliation.confidence is number && reconciliation.confidence >= 0 && reconciliation.confidence <= 1))
+        && (!('manualDecision' in reconciliation) || hasValidReconciliationManualDecision(reconciliation.manualDecision))
+        && (!('excludedSourceKeys' in reconciliation) || (reconciliation.excludedSourceKeys is list && reconciliation.excludedSourceKeys.size() <= 16));
+    }
+
+    function hasValidPerformedTrainingOccurrence(userId, occurrenceId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.performedOccurrenceId == occurrenceId
+        && data.keys().hasOnly(['schemaVersion', 'performedOccurrenceId', 'userId', 'status', 'mergedIntoOccurrenceId', 'startedAt', 'endedAt', 'localDate', 'modality', 'sourceRefs', 'reconciliation', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['schemaVersion', 'performedOccurrenceId', 'userId', 'status', 'sourceRefs', 'reconciliation', 'createdAt', 'updatedAt'])
+        && data.schemaVersion == 1
+        && data.status in ['active', 'merged']
+        && (!('mergedIntoOccurrenceId' in data) || data.mergedIntoOccurrenceId is string)
+        && (!('startedAt' in data) || data.startedAt is string)
+        && (!('endedAt' in data) || data.endedAt is string)
+        && (!('localDate' in data) || isValidActivityDate(data.localDate))
+        && (!('modality' in data) || data.modality is string)
+        && data.sourceRefs is list && data.sourceRefs.size() >= 1 && data.sourceRefs.size() <= 4
+        && (data.sourceRefs.size() < 1 || hasValidPerformedOccurrenceSourceRef(data.sourceRefs[0]))
+        && (data.sourceRefs.size() < 2 || hasValidPerformedOccurrenceSourceRef(data.sourceRefs[1]))
+        && (data.sourceRefs.size() < 3 || hasValidPerformedOccurrenceSourceRef(data.sourceRefs[2]))
+        && (data.sourceRefs.size() < 4 || hasValidPerformedOccurrenceSourceRef(data.sourceRefs[3]))
+        && hasValidReconciliation(data.reconciliation)
+        && data.createdAt is string
+        && data.updatedAt is string;
+    }
+
+    match /users/{userId}/performedTrainingOccurrences/{occurrenceId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidPerformedTrainingOccurrence(userId, occurrenceId);
+      allow update: if hasValidPerformedTrainingOccurrence(userId, occurrenceId)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.schemaVersion == resource.data.schemaVersion;
+      // Tombstoning is via `status: 'merged'`, never delete (ADR-0034 "not destructive").
+      allow delete: if false;
+    }
+
+    // `sourceLinkId` (the doc ID) is a normalized/possibly-hashed encoding of `sourceKey`
+    // (`training-occurrence/sourceIdentity.ts#encodeSourceKeyForDocId`) -- rules cannot
+    // re-derive that encoding, so identity integrity relies on the app always deriving the
+    // doc ID deterministically, not on a rules-level equality check here.
+    function hasValidPerformedOccurrenceSourceLink(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['schemaVersion', 'sourceKey', 'sourceKind', 'userId', 'performedOccurrenceId', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['schemaVersion', 'sourceKey', 'sourceKind', 'userId', 'performedOccurrenceId', 'createdAt', 'updatedAt'])
+        && data.schemaVersion == 1
+        && data.sourceKey is string && data.sourceKey.size() > 0
+        && data.sourceKind in ['structured_execution', 'provider_activity']
+        && data.performedOccurrenceId is string && data.performedOccurrenceId.size() > 0
+        && data.createdAt is string
+        && data.updatedAt is string;
+    }
+
+    match /users/{userId}/performedOccurrenceSourceLinks/{sourceLinkId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidPerformedOccurrenceSourceLink(userId);
+      // Only `performedOccurrenceId` may change on update -- the merge/unlink repair
+      // paths re-point a link to a survivor/new occurrence; `sourceKey`/`sourceKind`
+      // identity is otherwise immutable.
+      allow update: if hasValidPerformedOccurrenceSourceLink(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.sourceKey == resource.data.sourceKey
+        && request.resource.data.sourceKind == resource.data.sourceKind
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
     }
 
     function hasValidSessionResponse(userId, responseId) {

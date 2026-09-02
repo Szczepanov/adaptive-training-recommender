@@ -16,6 +16,7 @@ import type { DataState } from '../engine/dataState';
 import type {
     SessionExecution,
     SessionEntry,
+    SessionRestEvent,
     SessionSourceRef,
     SessionExecutionState,
 } from '../sessions/models';
@@ -23,6 +24,7 @@ import type { NormalizedExecutionRecord } from '../sessions/legacyStrengthAdapte
 import {
     parseSessionExecutionDocument,
     parseSessionEntryDocument,
+    parseSessionRestEventDocument,
 } from '../persistence/parsers/sessionExecution';
 
 export class SessionExecutionService {
@@ -56,6 +58,29 @@ export class SessionExecutionService {
             'session_executions',
             executionId,
             'entries',
+        );
+    }
+
+    private restEventRef(userId: string, executionId: string, restEventId: string) {
+        return doc(
+            this.db,
+            'users',
+            userId,
+            'session_executions',
+            executionId,
+            'restEvents',
+            restEventId,
+        );
+    }
+
+    private restEventsColl(userId: string, executionId: string) {
+        return collection(
+            this.db,
+            'users',
+            userId,
+            'session_executions',
+            executionId,
+            'restEvents',
         );
     }
 
@@ -134,6 +159,35 @@ export class SessionExecutionService {
 
     async getEntries(userId: string, executionId: string): Promise<SessionEntry[]> {
         return (await this.readEntries(userId, executionId)).entries;
+    }
+
+    /** PR 3 (training-occurrence plan): persists one durable performed-rest record. Uses
+     * the caller-supplied `restEventId` (not an auto-generated one) so a duplicate client
+     * call for the same rest instance -- e.g. a retried write after a transient failure --
+     * overwrites the same document instead of creating a second rest event
+     * (`sessions/restEventTiming.ts` itself is a pure function with no id of its own; the
+     * caller in `useSessionRunner.ts` mints one id per closed rest and reuses it on retry). */
+    async logRestEvent(userId: string, executionId: string, restEvent: SessionRestEvent): Promise<void> {
+        const now = new Date().toISOString();
+        const docPayload: SessionRestEvent = {
+            ...restEvent,
+            executionId,
+            createdAt: restEvent.createdAt || now,
+            updatedAt: now,
+        };
+        await setDoc(this.restEventRef(userId, executionId, restEvent.id), docPayload);
+    }
+
+    async getRestEvents(userId: string, executionId: string): Promise<SessionRestEvent[]> {
+        const snap = await getDocs(this.restEventsColl(userId, executionId));
+        const restEvents: SessionRestEvent[] = [];
+        for (const docSnap of snap.docs) {
+            const parsed = parseSessionRestEventDocument(docSnap.data(), docSnap.ref.path);
+            if (parsed.status === 'AVAILABLE' && parsed.data.executionId === executionId) {
+                restEvents.push(parsed.data);
+            }
+        }
+        return restEvents.sort((a, b) => a.startedAt.localeCompare(b.startedAt));
     }
 
     /**

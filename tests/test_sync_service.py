@@ -18,6 +18,7 @@ from garmin_sync.fit_activity import (
     FitRecordSample,
     FitTimerEvent,
 )
+from garmin_sync.fit_workout_identity import FIT_WORKOUT_FINGERPRINT_VERSION
 from garmin_sync.provider import (
     ProviderActivitiesResult,
     ProviderActivityDetailResult,
@@ -139,9 +140,15 @@ class HrFidelityFakeProvider(DetailFakeProvider):
         activity_hr_fidelity=True,
     )
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        workout_name: str | None = None,
+        workout_step_indices: tuple[int, ...] = (),
+    ) -> None:
         super().__init__()
         self.hr_fidelity_calls: list[str] = []
+        self._workout_name = workout_name
+        self._workout_step_indices = workout_step_indices
 
     def fetch_activity_hr_fidelity(self, activity_id: str) -> FitActivityEvidence:
         self.hr_fidelity_calls.append(activity_id)
@@ -159,6 +166,8 @@ class HrFidelityFakeProvider(DetailFakeProvider):
                 FitTimerEvent(start, "start"),
                 FitTimerEvent(start + timedelta(seconds=2), "stop"),
             ),
+            workout_step_indices=self._workout_step_indices,
+            workout_name=self._workout_name,
         )
 
 
@@ -1252,6 +1261,43 @@ def test_hr_fidelity_persists_compact_assessment_in_existing_activity_upsert() -
         "reasons": ["PROVENANCE_AMBIGUOUS"],
         "diagnosticVersion": "1.0.0",
     }
+
+
+def test_hr_fidelity_derives_fit_workout_fingerprint_from_the_same_decoded_evidence() -> None:
+    """PR 5 (training-occurrence plan, ADR-0034): no additional API call -- the
+    fingerprint comes from the exact same FitActivityEvidence already decoded for HR
+    fidelity."""
+    provider = HrFidelityFakeProvider(workout_name="5x5 Squat", workout_step_indices=(0, 1))
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_activity_hr_fidelity_enabled=True,
+    )
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {}
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+
+    payload = repo.upsert_activities.call_args.args[0][0][1]
+    assert payload["fitWorkoutFingerprint"].startswith(f"{FIT_WORKOUT_FINGERPRINT_VERSION}:")
+
+
+def test_hr_fidelity_omits_fit_workout_fingerprint_for_a_freeform_recording() -> None:
+    provider = HrFidelityFakeProvider()
+    settings = Settings(
+        app_user_id="test_uid_789",
+        garmin_activity_hr_fidelity_enabled=True,
+    )
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {}
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+
+    assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
+
+    payload = repo.upsert_activities.call_args.args[0][0][1]
+    assert "fitWorkoutFingerprint" not in payload
 
 
 def test_sync_service_skips_archiving_activity_with_missing_id():

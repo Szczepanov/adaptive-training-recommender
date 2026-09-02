@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { writeBatch } from 'firebase/firestore';
 import type {
     SessionDefinition,
@@ -21,10 +21,13 @@ import { playRestCompleteSound } from '../utils/audioFeedback';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { resolveEffectiveSession } from '../sessions/choiceResolution';
 import { resolvePostEntryRestSeconds } from '../sessions/restTiming';
+import { adjustRest, closeRest, startRest, type ActiveRestState, type RestEventFields } from '../sessions/restEventTiming';
+import type { RestEndReason } from '../sessions/models';
 import { resolveEffectiveInjuryConstraints, resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { ineligibleAlternativeOptionIds } from '../engine/sessionChoiceEligibility';
 import type { BodyRegion, RegionTissueResponse } from '../engine/models';
 import type { SessionCompletionPayload } from '../components/session/SessionCompletionSheet';
+import { reconcileStructuredCompletion } from '../training-occurrence';
 
 /** Two `ExerciseRef`s identify the same performed exercise. Used to scope a step's
  * per-exercise `setIndex` so a mid-session swap (`substituteStepExercise`) starts the
@@ -120,11 +123,57 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'unavailable'>('synced');
     const [lastRemovedEntry, setLastRemovedEntry] = useState<SessionEntry | null>(null);
 
+    // PR 3 (training-occurrence plan): the currently-running rest's durable start state,
+    // if any. A ref (not state) because closing it must read the latest value
+    // synchronously from inside the countdown interval/event handlers without waiting for
+    // a re-render, and clearing it immediately on close is what makes closeActiveRest
+    // idempotent against a duplicate/racing close call. Never reconstructed on
+    // restore/reload (see the restore effect above) -- an in-flight rest is simply lost
+    // across a reload rather than resumed or fabricated, satisfying "app
+    // interruption/resume does not fabricate duration".
+    const activeRestRef = useRef<ActiveRestState | null>(null);
+
+    /** Closes the active rest (if any) into a durable event and persists it with a
+     * deterministic id derived from the rest's own identity (afterEntryId + startedAt),
+     * so a retried write overwrites the same document rather than duplicating it. Returns
+     * the write promise so `completeSession`/`abandonSession` can await it -- a
+     * session-ending rest event must land before the execution's own state transition
+     * (see firestore.rules' restEvents `in_progress` gate). Other call sites intentionally
+     * fire-and-forget since they have no such ordering requirement.
+     *
+     * `activeRestRef` is cleared before the write settles (so a racing close can't
+     * double-fire), which means a failed write's rest data has nowhere durable to live if
+     * it's simply dropped. One inline retry covers the dominant real failure mode (a
+     * transient network blip) without a persistent cross-render retry queue, which would
+     * be a much larger change for a best-effort timing feature -- a retry that also fails
+     * still only loses this one rest's actual-duration data, not any entry/session state. */
+    const closeActiveRest = useCallback((endReason: RestEndReason): Promise<void> | undefined => {
+        const active = activeRestRef.current;
+        if (!active || !execution) return undefined;
+        activeRestRef.current = null;
+        const fields: RestEventFields = closeRest(active, new Date().toISOString(), endReason);
+        const restEventId = `rest-${Date.parse(fields.startedAt)}-${fields.afterEntryId}`;
+        const now = new Date().toISOString();
+        const restEvent = {
+            id: restEventId,
+            executionId: execution.executionId,
+            ...fields,
+            createdAt: now,
+            updatedAt: now,
+        };
+        return sessionExecutionService.logRestEvent(userId, execution.executionId, restEvent)
+            .catch(() => sessionExecutionService.logRestEvent(userId, execution.executionId, restEvent));
+    }, [execution, userId]);
+
     // Reloading or backgrounding must not create a second execution. Source-neutral
     // executions restore through the immutable source + prescription binding; fixtures
     // remain the only legacy path that does not carry a prescription hash.
     useEffect(() => {
         let cancelled = false;
+        // A restored in-progress execution never resumes a rest timer -- whatever rest was
+        // running before reload is simply lost, not reconstructed, so no fabricated
+        // duration can ever be persisted for it.
+        activeRestRef.current = null;
         sessionExecutionService.findInProgressExecution(userId)
             .then(async existing => {
                 if (!existing) return;
@@ -178,6 +227,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                     if (prev <= 1) {
                         playRestCompleteSound();
                         setIsRestRunning(false);
+                        closeActiveRest('timer_elapsed')?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
                         return 0;
                     }
                     return prev - 1;
@@ -187,7 +237,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         return () => {
             if (interval) clearInterval(interval);
         };
-    }, [isRestRunning, restSecondsRemaining]);
+    }, [isRestRunning, restSecondsRemaining, closeActiveRest]);
 
     // The athlete-facing effective view: recorded choices folded onto the raw, immutable
     // definition. `resolveEffectiveSession` always resolves actions from `rawDefinition`
@@ -238,6 +288,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         options: { occurrenceId?: string; prescriptionHash?: string } = {},
     ) => {
         if (isRestoring || execution?.state === 'in_progress') return;
+        activeRestRef.current = null;
         setRawDefinition(nextDefinition);
         setActiveBlockIndex(0);
         setActiveStepIndex(0);
@@ -349,10 +400,15 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         // optimistic boundary as the entry so a slow write can never resurrect a timer the athlete
         // already skipped or adjusted while the write was in flight. Structured warm-up steps do
         // not inherit the generic fallback when their author intentionally omitted rest.
+        // A still-running previous rest means this set started before its timer completed --
+        // close that prior rest as next_set_started (real elapsed time, not the prescribed
+        // duration) before starting the new one.
+        closeActiveRest('next_set_started')?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
         const restSec = resolvePostEntryRestSeconds(activeStep, activeBlock?.role);
         if (restSec > 0) {
             setRestSecondsRemaining(restSec);
             setIsRestRunning(true);
+            activeRestRef.current = startRest(entryId, now, restSec);
         }
 
         try {
@@ -360,8 +416,16 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             setSyncStatus('synced');
         } catch {
             setSyncStatus('unavailable');
+            // The rest timer above starts optimistically (same rationale as the optimistic
+            // setEntries call), tied to this entry's id. If the entry itself never
+            // persisted, a later timer/skip/session-close must not go on to write a durable
+            // rest event whose afterEntryId references an entry that doesn't exist.
+            if (activeRestRef.current?.afterEntryId === entryId) {
+                activeRestRef.current = null;
+                setIsRestRunning(false);
+            }
         }
-    }, [execution, activeStep, activeBlock, entries, userId]);
+    }, [execution, activeStep, activeBlock, entries, userId, closeActiveRest]);
 
     const logChoice = useCallback(async (choiceId: string, optionId: string, reason?: string) => {
         if (!execution || execution.state !== 'in_progress' || !activeBlock) return;
@@ -431,6 +495,9 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         }
     }, [execution, lastRemovedEntry, userId]);
 
+    // Not currently wired into any UI (no `afterEntryId` context to attribute a durable
+    // rest event to) -- left as local-only countdown state, matching its existing
+    // behavior, rather than fabricating a rest-event association it has no evidence for.
     const startRestTimer = useCallback((seconds: number) => {
         setRestSecondsRemaining(Math.max(1, seconds));
         setIsRestRunning(true);
@@ -439,10 +506,12 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const skipRestTimer = useCallback(() => {
         setRestSecondsRemaining(0);
         setIsRestRunning(false);
-    }, []);
+        closeActiveRest('skipped')?.catch(err => console.warn('[useSessionRunner] Failed to persist rest event:', err));
+    }, [closeActiveRest]);
 
     const addRestSeconds = useCallback((seconds: number) => {
         setRestSecondsRemaining(prev => Math.max(0, prev + seconds));
+        if (activeRestRef.current) activeRestRef.current = adjustRest(activeRestRef.current, seconds);
     }, []);
 
     const substituteStepExercise = useCallback((
@@ -495,6 +564,15 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
 
     const completeSession = useCallback(async (payload?: SessionCompletionPayload) => {
         if (!execution || execution.state !== 'in_progress') return;
+        // A rest still running when the session ends must be closed and persisted before
+        // the execution's own 'completed' transition below -- firestore.rules gates
+        // restEvents writes on the execution still being 'in_progress'.
+        setIsRestRunning(false);
+        try {
+            await closeActiveRest('session_ended');
+        } catch (err) {
+            console.warn('[useSessionRunner] Failed to persist rest event:', err);
+        }
         // Tissue values stay in the canonical daily check-in.  The execution is only an
         // attribution link, and a conflicting existing link is never overwritten.
         if (payload?.tissueFeedback?.length) {
@@ -562,15 +640,26 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         }, batch);
         await batch.commit();
         setExecution(completedExecution);
-    }, [execution, userId]);
+
+        // PR 1 (ADR-0034) shadow reconciliation: fire-and-forget, never affects
+        // completion UX or this function's behavior/return value.
+        void reconcileStructuredCompletion(userId, completedExecution, definition?.dominantModality)
+            .catch(err => console.warn('[training-occurrence] shadow reconciliation failed', err));
+    }, [execution, userId, definition, closeActiveRest]);
 
     const abandonSession = useCallback(async (notes?: string) => {
         if (!execution || execution.state !== 'in_progress') return;
+        setIsRestRunning(false);
+        try {
+            await closeActiveRest('session_ended');
+        } catch (err) {
+            console.warn('[useSessionRunner] Failed to persist rest event:', err);
+        }
         await sessionExecutionService.transitionExecution(userId, execution.executionId, 'abandoned', {
             notes,
         });
         setExecution(prev => prev ? { ...prev, state: 'abandoned' } : null);
-    }, [execution, userId]);
+    }, [execution, userId, closeActiveRest]);
 
     return {
         definition,

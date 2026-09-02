@@ -1113,6 +1113,7 @@ emulatorDescribe('Firestore security rules', () => {
     const sessionOccPath = `users/${ownerId}/session_occurrences/occ-unplanned-1`;
     const sessionExecPath = `users/${ownerId}/session_executions/exec-1`;
     const sessionEntryPath = `${sessionExecPath}/entries/entry-1`;
+    const sessionRestEventPath = `${sessionExecPath}/restEvents/rest-1`;
 
     function validSessionDefHeader() {
         return {
@@ -1198,6 +1199,21 @@ emulatorDescribe('Firestore security rules', () => {
                 weightKg: 60,
                 isWarmup: false,
             },
+        };
+    }
+
+    function validSessionRestEvent() {
+        return {
+            id: 'rest-1',
+            executionId: 'exec-1',
+            afterEntryId: 'entry-1',
+            prescribedSeconds: 90,
+            startedAt: '2026-08-18T10:05:00Z',
+            endedAt: '2026-08-18T10:06:30Z',
+            actualSeconds: 90,
+            endReason: 'timer_elapsed',
+            createdAt: '2026-08-18T10:06:30Z',
+            updatedAt: '2026-08-18T10:06:30Z',
         };
     }
 
@@ -1511,6 +1527,52 @@ emulatorDescribe('Firestore security rules', () => {
             ...validSessionEntry(),
             id: 'entry-2',
         }));
+    });
+
+    it('allows a rest event while in_progress, rejects it once terminal, and enforces retry-only-same-instance updates (PR 3, training-occurrence plan)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), validSessionExecution()))).resolves.toBeUndefined();
+
+        // Create while in progress.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionRestEventPath), validSessionRestEvent()))).resolves.toBeUndefined();
+
+        // A retried write for the same rest instance (identical afterEntryId/startedAt/
+        // endReason/createdAt) is allowed -- this is what makes a duplicate client event
+        // converge instead of duplicating.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionRestEventPath), validSessionRestEvent()))).resolves.toBeUndefined();
+
+        // The rest's own identity (afterEntryId/startedAt/endReason) is immutable on update.
+        await assertFails(setDoc(doc(ownerDb, sessionRestEventPath), {
+            ...validSessionRestEvent(), endReason: 'skipped',
+        }));
+        await assertFails(setDoc(doc(ownerDb, sessionRestEventPath), {
+            ...validSessionRestEvent(), afterEntryId: 'entry-2',
+        }));
+
+        // Delete is never allowed.
+        await assertFails(deleteDoc(doc(ownerDb, sessionRestEventPath)));
+
+        // Cross-user denial.
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, sessionRestEventPath)));
+        await assertFails(setDoc(doc(otherDb, sessionRestEventPath), validSessionRestEvent()));
+
+        // Once the execution is terminal, no new (or updated) rest event may be written.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), {
+            ...validSessionExecution(), state: 'completed', completedAt: '2026-08-18T10:45:00Z', updatedAt: '2026-08-18T10:45:00Z',
+        }))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, `${sessionExecPath}/restEvents/rest-2`), {
+            ...validSessionRestEvent(), id: 'rest-2', afterEntryId: 'entry-2',
+        }));
+    });
+
+    it('rejects a malformed rest event', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), validSessionExecution()))).resolves.toBeUndefined();
+
+        await assertFails(setDoc(doc(ownerDb, sessionRestEventPath), { ...validSessionRestEvent(), actualSeconds: -1 }));
+        await assertFails(setDoc(doc(ownerDb, sessionRestEventPath), { ...validSessionRestEvent(), endReason: 'not_a_real_reason' }));
+        await assertFails(setDoc(doc(ownerDb, sessionRestEventPath), { ...validSessionRestEvent(), id: 'wrong-id' }));
     });
 
     it('rejects an execution with an incomplete or unknown source reference', async () => {

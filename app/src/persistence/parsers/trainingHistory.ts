@@ -270,6 +270,9 @@ export function parseNormalizedGarminActivity(
     }
     if (raw.syncRunId !== undefined && typeof raw.syncRunId !== 'string') return invalid(documentPath, 'invalid-type', 'syncRunId');
     if (raw.syncedAt !== undefined && typeof raw.syncedAt !== 'string') return invalid(documentPath, 'invalid-type', 'syncedAt');
+    if (raw.startedAt !== undefined && typeof raw.startedAt !== 'string') return invalid(documentPath, 'invalid-type', 'startedAt');
+    if (raw.endedAt !== undefined && typeof raw.endedAt !== 'string') return invalid(documentPath, 'invalid-type', 'endedAt');
+    if (raw.fitWorkoutFingerprint !== undefined && typeof raw.fitWorkoutFingerprint !== 'string') return invalid(documentPath, 'invalid-type', 'fitWorkoutFingerprint');
 
     const powerInZones = parseZoneBuckets(raw.powerInZones);
     const hrInZones = parseZoneBuckets(raw.hrInZones);
@@ -290,6 +293,9 @@ export function parseNormalizedGarminActivity(
         data: {
             activityId,
             date: raw.date,
+            ...(typeof raw.startedAt === 'string' ? { startedAt: raw.startedAt } : {}),
+            ...(typeof raw.endedAt === 'string' ? { endedAt: raw.endedAt } : {}),
+            ...(typeof raw.fitWorkoutFingerprint === 'string' ? { fitWorkoutFingerprint: raw.fitWorkoutFingerprint } : {}),
             type: raw.type,
             durationMin: durationMin ?? null,
             trainingEffectAerobic: trainingEffectAerobic ?? null,

@@ -22,6 +22,8 @@ _MAX_RECORD_SAMPLES = 250_000
 _MAX_LAP_SUMMARIES = 10_000
 _MAX_TIMER_EVENTS = 20_000
 _MAX_ZONE_BUCKETS = 64
+_MAX_WORKOUT_STEP_INDICES = 500
+_MAX_WORKOUT_STEPS = 500
 _SESSION_MESSAGE_NUMBER = 18
 _ANTPLUS_HEART_RATE_DEVICE_TYPE = 120
 
@@ -60,6 +62,48 @@ class FitTimerEvent:
 
 
 @dataclass(frozen=True)
+class FitWorkoutStepEvidence:
+    """Identity-relevant fields from one FIT Workout Step message.
+
+    Garmin's FIT profile defines the workout by indexed duration/target/intensity
+    instructions. These semantic fields are materially stronger identity evidence than
+    merely observing that record/lap samples referenced step indexes 0..N.
+    """
+
+    message_index: int | None
+    name: str | None
+    duration_type: str | int | None
+    duration_value: float | None
+    target_type: str | int | None
+    target_value: float | None
+    custom_target_value_low: float | None
+    custom_target_value_high: float | None
+    intensity: str | int | None
+    equipment: str | int | None
+
+
+class FitWorkoutStepIndices(tuple):
+    """Tuple-compatible observed step indexes with optional semantic definition metadata.
+
+    The existing sync boundary already passes `workout_step_indices` into the fingerprint
+    function. Keeping this value tuple-compatible avoids widening that service API while
+    allowing the decoder to attach the stronger Workout Step definition for consumers that
+    understand it. Normal tuple behavior/equality is unchanged for existing callers.
+    """
+
+    workout_steps: tuple[FitWorkoutStepEvidence, ...]
+
+    def __new__(
+        cls,
+        values: list[int] | tuple[int, ...],
+        workout_steps: tuple[FitWorkoutStepEvidence, ...] = (),
+    ) -> "FitWorkoutStepIndices":
+        instance = super().__new__(cls, values)
+        instance.workout_steps = workout_steps
+        return instance
+
+
+@dataclass(frozen=True)
 class FitActivityEvidence:
     """Compact decoded evidence; callers must not persist ``records`` verbatim."""
 
@@ -69,6 +113,14 @@ class FitActivityEvidence:
     lap_average_heart_rate_bpm: tuple[float, ...]
     time_in_hr_zone_seconds: tuple[float, ...]
     timer_events: tuple[FitTimerEvent, ...]
+    # PR 5 (training-occurrence plan, ADR-0034 "FIT structured-workout identity"):
+    # `workout_steps` is the semantic definition when the Activity FIT embeds Workout /
+    # Workout Step messages. `workout_step_indices` is observed execution linkage from
+    # Lap.workout_step_index (plus the legacy record-level fallback) and is intentionally
+    # weaker evidence when the definition itself is absent.
+    workout_step_indices: tuple[int, ...] = ()
+    workout_name: str | None = None
+    workout_steps: tuple[FitWorkoutStepEvidence, ...] = ()
 
 
 def decode_activity_original(original: bytes) -> FitActivityEvidence:
@@ -81,6 +133,23 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
     timer_events: list[FitTimerEvent] = []
     average_heart_rate_bpm: float | None = None
     session_count = 0
+    workout_step_indices: list[int] = []
+    seen_workout_step_indices: set[int] = set()
+    workout_name_from_session: str | None = None
+    workout_name_from_definition: str | None = None
+    workout_definition_count = 0
+    workout_steps: list[FitWorkoutStepEvidence] = []
+
+    def remember_workout_step_index(step_index: int | None) -> None:
+        if step_index is None or step_index in seen_workout_step_indices:
+            return
+        _guard_capacity(
+            workout_step_indices,
+            _MAX_WORKOUT_STEP_INDICES,
+            "workout step index",
+        )
+        seen_workout_step_indices.add(step_index)
+        workout_step_indices.append(step_index)
 
     try:
         with fitdecode.FitReader(
@@ -121,6 +190,10 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                             power_watts=_number(_value(message, "power")),
                         )
                     )
+                    # Retain the pre-PR hardening record-level field as a compatibility
+                    # fallback for files/devices exposing it, but do not treat it as a
+                    # semantic workout definition.
+                    remember_workout_step_index(_integer(_value(message, "workout_step")))
                 elif name == "event":
                     event = _value(message, "event")
                     if event == "timer" or event == 0:
@@ -138,12 +211,45 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                         session_zones = _numbers(_value(message, "time_in_hr_zone"))
                         if session_zones:
                             time_in_hr_zone_seconds = _bounded_zone_values(session_zones)
+                        # Some Garmin-origin activity files expose this convenient session
+                        # alias. The FIT-standard Workout.wkt_name below is authoritative
+                        # when present.
+                        workout_name_from_session = _text(_value(message, "workout_name"))
                     else:
                         # A FIT can legitimately contain several sport sessions. This
                         # boundary has only one activity-level summary slot, so choosing
                         # the last session would falsely label it as whole-activity HR.
                         average_heart_rate_bpm = None
                         time_in_hr_zone_seconds = []
+                        workout_name_from_session = None
+                elif name == "workout":
+                    workout_definition_count += 1
+                    if workout_definition_count == 1:
+                        workout_name_from_definition = _text(_value(message, "wkt_name"))
+                    else:
+                        # The Activity profile allows at most one Workout message. Do not
+                        # manufacture one fingerprint by blending multiple definitions.
+                        workout_name_from_definition = None
+                elif name == "workout_step":
+                    _guard_capacity(workout_steps, _MAX_WORKOUT_STEPS, "workout step")
+                    workout_steps.append(
+                        FitWorkoutStepEvidence(
+                            message_index=_integer(_value(message, "message_index")),
+                            name=_text(_value(message, "wkt_step_name")),
+                            duration_type=_identifier(_value(message, "duration_type")),
+                            duration_value=_number(_value(message, "duration_value")),
+                            target_type=_identifier(_value(message, "target_type")),
+                            target_value=_number(_value(message, "target_value")),
+                            custom_target_value_low=_number(
+                                _value(message, "custom_target_value_low")
+                            ),
+                            custom_target_value_high=_number(
+                                _value(message, "custom_target_value_high")
+                            ),
+                            intensity=_identifier(_value(message, "intensity")),
+                            equipment=_identifier(_value(message, "equipment")),
+                        )
+                    )
                 elif name == "lap":
                     average = _number(_value(message, "avg_heart_rate"))
                     if average is not None:
@@ -153,6 +259,10 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                             "lap HR summary",
                         )
                         lap_average_heart_rate_bpm.append(average)
+                    # FIT Activity files typically associate each completed workout step
+                    # with a Lap via workout_step_index. This is execution linkage, not the
+                    # definition itself, so it only backs the fallback fingerprint path.
+                    remember_workout_step_index(_integer(_value(message, "workout_step_index")))
                 elif name == "time_in_zone" and session_count <= 1 and not time_in_hr_zone_seconds:
                     # FIT time-in-zone is an array and can be scoped to session/lap via
                     # reference_mesg/reference_index. Only session-scoped data is a safe
@@ -169,6 +279,12 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
             "Original activity FIT could not be decoded safely."
         ) from error
 
+    # Multiple Workout messages violate the Activity-profile expectation and make the
+    # step list ambiguous, so expose no semantic definition rather than hashing a blend.
+    semantic_workout_steps = tuple(workout_steps) if workout_definition_count <= 1 else ()
+    workout_name = workout_name_from_definition or workout_name_from_session
+    observed_step_indices = FitWorkoutStepIndices(workout_step_indices, semantic_workout_steps)
+
     return FitActivityEvidence(
         devices=tuple(devices),
         records=tuple(records),
@@ -176,6 +292,9 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
         lap_average_heart_rate_bpm=tuple(lap_average_heart_rate_bpm),
         time_in_hr_zone_seconds=tuple(time_in_hr_zone_seconds),
         timer_events=tuple(timer_events),
+        workout_step_indices=observed_step_indices,
+        workout_name=workout_name,
+        workout_steps=semantic_workout_steps,
     )
 
 
@@ -263,6 +382,12 @@ def _integer(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value
+
+
+def _text(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
 
 
 def _identifier(value: Any) -> str | int | None:

@@ -1637,6 +1637,12 @@ export interface ActivityExerciseSet {
 export interface NormalizedGarminActivity {
     activityId: string;
     date: string;
+    /** Absolute UTC instants derived from Garmin's startTimeGMT + duration (ADR-0034) --
+     * distinct from `date`, which is a Warsaw-local calendar day. Reconciliation requires
+     * absolute-timestamp overlap/proximity, not date-only matching; both are absent for
+     * activities ingested before this field existed, or when Garmin omitted startTimeGMT. */
+    startedAt?: string;
+    endedAt?: string;
     type: string;
     durationMin: number | null;
     trainingEffectAerobic: number | null;
@@ -1657,6 +1663,14 @@ export interface NormalizedGarminActivity {
     runningDynamics?: RunningDynamics;
     exerciseSets?: ActivityExerciseSet[];
     hrMeasurement?: HrMeasurement;
+    /** PR 5 (training-occurrence plan, ADR-0034 "FIT structured-workout identity"): a
+     * versioned fingerprint of a device-recorded FIT workout structure (workout name +
+     * step-index set), present only when Garmin activity HR-fidelity FIT decoding is
+     * enabled and found workout evidence. This is Garmin's on-device workout structure,
+     * not an Adaptive-authored prescription -- Adaptive does not push structured workouts
+     * to Garmin devices, so nothing yet correlates against this field in reconciliation
+     * scoring. Absence means no decodable workout structure, not "not yet computed". */
+    fitWorkoutFingerprint?: string;
     syncRunId?: string;
     syncedAt?: string;
 }

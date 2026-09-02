@@ -7,6 +7,7 @@ import {
     validateSessionOccurrence,
     validateSessionExecution,
     validateSessionEntry,
+    validateSessionRestEvent,
 } from './validation';
 
 const FIXTURES_DIR = join(dirname(fileURLToPath(import.meta.url)), 'fixtures');
@@ -190,5 +191,59 @@ describe('Session Validation (M2.1 / ADR-0023)', () => {
             });
             expect(badReason.ok).toBe(false);
         });
+    });
+});
+
+describe('validateSessionRestEvent (PR 3, training-occurrence plan)', () => {
+    function validRestEvent(overrides: Record<string, unknown> = {}) {
+        return {
+            id: 'rest-1',
+            executionId: 'exec-1',
+            afterEntryId: 'entry-1',
+            prescribedSeconds: 90,
+            startedAt: '2026-08-18T10:05:00Z',
+            endedAt: '2026-08-18T10:06:30Z',
+            actualSeconds: 90,
+            endReason: 'timer_elapsed',
+            createdAt: '2026-08-18T10:06:30Z',
+            updatedAt: '2026-08-18T10:06:30Z',
+            ...overrides,
+        };
+    }
+
+    it('accepts a valid rest event, with or without optional prescribedSeconds/adjustmentSeconds', () => {
+        expect(validateSessionRestEvent(validRestEvent()).ok).toBe(true);
+        expect(validateSessionRestEvent({
+            id: 'rest-1', executionId: 'exec-1', afterEntryId: 'entry-1',
+            startedAt: '2026-08-18T10:05:00Z', endedAt: '2026-08-18T10:06:30Z',
+            actualSeconds: 90, endReason: 'timer_elapsed',
+            createdAt: '2026-08-18T10:06:30Z', updatedAt: '2026-08-18T10:06:30Z',
+        }).ok).toBe(true);
+        expect(validateSessionRestEvent(validRestEvent({ adjustmentSeconds: 30 })).ok).toBe(true);
+    });
+
+    it.each(['timer_elapsed', 'skipped', 'next_set_started', 'session_ended'])('accepts endReason %s', (endReason) => {
+        expect(validateSessionRestEvent(validRestEvent({ endReason })).ok).toBe(true);
+    });
+
+    it('rejects an unknown endReason', () => {
+        expect(validateSessionRestEvent(validRestEvent({ endReason: 'made_up' })).ok).toBe(false);
+    });
+
+    it('rejects a negative actualSeconds', () => {
+        expect(validateSessionRestEvent(validRestEvent({ actualSeconds: -1 })).ok).toBe(false);
+    });
+
+    it('rejects a missing afterEntryId', () => {
+        expect(validateSessionRestEvent({
+            id: 'rest-1', executionId: 'exec-1',
+            startedAt: '2026-08-18T10:05:00Z', endedAt: '2026-08-18T10:06:30Z',
+            actualSeconds: 90, endReason: 'timer_elapsed',
+            createdAt: '2026-08-18T10:06:30Z', updatedAt: '2026-08-18T10:06:30Z',
+        }).ok).toBe(false);
+    });
+
+    it('rejects a non-finite adjustmentSeconds', () => {
+        expect(validateSessionRestEvent(validRestEvent({ adjustmentSeconds: Number.NaN })).ok).toBe(false);
     });
 });
