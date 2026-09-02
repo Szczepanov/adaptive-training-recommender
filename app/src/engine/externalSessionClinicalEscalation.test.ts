@@ -156,9 +156,15 @@ function adjudicate(s: ExternalPlanSession) {
 
 describe('SEP-C4 imported-session clinical escalation', () => {
     it('skips an imported training session instead of merely deferring it as readiness recovery', () => {
-        const verdict = adjudicate(session({ isEvent: false }));
+        const verdict = adjudicate(session({
+            isEvent: false,
+            scaling: {
+                fallback: 'Do 20 minutes of easy spinning instead.',
+            },
+        }));
         expect(verdict.decision).toBe('skip');
         expect(verdict.executionDose).toBeUndefined();
+        expect(verdict.fallbackSuggestion).toBeUndefined();
         expect(verdict.rationale).toContain('training prescriptions are paused');
     });
 
