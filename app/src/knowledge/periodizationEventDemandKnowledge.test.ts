@@ -19,7 +19,7 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
         expect(result.valid).toBe(true);
     });
 
-    it('supports progressive block concentration without validating the product phase scalars', () => {
+    it('records block periodization as viable without claiming universal superiority or validating product scalars', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.blockStructuredProgression);
         expect(claim).toMatchObject({
             claimType: 'intervention',
@@ -27,8 +27,8 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             recommendationStrength: 'conditional',
             maturity: 'emerging',
         });
-        // The low certainty is not incidental: the meta-analysis authors flag the pool themselves.
-        expect(claim.limitations.join(' ')).toContain('low methodological quality');
+        expect(claim.statement).toContain('does not establish consistent superiority');
+        expect(claim.limitations.join(' ')).toContain('no clear 8-12-week model advantage');
         expect(claim.limitations.join(' ')).toContain('35/84');
 
         const meta = getKnowledgeSource('MOLMEN-2019-BLOCK-PERIODIZATION-META');
@@ -39,17 +39,37 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             { type: 'doi', value: '10.2147/OAJSM.S180408' },
         ]));
 
+        // The cyclist-specific review and load-matched randomized trial are the counterweight to
+        // the older positive pooled signal: the registry must preserve both sides of the evidence.
+        const cyclistReview = getKnowledgeSource('GALAN-RIOJA-2023-CYCLIST-PERIODIZATION-REVIEW');
+        expect(cyclistReview.sourceType).toBe('systematic_review');
+        expect(cyclistReview.externalIds).toEqual(expect.arrayContaining([
+            { type: 'pmid', value: '36640771' },
+            { type: 'doi', value: '10.1123/ijspp.2022-0302' },
+        ]));
+        expect(cyclistReview.notes).toContain('no evidence currently favors a specific periodization model');
+
+        const cyclistTrial = getKnowledgeSource('ALMQUIST-2022-CYCLIST-PERIODIZATION-RCT');
+        expect(cyclistTrial.sourceType).toBe('randomized_trial');
+        expect(cyclistTrial.externalIds).toEqual(expect.arrayContaining([
+            { type: 'pmid', value: '35299664' },
+            { type: 'pmcid', value: 'PMC8921659' },
+            { type: 'doi', value: '10.3389/fphys.2022.837634' },
+        ]));
+        expect(cyclistTrial.notes).toContain('no between-group performance advantage');
+
         // Issurin is the conceptual framework, deliberately not registered as a review synthesis.
         const framework = getKnowledgeSource('ISSURIN-2010-PERIODIZATION-REVIEW');
         expect(framework.sourceType).toBe('expert_practice');
         expect(framework.notes).toContain('not itself a systematic review');
     });
 
-    it('supports duration/format-dependent performance limiters without validating preset vectors', () => {
+    it('supports duration/morphology-dependent performance limiters without validating preset vectors', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.eventDurationLimiterShift);
         expect(claim).toMatchObject({ claimType: 'descriptive', evidenceCertainty: 'moderate', maturity: 'established' });
-        expect(claim.statement).toContain('maximal oxygen uptake');
-        expect(claim.statement).toContain('lactate threshold');
+        expect(claim.statement).toContain('maximal aerobic');
+        expect(claim.statement).toContain('sustainable fraction');
+        expect(claim.statement).toContain('fatigue resistance');
         expect(claim.limitations.join(' ')).toContain('validate the exact 0-1 numeric value');
         expect(claim.limitations.join(' ')).toContain('strength_meet');
 
@@ -59,8 +79,21 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             { type: 'pmcid', value: 'PMC2375555' },
             { type: 'doi', value: '10.1113/jphysiol.2007.143834' },
         ]));
-        expect(getKnowledgeSource('SANDERS-2021-CYCLING-POWER-PROFILE-REVIEW').externalIds)
-            .toEqual(expect.arrayContaining([{ type: 'pmid', value: '33271501' }]));
+
+        const cyclingReview = getKnowledgeSource('SANDERS-2021-CYCLING-POWER-PROFILE-REVIEW');
+        expect(cyclingReview.externalIds).toEqual(expect.arrayContaining([{ type: 'pmid', value: '33271501' }]));
+        expect(cyclingReview.notes).toContain('stage type materially changes');
+        expect(cyclingReview.notes).not.toContain('time trials');
+
+        const directRaceData = getKnowledgeSource('EBERT-2006-ROAD-CYCLING-POWER-COHORT');
+        expect(directRaceData.sourceType).toBe('cohort');
+        expect(directRaceData.externalIds).toEqual(expect.arrayContaining([
+            { type: 'pmid', value: '19124890' },
+            { type: 'doi', value: '10.1123/ijspp.1.4.324' },
+        ]));
+        expect(directRaceData.notes).toContain('207 races');
+        expect(directRaceData.notes).toContain('Criteriums');
+
         expect(getKnowledgeSource('SHARMA-2020-TRIATHLON-DISTANCE-PHYSIOLOGY-CHAPTER').externalIds)
             .toEqual(expect.arrayContaining([{ type: 'doi', value: '10.1007/978-3-030-22357-1_2' }]));
     });
@@ -93,7 +126,7 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
         const CYCLING_TT_DEMAND = resolveDemandProfile('cycling_event', 'time_trial');
         const CYCLING_CRIT_DEMAND = resolveDemandProfile('cycling_event', 'criterium');
 
-        it('pins the registered preset examples to the authored EVENT_PRESETS table', () => {
+        it('pins the registered preset examples and source prose to the authored EVENT_PRESETS table', () => {
             const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.eventDemandPresetsPolicy);
 
             expect(claim.statement).toContain('thresholdPower (0.95)');
@@ -107,11 +140,15 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             expect(CYCLING_CRIT_DEMAND.sprintPower).toBe(0.7);
             expect(CYCLING_CRIT_DEMAND.aerobicEndurance).toBe(0.5);
 
-            // The claim states a preset count; drift here means the claim is stale. This
-            // assertion already caught one: the claim was first authored saying 22.
+            // The claim and its product-policy source both state a preset count; drift in either
+            // means the knowledge artifact is stale. The original draft incorrectly said 22.
             const presetCount = Object.values(EVENT_PRESETS).reduce((total, list) => total + list.length, 0);
             expect(claim.statement).toContain('19 authored event presets');
             expect(presetCount).toBe(19);
+
+            const policySource = getKnowledgeSource('PRODUCT-PERIODIZATION-EVENT-DEMAND-POLICY-V1');
+            expect(policySource.notes).toContain('19 authored event-preset demand vectors');
+            expect(policySource.notes).not.toContain('22 authored');
         });
 
         it('pins the registered phase boundaries and scales to evaluatePeriodizationPhase output', () => {
