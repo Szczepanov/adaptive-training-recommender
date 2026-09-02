@@ -481,7 +481,7 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
             expect(subjective.redFlagFindings).toEqual(findings);
         });
 
-        it('fails closed when redFlags.present is true but categories is empty/absent', () => {
+        it('fails closed when redFlags.present is true but categories is empty', () => {
             const checkin = testCheckin({
                 painOrInjury: true,
                 redFlags: { present: true, categories: [] },
@@ -489,6 +489,17 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
             // No resolved category finding: categories is empty, so resolveRedFlagFindings
             // has nothing to map. The disclosed present flag must still surface as a red
             // flag source rather than silently disappearing.
+            expect(resolveRedFlagFindings(checkin)).toEqual([]);
+            expect(resolveClinicalEnvelopeSources(checkin)).toContain('red_flag');
+        });
+
+        it('fails closed when redFlags.present is true and categories is absent entirely', () => {
+            const checkin = testCheckin({
+                painOrInjury: true,
+                redFlags: { present: true },
+            });
+            // categories is optional on RedFlagCheckin; omitting it entirely (not just an
+            // empty array) must still fail closed the same way.
             expect(resolveRedFlagFindings(checkin)).toEqual([]);
             expect(resolveClinicalEnvelopeSources(checkin)).toContain('red_flag');
         });

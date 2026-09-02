@@ -869,9 +869,15 @@ describe('session adjustment engine', () => {
             // with an empty redFlagFindings array. evaluateEnvelopes already treats that as an
             // active red flag; evaluateTraining's mode-selection override must match, or an
             // active template could still be selected instead of Rest.
+            //
+            // painFlag is deliberately false here: painFlag: true would independently trigger
+            // `clinicalRecoverOverride` and force recover regardless of `redFlagOverride`,
+            // masking a regression in the clinicalEnvelopeSources check this test exists to
+            // cover. Isolating painFlag: false means only redFlagOverride's own
+            // clinicalEnvelopeSources.includes('red_flag') check can produce recover here.
             const readiness: DailyReadiness = {
                 subjective: neutralSubjective({
-                    painFlag: true,
+                    painFlag: false,
                     clinicalEnvelopeSources: ['red_flag'],
                     redFlagFindings: [],
                 }),

@@ -97,6 +97,6 @@ Focused regression tests added during review:
 - `injuryPolicyLatencySafety.test.ts:deriveTissueSeverity` — missing latency follow-up fails closed;
 - `subjectiveThresholdSafety.test.ts:evaluateReadinessAndSafetyEnvelope` — 8/10 fatigue or soreness cannot be diluted by other good answers;
 - `externalSessionClinicalEscalation.test.ts:adjudicate` — imported sessions/events cannot bypass escalation, imported training does not expose a fallback suggestion, and imported-event copy retains the urgent cardiopulmonary/neurological warning language;
-- `MorningDecisionCardClinicalEscalation.test.tsx` — clinical escalation keeps rationale visible while suppressing workout identity/metrics, stale alternative rationale, start/view/export/alternative/workout-step surfaces;
+- `MorningDecisionCardClinicalEscalation.test.tsx:MorningDecisionCard clinical escalation` — clinical escalation keeps rationale visible while suppressing workout identity/metrics, stale alternative rationale, start/view/export/alternative/workout-step surfaces;
 - `redFlagIndependence.test.ts:mapCheckinToSubjectiveInput` — explicit red flags remain independent from the pain/injury toggle;
 - `redFlagReasonLabel.test.ts:evaluateEnvelopes` — the `systemic_infection` storage key renders as the non-diagnostic “systemic / cardiopulmonary warning” in user-facing clinical rationale.
