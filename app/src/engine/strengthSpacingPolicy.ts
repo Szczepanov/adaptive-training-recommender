@@ -1,11 +1,15 @@
 /**
  * Strength spacing policy (PR 2 / ADR-0034 cutover).
  *
- * Implements the domain rule that a completed strength exposure (app or provider/Garmin)
- * requires recovery spacing before another full-body or heavy strength session can be scheduled.
+ * This module intentionally does not invent an evidence-derived "48 hour" rule. It compares
+ * athlete-local calendar dates and applies the minimum local-day gap supplied by the existing
+ * planner/workout policy. Canonical performed-training facts are sufficient to establish that
+ * strength happened even when exact workout identity or resistance-training dose is unknown.
  *
- * Consecutive full-body resistance training days violate physiological recovery and adaptation.
- * Upper-body / trunk / mobility variants remain admissible if recovery-safe.
+ * Broad/full/lower-body strength exposure can suppress another broad/full/lower-body candidate
+ * until the configured local-day gap is satisfied. Upper-body-only candidates remain the
+ * recovery-safe exception on a later date; same-day duplicate strength recommendations are
+ * rejected separately.
  */
 import type { SessionTemplate } from './models';
 import { getDayDiff } from '../utils/localDate';
@@ -26,11 +30,9 @@ export function classifyCandidateStrength(candidate: SessionTemplate): Candidate
     if (candidate.category === 'Full-body Strength') return 'full_body';
     if (candidate.category === 'Lower-body Strength') return 'lower_body';
     if (candidate.category === 'Upper-body Strength') return 'upper_body';
-    if (candidate.modality === 'Strength') {
-        const lowerCost = candidate.costProfile?.lowerBody ?? 0;
-        if (lowerCost >= 0.4) return 'full_body';
-        return 'upper_body';
-    }
+    // An uncategorized Strength candidate is not proven upper-body-only, so fail closed as
+    // broad/full-body for spacing. This avoids another arbitrary cost threshold in this policy.
+    if (candidate.modality === 'Strength') return 'full_body';
     return 'none';
 }
 
@@ -57,22 +59,29 @@ export function classifyPriorStrength(exp: StrengthExposureLike): PriorStrengthC
 }
 
 export interface StrengthSpacingOptions {
-    /** Explicit policy override permitting consecutive strength (e.g. specialized microcycles) */
-    allowConsecutiveFullBody?: boolean;
+    /**
+     * Minimum athlete-local calendar-day gap for broad/full/lower strength candidates.
+     * The caller must supply this from planner/workout policy; this module owns no default.
+     */
+    minimumGapDays: number;
+}
+
+function normalizedMinimumGapDays(value: number): number {
+    if (!Number.isFinite(value)) return 1;
+    return Math.max(1, Math.trunc(value));
 }
 
 export function evaluateStrengthSpacingStatus(
     exposures: readonly StrengthExposureLike[],
     targetDate: string,
     candidate: SessionTemplate,
-    options: StrengthSpacingOptions = {},
+    options: StrengthSpacingOptions,
 ): StrengthSpacingStatus {
     const candidateClass = classifyCandidateStrength(candidate);
     if (candidateClass === 'none') {
         return { isRestricted: false };
     }
 
-    // Find all past or same-day strength exposures
     const strengthExposures = exposures
         .map(exp => {
             const date = exp.localDate ?? exp.date ?? '';
@@ -80,13 +89,12 @@ export function evaluateStrengthSpacingStatus(
             return {
                 date,
                 priorClass,
-                exposure: exp,
                 performedOccurrenceId: exp.performedOccurrenceId,
                 diffDays: date ? getDayDiff(targetDate, date) : Number.POSITIVE_INFINITY,
             };
         })
         .filter(exp => exp.priorClass !== 'none' && exp.diffDays >= 0)
-        .sort((a, b) => a.diffDays - b.diffDays); // closest in time first
+        .sort((a, b) => a.diffDays - b.diffDays); // closest athlete-local date first
 
     if (strengthExposures.length === 0) {
         return { isRestricted: false };
@@ -94,63 +102,36 @@ export function evaluateStrengthSpacingStatus(
 
     const mostRecent = strengthExposures[0];
 
-    // Same day (diffDays === 0)
     if (mostRecent.diffDays === 0) {
         return {
             isRestricted: true,
             reasonCode: 'SAME_DAY_STRENGTH_VIOLATION',
-            rationale: `Another strength session is already recorded for today (${mostRecent.date}). Multiple strength sessions on the same calendar date are restricted.`,
+            rationale: `Strength is already recorded on the target local date (${mostRecent.date}); the automatic recommender will not schedule a second strength session on that date.`,
             lastStrengthLocalDate: mostRecent.date,
             daysSinceLastStrength: 0,
             mostRecentOccurrenceId: mostRecent.performedOccurrenceId,
         };
     }
 
-    // Previous day (diffDays === 1)
-    if (mostRecent.diffDays === 1) {
-        if (options.allowConsecutiveFullBody) {
-            return {
-                isRestricted: false,
-                daysSinceLastStrength: 1,
-                lastStrengthLocalDate: mostRecent.date,
-                mostRecentOccurrenceId: mostRecent.performedOccurrenceId,
-            };
-        }
-
-        const priorClass = mostRecent.priorClass;
-
-        // If prior was full-body, lower-body, or general strength:
-        // Consecutive full-body or lower-body loading is restricted (requires 48h spacing)
-        if (priorClass === 'full_body' || priorClass === 'lower_body' || priorClass === 'general_strength') {
-            if (candidateClass === 'full_body' || candidateClass === 'lower_body') {
-                return {
-                    isRestricted: true,
-                    reasonCode: 'RECENT_STRENGTH_SPACING_VIOLATION',
-                    rationale: `Strength exposure completed on ${mostRecent.date}. Consecutive-day full-body or lower-body strength training is restricted for neuromuscular and tissue recovery (requires 48h spacing).`,
-                    lastStrengthLocalDate: mostRecent.date,
-                    daysSinceLastStrength: 1,
-                    mostRecentOccurrenceId: mostRecent.performedOccurrenceId,
-                };
-            }
-        }
-
-        // If prior was strictly upper-body, consecutive upper-body loading is restricted
-        if (priorClass === 'upper_body' && candidateClass === 'upper_body') {
-            return {
-                isRestricted: true,
-                reasonCode: 'RECENT_STRENGTH_SPACING_VIOLATION',
-                rationale: `Upper-body strength session completed on ${mostRecent.date}. Consecutive-day upper-body loading is restricted for recovery.`,
-                lastStrengthLocalDate: mostRecent.date,
-                daysSinceLastStrength: 1,
-                mostRecentOccurrenceId: mostRecent.performedOccurrenceId,
-            };
-        }
-
-        // Upper-body strength after general/full-body, or full-body after upper-body, is allowable
+    // Upper-body-only is the explicit later-date exception. Likewise, a proven upper-body-only
+    // prior session does not by itself suppress a fresh full/lower-body candidate.
+    if (candidateClass === 'upper_body' || mostRecent.priorClass === 'upper_body') {
         return {
             isRestricted: false,
-            daysSinceLastStrength: 1,
+            daysSinceLastStrength: mostRecent.diffDays,
             lastStrengthLocalDate: mostRecent.date,
+            mostRecentOccurrenceId: mostRecent.performedOccurrenceId,
+        };
+    }
+
+    const minimumGapDays = normalizedMinimumGapDays(options.minimumGapDays);
+    if (mostRecent.diffDays < minimumGapDays) {
+        return {
+            isRestricted: true,
+            reasonCode: 'RECENT_STRENGTH_SPACING_VIOLATION',
+            rationale: `Strength exposure completed on ${mostRecent.date}; this candidate requires a minimum ${minimumGapDays}-day athlete-local date gap under the planner spacing policy.`,
+            lastStrengthLocalDate: mostRecent.date,
+            daysSinceLastStrength: mostRecent.diffDays,
             mostRecentOccurrenceId: mostRecent.performedOccurrenceId,
         };
     }
