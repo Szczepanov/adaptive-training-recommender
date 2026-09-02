@@ -48,6 +48,23 @@ The distinction is structural:
 
 An explicitly empty canonical performed-facts snapshot remains authoritative over legacy completed history.
 
+### Prepared snapshots
+
+The legacy Firestore `TrainingHistorySnapshot` builder does not yet embed descriptor-scoped performed facts. Reusing such a prepared snapshot therefore must not suppress the canonical occurrence read. `resolveTrainingIntent()` reuses embedded canonical facts only when their revision proves they were derived for the active coverage set; otherwise the live path re-fetches canonical facts for that descriptor.
+
+Injected/custom history providers remain self-contained for deterministic tests and simulations and can continue to omit canonical facts.
+
+### Week-ahead projections
+
+The week-ahead planner keeps two histories on purpose:
+
+- operational/projected history for fatigue, spacing and objective simulation;
+- coverage history containing canonical completed role facts plus hypothetical projected entries.
+
+Completed canonical facts are never reconstructed from the rolling planner's legacy history. Today/tomorrow/forecast recommendations are added with `source: 'projected'`, so they contribute to `projectedSessions` rather than falsely appearing in `completedSessions`.
+
+This preserves canonical truth while still allowing hypothetical future sessions to participate in feasibility and weekly-role allocation.
+
 ## Dose and phase remain coverage-state concerns
 
 Canonical role identity does not bypass existing plan constraints.
@@ -76,6 +93,9 @@ Without coverage-set scope in the revision, two semantically different snapshots
 7. Phase and minimum-dose checks still apply after semantic cutover.
 8. Legacy/projected histories retain their existing fallback because projected sessions may not have canonical occurrence facts yet.
 9. Snapshot revisions cannot alias two coverage-set interpretations of the same occurrence set.
+10. Prepared legacy history snapshots cannot suppress the live canonical fact read.
+11. Rolling week-ahead projections cannot turn canonical completed facts back into legacy-derived role credit.
+12. Hypothetical recommendations count as projected coverage, not completed coverage.
 
 ## Regression coverage
 
@@ -88,7 +108,10 @@ Without coverage-set scope in the revision, two semantically different snapshots
 - authoritative `creditKind: 'none'`;
 - disabled `semantic_confident` credit;
 - preservation of the aerobic minimum-duration gate;
-- exposure-only projection/test compatibility.
+- exposure-only projection/test compatibility;
+- projected-vs-completed coverage accounting.
+
+`trainingIntentCanonicalFacts.test.ts` verifies that prepared legacy snapshots do not suppress canonical reads, matching scoped facts are reused, and mismatched coverage-set facts are re-fetched.
 
 `performedTrainingFactsService.revision.test.ts` verifies that empty and non-empty snapshots with identical physical-occurrence inputs receive different revisions when derived under different coverage sets.
 
