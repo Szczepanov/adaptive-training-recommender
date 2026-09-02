@@ -31,7 +31,12 @@ import type {
     ReconciliationSourceFacts,
 } from './models';
 import { PERFORMED_OCCURRENCE_SCHEMA_VERSION } from './models';
-import { buildProjection, projectionAfterAttach, type OccurrenceProjection } from './projectionBuilder';
+import {
+    buildProjection,
+    mergeProjection,
+    projectionAfterAttach,
+    type OccurrenceProjection,
+} from './projectionBuilder';
 import { encodeSourceKeyForDocId, sourceKeyForRef } from './sourceIdentity';
 import { parsePerformedOccurrenceSourceLink, parsePerformedTrainingOccurrence } from './validation';
 
@@ -54,7 +59,8 @@ export class SourceLinkConflictError extends Error {
 }
 
 function newPerformedOccurrenceId(): string {
-    return `pto-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const uuid = globalThis.crypto?.randomUUID?.();
+    return uuid ? `pto-${uuid}` : `pto-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
 }
 
 function newOccurrenceDoc(
@@ -73,6 +79,48 @@ function newOccurrenceDoc(
         reconciliation: { state: 'single_source' },
         createdAt: now,
         updatedAt: now,
+    };
+}
+
+function projectionFromOccurrence(
+    occurrence: Pick<PerformedTrainingOccurrence, 'localDate' | 'modality' | 'startedAt' | 'endedAt'>,
+): OccurrenceProjection {
+    return {
+        ...(occurrence.localDate !== undefined ? { localDate: occurrence.localDate } : {}),
+        ...(occurrence.modality !== undefined ? { modality: occurrence.modality } : {}),
+        ...(occurrence.startedAt !== undefined ? { startedAt: occurrence.startedAt } : {}),
+        ...(occurrence.endedAt !== undefined ? { endedAt: occurrence.endedAt } : {}),
+    };
+}
+
+function uniqueSourceKeys(...groups: ReadonlyArray<readonly string[] | undefined>): string[] {
+    return [...new Set(groups.flatMap(group => group ?? []))];
+}
+
+/**
+ * Automatic reconciliation is allowed to advance state/confidence, but it must never
+ * erase a prior manual override or exclusion while doing so. This is the persistence-side
+ * enforcement of ADR-0034's "manual confirms/unlinks are sticky" rule; relying only on
+ * candidate filtering is insufficient because a later successful attach/merge also
+ * rewrites the reconciliation object.
+ */
+function withStickyReconciliation(
+    existing: ReconciliationProvenance,
+    next: ReconciliationProvenance,
+    inheritedExcludedSourceKeys: readonly string[] = [],
+    inheritedManualDecision?: ManualReconciliationDecision,
+): ReconciliationProvenance {
+    const excludedSourceKeys = uniqueSourceKeys(
+        existing.excludedSourceKeys,
+        next.excludedSourceKeys,
+        inheritedExcludedSourceKeys,
+    );
+    const manualDecision = next.manualDecision ?? existing.manualDecision ?? inheritedManualDecision;
+    return {
+        ...existing,
+        ...next,
+        ...(manualDecision ? { manualDecision } : {}),
+        ...(excludedSourceKeys.length > 0 ? { excludedSourceKeys } : {}),
     };
 }
 
@@ -225,7 +273,7 @@ export class PerformedTrainingOccurrenceRepository {
                 ...occurrence,
                 ...projectionAfterAttach(occurrence, facts),
                 sourceRefs: alreadyPresent ? occurrence.sourceRefs : [...occurrence.sourceRefs, facts.sourceRef],
-                reconciliation,
+                reconciliation: withStickyReconciliation(occurrence.reconciliation, reconciliation),
                 updatedAt: now,
             };
             transaction.set(this.occurrenceRef(userId, occurrence.performedOccurrenceId), updated);
@@ -246,9 +294,13 @@ export class PerformedTrainingOccurrenceRepository {
      * Detaches one source from `performedOccurrenceId` into its own fresh occurrence
      * (ADR-0034 "Manual reconciliation UX"). Never deletes the source link -- it is
      * re-pointed at the new occurrence, which is why the source-link rules only ever need
-     * to permit updating `performedOccurrenceId`, never deleting the document. Sticky:
-     * the source key is recorded in the survivor's `excludedSourceKeys` so a later sweep
-     * does not immediately re-propose the same pairing.
+     * to permit updating `performedOccurrenceId`, never deleting the document.
+     *
+     * The rejection is stored on BOTH resulting occurrences: whichever side a later
+     * repair/reconciliation sweep evaluates as the candidate must see the opposite source
+     * key as excluded. The detached occurrence also retains the old projection as a
+     * temporary fallback so it remains date-queryable/rebuildable even before its source
+     * is re-hydrated independently.
      */
     async unlinkSource(
         userId: string,
@@ -278,6 +330,7 @@ export class PerformedTrainingOccurrenceRepository {
                 ...(reason ? { reason } : {}),
             };
             const remainingRefs = occurrence.sourceRefs.filter(ref => sourceKeyForRef(ref) !== sourceKey);
+            const remainingSourceKeys = remainingRefs.map(sourceKeyForRef);
             const survivor: PerformedTrainingOccurrence = {
                 ...occurrence,
                 sourceRefs: remainingRefs,
@@ -285,14 +338,18 @@ export class PerformedTrainingOccurrenceRepository {
                     ...occurrence.reconciliation,
                     state: remainingRefs.length <= 1 ? 'single_source' : occurrence.reconciliation.state,
                     manualDecision: decision,
-                    excludedSourceKeys: [...(occurrence.reconciliation.excludedSourceKeys ?? []), sourceKey],
+                    excludedSourceKeys: uniqueSourceKeys(occurrence.reconciliation.excludedSourceKeys, [sourceKey]),
                 },
                 updatedAt: now,
             };
-            const detached = newOccurrenceDoc(userId, detachedRef, {}, now);
+            const detached = newOccurrenceDoc(userId, detachedRef, projectionFromOccurrence(occurrence), now);
             const detachedWithDecision: PerformedTrainingOccurrence = {
                 ...detached,
-                reconciliation: { ...detached.reconciliation, manualDecision: { ...decision, resultingState: 'single_source' } },
+                reconciliation: {
+                    ...detached.reconciliation,
+                    manualDecision: { ...decision, resultingState: 'single_source' },
+                    excludedSourceKeys: uniqueSourceKeys(remainingSourceKeys),
+                },
             };
 
             transaction.set(occRef, survivor);
@@ -309,6 +366,11 @@ export class PerformedTrainingOccurrenceRepository {
      * semantics"). The loser is tombstoned (`status: 'merged'`), never deleted, and its
      * source links are re-pointed to the survivor so future lookups by source key resolve
      * to the survivor via `followMergeChain`.
+     *
+     * Canonical identity choice is independent of field authority: if the deterministic
+     * survivor was provider-only and the loser carries the structured execution, the
+     * survivor keeps its stable ID but adopts the structured projection. Sticky manual
+     * exclusions from either record are also retained across the merge.
      */
     async mergeOccurrences(
         userId: string,
@@ -331,11 +393,23 @@ export class PerformedTrainingOccurrenceRepository {
             const now = new Date().toISOString();
             const survivorKeys = new Set(survivor.sourceRefs.map(sourceKeyForRef));
             const combinedRefs = [...survivor.sourceRefs, ...loser.sourceRefs.filter(ref => !survivorKeys.has(sourceKeyForRef(ref)))];
+            const survivorHasStructured = survivor.sourceRefs.some(ref => ref.kind === 'structured_execution');
+            const loserHasStructured = loser.sourceRefs.some(ref => ref.kind === 'structured_execution');
+            const authorityProjection = !survivorHasStructured && loserHasStructured
+                ? mergeProjection(survivor, projectionFromOccurrence(loser))
+                : {};
+            const nextReconciliation = reconciliationOverride
+                ?? { ...survivor.reconciliation, state: combinedRefs.length > 1 ? 'matched' as const : survivor.reconciliation.state };
             const mergedSurvivor: PerformedTrainingOccurrence = {
                 ...survivor,
+                ...authorityProjection,
                 sourceRefs: combinedRefs,
-                reconciliation: reconciliationOverride
-                    ?? { ...survivor.reconciliation, state: combinedRefs.length > 1 ? 'matched' : survivor.reconciliation.state },
+                reconciliation: withStickyReconciliation(
+                    survivor.reconciliation,
+                    nextReconciliation,
+                    loser.reconciliation.excludedSourceKeys,
+                    loser.reconciliation.manualDecision,
+                ),
                 updatedAt: now,
             };
             const tombstonedLoser: PerformedTrainingOccurrence = {
