@@ -170,6 +170,11 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-01 SEP-C2 — Subjective Mode Threshold & Neutral-Default Calibration**](./analysis/2026-09-01-sep-c2-subjective-mode-thresholds.md) — Recalibrates `readiness.subjective_mode_thresholds`, decoupling motivation and pain-flag semantics from the physical fatigue average and handling partial check-ins.
 * [**2026-09-01 SEP-C3 — Tissue Response Severity Latency & Lumbar Axial Guardrail Precision**](./analysis/2026-09-01-sep-c3-tissue-response-severity.md) — Remediation for tissue-response severity latency and lumbar axial-loading guardrail precision.
 * [**2026-09-01 SEP-C4 — Red-Flag & Clinical Escalation Protocol**](./analysis/2026-09-01-sep-c4-clinical-escalation-protocol.md) — Specification for a fail-closed clinical red-flag/escalation protocol.
+* [**2026-09-02 Evidence Pack — Periodization Objectives & Sport/Event Demand**](./analysis/2026-09-02-evidence-pack-periodization-event-demand.md) — SKR3 W1 periodization objectives and sport/event demand.
+* [**2026-09-02 Knowledge citation provenance audit**](./analysis/2026-09-02-knowledge-citation-provenance-audit.md) — Review of every `app/src/knowledge` module defining `KnowledgeSource` records.
+* [**2026-09-02 PR #335 Review Hardening — SKR4 Athlete Evidence Boundary**](./analysis/2026-09-02-pr335-review-hardening.md) — Review covering architecture, safety semantics, identity isolation, and stacked-branch consistency.
+* [**2026-09-02 Workout Catalog Recovery Metadata Audit**](./analysis/2026-09-02-workout-catalog-recovery-metadata-audit.md) — SKR3 W3 audit focusing on session spacing heuristics and recovery defaults.
+* [**Strength recommendation occurrence-credit gap — 2026-09-02**](./analysis/strength-recommendation-occurrence-credit-gap-2026-09-02.md) — Production reproduction of strength occurrence-credit gap across ADR-0016, ADR-0023, and ADR-0034 boundaries.
 * [**Structured Strength and Garmin Activity Reconciliation Analysis**](./analysis/structured-strength-garmin-activity-reconciliation-analysis.md) — Architectural analysis for reconciling structured strength executions and Garmin activities into a canonical training occurrence.
 
 ---
