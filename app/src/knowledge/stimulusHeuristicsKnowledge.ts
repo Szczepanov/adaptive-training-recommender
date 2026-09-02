@@ -150,11 +150,11 @@ export const STIMULUS_HEURISTICS_CLAIMS: readonly KnowledgeClaim[] = [
     },
     {
         id: STIMULUS_HEURISTICS_CLAIM_IDS.legacySessionSpacingTiebreakPolicy,
-        statement: 'Product dose packing v1: for otherwise equivalent weekly dose placements, preferred spacing between sessions is 3 days for 2 sessions/week, 2 days for 3 sessions/week, and 1 day for 4 to 6 sessions/week.',
+        statement: 'Product dose packing v1: for otherwise equivalent weekly dose placements, preferred spacing between sessions is 3 days for 2 sessions/week, 2 days for 3 sessions/week, and 1 day for 4-6+ sessions/week.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
         applicability: { contexts: ['weekly_dose_packing', 'placement_tiebreak'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['preferred_session_spacing_days'], horizon: 'acute' },
         evidence: [{ sourceId: PLANNING_PRIORS_SOURCE, directness: 'direct' }],
-        limitations: ['The spacing tie-break resolves schedule ties evenly across the microcycle; it is a convenience heuristic that yields to hard eligibility and recovery constraints.'],
+        limitations: ['The spacing tie-break resolves schedule ties evenly across the microcycle; counts above six clamp to the six-session row, so 7+ also resolve to one-day preferred spacing. This remains a convenience heuristic that yields to hard eligibility and recovery constraints.'],
         reviewedOn: '2026-09-02', version: 1,
     },
 ];
