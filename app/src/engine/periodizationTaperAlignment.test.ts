@@ -12,6 +12,7 @@ const CYCLING_DEMAND = {
     neuromuscular: 0.3,
 };
 
+/** Build a scheduled cycling-event fixture with stable demand defaults for taper-policy tests. */
 function cyclingEvent(
     overrides: Partial<UserEvent> & Pick<UserEvent, 'id' | 'date' | 'priority'>,
 ): UserEvent {
