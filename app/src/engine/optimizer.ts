@@ -25,6 +25,7 @@ import { qualifiesForObjective } from './microcycle';
 import { buildCoverageState, coverageNeedTierForTemplate, type CoverageState } from './coverage';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveInjuryRestrictions } from './injuryPolicy';
+import { evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
@@ -144,6 +145,10 @@ export interface OptimizationOptions {
     date?: string;
     focusEvent?: UserEvent | null;
     recentHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
+    /** Canonical performed-training exposure facts are the recency/spacing authority for
+     * strength. An explicitly present empty array must stay empty rather than falling back
+     * to legacy reconstructed history. */
+    recentPerformedExposures?: readonly StrengthExposureLike[];
     anchorRole?: 'event-specific' | 'quality' | null;
     adjacentToAnchor?: boolean;
     plannedDose?: PlannedDose;
@@ -551,6 +556,16 @@ export function evaluateRecoveryConstraints(
         }
     }
 
+    const strengthSpacing = evaluateStrengthSpacingStatus(
+        options.recentPerformedExposures ?? history,
+        targetDate,
+        template,
+        { minimumGapDays: minDaysSpacing ?? 2 },
+    );
+    if (strengthSpacing.isRestricted && strengthSpacing.reasonCode) {
+        reasons.push(strengthSpacing.reasonCode);
+    }
+
     return reasons;
 }
 
@@ -622,6 +637,7 @@ export function buildOptimizationContext(
         fatigue: FatigueState;
         periodization?: { focusEvent?: UserEvent | null } | null;
         history?: (RecentHistoryEntry | SessionHistoryEntry)[];
+        performedTrainingFacts?: { exposures: readonly StrengthExposureLike[] } | null;
         plannedDose?: PlannedDose;
     },
     context: UserContext,
@@ -711,6 +727,7 @@ export function buildOptimizationContext(
                 : {}) }]
             : []),
     );
+    const recentPerformedExposures = options.recentPerformedExposures ?? intent.performedTrainingFacts?.exposures;
 
     return {
         unresolvedObjectives: intent.unresolvedObjectives ?? [],
@@ -729,6 +746,7 @@ export function buildOptimizationContext(
             coverageState,
             fatigueTier: options.fatigueTier ?? 'train',
             guardrails,
+            ...(recentPerformedExposures !== undefined ? { recentPerformedExposures } : {}),
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),

@@ -8,6 +8,7 @@ import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedu
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolvePlanningContext, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
+import { getPerformedTrainingFactsInRange, type PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 
 export type PlannedRecoveryReason =
   | 'scheduled_recovery'   // Prescribed microcycle rest day
@@ -30,6 +31,9 @@ export interface TrainingIntent {
      * to the requested short planning window even when athlete-state inference needs a
      * wider observation window. */
     history: CompletedExposure[];
+    /** Canonical performed-training facts for narrow recency/spacing cutovers. Legacy
+     * history remains the fatigue/objective authority until later ADR-0034 PRs migrate it. */
+    performedTrainingFacts: PerformedTrainingFactsSnapshot | null;
     /** The short operational snapshot. Evergreen performance planning may attach a wider
      * `athleteStateEvidence` window, but that evidence is never replayed into `history`. */
     historySnapshot: TrainingHistorySnapshot | null;
@@ -147,6 +151,13 @@ export async function resolveTrainingIntent(
     // operational history explicitly bounded so a 28-day state-evidence read cannot widen
     // fatigue or microcycle bookkeeping by accident.
     const history = operationalHistory.filter(exposure => exposure.date >= operationalWindowStart && exposure.date < date);
+    // The live/default path reads canonical occurrences for the narrow spacing cutover.
+    // Injected history providers are also used by deterministic projections (including
+    // tomorrow's hypothetical "today was completed" history), so they deliberately keep
+    // their self-contained reconstructed history as the spacing fallback.
+    const performedTrainingFacts = historyProvider
+        ? null
+        : await getPerformedTrainingFactsInRange(userId, operationalWindowStart, date);
 
     let historySnapshot = operationalSnapshot;
     if (needsEstablishedPerformanceEvidence(planningContext) && operationalSnapshot) {
@@ -198,7 +209,7 @@ export async function resolveTrainingIntent(
         date,
     ), date, authoredPlanBlocks, planDefinition);
     return {
-        planningContext, periodization, unresolvedObjectives, plannedDose, fatigue, history, historySnapshot, microcycle,
+        planningContext, periodization, unresolvedObjectives, plannedDose, fatigue, history, performedTrainingFacts, historySnapshot, microcycle,
         droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
     };
 }

@@ -1,6 +1,6 @@
 # Canonical strength occurrence -> recommendation credit cutover
 
-**Status:** implementation plan
+**Status:** In Progress (PR 1 & PR 2 implemented)
 **Motivating incident:** 2026-09-01 strength session followed by a 2026-09-02 duplicate full-body-strength recommendation
 **Depends on:** ADR-0016, ADR-0023, ADR-0034; PR #321 and PR #324
 
