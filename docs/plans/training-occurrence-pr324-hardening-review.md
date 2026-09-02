@@ -1,7 +1,7 @@
 # PR #324 hardening review — ADR-0034 performed-training occurrence
 
 **Reviewed:** 2 September 2026  
-**Scope:** PR1–PR5 implementation in PR #324, with emphasis on identity safety, manual reconciliation durability, deterministic merge authority, rebuild behavior, and FIT structured-workout evidence.
+**Scope:** PR1–PR5 implementation in PR #324, with emphasis on identity safety, manual reconciliation durability, deterministic merge authority, rebuild behavior, multi-provider behavior, and FIT structured-workout evidence.
 
 This note records the post-implementation review so later rollout work can distinguish **fixed correctness defects** from **deliberate rollout gates / remaining scope**. It supplements ADR-0034 and the implementation checklist; it does not replace either document.
 
@@ -24,7 +24,7 @@ Primary references:
 
 Before hardening, `unlinkSource` wrote the detached source key into the survivor's `excludedSourceKeys`, but the detached occurrence did not exclude the survivor's remaining source keys. A later duplicate-repair sweep is free to encounter either occurrence first, so the detached record could become the incoming side and be re-merged despite an explicit athlete/admin unlink.
 
-**Fix:** the separation is now symmetric. The survivor excludes the detached key and the detached occurrence excludes every source key that remained on the survivor. Candidate filtering therefore rejects the same pair regardless of iteration/query order.
+**Fix:** the separation is now symmetric. The survivor excludes the detached key and the detached occurrence excludes every source key that remained on the survivor. Candidate filtering therefore rejects the same pair regardless of iteration/query order. The persisted manual decision's `resultingState` now also matches the survivor's actual post-unlink state when more than one source remains.
 
 ### 2. Later attach/merge could erase sticky reconciliation provenance
 
@@ -71,6 +71,24 @@ Garmin's FIT profile provides stronger evidence directly in `Workout` / `Workout
 
 The fingerprint remains **diagnostic/additive** and is still not a reconciliation-scoring input because Adaptive does not yet produce a comparable Garmin-device workout identity.
 
+### 7. An ambiguous policy decision was not durable state
+
+The original reconciliation service returned/logged `ambiguous`, then created the new source with the repository's default `single_source` state. A later duplicate sweep explicitly scans `single_source` occurrences, so the system could auto-merge a case the policy had just refused to guess.
+
+**Fix:** `createOrGetForSource` accepts an initial reconciliation state and commits `ambiguous` atomically with the source claim and occurrence creation. The repair sweep continues to consider only true `single_source` records. If another caller claims the source between the initial read and transactional create, the loser now reports `already_linked` instead of returning its stale local ambiguity/no-match decision.
+
+### 8. Garmin unlink UI could construct a mixed-provider source key
+
+The diagnostic Activities action rendered whenever a structured occurrence had any provider source, then used `providers[0]` as the provider name while taking the activity ID from `workout.garmin`. With multiple providers, that could construct a source key such as `provider_activity:polar:<garmin-id>`; without a hydrated Garmin source it could include `undefined`.
+
+**Fix:** the action is rendered only when an actual Garmin source is hydrated, and its source key is built by the canonical `sourceKeyForRef` helper rather than string concatenation.
+
+### 9. Provider identity was case-sensitive despite being an identifier
+
+`providerActivitySourceKey` previously embedded the provider label verbatim, so `Garmin:123` and `garmin:123` could claim distinct source-link documents for the same provider record.
+
+**Fix:** provider labels are trimmed and lower-cased before building the canonical source key. Display casing remains separate from identity.
+
 ## Added regression coverage
 
 New focused tests cover:
@@ -78,6 +96,10 @@ New focused tests cover:
 - manual unlink rejection in both candidate orientations;
 - preservation of sticky exclusions/manual decision after a later attach;
 - structured projection authority when the deterministic merge survivor was provider-only;
+- durable ambiguity at creation and exclusion of ambiguous occurrences from automatic repair;
+- concurrent create convergence reporting `already_linked` rather than a stale local decision;
+- provider identity case/whitespace normalization;
+- Garmin unlink visibility only for an actually hydrated Garmin source;
 - semantic FIT fingerprints distinguishing same-name/same-index workouts with different step prescriptions;
 - semantic fingerprint stability when only the executed subset of a workout differs;
 - backward-compatible two-argument fingerprint calls consuming decoded semantic metadata;
