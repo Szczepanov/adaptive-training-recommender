@@ -70,7 +70,7 @@ describe('durable ambiguity', () => {
         vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([candidateA, candidateB]);
         vi.mocked(repo.createOrGetForSource).mockImplementation(async (_userId, _facts, reconciliation) => ({
             occurrence: {
-                ...providerOccurrence('pto-new', structuredFacts.startedAt, reconciliation),
+                ...providerOccurrence('pto-new', structuredFacts.startedAt, reconciliation ?? { state: 'single_source' }),
                 sourceRefs: [structuredFacts.sourceRef],
             },
             created: true,
