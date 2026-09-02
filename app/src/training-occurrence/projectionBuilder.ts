@@ -24,27 +24,39 @@ export function buildProjection(facts: readonly ReconciliationSourceFacts[]): Oc
     if (facts.length === 0) return {};
     const structured = facts.find(fact => fact.sourceRef.kind === 'structured_execution');
     const primary = structured ?? facts[0];
+    const modality = structured?.modality ?? facts.find(fact => fact.modality)?.modality;
+    const startedAt = structured?.startedAt ?? facts.find(fact => fact.startedAt)?.startedAt;
+    const endedAt = structured?.endedAt ?? facts.find(fact => fact.endedAt)?.endedAt;
 
+    // Keys are omitted rather than set to `undefined` -- the fallback Firestore client
+    // (firebase.ts's getFirestore() branch, used when initializeFirestore's
+    // ignoreUndefinedProperties setup throws) rejects writes containing an `undefined`
+    // field value outright.
     return {
         localDate: primary.localDate,
-        modality: structured?.modality ?? facts.find(fact => fact.modality)?.modality,
-        startedAt: structured?.startedAt ?? facts.find(fact => fact.startedAt)?.startedAt,
-        endedAt: structured?.endedAt ?? facts.find(fact => fact.endedAt)?.endedAt,
+        ...(modality !== undefined ? { modality } : {}),
+        ...(startedAt !== undefined ? { startedAt } : {}),
+        ...(endedAt !== undefined ? { endedAt } : {}),
     };
 }
 
 /** Merges a freshly-built projection onto an existing occurrence's summary fields --
  * never overwrites a known field with `undefined` (e.g. attaching a Garmin source with no
- * `startedAt` must not erase a structured execution's already-recorded `startedAt`). */
+ * `startedAt` must not erase a structured execution's already-recorded `startedAt`). Keys
+ * are omitted, not set to `undefined` -- see `buildProjection`'s Firestore-write note. */
 export function mergeProjection(
     existing: Pick<PerformedTrainingOccurrence, 'localDate' | 'modality' | 'startedAt' | 'endedAt'>,
     next: OccurrenceProjection,
 ): OccurrenceProjection {
+    const localDate = next.localDate ?? existing.localDate;
+    const modality = next.modality ?? existing.modality;
+    const startedAt = next.startedAt ?? existing.startedAt;
+    const endedAt = next.endedAt ?? existing.endedAt;
     return {
-        localDate: next.localDate ?? existing.localDate,
-        modality: next.modality ?? existing.modality,
-        startedAt: next.startedAt ?? existing.startedAt,
-        endedAt: next.endedAt ?? existing.endedAt,
+        ...(localDate !== undefined ? { localDate } : {}),
+        ...(modality !== undefined ? { modality } : {}),
+        ...(startedAt !== undefined ? { startedAt } : {}),
+        ...(endedAt !== undefined ? { endedAt } : {}),
     };
 }
 

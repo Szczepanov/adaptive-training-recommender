@@ -17,7 +17,7 @@ def _step(*, duration_value: float = 600.0, target_value: float = 3.0) -> FitWor
     )
 
 
-def test_semantic_step_definition_distinguishes_same_name_and_observed_indices():
+def test_semantic_step_definition_distinguishes_same_name_and_observed_indices() -> None:
     a = compute_fit_workout_fingerprint("Builder", (0,), (_step(duration_value=600.0),))
     b = compute_fit_workout_fingerprint("Builder", (0,), (_step(duration_value=900.0),))
 
@@ -26,7 +26,7 @@ def test_semantic_step_definition_distinguishes_same_name_and_observed_indices()
     assert a != b
 
 
-def test_semantic_definition_wins_over_partial_execution_indices():
+def test_semantic_definition_wins_over_partial_execution_indices() -> None:
     steps = (
         _step(duration_value=600.0),
         FitWorkoutStepEvidence(
@@ -49,7 +49,9 @@ def test_semantic_definition_wins_over_partial_execution_indices():
     assert completed_all == stopped_early
 
 
-def test_tuple_compatible_indices_carry_semantic_definition_through_existing_service_call_shape():
+def test_tuple_compatible_indices_carry_semantic_definition_through_existing_service_call_shape() -> (
+    None
+):
     steps = (_step(target_value=4.0),)
     indices = FitWorkoutStepIndices([0], steps)
 
@@ -61,14 +63,14 @@ def test_tuple_compatible_indices_carry_semantic_definition_through_existing_ser
     assert implicit == explicit
 
 
-def test_fallback_observed_indices_retain_order_independent_v1_behavior():
+def test_fallback_observed_indices_retain_order_independent_v1_behavior() -> None:
     forward = compute_fit_workout_fingerprint("Builder", (0, 1, 2))
     reordered = compute_fit_workout_fingerprint("Builder", (2, 0, 1))
 
     assert forward == reordered
 
 
-def test_cosmetic_name_and_enum_case_do_not_churn_semantic_fingerprint():
+def test_cosmetic_name_and_enum_case_do_not_churn_semantic_fingerprint() -> None:
     upper = _step()
     lower = FitWorkoutStepEvidence(
         message_index=0,

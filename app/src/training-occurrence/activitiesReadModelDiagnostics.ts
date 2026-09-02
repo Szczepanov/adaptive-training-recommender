@@ -31,11 +31,23 @@ export function compareActivitiesReadModels(
     const matchedCount = canonicalWorkouts.filter(w => w.sourceBadge.hasProvider && w.sourceBadge.hasStructured).length;
     const ambiguousCount = canonicalWorkouts.filter(w => w.reconciliation.state === 'ambiguous').length;
 
+    // Counting garminOnlyCount + matchedCount against currentActivities.length assumes
+    // every canonical row's Garmin source is one of currentActivities -- false for a row
+    // hydrated from an adjacent local day (its Garmin activity.date can fall outside this
+    // exact range) and for a generic non-Garmin `sourceBadge.hasProvider` row. Derive the
+    // count from hydrated Garmin activity IDs that actually appear in currentActivities.
+    const currentActivityIds = new Set(currentActivities.map(activity => activity.activityId));
+    const canonicalActivityIdsInRange = new Set(
+        canonicalWorkouts
+            .map(workout => workout.garmin?.activityId)
+            .filter((id): id is string => id !== undefined && currentActivityIds.has(id)),
+    );
+
     return {
         currentRowCount: currentActivities.length,
         canonicalRowCount: canonicalWorkouts.length,
         rowCountDelta: canonicalWorkouts.length - currentActivities.length,
-        duplicateDelta: currentActivities.length - (garminOnlyCount + matchedCount),
+        duplicateDelta: currentActivities.length - canonicalActivityIdsInRange.size,
         garminOnlyCount,
         structuredOnlyCount,
         matchedCount,

@@ -128,6 +128,19 @@ describe('getCompletedWorkoutsInRange', () => {
         expect(view.garmin?.activityId).toBe('act-adjacent');
     });
 
+    it('skips its own Activities fetch entirely when preloadedActivities is supplied', async () => {
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence({
+            sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-preloaded' }],
+        })]);
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27', [
+            { activityId: 'act-preloaded', date: '2026-08-26', type: 'strength_training', durationMin: 40, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null, intensityTag: 'moderate' },
+        ]);
+
+        expect(activityService.getActivitiesInRange).not.toHaveBeenCalled();
+        expect(view.garmin?.activityId).toBe('act-preloaded');
+    });
+
     it('sorts results by most-recent first', async () => {
         vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([
             occurrence({ performedOccurrenceId: 'pto-early', startedAt: '2026-08-24T06:00:00.000Z' }),

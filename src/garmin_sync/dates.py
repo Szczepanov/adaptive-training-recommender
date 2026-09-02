@@ -9,7 +9,11 @@ def parse_garmin_gmt_timestamp(value: str | None) -> datetime | None:
     upstream field degrades to "no absolute timestamp available" rather than raising and
     losing the whole activity.
     """
-    if not value:
+    if not value or not isinstance(value, str):
+        # `value` is typed `str | None`, but the caller passes a raw dict.get() result
+        # from an untrusted upstream payload -- a truthy non-string (e.g. a malformed
+        # API response returning a number/dict) would otherwise reach strptime() and
+        # raise TypeError, which the except clause below does not catch.
         return None
     try:
         parsed = datetime.strptime(value, "%Y-%m-%d %H:%M:%S")

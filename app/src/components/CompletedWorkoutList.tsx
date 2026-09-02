@@ -42,7 +42,11 @@ function workoutTitle(workout: CompletedWorkoutView): string {
 function formatLocalTime(iso: string | undefined): string | null {
   if (!iso) return null;
   const parsed = new Date(iso);
-  return Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  return Number.isNaN(parsed.getTime()) ? null : parsed.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'Europe/Warsaw',
+  });
 }
 
 function StructuredDetail({ structured }: { structured: NonNullable<CompletedWorkoutView['structured']> }) {

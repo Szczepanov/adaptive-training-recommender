@@ -580,7 +580,7 @@ def test_canonicalize_activities_handles_missing_activity_id():
     assert act.activity_id is None
 
 
-def test_canonicalize_activity_derives_started_and_ended_at_from_start_time_gmt():
+def test_canonicalize_activity_derives_started_and_ended_at_from_start_time_gmt() -> None:
     """ADR-0034 reconciliation needs absolute instants -- canonicalization must derive
     started_at/ended_at from startTimeGMT + duration, distinct from the Warsaw-local
     `date` (derived from startTimeLocal)."""
@@ -602,7 +602,7 @@ def test_canonicalize_activity_derives_started_and_ended_at_from_start_time_gmt(
     assert act.ended_at == "2026-08-05T19:32:30+00:00"
 
 
-def test_canonicalize_activity_started_at_none_when_start_time_gmt_missing():
+def test_canonicalize_activity_started_at_none_when_start_time_gmt_missing() -> None:
     raw = [
         {
             "activityId": "556",

@@ -19,7 +19,6 @@ import { CompletedWorkoutList } from './CompletedWorkoutList';
 import { unlinkCompletedWorkoutSource } from './completedWorkoutActions';
 import { configuredActivitiesReadModelPolicy } from '../training-occurrence/activitiesReadModelPolicy';
 import { getCompletedWorkoutsInRange } from '../training-occurrence/activitiesReadModelService';
-import { compareActivitiesReadModels, recordActivitiesReadModelComparison } from '../training-occurrence/activitiesReadModelDiagnostics';
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
 import './DataView.css';
 
@@ -116,7 +115,11 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   const [canonicalWorkoutWindow, setCanonicalWorkoutWindow] = useState<{
     userId: string;
     asOfDate: string;
-    workouts: CompletedWorkoutView[];
+    workouts: CompletedWorkoutView[] | null;
+    /** Set when the canonical read itself rejected -- `workouts` stays null so the UI can
+     * tell "still loading" (canonicalWorkoutWindow is null/stale) apart from "read failed"
+     * (this flag set) instead of showing an indefinite loading state for a real failure. */
+    error?: boolean;
   } | null>(null);
 
   const loadOverrides = useCallback(() => {
@@ -152,8 +155,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   }, [activeTab, userId, briefDate, activityWindow?.userId, activityWindow?.asOfDate]);
 
   // ADR-0034 PR2 dual-read: only runs when the cutover flag is explicitly enabled. Mirrors
-  // the raw-activity window above so the diagnostic comparison and (if enabled) the
-  // canonical UI cover the exact same 7-day window.
+  // the raw-activity window above so the (if enabled) canonical UI covers the exact same
+  // 7-day window. Comparison recording lives solely in getCompletedWorkoutsInRange
+  // itself now -- it already has the exact-range Garmin snapshot it hydrated from, so a
+  // second UI-level comparison against this view's separately-fetched activityWindow
+  // could log a false difference caused by the two fetches' timing, not by the read
+  // models actually disagreeing.
   useEffect(() => {
     if (activitiesReadModelPolicy === 'off' || activeTab !== 'activities' || !briefDate
       || (canonicalWorkoutWindow?.userId === userId && canonicalWorkoutWindow.asOfDate === briefDate)) return;
@@ -161,14 +168,13 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
     const startInclusive = addDaysToLocalDateString(briefDate, -6);
     const throughExclusive = addDaysToLocalDateString(briefDate, 1);
     getCompletedWorkoutsInRange(userId, startInclusive, throughExclusive).then((workouts) => {
-      if (cancelled) return;
-      setCanonicalWorkoutWindow({ userId, asOfDate: briefDate, workouts });
-      if (activityWindow?.state.status === 'AVAILABLE' && activityWindow.userId === userId && activityWindow.asOfDate === briefDate) {
-        recordActivitiesReadModelComparison(userId, compareActivitiesReadModels(activityWindow.state.data, workouts));
-      }
-    }).catch(err => console.warn('[training-occurrence] canonical activities read failed', err));
+      if (!cancelled) setCanonicalWorkoutWindow({ userId, asOfDate: briefDate, workouts });
+    }).catch(err => {
+      console.warn('[training-occurrence] canonical activities read failed', err);
+      if (!cancelled) setCanonicalWorkoutWindow({ userId, asOfDate: briefDate, workouts: null, error: true });
+    });
     return () => { cancelled = true; };
-  }, [activitiesReadModelPolicy, activeTab, userId, briefDate, canonicalWorkoutWindow?.userId, canonicalWorkoutWindow?.asOfDate, activityWindow]);
+  }, [activitiesReadModelPolicy, activeTab, userId, briefDate, canonicalWorkoutWindow?.userId, canonicalWorkoutWindow?.asOfDate]);
 
   useEffect(() => {
     // Keyed on the date the brief was built for and on the active preset, not merely on
@@ -1074,15 +1080,19 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
               )}
             </div>
             {activitiesReadModelPolicy === 'canonical-v1' ? (
-              <CompletedWorkoutList
-                workouts={canonicalWorkoutWindow && canonicalWorkoutWindow.userId === userId && canonicalWorkoutWindow.asOfDate === briefDate ? canonicalWorkoutWindow.workouts : null}
-                onReclassify={() => setReclassifyModalOpen(true)}
-                onUnlinkSource={(performedOccurrenceId, sourceKey) => {
-                  unlinkCompletedWorkoutSource(userId, performedOccurrenceId, sourceKey, userId)
-                    .then(() => setCanonicalWorkoutWindow(null))
-                    .catch(err => console.warn('[training-occurrence] unlink failed', err));
-                }}
-              />
+              canonicalWorkoutWindow && canonicalWorkoutWindow.userId === userId && canonicalWorkoutWindow.asOfDate === briefDate && canonicalWorkoutWindow.error ? (
+                <p className="activity-telemetry-state error">Canonical activity view is temporarily unavailable. Retry the dashboard refresh.</p>
+              ) : (
+                <CompletedWorkoutList
+                  workouts={canonicalWorkoutWindow && canonicalWorkoutWindow.userId === userId && canonicalWorkoutWindow.asOfDate === briefDate ? canonicalWorkoutWindow.workouts : null}
+                  onReclassify={() => setReclassifyModalOpen(true)}
+                  onUnlinkSource={(performedOccurrenceId, sourceKey) => {
+                    unlinkCompletedWorkoutSource(userId, performedOccurrenceId, sourceKey, userId)
+                      .then(() => setCanonicalWorkoutWindow(null))
+                      .catch(err => console.warn('[training-occurrence] unlink failed', err));
+                  }}
+                />
+              )
             ) : (
               <ActivityTelemetry
                 state={activityWindow && activityWindow.userId === userId && activityWindow.asOfDate === briefDate ? activityWindow.state : null}

@@ -139,7 +139,14 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
      * the write promise so `completeSession`/`abandonSession` can await it -- a
      * session-ending rest event must land before the execution's own state transition
      * (see firestore.rules' restEvents `in_progress` gate). Other call sites intentionally
-     * fire-and-forget since they have no such ordering requirement. */
+     * fire-and-forget since they have no such ordering requirement.
+     *
+     * `activeRestRef` is cleared before the write settles (so a racing close can't
+     * double-fire), which means a failed write's rest data has nowhere durable to live if
+     * it's simply dropped. One inline retry covers the dominant real failure mode (a
+     * transient network blip) without a persistent cross-render retry queue, which would
+     * be a much larger change for a best-effort timing feature -- a retry that also fails
+     * still only loses this one rest's actual-duration data, not any entry/session state. */
     const closeActiveRest = useCallback((endReason: RestEndReason): Promise<void> | undefined => {
         const active = activeRestRef.current;
         if (!active || !execution) return undefined;
@@ -147,13 +154,15 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         const fields: RestEventFields = closeRest(active, new Date().toISOString(), endReason);
         const restEventId = `rest-${Date.parse(fields.startedAt)}-${fields.afterEntryId}`;
         const now = new Date().toISOString();
-        return sessionExecutionService.logRestEvent(userId, execution.executionId, {
+        const restEvent = {
             id: restEventId,
             executionId: execution.executionId,
             ...fields,
             createdAt: now,
             updatedAt: now,
-        });
+        };
+        return sessionExecutionService.logRestEvent(userId, execution.executionId, restEvent)
+            .catch(() => sessionExecutionService.logRestEvent(userId, execution.executionId, restEvent));
     }, [execution, userId]);
 
     // Reloading or backgrounding must not create a second execution. Source-neutral
@@ -407,6 +416,14 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             setSyncStatus('synced');
         } catch {
             setSyncStatus('unavailable');
+            // The rest timer above starts optimistically (same rationale as the optimistic
+            // setEntries call), tied to this entry's id. If the entry itself never
+            // persisted, a later timer/skip/session-close must not go on to write a durable
+            // rest event whose afterEntryId references an entry that doesn't exist.
+            if (activeRestRef.current?.afterEntryId === entryId) {
+                activeRestRef.current = null;
+                setIsRestRunning(false);
+            }
         }
     }, [execution, activeStep, activeBlock, entries, userId, closeActiveRest]);
 

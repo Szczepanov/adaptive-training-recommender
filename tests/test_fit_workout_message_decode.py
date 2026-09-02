@@ -39,7 +39,7 @@ def _reader_with(messages: list[object]) -> MagicMock:
     return reader
 
 
-def test_decodes_fit_standard_workout_definition_and_lap_step_linkage():
+def test_decodes_fit_standard_workout_definition_and_lap_step_linkage() -> None:
     messages = [
         FakeDataMessage("session", avg_heart_rate=150, workout_name="Session Alias"),
         FakeDataMessage("workout", wkt_name="VO2 Builder", num_valid_steps=2),
@@ -96,7 +96,7 @@ def test_decodes_fit_standard_workout_definition_and_lap_step_linkage():
     assert implicit == explicit
 
 
-def test_multiple_workout_messages_do_not_blend_definitions_into_one_semantic_identity():
+def test_multiple_workout_messages_do_not_blend_definitions_into_one_semantic_identity() -> None:
     messages = [
         FakeDataMessage("workout", wkt_name="First"),
         FakeDataMessage("workout_step", message_index=0, duration_type="time", duration_value=60),

@@ -59,6 +59,14 @@ describe('buildProjection', () => {
         expect(projection.startedAt).toBe('2026-08-26T06:53:00.000Z');
         expect(projection.modality).toBe('strength');
     });
+
+    it('omits (never sets to undefined) a key with no value anywhere -- Firestore rejects an explicit undefined field value', () => {
+        const projection = buildProjection([garminFacts({ modality: undefined, startedAt: undefined, endedAt: undefined })]);
+        expect(projection).not.toHaveProperty('modality');
+        expect(projection).not.toHaveProperty('startedAt');
+        expect(projection).not.toHaveProperty('endedAt');
+        expect(projection).toEqual({ localDate: '2026-08-26' });
+    });
 });
 
 describe('mergeProjection', () => {
@@ -66,6 +74,14 @@ describe('mergeProjection', () => {
         const existing = { localDate: '2026-08-26', modality: 'strength', startedAt: '2026-08-26T06:52:00.000Z', endedAt: '2026-08-26T07:32:00.000Z' };
         const merged = mergeProjection(existing, { localDate: undefined, modality: undefined, startedAt: undefined, endedAt: undefined });
         expect(merged).toEqual(existing);
+    });
+
+    it('omits a key still missing on both sides rather than setting it to undefined', () => {
+        const merged = mergeProjection({ localDate: '2026-08-26', modality: undefined, startedAt: undefined, endedAt: undefined }, {});
+        expect(merged).not.toHaveProperty('modality');
+        expect(merged).not.toHaveProperty('startedAt');
+        expect(merged).not.toHaveProperty('endedAt');
+        expect(merged).toEqual({ localDate: '2026-08-26' });
     });
 });
 

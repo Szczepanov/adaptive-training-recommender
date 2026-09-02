@@ -111,7 +111,7 @@ def _reader_with(messages: list[object]) -> MagicMock:
     return reader
 
 
-def test_decode_activity_original_exercises_real_fitdecode_parser():
+def test_decode_activity_original_exercises_real_fitdecode_parser() -> None:
     evidence = decode_activity_original(_synthetic_fit_record())
 
     assert len(evidence.records) == 1
@@ -120,7 +120,7 @@ def test_decode_activity_original_exercises_real_fitdecode_parser():
     assert evidence.records[0].power_watts == 217.0
 
 
-def test_decode_activity_original_extracts_only_compact_evidence_from_zip():
+def test_decode_activity_original_extracts_only_compact_evidence_from_zip() -> None:
     messages = [
         FakeDefinitionMessage("device_info"),
         FakeDataMessage(
@@ -170,7 +170,7 @@ def test_decode_activity_original_extracts_only_compact_evidence_from_zip():
     assert evidence.timer_events[0].event_type == "start"
 
 
-def test_decode_activity_original_tolerates_missing_optional_fit_fields():
+def test_decode_activity_original_tolerates_missing_optional_fit_fields() -> None:
     messages = [
         FakeDataMessage("device_info", device_index=1, device_type="heart_rate"),
         FakeDataMessage(
@@ -193,7 +193,7 @@ def test_decode_activity_original_tolerates_missing_optional_fit_fields():
     assert evidence.records[0].power_watts is None
 
 
-def test_decode_activity_original_uses_only_session_scoped_time_in_zone_fallback():
+def test_decode_activity_original_uses_only_session_scoped_time_in_zone_fallback() -> None:
     messages = [
         FakeDataMessage("session", avg_heart_rate=148),
         FakeDataMessage(
@@ -219,7 +219,7 @@ def test_decode_activity_original_uses_only_session_scoped_time_in_zone_fallback
     assert evidence.time_in_hr_zone_seconds == (10.0, 20.0, 30.0, 40.0, 50.0)
 
 
-def test_decode_activity_original_extracts_distinct_ordered_workout_step_indices():
+def test_decode_activity_original_extracts_distinct_ordered_workout_step_indices() -> None:
     """PR 5 (training-occurrence plan, ADR-0034): a device-recorded structured workout
     tags record samples with workoutStepIndex; only distinct, first-seen-order indices
     are kept, not one entry per record."""
@@ -241,7 +241,7 @@ def test_decode_activity_original_extracts_distinct_ordered_workout_step_indices
     assert evidence.workout_name == "5x5 Squat"
 
 
-def test_decode_activity_original_leaves_workout_fields_absent_for_a_freeform_recording():
+def test_decode_activity_original_leaves_workout_fields_absent_for_a_freeform_recording() -> None:
     messages = [
         FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 0), heart_rate=140),
         FakeDataMessage("session", avg_heart_rate=140),
@@ -257,7 +257,7 @@ def test_decode_activity_original_leaves_workout_fields_absent_for_a_freeform_re
     assert evidence.workout_name is None
 
 
-def test_decode_activity_original_does_not_mislabel_multisession_workout_name():
+def test_decode_activity_original_does_not_mislabel_multisession_workout_name() -> None:
     messages = [
         FakeDataMessage("session", avg_heart_rate=140, workout_name="Real Workout"),
         FakeDataMessage("session", avg_heart_rate=150, workout_name="Second Session"),
@@ -272,7 +272,7 @@ def test_decode_activity_original_does_not_mislabel_multisession_workout_name():
     assert evidence.workout_name is None
 
 
-def test_decode_activity_original_caps_workout_step_index_growth():
+def test_decode_activity_original_caps_workout_step_index_growth() -> None:
     messages = [
         FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 0), workout_step=0),
         FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 1), workout_step=1),
@@ -289,7 +289,7 @@ def test_decode_activity_original_caps_workout_step_index_growth():
             decode_activity_original(_synthetic_original_zip())
 
 
-def test_decode_activity_original_does_not_mislabel_multisession_summary():
+def test_decode_activity_original_does_not_mislabel_multisession_summary() -> None:
     messages = [
         FakeDataMessage(
             "session",
@@ -319,7 +319,7 @@ def test_decode_activity_original_does_not_mislabel_multisession_summary():
     assert evidence.time_in_hr_zone_seconds == ()
 
 
-def test_decode_activity_original_ignores_non_timer_events():
+def test_decode_activity_original_ignores_non_timer_events() -> None:
     messages = [
         FakeDataMessage(
             "event",
@@ -351,7 +351,7 @@ def test_decode_activity_original_rejects_unknown_containers(original: bytes):
         decode_activity_original(original)
 
 
-def test_decode_activity_original_rejects_zip_with_extra_or_non_fit_members():
+def test_decode_activity_original_rejects_zip_with_extra_or_non_fit_members() -> None:
     buffer = BytesIO()
     with ZipFile(buffer, "w") as archive:
         archive.writestr("one.fit", b"x")
@@ -361,7 +361,7 @@ def test_decode_activity_original_rejects_zip_with_extra_or_non_fit_members():
         decode_activity_original(buffer.getvalue())
 
 
-def test_decode_activity_original_discards_partial_messages_after_decoder_error():
+def test_decode_activity_original_discards_partial_messages_after_decoder_error() -> None:
     reader = MagicMock()
     reader.__enter__.return_value = iter([FakeDataMessage("record", heart_rate=150)])
     reader.__exit__.side_effect = ValueError("crc failure")
@@ -371,7 +371,7 @@ def test_decode_activity_original_discards_partial_messages_after_decoder_error(
             decode_activity_original(_synthetic_original_zip())
 
 
-def test_decode_activity_original_caps_transient_record_growth():
+def test_decode_activity_original_caps_transient_record_growth() -> None:
     messages = [
         FakeDataMessage("record", heart_rate=150),
         FakeDataMessage("record", heart_rate=151),

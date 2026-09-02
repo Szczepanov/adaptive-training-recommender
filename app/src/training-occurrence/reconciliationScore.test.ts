@@ -48,6 +48,26 @@ describe('scoreCandidate', () => {
         expect(features.explicitCorrelation).toBe(true);
     });
 
+    it('rejects an explicit prescriptionHash correlation when the two sides have a known modality conflict', () => {
+        // A coincidental/corrupted prescriptionHash match must never auto-link across a
+        // known modality conflict -- modality incompatibility is checked first.
+        const incoming = facts({
+            sourceRef: { kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' },
+            prescriptionHash: 'hash-abc',
+            modality: 'cycling',
+        });
+        const candidate = occurrence({
+            modality: 'strength',
+            sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1', prescriptionHash: 'hash-abc' }],
+        });
+
+        const { confidence, features } = scoreCandidate(incoming, candidate);
+
+        expect(confidence).toBe(0);
+        expect(features.explicitCorrelation).toBe(true);
+        expect(features.modalityCompatible).toBe(false);
+    });
+
     it('scores 0 when modality is known and incompatible, even with strong temporal overlap', () => {
         const incoming = facts({ modality: 'cycling' });
         const candidate = occurrence({ modality: 'strength' });

@@ -69,25 +69,45 @@ async function hydrateOccurrence(
     };
 }
 
+/** The provider-activity fetch window hydration actually needs: one local day wider on
+ * either side of the caller's exact range, because a correctly-linked Garmin source can
+ * carry an adjacent provider-local date across midnight/travel/timezone boundaries while
+ * the canonical occurrence keeps the structured/Warsaw display date. Exported so a caller
+ * that also needs Activities for something else (e.g. `historyShadowService.ts`'s live
+ * pipeline comparison) can fetch one snapshot covering this same window and pass it into
+ * `getCompletedWorkoutsInRange` via `preloadedActivities`, instead of both sides reading
+ * Activities independently and risking a diff computed across two different snapshots. */
+export function hydrationWindowFor(fromDateInclusive: string, toDateExclusive: string): { from: string; to: string } {
+    return {
+        from: addDaysToLocalDateString(fromDateInclusive, -1),
+        to: addDaysToLocalDateString(toDateExclusive, 1),
+    };
+}
+
 /** `toDateExclusive`-style range, matching `activityService.getActivitiesInRange` and
  * `repository.queryActiveInDateWindow`'s (inclusive) convention. The canonical occurrence
- * window remains exact. Provider hydration is intentionally fetched one local day wider on
- * either side because a correctly-linked Garmin source can carry an adjacent provider-local
- * date across midnight/travel/timezone boundaries while the canonical occurrence keeps the
- * structured/Warsaw display date. Activity identity, not that widened date, selects the
- * telemetry attached to each canonical row. */
+ * window remains exact; provider hydration reads the wider `hydrationWindowFor` window
+ * (activity identity, not that widened date, selects the telemetry attached to each
+ * canonical row).
+ *
+ * `preloadedActivities`, when provided, MUST already cover `hydrationWindowFor(fromDateInclusive,
+ * toDateExclusive)` -- passing it skips this function's own Activities fetch entirely, so
+ * a caller that needs the same Activities data for another purpose can fetch it once and
+ * have both reads observe the identical snapshot. */
 export async function getCompletedWorkoutsInRange(
     userId: string,
     fromDateInclusive: string,
     toDateExclusive: string,
+    preloadedActivities?: readonly NormalizedGarminActivity[],
 ): Promise<CompletedWorkoutView[]> {
     const toDateInclusiveForOccurrenceQuery = getPreviousLocalDateString(toDateExclusive);
-    const hydrationFromDateInclusive = addDaysToLocalDateString(fromDateInclusive, -1);
-    const hydrationToDateExclusive = addDaysToLocalDateString(toDateExclusive, 1);
+    const hydrationWindow = hydrationWindowFor(fromDateInclusive, toDateExclusive);
 
     const [occurrences, activitiesState] = await Promise.all([
         repository.queryActiveInDateWindow(userId, fromDateInclusive, toDateInclusiveForOccurrenceQuery),
-        activityService.getActivitiesInRange(userId, hydrationFromDateInclusive, hydrationToDateExclusive),
+        preloadedActivities !== undefined
+            ? Promise.resolve({ status: 'AVAILABLE' as const, data: [...preloadedActivities], revision: null })
+            : activityService.getActivitiesInRange(userId, hydrationWindow.from, hydrationWindow.to),
     ]);
 
     const availableActivities = activitiesState.status === 'AVAILABLE' ? activitiesState.data : [];

@@ -316,7 +316,7 @@ def test_normalize_activity_maps_canonical_fields():
     assert "endedAt" not in normalized
 
 
-def test_normalize_activity_maps_started_and_ended_at_when_present():
+def test_normalize_activity_maps_started_and_ended_at_when_present() -> None:
     """ADR-0034 reconciliation needs absolute instants, not just the Warsaw-local `date`
     -- normalize_activity must carry started_at/ended_at through when the canonical layer
     computed them, and omit them (not null) when it didn't, matching every other optional

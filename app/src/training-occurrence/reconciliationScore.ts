@@ -105,10 +105,12 @@ export function scoreCandidate(
         sameLocalDate,
     };
 
-    if (explicitCorrelation) return { confidence: 1, features };
     // Modality compatibility is required-when-known (ADR-0034): an incompatible pairing
-    // is disqualified outright regardless of how strong the other evidence looks.
+    // is disqualified outright regardless of how strong the other evidence looks --
+    // checked before explicit correlation so a coincidental/corrupted prescriptionHash
+    // match can never auto-link across a known modality conflict.
     if (modalityCompatible === false) return { confidence: 0, features };
+    if (explicitCorrelation) return { confidence: 1, features };
 
     const temporalScore = !hasAbsoluteTimestamps
         ? 0

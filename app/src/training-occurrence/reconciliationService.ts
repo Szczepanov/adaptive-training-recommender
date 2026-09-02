@@ -200,6 +200,12 @@ async function mergeDuplicatesInWindow(userId: string, fromDateInclusive: string
                 ? Math.round((Date.parse(occurrence.endedAt) - Date.parse(occurrence.startedAt)) / 60000)
                 : null,
             modality: occurrence.modality,
+            // The normal structured-completion path always carries prescriptionHash;
+            // dropping it here would make duplicate repair miss an otherwise-eligible
+            // explicit-correlation merge for a structured-only occurrence.
+            ...(occurrence.sourceRefs[0].kind === 'structured_execution' && occurrence.sourceRefs[0].prescriptionHash
+                ? { prescriptionHash: occurrence.sourceRefs[0].prescriptionHash }
+                : {}),
         };
         if (!facts) continue;
 
