@@ -1,13 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
     deriveFactsFromOccurrence,
-    getPerformedTrainingFactsInRange,
     compareCanonicalVsLegacyFacts,
     normalizeModality,
     templateIdForWorkoutId,
     type PerformedExposureFact,
     type HydratedOccurrenceContext,
 } from './performedTrainingFacts';
+import { getPerformedTrainingFactsInRange } from '../training-occurrence/performedTrainingFactsService';
 import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
 import { performedTrainingOccurrenceRepository as repository } from '../training-occurrence/repository';
 import { activityService } from '../services/activityService';

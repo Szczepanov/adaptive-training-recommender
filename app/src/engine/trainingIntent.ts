@@ -8,7 +8,7 @@ import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedu
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolvePlanningContext, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
-import { getPerformedTrainingFactsInRange, type PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 
 export type PlannedRecoveryReason =
   | 'scheduled_recovery'   // Prescribed microcycle rest day
@@ -155,9 +155,11 @@ export async function resolveTrainingIntent(
     // Injected history providers are also used by deterministic projections (including
     // tomorrow's hypothetical "today was completed" history), so they deliberately keep
     // their self-contained reconstructed history as the spacing fallback.
-    const performedTrainingFacts = historyProvider
-        ? null
-        : await getPerformedTrainingFactsInRange(userId, operationalWindowStart, date);
+    const performedTrainingFacts = preparedHistorySnapshot
+        ? (preparedHistorySnapshot.performedTrainingFacts ?? null)
+        : historyProvider
+            ? null
+            : await (await import('../training-occurrence/performedTrainingFactsService')).getPerformedTrainingFactsInRange(userId, operationalWindowStart, date);
 
     let historySnapshot = operationalSnapshot;
     if (needsEstablishedPerformanceEvidence(planningContext) && operationalSnapshot) {
