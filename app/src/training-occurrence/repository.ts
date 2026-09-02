@@ -58,6 +58,24 @@ export class SourceLinkConflictError extends Error {
     }
 }
 
+/** Raised when an idempotent merge retry discovers that the loser has already been
+ * merged into a *different* canonical survivor. Returning the requested survivor in this
+ * case would lie to the caller and could make an automatic repair sweep mark both IDs as
+ * successfully handled even though a concurrent merge chose another identity. */
+export class OccurrenceMergeConflictError extends Error {
+    readonly loserId: string;
+    readonly requestedSurvivorId: string;
+    readonly existingSurvivorId: string;
+
+    constructor(loserId: string, requestedSurvivorId: string, existingSurvivorId: string) {
+        super(`Occurrence ${loserId} is already merged into ${existingSurvivorId}, not requested survivor ${requestedSurvivorId}`);
+        this.loserId = loserId;
+        this.requestedSurvivorId = requestedSurvivorId;
+        this.existingSurvivorId = existingSurvivorId;
+        this.name = 'OccurrenceMergeConflictError';
+    }
+}
+
 function newPerformedOccurrenceId(): string {
     return `pto-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
 }
@@ -95,6 +113,25 @@ function projectionFromOccurrence(
 
 function uniqueSourceKeys(...groups: ReadonlyArray<readonly string[] | undefined>): string[] {
     return [...new Set(groups.flatMap(group => group ?? []))];
+}
+
+/** The encoded source key is normally reversible, but very long keys use a bounded hash
+ * fallback. Always verify the persisted canonical key after looking a document up by its
+ * encoded ID so an accidental/corrupt/hash-colliding document fails closed instead of
+ * being treated as ownership of a different source. */
+function parseSourceLinkForKey(value: unknown, userId: string, expectedSourceKey: string) {
+    const link = parsePerformedOccurrenceSourceLink(value, userId);
+    if (link.sourceKey !== expectedSourceKey) {
+        throw new Error(`Source-link identity mismatch for ${expectedSourceKey}: found ${link.sourceKey}`);
+    }
+    return link;
+}
+
+function assertSourceCardinality(sourceRefs: readonly PerformedOccurrenceSourceRef[]): void {
+    const structuredCount = sourceRefs.filter(ref => ref.kind === 'structured_execution').length;
+    if (structuredCount > 1) {
+        throw new Error('Performed occurrence cannot contain more than one structured execution source');
+    }
 }
 
 /**
@@ -178,7 +215,7 @@ export class PerformedTrainingOccurrenceRepository {
     async getBySourceKey(userId: string, sourceKey: string): Promise<PerformedTrainingOccurrence | null> {
         const linkSnap = await getDoc(this.sourceLinkRef(userId, sourceKey));
         if (!linkSnap.exists()) return null;
-        const link = parsePerformedOccurrenceSourceLink(linkSnap.data(), userId);
+        const link = parseSourceLinkForKey(linkSnap.data(), userId, sourceKey);
         return this.getById(userId, link.performedOccurrenceId);
     }
 
@@ -220,7 +257,7 @@ export class PerformedTrainingOccurrenceRepository {
         return runTransaction(this.db, async transaction => {
             const linkSnap = await transaction.get(linkRef);
             if (linkSnap.exists()) {
-                const link = parsePerformedOccurrenceSourceLink(linkSnap.data(), userId);
+                const link = parseSourceLinkForKey(linkSnap.data(), userId, sourceKey);
                 const occSnap = await transaction.get(this.occurrenceRef(userId, link.performedOccurrenceId));
                 if (!occSnap.exists()) throw new Error(`Linked occurrence ${link.performedOccurrenceId} does not exist`);
                 const occurrence = await this.followMergeChainTx(transaction, userId, parsePerformedTrainingOccurrence(occSnap.data(), userId));
@@ -268,17 +305,19 @@ export class PerformedTrainingOccurrenceRepository {
 
             const linkSnap = await transaction.get(linkRef);
             if (linkSnap.exists()) {
-                const existingLink = parsePerformedOccurrenceSourceLink(linkSnap.data(), userId);
+                const existingLink = parseSourceLinkForKey(linkSnap.data(), userId, sourceKey);
                 if (existingLink.performedOccurrenceId === occurrence.performedOccurrenceId) return occurrence;
                 throw new SourceLinkConflictError(sourceKey, existingLink.performedOccurrenceId, occurrence.performedOccurrenceId);
             }
 
             const now = new Date().toISOString();
             const alreadyPresent = occurrence.sourceRefs.some(ref => sourceKeyForRef(ref) === sourceKey);
+            const nextSourceRefs = alreadyPresent ? occurrence.sourceRefs : [...occurrence.sourceRefs, facts.sourceRef];
+            assertSourceCardinality(nextSourceRefs);
             const updated: PerformedTrainingOccurrence = {
                 ...occurrence,
                 ...projectionAfterAttach(occurrence, facts),
-                sourceRefs: alreadyPresent ? occurrence.sourceRefs : [...occurrence.sourceRefs, facts.sourceRef],
+                sourceRefs: nextSourceRefs,
                 reconciliation: withStickyReconciliation(occurrence.reconciliation, reconciliation),
                 updatedAt: now,
             };
@@ -325,6 +364,16 @@ export class PerformedTrainingOccurrenceRepository {
             const detachedRef = occurrence.sourceRefs.find(ref => sourceKeyForRef(ref) === sourceKey);
             if (!detachedRef) throw new Error(`Occurrence ${performedOccurrenceId} has no source ${sourceKey}`);
             if (occurrence.sourceRefs.length <= 1) throw new Error(`Cannot unlink the only source on occurrence ${performedOccurrenceId}`);
+
+            // Source-link ownership must be part of the transaction read set before the
+            // re-pointing write. Otherwise a concurrent merge/unlink can move this claim
+            // and this transaction could silently overwrite the newer owner.
+            const linkSnap = await transaction.get(linkRef);
+            if (!linkSnap.exists()) throw new Error(`Source link ${sourceKey} does not exist`);
+            const link = parseSourceLinkForKey(linkSnap.data(), userId, sourceKey);
+            if (link.performedOccurrenceId !== occurrence.performedOccurrenceId) {
+                throw new SourceLinkConflictError(sourceKey, link.performedOccurrenceId, occurrence.performedOccurrenceId);
+            }
 
             const now = new Date().toISOString();
             const remainingRefs = occurrence.sourceRefs.filter(ref => sourceKeyForRef(ref) !== sourceKey);
@@ -395,11 +444,35 @@ export class PerformedTrainingOccurrenceRepository {
             if (!loserSnap.exists()) throw new Error(`Loser occurrence ${loserId} does not exist`);
             const survivor = parsePerformedTrainingOccurrence(survivorSnap.data(), userId);
             const loser = parsePerformedTrainingOccurrence(loserSnap.data(), userId);
-            if (loser.status === 'merged') return survivor;
+            if (survivor.status !== 'active') {
+                throw new Error(`Survivor occurrence ${survivorId} is not active`);
+            }
+            if (loser.status === 'merged') {
+                const existingSurvivor = await this.followMergeChainTx(transaction, userId, loser);
+                if (existingSurvivor.performedOccurrenceId === survivor.performedOccurrenceId) return survivor;
+                throw new OccurrenceMergeConflictError(loserId, survivor.performedOccurrenceId, existingSurvivor.performedOccurrenceId);
+            }
 
-            const now = new Date().toISOString();
             const survivorKeys = new Set(survivor.sourceRefs.map(sourceKeyForRef));
             const combinedRefs = [...survivor.sourceRefs, ...loser.sourceRefs.filter(ref => !survivorKeys.has(sourceKeyForRef(ref)))];
+            assertSourceCardinality(combinedRefs);
+
+            // Every claim that is about to be moved must be read and verified *before*
+            // writes begin. Firestore can then retry the transaction if any concurrent
+            // writer moved one of these source-link documents in the meantime.
+            const loserLinks = await Promise.all(loser.sourceRefs.map(async ref => {
+                const sourceKey = sourceKeyForRef(ref);
+                const sourceLinkRef = this.sourceLinkRef(userId, sourceKey);
+                const linkSnap = await transaction.get(sourceLinkRef);
+                if (!linkSnap.exists()) throw new Error(`Source link ${sourceKey} does not exist`);
+                const link = parseSourceLinkForKey(linkSnap.data(), userId, sourceKey);
+                if (link.performedOccurrenceId !== loser.performedOccurrenceId) {
+                    throw new SourceLinkConflictError(sourceKey, link.performedOccurrenceId, loser.performedOccurrenceId);
+                }
+                return { sourceLinkRef };
+            }));
+
+            const now = new Date().toISOString();
             const survivorHasStructured = survivor.sourceRefs.some(ref => ref.kind === 'structured_execution');
             const loserHasStructured = loser.sourceRefs.some(ref => ref.kind === 'structured_execution');
             const authorityProjection = !survivorHasStructured && loserHasStructured
@@ -422,14 +495,14 @@ export class PerformedTrainingOccurrenceRepository {
             const tombstonedLoser: PerformedTrainingOccurrence = {
                 ...loser,
                 status: 'merged',
-                mergedIntoOccurrenceId: survivorId,
+                mergedIntoOccurrenceId: survivor.performedOccurrenceId,
                 updatedAt: now,
             };
 
             transaction.set(survivorRef, mergedSurvivor);
             transaction.set(loserRef, tombstonedLoser);
-            for (const ref of loser.sourceRefs) {
-                transaction.update(this.sourceLinkRef(userId, sourceKeyForRef(ref)), { performedOccurrenceId: survivorId, updatedAt: now });
+            for (const { sourceLinkRef } of loserLinks) {
+                transaction.update(sourceLinkRef, { performedOccurrenceId: survivor.performedOccurrenceId, updatedAt: now });
             }
             return mergedSurvivor;
         });
