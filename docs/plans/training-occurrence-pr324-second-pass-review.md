@@ -1,6 +1,6 @@
 # PR #324 second-pass review — transaction and read-model hardening
 
-**Reviewed:** 2 September 2026  
+**Reviewed:** 2 September 2026
 **Scope:** second independent pass over PR #324 after the initial hardening review, focused on Firestore transaction read sets, merge determinism, source-cardinality enforcement, cross-timezone Activities hydration, and rollout diagnostics.
 
 This note supplements:
