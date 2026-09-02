@@ -4,7 +4,7 @@
 **Status:** Proposed
 **Parent plan:** [`sports-knowledge-registry-follow-up.md`](./sports-knowledge-registry-follow-up.md) — SKR3
 **Related:** ADR-0033 (claim registry), SKR1 (persisted lineage), SKR2 (coverage inventory)
-**Policy version impact:** none intended — every workstream below is behavior-preserving
+**Policy version impact:** registry migration is behavior-preserving by default; W0 review exposed one live taper-resolution defect, corrected in this PR with `POLICY_VERSION` bumped to `2026-09-skr3-taper-resolution-v1`
 
 ## 1. Purpose
 
@@ -107,8 +107,10 @@ product-defined, so no study can validate them: `optimizer.fatigue_cost_weights`
 `evergreen.default_weekly_commitment`.
 
 Treating the second group as a literature problem wastes effort and invites dishonest citations.
-They need explicit product-policy claims plus drift-proof alignment tests — and must **keep** a
-research priority, because recording a number is not calibrating it.
+They need explicit product-policy claims plus drift-proof alignment tests. Their **coverage** state
+must reflect whether the current epistemic status has complete claim-level lineage; any remaining
+outcome-calibration debt belongs to simulation/SKR4 rather than being disguised as a literature
+backlog solely to keep a coverage row `partial`.
 
 ### F7 — `spacing.hard_lower_body_recovery` is a data audit, not a reading task
 
@@ -119,60 +121,97 @@ that override the 0.6/two-day fallback, consumed by
 `planningCandidate.ts:resolveMinimumDaysAfterHardLowerBody`. Closing it means auditing catalog
 entries and adding a validator, not reviewing papers.
 
+### F8 — Multi-event contributor taper duplicated the canonical policy
+
+Review of W0 found a behavior defect outside the original reconciliation scope:
+`periodization.ts` computed contributor-objective taper state from hard-coded A/B day windows,
+while `taperPolicy.ts:resolveEventTaper` is the canonical resolver and also owns cycling-A
+race-week-Monday alignment and authored `taper.startDate` overrides. This meant a focus event and a
+contributor event could be judged by different taper calendars.
+
+The correction is intentionally small: contributor evaluation delegates to `resolveEventTaper`,
+with regression coverage for cycling-A race-week alignment and authored contributor taper dates.
+Because that can alter a persisted recommendation, it is a real policy change and must carry a
+`POLICY_VERSION` bump. This is an implementation-consistency fix; it does **not** turn the exact
+A/B/cycling windows into scientific constants.
+
 ## 4. Scope
 
 | In scope | Out of scope (and why) |
 |---|---|
-| W0 registry↔inventory↔lineage reconciliation | The seven SEP P0 partials — calibration debt, not literature debt (F4); route to SKR4 |
+| W0 registry↔inventory↔lineage reconciliation plus the F8 canonical taper-resolution correction found during review | The seven SEP P0 partials — calibration debt, not literature debt (F4); route to SKR4 |
 | W1 periodization + event-demand evidence pack | Fueling policy migration — the engine has no fueling decision authority yet; migrating it would register authority that does not exist |
-| W2 optimizer/stimulus product-policy registration | Any `POLICY_VERSION`-bumping behavior change; those are separate calibration PRs |
+| W2 optimizer/stimulus product-policy registration | New calibration-driven behavior changes; those require their own evidence/simulation and `POLICY_VERSION` bump |
 | W3 catalog recovery-metadata audit | Relaxing `validateKnowledgeCoverageInventory` rules (F2) |
 
 ## 5. Coverage-state decision rule
 
-To keep these workstreams from becoming coverage inflation, apply one rule consistently:
+To keep these workstreams from becoming coverage inflation, use the inventory's own semantics:
 
-- **`covered`** requires *all three*: (a) an applicable reviewed scientific boundary claim,
-  (b) an explicit product-policy claim recording the exact scalars, (c) an alignment test pinning
-  claim text to the live constants. Priority becomes `none`.
-- **`partial`** where a product-policy claim exists but either no scientific boundary applies, or a
-  material sub-surface stays unaudited. Priority is **retained**.
-- **`uncovered`** stays only where not even a product-policy claim has been written.
+- **`covered`** means the family has adequate explicit lineage for its **current epistemic status**.
+  For a product heuristic this can be a reviewed scientific boundary where one is applicable, an
+  explicit product-policy claim for exact product scalars, and an alignment test that keeps claim
+  text synchronized with live constants. Priority becomes `none` because no evidence/provenance
+  surface in that family remains unaudited.
+- **`partial`** means at least one supporting claim exists, but a **material evidence/provenance
+  sub-surface represented by that family** remains unaudited or unsupported. Priority is retained
+  for that unresolved surface.
+- **`uncovered`** means the live family has no claim-level coverage yet. It must not borrow adjacent
+  evidence merely because the neighboring concept is scientifically plausible.
+- **`not_applicable`** remains for implementation constants or non-scientific safety invariants
+  where sports-science provenance would be a category error.
 
-Recording a scalar in a claim is provenance, not validation. A family whose numbers remain
-uncalibrated ends at `partial` with its priority intact — never `covered`.
+Recording an exact scalar in a product-policy claim is provenance, not proof that the scalar is
+optimal. Conversely, lack of outcome calibration does **not by itself** make provenance incomplete.
+Keep calibration debt explicit in simulation/SKR4 or a dedicated calibration work item; do not make
+`covered` mean “scientifically validated coefficient,” because existing covered product heuristics
+(including readiness coefficients) deliberately distinguish those concepts.
+
+For `periodization.taper_windows_volume`, the scientific claim supports the endurance taper
+**direction/boundary** (substantial volume reduction while preserving meaningful intensity and
+frequency, with multiple effective durations). The exact A/B windows, cycling-A race-week alignment,
+linear curve, `intensityScale = 1.0`, and `volumeScale → 0.6` remain transparent product policy.
 
 ## 6. Workstreams
 
 ### W0 — Reconcile the registry, the inventory and the runtime lineage
 
-**Prerequisite for everything else.** No literature. No engine behavior change.
+**Prerequisite for everything else.** Registry reconciliation itself needs no new literature. The
+F8 contributor-taper inconsistency found during review is a separate corrective behavior change
+included in this PR and therefore carries the policy-version bump described above.
 
 1. Split `periodization.taper_windows_volume`:
    - `periodization.taper_windows_volume` → `covered`, refs `endurancePreEventTaper` +
-     `taperWindowsVolumePolicy`, priority `none`. It satisfies all three `covered` conditions today.
+     `taperWindowsVolumePolicy`, priority `none`. Its scientific boundary and exact product-policy
+     scheduling/scalars are both explicit, and alignment/runtime lineage already exist.
    - New `periodization.post_event_recovery_window` → `uncovered`, `product_heuristic`, P1,
      decision impact `moderate`, safety impact `moderate`, codeRef
      `periodization.ts:evaluatePeriodizationPhase`, rationale recording that the A-only,
      three-day, 0.4/0.4 window is independently calibrated and unsupported by taper meta-analysis.
-     (The §6 target figures below assume `moderate` decision impact; scoring it `high` instead
-     leaves high-impact uncovered at 8 rather than 7.)
+     (The target figures below assume `moderate` decision impact; scoring it `high` instead leaves
+     high-impact uncovered at 8 rather than 7.)
 2. `periodization.taper_sharpening_targets` → `partial` + `taperSharpeningPolicy`, priority P2.
-   Product claim exists; the specific stimulus target values are not derivable from taper evidence.
+   Product claim exists; the specific stimulus target values remain a distinct calibration surface.
 3. `spacing.pre_event_restrictions` → `partial` + `preEventRestrictionsPolicy`, priority P1 retained
-   (its scientific half is W1's job).
+   (its scientific timing half is W1's job).
 4. Correct the `knowledgeLineage.ts:trainingIntentKnowledgeRefs` doc comment so its stated rule
-   matches reality, and decide explicitly whether `preEventRestrictionsPolicy` should now be
-   emitted for tapering endurance events (recommended: yes, once the family is `partial`).
-5. Update the totals asserted in `knowledgeCoverage.test.ts` and the inventory figures quoted in
-   `sports-knowledge-registry-follow-up.md` and
-   `docs/analysis/2026-08-30-engine-knowledge-coverage-inventory.md`.
+   matches reality. **Do not** emit `preEventRestrictionsPolicy` from the current coarse
+   `taperActive` input: the optimizer evaluates those blocks on exact days-to-event, and attributing
+   the claim on every taper-active day would overstate which policy actually executed. Precise
+   lineage requires propagating an exact restriction-evaluated signal or equivalent context.
+5. Update the totals asserted in `knowledgeCoverage.test.ts` and the current inventory figures in
+   `sports-knowledge-registry-follow-up.md`. Historical dated analysis remains historical unless a
+   separate current-state note explicitly supersedes it.
+6. Canonicalize contributor taper evaluation by delegating to `resolveEventTaper`; add regression
+   tests for cycling-A race-week alignment and authored contributor `taper.startDate`; bump
+   `POLICY_VERSION` because this can change live objective weighting/recommendations.
 
-**Target end state (subject to review):** 54 families — covered 18, partial 10, uncovered 20,
-not_applicable 6; P0 **7**, P1 13, P2 8, P3 2; high-impact uncovered 9 → **7**; uncovered-P0 → **0**.
+**Target end state:** 54 families — covered 18, partial 10, uncovered 20, not_applicable 6; P0 **7**,
+P1 13, P2 8, P3 2; high-impact uncovered 9 → **7**; uncovered-P0 → **0**.
 
-**Acceptance:** `npm run check` green; `validate:knowledge-coverage` reports the new totals; no
-change to any file in the `check-policy-drift.mjs` decision-file list.
+**Acceptance:** `npm run check` green; `validate:knowledge-coverage` reports the new totals;
+`check-policy-drift.mjs` passes with the explicit policy-version change; contributor taper tests pin
+both canonical race-week alignment and authored-start behavior.
 
 ### W1 — Evidence Pack 6: periodization objectives and event demand
 
@@ -186,11 +225,11 @@ periodization-structure syntheses and sport-demand characterization literature t
 —without validating 35/84-day cut-offs, 0.6/1.1/0.9 scalars, the 0..1 demand vectors, or the
 0.4/0.5/0.6/0.7 objective thresholds.
 
-**Honest expected outcome:** mostly `partial`. `event.demand_presets` is currently classified
-`scientific_claim`; the analysis should reclassify it as `product_heuristic` with a scientific
-boundary, because the authored 0..1 vectors are a product encoding, not a measured constant. The
-same reclassification question applies to `periodization.taper_windows_volume` and should be
-settled in W0.
+**Honest expected outcome:** likely a mix of `covered` and `partial`, decided per §5 rather than by
+whether every product scalar has a published effect estimate. `event.demand_presets` is currently
+classified `scientific_claim`; the analysis should reclassify it as `product_heuristic` with a
+scientific boundary if the authored 0..1 vectors prove to be a product encoding rather than measured
+constants. W0 settles the equivalent classification question for `periodization.taper_windows_volume`.
 
 **Deliverables:** `docs/analysis/<date>-evidence-pack-periodization-event-demand.md`; a new
 `periodizationEventDemandKnowledge.ts` module registered in `sportsKnowledgeRegistry.ts`; claim and
@@ -201,15 +240,19 @@ alignment tests; inventory updates; optional lineage wiring for newly non-uncove
 **Families:** the F6 second group (15 families — the largest workstream by count, and the lowest
 per-family cost).
 
-**Method:** no literature search. For each family author a `policy.*` claim with
-`evidenceCertainty: 'not_applicable'` stating the exact live constants, then add an alignment test
-that fails if code and claim diverge. Where a genuinely applicable boundary already exists in the
-registry (e.g. `trainingStressRecoveryBalance` and `fatigueDecayHalfLives` for the fatigue-cost
-weights), link it as context — not as validation of the coefficients.
+**Method:** no literature search merely to legitimize product-defined scales. For each family author
+a `policy.*` claim with `evidenceCertainty: 'not_applicable'` stating the exact live constants, then
+add an alignment test that fails if code and claim diverge. Where a genuinely applicable boundary
+already exists in the registry (e.g. `trainingStressRecoveryBalance` and
+`fatigueDecayHalfLives` for fatigue-cost weights), link it as context — not as validation of the
+coefficients.
 
-**Every family in W2 ends `partial` with its priority retained.** The deliverable is provenance and
-drift protection, not discharged calibration debt. State this explicitly in each
-`coverageRationale`, otherwise the summary will read as if optimizer tuning had been validated.
+**Do not pre-assign every W2 family to `partial`.** Apply §5 family by family. If the explicit
+product-policy claim fully represents the family's current epistemic status and no material
+provenance/audit surface remains, `covered` is legitimate even though the coefficient has not been
+outcome-optimized. If some represented surface still lacks evidence/provenance, keep `partial` and
+retain a priority for that named surface. Track outcome-calibration debt separately so the coverage
+inventory does not become a surrogate calibration tracker.
 
 **Sequencing note:** split into at least two PRs (optimizer scoring; stimulus credit + remaining
 heuristics) — 15 families in one review is too large for the alignment tests to be read carefully.
@@ -227,7 +270,7 @@ heuristics) — 15 families in one review is too large for the alignment tests t
 
 **Note:** this is the one workstream that can plausibly surface a *behavior* problem (an override
 weakening a high-safety spacing rule). If it does, that fix is a separate `POLICY_VERSION`-bumping
-PR with simulation, not part of the registry work.
+change with simulation rather than being hidden inside provenance migration.
 
 ### W4 — Fueling (deferred, unchanged)
 
@@ -249,22 +292,25 @@ W2 add inventory rows whose totals would otherwise need updating twice. W1 and W
 W3 is independent of both but shares the alignment-test pattern, so it benefits from following W2a.
 
 Suggested PRs: W0 (1 PR) → W1 (1 analysis PR + 1 implementation PR) → W2a, W2b (2 PRs) → W3
-(1 audit PR + possibly 1 behavior PR).
+(1 audit PR + possibly 1 behavior PR). The F8 corrective taper change is explicitly documented as
+part of this W0 PR because review found it before merge; future behavior changes should remain
+separate from evidence-only migrations.
 
 ## 8. Per-family migration recipe
 
 Derived from the completed packs; follow it for every family in W1–W3.
 
 1. Write the family's exact current rule from the code, including every material scalar.
-2. Decide the honest claim shape: scientific boundary, product policy, or both.
+2. Decide the honest claim shape: scientific boundary, product policy, athlete-specific evidence,
+   implementation invariant, or a combination where each has a distinct role.
 3. Search evidence **after** the claim is defined, never to justify a number already chosen.
 4. Register claims and sources in a focused `*Knowledge.ts` module; export through
    `sportsKnowledgeRegistry.ts` so cross-module identity stays validated.
 5. Add a claim test (registry shape) and an alignment test (claim text ↔ live constants).
 6. Update the `ENGINE_KNOWLEDGE_COVERAGE` row: coverage state per §5, refs, and a rationale that
-   names what remains unvalidated.
+   names any unresolved evidence/provenance surface separately from outcome-calibration debt.
 7. Wire `knowledgeLineage.ts` only for families that are no longer `uncovered`, and only on paths
-   actually evaluated for the supplied inputs.
+   where the cited policy actually evaluated for the supplied inputs.
 
 ## 9. Verification and guardrails
 
@@ -279,28 +325,34 @@ Required for every PR in this plan:
 `app/src/engine/knowledgeLineage.ts`, docs, tests.
 
 **Guarded decision files** — `optimizer.ts`, `periodization.ts`, `rules.ts`, `fatigue.ts`,
-`microcycle.ts` and the rest of the `check-policy-drift.mjs` list — must not change executably in
-this plan. Comment-only edits are permitted (the gate compares normalized syntax with comments
-removed), which is how the W0 lineage-comment correction and any clarifying code comments should
-land. Anything else means the work stopped being behavior-preserving and needs its own PR.
+`microcycle.ts` and the rest of the `check-policy-drift.mjs` list — must not change executably in a
+purported evidence-only migration. Comment-only edits are permitted because the gate compares
+normalized executable syntax. If review uncovers a real behavior defect, fix it explicitly, add
+regression coverage, and bump `POLICY_VERSION` instead of weakening the gate or describing the
+change as behavior-preserving. W0/F8 is the worked example.
 
 ## 10. Risks
 
 | Risk | Mitigation |
 |---|---|
-| **Coverage inflation** — recording scalars reads as validating them | §5 decision rule; W2 families stay `partial` with priorities retained; rationales state the residual debt |
+| **Coverage inflation** — recording scalars reads as validating them | §5 separates lineage completeness from outcome calibration; rationales must state which numbers are product policy |
+| **Coverage deflation** — using `partial` only to mean “not outcome-calibrated” | Apply the inventory's documented epistemic-status semantics; track calibration separately |
 | **Proximity legitimization** — citing adjacent evidence for a product number | Claim-first authoring (recipe step 3); the parent plan already rejected this for subjective thresholds |
-| **Scope creep into SEP P0s** | Explicitly out of scope (F4); route to SKR4/calibration |
-| **Accidental behavior change** | Drift gate + guarded-file rule (§9); W3 escalates to a separate PR if it finds a real defect |
+| **Scope creep into SEP P0s** | Explicitly out of scope (F4); route calibration to SKR4/simulation |
+| **Accidental behavior change** | Drift gate + guarded-file rule (§9); executable corrections require regression tests and a policy-version bump |
 | **Double-counted totals** | W0 lands before W1/W2; a single totals update per PR |
-| **Family splits break audit identity** | Coverage ids are stable audit identity — the new `periodization.post_event_recovery_window` is additive; the retained `periodization.taper_windows_volume` id keeps its meaning narrowed, and this must be recorded in the W0 analysis note |
+| **Family splits break audit identity** | Coverage ids are stable audit identity — the new `periodization.post_event_recovery_window` is additive; the retained `periodization.taper_windows_volume` id keeps its meaning narrowed, and this must remain explicit in current documentation |
+| **Lineage over-attribution** | Emit a claim only when the corresponding policy actually evaluated; coarse `taperActive` is insufficient for exact pre-event restriction lineage |
 
 ## 11. Definition of done for SKR3
 
 - Uncovered-P0 backlog is zero and stays zero.
-- Every family with live decision authority holds at least a product-policy claim, so no decision
-  path is completely unattributed.
-- Every registered scalar is protected by an alignment test.
-- The remaining backlog is honestly labelled calibration debt (`partial` + priority), not absence
-  of provenance — and the families that need athlete data rather than literature are handed to SKR4
-  rather than being closed prematurely.
+- Every family with live decision authority has claim-level provenance appropriate to its current
+  epistemic status, or an explicit named unresolved surface and priority.
+- Every registered product scalar is protected by an alignment test.
+- Literature backlog, provenance gaps, and outcome-calibration debt are not conflated: families that
+  need scientific review stay in SKR3 evidence work; families that need athlete/outcome calibration
+  are handed to SKR4/simulation; product-authored constants are labelled as such rather than
+  proximity-validated by adjacent literature.
+- Any executable behavior correction discovered during migration is versioned and regression-tested
+  instead of being hidden under an evidence-only label.
