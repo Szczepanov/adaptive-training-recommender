@@ -58,9 +58,10 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
         ]));
         expect(cyclistTrial.notes).toContain('no between-group performance advantage');
 
-        // Issurin is the conceptual framework, deliberately not registered as a review synthesis.
+        // PubMed classifies Issurin as a Review; it remains a conceptual framework rather than a
+        // systematic review or effect-size synthesis, so the non-systematic review bucket is exact.
         const framework = getKnowledgeSource('ISSURIN-2010-PERIODIZATION-REVIEW');
-        expect(framework.sourceType).toBe('expert_practice');
+        expect(framework.sourceType).toBe('narrative_review');
         expect(framework.notes).toContain('not itself a systematic review');
     });
 
@@ -74,6 +75,7 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
         expect(claim.limitations.join(' ')).toContain('strength_meet');
 
         const foundation = getKnowledgeSource('JOYNER-2008-ENDURANCE-PHYSIOLOGY-REVIEW');
+        expect(foundation.sourceType).toBe('narrative_review');
         expect(foundation.externalIds).toEqual(expect.arrayContaining([
             { type: 'pmid', value: '17901124' },
             { type: 'pmcid', value: 'PMC2375555' },
@@ -81,6 +83,7 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
         ]));
 
         const cyclingReview = getKnowledgeSource('SANDERS-2021-CYCLING-POWER-PROFILE-REVIEW');
+        expect(cyclingReview.sourceType).toBe('narrative_review');
         expect(cyclingReview.externalIds).toEqual(expect.arrayContaining([{ type: 'pmid', value: '33271501' }]));
         expect(cyclingReview.notes).toContain('stage type materially changes');
         expect(cyclingReview.notes).not.toContain('time trials');
