@@ -831,6 +831,64 @@ describe('session adjustment engine', () => {
             expect(envelopes.safety.restrictedModalities).not.toContain('Running');
             expect(envelopes.plan.maxAllowableTier).toBe('Mobility');
         });
+
+        it('applies strict Rest ceiling, clinical escalation, and pauses training when red flags are reported', () => {
+            const readiness: DailyReadiness = {
+                subjective: neutralSubjective({
+                    painFlag: true,
+                    clinicalEnvelopeSources: ['red_flag', 'pain_or_injury'],
+                    redFlagFindings: [
+                        { category: 'neurological', source: 'explicit_checkin', description: 'Numbness reported' },
+                    ],
+                }),
+                objective: quietObjective(),
+            };
+            const context = baseContext();
+            const envelopes = evaluateEnvelopes(readiness, context);
+
+            expect(envelopes.safety.clinicalFlagActive).toBe(true);
+            expect(envelopes.safety.redFlagActive).toBe(true);
+            expect(envelopes.safety.clinicalEscalationRequired).toBe(true);
+            expect(envelopes.safety.redFlagCategories).toEqual(['neurological']);
+            expect(envelopes.safety.clinicalReason).toContain('Clinical evaluation recommended');
+            expect(envelopes.safety.clinicalReason).toContain('neurological');
+            expect(envelopes.plan.maxAllowableTier).toBe('Rest');
+            expect(envelopes.plan.reason).toContain('Red-flag clinical escalation protocol active');
+
+            const baseRec = evaluateTraining(readiness, context, '2026-09-01');
+            expect(baseRec.mode).toBe('recover');
+            expect(baseRec.template.category).toBe('Rest');
+            expect(baseRec.rationale).toContain('Clinical evaluation recommended');
+            expect(adjustSessionRecommendation(baseRec, 'easier', readiness, context, '2026-09-01')).toBeNull();
+            expect(adjustSessionRecommendation(baseRec, 'harder', readiness, context, '2026-09-01')).toBeNull();
+        });
+
+        it('forces recover mode from clinicalEnvelopeSources red_flag alone, without a resolved redFlagFindings entry', () => {
+            // A disclosed red flag with no resolved category (e.g. `redFlags.present` true but
+            // `categories` empty) reaches the engine as clinicalEnvelopeSources: ['red_flag']
+            // with an empty redFlagFindings array. evaluateEnvelopes already treats that as an
+            // active red flag; evaluateTraining's mode-selection override must match, or an
+            // active template could still be selected instead of Rest.
+            //
+            // painFlag is deliberately false here: painFlag: true would independently trigger
+            // `clinicalRecoverOverride` and force recover regardless of `redFlagOverride`,
+            // masking a regression in the clinicalEnvelopeSources check this test exists to
+            // cover. Isolating painFlag: false means only redFlagOverride's own
+            // clinicalEnvelopeSources.includes('red_flag') check can produce recover here.
+            const readiness: DailyReadiness = {
+                subjective: neutralSubjective({
+                    painFlag: false,
+                    clinicalEnvelopeSources: ['red_flag'],
+                    redFlagFindings: [],
+                }),
+                objective: quietObjective(),
+            };
+            const context = baseContext();
+
+            const baseRec = evaluateTraining(readiness, context, '2026-09-01');
+            expect(baseRec.mode).toBe('recover');
+            expect(baseRec.template.category).toBe('Rest');
+        });
     });
 
     it('Non-transferable objective (Hill Repeats) skips Tier 4 cross-modal substitution', () => {

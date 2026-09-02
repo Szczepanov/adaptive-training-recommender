@@ -63,8 +63,14 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     const [launching, setLaunching] = useState(false);
     const [launchError, setLaunchError] = useState<string | null>(null);
     const panelId = useId();
+    const clinicalEscalationActive = recommendation?.envelopes?.safety.clinicalEscalationRequired === true;
+    const clinicalReason = recommendation?.envelopes?.safety.clinicalReason
+        ?? 'Red-flag symptoms reported. Training recommendations are paused until medical evaluation.';
 
     const handleTabToggle = (tab: 'why' | 'alternatives' | 'workout') => {
+        // Keep the rationale/evidence surface available, but do not expose executable
+        // prescription or adjustment surfaces while clinical escalation is active.
+        if (clinicalEscalationActive && tab !== 'why') return;
         const next = activeTab === tab ? 'none' : tab;
         setActiveTab(next);
         if (next !== 'none') {
@@ -85,6 +91,10 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         }
 
         if (!recommendation) return;
+
+        // Clinical escalation pauses all training launch paths, including adjusted
+        // bindings and the original prescription, until medical evaluation clears it.
+        if (clinicalEscalationActive) return;
 
         // A recommendation's primarySession is an immutable binding for the original
         // authored prescription. Once the athlete selects a one-tap alternative or load
@@ -119,6 +129,10 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     };
 
     const handleLoadAdjustClick = (dir: 'easier' | 'harder' | null) => {
+        if (clinicalEscalationActive) {
+            usabilityMetrics.recordOverrideAttempt(userId, date, 'Training adjustment blocked by clinical escalation', true);
+            return;
+        }
         if (dir === 'harder' && (isGateLocked || !evidence.boundaries.harderAdjustmentAllowed)) {
             usabilityMetrics.recordOverrideAttempt(userId, date, 'Harder load blocked by safety gate', true);
             return;
@@ -128,9 +142,10 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         onAdjustLoad(dir);
     };
 
-    const isHardGateActive = isGateLocked || !evidence.boundaries.harderAdjustmentAllowed;
+    const isHardGateActive = clinicalEscalationActive || isGateLocked || !evidence.boundaries.harderAdjustmentAllowed;
     const canLaunchCurrentPrescription = Boolean(
-        onStartSession
+        !clinicalEscalationActive
+        && onStartSession
         && prescription
         && (activeAlternativeId || adjustmentDirection !== null),
     );
@@ -180,63 +195,88 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                     </div>
                 ) : recommendation ? (
                     <div className="hero-recommendation-content">
-                        <div className="headline-meta-row">
-                            <h2 className="hero-headline">
-                                {recommendation.template.title}
-                                {recommendation.activeDose && (
-                                    <span className="hero-dose-pill">{recommendation.activeDose.label}</span>
-                                )}
-                            </h2>
-                        </div>
+                        {clinicalEscalationActive && (
+                            <div className="clinical-escalation-hero-banner" role="alert">
+                                <span className="escalation-icon" aria-hidden="true">⚠️</span>
+                                <div className="escalation-content">
+                                    <strong className="escalation-title">Clinical Evaluation Recommended</strong>
+                                    <p className="escalation-text">{clinicalReason}</p>
+                                    <p className="escalation-text">
+                                        If you have acute chest pain/pressure, unexplained shortness of breath, fainting/near-fainting, new neurological symptoms, or believe this may be an emergency, seek urgent or emergency medical care now.
+                                    </p>
+                                </div>
+                            </div>
+                        )}
 
-                        <p className="hero-session-metrics">
-                            <span className="metric-tag">{recommendation.template.modality}</span>
-                            <span className="metric-dot">·</span>
-                            <span className="metric-tag">
-                                {recommendation.activeDose
-                                    ? `${recommendation.activeDose.durationMin}–${recommendation.activeDose.durationMax} min`
-                                    : `${recommendation.template.durationMin}–${recommendation.template.durationMax} min`}
-                            </span>
-                            <span className="metric-dot">·</span>
-                            <span className="metric-tag">{recommendation.template.category}</span>
-                        </p>
+                        {clinicalEscalationActive ? (
+                            <div className="headline-meta-row">
+                                <h2 className="hero-headline">Training Paused</h2>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="headline-meta-row">
+                                    <h2 className="hero-headline">
+                                        {recommendation.template.title}
+                                        {recommendation.activeDose && (
+                                            <span className="hero-dose-pill">{recommendation.activeDose.label}</span>
+                                        )}
+                                    </h2>
+                                </div>
+
+                                <p className="hero-session-metrics">
+                                    <span className="metric-tag">{recommendation.template.modality}</span>
+                                    <span className="metric-dot">·</span>
+                                    <span className="metric-tag">
+                                        {recommendation.activeDose
+                                            ? `${recommendation.activeDose.durationMin}–${recommendation.activeDose.durationMax} min`
+                                            : `${recommendation.template.durationMin}–${recommendation.template.durationMax} min`}
+                                    </span>
+                                    <span className="metric-dot">·</span>
+                                    <span className="metric-tag">{recommendation.template.category}</span>
+                                </p>
+                            </>
+                        )}
 
                         <div className="hero-why-callout" role="note">
                             <p className="why-text">
-                                <strong>Why today:</strong> {recommendation.rationale}
+                                <strong>Why today:</strong> {clinicalEscalationActive ? clinicalReason : recommendation.rationale}
                             </p>
                         </div>
 
                         <div className="hero-cta-wrap">
-                            {(canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession)) ? (
-                                <button
-                                    type="button"
-                                    className="btn-hero-primary"
-                                    onClick={() => void handleStartPrimary()}
-                                    disabled={launching}
-                                    aria-label={`Start ${recommendation.template.title}`}
-                                >
-                                    {recommendation.template.modality === 'Strength' ? '🏋️' : '▶️'} {launching ? 'Preparing Session…' : 'Start Session →'}
-                                </button>
-                            ) : prescription ? (
-                                <button
-                                    type="button"
-                                    className="btn-hero-primary"
-                                    onClick={() => setActiveTab(activeTab === 'workout' ? 'none' : 'workout')}
-                                    aria-label={`View workout details for ${recommendation.template.title}`}
-                                >
-                                    📋 View Workout Targets →
-                                </button>
-                            ) : null}
+                            {!clinicalEscalationActive && (
+                                <>
+                                    {(canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession)) ? (
+                                        <button
+                                            type="button"
+                                            className="btn-hero-primary"
+                                            onClick={() => void handleStartPrimary()}
+                                            disabled={launching}
+                                            aria-label={`Start ${recommendation.template.title}`}
+                                        >
+                                            {recommendation.template.modality === 'Strength' ? '🏋️' : '▶️'} {launching ? 'Preparing Session…' : 'Start Session →'}
+                                        </button>
+                                    ) : prescription ? (
+                                        <button
+                                            type="button"
+                                            className="btn-hero-primary"
+                                            onClick={() => setActiveTab(activeTab === 'workout' ? 'none' : 'workout')}
+                                            aria-label={`View workout details for ${recommendation.template.title}`}
+                                        >
+                                            📋 View Workout Targets →
+                                        </button>
+                                    ) : null}
 
-                            {prescription && (
-                                <WorkoutExportMenu
-                                    userId={userId}
-                                    date={date}
-                                    title={recommendation.template.title}
-                                    modality={recommendation.template.modality}
-                                    prescription={prescription}
-                                />
+                                    {prescription && (
+                                        <WorkoutExportMenu
+                                            userId={userId}
+                                            date={date}
+                                            title={recommendation.template.title}
+                                            modality={recommendation.template.modality}
+                                            prescription={prescription}
+                                        />
+                                    )}
+                                </>
                             )}
                         </div>
                         {launchError && <p className="form-error-msg" role="alert">{launchError}</p>}
@@ -258,15 +298,17 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                     >
                         💡 Why & Invalidation Rules {activeTab === 'why' ? '▲' : '▼'}
                     </button>
-                    <button
-                        type="button"
-                        aria-expanded={activeTab === 'alternatives'}
-                        className={`decision-tab-btn ${activeTab === 'alternatives' ? 'active' : ''}`}
-                        onClick={() => handleTabToggle('alternatives')}
-                    >
-                        ⚡ 1-Tap Alternatives {activeTab === 'alternatives' ? '▲' : '▼'}
-                    </button>
-                    {prescription && (
+                    {!clinicalEscalationActive && (
+                        <button
+                            type="button"
+                            aria-expanded={activeTab === 'alternatives'}
+                            className={`decision-tab-btn ${activeTab === 'alternatives' ? 'active' : ''}`}
+                            onClick={() => handleTabToggle('alternatives')}
+                        >
+                            ⚡ 1-Tap Alternatives {activeTab === 'alternatives' ? '▲' : '▼'}
+                        </button>
+                    )}
+                    {!clinicalEscalationActive && prescription && (
                         <button
                             type="button"
                             aria-expanded={activeTab === 'workout'}
@@ -290,7 +332,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                 </div>
             )}
 
-            {activeTab === 'alternatives' && (
+            {!clinicalEscalationActive && activeTab === 'alternatives' && (
                 <div
                     id={`${panelId}-alternatives`}
                     role="region"
@@ -329,7 +371,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                 </div>
             )}
 
-            {activeTab === 'workout' && prescription && (
+            {!clinicalEscalationActive && activeTab === 'workout' && prescription && (
                 <div
                     id={`${panelId}-workout`}
                     role="region"

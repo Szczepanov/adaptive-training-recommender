@@ -4,13 +4,16 @@ export const INJURY_PAIN_CLAIM_IDS = {
     symptomsRequireContextualAssessment: 'injury.symptoms.require_contextual_assessment',
     returnToSportCriteriaBasedRiskManagement: 'injury.return_to_sport.criteria_based_risk_management',
     tissueResponseTemporalMonitoring: 'injury.tissue_response.temporal_monitoring_condition_specific',
-    tissueResponseSeverityPolicy: 'policy.injury.tissue_response_severity_v1',
+    tissueResponseSeverityPolicyV1: 'policy.injury.tissue_response_severity_v1',
+    tissueResponseSeverityPolicy: 'policy.injury.tissue_response_severity_v2',
     lowerLimbImpactPolicy: 'policy.injury.region_lower_limb_impact_v1',
     lowerLimbStrengthPolicy: 'policy.injury.region_lower_limb_strength_v1',
-    lumbarLoadingPolicy: 'policy.injury.region_lumbar_loading_v1',
+    lumbarLoadingPolicyV1: 'policy.injury.region_lumbar_loading_v1',
+    lumbarLoadingPolicy: 'policy.injury.region_lumbar_loading_v2',
     upperLimbLoadingPolicy: 'policy.injury.region_upper_limb_loading_v1',
     genericClinicalEnvelopePolicyV1: 'policy.injury.generic_clinical_envelope_v1',
     genericClinicalEnvelopePolicy: 'policy.injury.contextual_clinical_envelope_v2',
+    clinicalEscalationProtocol: 'policy.safety.clinical_escalation_protocol',
 } as const;
 
 const IOC_PAIN_CONSENSUS_SOURCE = 'HAINLINE-2017-IOC-PAIN-CONSENSUS';
@@ -19,6 +22,9 @@ const TENDINOPATHY_PROGRESSION_REVIEW_SOURCE = 'ESCRICHE-ESCUDER-2020-LOWER-LIMB
 const INITIAL_MSK_ASSESSMENT_CONSENSUS_SOURCE = 'HERRING-2024-INITIAL-MSK-ASSESSMENT-CONSENSUS';
 const INJURY_PRODUCT_POLICY_SOURCE = 'PRODUCT-INJURY-CLINICAL-SYMPTOM-POLICY-V1';
 const CONTEXTUAL_CLINICAL_PRODUCT_POLICY_SOURCE = 'PRODUCT-INJURY-CLINICAL-SYMPTOM-POLICY-V2';
+const TISSUE_RESPONSE_SEVERITY_PRODUCT_POLICY_V2_SOURCE = 'PRODUCT-TISSUE-RESPONSE-SEVERITY-POLICY-V2';
+const LUMBAR_LOADING_PRODUCT_POLICY_V2_SOURCE = 'PRODUCT-LUMBAR-LOADING-POLICY-V2';
+const CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE = 'PRODUCT-CLINICAL-ESCALATION-POLICY-V1';
 
 /**
  * Exact descriptor of the current injury and clinical-symptom product policy. It is
@@ -28,7 +34,11 @@ const CONTEXTUAL_CLINICAL_PRODUCT_POLICY_SOURCE = 'PRODUCT-INJURY-CLINICAL-SYMPT
 export const INJURY_PAIN_POLICY_DESCRIPTOR = {
     tissueResponseSeverity: {
         sourceSignals: ['morningState', 'painDuringTraining', 'afterTrainingState', 'nextMorningReaction'],
-        worstSignalMapping: { severe: 'exclude', moderate: 'limit', mild: 'monitor', normal: null },
+        severeSignalMapping: 'exclude',
+        persistentOrDelayedModerateMapping: 'limit',
+        transientDuringSessionLoadingSettledMapping: 'monitor',
+        mildSignalMapping: 'monitor',
+        normalSignalMapping: null,
         standingConstraintRule: 'preserve_or_tighten',
         derivedConstraintScope: 'today_only',
     },
@@ -46,7 +56,7 @@ export const INJURY_PAIN_POLICY_DESCRIPTOR = {
         lumbarLoading: {
             regions: ['lower_back'],
             limit: { restrictedModalities: [], impliedGuardrails: ['avoid_heavy_spinal_loading'], restrictedCategories: [] },
-            exclude: { restrictedModalities: [], impliedGuardrails: ['avoid_heavy_spinal_loading', 'avoid_heavy_lower_body'], restrictedCategories: [] },
+            exclude: { restrictedModalities: [], impliedGuardrails: ['avoid_heavy_spinal_loading', 'avoid_heavy_lower_body', 'avoid_high_impact'], restrictedCategories: [] },
         },
         upperLimbLoading: {
             regions: ['shoulder', 'elbow', 'wrist'],
@@ -67,6 +77,13 @@ export const INJURY_PAIN_POLICY_DESCRIPTOR = {
             noGenericRestrictionForIsolatedFamilies: ['lower_limb_strength', 'lumbar_loading', 'upper_limb_loading'],
             provenanceTraceMayControlPolicy: false,
         },
+    },
+    clinicalEscalationProtocol: {
+        redFlagCategories: ['neurological', 'acute_trauma_structural', 'systemic_infection', 'rapidly_worsening'],
+        maxTierWhenRedFlag: 'Rest',
+        enforceMode: 'recover',
+        requiresMedicalReferral: true,
+        prohibitsPhysicalTraining: true,
     },
 } as const;
 
@@ -126,6 +143,27 @@ export const INJURY_PAIN_SOURCES: readonly KnowledgeSource[] = [
         citation: 'Adaptive Training Recommender product policy: injury-clinical-symptom-v2 / SEP-C1.',
         notes: 'Separates the systemic current-clinical-symptom ceiling from the pain/injury-specific generic Running fallback. Current pain location comes only from today structured tissue responses; standing-injury trace remains provenance and cannot loosen policy.',
     },
+    {
+        id: TISSUE_RESPONSE_SEVERITY_PRODUCT_POLICY_V2_SOURCE,
+        title: 'Tissue response severity policy v2 (SEP-C3 latency-aware)',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy: tissue-response-severity-v2 (SEP-C3).',
+        notes: 'Evaluates tissue response with 24-hour response latency: severe at any point maps to exclude; persistent post-session or delayed next-morning moderate irritability maps to limit; transient during-session moderate loading discomfort that settles post-session and next morning maps to monitor (tolerable loading, Escriche-Escuder 2020); mild maps to monitor; normal maps to null.',
+    },
+    {
+        id: LUMBAR_LOADING_PRODUCT_POLICY_V2_SOURCE,
+        title: 'Lumbar loading restriction policy v2 (SEP-C3 axial shock offload)',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy: lumbar-loading-v2 (SEP-C3).',
+        notes: 'For lower-back constraints, limit applies avoid-heavy-spinal-loading, while exclude applies avoid-heavy-spinal-loading, avoid-heavy-lower-body, and avoid-high-impact to offload high-impact axial shock.',
+    },
+    {
+        id: CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE,
+        title: 'Red-flag & clinical escalation protocol policy v1 (SEP-C4)',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy: clinical-escalation-protocol-v1 (SEP-C4).',
+        notes: 'Red-flag presentations (neurological deficit, acute traumatic instability, severe systemic infection/fever, or rapidly worsening symptoms) halt training prescriptions, cap the plan envelope at Rest, and mandate clinical evaluation.',
+    },
 ];
 
 export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
@@ -171,13 +209,30 @@ export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
         reviewedOn: '2026-09-01', version: 1,
     },
     {
-        id: INJURY_PAIN_CLAIM_IDS.tissueResponseSeverityPolicy,
+        id: INJURY_PAIN_CLAIM_IDS.tissueResponseSeverityPolicyV1,
         statement: 'The product takes the worst available daily tissue-response signal, maps severe/moderate/mild to exclude/limit/monitor, preserves or tightens active standing constraints, and scopes a newly inferred constraint to the current local day.',
-        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'deprecated', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
         applicability: { contexts: ['recommendation_engine', 'tissue_response_monitoring'], sports: ['all_supported_sports'], populations: ['product_users_with_structured_tissue_response'], outcomes: ['injury_constraint_severity'], horizon: 'acute' },
         evidence: [{ sourceId: INJURY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['The severity vocabulary and state translation are product policy, not externally validated clinical thresholds.', 'A tissue response neither diagnoses a condition nor clears a standing constraint.', 'This policy does not provide medical escalation, treatment, or return-to-sport clearance.'],
+        limitations: [
+            'Superseded by SEP-C3 latency-aware model because naive worst-of aggregation penalized tolerable transient during-session discomfort.',
+            'Retained only so historical recommendation lineage remains interpretable.',
+        ],
         reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.tissueResponseSeverityPolicy,
+        statement: 'The product evaluates daily tissue-response observations with 24-hour response latency: severe at any observation point maps to exclude; persistent post-session or delayed next-morning moderate irritability (or waking state) maps to limit; transient during-session moderate loading discomfort that settles by next morning (normal/mild) maps to monitor (tolerable loading); mild maps to monitor; normal maps to null. Active standing constraints are preserved or tightened, and newly inferred constraints are scoped to the current local day.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'tissue_response_monitoring'], sports: ['all_supported_sports'], populations: ['product_users_with_structured_tissue_response'], outcomes: ['injury_constraint_severity'], horizon: 'acute' },
+        evidence: [{ sourceId: TISSUE_RESPONSE_SEVERITY_PRODUCT_POLICY_V2_SOURCE, directness: 'direct' }],
+        limitations: [
+            'The 24-hour latency model and severity thresholds are product policy, not externally validated clinical constants.',
+            'A tissue response neither diagnoses a condition nor clears an active standing constraint.',
+            'This policy does not provide medical escalation, treatment, or return-to-sport clearance.',
+        ],
+        reviewedOn: '2026-09-01', version: 1,
+        supersedes: INJURY_PAIN_CLAIM_IDS.tissueResponseSeverityPolicyV1,
     },
     {
         id: INJURY_PAIN_CLAIM_IDS.lowerLimbImpactPolicy,
@@ -198,13 +253,30 @@ export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
         reviewedOn: '2026-09-01', version: 1,
     },
     {
-        id: INJURY_PAIN_CLAIM_IDS.lumbarLoadingPolicy,
+        id: INJURY_PAIN_CLAIM_IDS.lumbarLoadingPolicyV1,
         statement: 'For lower-back constraints, the product applies avoid-heavy-spinal-loading at limit/exclude and additionally applies avoid-heavy-lower-body at exclude.',
-        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'deprecated', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
         applicability: { contexts: ['recommendation_engine', 'injury_safety'], sports: ['all_supported_sports'], populations: ['product_users_with_matching_active_constraint'], outcomes: ['restriction_mapping'], horizon: 'acute' },
         evidence: [{ sourceId: INJURY_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['Lower-back symptoms have heterogeneous causes and require contextual assessment.', 'The mapping is conservative product policy, not diagnosis-specific rehabilitation authority.', 'Explicit athlete modality restrictions pass through independently of this mapping.'],
+        limitations: [
+            'Superseded by SEP-C3 which adds the avoid_high_impact guardrail to severe lower-back exclusions to offload repetitive axial impact.',
+            'Retained only so historical recommendation lineage remains interpretable.',
+        ],
         reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.lumbarLoadingPolicy,
+        statement: 'For lower-back constraints, the product applies avoid-heavy-spinal-loading at limit/exclude and additionally applies avoid-heavy-lower-body and avoid-high-impact at exclude to offload high-impact axial shock.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'injury_safety'], sports: ['all_supported_sports'], populations: ['product_users_with_matching_active_constraint'], outcomes: ['restriction_mapping'], horizon: 'acute' },
+        evidence: [{ sourceId: LUMBAR_LOADING_PRODUCT_POLICY_V2_SOURCE, directness: 'direct' }],
+        limitations: [
+            'Lower-back symptoms have heterogeneous causes and require contextual clinical assessment.',
+            'The mapping is conservative product policy, not diagnosis-specific rehabilitation authority.',
+            'Explicit athlete modality restrictions pass through independently of this mapping.',
+        ],
+        reviewedOn: '2026-09-01', version: 1,
+        supersedes: INJURY_PAIN_CLAIM_IDS.lumbarLoadingPolicyV1,
     },
     {
         id: INJURY_PAIN_CLAIM_IDS.upperLimbLoadingPolicy,
@@ -238,5 +310,17 @@ export const INJURY_PAIN_CLAIMS: readonly KnowledgeClaim[] = [
         ],
         reviewedOn: '2026-09-01', version: 1,
         supersedes: INJURY_PAIN_CLAIM_IDS.genericClinicalEnvelopePolicyV1,
+    },
+    {
+        id: INJURY_PAIN_CLAIM_IDS.clinicalEscalationProtocol,
+        statement: 'Red-flag findings (neurological symptoms, acute traumatic structural instability, severe systemic infection with high fever, or rapidly worsening symptoms) halt all physical training recommendations, cap the plan envelope at Rest, and mandate medical evaluation before resuming physical loading.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'injury_safety'], sports: ['all_supported_sports'], populations: ['product_users_with_red_flag_symptoms'], outcomes: ['daily_training_ceiling', 'clinical_escalation_referral'], horizon: 'acute' },
+        evidence: [{ sourceId: CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
+        limitations: [
+            'Check-in screening relies on self-reported athlete symptoms and does not replace medical history, physical examination, or diagnostic imaging.',
+            'Enforcing a Rest ceiling does not provide clinical treatment or rehabilitation advice; it safely halts automated exercise prescription.',
+        ],
+        reviewedOn: '2026-09-01', version: 1,
     },
 ];

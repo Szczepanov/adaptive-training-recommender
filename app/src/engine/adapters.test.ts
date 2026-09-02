@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapSnapshotToEngineInput, resolveClinicalEnvelopeSources } from './adapters';
+import { mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapSnapshotToEngineInput, resolveClinicalEnvelopeSources, resolveRedFlagFindings } from './adapters';
 import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
@@ -427,5 +427,96 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
             },
         });
         expect(mapCheckinToSubjectiveInput(checkin).painFlag).toBe(true);
+    });
+
+    describe('red-flag findings (clinical escalation protocol)', () => {
+        it('resolves explicit red flags from checkin', () => {
+            const checkin = testCheckin({
+                painOrInjury: true,
+                redFlags: {
+                    present: true,
+                    categories: ['neurological', 'acute_trauma_structural'],
+                },
+            });
+            const findings = resolveRedFlagFindings(checkin);
+            expect(findings).toHaveLength(2);
+            expect(findings[0]).toEqual({
+                category: 'neurological',
+                source: 'explicit_checkin',
+                description: 'Athlete reported red-flag symptom: neurological.',
+            });
+            expect(findings[1]).toEqual({
+                category: 'acute_trauma_structural',
+                source: 'explicit_checkin',
+                description: 'Athlete reported red-flag symptom: acute trauma structural.',
+            });
+            expect(resolveClinicalEnvelopeSources(checkin)).toContain('red_flag');
+            const subjective = mapCheckinToSubjectiveInput(checkin);
+            expect(subjective.painFlag).toBe(true);
+            expect(subjective.redFlagFindings).toEqual(findings);
+        });
+
+        it('detects implicit systemic infection red flag from severe fever/chills symptoms', () => {
+            const checkin = testCheckin({
+                illnessSymptoms: true,
+                healthContext: {
+                    symptoms: {
+                        present: true,
+                        severity: 'severe',
+                        types: ['fever_or_chills', 'headache_or_body_aches'],
+                        suspectedCause: 'infectious',
+                    },
+                },
+            });
+            const findings = resolveRedFlagFindings(checkin);
+            expect(findings).toHaveLength(1);
+            expect(findings[0]).toEqual({
+                category: 'systemic_infection',
+                source: 'severe_systemic_symptoms',
+                description: 'Severe fever or chills reported in health symptoms.',
+            });
+            expect(resolveClinicalEnvelopeSources(checkin)).toContain('red_flag');
+            const subjective = mapCheckinToSubjectiveInput(checkin);
+            expect(subjective.painFlag).toBe(true);
+            expect(subjective.redFlagFindings).toEqual(findings);
+        });
+
+        it('fails closed when redFlags.present is true but categories is empty', () => {
+            const checkin = testCheckin({
+                painOrInjury: true,
+                redFlags: { present: true, categories: [] },
+            });
+            // No resolved category finding: categories is empty, so resolveRedFlagFindings
+            // has nothing to map. The disclosed present flag must still surface as a red
+            // flag source rather than silently disappearing.
+            expect(resolveRedFlagFindings(checkin)).toEqual([]);
+            expect(resolveClinicalEnvelopeSources(checkin)).toContain('red_flag');
+        });
+
+        it('fails closed when redFlags.present is true and categories is absent entirely', () => {
+            const checkin = testCheckin({
+                painOrInjury: true,
+                redFlags: { present: true },
+            });
+            // categories is optional on RedFlagCheckin; omitting it entirely (not just an
+            // empty array) must still fail closed the same way.
+            expect(resolveRedFlagFindings(checkin)).toEqual([]);
+            expect(resolveClinicalEnvelopeSources(checkin)).toContain('red_flag');
+        });
+
+        it('does not treat mild or non-fever symptoms as red flags', () => {
+            const checkin = testCheckin({
+                illnessSymptoms: true,
+                healthContext: {
+                    symptoms: {
+                        present: true,
+                        severity: 'mild',
+                        types: ['fever_or_chills'],
+                    },
+                },
+            });
+            expect(resolveRedFlagFindings(checkin)).toEqual([]);
+            expect(resolveClinicalEnvelopeSources(checkin)).not.toContain('red_flag');
+        });
     });
 });
