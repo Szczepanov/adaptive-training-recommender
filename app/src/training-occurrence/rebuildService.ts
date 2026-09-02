@@ -27,13 +27,14 @@ async function factsForSource(
         return state.status === 'AVAILABLE' ? structuredExecutionToFacts(state.data) : null;
     }
     if (!fallbackLocalDate) return null;
-    // No single-activity getter exists on activityService -- a bounded 2-day window read
-    // anchored on the occurrence's own localDate is enough to recover this one activity's
-    // current record without a new read primitive.
+    // No single-activity getter exists on activityService. Search one local day on either
+    // side of the canonical fallback date so a provider source remains recoverable across
+    // midnight/travel timezone disagreement between structured and wearable local dates.
+    // Identity still comes from activityId; the wider date window is discovery only.
     const activitiesState = await activityService.getActivitiesInRange(
         userId,
-        fallbackLocalDate,
-        addDaysToLocalDateString(fallbackLocalDate, 1),
+        addDaysToLocalDateString(fallbackLocalDate, -1),
+        addDaysToLocalDateString(fallbackLocalDate, 2),
     );
     if (activitiesState.status !== 'AVAILABLE') return null;
     const match = activitiesState.data.find(activity => activity.activityId === ref.activityId);
