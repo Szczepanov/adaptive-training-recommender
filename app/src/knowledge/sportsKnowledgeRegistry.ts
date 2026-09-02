@@ -37,6 +37,11 @@ import {
     STRENGTH_WARMUP_CLAIMS,
     STRENGTH_WARMUP_SOURCES,
 } from './strengthWarmupKnowledge.ts';
+import {
+    PERIODIZATION_EVENT_DEMAND_CLAIM_IDS,
+    PERIODIZATION_EVENT_DEMAND_CLAIMS,
+    PERIODIZATION_EVENT_DEMAND_SOURCES,
+} from './periodizationEventDemandKnowledge.ts';
 
 /**
  * Canonical aggregate registry.
@@ -54,6 +59,7 @@ export const SPORTS_KNOWLEDGE_SOURCES: readonly KnowledgeSource[] = [
     ...SUBJECTIVE_READINESS_SOURCES,
     ...INJURY_PAIN_SOURCES,
     ...STRENGTH_WARMUP_SOURCES,
+    ...PERIODIZATION_EVENT_DEMAND_SOURCES,
 ];
 
 export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
@@ -64,6 +70,7 @@ export const SPORTS_KNOWLEDGE_CLAIMS: readonly KnowledgeClaim[] = [
     ...SUBJECTIVE_READINESS_CLAIMS,
     ...INJURY_PAIN_CLAIMS,
     ...STRENGTH_WARMUP_CLAIMS,
+    ...PERIODIZATION_EVENT_DEMAND_CLAIMS,
 ];
 
 export const KNOWLEDGE_CLAIM_IDS = {
@@ -74,6 +81,7 @@ export const KNOWLEDGE_CLAIM_IDS = {
     ...SUBJECTIVE_READINESS_CLAIM_IDS,
     ...INJURY_PAIN_CLAIM_IDS,
     ...STRENGTH_WARMUP_CLAIM_IDS,
+    ...PERIODIZATION_EVENT_DEMAND_CLAIM_IDS,
 } as const;
 
 export const SPORTS_KNOWLEDGE_SOURCES_BY_ID: ReadonlyMap<string, KnowledgeSource> = new Map(

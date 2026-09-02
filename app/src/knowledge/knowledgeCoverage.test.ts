@@ -91,12 +91,12 @@ describe('engine knowledge coverage inventory', () => {
         expect(byId('data_trust.identity_gated_source_fail_closed')).toMatchObject({ classification: 'safety_invariant', coverage: 'not_applicable' });
     });
 
-    it('reports the post-SKR3-W0 coverage and risk debt exactly', () => {
+    it('reports the post-SKR3-W1 coverage and risk debt exactly', () => {
         const summary = summarizeKnowledgeCoverage();
         expect(summary.total).toBe(54);
-        expect(summary.byCoverage).toEqual({ covered: 18, partial: 10, uncovered: 20, not_applicable: 6 });
+        expect(summary.byCoverage).toEqual({ covered: 18, partial: 14, uncovered: 16, not_applicable: 6 });
         expect(summary.byPriority).toEqual({ p0: 7, p1: 13, p2: 8, p3: 2, none: 24 });
-        expect(summary.highImpactUncovered).toBe(7);
+        expect(summary.highImpactUncovered).toBe(4);
         expect(summary.highSafetyUncovered).toBe(0);
     });
 
