@@ -630,9 +630,12 @@ export function resolveMultiEventObjectives(
             return a.event.id < b.event.id ? -1 : a.event.id > b.event.id ? 1 : 0;
         });
 
-    for (const { event, daysToEvent } of contributors) {
-        const contributorTaperWindowDays = event.priority === 'A' ? 14 : (event.priority === 'B' ? 5 : 0);
-        const contributorTaperActive = contributorTaperWindowDays > 0 && daysToEvent <= contributorTaperWindowDays;
+    for (const { event } of contributors) {
+        // `resolveEventTaper` is the single taper policy authority for both governing and
+        // contributor events. Do not duplicate A/B day windows here: that would bypass
+        // cycling-A race-week alignment and athlete-authored taper start dates.
+        const contributorTaper = resolveEventTaper(event);
+        const contributorTaperActive = contributorTaper !== null && currentDateStr >= contributorTaper.startDate;
         const allowedModalities = modalitiesForEventCategory(event.category);
 
         const contributorObjectives = objectivesFromDemand(

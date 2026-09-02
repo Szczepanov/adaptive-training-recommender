@@ -304,8 +304,9 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     {
         id: 'spacing.pre_event_restrictions', domain: 'session_spacing', title: 'Pre-event strength, hard and exhaustive session restrictions',
         currentRule: 'For A/B cycling/running events: strength is blocked 1-3 days pre-race; hard work is blocked 1-2 days; exhaustive work (systemicCost >=0.75 or VO2 title) is blocked 3-7 days.',
-        classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
-        codeRefs: ['engine/optimizer.ts:evaluateRecoveryConstraints'], knowledgeRefs: [], coverageRationale: 'These are taper/freshness rules with directly researchable timing questions but no registered evidence.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
+        codeRefs: ['engine/optimizer.ts:evaluateRecoveryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.preEventRestrictionsPolicy],
+        coverageRationale: 'Now recorded as an explicit product-policy claim (`policy.taper.pre_event_restrictions_v1`) so the exact 1-3/1-2/3-7-day windows have provenance. The underlying timing questions (how close to competition strength/hard/exhaustive work should stop) are directly researchable and remain unreviewed, so this stays partial/P1 pending Evidence Pack 6. SKR1 runtime lineage does not yet emit this claim: the optimizer evaluates the restriction against exact days-to-event, while `trainingIntentKnowledgeRefs` only has a coarser taper-active signal available, and attributing on that coarser signal would over-claim lineage on days where the restriction never actually evaluates. Wiring precise days-to-event into runtime lineage is a separate change.',
     },
     {
         id: 'optimizer.intensity_class_thresholds', domain: 'optimizer_scoring', title: 'Catalog systemic-cost intensity classification',
@@ -346,9 +347,17 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'periodization.taper_windows_volume', domain: 'periodization_taper', title: 'Event taper windows and volume reduction',
-        currentRule: 'Cycling A events taper from race-week Monday with a 3-day minimum; legacy A/B defaults are 14/5 days. Taper intensityScale stays 1.0 while volumeScale linearly falls toward 0.6. A-event post-event recovery lasts three days at volume/intensity 0.4.',
-        classification: 'scientific_claim', coverage: 'uncovered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p0',
-        codeRefs: ['engine/taperPolicy.ts:resolveEventTaper', 'engine/periodization.ts:evaluatePeriodizationPhase'], knowledgeRefs: [], coverageRationale: 'Taper duration, maintained intensity and volume reduction are directly researchable and should be handled by the dedicated taper evidence pack; current values have no linked review/guideline claim.',
+        currentRule: 'An athlete-authored taper start date overrides all defaults. Otherwise cycling A events taper from race-week Monday with a 3-day minimum; non-general-target A/B events fall back to 14/5 days. Taper intensityScale stays 1.0 while volumeScale linearly falls toward 0.6.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/taperPolicy.ts:resolveEventTaper', 'engine/periodization.ts:evaluatePeriodizationPhase'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper, KNOWLEDGE_CLAIM_IDS.taperWindowsVolumePolicy],
+        coverageRationale: 'The pre-event volume-reduction-while-preserving-intensity boundary has a moderate-certainty scientific claim; exact default scheduling (authored-start override precedence, cycling-A race-week alignment with a 3-day minimum, and legacy 14/5-day fallback for non-general targets) plus the 0.6 volume endpoint are separately registered as explicit product policy, not scientific constants. SKR1 runtime lineage (`knowledgeLineage.ts:trainingIntentKnowledgeRefs`) already emits both claims while a taper is active for an endurance event.',
+    },
+    {
+        id: 'periodization.post_event_recovery_window', domain: 'periodization_taper', title: 'A-event post-event recovery window',
+        currentRule: 'A-priority cycling/running events completed or DNF within the last 3 days enter a Post-Event Recovery phase at volume/intensity 0.4; B/C events and events older than 3 days do not.',
+        classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p1',
+        codeRefs: ['engine/periodization.ts:evaluatePeriodizationPhase'], knowledgeRefs: [],
+        coverageRationale: 'Split out of periodization.taper_windows_volume (2026-09-02): this is an independently calibrated post-event rule, not a taper, and taper meta-analysis does not justify its 3-day window or 0.4/0.4 scale. It stays uncovered on its own rather than borrowing the adjacent taper claim by proximity.',
     },
     {
         id: 'periodization.objective_thresholds', domain: 'periodization_taper', title: 'Demand-to-weekly-objective thresholds',
@@ -359,14 +368,15 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     {
         id: 'periodization.taper_sharpening_targets', domain: 'periodization_taper', title: 'Race-week sharpening and strength-primer targets',
         currentRule: 'Taper sharpening targets thresholdPower 0.5/repeatedSurges 0.4 with threshold qualification 0.3; strength primer targets maxStrength 0.3/hypertrophy 0.2.',
-        classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p1',
-        codeRefs: ['engine/periodization.ts:TAPER_SHARPENING_TARGET_STIMULUS', 'engine/periodization.ts:TAPER_STRENGTH_TARGET_STIMULUS'], knowledgeRefs: [], coverageRationale: 'The concepts align with freshness/maintenance goals, but the internal target values have no claim-level provenance.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p2',
+        codeRefs: ['engine/periodization.ts:TAPER_SHARPENING_TARGET_STIMULUS', 'engine/periodization.ts:TAPER_STRENGTH_TARGET_STIMULUS'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.taperSharpeningPolicy],
+        coverageRationale: 'Now recorded as an explicit product-policy claim (`policy.taper.sharpening_targets_v1`), so the scalars have provenance and drift protection. The concepts align with freshness/maintenance goals from the taper literature, but the exact target values remain uncalibrated against outcomes, so this stays partial rather than covered.',
     },
     {
         id: 'periodization.multi_event_contribution', domain: 'periodization_taper', title: 'Multi-event contribution window and taper authority',
-        currentRule: 'Secondary events contribute objectives inside 35 days; authority taper can drop threshold work; contributor A/B taper windows use 14/5 days and same-key requirements merge by max rather than sum.',
+        currentRule: 'Secondary events contribute objectives inside 35 days; authority taper can drop threshold work; each contributor uses its canonical resolved taper (athlete-authored start override first, cycling-A race-week alignment next, otherwise the applicable legacy A/B default), and same-key requirements merge by max rather than sum.',
         classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p2',
-        codeRefs: ['engine/periodization.ts:resolveMultiEventObjectives'], knowledgeRefs: [], coverageRationale: 'Mostly conflict-resolution product policy, but its 35/14/5-day timing assumptions can alter training and should be documented/calibrated.',
+        codeRefs: ['engine/periodization.ts:resolveMultiEventObjectives'], knowledgeRefs: [], coverageRationale: 'Mostly conflict-resolution product policy, but its 35-day contribution window, contributor taper-resolution semantics/defaults, authority-taper drop behavior and same-key merge rule can alter training and should be documented/calibrated.',
     },
     {
         id: 'event.demand_presets', domain: 'event_demand', title: 'Sport/event demand profiles',

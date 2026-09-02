@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { ENGINE_KNOWLEDGE_COVERAGE, summarizeKnowledgeCoverage } from './knowledgeCoverage';
+import { ENGINE_KNOWLEDGE_COVERAGE } from './knowledgeCoverage';
 import {
     getActiveKnowledgeClaim,
     getKnowledgeSource,
@@ -86,15 +86,6 @@ describe('strength and concurrent training evidence pack', () => {
         expect(coverageById('optimizer.stimulus_benefit_weights')).toMatchObject({
             coverage: 'uncovered',
             researchPriority: 'p2',
-        });
-    });
-
-    it('preserves this pack’s coverage state while later migrations update the global inventory', () => {
-        expect(summarizeKnowledgeCoverage()).toMatchObject({
-            total: 53,
-            byCoverage: { covered: 17, partial: 8, uncovered: 22, not_applicable: 6 },
-            highImpactUncovered: 9,
-            highSafetyUncovered: 0,
         });
     });
 });

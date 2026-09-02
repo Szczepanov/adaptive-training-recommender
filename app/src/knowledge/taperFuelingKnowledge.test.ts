@@ -102,9 +102,13 @@ describe('taper and fueling evidence pack', () => {
         expect(claim.limitations.join(' ')).toContain('no single mL/h');
     });
 
-    it('does not pretend fueling has live engine decision authority or that the bundled taper inventory is fully migrated', () => {
+    it('does not pretend fueling has live engine decision authority, and keeps the split-out post-event window unmigrated', () => {
         expect(ENGINE_KNOWLEDGE_COVERAGE.some(item => item.domain === 'periodization_taper')).toBe(true);
-        expect(coverageById('periodization.taper_windows_volume')).toMatchObject({ coverage: 'uncovered', researchPriority: 'p0' });
+        // SKR3 W0 (2026-09-02): periodization.taper_windows_volume now cites its already-registered
+        // claims and is covered. The independently calibrated A-event post-event recovery window it
+        // used to bundle is split into its own family and stays uncovered.
+        expect(coverageById('periodization.taper_windows_volume')).toMatchObject({ coverage: 'covered', researchPriority: 'none' });
+        expect(coverageById('periodization.post_event_recovery_window')).toMatchObject({ coverage: 'uncovered', researchPriority: 'p1' });
         expect(ENGINE_KNOWLEDGE_COVERAGE.some(item => item.id.includes('fuel'))).toBe(false);
     });
 });

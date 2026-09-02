@@ -72,7 +72,13 @@ describe('engine knowledge coverage inventory', () => {
             'injury.pain_envelope_mapping',
         ];
         expectedP0Gaps.forEach(id => expect(byId(id)).toMatchObject({ coverage: 'partial', researchPriority: 'p0', classification: 'product_heuristic' }));
-        expect(byId('periodization.taper_windows_volume')).toMatchObject({ coverage: 'uncovered', researchPriority: 'p0', classification: 'scientific_claim' });
+        // SKR3 W0 (2026-09-02) resolved the last uncovered P0 (periodization.taper_windows_volume
+        // was uncovered despite already-registered claims and runtime lineage — see
+        // knowledgeLineage.ts:trainingIntentKnowledgeRefs) by splitting it: the taper-window/volume
+        // rule is now covered, and the independently calibrated post-event recovery rule it was
+        // bundled with is its own uncovered P1 family.
+        expect(byId('periodization.taper_windows_volume')).toMatchObject({ coverage: 'covered', researchPriority: 'none', classification: 'product_heuristic' });
+        expect(byId('periodization.post_event_recovery_window')).toMatchObject({ coverage: 'uncovered', researchPriority: 'p1', classification: 'product_heuristic' });
         expect(byId('injury.region_restriction_mapping')).toBeUndefined();
         expect(byId('injury.standing_constraint_preserve_or_tighten')).toMatchObject({ coverage: 'not_applicable', classification: 'safety_invariant' });
         expect(byId('readiness.subjective_mode_thresholds')).toMatchObject({ coverage: 'partial', researchPriority: 'p0', safetyImpact: 'high' });
@@ -85,12 +91,12 @@ describe('engine knowledge coverage inventory', () => {
         expect(byId('data_trust.identity_gated_source_fail_closed')).toMatchObject({ classification: 'safety_invariant', coverage: 'not_applicable' });
     });
 
-    it('reports the post-SEP-B coverage and risk debt exactly', () => {
+    it('reports the post-SKR3-W0 coverage and risk debt exactly', () => {
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(53);
-        expect(summary.byCoverage).toEqual({ covered: 17, partial: 8, uncovered: 22, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 8, p1: 13, p2: 7, p3: 2, none: 23 });
-        expect(summary.highImpactUncovered).toBe(9);
+        expect(summary.total).toBe(54);
+        expect(summary.byCoverage).toEqual({ covered: 18, partial: 10, uncovered: 20, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 7, p1: 13, p2: 8, p3: 2, none: 24 });
+        expect(summary.highImpactUncovered).toBe(7);
         expect(summary.highSafetyUncovered).toBe(0);
     });
 
