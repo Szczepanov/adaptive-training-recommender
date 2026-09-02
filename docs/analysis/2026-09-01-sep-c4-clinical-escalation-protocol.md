@@ -52,6 +52,7 @@ When a red-flag finding reaches the engine:
 - the decision card presents clinical-escalation messaging.
 
 The **presentation layer must fail closed as well as the engine**. While `clinicalEscalationRequired` is true, the Morning Decision card:
+- renders a generic **Training Paused** state instead of a workout title, modality, duration, category, or stale pre-escalation alternative rationale;
 - does not expose **Start Session**;
 - does not expose **View Workout Targets**;
 - does not expose workout export/sync actions;
@@ -59,7 +60,7 @@ The **presentation layer must fail closed as well as the engine**. While `clinic
 - does not expose the **Workout Steps** tab or rendered structured targets;
 - keeps **Why & Invalidation Rules** available so the athlete can inspect the evidence and reason for the pause.
 
-This avoids a misleading state where execution is blocked in an event handler but the application still displays executable-looking training instructions.
+This avoids a misleading state where execution is blocked in an event handler but the application still displays executable-looking training instructions. It also makes the clinical state authoritative over any alternative selection that was already present in parent UI state before escalation became active.
 
 Severe fever/chills in structured health symptoms also creates an implicit `systemic_infection` finding even when the athlete did not use the explicit red-flag checklist.
 
@@ -96,6 +97,6 @@ Focused regression tests added during review:
 - `injuryPolicyLatencySafety.test.ts:deriveTissueSeverity` — missing latency follow-up fails closed;
 - `subjectiveThresholdSafety.test.ts:evaluateReadinessAndSafetyEnvelope` — 8/10 fatigue or soreness cannot be diluted by other good answers;
 - `externalSessionClinicalEscalation.test.ts:adjudicate` — imported sessions/events cannot bypass escalation, imported training does not expose a fallback suggestion, and imported-event copy retains the urgent cardiopulmonary/neurological warning language;
-- `MorningDecisionCardClinicalEscalation.test.tsx` — clinical escalation keeps rationale visible while suppressing start/view/export/alternative/workout-step surfaces;
+- `MorningDecisionCardClinicalEscalation.test.tsx` — clinical escalation keeps rationale visible while suppressing workout identity/metrics, stale alternative rationale, start/view/export/alternative/workout-step surfaces;
 - `redFlagIndependence.test.ts:mapCheckinToSubjectiveInput` — explicit red flags remain independent from the pain/injury toggle;
 - `redFlagReasonLabel.test.ts:evaluateEnvelopes` — the `systemic_infection` storage key renders as the non-diagnostic “systemic / cardiopulmonary warning” in user-facing clinical rationale.
