@@ -167,6 +167,9 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-01 Evidence Pack — Subjective Readiness**](./analysis/2026-09-01-evidence-pack-subjective-readiness.md) — Targeted evidence appraisal for the live current-day subjective classifier.
 * [**2026-09-01 PR #321 Structured Strength Warm-ups Review**](./analysis/2026-09-01-pr-321-structured-strength-warmups-review.md) — Follow-up review of structured strength warm-ups and concurrent rest logging.
 * [**2026-09-01 SEP-C1 — Contextual Clinical Envelope Remediation**](./analysis/2026-09-01-sep-c1-contextual-clinical-envelope-remediation.md) — Remediation for decoupling non-allergy illness from the generic Running restriction.
+* [**2026-09-01 SEP-C2 — Subjective Mode Threshold & Neutral-Default Calibration**](./analysis/2026-09-01-sep-c2-subjective-mode-thresholds.md) — Recalibrates `readiness.subjective_mode_thresholds`, decoupling motivation and pain-flag semantics from the physical fatigue average and handling partial check-ins.
+* [**2026-09-01 SEP-C3 — Tissue Response Severity Latency & Lumbar Axial Guardrail Precision**](./analysis/2026-09-01-sep-c3-tissue-response-severity.md) — Remediation for tissue-response severity latency and lumbar axial-loading guardrail precision.
+* [**2026-09-01 SEP-C4 — Red-Flag & Clinical Escalation Protocol**](./analysis/2026-09-01-sep-c4-clinical-escalation-protocol.md) — Specification for a fail-closed clinical red-flag/escalation protocol.
 * [**Structured Strength and Garmin Activity Reconciliation Analysis**](./analysis/structured-strength-garmin-activity-reconciliation-analysis.md) — Architectural analysis for reconciling structured strength executions and Garmin activities into a canonical training occurrence.
 
 ---
