@@ -126,7 +126,7 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
         const CYCLING_TT_DEMAND = resolveDemandProfile('cycling_event', 'time_trial');
         const CYCLING_CRIT_DEMAND = resolveDemandProfile('cycling_event', 'criterium');
 
-        it('pins the registered preset examples and source prose to the authored EVENT_PRESETS table', () => {
+        it('pins the registered preset examples and source/coverage prose to the authored EVENT_PRESETS table', () => {
             const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.eventDemandPresetsPolicy);
 
             expect(claim.statement).toContain('thresholdPower (0.95)');
@@ -140,8 +140,8 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             expect(CYCLING_CRIT_DEMAND.sprintPower).toBe(0.7);
             expect(CYCLING_CRIT_DEMAND.aerobicEndurance).toBe(0.5);
 
-            // The claim and its product-policy source both state a preset count; drift in either
-            // means the knowledge artifact is stale. The original draft incorrectly said 22.
+            // The claim, product-policy source and coverage rationale all state the authored count;
+            // drift in any of them means the knowledge artifact is stale. The original draft said 22.
             const presetCount = Object.values(EVENT_PRESETS).reduce((total, list) => total + list.length, 0);
             expect(claim.statement).toContain('19 authored event presets');
             expect(presetCount).toBe(19);
@@ -149,6 +149,10 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             const policySource = getKnowledgeSource('PRODUCT-PERIODIZATION-EVENT-DEMAND-POLICY-V1');
             expect(policySource.notes).toContain('19 authored event-preset demand vectors');
             expect(policySource.notes).not.toContain('22 authored');
+
+            const coverage = coverageById('event.demand_presets');
+            expect(coverage?.coverageRationale).toContain('19 authored preset vectors');
+            expect(coverage?.coverageRationale).not.toContain('22 preset');
         });
 
         it('pins the registered phase boundaries and scales to evaluatePeriodizationPhase output', () => {
@@ -193,6 +197,11 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
             expect(item?.coverage).toBe('partial');
             expect(item?.researchPriority).not.toBe('none');
         }
+
+        const phaseCoverage = coverageById('periodization.phase_boundaries_scales');
+        expect(phaseCoverage?.coverageRationale).toContain('not consistently superior');
+        expect(phaseCoverage?.coverageRationale).not.toContain('can outperform');
+
         // Reclassified in this pack: an authored 0-1 vector table is an encoding, not a constant.
         expect(coverageById('event.demand_presets')?.classification).toBe('product_heuristic');
     });
