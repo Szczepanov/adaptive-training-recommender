@@ -109,6 +109,25 @@ describe('getCompletedWorkoutsInRange', () => {
         expect(view.garminExerciseSetsAreDiagnosticOnly).toBe(false);
     });
 
+    it('hydrates an attached provider activity from an adjacent local day without widening canonical rows', async () => {
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([occurrence({
+            localDate: '2026-08-20',
+            sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-adjacent' }],
+        })]);
+        vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
+            status: 'AVAILABLE',
+            data: [{ activityId: 'act-adjacent', date: '2026-08-19', type: 'strength_training', durationMin: 40, trainingEffectAerobic: null, trainingEffectAnaerobic: null, averageHr: null, activityTrainingLoad: null, intensityTag: 'moderate' }],
+            revision: null,
+        });
+
+        const [view] = await getCompletedWorkoutsInRange('user-1', '2026-08-20', '2026-08-27');
+
+        expect(repo.queryActiveInDateWindow).toHaveBeenCalledWith('user-1', '2026-08-20', '2026-08-26');
+        expect(activityService.getActivitiesInRange).toHaveBeenCalledWith('user-1', '2026-08-19', '2026-08-28');
+        expect(view.localDate).toBe('2026-08-20');
+        expect(view.garmin?.activityId).toBe('act-adjacent');
+    });
+
     it('sorts results by most-recent first', async () => {
         vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([
             occurrence({ performedOccurrenceId: 'pto-early', startedAt: '2026-08-24T06:00:00.000Z' }),
