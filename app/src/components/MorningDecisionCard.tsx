@@ -64,6 +64,8 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     const [launchError, setLaunchError] = useState<string | null>(null);
     const panelId = useId();
     const clinicalEscalationActive = recommendation?.envelopes?.safety.clinicalEscalationRequired === true;
+    const clinicalReason = recommendation?.envelopes?.safety.clinicalReason
+        ?? 'Red-flag symptoms reported. Training recommendations are paused until medical evaluation.';
 
     const handleTabToggle = (tab: 'why' | 'alternatives' | 'workout') => {
         // Keep the rationale/evidence surface available, but do not expose executable
@@ -198,39 +200,46 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                 <span className="escalation-icon" aria-hidden="true">⚠️</span>
                                 <div className="escalation-content">
                                     <strong className="escalation-title">Clinical Evaluation Recommended</strong>
-                                    <p className="escalation-text">
-                                        {recommendation.envelopes?.safety.clinicalReason ?? 'Red-flag symptoms reported. Training recommendations are paused until medical evaluation.'}
-                                    </p>
+                                    <p className="escalation-text">{clinicalReason}</p>
                                     <p className="escalation-text">
                                         If you have acute chest pain/pressure, unexplained shortness of breath, fainting/near-fainting, new neurological symptoms, or believe this may be an emergency, seek urgent or emergency medical care now.
                                     </p>
                                 </div>
                             </div>
                         )}
-                        <div className="headline-meta-row">
-                            <h2 className="hero-headline">
-                                {recommendation.template.title}
-                                {recommendation.activeDose && (
-                                    <span className="hero-dose-pill">{recommendation.activeDose.label}</span>
-                                )}
-                            </h2>
-                        </div>
 
-                        <p className="hero-session-metrics">
-                            <span className="metric-tag">{recommendation.template.modality}</span>
-                            <span className="metric-dot">·</span>
-                            <span className="metric-tag">
-                                {recommendation.activeDose
-                                    ? `${recommendation.activeDose.durationMin}–${recommendation.activeDose.durationMax} min`
-                                    : `${recommendation.template.durationMin}–${recommendation.template.durationMax} min`}
-                            </span>
-                            <span className="metric-dot">·</span>
-                            <span className="metric-tag">{recommendation.template.category}</span>
-                        </p>
+                        {clinicalEscalationActive ? (
+                            <div className="headline-meta-row">
+                                <h2 className="hero-headline">Training Paused</h2>
+                            </div>
+                        ) : (
+                            <>
+                                <div className="headline-meta-row">
+                                    <h2 className="hero-headline">
+                                        {recommendation.template.title}
+                                        {recommendation.activeDose && (
+                                            <span className="hero-dose-pill">{recommendation.activeDose.label}</span>
+                                        )}
+                                    </h2>
+                                </div>
+
+                                <p className="hero-session-metrics">
+                                    <span className="metric-tag">{recommendation.template.modality}</span>
+                                    <span className="metric-dot">·</span>
+                                    <span className="metric-tag">
+                                        {recommendation.activeDose
+                                            ? `${recommendation.activeDose.durationMin}–${recommendation.activeDose.durationMax} min`
+                                            : `${recommendation.template.durationMin}–${recommendation.template.durationMax} min`}
+                                    </span>
+                                    <span className="metric-dot">·</span>
+                                    <span className="metric-tag">{recommendation.template.category}</span>
+                                </p>
+                            </>
+                        )}
 
                         <div className="hero-why-callout" role="note">
                             <p className="why-text">
-                                <strong>Why today:</strong> {recommendation.rationale}
+                                <strong>Why today:</strong> {clinicalEscalationActive ? clinicalReason : recommendation.rationale}
                             </p>
                         </div>
 
