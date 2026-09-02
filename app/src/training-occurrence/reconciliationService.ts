@@ -126,7 +126,21 @@ export async function reconcileSourceFacts(userId: string, facts: Reconciliation
             }
         }
 
-        const { occurrence } = await repository.createOrGetForSource(userId, facts);
+        const initialReconciliation = decision.outcome === 'ambiguous'
+            ? {
+                state: 'ambiguous' as const,
+                matcherVersion: RECONCILIATION_MATCHER_VERSION,
+                policyVersion: RECONCILIATION_POLICY_VERSION,
+            }
+            : { state: 'single_source' as const };
+        const { occurrence, created } = await repository.createOrGetForSource(userId, facts, initialReconciliation);
+
+        // Another caller may have claimed this source after our first read but before the
+        // transactional create. In that race, the repository returns the already-owned
+        // canonical occurrence and we must report convergence, not our now-stale local
+        // ambiguity/no-match decision.
+        if (!created) return { outcome: 'already_linked', occurrence };
+
         if (decision.outcome === 'ambiguous') {
             recordShadowReconciliationEvent({
                 type: 'training_occurrence.ambiguous',
@@ -168,6 +182,9 @@ export function reconcileGarminActivity(userId: string, activity: NormalizedGarm
  */
 async function mergeDuplicatesInWindow(userId: string, fromDateInclusive: string, toDateInclusive: string): Promise<void> {
     const pool = await repository.queryActiveInDateWindow(userId, fromDateInclusive, toDateInclusive);
+    // Ambiguity is durable state. Do not feed an occurrence policy has explicitly marked
+    // ambiguous back into automatic merge repair; only genuinely unresolved single-source
+    // records are eligible for this convergence sweep.
     const singleSource = pool.filter(occurrence => occurrence.reconciliation.state === 'single_source');
     const merged = new Set<string>();
 
