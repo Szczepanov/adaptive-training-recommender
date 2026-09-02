@@ -18,6 +18,7 @@ from garmin_sync.fit_activity import (
     FitRecordSample,
     FitTimerEvent,
 )
+from garmin_sync.fit_workout_identity import FIT_WORKOUT_FINGERPRINT_VERSION
 from garmin_sync.provider import (
     ProviderActivitiesResult,
     ProviderActivityDetailResult,
@@ -1279,7 +1280,7 @@ def test_hr_fidelity_derives_fit_workout_fingerprint_from_the_same_decoded_evide
     assert service.sync_daily("2026-08-06", force=True, resync_lookback_days=0)
 
     payload = repo.upsert_activities.call_args.args[0][0][1]
-    assert payload["fitWorkoutFingerprint"].startswith("fit-workout-v1:")
+    assert payload["fitWorkoutFingerprint"].startswith(f"{FIT_WORKOUT_FINGERPRINT_VERSION}:")
 
 
 def test_hr_fidelity_omits_fit_workout_fingerprint_for_a_freeform_recording() -> None:
