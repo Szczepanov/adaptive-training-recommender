@@ -70,6 +70,9 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const [forecastRepairTargets, setForecastRepairTargets] = useState<ErrorRepairAction[]>([]);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [showImport, setShowImport] = useState<boolean>(false);
+  // SEP-C4: the imported-plan weekly view must fail closed the same way MorningDecisionCard
+  // does -- suppress workout-step detail, export, and reschedule controls while active.
+  const [clinicalEscalationRequired, setClinicalEscalationRequired] = useState<boolean>(false);
 
   const loadPlanData = useCallback(async () => {
     // Clear stale state on every reload attempt
@@ -80,6 +83,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     setWeekAheadPlan(null);
     setNextDayPlan(null);
     setCritique(null);
+    setClinicalEscalationRequired(false);
 
     try {
       const weekEnd = addDaysToLocalDateString(today, 6);
@@ -239,6 +243,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             'max',
             null,
           );
+          setClinicalEscalationRequired(baseRec.envelopes?.safety.clinicalEscalationRequired === true);
 
           const tomorrowPlan = await evaluateNextDayPlanWithIntent(
             userId,
@@ -476,6 +481,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             onConfirmReplacement={handleConfirmReplacement}
             onChooseDate={handleChooseDate}
             writeError={writeError}
+            clinicalEscalationRequired={clinicalEscalationRequired}
           />
         </div>
       ) : (

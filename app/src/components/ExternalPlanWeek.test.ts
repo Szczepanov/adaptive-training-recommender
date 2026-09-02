@@ -237,4 +237,38 @@ describe('ExternalPlanWeek occupancy and scheduling contracts', () => {
         expect(html).toContain('moderate · 25–35 min');
         expect(html).toContain('recovery · 15–20 min');
     });
+
+    describe('clinical escalation (SEP-C4 fail-closed)', () => {
+        const buildProps = (clinicalEscalationRequired: boolean) => ({
+            userId: 'user-1',
+            planTitle: 'Adaptive Peak Plan',
+            weekStartDate: '2026-08-17',
+            placed,
+            critique: null,
+            today: '2026-08-17',
+            onProposeReplacement: () => ({ sessionId: 's1', missedDate: '2026-08-17', outcome: 'unresolved' as const, rationale: '' }),
+            onConfirmReplacement: () => {},
+            onChooseDate: () => {},
+            clinicalEscalationRequired,
+        });
+
+        it('suppresses view/export/reschedule controls and workout-step detail while active', () => {
+            const html = renderToStaticMarkup(React.createElement(ExternalPlanWeek, buildProps(true)));
+
+            expect(html).toContain('Clinical Evaluation Recommended');
+            expect(html).not.toContain('View workout');
+            expect(html).not.toContain('Missed it');
+            expect(html).not.toContain('Reschedule');
+            // Session identity/status can still be shown (it is not executable content by
+            // itself), but the structured steps from the fixture prescription must not leak.
+            expect(html).not.toContain('95-100% FTP');
+        });
+
+        it('renders the normal actionable controls when escalation is not active', () => {
+            const html = renderToStaticMarkup(React.createElement(ExternalPlanWeek, buildProps(false)));
+
+            expect(html).not.toContain('Clinical Evaluation Recommended');
+            expect(html).toContain('View workout');
+        });
+    });
 });
