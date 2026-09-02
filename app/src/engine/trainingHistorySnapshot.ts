@@ -3,6 +3,7 @@ import type { DataState, DataStateSummary } from './dataState';
 import { summarizeDataState } from './dataState';
 import { completedEventToExposure, reconcileCompletedTrainingEvents } from './completedTraining';
 import type { CompletedExposure } from './trainingHistory';
+import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import { workoutForTemplate } from '../workouts/prescription';
 import { deriveStrengthExposure } from '../workouts/strengthExposure';
 
@@ -25,6 +26,8 @@ export interface TrainingHistorySnapshot {
     /** Optional wider evidence window for evergreen athlete-state inference. It is never
      * replayed into fatigue, microcycle objectives, or delivered-dose accounting. */
     athleteStateEvidence?: AthleteStateHistoryEvidence;
+    /** Optional canonical performed training facts for narrow recency/spacing cutover. */
+    performedTrainingFacts?: PerformedTrainingFactsSnapshot | null;
 }
 
 export type ManualTrainingPolicy = 'off' | 'included';
