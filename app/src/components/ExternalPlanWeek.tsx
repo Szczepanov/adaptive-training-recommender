@@ -45,6 +45,10 @@ export interface ExternalPlanWeekProps {
     /** Set when the last write failed. The week below still shows the stored placement,
      * which is accurate — nothing was written. */
     writeError?: string | null;
+    /** SEP-C4: while true, this must fail closed the same way MorningDecisionCard does —
+     * no workout-step detail, export/sync, or session-change (missed/reschedule) controls,
+     * regardless of what was placed before the escalation became active. */
+    clinicalEscalationRequired?: boolean;
 }
 
 function findingsFor(critique: ExternalWeekCritique | null, date: string): ExternalCritiqueFinding[] {
@@ -67,12 +71,14 @@ export function ExternalPlanWeek({
     userId,
     planTitle, weekStartDate, placed, critique, today, fixedActivities,
     onProposeReplacement, onConfirmReplacement, onChooseDate, writeError = null,
+    clinicalEscalationRequired = false,
 }: ExternalPlanWeekProps) {
     const [proposal, setProposal] = useState<ReplacementProposal | null>(null);
     const [choosingFor, setChoosingFor] = useState<string | null>(null);
     const [expandedSessionIds, setExpandedSessionIds] = useState<Set<string>>(() => new Set());
 
     const toggleExpandSession = (sessionId: string) => {
+        if (clinicalEscalationRequired) return;
         setExpandedSessionIds(prev => {
             const next = new Set(prev);
             if (next.has(sessionId)) {
@@ -105,11 +111,13 @@ export function ExternalPlanWeek({
     const weekFindings = weekLevelFindings(critique);
 
     const startProposal = (sessionId: string, missedDate: string) => {
+        if (clinicalEscalationRequired) return;
         setChoosingFor(null);
         setProposal(onProposeReplacement(sessionId, missedDate));
     };
 
     const handleConfirm = async (proposalToConfirm: ReplacementProposal) => {
+        if (clinicalEscalationRequired) return;
         try {
             await onConfirmReplacement(proposalToConfirm);
             setProposal(null);
@@ -119,6 +127,7 @@ export function ExternalPlanWeek({
     };
 
     const handleDateChoice = async (sessionId: string, date: string) => {
+        if (clinicalEscalationRequired) return;
         try {
             await onChooseDate(sessionId, date);
             setProposal(null);
@@ -139,6 +148,19 @@ export function ExternalPlanWeek({
 
             {writeError && <p className="external-week-error" role="alert">{writeError}</p>}
 
+            {clinicalEscalationRequired && (
+                <div className="clinical-escalation-hero-banner" role="alert">
+                    <span className="escalation-icon" aria-hidden="true">⚠️</span>
+                    <div className="escalation-content">
+                        <strong className="escalation-title">Clinical Evaluation Recommended</strong>
+                        <p className="escalation-text">
+                            Workout details, export, and rescheduling for this imported plan are paused until
+                            medical evaluation clears active training.
+                        </p>
+                    </div>
+                </div>
+            )}
+
             <ol className="external-week-list">
                 {days.map(date => {
                     const sessions = inWeek.filter(item => item.date === date);
@@ -152,7 +174,7 @@ export function ExternalPlanWeek({
                             <div className="external-week-daybody">
                                 {sessions.length === 0 && <p className="external-week-empty">Nothing placed</p>}
                                 {sessions.map(item => {
-                                    const isExpanded = expandedSessionIds.has(item.session.id);
+                                    const isExpanded = !clinicalEscalationRequired && expandedSessionIds.has(item.session.id);
                                     const displayPrescription = externalSessionDisplayPrescription(item.session);
                                     const steps: ExternalPrescriptionStep[] = displayPrescription.steps ?? [];
                                     return (
@@ -167,25 +189,27 @@ export function ExternalPlanWeek({
                                                         {item.moved && ' (not where your plan first put it)'}
                                                     </span>
                                                 </div>
-                                                <div className="external-week-session-actions">
-                                                    <button
-                                                        type="button"
-                                                        className="external-week-view-btn"
-                                                        onClick={() => toggleExpandSession(item.session.id)}
-                                                        aria-expanded={isExpanded}
-                                                    >
-                                                        {isExpanded ? 'Hide workout' : 'View workout'}
-                                                    </button>
-                                                    {(item.status === 'planned' || item.status === 'moved') && date <= today && (
+                                                {!clinicalEscalationRequired && (
+                                                    <div className="external-week-session-actions">
                                                         <button
                                                             type="button"
-                                                            className="external-week-missed-btn"
-                                                            onClick={() => startProposal(item.session.id, date)}
+                                                            className="external-week-view-btn"
+                                                            onClick={() => toggleExpandSession(item.session.id)}
+                                                            aria-expanded={isExpanded}
                                                         >
-                                                            {date === today ? 'Reschedule' : 'Missed it'}
+                                                            {isExpanded ? 'Hide workout' : 'View workout'}
                                                         </button>
-                                                    )}
-                                                </div>
+                                                        {(item.status === 'planned' || item.status === 'moved') && date <= today && (
+                                                            <button
+                                                                type="button"
+                                                                className="external-week-missed-btn"
+                                                                onClick={() => startProposal(item.session.id, date)}
+                                                            >
+                                                                {date === today ? 'Reschedule' : 'Missed it'}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                             {isExpanded && (
                                                 <div className="external-week-details" aria-label={`Workout details for ${item.session.title}`}>
@@ -259,7 +283,7 @@ export function ExternalPlanWeek({
                 </section>
             )}
 
-            {proposal && (
+            {proposal && !clinicalEscalationRequired && (
                 <section className="external-week-proposal" aria-label="Missed session proposal">
                     <h4>{proposal.missedDate === today ? 'Reschedule session' : 'Missed session'}</h4>
                     <p>{proposal.rationale}</p>

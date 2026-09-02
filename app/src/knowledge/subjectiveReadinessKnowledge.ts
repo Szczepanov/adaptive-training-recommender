@@ -4,7 +4,8 @@ export const SUBJECTIVE_READINESS_CLAIM_IDS = {
     contextualMonitoring: 'readiness.subjective.contextual_monitoring',
     measurementQualityLimits: 'readiness.subjective.measurement_quality_limits',
     exactCutpointLimits: 'readiness.subjective.exact_cutpoint_limits',
-    modeThresholdsPolicy: 'policy.readiness.subjective_mode_thresholds_v1',
+    modeThresholdsPolicyV1: 'policy.readiness.subjective_mode_thresholds_v1',
+    modeThresholdsPolicy: 'policy.readiness.subjective_mode_thresholds_v2',
 } as const;
 
 const SAW_SUBJECTIVE_MONITORING_SOURCE = 'SAW-2016-SUBJECTIVE-MONITORING-REVIEW';
@@ -14,14 +15,12 @@ const CAMPBELL_WELLNESS_PREDICTION_SOURCE = 'CAMPBELL-2021-WELLNESS-LOAD-PREDICT
 const BRAUERS_ARSS_SRSS_VALIDATION_SOURCE = 'BRAUERS-2024-ARSS-SRSS-VALIDATION';
 const BRAUERS_FOOTBALL_RESPONSE_META_SOURCE = 'BRAUERS-2026-FOOTBALL-LOAD-RESPONSE-META';
 const SUBJECTIVE_READINESS_PRODUCT_POLICY_SOURCE = 'PRODUCT-SUBJECTIVE-READINESS-MODE-V1';
+const SUBJECTIVE_READINESS_PRODUCT_POLICY_V2_SOURCE = 'PRODUCT-SUBJECTIVE-READINESS-MODE-V2';
 
 /**
- * A versioned, reviewable description of the existing classifier. It intentionally
- * records policy rather than deriving constants from `rules.ts`, so the alignment
- * tests can detect drift without making the decision implementation depend on this
- * evidence module.
+ * Historical V1 descriptor retained for audit/replay verification.
  */
-export const SUBJECTIVE_READINESS_POLICY_DESCRIPTOR = {
+export const SUBJECTIVE_READINESS_POLICY_DESCRIPTOR_V1 = {
     neutralDefaultForMissingScaleDimensions: 5,
     composite: {
         denominator: 5,
@@ -50,6 +49,48 @@ export const SUBJECTIVE_READINESS_POLICY_DESCRIPTOR = {
         'readiness <= 3',
         'stress >= 9',
         'readiness <= 4 && fatigue >= 6',
+    ],
+    excludedFromThisPolicySurface: [
+        'painFlag', 'illnessSymptoms', 'subjectiveDrift', 'alreadyTrainedToday', 'objective.today_training',
+    ],
+} as const;
+
+/**
+ * A versioned, reviewable description of the SEP-C2 classifier. Motivation is excluded
+ * from the physical fatigue composite, answered dimensions participate dynamically
+ * for partial check-ins, and clinical painFlag is decoupled from extreme fatigue.
+ */
+export const SUBJECTIVE_READINESS_POLICY_DESCRIPTOR = {
+    composite: {
+        denominator: 4,
+        dimensions: {
+            fatigue: 'direct',
+            soreness: 'direct',
+            readiness: 'inverted',
+            sleepQuality: 'inverted',
+        },
+        modifyWhen: '> 5',
+        recoverWhen: '> 7',
+    },
+    partialCheckinParticipation: 'average_answered_physical_dimensions',
+    independentTriggers: {
+        sorenessModifyWhen: '> 6',
+        fatigueRecoverWhen: '>= 8',
+        sorenessRecoverWhen: '>= 8',
+    },
+    severeDistressRecoverWhenAny: [
+        'fatigue >= 8 && readiness <= 4',
+        'readiness <= 3 && stress >= 8',
+        'fatigue >= 8 && stress >= 8',
+    ],
+    acuteSubjectiveModifyWhenAny: [
+        'fatigue >= 8',
+        'readiness <= 3',
+        'stress >= 9',
+        'readiness <= 4 && fatigue >= 6',
+    ],
+    excludedFromPhysicalFatigueComposite: [
+        'motivation', 'stress',
     ],
     excludedFromThisPolicySurface: [
         'painFlag', 'illnessSymptoms', 'subjectiveDrift', 'alreadyTrainedToday', 'objective.today_training',
@@ -146,7 +187,14 @@ export const SUBJECTIVE_READINESS_SOURCES: readonly KnowledgeSource[] = [
         title: 'Subjective readiness mode policy v1',
         sourceType: 'product_policy',
         citation: 'Adaptive Training Recommender product policy: subjective-readiness-mode-v1.',
-        notes: 'Records the current five-item equal-weight composite, independent subjective triggers, strict/inclusive comparison operators, and neutral midpoint defaults used after minimum-safety check-in validation. These are product calibration and safety choices, not externally validated clinical or physiological cut-points.',
+        notes: 'Records the legacy five-item equal-weight composite, independent subjective triggers, strict/inclusive comparison operators, and neutral midpoint defaults used after minimum-safety check-in validation. These are product calibration and safety choices, not externally validated clinical or physiological cut-points.',
+    },
+    {
+        id: SUBJECTIVE_READINESS_PRODUCT_POLICY_V2_SOURCE,
+        title: 'Subjective readiness mode policy v2 (SEP-C2)',
+        sourceType: 'product_policy',
+        citation: 'Adaptive Training Recommender product policy: subjective-readiness-mode-v2 (SEP-C2).',
+        notes: 'Records the four-item physical fatigue composite (fatigue, soreness, inverted readiness, inverted sleep quality), motivation exclusion from physical fatigue, dynamic answered-dimension evaluation for partial check-ins, and decoupled clinical recover override.',
     },
 ];
 
@@ -208,18 +256,31 @@ export const SUBJECTIVE_READINESS_CLAIMS: readonly KnowledgeClaim[] = [
         reviewedOn: '2026-09-01', version: 1,
     },
     {
-        id: SUBJECTIVE_READINESS_CLAIM_IDS.modeThresholdsPolicy,
+        id: SUBJECTIVE_READINESS_CLAIM_IDS.modeThresholdsPolicyV1,
         statement: 'The product computes an equal-weight five-item subjective fatigue score from fatigue, soreness, inverted readiness, inverted sleep quality and inverted motivation; it modifies above 5 and recovers above 7, applies the documented independent and combination triggers, and maps missing non-safety scale dimensions to neutral 5 after minimum-safety check-in validation.',
-        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'deprecated', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
         applicability: { contexts: ['recommendation_engine', 'daily_readiness'], sports: ['all_supported_sports'], populations: ['product_users_with_a_complete_minimum_safety_checkin'], outcomes: ['daily_training_mode'], horizon: 'acute' },
         evidence: [{ sourceId: SUBJECTIVE_READINESS_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: [
-            'The equal weights, >5/>7 thresholds, 3/4/6/8/9 comparisons, combination triggers and neutral midpoint are product calibration rather than externally validated clinical or physiological constants.',
-            'Minimum-safety completeness requires answered pain/injury, illness and already-trained flags plus fatigue or soreness; other scale dimensions can be neutral defaults and were not necessarily measured that day.',
+            'Superseded by SEP-C2 because it included motivation in the physical fatigue composite and used static neutral-5 imputation for partial check-ins.',
+            'Retained only so historical recommendation lineage remains interpretable.',
+        ],
+        reviewedOn: '2026-09-01', version: 1,
+    },
+    {
+        id: SUBJECTIVE_READINESS_CLAIM_IDS.modeThresholdsPolicy,
+        statement: 'The product computes a four-item subjective physical fatigue score from fatigue, soreness, inverted readiness, and inverted sleep quality; motivation is excluded from the physical composite. It modifies above 5 and recovers above 7. For complete minimum-safety check-ins, the score averages only answered physical dimensions rather than imputing neutral defaults. Documented independent and combination triggers apply, and clinical painFlag is decoupled from extreme fatigue.',
+        claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'high',
+        applicability: { contexts: ['recommendation_engine', 'daily_readiness'], sports: ['all_supported_sports'], populations: ['product_users_with_a_complete_minimum_safety_checkin'], outcomes: ['daily_training_mode'], horizon: 'acute' },
+        evidence: [{ sourceId: SUBJECTIVE_READINESS_PRODUCT_POLICY_V2_SOURCE, directness: 'direct' }],
+        limitations: [
+            'The four physical dimensions, >5/>7 thresholds, 3/4/6/8/9 comparisons, combination triggers and answered-dimension averaging are product calibration rather than externally validated clinical or physiological constants.',
+            'Minimum-safety completeness requires answered pain/injury, illness and already-trained flags plus fatigue or soreness; omitted physical dimensions are not imputed with neutral defaults in the composite.',
             'Pain/illness mapping and default-off subjective-drift logic are intentionally excluded from this claim and retain their separate policy/evidence status.',
             'Terminal already-trained overrides (`alreadyTrainedToday` and objective `today_training`) are evaluated after the threshold classifier and are outside this threshold claim.',
             'A recover/modify output is conservative product guidance, not a diagnosis, return-to-sport clearance, or substitute for medical assessment.',
         ],
         reviewedOn: '2026-09-01', version: 1,
+        supersedes: SUBJECTIVE_READINESS_CLAIM_IDS.modeThresholdsPolicyV1,
     },
 ];

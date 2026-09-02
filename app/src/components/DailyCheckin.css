@@ -787,3 +787,64 @@
   cursor: default;
   transform: none;
 }
+
+.red-flag-disclosure {
+  background: rgba(239, 68, 68, 0.08);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: var(--radius-control, 10px);
+  padding: 0.9rem;
+  margin-top: 0.75rem;
+}
+
+.red-flag-header strong {
+  color: #ef4444;
+  font-size: 0.92rem;
+  display: block;
+}
+
+.red-flag-header p {
+  color: #fca5a5;
+  font-size: 0.78rem;
+  margin: 0.2rem 0 0.6rem 0;
+}
+
+.red-flag-options-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+@media (max-width: 600px) {
+  .red-flag-options-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.red-flag-option-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.6rem;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  cursor: pointer;
+}
+
+.red-flag-option-card.is-active {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: #ef4444;
+}
+
+.red-flag-option-text strong {
+  display: block;
+  font-size: 0.82rem;
+  color: #f87171;
+}
+
+.red-flag-option-text small {
+  display: block;
+  font-size: 0.72rem;
+  color: #94a3b8;
+  line-height: 1.25;
+}

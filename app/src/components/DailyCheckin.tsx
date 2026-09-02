@@ -5,7 +5,7 @@ import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
 import { relevantFollowupRegions } from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import type { BodyRegion, DailySubjectiveCheckin, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
+import type { BodyRegion, DailySubjectiveCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
 import { isCompletedSubjectiveCheckin } from '../engine/checkinCompletion';
@@ -15,6 +15,13 @@ import type { Screen } from '../types/navigation';
 import { HealthContextSection } from './checkin/HealthContextSection';
 import { SubjectiveScaleRow } from './checkin/SubjectiveScaleRow';
 import './DailyCheckin.css';
+
+const RED_FLAG_OPTIONS: Array<{ value: RedFlagCategory; label: string; desc: string }> = [
+  { value: 'neurological', label: 'Neurological symptoms', desc: 'Numbness, tingling, or radiating weakness' },
+  { value: 'acute_trauma_structural', label: 'Acute trauma / structural instability', desc: 'Cannot bear weight, deformity, or joint give-way' },
+  { value: 'systemic_infection', label: 'Systemic / cardiopulmonary warning', desc: 'High fever with chills, unexplained chest pain, or shortness of breath' },
+  { value: 'rapidly_worsening', label: 'Rapidly worsening symptoms', desc: 'Severe progression of pain or loss of mobility despite rest' },
+];
 
 interface DailyCheckinProps {
   userId: string;
@@ -278,9 +285,27 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       });
       return;
     }
-    // The hard pain/injury flag and graded tissue observations are independent channels.
-    // Turning the hard flag off must not erase a valid mild/moderate tissue observation.
+    // Pain/injury and red-flag disclosure are independent safety channels. Turning the
+    // pain toggle off must not erase an explicitly disclosed neurological/systemic/trauma
+    // red flag, just as it must not erase a valid graded tissue observation.
     setCheckin({ ...checkin, [field]: next });
+  };
+
+  const handleRedFlagToggle = (category: RedFlagCategory) => {
+    if (!checkin) return;
+    const currentCategories = checkin.redFlags?.categories ?? [];
+    const exists = currentCategories.includes(category);
+    const nextCategories = exists
+      ? currentCategories.filter(c => c !== category)
+      : [...currentCategories, category];
+    setCheckin({
+      ...checkin,
+      redFlags: {
+        ...checkin.redFlags,
+        present: nextCategories.length > 0,
+        categories: nextCategories,
+      },
+    });
   };
 
   const handleHealthContextChange = (healthContext: HealthContextCheckin) => {
@@ -643,6 +668,31 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                 <span>Recommend rest or recovery only</span>
               </div>
             </label>
+          </div>
+
+          <div className="red-flag-disclosure" role="group" aria-label="Red-flag safety screening">
+            <div className="red-flag-header">
+              <strong>⚠️ Any Red-Flag Symptoms?</strong>
+              <p>These warnings can exist without a musculoskeletal injury. If present, training prescriptions are paused for medical evaluation.</p>
+            </div>
+            <div className="red-flag-options-grid">
+              {RED_FLAG_OPTIONS.map(opt => {
+                const isChecked = checkin.redFlags?.categories?.includes(opt.value) ?? false;
+                return (
+                  <label key={opt.value} className={`red-flag-option-card ${isChecked ? 'is-active' : ''}`}>
+                    <input
+                      type="checkbox"
+                      checked={isChecked}
+                      onChange={() => handleRedFlagToggle(opt.value)}
+                    />
+                    <div className="red-flag-option-text">
+                      <strong>{opt.label}</strong>
+                      <small>{opt.desc}</small>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
           </div>
 
           <HealthContextSection

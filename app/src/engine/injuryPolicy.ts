@@ -104,6 +104,7 @@ export function resolveInjuryRestrictions(
                     guardrailsSet.add('avoid_heavy_spinal_loading');
                     if (isExclude) {
                         guardrailsSet.add('avoid_heavy_lower_body');
+                        guardrailsSet.add('avoid_high_impact');
                     }
                     break;
 
@@ -127,7 +128,6 @@ export function resolveInjuryRestrictions(
 }
 
 const SEVERITY_RANK: Record<InjuryConstraint['severity'], number> = { monitor: 0, limit: 1, exclude: 2 };
-const TISSUE_LEVEL_RANK: Record<TissueResponseLevel, number> = { normal: 0, mild: 1, moderate: 2, severe: 3 };
 
 /** Tightens only -- never returns a less-severe value than either input. */
 function moreSevere(a: InjuryConstraint['severity'], b: InjuryConstraint['severity']): InjuryConstraint['severity'] {
@@ -135,18 +135,51 @@ function moreSevere(a: InjuryConstraint['severity'], b: InjuryConstraint['severi
 }
 
 /**
- * Worst signal across a day's four tissue-response observation points, translated into
- * the InjuryConstraint severity it would justify on its own: severe -> exclude,
- * moderate -> limit, mild -> monitor, normal/no signal -> null (nothing to add).
+ * Evaluates today's tissue-response observations with 24-hour response latency:
+ * 1. Severe at any point (morning, during, post, or next morning) -> 'exclude'.
+ * 2. Persistent post-session or next-morning irritability (or waking morningState) at moderate -> 'limit'.
+ * 3. Transient during-session loading discomfort (painDuringTraining === 'moderate') is
+ *    downgraded to 'monitor' only when BOTH post-session and next-morning observations
+ *    are explicitly present and normal/mild. Missing follow-up is unknown, not evidence
+ *    that the response settled, so it remains 'limit' until the latency window is observed.
+ * 4. Mild at any point -> 'monitor'.
+ * 5. Normal or absent -> null.
+ *
+ * The settle-by-next-morning rule is adapted from pain-monitoring/load-progression work in
+ * lower-limb tendinopathy. It is a conservative load-management heuristic here, not a
+ * diagnosis or evidence that every tissue/condition can safely tolerate the same pain dose.
  */
 export function deriveTissueSeverity(response: RegionTissueResponse): InjuryConstraint['severity'] | null {
-    const levels = [response.morningState, response.painDuringTraining, response.afterTrainingState, response.nextMorningReaction]
+    const { morningState, painDuringTraining, afterTrainingState, nextMorningReaction } = response;
+    const levels = [morningState, painDuringTraining, afterTrainingState, nextMorningReaction]
         .filter((level): level is TissueResponseLevel => level !== undefined);
     if (levels.length === 0) return null;
-    const worst = levels.reduce((worst, level) => (TISSUE_LEVEL_RANK[level] > TISSUE_LEVEL_RANK[worst] ? level : worst));
-    if (worst === 'severe') return 'exclude';
-    if (worst === 'moderate') return 'limit';
-    if (worst === 'mild') return 'monitor';
+
+    // Any severe signal crosses the automated-training exclusion boundary.
+    if (levels.some((level) => level === 'severe')) {
+        return 'exclude';
+    }
+
+    // Persistent or delayed moderate irritability: waking morningState, post-exercise, or next morning.
+    if (morningState === 'moderate' || afterTrainingState === 'moderate' || nextMorningReaction === 'moderate') {
+        return 'limit';
+    }
+
+    if (painDuringTraining === 'moderate') {
+        const settledLevel = (level: TissueResponseLevel | undefined): boolean =>
+            level === 'normal' || level === 'mild';
+        const completeSettledFollowup = settledLevel(afterTrainingState) && settledLevel(nextMorningReaction);
+
+        // Do not infer recovery from absent observations. The evidence-backed latency rule
+        // requires the later response to be known before relaxing the restriction.
+        return completeSettledFollowup ? 'monitor' : 'limit';
+    }
+
+    // Mild signal at any point.
+    if (levels.some((level) => level === 'mild')) {
+        return 'monitor';
+    }
+
     return null;
 }
 

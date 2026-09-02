@@ -382,3 +382,35 @@
         width: 100%;
     }
 }
+
+.clinical-escalation-hero-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.75rem;
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid rgba(239, 68, 68, 0.4);
+    border-radius: 10px;
+    padding: 0.85rem 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.clinical-escalation-hero-banner .escalation-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+}
+
+.clinical-escalation-hero-banner .escalation-title {
+    display: block;
+    color: #ef4444;
+    font-size: 0.92rem;
+    font-weight: 700;
+    margin-bottom: 0.2rem;
+}
+
+.clinical-escalation-hero-banner .escalation-text {
+    color: #fca5a5;
+    font-size: 0.82rem;
+    line-height: 1.4;
+    margin: 0;
+}
