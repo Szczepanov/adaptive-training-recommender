@@ -4,6 +4,7 @@ import {
     getPerformedTrainingFactsInRange,
     compareCanonicalVsLegacyFacts,
     normalizeModality,
+    templateIdForWorkoutId,
     type PerformedExposureFact,
     type HydratedOccurrenceContext,
 } from './performedTrainingFacts';
@@ -99,6 +100,12 @@ describe('performedTrainingFacts', () => {
         });
     });
 
+    describe('template identity inference', () => {
+        it('does not fabricate a template id when one workout serves multiple engine templates', () => {
+            expect(templateIdForWorkoutId('strength_full_body_maintenance_01')).toBeUndefined();
+        });
+    });
+
     describe('deriveFactsFromOccurrence (pure derivation)', () => {
         it('Garmin-only strength produces broad Strength exposure without inventing an exact category', () => {
             const occurrence = mockOccurrence({
@@ -156,6 +163,51 @@ describe('performedTrainingFacts', () => {
             expect(exposure.category).toBeUndefined();
         });
 
+        it('uses known provider modality when canonical modality is present but unrecognized', () => {
+            const occurrence = mockOccurrence({ modality: 'provider_specific_unknown' });
+            const { exposure } = deriveFactsFromOccurrence(occurrence, {
+                provider: {
+                    activityId: 'ride-1',
+                    provider: 'garmin',
+                    modality: 'Cycling',
+                    durationMin: 45,
+                },
+            });
+
+            expect(exposure.modality).toBe('Cycling');
+        });
+
+        it('keeps canonical local date across a midnight-adjacent provider timestamp', () => {
+            const occurrence = mockOccurrence({
+                localDate: '2026-09-01',
+                startedAt: undefined,
+                sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'ride-midnight' }],
+            });
+            const garminActivity: NormalizedGarminActivity = {
+                activityId: 'ride-midnight',
+                date: '2026-09-02',
+                type: 'cycling',
+                durationMin: 45,
+                startedAt: '2026-09-02T00:05:00Z',
+                endedAt: '2026-09-02T00:50:00Z',
+            };
+
+            const { exposure } = deriveFactsFromOccurrence(occurrence, {
+                provider: {
+                    activityId: 'ride-midnight',
+                    provider: 'garmin',
+                    modality: 'Cycling',
+                    startedAt: garminActivity.startedAt,
+                    endedAt: garminActivity.endedAt,
+                    durationMin: 45,
+                    garminActivity,
+                },
+            });
+
+            expect(exposure.localDate).toBe('2026-09-01');
+            expect(exposure.startedAt).toBe('2026-09-02T00:05:00Z');
+        });
+
         it('structured strength + Garmin produces one exposure and derives exact catalog category (D4)', () => {
             const occurrence = mockOccurrence({
                 sourceRefs: [
@@ -194,6 +246,21 @@ describe('performedTrainingFacts', () => {
             expect(coverageCredits[0].coverageKey).toBe('primary_strength');
             expect(coverageCredits[0].creditKind).toBe('exact');
             expect(coverageCredits[0].reasonCode).toBe('exact_workout_identity');
+        });
+
+        it('derives a safe shared category from workout identity without inventing a shared template id', () => {
+            const occurrence = mockOccurrence();
+            const { exposure } = deriveFactsFromOccurrence(occurrence, {
+                structured: {
+                    executionId: 'exec-1',
+                    workoutId: 'strength_full_body_maintenance_01',
+                    modality: 'Strength',
+                    durationMin: 45,
+                },
+            });
+
+            expect(exposure.category).toBe('Full-body Strength');
+            expect(exposure.templateId).toBeUndefined();
         });
 
         it('legacy strength stays generic instead of inventing full-body role semantics (D3)', () => {
