@@ -61,11 +61,11 @@ def test_tuple_compatible_indices_carry_semantic_definition_through_existing_ser
     assert implicit == explicit
 
 
-def test_fallback_observed_indices_preserve_execution_order_instead_of_sorting():
+def test_fallback_observed_indices_retain_order_independent_v1_behavior():
     forward = compute_fit_workout_fingerprint("Builder", (0, 1, 2))
     reordered = compute_fit_workout_fingerprint("Builder", (2, 0, 1))
 
-    assert forward != reordered
+    assert forward == reordered
 
 
 def test_cosmetic_name_and_enum_case_do_not_churn_semantic_fingerprint():
