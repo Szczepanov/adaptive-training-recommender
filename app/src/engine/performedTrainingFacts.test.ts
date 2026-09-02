@@ -141,7 +141,6 @@ describe('performedTrainingFacts', () => {
             expect(exposure.durationMin).toBe(77);
             expect(exposure.workoutId).toBeUndefined();
 
-            // Weekly coverage credit should NOT be exact; generic modality only (D1, D5).
             expect(coverageCredits).toHaveLength(1);
             expect(coverageCredits[0].coverageKey).toBe('primary_strength');
             expect(coverageCredits[0].creditKind).toBe('none');
@@ -213,6 +212,36 @@ describe('performedTrainingFacts', () => {
             expect(exposure.startedAt).toBe('2026-09-02T00:05:00Z');
         });
 
+        it('derives a missing local date from the start instant in Europe/Warsaw', () => {
+            const occurrence = mockOccurrence({
+                localDate: undefined,
+                startedAt: '2026-09-01T23:30:00Z',
+            });
+
+            const { exposure } = deriveFactsFromOccurrence(occurrence, {});
+
+            expect(exposure.localDate).toBe('2026-09-02');
+        });
+
+        it('rejects an impossible canonical local calendar date', () => {
+            const occurrence = mockOccurrence({ localDate: '2026-02-30' });
+
+            expect(() => deriveFactsFromOccurrence(occurrence, {})).toThrow(
+                'invalid performed local date: 2026-02-30',
+            );
+        });
+
+        it('rejects a malformed start timestamp before deriving a local date', () => {
+            const occurrence = mockOccurrence({
+                localDate: undefined,
+                startedAt: 'not-a-timestamp',
+            });
+
+            expect(() => deriveFactsFromOccurrence(occurrence, {})).toThrow(
+                'invalid start time: not-a-timestamp',
+            );
+        });
+
         it('structured strength + Garmin produces one exposure and derives exact catalog category (D4)', () => {
             const occurrence = mockOccurrence({
                 sourceRefs: [
@@ -232,7 +261,7 @@ describe('performedTrainingFacts', () => {
                     activityId: 'act-1',
                     provider: 'garmin',
                     modality: 'Strength',
-                    durationMin: 77, // watch ran longer
+                    durationMin: 77,
                 },
             };
 
@@ -244,9 +273,8 @@ describe('performedTrainingFacts', () => {
             expect(exposure.templateId).toBe('str_full_01');
             expect(exposure.confidence).toBe('exact');
             expect(exposure.sourceKinds).toEqual(['structured_execution', 'provider_activity']);
-            expect(exposure.durationMin).toBe(45); // structured duration wins
+            expect(exposure.durationMin).toBe(45);
 
-            // Weekly coverage awards exact credit once (D1, D4).
             expect(coverageCredits).toHaveLength(1);
             expect(coverageCredits[0].coverageKey).toBe('primary_strength');
             expect(coverageCredits[0].creditKind).toBe('exact');
@@ -314,7 +342,6 @@ describe('performedTrainingFacts', () => {
             const occ1 = mockOccurrence({ performedOccurrenceId: 'pto-1', localDate: '2026-09-01' });
             const occ2 = mockOccurrence({ performedOccurrenceId: 'pto-2', localDate: '2026-09-01' });
 
-            // queryActiveInDateWindow already filters status == 'active', so merged losers are never returned.
             vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([occ1, occ2]);
             vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
                 status: 'AVAILABLE',
