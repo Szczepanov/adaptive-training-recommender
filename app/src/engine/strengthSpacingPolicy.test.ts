@@ -123,6 +123,29 @@ describe('strengthSpacingPolicy', () => {
             expect(evaluateStrengthSpacingStatus(history, '2026-09-02', fullBodyCandidate, plannerGap).isRestricted).toBe(false);
         });
 
+        it('does not let an intervening upper-body exposure hide a broad exposure that is still inside a longer configured gap', () => {
+            const history: StrengthExposureLike[] = [
+                {
+                    localDate: '2026-08-31',
+                    modality: 'Strength',
+                    category: 'Full-body Strength',
+                    performedOccurrenceId: 'pto-full',
+                },
+                {
+                    localDate: '2026-09-01',
+                    modality: 'Strength',
+                    category: 'Upper-body Strength',
+                    performedOccurrenceId: 'pto-upper',
+                },
+            ];
+
+            const status = evaluateStrengthSpacingStatus(history, '2026-09-02', fullBodyCandidate, { minimumGapDays: 3 });
+            expect(status.isRestricted).toBe(true);
+            expect(status.lastStrengthLocalDate).toBe('2026-08-31');
+            expect(status.daysSinceLastStrength).toBe(2);
+            expect(status.mostRecentOccurrenceId).toBe('pto-full');
+        });
+
         it('does not restrict non-strength candidates', () => {
             const history: StrengthExposureLike[] = [{
                 localDate: '2026-09-01',
