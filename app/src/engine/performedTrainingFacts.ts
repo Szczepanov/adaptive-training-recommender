@@ -25,7 +25,7 @@ import { performedTrainingOccurrenceRepository as repository } from '../training
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { activityService } from '../services/activityService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
-import { getPreviousLocalDateString } from '../utils/localDate';
+import { getLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import { classifyGarminTier } from './completedTraining';
 
 export type FactConfidence = 'exact' | 'high' | 'inferred' | 'unknown';
@@ -151,17 +151,44 @@ export interface HydratedOccurrenceContext {
     };
 }
 
+function isValidCalendarDate(value: string): boolean {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+    if (!match) return false;
+
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const candidate = new Date(Date.UTC(year, month - 1, day));
+
+    return candidate.getUTCFullYear() === year
+        && candidate.getUTCMonth() === month - 1
+        && candidate.getUTCDate() === day;
+}
+
 function requirePerformedLocalDate(
     occurrence: PerformedTrainingOccurrence,
     startedAt: string | undefined,
     hydrated: HydratedOccurrenceContext,
 ): string {
-    const localDate = occurrence.localDate
-        ?? (startedAt ? startedAt.split('T')[0] : undefined)
-        ?? hydrated.provider?.garminActivity?.date;
+    let localDate: string | undefined;
+
+    if (occurrence.localDate !== undefined) {
+        localDate = occurrence.localDate;
+    } else if (startedAt) {
+        const startedInstant = new Date(startedAt);
+        if (Number.isNaN(startedInstant.getTime())) {
+            throw new Error(`Performed training occurrence ${occurrence.performedOccurrenceId} has invalid start time: ${startedAt}.`);
+        }
+        localDate = getLocalDateString(startedInstant);
+    } else if (hydrated.provider?.garminActivity?.date !== undefined) {
+        localDate = hydrated.provider.garminActivity.date;
+    }
 
     if (!localDate) {
         throw new Error(`Performed training occurrence ${occurrence.performedOccurrenceId} has no performed local date or start time.`);
+    }
+    if (!isValidCalendarDate(localDate)) {
+        throw new Error(`Performed training occurrence ${occurrence.performedOccurrenceId} has invalid performed local date: ${localDate}.`);
     }
     return localDate;
 }
