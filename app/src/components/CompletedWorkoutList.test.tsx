@@ -1,5 +1,5 @@
 import { renderToStaticMarkup } from 'react-dom/server';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
 import { CompletedWorkoutList } from './CompletedWorkoutList';
 
@@ -66,5 +66,20 @@ describe('CompletedWorkoutList', () => {
         const ambiguous: CompletedWorkoutView = { ...structuredOnly, reconciliation: { state: 'ambiguous' } };
         const html = renderToStaticMarkup(<CompletedWorkoutList workouts={[ambiguous]} />);
         expect(html).toContain('Ambiguous match');
+    });
+
+    it('shows the Garmin unlink affordance only when an actual Garmin source is hydrated', () => {
+        const unlink = vi.fn();
+        const garminHtml = renderToStaticMarkup(<CompletedWorkoutList workouts={[matched]} onUnlinkSource={unlink} />);
+        expect(garminHtml).toContain('Unlink Garmin source');
+
+        const nonGarminMatched: CompletedWorkoutView = {
+            ...structuredOnly,
+            performedOccurrenceId: 'pto-nongarmin',
+            sourceBadge: { hasStructured: true, hasProvider: true, providers: ['polar'] },
+            reconciliation: { state: 'matched' },
+        };
+        const nonGarminHtml = renderToStaticMarkup(<CompletedWorkoutList workouts={[nonGarminMatched]} onUnlinkSource={unlink} />);
+        expect(nonGarminHtml).not.toContain('Unlink Garmin source');
     });
 });
