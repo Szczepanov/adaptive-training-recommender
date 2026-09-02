@@ -23,6 +23,21 @@ When a structured execution is attached:
 - provider observations may contribute measured telemetry and generic modality evidence;
 - a provider activity cannot overwrite an exact structured workout identity.
 
+If a canonical occurrence carries an unrecognized modality string but the attached provider has a known normalized modality, the known provider modality may safely fill that semantic gap. An `Unknown` normalization must not block better attached-source evidence.
+
+### Exact workout identity is not automatically exact template identity
+
+The workout catalog is not one-to-one with engine templates. For example, `strength_full_body_maintenance_01` intentionally serves both `str_full_01` and `str_full_03`.
+
+Therefore reverse lookup follows a stricter rule:
+
+- `workoutId` remains exact when it comes from the structured execution;
+- `templateId` is inferred from `workoutId` only when exactly one engine template resolves to that workout;
+- if several templates share the workout, `templateId` remains undefined unless the structured source explicitly supplies it;
+- a shared engine category may still be derived when all matching templates agree on that category.
+
+This prevents a downstream fact from becoming more specific than the persisted structured evidence.
+
 ### Generic modality is not an exact training role
 
 A generic provider activity such as `strength_training` establishes that strength occurred. It does **not** establish that the workout was `Full-body Strength`.
@@ -31,7 +46,7 @@ Likewise, generic cycling establishes cycling exposure. It does **not** establis
 
 Therefore:
 
-- exact catalog workout identity may populate an exact engine category and exact weekly coverage credit;
+- exact catalog workout identity may populate a safe engine category and exact weekly coverage credit;
 - generic modality-only evidence keeps `category` undefined;
 - generic strength may emit a `primary_strength` coverage row with `creditKind: none` / `generic_modality_only`, but must not receive exact weekly role credit.
 
@@ -45,7 +60,9 @@ A normalized legacy-strength execution contributes high-confidence broad strengt
 
 Recommendation recency is date-sensitive. A missing performed date must not silently become `1970-01-01` because that converts data-integrity uncertainty into a false historical fact.
 
-The fact derivation now resolves local date from canonical `localDate`, performed start time, or provider activity date and fails visibly when none exists. This keeps malformed occurrence data observable during shadow rollout.
+The fact derivation resolves local date from canonical `localDate`, performed start time, or provider activity date and fails visibly when none exists. Canonical `localDate` remains authoritative even when an attached provider timestamp/date is midnight-adjacent and differs by a calendar day.
+
+This keeps malformed occurrence data observable during shadow rollout and protects athlete-local recency semantics.
 
 ## Dual-read comparison
 
@@ -79,8 +96,11 @@ The PR test suite now explicitly protects:
 
 - provider-only strength remains generic and does not invent a category;
 - provider-only cycling does not invent `Easy Endurance`;
-- exact structured catalog identity derives the catalog engine category;
+- a known provider modality can replace an unrecognized occurrence modality;
+- exact structured catalog identity derives the safe catalog/engine category;
+- a shared workout does not fabricate one of several possible engine template ids;
 - generic legacy strength remains role-agnostic;
+- canonical local date survives a midnight-adjacent provider date/timestamp;
 - missing performed date fails rather than creating an epoch-date fact;
 - same-day active occurrences remain separate facts;
 - equal-count modality drift is detected;
@@ -91,3 +111,5 @@ The PR test suite now explicitly protects:
 ## Remaining rollout boundary
 
 This PR deliberately does not switch production strength frequency/weekly-role recommendation decisions to canonical facts. The next cutover stage should use shadow comparison results and the broader ADR-0034/cutover-plan test matrix before enabling canonical facts as the production source of truth.
+
+The cutover plan also explicitly allows an occurrence-`updatedAt` watermark as the simple PR1 revision strategy. Material source-edit/late-sync invalidation and the broader legacy-history horizon remain PR4 concerns and are intentionally not pulled into this PR.
