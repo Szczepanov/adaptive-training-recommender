@@ -171,4 +171,44 @@ describe('SessionExecutionService', () => {
             expect(options).toEqual({ merge: true });
         });
     });
+
+    describe('logRestEvent / getRestEvents (PR 3, training-occurrence plan)', () => {
+        function validRestEvent(overrides: Record<string, unknown> = {}) {
+            return {
+                id: 'rest-1',
+                executionId: EXECUTION_ID,
+                afterEntryId: 'entry-1',
+                prescribedSeconds: 90,
+                startedAt: '2026-08-17T18:10:00Z',
+                endedAt: '2026-08-17T18:11:30Z',
+                actualSeconds: 90,
+                endReason: 'timer_elapsed',
+                createdAt: '2026-08-17T18:11:30Z',
+                updatedAt: '2026-08-17T18:11:30Z',
+                ...overrides,
+            };
+        }
+
+        it('persists a rest event via setDoc using the caller-supplied id', async () => {
+            await service.logRestEvent(USER_ID, EXECUTION_ID, validRestEvent() as never);
+            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+            const [, payload] = firestore.setDoc.mock.calls[0] as [unknown, Record<string, unknown>];
+            expect(payload).toMatchObject({ id: 'rest-1', afterEntryId: 'entry-1', endReason: 'timer_elapsed', actualSeconds: 90 });
+        });
+
+        it('returns only rest events belonging to this execution, sorted by startedAt, dropping malformed ones', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    { id: 'rest-2', ref: { path: '.../restEvents/rest-2' }, data: () => validRestEvent({ id: 'rest-2', afterEntryId: 'entry-2', startedAt: '2026-08-17T18:20:00Z', endedAt: '2026-08-17T18:21:00Z' }) },
+                    { id: 'rest-1', ref: { path: '.../restEvents/rest-1' }, data: () => validRestEvent() },
+                    { id: 'rest-cross', ref: { path: '.../restEvents/rest-cross' }, data: () => validRestEvent({ id: 'rest-cross', executionId: 'other-exec' }) },
+                    { id: 'rest-bad', ref: { path: '.../restEvents/rest-bad' }, data: () => validRestEvent({ id: 'rest-bad', actualSeconds: -1 }) },
+                ],
+            });
+
+            const restEvents = await service.getRestEvents(USER_ID, EXECUTION_ID);
+
+            expect(restEvents.map(e => e.id)).toEqual(['rest-1', 'rest-2']);
+        });
+    });
 });

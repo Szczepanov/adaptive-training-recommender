@@ -76,7 +76,10 @@ const GARMIN_ACTIVITY_TYPE_KEYWORDS: Record<string, string[]> = {
     cross_training: ['swim', 'row', 'ellipt', 'cardio'],
 };
 
-function normalizedGarminModality(activityType: string): string | null {
+/** Exported for `training-occurrence/reconciliationService.ts` (PR 1, ADR-0034), which
+ * reuses this classifier rather than duplicating the keyword table -- avoids two
+ * independent production matchers disagreeing about Garmin modality vocabulary. */
+export function normalizedGarminModality(activityType: string): string | null {
     const normalized = activityType.toLowerCase();
     for (const [modality, keywords] of Object.entries(GARMIN_ACTIVITY_TYPE_KEYWORDS)) {
         if (keywords.some(keyword => normalized.includes(keyword))) return modality;

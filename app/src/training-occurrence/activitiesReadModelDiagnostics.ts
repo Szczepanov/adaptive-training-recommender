@@ -1,0 +1,48 @@
+/**
+ * Dual-read diagnostics (ADR-0034 Stage 2 "construct the new completed-workout DTO in
+ * parallel; compare row counts, duplicates, source coverage"). Suggested metric names
+ * from the ADR (`activity_read.shadow.row_count_delta`, `activity_read.shadow.duplicate_delta`)
+ * are logged via the same `[training_occurrence]` console convention `metrics.ts`
+ * established for PR 1, since this repository has no real metrics backend.
+ */
+import type { NormalizedGarminActivity } from '../engine/models';
+import type { CompletedWorkoutView } from './completedWorkoutView';
+
+export interface ActivitiesReadModelComparison {
+    currentRowCount: number;
+    canonicalRowCount: number;
+    rowCountDelta: number;
+    /** How many raw Garmin rows collapsed into fewer canonical rows because they were
+     * matched to a structured source (or another provider activity). Zero means the
+     * canonical view found nothing to deduplicate relative to the raw view. */
+    duplicateDelta: number;
+    garminOnlyCount: number;
+    structuredOnlyCount: number;
+    matchedCount: number;
+    ambiguousCount: number;
+}
+
+export function compareActivitiesReadModels(
+    currentActivities: readonly NormalizedGarminActivity[],
+    canonicalWorkouts: readonly CompletedWorkoutView[],
+): ActivitiesReadModelComparison {
+    const garminOnlyCount = canonicalWorkouts.filter(w => w.sourceBadge.hasProvider && !w.sourceBadge.hasStructured).length;
+    const structuredOnlyCount = canonicalWorkouts.filter(w => w.sourceBadge.hasStructured && !w.sourceBadge.hasProvider).length;
+    const matchedCount = canonicalWorkouts.filter(w => w.sourceBadge.hasProvider && w.sourceBadge.hasStructured).length;
+    const ambiguousCount = canonicalWorkouts.filter(w => w.reconciliation.state === 'ambiguous').length;
+
+    return {
+        currentRowCount: currentActivities.length,
+        canonicalRowCount: canonicalWorkouts.length,
+        rowCountDelta: canonicalWorkouts.length - currentActivities.length,
+        duplicateDelta: currentActivities.length - (garminOnlyCount + matchedCount),
+        garminOnlyCount,
+        structuredOnlyCount,
+        matchedCount,
+        ambiguousCount,
+    };
+}
+
+export function recordActivitiesReadModelComparison(userId: string, comparison: ActivitiesReadModelComparison): void {
+    console.info('[training_occurrence] activity_read.shadow', { userId, ...comparison });
+}

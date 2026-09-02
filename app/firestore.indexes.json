@@ -50,6 +50,14 @@
         { "fieldPath": "priority", "order": "DESCENDING" },
         { "fieldPath": "createdAt", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "performedTrainingOccurrences",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "status", "order": "ASCENDING" },
+        { "fieldPath": "localDate", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

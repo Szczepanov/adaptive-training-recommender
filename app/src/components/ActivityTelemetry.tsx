@@ -1,103 +1,20 @@
 import { useState } from 'react';
 import type { DataState } from '../engine/dataState';
-import type { ActivityZoneBucket, NormalizedGarminActivity, RunningDynamics } from '../engine/models';
+import type { NormalizedGarminActivity } from '../engine/models';
 import { copyActivityJsonToClipboard } from '../utils/activityJsonExport';
+import {
+  formatDuration,
+  formatRunningPower,
+  formatTrainingEffectDescriptor,
+  hasRunningDynamics,
+  hrMeasurementDetail,
+} from './activityTelemetryFormat';
+import { ZoneBars } from './ZoneBars';
 import './ActivityTelemetry.css';
 
 interface ActivityTelemetryProps {
   state: DataState<NormalizedGarminActivity[]> | null;
   onReclassify?: (activityId: string) => void;
-}
-
-function formatDuration(seconds: number): string {
-  const totalSeconds = Math.round(seconds);
-  const minutes = Math.floor(totalSeconds / 60);
-  const remainder = totalSeconds % 60;
-  return remainder > 0 ? `${minutes}:${String(remainder).padStart(2, '0')}` : `${minutes}:00`;
-}
-
-function hasRunningDynamics(dynamics: RunningDynamics | undefined): dynamics is RunningDynamics {
-  return dynamics !== undefined && Object.values(dynamics).some((value) => value != null);
-}
-
-function formatRunningPower(dynamics: RunningDynamics): string | null {
-  const parts: string[] = [];
-  if (dynamics.avgRunningPowerWatts != null) parts.push(`${Math.round(dynamics.avgRunningPowerWatts)} W avg`);
-  if (dynamics.maxRunningPowerWatts != null) parts.push(`${Math.round(dynamics.maxRunningPowerWatts)} W max`);
-  return parts.length > 0 ? parts.join(' · ') : null;
-}
-
-function formatTrainingEffectDescriptor(value: string): string {
-  return value.replaceAll('_', ' ');
-}
-
-function humanizeHrReason(value: string): string {
-  const known: Record<string, string> = {
-    ISOLATED_SPIKE: 'isolated spikes',
-    REPEATED_DROPOUT: 'repeated dropouts',
-    LONG_GAP: 'long gaps',
-    CADENCE_LOCK_SUSPECTED: 'possible cadence lock',
-    PROVENANCE_AMBIGUOUS: 'ambiguous source provenance',
-    SUMMARY_TRACE_DISCORDANCE: 'summary/trace mismatch',
-  };
-  return known[value] ?? value.replaceAll('_', ' ').toLowerCase();
-}
-
-function hrMeasurementDetail(activity: NormalizedGarminActivity): { status: string; reason: string } | null {
-  const hasHrSummary = activity.averageHr !== null
-    || (activity.hrInZones?.length ?? 0) > 0
-    || activity.activityTrainingLoad !== null
-    || activity.trainingEffectAerobic !== null
-    || activity.trainingEffectAnaerobic !== null;
-  const measurement = activity.hrMeasurement;
-  if (!measurement) {
-    return hasHrSummary
-      ? { status: 'Not assessed', reason: 'No fidelity assessment is available for this activity.' }
-      : null;
-  }
-
-  const status = {
-    high: 'High confidence',
-    moderate: 'Moderate confidence',
-    low: 'Low confidence',
-    unreliable: 'Unreliable',
-    unknown: 'Assessment incomplete',
-  }[measurement.measurementConfidence];
-  const evidence: string[] = [];
-  if (measurement.sourceForActivity === 'wrist') evidence.push('wrist optical HR');
-  if (measurement.sourceForActivity === 'external') evidence.push('external HR source');
-  if (measurement.sourceForActivity === 'mixed_possible') evidence.push('possibly mixed HR source');
-  if (measurement.activityMotionRisk === 'high') evidence.push('high arm-motion risk');
-  evidence.push(...measurement.artifactFlags.map(humanizeHrReason));
-  evidence.push(...measurement.reasons.map(humanizeHrReason));
-  const reason = [...new Set(evidence)].slice(0, 3).join(' + ');
-  return { status, reason: reason || 'Compact trace-quality assessment is available.' };
-}
-
-function ZoneBars({ title, unit, zones }: { title: string; unit: string; zones: ActivityZoneBucket[] }) {
-  const total = zones.reduce((sum, zone) => sum + zone.secondsInZone, 0);
-  return (
-    <section className="activity-zone-section" aria-label={title}>
-      <h5>{title}</h5>
-      <div className="activity-zone-list">
-        {zones.map((zone) => {
-          const percent = total > 0 ? (zone.secondsInZone / total) * 100 : 0;
-          return (
-            <div className="activity-zone-row" key={zone.zoneNumber}>
-              <span className="activity-zone-label">Z{zone.zoneNumber}</span>
-              <div className="activity-zone-track" aria-hidden="true">
-                <span style={{ width: `${percent}%` }} />
-              </div>
-              <span className="activity-zone-value">
-                {formatDuration(zone.secondsInZone)}
-                {zone.lowBoundary !== undefined ? ` · ≥${zone.lowBoundary} ${unit}` : ''}
-              </span>
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
 }
 
 export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProps) {

@@ -528,6 +528,12 @@ class CanonicalActivity:
     epoc: float | None = None
     recovery_time_hours: int | None = None
     training_effect_label: str | None = None
+    # Absolute UTC instants (ISO 8601, e.g. "2026-08-26T06:52:30+00:00"), distinct from
+    # `date` (a Warsaw-local calendar day derived from startTimeLocal). Reconciliation
+    # (docs/adr/0034) requires absolute-timestamp overlap/proximity, not date-only
+    # matching -- `date` alone cannot support that. None when Garmin omitted startTimeGMT.
+    started_at: str | None = None
+    ended_at: str | None = None
 
 
 @dataclass

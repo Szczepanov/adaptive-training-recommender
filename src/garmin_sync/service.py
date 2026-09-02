@@ -24,6 +24,7 @@ from .config import Settings
 from .dates import get_date_range, get_date_string, local_today, n_days_ago, parse_date_string
 from .firestore_repository import FirestoreRecoveryRepository
 from .fit_activity import FitDeviceInventoryEntry
+from .fit_workout_identity import compute_fit_workout_fingerprint
 from .garmin_client import GarminClientWrapper
 from .garmin_provider import (
     GarminProviderAdapter,
@@ -198,6 +199,7 @@ class GarminSyncService:
         sync_run_id: str,
         details_by_activity_id: dict[str, CanonicalActivityDetail] | None = None,
         hr_measurements_by_activity_id: dict[str, CanonicalHrMeasurementQuality] | None = None,
+        fit_workout_fingerprints_by_activity_id: dict[str, str] | None = None,
     ) -> None:
         """Write a normalized standalone record per activity to users/{userId}/activities/.
         Safe to call unconditionally (no-op for an empty list). Activities without a
@@ -213,6 +215,7 @@ class GarminSyncService:
                 sync_run_id,
                 (details_by_activity_id or {}).get(activity.activity_id),
                 (hr_measurements_by_activity_id or {}).get(activity.activity_id),
+                (fit_workout_fingerprints_by_activity_id or {}).get(activity.activity_id),
             )
             activities_to_upsert.append((activity.activity_id, payload))
 
@@ -279,21 +282,25 @@ class GarminSyncService:
         provider: WearableProvider,
         canonical_activities: list[CanonicalActivity],
         target_iso: str,
-    ) -> dict[str, CanonicalHrMeasurementQuality]:
+    ) -> tuple[dict[str, CanonicalHrMeasurementQuality], dict[str, str]]:
         """Assess target-date FIT evidence without letting enrichment failures block sync.
 
         The result contains only compact, provider-neutral measurement evidence. FIT
         bytes and per-sample data remain in memory and are discarded by the provider
         boundary. A missing/failed original stays absent rather than being mislabeled
         as an assessed unreliable trace.
+
+        Also derives a FIT workout-structure fingerprint (PR 5, training-occurrence
+        plan) from the exact same already-decoded evidence -- no additional API calls.
         """
         if not provider.capabilities.activity_hr_fidelity:
-            return {}
+            return {}, {}
         fetch_fidelity: Any = getattr(provider, "fetch_activity_hr_fidelity", None)
         if not callable(fetch_fidelity):
-            return {}
+            return {}, {}
 
         assessments: dict[str, CanonicalHrMeasurementQuality] = {}
+        fit_workout_fingerprints: dict[str, str] = {}
         for activity in canonical_activities:
             if activity.date != target_iso or activity.activity_id is None:
                 continue
@@ -305,6 +312,11 @@ class GarminSyncService:
                         evidence,
                         _source_evidence_from_fit_devices(evidence.devices),
                     ).quality
+                    fingerprint = compute_fit_workout_fingerprint(
+                        evidence.workout_name, evidence.workout_step_indices
+                    )
+                    if fingerprint is not None:
+                        fit_workout_fingerprints[activity.activity_id] = fingerprint
             except GarminConnectTooManyRequestsError as error:
                 logger.warning(
                     f"[{target_iso}] Garmin HR-fidelity rate limit reached; "
@@ -316,7 +328,7 @@ class GarminSyncService:
                     f"[{target_iso}] Garmin HR-fidelity enrichment failed for "
                     f"activity=<ID-redacted>, continuing with the base record: {error}"
                 )
-        return assessments
+        return assessments, fit_workout_fingerprints
 
     def _seed_prehistory(
         self, raw_memory_store: dict[str, dict[str, Any]], range_start: Any
@@ -467,16 +479,17 @@ class GarminSyncService:
             target_iso,
             include_power_details=include_activity_details,
         )
-        hr_measurements_by_activity_id = (
+        hr_measurements_by_activity_id, fit_workout_fingerprints_by_activity_id = (
             self._fetch_activity_hr_fidelity(provider, activities_result.canonical, target_iso)
             if include_activity_hr_fidelity
-            else {}
+            else ({}, {})
         )
         self._archive_activities(
             activities_result.canonical,
             sync_run_id,
             details_by_activity_id=details_by_activity_id,
             hr_measurements_by_activity_id=hr_measurements_by_activity_id,
+            fit_workout_fingerprints_by_activity_id=fit_workout_fingerprints_by_activity_id,
         )
 
         # Persist refreshed tokens after API calls

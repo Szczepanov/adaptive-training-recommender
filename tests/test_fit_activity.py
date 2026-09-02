@@ -219,6 +219,76 @@ def test_decode_activity_original_uses_only_session_scoped_time_in_zone_fallback
     assert evidence.time_in_hr_zone_seconds == (10.0, 20.0, 30.0, 40.0, 50.0)
 
 
+def test_decode_activity_original_extracts_distinct_ordered_workout_step_indices():
+    """PR 5 (training-occurrence plan, ADR-0034): a device-recorded structured workout
+    tags record samples with workoutStepIndex; only distinct, first-seen-order indices
+    are kept, not one entry per record."""
+    messages = [
+        FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 0), workout_step=0),
+        FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 1), workout_step=0),
+        FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 2), workout_step=1),
+        FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 3), workout_step=0),
+        FakeDataMessage("session", avg_heart_rate=148, workout_name="5x5 Squat"),
+    ]
+
+    with patch(
+        "garmin_sync.fit_activity.fitdecode.FitReader",
+        return_value=_reader_with(messages),
+    ):
+        evidence = decode_activity_original(_synthetic_original_zip())
+
+    assert evidence.workout_step_indices == (0, 1)
+    assert evidence.workout_name == "5x5 Squat"
+
+
+def test_decode_activity_original_leaves_workout_fields_absent_for_a_freeform_recording():
+    messages = [
+        FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 0), heart_rate=140),
+        FakeDataMessage("session", avg_heart_rate=140),
+    ]
+
+    with patch(
+        "garmin_sync.fit_activity.fitdecode.FitReader",
+        return_value=_reader_with(messages),
+    ):
+        evidence = decode_activity_original(_synthetic_original_zip())
+
+    assert evidence.workout_step_indices == ()
+    assert evidence.workout_name is None
+
+
+def test_decode_activity_original_does_not_mislabel_multisession_workout_name():
+    messages = [
+        FakeDataMessage("session", avg_heart_rate=140, workout_name="Real Workout"),
+        FakeDataMessage("session", avg_heart_rate=150, workout_name="Second Session"),
+    ]
+
+    with patch(
+        "garmin_sync.fit_activity.fitdecode.FitReader",
+        return_value=_reader_with(messages),
+    ):
+        evidence = decode_activity_original(_synthetic_original_zip())
+
+    assert evidence.workout_name is None
+
+
+def test_decode_activity_original_caps_workout_step_index_growth():
+    messages = [
+        FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 0), workout_step=0),
+        FakeDataMessage("record", timestamp=datetime(2026, 1, 1, 10, 1), workout_step=1),
+    ]
+
+    with (
+        patch("garmin_sync.fit_activity._MAX_WORKOUT_STEP_INDICES", 1),
+        patch(
+            "garmin_sync.fit_activity.fitdecode.FitReader",
+            return_value=_reader_with(messages),
+        ),
+    ):
+        with pytest.raises(FitActivityDecodeError):
+            decode_activity_original(_synthetic_original_zip())
+
+
 def test_decode_activity_original_does_not_mislabel_multisession_summary():
     messages = [
         FakeDataMessage(

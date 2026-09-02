@@ -8,11 +8,14 @@ import {
     type SessionOccurrence,
     type SessionExecution,
     type SessionEntry,
+    type SessionRestEvent,
     type SessionIntent,
     type BlockRole,
     type BlockExecutionMode,
     SESSION_SCHEMA_VERSION,
 } from './models';
+
+const REST_END_REASONS = new Set(['timer_elapsed', 'skipped', 'next_set_started', 'session_ended']);
 
 export interface ValidationIssue {
     path: string;
@@ -517,4 +520,26 @@ export function validateSessionEntry(raw: unknown): ValidationResult<SessionEntr
 
     if (issues.length > 0) return { ok: false, issues };
     return { ok: true, value: raw as unknown as SessionEntry };
+}
+
+/** PR 3 (training-occurrence plan): validates a durable performed-rest record. See
+ * `sessions/restEventTiming.ts` for the pure logic that produces these fields. */
+export function validateSessionRestEvent(raw: unknown): ValidationResult<SessionRestEvent> {
+    const issues: ValidationIssue[] = [];
+    if (!isObject(raw)) return { ok: false, issues: [{ path: '', message: 'Expected object' }] };
+
+    if (typeof raw.id !== 'string' || raw.id.length === 0) issues.push({ path: 'id', message: 'Missing rest event id' });
+    if (typeof raw.executionId !== 'string' || raw.executionId.length === 0) issues.push({ path: 'executionId', message: 'Missing executionId' });
+    if (typeof raw.afterEntryId !== 'string' || raw.afterEntryId.length === 0) issues.push({ path: 'afterEntryId', message: 'Missing afterEntryId' });
+    if (typeof raw.startedAt !== 'string' || raw.startedAt.length === 0) issues.push({ path: 'startedAt', message: 'Missing startedAt' });
+    if (typeof raw.endedAt !== 'string' || raw.endedAt.length === 0) issues.push({ path: 'endedAt', message: 'Missing endedAt' });
+    if (typeof raw.actualSeconds !== 'number' || !Number.isFinite(raw.actualSeconds) || raw.actualSeconds < 0) issues.push({ path: 'actualSeconds', message: 'actualSeconds must be a finite non-negative number' });
+    if (typeof raw.endReason !== 'string' || !REST_END_REASONS.has(raw.endReason)) issues.push({ path: 'endReason', message: `Invalid endReason: ${String(raw.endReason)}` });
+    if (raw.prescribedSeconds !== undefined && (typeof raw.prescribedSeconds !== 'number' || !Number.isFinite(raw.prescribedSeconds) || raw.prescribedSeconds < 0)) issues.push({ path: 'prescribedSeconds', message: 'prescribedSeconds must be a finite non-negative number' });
+    if (raw.adjustmentSeconds !== undefined && (typeof raw.adjustmentSeconds !== 'number' || !Number.isFinite(raw.adjustmentSeconds))) issues.push({ path: 'adjustmentSeconds', message: 'adjustmentSeconds must be a finite number' });
+    if (typeof raw.createdAt !== 'string' || raw.createdAt.length === 0) issues.push({ path: 'createdAt', message: 'Missing createdAt' });
+    if (typeof raw.updatedAt !== 'string' || raw.updatedAt.length === 0) issues.push({ path: 'updatedAt', message: 'Missing updatedAt' });
+
+    if (issues.length > 0) return { ok: false, issues };
+    return { ok: true, value: raw as unknown as SessionRestEvent };
 }

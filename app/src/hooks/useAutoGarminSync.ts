@@ -3,6 +3,7 @@ import type { DailyDecisionInput } from '../engine/models';
 import { garminSyncRequestService } from '../services/garminSyncRequestService';
 import { getAwaitedSyncOutcome } from '../utils/garminSyncRequestState';
 import { isRecoverySnapshotStale } from '../utils/garminSyncStaleness';
+import { triggerGarminShadowReconciliationSweep } from '../training-occurrence';
 
 export interface UseAutoGarminSyncOptions {
     userId: string | null | undefined;
@@ -65,6 +66,11 @@ export function useAutoGarminSync({
                 activeTriggerRef.current = null;
                 if (outcome === 'completed') {
                     onSyncedRef.current?.();
+                    // PR 1 (ADR-0034) shadow reconciliation: fire-and-forget, never
+                    // affects sync UX. A bounded sweep since this hook doesn't know
+                    // which specific activity IDs the sync just landed.
+                    void triggerGarminShadowReconciliationSweep(userId)
+                        .catch(err => console.warn('[training-occurrence] shadow reconciliation sweep failed', err));
                 }
             },
             (err) => console.error('[useAutoGarminSync] Subscription error:', err)
@@ -125,6 +131,8 @@ export function useAutoGarminSync({
                     activeTriggerRef.current = null;
                     if (outcome === 'completed') {
                         onSyncedRef.current?.();
+                        void triggerGarminShadowReconciliationSweep(userId)
+                            .catch(sweepErr => console.warn('[training-occurrence] shadow reconciliation sweep failed', sweepErr));
                     }
                 } catch (err) {
                     // The realtime subscription remains the primary completion path; a

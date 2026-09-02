@@ -22,6 +22,7 @@ _MAX_RECORD_SAMPLES = 250_000
 _MAX_LAP_SUMMARIES = 10_000
 _MAX_TIMER_EVENTS = 20_000
 _MAX_ZONE_BUCKETS = 64
+_MAX_WORKOUT_STEP_INDICES = 500
 _SESSION_MESSAGE_NUMBER = 18
 _ANTPLUS_HEART_RATE_DEVICE_TYPE = 120
 
@@ -69,6 +70,14 @@ class FitActivityEvidence:
     lap_average_heart_rate_bpm: tuple[float, ...]
     time_in_hr_zone_seconds: tuple[float, ...]
     timer_events: tuple[FitTimerEvent, ...]
+    # PR 5 (training-occurrence plan, ADR-0034 "FIT structured-workout identity"): a
+    # device-recorded structured workout tags its record samples with a workoutStepIndex
+    # and its session with a workout name. Both are absent for a freeform (non-workout)
+    # recording -- that absence is meaningful and must fall through cleanly, not be
+    # confused with "not yet decoded". Distinct, ascending-first-seen step indices only
+    # (not one entry per record) so a multi-hour activity can't blow past the bound.
+    workout_step_indices: tuple[int, ...] = ()
+    workout_name: str | None = None
 
 
 def decode_activity_original(original: bytes) -> FitActivityEvidence:
@@ -81,6 +90,9 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
     timer_events: list[FitTimerEvent] = []
     average_heart_rate_bpm: float | None = None
     session_count = 0
+    workout_step_indices: list[int] = []
+    seen_workout_step_indices: set[int] = set()
+    workout_name: str | None = None
 
     try:
         with fitdecode.FitReader(
@@ -121,6 +133,15 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                             power_watts=_number(_value(message, "power")),
                         )
                     )
+                    step_index = _integer(_value(message, "workout_step"))
+                    if step_index is not None and step_index not in seen_workout_step_indices:
+                        _guard_capacity(
+                            workout_step_indices,
+                            _MAX_WORKOUT_STEP_INDICES,
+                            "workout step index",
+                        )
+                        seen_workout_step_indices.add(step_index)
+                        workout_step_indices.append(step_index)
                 elif name == "event":
                     event = _value(message, "event")
                     if event == "timer" or event == 0:
@@ -138,12 +159,14 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                         session_zones = _numbers(_value(message, "time_in_hr_zone"))
                         if session_zones:
                             time_in_hr_zone_seconds = _bounded_zone_values(session_zones)
+                        workout_name = _text(_value(message, "workout_name"))
                     else:
                         # A FIT can legitimately contain several sport sessions. This
                         # boundary has only one activity-level summary slot, so choosing
                         # the last session would falsely label it as whole-activity HR.
                         average_heart_rate_bpm = None
                         time_in_hr_zone_seconds = []
+                        workout_name = None
                 elif name == "lap":
                     average = _number(_value(message, "avg_heart_rate"))
                     if average is not None:
@@ -176,6 +199,8 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
         lap_average_heart_rate_bpm=tuple(lap_average_heart_rate_bpm),
         time_in_hr_zone_seconds=tuple(time_in_hr_zone_seconds),
         timer_events=tuple(timer_events),
+        workout_step_indices=tuple(workout_step_indices),
+        workout_name=workout_name,
     )
 
 
@@ -263,6 +288,12 @@ def _integer(value: Any) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int):
         return None
     return value
+
+
+def _text(value: Any) -> str | None:
+    if isinstance(value, str) and value.strip():
+        return value
+    return None
 
 
 def _identifier(value: Any) -> str | int | None:
