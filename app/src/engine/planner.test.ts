@@ -1084,4 +1084,35 @@ describe('Phase 6.2b -- fixed activities as projected exposures', () => {
         expect(overriddenDay).toBeDefined();
         expect(overriddenDay!.template.environment).not.toBe('outdoor');
     });
+
+    describe('compound subjective & severe objective adverse recovery persistence', () => {
+        it('persists recovery across 3 days when compound subjective distress is reported', () => {
+            const context = baseContext();
+            // Compound subjective distress: readiness 3, fatigue 8, soreness 7, stress 8
+            const severeSubjReadiness: DailyReadiness = {
+                subjective: neutralSubjective({ readiness: 3, fatigue: 8, soreness: 7, stress: 8 }),
+                objective: quietObjective(),
+            };
+            const { todayRec } = buildTodayAndTomorrow(context);
+            // Force todayRec to recover mode
+            const recoverRec = { ...todayRec, mode: 'recover' as const };
+            const seed = prepareWeekAheadPlanSeed(severeSubjReadiness, [], '2026-08-07', []);
+
+            const plan = generateWeekAheadPlan(
+                severeSubjReadiness, context, null, '2026-08-07', recoverRec, null, seed, { days: 5 },
+            );
+
+            // Offset 1 (Day 1: 2026-08-08) and Offset 2 (Day 2: 2026-08-09) must be Rest or light
+            const day1 = plan.days.find(d => d.dayOffset === 1);
+            const day2 = plan.days.find(d => d.dayOffset === 2);
+            const day3 = plan.days.find(d => d.dayOffset === 3);
+
+            expect(['Rest', 'Mobility/Recovery']).toContain(day1?.template.category);
+            expect(day2?.template.systemicCost ?? 0).toBeLessThanOrEqual(0.4);
+            // Day 3 must be capped at moderate or below (no Hard Endurance / Race-Specific)
+            expect(day3?.template.category).not.toBe('Hard Endurance');
+            expect(day3?.template.category).not.toBe('Race-Specific Endurance');
+            expect(day3?.template.systemicCost ?? 0).toBeLessThanOrEqual(0.65);
+        });
+    });
 });

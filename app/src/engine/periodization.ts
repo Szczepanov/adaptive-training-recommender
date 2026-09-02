@@ -331,7 +331,8 @@ function blendDemand(base: EventDemandProfile, eventDemand: EventDemandProfile, 
  */
 export function evaluatePeriodizationPhase(
     events: UserEvent[],
-    currentDateStr: string
+    currentDateStr: string,
+    asOfDate?: string,
 ): PeriodizationResult {
     const basePhase: PhaseWeights = {
         phaseName: 'Base',
@@ -352,17 +353,22 @@ export function evaluatePeriodizationPhase(
 
     // A scheduled event that has passed is intentionally not treated as a completed
     // race. It needs an explicit outcome before granting post-event recovery.
-    const staleEvents = datedEvents
-        .filter(({ event, daysToEvent }) => event.lifecycle === 'scheduled' && daysToEvent < 0)
-        .map(({ event }) => event);
-
-    // Scheduled events direct their normal progression through their event day. A
-    // completed/DNF event is eligible only for the existing three-day recovery window.
-    // DNS/cancelled (and the legacy rescheduled lifecycle) do not direct training.
-    const eligibleEvents = datedEvents.filter(({ event, daysToEvent }) =>
+    // In forward plan projections (asOfDate provided), an event scheduled on or after
+    // asOfDate that has now passed in the simulated timeline (daysToEvent < 0 && daysToEvent >= -3)
+    // enters Post-Event Recovery as a projected completion.
+    const eligibleEvents = datedEvents.filter(({ event, daysToEvent, targetDate }) =>
         (event.lifecycle === 'scheduled' && daysToEvent >= 0)
         || ((event.lifecycle === 'completed' || event.lifecycle === 'DNF') && daysToEvent < 0 && daysToEvent >= -3)
+        || (event.lifecycle === 'scheduled' && asOfDate && targetDate >= asOfDate && daysToEvent < 0 && daysToEvent >= -3)
     );
+
+    const staleEvents = datedEvents
+        .filter(({ event, daysToEvent, targetDate }) =>
+            event.lifecycle === 'scheduled'
+            && daysToEvent < 0
+            && (!asOfDate || targetDate < asOfDate || daysToEvent < -3)
+        )
+        .map(({ event }) => event);
 
     if (eligibleEvents.length === 0) {
         return {

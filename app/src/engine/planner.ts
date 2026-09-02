@@ -390,7 +390,7 @@ export function resolveWeeklyAnchors(
     const dayInfo: AnchorDayInfo[] = [];
     for (let offset = 2; offset <= totalDays; offset++) {
         const date = addDaysToLocalDateString(todayDate, offset);
-        const periodization = evaluatePeriodizationPhase(events, date);
+        const periodization = evaluatePeriodizationPhase(events, date, todayDate);
         if (!periodization.focusEvent) continue;
         const availability = resolveAvailability(date, null, fixedActivities, context);
         dayInfo.push({ date, offset, maxTimeMinutes: availability.maxTimeMinutes, periodization });
@@ -447,6 +447,7 @@ export interface ProjectedDatePlanningContext {
     internalStrainAsOf: string;
     fatigueFusionPolicy?: FatigueFusionPolicy;
     planDefinition?: PlanDefinition | null;
+    todayDate?: string;
 }
 
 export interface ProjectedDateState {
@@ -480,7 +481,7 @@ export function evaluateProjectedDate(
     state: ProjectedDateState,
     shared: ProjectedDatePlanningContext,
 ): ProjectedDateEvaluation {
-    const periodization = evaluatePeriodizationPhase(shared.events, date);
+    const periodization = evaluatePeriodizationPhase(shared.events, date, shared.todayDate);
     const availability = resolveAvailability(date, null, shared.fixedActivities, shared.context);
 
     const rankingFatigue = applyCompletedSessionLoad(
@@ -997,7 +998,19 @@ export function generateWeekAheadPlan(
     if (obj.rhr_delta !== null && obj.rhr_delta !== undefined && obj.rhr_delta >= 5) adverseSignalCount++;
     if (obj.body_battery_wake !== null && obj.body_battery_wake !== undefined && obj.body_battery_wake <= 35) adverseSignalCount++;
     if (obj.sleep_score !== null && obj.sleep_score !== undefined && obj.sleep_score <= 55) adverseSignalCount++;
-    const isSevereAdverseRecovery = todayRec.mode === 'recover' && adverseSignalCount >= 2;
+
+    const subj = todayReadiness?.subjective ?? {};
+    let subjectiveDistressCount = 0;
+    if (subj.fatigue !== undefined && subj.fatigue !== null && subj.fatigue >= 7) subjectiveDistressCount++;
+    if (subj.soreness !== undefined && subj.soreness !== null && subj.soreness >= 7) subjectiveDistressCount++;
+    if (subj.stress !== undefined && subj.stress !== null && subj.stress >= 8) subjectiveDistressCount++;
+    if (subj.readiness !== undefined && subj.readiness !== null && subj.readiness <= 4) subjectiveDistressCount++;
+
+    const isSevereAdverseRecovery = todayRec.mode === 'recover' && (
+        adverseSignalCount >= 2
+        || subjectiveDistressCount >= 2
+        || (adverseSignalCount >= 1 && subjectiveDistressCount >= 1)
+    );
 
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
@@ -1166,6 +1179,7 @@ export function generateWeekAheadPlan(
         internalStrainAsOf,
         fatigueFusionPolicy,
         planDefinition: suppliedPlanDefinition,
+        todayDate,
     };
 
     const historyEntryFor = (date: string, template: SessionTemplate): RecentHistoryEntry => ({
@@ -1282,7 +1296,7 @@ export function generateWeekAheadPlan(
 
     const evaluateForecastDate = (offset: number) => {
         const date = addDaysToLocalDateString(todayDate, offset);
-        const periodization = evaluatePeriodizationPhase(events, date);
+        const periodization = evaluatePeriodizationPhase(events, date, todayDate);
 
         const priorObjectiveIds = new Set(microcycle.objectives.map(objective => objective.id));
         const reconciled = reconcileObjectivesForDate(microcycle, events, date, todayDate, periodization, creditMemory, projectionExposures, authoredPlanBlocks, suppliedPlanDefinition);
@@ -1322,14 +1336,16 @@ export function generateWeekAheadPlan(
                 || template.category === 'Moderate Endurance')
             && coverageNeedTierForTemplate(optContext.coverageState, template, anchorRole) <= 1
         );
-        const isRecoveryPersistedDate = isSevereAdverseRecovery && offset <= 2;
+        const isRecoveryPersistedDate = isSevereAdverseRecovery && offset <= 3;
         let rankingCandidates = isRecoveryPersistedDate && offset === 1
             ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
             : (isRecoveryPersistedDate && offset === 2
                 ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery' || template.systemicCost <= PROJECTED_MODIFY_MAX_SYSTEMIC_COST)
-                : (hasFatigueGatedRequiredCoverage
-                    ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
-                    : fatigueGated));
+                : (isRecoveryPersistedDate && offset === 3
+                    ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery' || (template.systemicCost <= 0.65 && template.category !== 'Hard Endurance' && template.category !== 'Race-Specific Endurance'))
+                    : (hasFatigueGatedRequiredCoverage
+                        ? fatigueGated.filter(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
+                        : fatigueGated)));
 
         // On a reserved date, rank only the candidates that fulfil the reserved occurrence.
         // If the dynamic state has made all of them unsafe, fall back to the ordinary set:

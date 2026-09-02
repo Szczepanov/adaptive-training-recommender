@@ -3,23 +3,23 @@
   "samples": 5,
   "familiesCount": 13,
   "maxContextUtilization": 0.624,
-  "totalPromptTokens": 2226790,
-  "totalCompletionTokens": 165424,
+  "totalPromptTokens": 2218340,
+  "totalCompletionTokens": 168493,
   "families": [
     {
       "familyId": "objective_recovery",
       "samples": 5,
-      "familySensitivityMedian": 8.5,
+      "familySensitivityMedian": 7.5,
       "familySensitivityMad": 0.5,
-      "familySensitivitySpread": 3,
+      "familySensitivitySpread": 2,
       "dimensionMadAverages": {
-        "safety_recovery_fit": 1,
-        "goal_event_fit": 0.38,
-        "sequencing": 0.75,
-        "periodization_taper": 0.75,
-        "preference_capacity_fit": 0.63,
-        "robustness": 1,
-        "overall": 0.75
+        "safety_recovery_fit": 0.38,
+        "goal_event_fit": 0.13,
+        "sequencing": 0,
+        "periodization_taper": 0.13,
+        "preference_capacity_fit": 0.75,
+        "robustness": 0.13,
+        "overall": 0.38
       },
       "cases": {
         "judge_obj_neutral": {
@@ -37,11 +37,11 @@
             "goal_event_fit": 0,
             "sequencing": 0,
             "periodization_taper": 0,
-            "preference_capacity_fit": 1,
+            "preference_capacity_fit": 0,
             "robustness": 0,
             "overall": 0
           },
-          "maxSpread": 3
+          "maxSpread": 1
         },
         "judge_obj_hrv_1sd": {
           "scoreMedians": {
@@ -50,14 +50,14 @@
             "sequencing": 9,
             "periodization_taper": 8,
             "preference_capacity_fit": 9,
-            "robustness": 7,
+            "robustness": 8,
             "overall": 8
           },
           "dimensionMads": {
-            "safety_recovery_fit": 1,
+            "safety_recovery_fit": 0,
             "goal_event_fit": 0,
             "sequencing": 0,
-            "periodization_taper": 1,
+            "periodization_taper": 0,
             "preference_capacity_fit": 1,
             "robustness": 0,
             "overall": 0
@@ -65,27 +65,6 @@
           "maxSpread": 2
         },
         "judge_obj_hrv_2sd": {
-          "scoreMedians": {
-            "safety_recovery_fit": 7,
-            "goal_event_fit": 8,
-            "sequencing": 8,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 9,
-            "robustness": 7,
-            "overall": 8
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 1,
-            "periodization_taper": 0,
-            "preference_capacity_fit": 0,
-            "robustness": 1,
-            "overall": 1
-          },
-          "maxSpread": 4
-        },
-        "judge_obj_rhr_1sd": {
           "scoreMedians": {
             "safety_recovery_fit": 8,
             "goal_event_fit": 9,
@@ -99,7 +78,28 @@
             "safety_recovery_fit": 1,
             "goal_event_fit": 0,
             "sequencing": 0,
-            "periodization_taper": 1,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 1
+          },
+          "maxSpread": 3
+        },
+        "judge_obj_rhr_1sd": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 9,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 9,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
             "preference_capacity_fit": 1,
             "robustness": 0,
             "overall": 0
@@ -114,43 +114,43 @@
             "periodization_taper": 8,
             "preference_capacity_fit": 9,
             "robustness": 7,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 3
+        },
+        "judge_obj_poor_sleep": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 9,
+            "robustness": 7,
             "overall": 8
           },
           "dimensionMads": {
             "safety_recovery_fit": 1,
             "goal_event_fit": 0,
-            "sequencing": 1,
+            "sequencing": 0,
             "periodization_taper": 0,
-            "preference_capacity_fit": 0,
-            "robustness": 1,
-            "overall": 1
-          },
-          "maxSpread": 5
-        },
-        "judge_obj_poor_sleep": {
-          "scoreMedians": {
-            "safety_recovery_fit": 7,
-            "goal_event_fit": 8,
-            "sequencing": 8,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 9,
-            "robustness": 7,
-            "overall": 8
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 2,
-            "goal_event_fit": 1,
-            "sequencing": 1,
-            "periodization_taper": 1,
             "preference_capacity_fit": 1,
-            "robustness": 2,
+            "robustness": 0,
             "overall": 1
           },
-          "maxSpread": 5
+          "maxSpread": 3
         },
         "judge_obj_low_battery": {
           "scoreMedians": {
-            "safety_recovery_fit": 6,
+            "safety_recovery_fit": 8,
             "goal_event_fit": 8,
             "sequencing": 8,
             "periodization_taper": 8,
@@ -161,51 +161,51 @@
           "dimensionMads": {
             "safety_recovery_fit": 1,
             "goal_event_fit": 1,
-            "sequencing": 1,
+            "sequencing": 0,
             "periodization_taper": 1,
             "preference_capacity_fit": 1,
-            "robustness": 2,
+            "robustness": 1,
             "overall": 1
           },
-          "maxSpread": 7
+          "maxSpread": 4
         },
         "judge_obj_combined_bad": {
           "scoreMedians": {
-            "safety_recovery_fit": 6,
-            "goal_event_fit": 7,
-            "sequencing": 7,
-            "periodization_taper": 6,
-            "preference_capacity_fit": 9,
-            "robustness": 6,
-            "overall": 7
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 8,
+            "sequencing": 9,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 8,
+            "robustness": 9,
+            "overall": 9
           },
           "dimensionMads": {
-            "safety_recovery_fit": 2,
-            "goal_event_fit": 1,
-            "sequencing": 2,
-            "periodization_taper": 2,
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
             "preference_capacity_fit": 0,
-            "robustness": 2,
-            "overall": 2
+            "robustness": 0,
+            "overall": 0
           },
-          "maxSpread": 7
+          "maxSpread": 5
         }
       }
     },
     {
       "familyId": "subjective_recovery",
       "samples": 5,
-      "familySensitivityMedian": 7.5,
-      "familySensitivityMad": 1,
-      "familySensitivitySpread": 2,
+      "familySensitivityMedian": 8,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 2.5,
       "dimensionMadAverages": {
-        "safety_recovery_fit": 1,
-        "goal_event_fit": 0.88,
+        "safety_recovery_fit": 1.13,
+        "goal_event_fit": 0.25,
         "sequencing": 0.63,
         "periodization_taper": 0.38,
-        "preference_capacity_fit": 1.13,
-        "robustness": 0.94,
-        "overall": 1
+        "preference_capacity_fit": 0.25,
+        "robustness": 1.13,
+        "overall": 0.69
       },
       "cases": {
         "judge_subj_neutral": {
@@ -216,7 +216,7 @@
             "periodization_taper": 8,
             "preference_capacity_fit": 8,
             "robustness": 8,
-            "overall": 8.5
+            "overall": 8
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
@@ -225,154 +225,154 @@
             "periodization_taper": 0,
             "preference_capacity_fit": 0,
             "robustness": 0,
-            "overall": 0.5
+            "overall": 0
           },
-          "maxSpread": 3
+          "maxSpread": 4
         },
         "judge_subj_fresh": {
           "scoreMedians": {
-            "safety_recovery_fit": 9,
+            "safety_recovery_fit": 8,
             "goal_event_fit": 9,
             "sequencing": 8,
             "periodization_taper": 8,
-            "preference_capacity_fit": 9,
-            "robustness": 7.5,
-            "overall": 8.5
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 8
           },
           "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 1,
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
             "sequencing": 1,
-            "periodization_taper": 0,
-            "preference_capacity_fit": 1,
-            "robustness": 0.5,
-            "overall": 1.5
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0.5
           },
-          "maxSpread": 5
+          "maxSpread": 4
         },
         "judge_subj_low_readiness": {
           "scoreMedians": {
-            "safety_recovery_fit": 6,
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 8,
+            "sequencing": 7,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 7,
+            "robustness": 7,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0.5
+          },
+          "maxSpread": 5
+        },
+        "judge_subj_fatigue": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
             "goal_event_fit": 7,
             "sequencing": 7,
-            "periodization_taper": 6,
-            "preference_capacity_fit": 6,
-            "robustness": 6,
-            "overall": 6
+            "periodization_taper": 8,
+            "preference_capacity_fit": 7,
+            "robustness": 7,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 2,
+            "overall": 1
+          },
+          "maxSpread": 5
+        },
+        "judge_subj_soreness": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 7,
+            "robustness": 7,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 2,
+            "overall": 1
+          },
+          "maxSpread": 6
+        },
+        "judge_subj_stress": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 7,
+            "robustness": 7,
+            "overall": 7
           },
           "dimensionMads": {
             "safety_recovery_fit": 2,
             "goal_event_fit": 0,
             "sequencing": 1,
             "periodization_taper": 1,
-            "preference_capacity_fit": 2,
-            "robustness": 1,
-            "overall": 1
-          },
-          "maxSpread": 5
-        },
-        "judge_subj_fatigue": {
-          "scoreMedians": {
-            "safety_recovery_fit": 5,
-            "goal_event_fit": 7,
-            "sequencing": 6,
-            "periodization_taper": 5,
-            "preference_capacity_fit": 4,
-            "robustness": 4,
-            "overall": 5
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 2,
-            "sequencing": 1,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 2,
-            "robustness": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 2,
             "overall": 1
           },
           "maxSpread": 7
-        },
-        "judge_subj_soreness": {
-          "scoreMedians": {
-            "safety_recovery_fit": 5,
-            "goal_event_fit": 7,
-            "sequencing": 6,
-            "periodization_taper": 6,
-            "preference_capacity_fit": 5,
-            "robustness": 5,
-            "overall": 5.5
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 1,
-            "sequencing": 0,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 1,
-            "robustness": 1,
-            "overall": 0.5
-          },
-          "maxSpread": 6
-        },
-        "judge_subj_stress": {
-          "scoreMedians": {
-            "safety_recovery_fit": 5,
-            "goal_event_fit": 7,
-            "sequencing": 6,
-            "periodization_taper": 5,
-            "preference_capacity_fit": 5,
-            "robustness": 5,
-            "overall": 6
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 1,
-            "sequencing": 0,
-            "periodization_taper": 0,
-            "preference_capacity_fit": 1,
-            "robustness": 1,
-            "overall": 1
-          },
-          "maxSpread": 5
         },
         "judge_subj_low_motivation": {
           "scoreMedians": {
             "safety_recovery_fit": 8,
             "goal_event_fit": 8,
             "sequencing": 8,
-            "periodization_taper": 7,
+            "periodization_taper": 8,
             "preference_capacity_fit": 8,
             "robustness": 7,
-            "overall": 8
+            "overall": 7.5
           },
           "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 0,
-            "sequencing": 1,
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 1,
+            "sequencing": 0,
             "periodization_taper": 0,
-            "preference_capacity_fit": 1,
+            "preference_capacity_fit": 0,
             "robustness": 1,
             "overall": 0.5
           },
-          "maxSpread": 3
+          "maxSpread": 4
         },
         "judge_subj_combined_bad": {
           "scoreMedians": {
-            "safety_recovery_fit": 7,
-            "goal_event_fit": 7,
-            "sequencing": 8,
-            "periodization_taper": 9,
-            "preference_capacity_fit": 8,
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 6,
+            "sequencing": 7,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 6,
             "robustness": 7,
-            "overall": 8
+            "overall": 6
           },
           "dimensionMads": {
-            "safety_recovery_fit": 2,
-            "goal_event_fit": 2,
-            "sequencing": 1,
+            "safety_recovery_fit": 3,
+            "goal_event_fit": 0,
+            "sequencing": 0,
             "periodization_taper": 0,
             "preference_capacity_fit": 1,
             "robustness": 2,
-            "overall": 2
+            "overall": 1
           },
           "maxSpread": 7
         }
@@ -505,85 +505,43 @@
       "familyId": "event_proximity",
       "samples": 5,
       "familySensitivityMedian": 8,
-      "familySensitivityMad": 0,
-      "familySensitivitySpread": 1.5,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 3.5,
       "dimensionMadAverages": {
-        "safety_recovery_fit": 0.8,
-        "goal_event_fit": 0.8,
-        "sequencing": 1,
-        "periodization_taper": 1.8,
-        "preference_capacity_fit": 1,
-        "robustness": 0.6,
-        "overall": 1
+        "safety_recovery_fit": 1.4,
+        "goal_event_fit": 0.4,
+        "sequencing": 0.6,
+        "periodization_taper": 1.2,
+        "preference_capacity_fit": 0.8,
+        "robustness": 1.2,
+        "overall": 0.6
       },
       "cases": {
         "judge_event_40d": {
           "scoreMedians": {
             "safety_recovery_fit": 8,
-            "goal_event_fit": 9,
-            "sequencing": 8,
-            "periodization_taper": 8,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 6,
             "preference_capacity_fit": 8,
             "robustness": 8,
             "overall": 8
           },
           "dimensionMads": {
-            "safety_recovery_fit": 1,
+            "safety_recovery_fit": 0,
             "goal_event_fit": 0,
             "sequencing": 1,
             "periodization_taper": 2,
             "preference_capacity_fit": 1,
             "robustness": 0,
-            "overall": 1
+            "overall": 0
           },
-          "maxSpread": 6
+          "maxSpread": 4
         },
         "judge_event_20d": {
           "scoreMedians": {
             "safety_recovery_fit": 7,
-            "goal_event_fit": 8,
-            "sequencing": 7,
-            "periodization_taper": 7,
-            "preference_capacity_fit": 9,
-            "robustness": 8,
-            "overall": 7.5
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 0,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0,
-            "robustness": 0,
-            "overall": 0.5
-          },
-          "maxSpread": 4
-        },
-        "judge_event_14d": {
-          "scoreMedians": {
-            "safety_recovery_fit": 6,
-            "goal_event_fit": 7,
-            "sequencing": 7,
-            "periodization_taper": 6,
-            "preference_capacity_fit": 8,
-            "robustness": 7,
-            "overall": 7
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 1,
-            "sequencing": 1,
-            "periodization_taper": 2,
-            "preference_capacity_fit": 1,
-            "robustness": 0,
-            "overall": 0.5
-          },
-          "maxSpread": 7
-        },
-        "judge_event_7d": {
-          "scoreMedians": {
-            "safety_recovery_fit": 7,
-            "goal_event_fit": 7,
+            "goal_event_fit": 6,
             "sequencing": 7,
             "periodization_taper": 6,
             "preference_capacity_fit": 7,
@@ -592,33 +550,75 @@
           },
           "dimensionMads": {
             "safety_recovery_fit": 1,
-            "goal_event_fit": 1,
-            "sequencing": 1,
-            "periodization_taper": 2,
-            "preference_capacity_fit": 2,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
             "robustness": 1,
             "overall": 1
+          },
+          "maxSpread": 4
+        },
+        "judge_event_14d": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 8,
+            "robustness": 7,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 0
+          },
+          "maxSpread": 6
+        },
+        "judge_event_7d": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 5,
+            "sequencing": 6,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 6,
+            "robustness": 6,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 2,
+            "overall": 2
           },
           "maxSpread": 6
         },
         "judge_event_3d": {
           "scoreMedians": {
             "safety_recovery_fit": 5,
-            "goal_event_fit": 5,
+            "goal_event_fit": 4,
             "sequencing": 5,
             "periodization_taper": 4,
             "preference_capacity_fit": 6,
-            "robustness": 6,
-            "overall": 6
+            "robustness": 5,
+            "overall": 5
           },
           "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 2,
-            "sequencing": 2,
-            "periodization_taper": 2,
+            "safety_recovery_fit": 3,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
             "preference_capacity_fit": 1,
             "robustness": 2,
-            "overall": 2
+            "overall": 0
           },
           "maxSpread": 7
         }
@@ -873,28 +873,133 @@
     {
       "familyId": "interactions",
       "samples": 5,
-      "familySensitivityMedian": 7,
-      "familySensitivityMad": 1,
-      "familySensitivitySpread": 3.5,
+      "familySensitivityMedian": 8,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 1.8,
       "dimensionMadAverages": {
-        "safety_recovery_fit": 0.38,
-        "goal_event_fit": 0.63,
-        "sequencing": 0.5,
-        "periodization_taper": 0.5,
+        "safety_recovery_fit": 0.88,
+        "goal_event_fit": 0.38,
+        "sequencing": 0.75,
+        "periodization_taper": 0.75,
         "preference_capacity_fit": 0.88,
         "robustness": 0.25,
-        "overall": 0.81
+        "overall": 0.75
       },
       "cases": {
         "judge_int_fresh_hard_yday": {
           "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 9,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 3
+        },
+        "judge_int_badobj_noload": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 8,
+            "robustness": 5,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 4
+        },
+        "judge_int_badobj_hard_yday": {
+          "scoreMedians": {
+            "safety_recovery_fit": 5,
+            "goal_event_fit": 7,
+            "sequencing": 6,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 7,
+            "robustness": 4,
+            "overall": 5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 0,
+            "sequencing": 2,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 1,
+            "overall": 1
+          },
+          "maxSpread": 6
+        },
+        "judge_int_badsubj_goodobj": {
+          "scoreMedians": {
             "safety_recovery_fit": 9,
             "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 1
+          },
+          "maxSpread": 4
+        },
+        "judge_int_goodsubj_badobj": {
+          "scoreMedians": {
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 8,
+            "robustness": 5,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 1
+          },
+          "maxSpread": 4
+        },
+        "judge_int_race7_fresh": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 10,
             "sequencing": 9,
             "periodization_taper": 9,
             "preference_capacity_fit": 9,
-            "robustness": 8,
-            "overall": 9
+            "robustness": 9,
+            "overall": 10
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
@@ -905,83 +1010,20 @@
             "robustness": 0,
             "overall": 0
           },
-          "maxSpread": 3
+          "maxSpread": 2
         },
-        "judge_int_badobj_noload": {
-          "scoreMedians": {
-            "safety_recovery_fit": 5,
-            "goal_event_fit": 7,
-            "sequencing": 6,
-            "periodization_taper": 6,
-            "preference_capacity_fit": 8,
-            "robustness": 5,
-            "overall": 6
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 0,
-            "periodization_taper": 0,
-            "preference_capacity_fit": 1,
-            "robustness": 0,
-            "overall": 0.5
-          },
-          "maxSpread": 5
-        },
-        "judge_int_badobj_hard_yday": {
+        "judge_int_race7_hard_yday": {
           "scoreMedians": {
             "safety_recovery_fit": 8,
             "goal_event_fit": 8,
             "sequencing": 8,
             "periodization_taper": 8,
-            "preference_capacity_fit": 7,
-            "robustness": 7,
+            "preference_capacity_fit": 9,
+            "robustness": 8,
             "overall": 8
           },
           "dimensionMads": {
             "safety_recovery_fit": 1,
-            "goal_event_fit": 1,
-            "sequencing": 1,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 1,
-            "robustness": 1,
-            "overall": 1
-          },
-          "maxSpread": 6
-        },
-        "judge_int_badsubj_goodobj": {
-          "scoreMedians": {
-            "safety_recovery_fit": 5,
-            "goal_event_fit": 7,
-            "sequencing": 6,
-            "periodization_taper": 7,
-            "preference_capacity_fit": 8,
-            "robustness": 5,
-            "overall": 6
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 1,
-            "sequencing": 0,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 1,
-            "robustness": 0,
-            "overall": 1
-          },
-          "maxSpread": 6
-        },
-        "judge_int_goodsubj_badobj": {
-          "scoreMedians": {
-            "safety_recovery_fit": 5,
-            "goal_event_fit": 7,
-            "sequencing": 6,
-            "periodization_taper": 6,
-            "preference_capacity_fit": 8,
-            "robustness": 5,
-            "overall": 6
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
             "goal_event_fit": 0,
             "sequencing": 0,
             "periodization_taper": 0,
@@ -989,70 +1031,28 @@
             "robustness": 0,
             "overall": 1
           },
-          "maxSpread": 5
-        },
-        "judge_int_race7_fresh": {
-          "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 9,
-            "sequencing": 9,
-            "periodization_taper": 10,
-            "preference_capacity_fit": 9,
-            "robustness": 9,
-            "overall": 9
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 1,
-            "sequencing": 1,
-            "periodization_taper": 0,
-            "preference_capacity_fit": 1,
-            "robustness": 0,
-            "overall": 1
-          },
-          "maxSpread": 5
-        },
-        "judge_int_race7_hard_yday": {
-          "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 8,
-            "sequencing": 9,
-            "periodization_taper": 9,
-            "preference_capacity_fit": 8,
-            "robustness": 8,
-            "overall": 8
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 1,
-            "sequencing": 0,
-            "periodization_taper": 0,
-            "preference_capacity_fit": 1,
-            "robustness": 0,
-            "overall": 1
-          },
-          "maxSpread": 5
+          "maxSpread": 3
         },
         "judge_int_race7_badobj": {
           "scoreMedians": {
-            "safety_recovery_fit": 5,
-            "goal_event_fit": 6,
-            "sequencing": 6,
-            "periodization_taper": 6,
-            "preference_capacity_fit": 7,
+            "safety_recovery_fit": 6,
+            "goal_event_fit": 8,
+            "sequencing": 7,
+            "periodization_taper": 5,
+            "preference_capacity_fit": 8,
             "robustness": 4,
-            "overall": 5
+            "overall": 6
           },
           "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 1,
-            "sequencing": 2,
-            "periodization_taper": 2,
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 1,
             "preference_capacity_fit": 1,
             "robustness": 1,
-            "overall": 1
+            "overall": 2
           },
-          "maxSpread": 6
+          "maxSpread": 5
         }
       }
     },
@@ -1570,16 +1570,16 @@
       "familyId": "conflicting_tissue_vs_wearable",
       "samples": 5,
       "familySensitivityMedian": 7.5,
-      "familySensitivityMad": 0,
-      "familySensitivitySpread": 3,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 1.5,
       "dimensionMadAverages": {
-        "safety_recovery_fit": 0.5,
-        "goal_event_fit": 0.25,
-        "sequencing": 0,
-        "periodization_taper": 0.25,
-        "preference_capacity_fit": 0.25,
-        "robustness": 0.25,
-        "overall": 0.5
+        "safety_recovery_fit": 0.75,
+        "goal_event_fit": 1,
+        "sequencing": 0.5,
+        "periodization_taper": 0.75,
+        "preference_capacity_fit": 0.5,
+        "robustness": 0.5,
+        "overall": 0.63
       },
       "cases": {
         "judge_conflict_neutral": {
@@ -1588,9 +1588,9 @@
             "goal_event_fit": 9,
             "sequencing": 8,
             "periodization_taper": 8,
-            "preference_capacity_fit": 9,
+            "preference_capacity_fit": 8,
             "robustness": 8,
-            "overall": 9
+            "overall": 8.5
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
@@ -1599,66 +1599,66 @@
             "periodization_taper": 0,
             "preference_capacity_fit": 0,
             "robustness": 0,
-            "overall": 0
+            "overall": 0.5
           },
-          "maxSpread": 2
+          "maxSpread": 1
         },
         "judge_conflict_sore_legs_great_hrv": {
           "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 9,
-            "sequencing": 8,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 7,
-            "robustness": 8,
-            "overall": 8
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 0,
-            "periodization_taper": 0,
-            "preference_capacity_fit": 0,
-            "robustness": 0,
-            "overall": 0
-          },
-          "maxSpread": 3
-        },
-        "judge_conflict_fresh_legs_terrible_hrv": {
-          "scoreMedians": {
-            "safety_recovery_fit": 5,
-            "goal_event_fit": 6,
-            "sequencing": 7,
-            "periodization_taper": 6,
-            "preference_capacity_fit": 5,
-            "robustness": 5,
-            "overall": 6
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 0,
-            "sequencing": 0,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 1,
-            "robustness": 1,
-            "overall": 1
-          },
-          "maxSpread": 4
-        },
-        "judge_conflict_high_stress_fresh_body": {
-          "scoreMedians": {
-            "safety_recovery_fit": 8,
+            "safety_recovery_fit": 7,
             "goal_event_fit": 8,
-            "sequencing": 8,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 7,
-            "robustness": 8,
-            "overall": 8
+            "sequencing": 7,
+            "periodization_taper": 7,
+            "preference_capacity_fit": 8,
+            "robustness": 7,
+            "overall": 7
           },
           "dimensionMads": {
             "safety_recovery_fit": 1,
             "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 1,
+            "overall": 0.5
+          },
+          "maxSpread": 4
+        },
+        "judge_conflict_fresh_legs_terrible_hrv": {
+          "scoreMedians": {
+            "safety_recovery_fit": 4,
+            "goal_event_fit": 5,
+            "sequencing": 6,
+            "periodization_taper": 4,
+            "preference_capacity_fit": 6,
+            "robustness": 5,
+            "overall": 5
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 2,
             "sequencing": 0,
+            "periodization_taper": 2,
+            "preference_capacity_fit": 2,
+            "robustness": 1,
+            "overall": 0.5
+          },
+          "maxSpread": 5
+        },
+        "judge_conflict_high_stress_fresh_body": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 6,
+            "preference_capacity_fit": 7,
+            "robustness": 6,
+            "overall": 6
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 1,
+            "goal_event_fit": 1,
+            "sequencing": 1,
             "periodization_taper": 0,
             "preference_capacity_fit": 0,
             "robustness": 0,

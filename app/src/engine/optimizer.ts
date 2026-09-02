@@ -547,6 +547,20 @@ export function evaluateRecoveryConstraints(
                 reasons.push('PRE_EVENT_TAPER_RESTRICTION');
             }
         }
+        const daysSinceRace = getDayDiff(targetDate, raceDate);
+        if (focusEvent.priority === 'A' && daysSinceRace >= 1 && daysSinceRace <= 3) {
+            const isStrengthModality = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
+            const isHardOrHeavy = isStrengthModality || template.systemicCost > 0.45 || template.category === 'Hard Endurance' || template.category === 'Race-Specific Endurance';
+            if (isHardOrHeavy) {
+                reasons.push('POST_EVENT_RECOVERY_WINDOW');
+            }
+        } else if (focusEvent.priority === 'B' && daysSinceRace >= 1 && daysSinceRace <= 2) {
+            const isStrengthModality = template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category);
+            const isHardOrHeavy = isStrengthModality || template.systemicCost > 0.45 || template.category === 'Hard Endurance';
+            if (isHardOrHeavy) {
+                reasons.push('POST_EVENT_RECOVERY_WINDOW');
+            }
+        }
     }
 
     const minDaysSpacing = options.resolveMinimumDaysAfterHardLowerBody?.(template.id);

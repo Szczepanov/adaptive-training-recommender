@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildOptimizationContext, calculateStimulusBenefit, rankCandidates, rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
+import { buildOptimizationContext, calculateStimulusBenefit, evaluateRecoveryConstraints, rankCandidates, rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { FatigueState, SessionTemplate, UserContext, UserPreferences, WeeklyObjective } from './models';
 import type { ResolvedAvailability } from './schedule';
@@ -439,5 +439,40 @@ describe('optimizer — one optimizer invocation context (F4 / 3.3)', () => {
         const res2 = rankCandidates([template], optCtx2.unresolvedObjectives, optCtx2.fatigueState, optCtx2.availability, optCtx2.injuryConstraints, optCtx2.preferences, optCtx2.options);
 
         expect(res1.accepted[0].utilityScore).toEqual(res2.accepted[0].utilityScore);
+    });
+});
+
+describe('optimizer — post-event recovery window constraints', () => {
+    const fullBodyStrength = ENRICHED_TEMPLATES.find(t => t.category === 'Full-body Strength')!;
+    const easySpin = ENRICHED_TEMPLATES.find(t => t.category === 'Easy Endurance')!;
+    const focusEventA = {
+        id: 'crit-a',
+        title: 'Championship Criterium',
+        date: '2026-08-10',
+        priority: 'A' as const,
+        category: 'cycling_event' as const,
+        lifecycle: 'scheduled' as const,
+        demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.7, vo2MaxPower: 0.4, repeatedSurges: 0.5, sprintPower: 0.2, fatigueResistance: 0.8, neuromuscular: 0.3 },
+    };
+
+    it('restricts heavy strength and hard sessions for 1-3 days after an A-priority event', () => {
+        // 2 days post-event (targetDate = 2026-08-12)
+        const reasonsStrength = evaluateRecoveryConstraints(fullBodyStrength, '2026-08-12', [], {
+            focusEvent: focusEventA,
+        });
+        expect(reasonsStrength).toContain('POST_EVENT_RECOVERY_WINDOW');
+
+        const reasonsEasy = evaluateRecoveryConstraints(easySpin, '2026-08-12', [], {
+            focusEvent: focusEventA,
+        });
+        expect(reasonsEasy).not.toContain('POST_EVENT_RECOVERY_WINDOW');
+    });
+
+    it('lifts post-event restriction after 3 days have passed', () => {
+        // 4 days post-event (targetDate = 2026-08-14)
+        const reasonsStrength = evaluateRecoveryConstraints(fullBodyStrength, '2026-08-14', [], {
+            focusEvent: focusEventA,
+        });
+        expect(reasonsStrength).not.toContain('POST_EVENT_RECOVERY_WINDOW');
     });
 });

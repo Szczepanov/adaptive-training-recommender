@@ -203,4 +203,24 @@ describe('resolveMultiEventObjectives (Phase 5.6)', () => {
         const resolution = resolveMultiEventObjectives([], '2026-08-08', authorityResult, []);
         expect(resolution).toEqual({ objectives: [], droppedContributorObjectives: [] });
     });
+
+    describe('projected post-event recovery with asOfDate', () => {
+        it('activates Post-Event Recovery for an upcoming scheduled A-event passed in the projected timeline', () => {
+            const aRace = event({ id: 'a-crit', date: '2026-08-10', priority: 'A', lifecycle: 'scheduled' });
+            // Forecast evaluating 2 days post-race when today is 2026-08-07
+            const forecastResult = evaluatePeriodizationPhase([aRace], '2026-08-12', '2026-08-07');
+            expect(forecastResult.phase.phaseName).toBe('Post-Event Recovery');
+            expect(forecastResult.phase.volumeScale).toBe(0.4);
+            expect(forecastResult.phase.intensityScale).toBe(0.4);
+            expect(forecastResult.focusEvent?.id).toBe('a-crit');
+        });
+
+        it('reverts to Base phase once the 3-day recovery window expires', () => {
+            const aRace = event({ id: 'a-crit', date: '2026-08-10', priority: 'A', lifecycle: 'scheduled' });
+            // Forecast evaluating 4 days post-race when today is 2026-08-07
+            const forecastResult = evaluatePeriodizationPhase([aRace], '2026-08-14', '2026-08-07');
+            expect(forecastResult.phase.phaseName).toBe('Base');
+            expect(forecastResult.focusEvent).toBeNull();
+        });
+    });
 });
