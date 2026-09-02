@@ -14,7 +14,7 @@ const recommendation = {
         durationMin: 20,
         durationMax: 30,
     },
-    rationale: 'A red-flag clinical finding was reported.',
+    rationale: '1-tap alternative applied: Joint Mobility & Recovery flow.',
     envelopes: {
         safety: {
             clinicalEscalationRequired: true,
@@ -40,7 +40,7 @@ const prescription = {
 } as unknown as WorkoutPrescription;
 
 describe('MorningDecisionCard clinical escalation', () => {
-    it('keeps explanation visible while suppressing every executable prescription surface', () => {
+    it('keeps explanation visible while suppressing every executable or stale prescription surface', () => {
         const html = renderToStaticMarkup(
             <MorningDecisionCard
                 userId="athlete"
@@ -49,7 +49,7 @@ describe('MorningDecisionCard clinical escalation', () => {
                 evidence={evidence}
                 prescription={prescription}
                 adjustmentDirection={null}
-                activeAlternativeId={null}
+                activeAlternativeId="mobility"
                 onStartSession={() => undefined}
                 onAdjustLoad={() => undefined}
                 onSelectTimeCrunch={() => undefined}
@@ -61,7 +61,11 @@ describe('MorningDecisionCard clinical escalation', () => {
         );
 
         expect(html).toContain('Clinical Evaluation Recommended');
+        expect(html).toContain('Training Paused');
+        expect(html).toContain('Systemic / cardiopulmonary warning reported.');
         expect(html).toContain('Why &amp; Invalidation Rules');
+        expect(html).not.toContain('Recovery Mobility');
+        expect(html).not.toContain('1-tap alternative applied');
         expect(html).not.toContain('Start Session');
         expect(html).not.toContain('View Workout Targets');
         expect(html).not.toContain('Export / Sync');
