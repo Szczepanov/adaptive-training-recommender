@@ -161,8 +161,21 @@ function isEnduranceEvent(event: UserEvent | null | undefined): boolean {
 }
 
 /**
- * Covered intent-aware ranking policies whose gates/costs are evaluated for the supplied plan state.
- * Uncovered optimizer coefficients and pre-event restriction windows are intentionally not attributed.
+ * Attributes intent-aware ranking policies whose gates/costs are evaluated for the supplied plan
+ * state and whose knowledge-coverage inventory row is `covered` or `partial` (see
+ * `knowledge/knowledgeCoverage.ts`) — never a row still `uncovered`, and never on a coarser signal
+ * than the one the coverage row actually claims.
+ *
+ * The `taperActive` gate below is precise enough for the taper-window/volume and taper-sharpening
+ * claims: both describe behavior that is, by definition, exactly what `taperActive` means. It is
+ * NOT precise enough for `spacing.pre_event_restrictions` (SKR3 W0, 2026-09-02): that family's
+ * `preEventRestrictionsPolicy` claim describes optimizer restrictions gated on exact days-to-event
+ * (`engine/optimizer.ts:evaluateRecoveryConstraints`), which can differ from `taperActive` — e.g. a
+ * legacy A/B taper can be active up to 14 days out while the exhaustive-work restriction only
+ * evaluates within 7. Attributing it here would over-claim lineage on days where the restriction
+ * never actually fires. It stays unattributed until days-to-event is threaded into this function's
+ * input, uncovered optimizer coefficients (`engine/optimizer.ts` weights with no coverage row above
+ * `uncovered`) are never attributed at all.
  */
 export function trainingIntentKnowledgeRefs(intent: {
     history: readonly unknown[];

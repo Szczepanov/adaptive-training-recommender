@@ -90,10 +90,12 @@ describe('strength and concurrent training evidence pack', () => {
     });
 
     it('preserves this pack’s coverage state while later migrations update the global inventory', () => {
+        // Totals as of SKR3 W0 (2026-09-02) — see knowledgeCoverage.test.ts for the authoritative
+        // running total; this test only pins that this pack's own families are unaffected by it.
         expect(summarizeKnowledgeCoverage()).toMatchObject({
-            total: 53,
-            byCoverage: { covered: 17, partial: 8, uncovered: 22, not_applicable: 6 },
-            highImpactUncovered: 9,
+            total: 54,
+            byCoverage: { covered: 18, partial: 10, uncovered: 20, not_applicable: 6 },
+            highImpactUncovered: 7,
             highSafetyUncovered: 0,
         });
     });

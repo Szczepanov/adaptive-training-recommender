@@ -33,6 +33,8 @@ Initial baseline: 47 policy families — 4 covered, 38 uncovered and 5 deliberat
 
 For each migration, define the atomic claim first and then search the best applicable evidence. Each migration should be behavior-preserving unless the evidence review explicitly justifies a separate policy change and `POLICY_VERSION` bump.
 
+**Current totals (2026-09-02, post SKR3-W0):** 54 families — 18 covered / 10 partial / 20 uncovered / 6 not applicable. P0 / P1 / P2 / P3 = 7 / 13 / 8 / 2. High-impact uncovered = 7, high-safety uncovered = 0. The "Post-pack inventory" lines below are historical snapshots as of each pack's own merge, not a running total; several later packs (the SEP subjective/injury safety pack in particular) added coverage rows without restating a new running total, so those older snapshots should not be read as current. Scoping and rationale for the remaining SKR3 work: [`2026-09-02-skr3-completion-plan.md`](./2026-09-02-skr3-completion-plan.md).
+
 ### Evidence Pack 1 — Load + Intensity + Recovery
 
 **Status:** Complete (2026-08-30)
