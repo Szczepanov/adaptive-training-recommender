@@ -1,0 +1,88 @@
+# Canonical weekly coverage credit authority
+
+**Status:** implemented by ADR-0034 PR 3 (`feat/canonical-coverage-credit`)
+
+## Purpose
+
+Weekly programming-role coverage must use the same canonical performed-training occurrence truth as recent-exposure spacing without collapsing the two concepts into one ledger.
+
+The architecture deliberately separates:
+
+1. **Occurrence identity** — `PerformedTrainingOccurrence` answers which provider/app records describe one physical session.
+2. **Broad performed exposure** — `PerformedExposureFact` answers what can safely be said about the performed session for recency/spacing.
+3. **Programming-role semantics** — `CoverageCreditFact` answers whether that occurrence satisfies an authored coverage role such as `primary_strength`.
+4. **Coverage-state eligibility** — `buildCoverageState()` applies the active plan phase, rolling window, required/target counts, and dose constraints such as the aerobic minimum duration.
+
+A downstream consumer must not use layer 2 to reconstruct a decision already made by layer 3.
+
+## Why the semantic ledger is authoritative
+
+A canonical exposure may carry an exact `workoutId`, but the programming role of that workout is coverage-set scoped. For example, `strength_bodyweight_full_body_01` is `primary_strength` in the evergreen general coverage set but `compact_strength` in the September cycling-event set.
+
+Therefore the live path derives `CoverageCreditFact` using the same `CoverageSetDescriptor` that the recommendation decision will consume. `buildCoverageState()` then accepts only canonical exact credits whose `coverageSetId` matches the active descriptor.
+
+This prevents a fact derived under one plan vocabulary from being silently reclassified under another.
+
+## Canonical no-credit is also authoritative
+
+`creditKind: 'none'` is an explicit semantic result, not missing data. A generic Garmin Strength activity can prove that strength happened for spacing while still failing to prove the exact full-body role.
+
+When the canonical credit ledger is present:
+
+- `exact` may satisfy the matching authored role;
+- `semantic_confident` remains disabled in PR 3 until a separate policy defines it;
+- `none` never satisfies a role;
+- a credit for another `coverageSetId` never satisfies the active set;
+- absence of a positive credit for an occurrence is authoritative and must not trigger a workout-id fallback.
+
+This fail-closed behavior is what preserves the cutover plan's D1 separation between recency and exact role fulfillment.
+
+## Legacy and projection compatibility
+
+Forecasts and deterministic tests can contain hypothetical future completions that do not exist yet as canonical occurrences. Legacy/projected `CoverageHistoryEntry` values therefore continue to use descriptor lookup from `workoutId` / `templateId` when no canonical semantic ledger is present.
+
+The distinction is structural:
+
+- canonical performed facts with a `coverageCredits` ledger -> semantic ledger is authoritative, including an empty positive-credit set;
+- legacy/projected history without that ledger -> existing descriptor lookup remains available.
+
+An explicitly empty canonical performed-facts snapshot remains authoritative over legacy completed history.
+
+## Dose and phase remain coverage-state concerns
+
+Canonical role identity does not bypass existing plan constraints.
+
+`buildCoverageState()` still verifies that a credited key exists in the active descriptor and phase. For `aerobic_volume`, it also preserves the catalog minimum-duration rule: knowing that an occurrence executed `cycling_zone2_standard_01` is not enough if the performed duration is below the authored minimum.
+
+This keeps the semantic boundary clean:
+
+- fact layer: *which role identity is proven?*
+- coverage layer: *is that proven role eligible in this plan window and was enough dose performed?*
+
+## Invariants
+
+1. One active canonical occurrence can award a given exact role at most once.
+2. App + Garmin sources attached to one occurrence cannot double-count coverage.
+3. Provider modality alone cannot invent exact role identity.
+4. Canonical `none` cannot be resurrected by downstream workout-id inference.
+5. Credits are valid only for the coverage set under which they were derived.
+6. `semantic_confident` is observational only until an explicit policy enables it.
+7. Phase and minimum-dose checks still apply after semantic cutover.
+8. Legacy/projected histories retain their existing fallback because projected sessions may not have canonical occurrence facts yet.
+
+## Regression coverage
+
+`canonicalCoverageCreditCutover.test.ts` covers the PR 3 acceptance matrix: exact full-body and bodyweight roles, compact-strength non-substitution, generic Garmin no-credit, app+Garmin deduplication, source-order independence, unknown/legacy observability, and authoritative empty canonical history.
+
+`canonicalCoverageCreditAuthority.test.ts` adds architectural regressions for:
+
+- canonical role differing from what a workout-id reclassification would infer;
+- cross-coverage-set credit leakage;
+- authoritative `creditKind: 'none'`;
+- disabled `semantic_confident` credit;
+- preservation of the aerobic minimum-duration gate;
+- exposure-only projection/test compatibility.
+
+## Rollout boundary
+
+This PR cuts weekly role accounting to canonical semantic identity, but it does not remove all legacy recommendation-history reconstruction. Late-sync invalidation/history revision remains PR 4, and retirement of recommendation-specific reconciliation remains PR 5 under the existing cutover plan.
