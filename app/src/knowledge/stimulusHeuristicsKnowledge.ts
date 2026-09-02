@@ -145,7 +145,7 @@ export const STIMULUS_HEURISTICS_CLAIMS: readonly KnowledgeClaim[] = [
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
         applicability: { contexts: ['evergreen_dose', 'unprofiled_athlete_defaults'], sports: ['all_supported_sports'], populations: ['app_users_without_intent_profile'], outcomes: ['weekly_commitment_sessions'], horizon: 'chronic' },
         evidence: [{ sourceId: PLANNING_PRIORS_SOURCE, directness: 'direct' }],
-        limitations: ['The 2/3/4 session commitment prior provides a safe starting baseline within WHO activity guidelines, but remains an authored product default.'],
+        limitations: ['The 2/3/4 session commitment prior is an authored product default. It is not derived from WHO activity-duration or strengthening-frequency recommendations and must not be presented as a scientifically validated session-count prescription.'],
         reviewedOn: '2026-09-02', version: 1,
     },
     {
