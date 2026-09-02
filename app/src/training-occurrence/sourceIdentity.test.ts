@@ -11,6 +11,12 @@ describe('structuredExecutionSourceKey / providerActivitySourceKey', () => {
         expect(structuredExecutionSourceKey('exec-1')).toBe('structured_execution:exec-1');
         expect(providerActivitySourceKey('garmin', 'act-1')).toBe('provider_activity:garmin:act-1');
     });
+
+    it('normalizes provider case and outer whitespace before claiming identity', () => {
+        expect(providerActivitySourceKey(' Garmin ', 'act-1')).toBe(providerActivitySourceKey('garmin', 'act-1'));
+        expect(sourceKeyForRef({ kind: 'provider_activity', provider: 'GARMIN', activityId: 'act-1' }))
+            .toBe('provider_activity:garmin:act-1');
+    });
 });
 
 describe('sourceKeyForRef', () => {
