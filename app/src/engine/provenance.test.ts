@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { Recommendation } from './models';
 import type { IdentityDecisionProvenance } from '../observations/identityModels';
+import type { AthleteEvidenceRecord } from '../knowledge/athleteEvidence';
 import { TEMPLATES } from './templates';
 import { POLICY_VERSION } from './policy';
 import { buildRecommendationAudit } from './provenance';
@@ -86,8 +87,6 @@ describe('recommendation provenance', () => {
         );
         expect(external!.externalPlan).toEqual(provenance);
 
-        // Absent rather than undefined: Firestore rejects an explicit undefined value, and
-        // an always-present key would make "was this external?" ambiguous on read.
         const catalog = buildRecommendationAudit(base, snapshot, '2026-08-07T09:00:00Z');
         expect(Object.keys(catalog!)).not.toContain('externalPlan');
     });
@@ -116,8 +115,7 @@ describe('recommendation provenance', () => {
             '2026-08-07T08:00:00Z',
         );
 
-        const audit = buildRecommendationAudit(recommendation, snapshot, '2026-08-07T09:00:00Z');
-        expect(audit?.envelope.safetyRestrictedModalityCount).toBe(1);
+        expect(buildRecommendationAudit(recommendation, snapshot, '2026-08-07T09:00:00Z')?.envelope.safetyRestrictedModalityCount).toBe(1);
     });
 
     it('persists resolved SEP-B lineage identities without the runtime symptom trace', () => {
@@ -185,9 +183,61 @@ describe('recommendation provenance', () => {
             fallbackReason: 'ANCHOR_MISSING',
         };
 
-        const audit = buildRecommendationAudit(
-            recommendation, snapshot, '2026-08-07T09:00:00Z', null, identity,
-        );
+        const audit = buildRecommendationAudit(recommendation, snapshot, '2026-08-07T09:00:00Z', null, identity);
         expect(audit?.identityDecision).toEqual(identity);
+    });
+
+    it('persists compact athlete-evidence lineage and the base knowledge prior without personal payloads', () => {
+        const template = TEMPLATES.find(item => item.category === 'Easy Endurance');
+        if (!template) throw new Error('Test fixture requires an easy template');
+        const recommendation: Recommendation = {
+            template,
+            mode: 'modify',
+            rationale: 'Conservative personal refinement.',
+            envelopes: {
+                safety: { clinicalFlagActive: false, restrictedModalities: [] },
+                plan: { maxAllowableTier: 'Easy', taperActive: false },
+            },
+            decisionTrace: { policyVersion: POLICY_VERSION, candidateScores: [], droppedContributorObjectives: [] },
+        };
+        const history = buildTrainingHistorySnapshot(
+            '2026-08-07', 7,
+            { status: 'AVAILABLE', revision: 'activities-r1', data: [] },
+            { status: 'AVAILABLE', revision: 'recommendations-r1', data: [] },
+            '2026-08-07T08:00:00Z',
+        );
+        const record: AthleteEvidenceRecord = {
+            id: 'conservative_subjective_calibration',
+            userId: 'private-user-id',
+            domain: 'subjective_calibration',
+            status: 'active',
+            version: 2,
+            baseKnowledgeClaimId: KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy,
+            refinementType: 'calibrate_scalar',
+            parameters: { scalarOffset: 1, customNote: 'private note' },
+            sampleSize: 12,
+            observationWindowDays: 30,
+            confidence: 'moderate',
+            firstObservedDate: '2026-07-01',
+            lastObservedDate: '2026-08-01',
+            rationale: 'private athlete-specific rationale',
+        };
+
+        const audit = buildRecommendationAudit(recommendation, history, '2026-08-07T09:00:00Z', null, null, [record]);
+        expect(audit?.athleteEvidenceLineage).toEqual([{
+            recordId: record.id,
+            version: 2,
+            domain: 'subjective_calibration',
+            refinementType: 'calibrate_scalar',
+            baseKnowledgeClaimId: KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy,
+        }]);
+        expect(audit?.knowledgeLineage).toContainEqual({
+            claimId: KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy,
+            version: getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy).version,
+        });
+        const serialized = JSON.stringify(audit);
+        expect(serialized).not.toContain('private-user-id');
+        expect(serialized).not.toContain('private note');
+        expect(serialized).not.toContain('private athlete-specific rationale');
     });
 });

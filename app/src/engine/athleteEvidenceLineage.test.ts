@@ -8,20 +8,20 @@ import {
 
 describe('Athlete Evidence Lineage Snapshot & Replay Comparison (SKR4)', () => {
   const sampleRecord: AthleteEvidenceRecord = {
-    id: 'habitual_high_soreness_baseline',
+    id: 'conservative_subjective_calibration',
     userId: 'user-01',
     domain: 'subjective_calibration',
     status: 'active',
     version: 1,
     baseKnowledgeClaimId: 'policy.readiness.subjective_mode_thresholds_v2',
     refinementType: 'calibrate_scalar',
-    parameters: { scalarOffset: -1.0 },
+    parameters: { scalarOffset: 1 },
     sampleSize: 10,
     observationWindowDays: 30,
     confidence: 'high',
     firstObservedDate: '2026-07-01',
     lastObservedDate: '2026-08-01',
-    rationale: 'Habitual 3/10 soreness during normal training.',
+    rationale: 'Repeated evidence supports conservative subjective escalation.',
   };
 
   it('snapshots empty or undefined records as undefined', () => {
@@ -29,11 +29,12 @@ describe('Athlete Evidence Lineage Snapshot & Replay Comparison (SKR4)', () => {
     expect(snapshotAthleteEvidenceLineage([])).toBeUndefined();
   });
 
-  it('snapshots active records into compact lineage refs', () => {
-    const snapshot = snapshotAthleteEvidenceLineage([sampleRecord]);
-    expect(snapshot).toHaveLength(1);
-    expect(snapshot![0]).toEqual({
-      recordId: 'habitual_high_soreness_baseline',
+  it('snapshots active records into deterministic compact lineage refs', () => {
+    const second = { ...sampleRecord, id: 'z_recovery_record' };
+    const snapshot = snapshotAthleteEvidenceLineage([second, sampleRecord]);
+    expect(snapshot?.map(ref => ref.recordId)).toEqual(['conservative_subjective_calibration', 'z_recovery_record']);
+    expect(snapshot?.[0]).toEqual({
+      recordId: 'conservative_subjective_calibration',
       version: 1,
       domain: 'subjective_calibration',
       refinementType: 'calibrate_scalar',
@@ -41,46 +42,35 @@ describe('Athlete Evidence Lineage Snapshot & Replay Comparison (SKR4)', () => {
     });
   });
 
-  it('enforces maximum lineage ref cap', () => {
-    const excessive = Array.from({ length: MAX_ATHLETE_EVIDENCE_LINEAGE_REFS + 1 }, (_, idx) => ({
-      ...sampleRecord,
-      id: `record_${idx}`,
-    }));
+  it('rejects inactive, mixed-user, duplicate, or excessive snapshots', () => {
+    expect(() => snapshotAthleteEvidenceLineage([{ ...sampleRecord, status: 'revoked' }])).toThrow('only active records');
+    expect(() => snapshotAthleteEvidenceLineage([sampleRecord, { ...sampleRecord, id: 'foreign', userId: 'user-02' }])).toThrow('multiple users');
+    expect(() => snapshotAthleteEvidenceLineage([sampleRecord, { ...sampleRecord }])).toThrow('duplicate record id');
+    const excessive = Array.from({ length: MAX_ATHLETE_EVIDENCE_LINEAGE_REFS + 1 }, (_, idx) => ({ ...sampleRecord, id: `record_${idx}` }));
     expect(() => snapshotAthleteEvidenceLineage(excessive)).toThrow('exceeds 16 records');
   });
 
   describe('compareAthleteEvidenceLineage', () => {
     it('returns lineage_unavailable when persisted lineage is undefined', () => {
-      const res = compareAthleteEvidenceLineage(undefined, [sampleRecord]);
-      expect(res.status).toBe('lineage_unavailable');
-      expect(res.drift).toHaveLength(0);
+      expect(compareAthleteEvidenceLineage(undefined, [sampleRecord])).toEqual({ status: 'lineage_unavailable', drift: [] });
     });
 
-    it('returns matches_current when records and versions match', () => {
+    it('returns matches_current when record identity, definition, status, and version match', () => {
       const snapshot = snapshotAthleteEvidenceLineage([sampleRecord])!;
-      const res = compareAthleteEvidenceLineage(snapshot, [sampleRecord]);
-      expect(res.status).toBe('matches_current');
-      expect(res.drift).toHaveLength(0);
+      expect(compareAthleteEvidenceLineage(snapshot, [sampleRecord])).toEqual({ status: 'matches_current', drift: [] });
     });
 
-    it('detects missing record drift when a persisted record no longer exists', () => {
+    it('detects missing, inactive, version, and same-version definition drift', () => {
       const snapshot = snapshotAthleteEvidenceLineage([sampleRecord])!;
-      const res = compareAthleteEvidenceLineage(snapshot, []);
-      expect(res.status).toBe('drifted');
-      expect(res.drift).toHaveLength(1);
-      expect(res.drift[0].recordId).toBe('habitual_high_soreness_baseline');
-      expect(res.drift[0].status).toBe('missing');
+      expect(compareAthleteEvidenceLineage(snapshot, []).drift[0].status).toBe('missing');
+      expect(compareAthleteEvidenceLineage(snapshot, [{ ...sampleRecord, status: 'revoked' }]).drift[0].status).toBe('inactive');
+      expect(compareAthleteEvidenceLineage(snapshot, [{ ...sampleRecord, version: 2 }]).drift[0].status).toBe('version_mismatch');
+      expect(compareAthleteEvidenceLineage(snapshot, [{ ...sampleRecord, baseKnowledgeClaimId: 'policy.readiness.mode_thresholds_v1' }]).drift[0].status).toBe('definition_mismatch');
     });
 
-    it('detects version mismatch drift when record version changed', () => {
+    it('rejects a mixed-user current-record set rather than matching by id across identities', () => {
       const snapshot = snapshotAthleteEvidenceLineage([sampleRecord])!;
-      const updatedRecord: AthleteEvidenceRecord = { ...sampleRecord, version: 2 };
-      const res = compareAthleteEvidenceLineage(snapshot, [updatedRecord]);
-      expect(res.status).toBe('drifted');
-      expect(res.drift).toHaveLength(1);
-      expect(res.drift[0].recordedVersion).toBe(1);
-      expect(res.drift[0].currentVersion).toBe(2);
-      expect(res.drift[0].status).toBe('version_mismatch');
+      expect(() => compareAthleteEvidenceLineage(snapshot, [sampleRecord, { ...sampleRecord, id: 'foreign', userId: 'user-02' }])).toThrow('multiple users');
     });
   });
 });

@@ -17,26 +17,26 @@ describe('Athlete-Specific Evidence Policy Refinement Engine (SKR4)', () => {
     updatedAt: '2026-09-02T12:00:00Z',
     records: [
       {
-        id: 'habitual_high_soreness_baseline',
+        id: 'conservative_subjective_calibration',
         userId: 'athlete-calibration-01',
         domain: 'subjective_calibration',
         status: 'active',
         version: 1,
         baseKnowledgeClaimId: KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy,
         refinementType: 'calibrate_scalar',
-        parameters: { scalarOffset: -1.0 },
+        parameters: { scalarOffset: 1.0 },
         sampleSize: 15,
         observationWindowDays: 45,
         confidence: 'high',
         firstObservedDate: '2026-06-01',
         lastObservedDate: '2026-08-01',
-        rationale: 'Athlete habitually reports mild baseline soreness 3/10 during normal training.',
+        rationale: 'Repeated athlete-specific evidence supports a conservative one-point escalation.',
       },
       {
         id: 'provisional_stoic_bias',
         userId: 'athlete-calibration-01',
         domain: 'subjective_calibration',
-        status: 'provisional', // Provisional records must NOT be applied
+        status: 'provisional',
         version: 1,
         baseKnowledgeClaimId: KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy,
         refinementType: 'calibrate_scalar',
@@ -56,10 +56,7 @@ describe('Athlete-Specific Evidence Policy Refinement Engine (SKR4)', () => {
         version: 1,
         baseKnowledgeClaimId: KNOWLEDGE_CLAIM_IDS.strenuousLowerBodyResidualFatigue,
         refinementType: 'tighten_constraint',
-        parameters: {
-          scalarMultiplier: 1.25,
-          enforcedMinimumRecoveryHours: 54,
-        },
+        parameters: { scalarMultiplier: 1.25, enforcedMinimumRecoveryHours: 54 },
         sampleSize: 8,
         observationWindowDays: 60,
         confidence: 'high',
@@ -77,92 +74,102 @@ describe('Athlete-Specific Evidence Policy Refinement Engine (SKR4)', () => {
         refinementType: 'tighten_constraint',
         parameters: {
           additionalRestrictedModalities: ['Running'],
+          applicableBodyRegions: ['achilles'],
         },
         sampleSize: 5,
         observationWindowDays: 30,
         confidence: 'moderate',
         firstObservedDate: '2026-07-01',
         lastObservedDate: '2026-08-01',
-        rationale: 'Recurring right Achilles tendinopathy flares upon repeated pavement running.',
+        rationale: 'Recurring right Achilles irritation with repeated high-impact running exposure.',
       },
     ],
   };
 
-  it('filters active records and excludes provisional ones', () => {
-    const allActive = resolveActiveAthleteEvidenceRecords(profileWithCalibrations);
+  it('filters active records and fails closed on cross-user records', () => {
+    const contaminated: AthleteEvidenceProfile = {
+      ...profileWithCalibrations,
+      records: [
+        ...profileWithCalibrations.records,
+        { ...profileWithCalibrations.records[3], id: 'foreign_record', userId: 'other-athlete' },
+      ],
+    };
+    const allActive = resolveActiveAthleteEvidenceRecords(contaminated);
     expect(allActive).toHaveLength(3);
+    expect(allActive.some(r => r.id === 'foreign_record')).toBe(false);
     expect(allActive.some(r => r.id === 'provisional_stoic_bias')).toBe(false);
-
-    const subjectiveActive = resolveActiveAthleteEvidenceRecords(profileWithCalibrations, 'subjective_calibration');
-    expect(subjectiveActive).toHaveLength(1);
-    expect(subjectiveActive[0].id).toBe('habitual_high_soreness_baseline');
   });
 
   describe('applyAthleteSubjectiveCalibration', () => {
     it('returns raw values when no profile or active calibration is present', () => {
       const res = applyAthleteSubjectiveCalibration(null, { soreness: 4, fatigue: 3 });
-      expect(res.calibratedSoreness).toBe(4);
-      expect(res.calibratedFatigue).toBe(3);
+      expect(res).toEqual({ calibratedSoreness: 4, calibratedFatigue: 3, offsetApplied: 0 });
+    });
+
+    it('applies only conservative positive calibration', () => {
+      const res = applyAthleteSubjectiveCalibration(profileWithCalibrations, { soreness: 4, fatigue: 3 });
+      expect(res.calibratedSoreness).toBe(5);
+      expect(res.calibratedFatigue).toBe(4);
+      expect(res.offsetApplied).toBe(1);
+      expect(res.appliedRecord?.id).toBe('conservative_subjective_calibration');
+    });
+
+    it('makes an unvalidated negative offset a no-op so absolute floors cannot be weakened', () => {
+      const unsafeProfile: AthleteEvidenceProfile = {
+        ...profileWithCalibrations,
+        records: [{ ...profileWithCalibrations.records[0], parameters: { scalarOffset: -2 } }],
+      };
+      const res = applyAthleteSubjectiveCalibration(unsafeProfile, { soreness: 7, fatigue: 9 });
+      expect(res.calibratedSoreness).toBe(7);
+      expect(res.calibratedFatigue).toBe(9);
       expect(res.offsetApplied).toBe(0);
       expect(res.appliedRecord).toBeUndefined();
-    });
-
-    it('applies calibrated offset within valid scale bounds', () => {
-      const res = applyAthleteSubjectiveCalibration(profileWithCalibrations, { soreness: 4, fatigue: 3 });
-      expect(res.calibratedSoreness).toBe(3.0);
-      expect(res.calibratedFatigue).toBe(2.0);
-      expect(res.offsetApplied).toBe(-1.0);
-      expect(res.appliedRecord?.id).toBe('habitual_high_soreness_baseline');
-    });
-
-    it('preserves safety invariant: severe soreness (>= 8) cannot be calibrated below 6', () => {
-      const resSevere = applyAthleteSubjectiveCalibration(profileWithCalibrations, { soreness: 8, fatigue: 8 });
-      // 8 - 1.0 = 7.0, which is >= 6, so it's allowed.
-      expect(resSevere.calibratedSoreness).toBe(7.0);
-
-      // Even if offset is -2.0 (the maximum allowed offset), 8 - 2 = 6, never below 6
-      const extremeProfile: AthleteEvidenceProfile = {
-        ...profileWithCalibrations,
-        records: [
-          {
-            ...profileWithCalibrations.records[0],
-            parameters: { scalarOffset: -2.0 },
-          },
-        ],
-      };
-      const resExtreme = applyAthleteSubjectiveCalibration(extremeProfile, { soreness: 8, fatigue: 8 });
-      expect(resExtreme.calibratedSoreness).toBe(6.0);
     });
   });
 
   describe('applyAthleteRecoveryKinetics', () => {
-    it('scales recovery hours by multiplier and enforces minimums', () => {
+    it('lengthens recovery hours by multiplier and enforced minimum', () => {
       const res = applyAthleteRecoveryKinetics(profileWithCalibrations, 48, { isStrenuousLowerBody: true });
-      // 48 * 1.25 = 60, enforced minimum is 54, so 60 hours
       expect(res.effectiveRecoveryHours).toBe(60);
       expect(res.appliedRecord?.id).toBe('delayed_recovery_kinetics');
     });
 
-    it('prevents compressing strenuous lower-body recovery hours below 36h', () => {
-      const fastRecovererProfile: AthleteEvidenceProfile = {
+    it('does not let an unvalidated fast-recovery record shorten the general prior', () => {
+      const unsafeProfile: AthleteEvidenceProfile = {
         ...profileWithCalibrations,
-        records: [
-          {
-            ...profileWithCalibrations.records[2],
-            parameters: { scalarMultiplier: 0.75 }, // attempts 48 * 0.75 = 36
-          },
-        ],
+        records: [{ ...profileWithCalibrations.records[2], parameters: { scalarMultiplier: 0.75 } }],
       };
-      const res = applyAthleteRecoveryKinetics(fastRecovererProfile, 48, { isStrenuousLowerBody: true });
-      expect(res.effectiveRecoveryHours).toBe(36);
+      const res = applyAthleteRecoveryKinetics(unsafeProfile, 48, { isStrenuousLowerBody: true });
+      expect(res.effectiveRecoveryHours).toBe(48);
+      expect(res.appliedRecord).toBeUndefined();
     });
   });
 
   describe('resolveAthleteTissueTolerance', () => {
-    it('resolves additional restricted modalities from active tissue tolerance records', () => {
-      const res = resolveAthleteTissueTolerance(profileWithCalibrations, { activeBodyRegions: ['achilles'] });
+    it('applies a scoped restriction when the current region intersects', () => {
+      const res = resolveAthleteTissueTolerance(profileWithCalibrations, { activeBodyRegions: ['Achilles'] });
       expect(res.additionalRestrictedModalities).toContain('Running');
       expect(res.appliedRecords).toHaveLength(1);
+    });
+
+    it('does not apply a scoped Achilles restriction to an explicitly unrelated current region', () => {
+      const res = resolveAthleteTissueTolerance(profileWithCalibrations, { activeBodyRegions: ['shoulder'] });
+      expect(res.additionalRestrictedModalities).not.toContain('Running');
+      expect(res.appliedRecords).toHaveLength(0);
+    });
+
+    it('returns typed movement-pattern restrictions as well as modalities', () => {
+      const movementProfile: AthleteEvidenceProfile = {
+        ...profileWithCalibrations,
+        records: [{
+          ...profileWithCalibrations.records[3],
+          id: 'landing_pattern_restriction',
+          domain: 'movement_contraindication',
+          parameters: { contraindicatedMovementPatterns: ['max_depth_drop_jump'] },
+        }],
+      };
+      const res = resolveAthleteTissueTolerance(movementProfile);
+      expect(res.contraindicatedMovementPatterns).toEqual(['max_depth_drop_jump']);
     });
   });
 
@@ -171,36 +178,27 @@ describe('Athlete-Specific Evidence Policy Refinement Engine (SKR4)', () => {
       clinicalFlagActive: true,
       redFlagActive: true,
       clinicalEscalationRequired: true,
+      redFlagCategories: ['neurological'],
       restrictedModalities: ['Running'],
     };
 
     it('passes when refined envelope preserves all safety constraints', () => {
       const validRefined: SafetyEnvelope = {
         ...baseEnvelope,
-        restrictedModalities: ['Running', 'Strength'], // added restriction is safe
+        restrictedModalities: ['Running', 'Strength'],
       };
       expect(() => assertSafetyMonotonicity(baseEnvelope, validRefined)).not.toThrow();
     });
 
-    it('throws when clinicalFlagActive is disabled', () => {
-      const weakened: SafetyEnvelope = { ...baseEnvelope, clinicalFlagActive: false };
-      expect(() => assertSafetyMonotonicity(baseEnvelope, weakened)).toThrow(
-        'clinicalFlagActive was disabled'
-      );
+    it('throws when clinical or red-flag authority is weakened', () => {
+      expect(() => assertSafetyMonotonicity({ ...baseEnvelope }, { ...baseEnvelope, clinicalFlagActive: false })).toThrow('clinicalFlagActive was disabled');
+      expect(() => assertSafetyMonotonicity({ ...baseEnvelope }, { ...baseEnvelope, redFlagActive: false })).toThrow('redFlagActive was disabled');
+      expect(() => assertSafetyMonotonicity({ ...baseEnvelope }, { ...baseEnvelope, clinicalEscalationRequired: false })).toThrow('clinicalEscalationRequired was disabled');
     });
 
-    it('throws when redFlagActive is disabled', () => {
-      const weakened: SafetyEnvelope = { ...baseEnvelope, redFlagActive: false };
-      expect(() => assertSafetyMonotonicity(baseEnvelope, weakened)).toThrow(
-        'redFlagActive was disabled'
-      );
-    });
-
-    it('throws when a restricted modality is removed', () => {
-      const weakened: SafetyEnvelope = { ...baseEnvelope, restrictedModalities: [] };
-      expect(() => assertSafetyMonotonicity(baseEnvelope, weakened)).toThrow(
-        'restricted modality "Running" was removed'
-      );
+    it('throws when a restricted modality or red-flag category is removed', () => {
+      expect(() => assertSafetyMonotonicity(baseEnvelope, { ...baseEnvelope, restrictedModalities: [] })).toThrow('restricted modality "Running" was removed');
+      expect(() => assertSafetyMonotonicity(baseEnvelope, { ...baseEnvelope, redFlagCategories: [] })).toThrow('red flag category "neurological" was removed');
     });
   });
 });

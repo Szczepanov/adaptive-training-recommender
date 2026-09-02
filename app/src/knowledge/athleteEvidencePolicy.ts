@@ -1,6 +1,8 @@
 import type { SafetyEnvelope, SessionTemplate } from '../engine/models';
 import {
+  ATHLETE_EVIDENCE_MODALITIES,
   type AthleteEvidenceDomain,
+  type AthleteEvidenceModality,
   type AthleteEvidenceProfile,
   type AthleteEvidenceRecord,
 } from './athleteEvidence';
@@ -8,6 +10,8 @@ import { KNOWLEDGE_CLAIM_IDS } from './sportsKnowledgeRegistry';
 
 /**
  * Filter active, usable evidence records from an athlete profile.
+ * Identity mismatch fails closed: records belonging to another user never participate,
+ * even if an unvalidated profile reaches this pure policy layer.
  */
 export function resolveActiveAthleteEvidenceRecords(
   profile: AthleteEvidenceProfile | null | undefined,
@@ -15,7 +19,10 @@ export function resolveActiveAthleteEvidenceRecords(
 ): AthleteEvidenceRecord[] {
   if (!profile || !Array.isArray(profile.records)) return [];
   return profile.records.filter(
-    record => record.status === 'active' && (!domain || record.domain === domain)
+    record =>
+      record.status === 'active' &&
+      record.userId === profile.userId &&
+      (!domain || record.domain === domain)
   );
 }
 
@@ -27,10 +34,13 @@ export interface SubjectiveCalibrationResult {
 }
 
 /**
- * Apply athlete-specific subjective calibration offset (e.g., for athletes with chronic baseline soreness).
- * Enforces D-ATHLETE-SAFETY-PRESERVE:
- * - If raw soreness is severe (>= 8), calibration can never adjust it below 6 (preserving the mode trigger).
- * - Calibrated values are always clamped to the valid [1, 10] range.
+ * Apply conservative athlete-specific subjective calibration.
+ *
+ * ADR-0020 D-SUBJFLOOR makes the asymmetry structural: athlete history may never lower
+ * today's raw soreness/fatigue values on a deciding path, because doing so could cancel
+ * the absolute `soreness > 6`, `fatigue > 8`, or aggregate fatigue floors. Negative
+ * offsets therefore fail safe as a no-op here even if an unvalidated record reaches this
+ * function. Two-sided reporting-scale calibration requires a separate accepted policy.
  */
 export function applyAthleteSubjectiveCalibration(
   profile: AthleteEvidenceProfile | null | undefined,
@@ -44,7 +54,7 @@ export function applyAthleteSubjectiveCalibration(
       r.parameters.scalarOffset !== undefined
   );
 
-  if (!record || record.parameters.scalarOffset === undefined) {
+  if (!record || record.parameters.scalarOffset === undefined || record.parameters.scalarOffset <= 0) {
     return {
       calibratedSoreness: raw.soreness,
       calibratedFatigue: raw.fatigue,
@@ -52,23 +62,9 @@ export function applyAthleteSubjectiveCalibration(
     };
   }
 
-  const offset = record.parameters.scalarOffset;
-
-  // An athlete whose habitual baseline is 3.5 might have an offset of -1.5.
-  // We apply the offset, then clamp.
-  let calibratedSoreness = raw.soreness + offset;
-  let calibratedFatigue = raw.fatigue + offset;
-
-  // SAFETY GUARD: Severe soreness (>= 8) must never be diluted into green/normal territory (< 6)
-  if (raw.soreness >= 8) {
-    calibratedSoreness = Math.max(6, calibratedSoreness);
-  }
-  if (raw.fatigue >= 8) {
-    calibratedFatigue = Math.max(6, calibratedFatigue);
-  }
-
-  calibratedSoreness = Math.max(1, Math.min(10, Math.round(calibratedSoreness * 10) / 10));
-  calibratedFatigue = Math.max(1, Math.min(10, Math.round(calibratedFatigue * 10) / 10));
+  const offset = Math.min(2.0, record.parameters.scalarOffset);
+  const calibratedSoreness = Math.max(1, Math.min(10, Math.round((raw.soreness + offset) * 10) / 10));
+  const calibratedFatigue = Math.max(1, Math.min(10, Math.round((raw.fatigue + offset) * 10) / 10));
 
   return {
     calibratedSoreness,
@@ -84,21 +80,24 @@ export interface RecoveryKineticsResult {
 }
 
 /**
- * Apply athlete-specific recovery kinetics scaling to template recovery hours.
- * Enforces D-ATHLETE-SAFETY-PRESERVE:
- * - Recovery hours cannot be reduced below 75% of baseline or below 24h for strenuous lower-body work.
- * - Enforced minimums can only lengthen recovery duration, never shorten it.
+ * Apply athlete-specific recovery kinetics to a safety-linked recovery prior.
+ *
+ * v1 is deliberately tighten-only: a repeated personal slow-recovery pattern may lengthen
+ * the general prior, but this boundary does not authorize a personal fast-recovery pattern
+ * to shorten it. Recovery research is protocol- and outcome-dependent, so a universal 36h
+ * personal floor would be false precision rather than a validated safety invariant.
  */
 export function applyAthleteRecoveryKinetics(
   profile: AthleteEvidenceProfile | null | undefined,
   baseRecoveryHours: number,
-  options?: { isStrenuousLowerBody?: boolean }
+  _options?: { isStrenuousLowerBody?: boolean }
 ): RecoveryKineticsResult {
   const records = resolveActiveAthleteEvidenceRecords(profile, 'recovery_kinetics');
   const record = records.find(
     r =>
-      r.baseKnowledgeClaimId === KNOWLEDGE_CLAIM_IDS.strenuousLowerBodyResidualFatigue ||
-      r.baseKnowledgeClaimId === KNOWLEDGE_CLAIM_IDS.hardLowerBodySpacing
+      r.refinementType === 'tighten_constraint' &&
+      (r.baseKnowledgeClaimId === KNOWLEDGE_CLAIM_IDS.strenuousLowerBodyResidualFatigue ||
+        r.baseKnowledgeClaimId === KNOWLEDGE_CLAIM_IDS.hardLowerBodySpacing)
   );
 
   if (!record) {
@@ -108,68 +107,85 @@ export function applyAthleteRecoveryKinetics(
   let hours = baseRecoveryHours;
 
   if (record.parameters.scalarMultiplier !== undefined) {
-    const mult = Math.max(0.75, Math.min(2.0, record.parameters.scalarMultiplier));
-    hours = Math.round(hours * mult);
+    const multiplier = Math.max(1.0, Math.min(2.0, record.parameters.scalarMultiplier));
+    hours = Math.round(hours * multiplier);
   }
 
   if (record.parameters.enforcedMinimumRecoveryHours !== undefined) {
     hours = Math.max(hours, record.parameters.enforcedMinimumRecoveryHours);
   }
 
-  // Safety constraint: strenuous lower-body work (>= 48h base) cannot be compressed below 36h
-  if (options?.isStrenuousLowerBody && baseRecoveryHours >= 48) {
-    hours = Math.max(36, hours);
-  }
-
+  const effectiveRecoveryHours = Math.min(168, Math.max(baseRecoveryHours, hours));
   return {
-    effectiveRecoveryHours: Math.min(168, Math.max(0, hours)),
-    appliedRecord: record,
+    effectiveRecoveryHours,
+    ...(effectiveRecoveryHours > baseRecoveryHours ? { appliedRecord: record } : {}),
   };
 }
 
 export interface TissueToleranceResult {
   additionalRestrictedModalities: SessionTemplate['modality'][];
+  contraindicatedMovementPatterns: string[];
   appliedRecords: AthleteEvidenceRecord[];
 }
 
+function isKnownModality(value: string): value is AthleteEvidenceModality {
+  return (ATHLETE_EVIDENCE_MODALITIES as readonly string[]).includes(value);
+}
+
+function regionScopeMatches(record: AthleteEvidenceRecord, activeBodyRegions: readonly string[] | undefined): boolean {
+  const scope = record.parameters.applicableBodyRegions;
+  if (!scope || scope.length === 0 || !activeBodyRegions || activeBodyRegions.length === 0) return true;
+  const active = new Set(activeBodyRegions.map(region => region.trim().toLowerCase()));
+  return scope.some(region => active.has(region.trim().toLowerCase()));
+}
+
 /**
- * Resolve tissue tolerance restrictions based on athlete evidence.
- * Can only tighten constraints by adding restricted modalities or enforcing minimum gaps.
+ * Resolve athlete tissue/movement restrictions. Records with an explicit region scope are
+ * skipped when the caller has explicit, non-matching current region context; missing region
+ * context remains conservative and keeps the restriction active.
  */
 export function resolveAthleteTissueTolerance(
   profile: AthleteEvidenceProfile | null | undefined,
   options?: { activeBodyRegions?: readonly string[] }
 ): TissueToleranceResult {
-  const records = resolveActiveAthleteEvidenceRecords(profile, 'tissue_tolerance');
+  const records = [
+    ...resolveActiveAthleteEvidenceRecords(profile, 'tissue_tolerance'),
+    ...resolveActiveAthleteEvidenceRecords(profile, 'movement_contraindication'),
+  ];
   const additionalRestrictedModalities: SessionTemplate['modality'][] = [];
+  const contraindicatedMovementPatterns: string[] = [];
   const appliedRecords: AthleteEvidenceRecord[] = [];
 
   for (const record of records) {
-    if (record.refinementType === 'tighten_constraint') {
-      if (record.parameters.additionalRestrictedModalities) {
-        for (const mod of record.parameters.additionalRestrictedModalities) {
-          const typedMod = mod as SessionTemplate['modality'];
-          if (!additionalRestrictedModalities.includes(typedMod)) {
-            additionalRestrictedModalities.push(typedMod);
-          }
-        }
-        appliedRecords.push(record);
+    if (record.refinementType !== 'tighten_constraint' || !regionScopeMatches(record, options?.activeBodyRegions)) {
+      continue;
+    }
+
+    let changed = false;
+    for (const modality of record.parameters.additionalRestrictedModalities ?? []) {
+      if (isKnownModality(modality) && !additionalRestrictedModalities.includes(modality)) {
+        additionalRestrictedModalities.push(modality);
+        changed = true;
       }
     }
-  }
-
-  if (options?.activeBodyRegions && options.activeBodyRegions.length > 0) {
-    // Retained for context when evaluating regional loading constraints
+    for (const pattern of record.parameters.contraindicatedMovementPatterns ?? []) {
+      if (typeof pattern === 'string' && pattern.trim().length > 0 && !contraindicatedMovementPatterns.includes(pattern)) {
+        contraindicatedMovementPatterns.push(pattern);
+        changed = true;
+      }
+    }
+    if (changed) appliedRecords.push(record);
   }
 
   return {
     additionalRestrictedModalities,
+    contraindicatedMovementPatterns,
     appliedRecords,
   };
 }
 
 /**
- * Monotonic safety assertion ensuring refined safety envelope never weakens safety over original.
+ * Monotonic safety assertion ensuring a refined safety envelope never weakens the original.
  */
 export function assertSafetyMonotonicity(
   original: SafetyEnvelope,
@@ -184,9 +200,14 @@ export function assertSafetyMonotonicity(
   if (original.clinicalEscalationRequired && !refined.clinicalEscalationRequired) {
     throw new Error('Safety monotonicity violation: clinicalEscalationRequired was disabled by refinement');
   }
-  for (const mod of original.restrictedModalities) {
-    if (!refined.restrictedModalities.includes(mod)) {
-      throw new Error(`Safety monotonicity violation: restricted modality "${mod}" was removed by refinement`);
+  for (const modality of original.restrictedModalities) {
+    if (!refined.restrictedModalities.includes(modality)) {
+      throw new Error(`Safety monotonicity violation: restricted modality "${modality}" was removed by refinement`);
+    }
+  }
+  for (const category of original.redFlagCategories ?? []) {
+    if (!(refined.redFlagCategories ?? []).includes(category)) {
+      throw new Error(`Safety monotonicity violation: red flag category "${category}" was removed by refinement`);
     }
   }
 }

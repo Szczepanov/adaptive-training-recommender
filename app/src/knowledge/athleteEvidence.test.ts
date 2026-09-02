@@ -22,6 +22,7 @@ describe('Athlete-Specific Evidence Contracts & Validation (SKR4)', () => {
       enforcedMinimumRecoveryHours: 48,
       additionalRestrictedModalities: ['Running'],
       contraindicatedMovementPatterns: ['high_eccentric_plyometrics'],
+      applicableBodyRegions: ['achilles'],
       customNote: 'Right Achilles irritable 24-48h post high-speed running',
     },
     sampleSize: 6,
@@ -59,80 +60,119 @@ describe('Athlete-Specific Evidence Contracts & Validation (SKR4)', () => {
     expect(res.errors.some(e => e.includes('does not exist in the Sports Knowledge Registry'))).toBe(true);
   });
 
-  it('enforces safety bounds on scalarOffset [-2.0, +2.0]', () => {
+  it('enforces scalar bounds and blocks negative subjective de-escalation', () => {
     const excessiveOffset: AthleteEvidenceRecord = {
       ...validRecord,
       id: 'excessive_offset',
       domain: 'subjective_calibration',
+      baseKnowledgeClaimId: KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy,
+      refinementType: 'calibrate_scalar',
       parameters: { scalarOffset: 3.5 },
     };
     const res = validateAthleteEvidenceRecord(excessiveOffset, registeredClaimIds);
     expect(res.valid).toBe(false);
     expect(res.errors.some(e => e.includes('violates safety bounds [-2.0, +2.0]'))).toBe(true);
 
+    const deEscalatingOffset: AthleteEvidenceRecord = {
+      ...excessiveOffset,
+      id: 'negative_subjective_offset',
+      parameters: { scalarOffset: -1 },
+    };
+    const resNegative = validateAthleteEvidenceRecord(deEscalatingOffset, registeredClaimIds);
+    expect(resNegative.valid).toBe(false);
+    expect(resNegative.errors.some(e => e.includes('D-SUBJFLOOR'))).toBe(true);
+
     const validOffset: AthleteEvidenceRecord = {
-      ...validRecord,
+      ...excessiveOffset,
       id: 'valid_offset',
-      domain: 'subjective_calibration',
       parameters: { scalarOffset: 1.5 },
     };
-    const resValid = validateAthleteEvidenceRecord(validOffset, registeredClaimIds);
-    expect(resValid.valid).toBe(true);
+    expect(validateAthleteEvidenceRecord(validOffset, registeredClaimIds).valid).toBe(true);
   });
 
-  it('enforces safety bounds on scalarMultiplier [0.75, 2.0]', () => {
+  it('enforces recovery bounds and tighten-only recovery semantics', () => {
     const tooLow: AthleteEvidenceRecord = {
       ...validRecord,
       id: 'too_low_multiplier',
       domain: 'recovery_kinetics',
-      parameters: { scalarMultiplier: 0.5 },
+      baseKnowledgeClaimId: KNOWLEDGE_CLAIM_IDS.strenuousLowerBodyResidualFatigue,
+      refinementType: 'tighten_constraint',
+      parameters: { scalarMultiplier: 0.75 },
     };
     const res = validateAthleteEvidenceRecord(tooLow, registeredClaimIds);
     expect(res.valid).toBe(false);
-    expect(res.errors.some(e => e.includes('violates safety bounds [0.75, 2.0]'))).toBe(true);
+    expect(res.errors.some(e => e.includes('cannot shorten recovery'))).toBe(true);
 
     const tooHigh: AthleteEvidenceRecord = {
-      ...validRecord,
+      ...tooLow,
       id: 'too_high_multiplier',
-      domain: 'recovery_kinetics',
       parameters: { scalarMultiplier: 2.5 },
     };
-    const resHigh = validateAthleteEvidenceRecord(tooHigh, registeredClaimIds);
-    expect(resHigh.valid).toBe(false);
-    expect(resHigh.errors.some(e => e.includes('violates safety bounds [0.75, 2.0]'))).toBe(true);
+    expect(validateAthleteEvidenceRecord(tooHigh, registeredClaimIds).valid).toBe(false);
+
+    const validRecovery: AthleteEvidenceRecord = {
+      ...tooLow,
+      id: 'valid_recovery_multiplier',
+      parameters: { scalarMultiplier: 1.25, enforcedMinimumRecoveryHours: 54 },
+    };
+    expect(validateAthleteEvidenceRecord(validRecovery, registeredClaimIds).valid).toBe(true);
   });
 
   it('enforces bounds on enforcedMinimumRecoveryHours [0, 168]', () => {
-    const neg: AthleteEvidenceRecord = {
+    expect(validateAthleteEvidenceRecord({
       ...validRecord,
       id: 'neg_rec',
       parameters: { enforcedMinimumRecoveryHours: -1 },
-    };
-    expect(validateAthleteEvidenceRecord(neg).valid).toBe(false);
-
-    const excess: AthleteEvidenceRecord = {
+    }).valid).toBe(false);
+    expect(validateAthleteEvidenceRecord({
       ...validRecord,
       id: 'excess_rec',
       parameters: { enforcedMinimumRecoveryHours: 200 },
-    };
-    expect(validateAthleteEvidenceRecord(excess).valid).toBe(false);
+    }).valid).toBe(false);
   });
 
-  it('rejects date chronology anomalies (firstObservedDate > lastObservedDate)', () => {
+  it('validates modality and scoped string lists rather than accepting arbitrary arrays', () => {
+    const invalid = {
+      ...validRecord,
+      parameters: {
+        additionalRestrictedModalities: ['Teleporting'],
+        contraindicatedMovementPatterns: ['valid_pattern', 42],
+        applicableBodyRegions: ['Achilles', 'achilles'],
+      },
+    };
+    const res = validateAthleteEvidenceRecord(invalid, registeredClaimIds);
+    expect(res.valid).toBe(false);
+    expect(res.errors.some(e => e.includes('not an allowed value'))).toBe(true);
+    expect(res.errors.some(e => e.includes('must be a non-empty string'))).toBe(true);
+    expect(res.errors.some(e => e.includes('duplicate value'))).toBe(true);
+  });
+
+  it('rejects date chronology anomalies and stale review confirmation', () => {
     const reversedDates: AthleteEvidenceRecord = {
       ...validRecord,
       firstObservedDate: '2026-08-01',
       lastObservedDate: '2026-06-01',
     };
-    const res = validateAthleteEvidenceRecord(reversedDates);
+    expect(validateAthleteEvidenceRecord(reversedDates).errors.some(e => e.includes('cannot be after lastObservedDate'))).toBe(true);
+
+    const staleReview: AthleteEvidenceRecord = {
+      ...validRecord,
+      lastObservedDate: '2026-08-15',
+      reviewedAt: '2026-08-01',
+    };
+    expect(validateAthleteEvidenceRecord(staleReview).errors.some(e => e.includes('cannot be before lastObservedDate'))).toBe(true);
+  });
+
+  it('rejects invalid profile updatedAt timestamps', () => {
+    const invalid = { ...validProfile, updatedAt: '2026-09-02' };
+    const res = validateAthleteEvidenceProfile(invalid, registeredClaimIds);
     expect(res.valid).toBe(false);
-    expect(res.errors.some(e => e.includes('cannot be after lastObservedDate'))).toBe(true);
+    expect(res.errors.some(e => e.includes('ISO/RFC3339'))).toBe(true);
   });
 
   it('rejects record userId mismatch against profile userId', () => {
     const mismatchedProfile: AthleteEvidenceProfile = {
       ...validProfile,
-      userId: 'user-athlete-01',
       records: [{ ...validRecord, userId: 'different-user' }],
     };
     const res = validateAthleteEvidenceProfile(mismatchedProfile);

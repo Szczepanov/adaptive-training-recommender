@@ -1,36 +1,45 @@
 import type { Recommendation, RecommendationAudit } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import type { IdentityDecisionProvenance } from '../observations/identityModels';
+import type { AthleteEvidenceRecord } from '../knowledge/athleteEvidence';
 import {
     compactSubjectiveDriftAudit,
     type SubjectiveDriftAudit,
     type SubjectiveDriftAuditSource,
 } from './subjectiveDriftAudit';
-import { snapshotKnowledgeLineage } from './knowledgeLineage';
+import {
+    mergeKnowledgeRefs,
+    snapshotAthleteEvidenceLineage,
+    snapshotKnowledgeLineage,
+} from './knowledgeLineage';
 
 export type RecommendationAuditWithSubjectiveDrift = RecommendationAudit & {
-    /** Present only when an explicitly measured/enabled subjective-drift path supplied
-     * normalized evidence. Production-default callers do not supply it and retain the
-     * exact legacy audit shape. */
+    /** Present only when an explicitly measured/enabled subjective-drift path supplied normalized evidence. */
     subjectiveDrift?: SubjectiveDriftAudit;
 };
 
-/** Builds the v3 audit from already-normalized decision facts. Do not add free-text
- * check-in notes, raw wearable payloads, raw readiness values, or raw subjective history
- * to this record. Subjective drift, when explicitly measured, is already normalized and
- * bounded before it reaches this function (ADR-0020/D-SUBJAUDIT). */
+/** Builds the v4 audit from already-normalized decision facts. Do not add free-text
+ * check-in notes, raw wearable payloads, raw readiness values, raw subjective history,
+ * athlete-evidence rationales, or athlete-evidence user IDs to this record. */
 export function buildRecommendationAudit(
     recommendation: Recommendation,
     historySnapshot: TrainingHistorySnapshot,
     evaluatedAt = new Date().toISOString(),
     subjectiveDriftEvidence: SubjectiveDriftAuditSource | null = null,
     identityDecision: IdentityDecisionProvenance | null = null,
+    athleteEvidenceRecords: readonly AthleteEvidenceRecord[] = [],
 ): RecommendationAuditWithSubjectiveDrift | null {
     const trace = recommendation.decisionTrace;
     const envelopes = recommendation.envelopes;
     if (!trace || !envelopes) return null;
 
     const subjectiveDrift = compactSubjectiveDriftAudit(subjectiveDriftEvidence);
+    const athleteEvidenceLineage = snapshotAthleteEvidenceLineage(athleteEvidenceRecords);
+    const knowledgeLineage = snapshotKnowledgeLineage(mergeKnowledgeRefs(
+        recommendation.knowledgeRefs ?? [],
+        athleteEvidenceRecords.map(record => record.baseKnowledgeClaimId),
+    ));
+
     return {
         policyVersion: trace.policyVersion,
         evaluatedAt,
@@ -49,12 +58,12 @@ export function buildRecommendationAudit(
             safetyRestrictedModalityCount: envelopes.safety.restrictedModalities.length,
             planMaxAllowableTier: envelopes.plan.maxAllowableTier,
         },
-        knowledgeLineage: snapshotKnowledgeLineage(recommendation.knowledgeRefs ?? []),
+        knowledgeLineage,
+        ...(athleteEvidenceLineage ? { athleteEvidenceLineage } : {}),
         ...(recommendation.plannedDose ? { plannedDose: recommendation.plannedDose } : {}),
         ...(recommendation.executionDose ? { executionDose: recommendation.executionDose } : {}),
         candidateScores: trace.candidateScores,
         droppedContributorObjectives: trace.droppedContributorObjectives,
-        // Carried verbatim: the audit must name the revision bytes, not re-derive them.
         ...(trace.externalPlan ? { externalPlan: trace.externalPlan } : {}),
         ...(trace.authoredOccurrence ? { authoredOccurrence: trace.authoredOccurrence } : {}),
         ...(recommendation.primarySession ? { primarySession: recommendation.primarySession } : {}),

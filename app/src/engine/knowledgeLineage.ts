@@ -25,10 +25,7 @@ export function mergeKnowledgeRefs(
     return [...new Set(groups.flatMap(group => group ?? []))].sort();
 }
 
-/**
- * Freeze the currently active registry versions for the claims materially consumed by one decision.
- * Statements, citations and source metadata deliberately remain in Git rather than being copied to Firestore.
- */
+/** Freeze currently active registry versions for claims materially consumed by one decision. */
 export function snapshotKnowledgeLineage(refs: readonly string[]): KnowledgeLineageRef[] {
     const claimIds = mergeKnowledgeRefs(refs);
     if (claimIds.length > MAX_KNOWLEDGE_LINEAGE_REFS) {
@@ -51,31 +48,16 @@ export function compareKnowledgeLineage(
         try {
             const current = getKnowledgeClaim(ref.claimId);
             if (current.version !== ref.version || current.status !== 'active') {
-                drift.push({
-                    claimId: ref.claimId,
-                    recordedVersion: ref.version,
-                    currentVersion: current.version,
-                    currentStatus: current.status,
-                });
+                drift.push({ claimId: ref.claimId, recordedVersion: ref.version, currentVersion: current.version, currentStatus: current.status });
             }
         } catch {
-            drift.push({
-                claimId: ref.claimId,
-                recordedVersion: ref.version,
-                currentStatus: 'missing',
-            });
+            drift.push({ claimId: ref.claimId, recordedVersion: ref.version, currentStatus: 'missing' });
         }
     }
     return { status: drift.length > 0 ? 'drifted' : 'matches_current', drift };
 }
 
-/**
- * Claim IDs for the subjective classifier evaluated by every normal readiness decision.
- * `SubjectiveInput` is normalized before it reaches the engine: a complete minimum-safety
- * check-in can therefore include neutral defaults for other scale dimensions. The product
- * policy claim documents that participation without misrepresenting the defaults as measured
- * evidence. Provisional safety fallbacks do not call this helper or create an audit.
- */
+/** Claim IDs for the subjective classifier evaluated by every normal readiness decision. */
 export function subjectiveReadinessKnowledgeRefs(): string[] {
     return mergeKnowledgeRefs([
         KNOWLEDGE_CLAIM_IDS.contextualMonitoring,
@@ -85,18 +67,12 @@ export function subjectiveReadinessKnowledgeRefs(): string[] {
     ]);
 }
 
-/** Claim IDs for the compact injury/symptom-policy facts captured at composition time.
- * Standing-injury region families are read from the trace because they are provenance facts.
- * Current clinical source attribution is read from `SubjectiveInput`, the same decision input
- * consumed by `rules.ts`; trace data must not be promoted into current-pain policy authority. */
+/** Claim IDs for compact injury/symptom-policy facts captured at composition time. */
 export function injuryPolicyKnowledgeRefs(readiness: DailyReadiness, context: UserContext): string[] {
     const trace = context.injuryPolicyTrace;
     const refs: string[] = [];
     if (trace?.tissueSeverityApplied) {
-        refs.push(
-            KNOWLEDGE_CLAIM_IDS.tissueResponseTemporalMonitoring,
-            KNOWLEDGE_CLAIM_IDS.tissueResponseSeverityPolicy,
-        );
+        refs.push(KNOWLEDGE_CLAIM_IDS.tissueResponseTemporalMonitoring, KNOWLEDGE_CLAIM_IDS.tissueResponseSeverityPolicy);
     }
     for (const family of trace?.regionMappingFamilies ?? []) {
         refs.push(KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement);
@@ -110,18 +86,12 @@ export function injuryPolicyKnowledgeRefs(readiness: DailyReadiness, context: Us
         ?? (readiness.subjective.painFlag ? ['pain_or_injury'] as const : []);
     if (readiness.subjective.painFlag || currentClinicalSources.length > 0) {
         refs.push(KNOWLEDGE_CLAIM_IDS.genericClinicalEnvelopePolicy);
-        if (currentClinicalSources.includes('pain_or_injury')) {
-            refs.push(KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment);
-        }
+        if (currentClinicalSources.includes('pain_or_injury')) refs.push(KNOWLEDGE_CLAIM_IDS.symptomsRequireContextualAssessment);
     }
     return mergeKnowledgeRefs(refs);
 }
 
-/**
- * Claim IDs for the covered objective- and subjective-readiness policies actually evaluated for this input.
- * A long-horizon value is only consumed by metricStrain when its 7-day anchor exists, so
- * 28-day-only fields must not create lineage for a branch that returned before reading them.
- */
+/** Claim IDs for covered objective/subjective readiness policies evaluated for this input. */
 export function readinessKnowledgeRefs(readiness: DailyReadiness, context: UserContext): string[] {
     const objective = readiness.objective;
     const hasHrv = objective.hrv_delta !== null;
@@ -132,59 +102,29 @@ export function readinessKnowledgeRefs(readiness: DailyReadiness, context: UserC
     const hasBodyBattery = objective.body_battery_wake !== null;
     const hasRecentHardPenalty = (objective.last_3_days_hard_sessions_count || 0) >= 2;
     const hasPhysiologicalStrainInput = hasHrv || hasRhr || hasSleepRelative || hasRespiration;
-    const hasObjectiveDecisionInput = hasPhysiologicalStrainInput
-        || hasSleepAbsolute
-        || hasBodyBattery
-        || hasRecentHardPenalty
-        || context.preferences.conservativeBias;
+    const hasObjectiveDecisionInput = hasPhysiologicalStrainInput || hasSleepAbsolute || hasBodyBattery || hasRecentHardPenalty || context.preferences.conservativeBias;
 
     const refs: string[] = [...subjectiveReadinessKnowledgeRefs()];
     if (hasHrv) refs.push(KNOWLEDGE_CLAIM_IDS.hrvContextualMonitoring, KNOWLEDGE_CLAIM_IDS.hrvGuidedTrainingConditional);
     if (hasRhr) refs.push(KNOWLEDGE_CLAIM_IDS.rhrContextualMonitoring);
-    if (hasSleepRelative || hasSleepAbsolute) {
-        refs.push(KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.wearableSleepMeasurementLimits);
-    }
+    if (hasSleepRelative || hasSleepAbsolute) refs.push(KNOWLEDGE_CLAIM_IDS.sleepPerformanceImportance, KNOWLEDGE_CLAIM_IDS.wearableSleepMeasurementLimits);
     if (hasRespiration) refs.push(KNOWLEDGE_CLAIM_IDS.respirationLongitudinalContext);
     if (hasPhysiologicalStrainInput) refs.push(KNOWLEDGE_CLAIM_IDS.readinessPhysiologicalStrainModel);
     if (hasSleepAbsolute || hasBodyBattery) refs.push(KNOWLEDGE_CLAIM_IDS.readinessAbsoluteDeviceFloors);
     if (hasHrv || hasRhr) refs.push(KNOWLEDGE_CLAIM_IDS.readinessAcuteBiometricFloors);
-    if (hasRecentHardPenalty) {
-        refs.push(KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.recentHardReadinessPenalty);
-    }
+    if (hasRecentHardPenalty) refs.push(KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.recentHardReadinessPenalty);
     if (hasObjectiveDecisionInput) refs.push(KNOWLEDGE_CLAIM_IDS.readinessModeThresholds);
     return mergeKnowledgeRefs(refs, injuryPolicyKnowledgeRefs(readiness, context));
 }
 
-/** True when the event category is governed by the endurance taper knowledge claims. */
 function isEnduranceEvent(event: UserEvent | null | undefined): boolean {
-    return event?.category === 'running_race'
-        || event?.category === 'cycling_event'
-        || event?.category === 'triathlon';
+    return event?.category === 'running_race' || event?.category === 'cycling_event' || event?.category === 'triathlon';
 }
 
-/**
- * Attributes intent-aware ranking policies whose gates/costs are evaluated for the supplied plan
- * state and whose knowledge-coverage inventory row is `covered` or `partial` (see
- * `knowledge/knowledgeCoverage.ts`) — never a row still `uncovered`, and never on a coarser signal
- * than the one the coverage row actually claims.
- *
- * The `taperActive` gate below is precise enough for the taper-window/volume and taper-sharpening
- * claims: both describe behavior that is, by definition, exactly what `taperActive` means. It is
- * NOT precise enough for `spacing.pre_event_restrictions` (SKR3 W0, 2026-09-02): that family's
- * `preEventRestrictionsPolicy` claim describes optimizer restrictions gated on exact days-to-event
- * (`engine/optimizer.ts:evaluateRecoveryConstraints`), which can differ from `taperActive` — e.g. a
- * legacy A/B taper can be active up to 14 days out while the exhaustive-work restriction only
- * evaluates within 7. Attributing it here would over-claim lineage on days where the restriction
- * never actually fires. It stays unattributed until days-to-event is threaded into this function's
- * input, uncovered optimizer coefficients (`engine/optimizer.ts` weights with no coverage row above
- * `uncovered`) are never attributed at all.
- */
+/** Attributes intent-aware ranking policies actually evaluated for the supplied plan state. */
 export function trainingIntentKnowledgeRefs(intent: {
     history: readonly unknown[];
-    periodization: {
-        focusEvent: UserEvent | null;
-        phase: { taperActive: boolean };
-    };
+    periodization: { focusEvent: UserEvent | null; phase: { taperActive: boolean } };
 }): string[] {
     const refs: string[] = [
         KNOWLEDGE_CLAIM_IDS.enduranceIntensityDistribution,
@@ -218,9 +158,19 @@ export function trainingIntentKnowledgeRefs(intent: {
 /** Maximum number of athlete-specific evidence refs permitted in a decision lineage snapshot. */
 export const MAX_ATHLETE_EVIDENCE_LINEAGE_REFS = 16;
 
-/**
- * Freeze the active athlete evidence records materially applied as policy refinements (SKR4).
- */
+function assertSingleAthleteScope(records: readonly AthleteEvidenceRecord[]): void {
+    const userIds = new Set(records.map(record => record.userId));
+    if (userIds.size > 1) {
+        throw new Error('Athlete evidence lineage cannot mix records from multiple users');
+    }
+    const ids = new Set<string>();
+    for (const record of records) {
+        if (ids.has(record.id)) throw new Error(`Athlete evidence lineage contains duplicate record id "${record.id}"`);
+        ids.add(record.id);
+    }
+}
+
+/** Freeze active athlete evidence records materially applied as policy refinements (SKR4). */
 export function snapshotAthleteEvidenceLineage(
     records: readonly AthleteEvidenceRecord[] | undefined
 ): AthleteEvidenceLineageRef[] | undefined {
@@ -228,13 +178,21 @@ export function snapshotAthleteEvidenceLineage(
     if (records.length > MAX_ATHLETE_EVIDENCE_LINEAGE_REFS) {
         throw new Error(`Athlete evidence lineage exceeds ${MAX_ATHLETE_EVIDENCE_LINEAGE_REFS} records`);
     }
-    return records.map(record => ({
-        recordId: record.id,
-        version: record.version,
-        domain: record.domain,
-        refinementType: record.refinementType,
-        baseKnowledgeClaimId: record.baseKnowledgeClaimId,
-    }));
+    assertSingleAthleteScope(records);
+    for (const record of records) {
+        if (record.status !== 'active') {
+            throw new Error(`Athlete evidence lineage may snapshot only active records; "${record.id}" is ${record.status}`);
+        }
+    }
+    return [...records]
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .map(record => ({
+            recordId: record.id,
+            version: record.version,
+            domain: record.domain,
+            refinementType: record.refinementType,
+            baseKnowledgeClaimId: record.baseKnowledgeClaimId,
+        }));
 }
 
 export type AthleteEvidenceLineageStatus = 'matches_current' | 'drifted' | 'lineage_unavailable';
@@ -243,12 +201,10 @@ export interface AthleteEvidenceLineageDrift {
     recordId: string;
     recordedVersion: number;
     currentVersion?: number;
-    status: 'missing' | 'version_mismatch';
+    status: 'missing' | 'inactive' | 'version_mismatch' | 'definition_mismatch';
 }
 
-/**
- * Compare persisted athlete evidence lineage against an athlete's current profile (SKR4).
- */
+/** Compare persisted athlete evidence lineage against one athlete's current profile. */
 export function compareAthleteEvidenceLineage(
     persistedLineage: readonly AthleteEvidenceLineageRef[] | undefined,
     currentRecords: readonly AthleteEvidenceRecord[] | undefined
@@ -256,29 +212,27 @@ export function compareAthleteEvidenceLineage(
     if (persistedLineage === undefined) return { status: 'lineage_unavailable', drift: [] };
     if (persistedLineage.length === 0) return { status: 'matches_current', drift: [] };
 
-    const currentMap = new Map((currentRecords ?? []).map(r => [r.id, r]));
+    const current = currentRecords ?? [];
+    if (current.length > 0) assertSingleAthleteScope(current);
+    const currentMap = new Map(current.map(record => [record.id, record]));
     const drift: AthleteEvidenceLineageDrift[] = [];
 
     for (const ref of persistedLineage) {
-        const current = currentMap.get(ref.recordId);
-        if (!current) {
-            drift.push({
-                recordId: ref.recordId,
-                recordedVersion: ref.version,
-                status: 'missing',
-            });
-        } else if (current.version !== ref.version) {
-            drift.push({
-                recordId: ref.recordId,
-                recordedVersion: ref.version,
-                currentVersion: current.version,
-                status: 'version_mismatch',
-            });
+        const record = currentMap.get(ref.recordId);
+        if (!record) {
+            drift.push({ recordId: ref.recordId, recordedVersion: ref.version, status: 'missing' });
+        } else if (record.status !== 'active') {
+            drift.push({ recordId: ref.recordId, recordedVersion: ref.version, currentVersion: record.version, status: 'inactive' });
+        } else if (record.version !== ref.version) {
+            drift.push({ recordId: ref.recordId, recordedVersion: ref.version, currentVersion: record.version, status: 'version_mismatch' });
+        } else if (
+            record.domain !== ref.domain ||
+            record.refinementType !== ref.refinementType ||
+            record.baseKnowledgeClaimId !== ref.baseKnowledgeClaimId
+        ) {
+            drift.push({ recordId: ref.recordId, recordedVersion: ref.version, currentVersion: record.version, status: 'definition_mismatch' });
         }
     }
 
-    return {
-        status: drift.length > 0 ? 'drifted' : 'matches_current',
-        drift,
-    };
+    return { status: drift.length > 0 ? 'drifted' : 'matches_current', drift };
 }
