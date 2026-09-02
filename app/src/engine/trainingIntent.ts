@@ -9,6 +9,7 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolvePlanningContext, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
 import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 
 export type PlannedRecoveryReason =
   | 'scheduled_recovery'   // Prescribed microcycle rest day
@@ -53,6 +54,7 @@ export interface TrainingIntent {
 const MAX_PLANNED_VOLUME = 1;
 const MAX_PLANNED_INTENSITY = 1.2;
 const ATHLETE_STATE_HISTORY_WINDOW_DAYS = 28;
+const CANONICAL_FACT_REVISION_PREFIX = 'canonical-facts-v1:';
 
 function boundedPlannedDose(volume: number, intensity: number): PlannedDose {
     return {
@@ -65,6 +67,23 @@ function needsEstablishedPerformanceEvidence(planningContext: PlanningContext): 
     if (planningContext.mode !== 'evergreen') return false;
     return planningContext.profile.priorities.some(priority =>
         priority === 'endurance' || priority === 'speed_power' || priority === 'sport_readiness');
+}
+
+/**
+ * A prepared history snapshot may carry canonical performed facts, but those semantic
+ * credits are valid only for the coverage set under which they were derived. Non-canonical
+ * revision strings are retained for deterministic injected fixtures; production canonical
+ * revisions must carry the descriptor id and fail closed on mismatch/legacy unscoped form.
+ */
+export function preparedPerformedFactsForCoverageSet(
+    facts: PerformedTrainingFactsSnapshot | null | undefined,
+    coverageSetId: string,
+): PerformedTrainingFactsSnapshot | null {
+    if (!facts) return null;
+    if (!facts.revision.startsWith(CANONICAL_FACT_REVISION_PREFIX)) return facts;
+    return facts.revision.startsWith(`${CANONICAL_FACT_REVISION_PREFIX}${coverageSetId}:`)
+        ? facts
+        : null;
 }
 
 /**
@@ -141,6 +160,13 @@ export async function resolveTrainingIntent(
     const periodization = planningContext.mode === 'event_directed'
         ? eventPeriodization
         : evaluatePeriodizationPhase([], date);
+    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
+    // CoverageCreditFact is descriptor-scoped. Derive canonical role facts against the same
+    // coverage set the live decision will consume; otherwise a workout whose role differs
+    // between evergreen and event plans can be silently reinterpreted at read time.
+    const performedFactsCoverageDescriptor = planDefinition
+        ? coverageSetFor(planDefinition.coverageSetId)
+        : EVERGREEN_GENERAL_COVERAGE_SET;
     const operationalSnapshot = preparedHistorySnapshot
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
@@ -151,15 +177,24 @@ export async function resolveTrainingIntent(
     // operational history explicitly bounded so a 28-day state-evidence read cannot widen
     // fatigue or microcycle bookkeeping by accident.
     const history = operationalHistory.filter(exposure => exposure.date >= operationalWindowStart && exposure.date < date);
-    // The live/default path reads canonical occurrences for the narrow spacing cutover.
-    // Injected history providers are also used by deterministic projections (including
-    // tomorrow's hypothetical "today was completed" history), so they deliberately keep
-    // their self-contained reconstructed history as the spacing fallback.
-    const performedTrainingFacts = preparedHistorySnapshot
-        ? (preparedHistorySnapshot.performedTrainingFacts ?? null)
-        : historyProvider
-            ? null
-            : await (await import('../training-occurrence/performedTrainingFactsService')).getPerformedTrainingFactsInRange(userId, operationalWindowStart, date);
+    // Reusing the legacy TrainingHistorySnapshot must not suppress the canonical occurrence
+    // read: Firestore history snapshots currently do not embed descriptor-scoped facts. If
+    // they do carry facts, accept them only when their canonical revision proves they were
+    // derived for this active coverage set. Injected history providers remain self-contained
+    // for deterministic projections and therefore fall back to reconstructed history when
+    // no matching canonical facts were explicitly provided.
+    let performedTrainingFacts = preparedPerformedFactsForCoverageSet(
+        preparedHistorySnapshot?.performedTrainingFacts,
+        performedFactsCoverageDescriptor.id,
+    );
+    if (!performedTrainingFacts && !historyProvider) {
+        performedTrainingFacts = await (await import('../training-occurrence/performedTrainingFactsService')).getPerformedTrainingFactsInRange(
+            userId,
+            operationalWindowStart,
+            date,
+            { coverageSetDescriptor: performedFactsCoverageDescriptor },
+        );
+    }
 
     let historySnapshot = operationalSnapshot;
     if (needsEstablishedPerformanceEvidence(planningContext) && operationalSnapshot) {
@@ -183,7 +218,6 @@ export async function resolveTrainingIntent(
         };
     }
 
-    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
     const builtMicrocycle = buildMicrocycleState(
         periodization.phase,
         addDaysToLocalDateString(date, -windowDays),

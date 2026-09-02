@@ -22,7 +22,7 @@ import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
 import { qualifiesForObjective } from './microcycle';
-import { buildCoverageState, coverageNeedTierForTemplate, type CoverageState } from './coverage';
+import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, type CoverageState } from './coverage';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
@@ -718,14 +718,11 @@ export function buildOptimizationContext(
     });
 
     const focusEvent = options.focusEvent ?? intent.periodization?.focusEvent ?? null;
+    const coverageHistory = resolveCoverageHistory(intent.performedTrainingFacts, intent.history);
     const coverageState = options.coverageState ?? buildCoverageState(
         resolvePlanDefinitionForEvent(focusEvent, options.authoredPlanBlocks),
         date,
-        rawHistory.flatMap(entry => entry.date && entry.templateId
-            ? [{ date: entry.date, templateId: entry.templateId, ...(typeof (entry as Record<string, unknown>).durationMin === 'number'
-                ? { durationMin: (entry as Record<string, number>).durationMin }
-                : {}) }]
-            : []),
+        coverageHistory,
     );
     const recentPerformedExposures = options.recentPerformedExposures ?? intent.performedTrainingFacts?.exposures;
 

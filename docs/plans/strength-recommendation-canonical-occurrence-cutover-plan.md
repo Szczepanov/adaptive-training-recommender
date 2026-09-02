@@ -564,10 +564,10 @@ Assertions must verify behavior, not just parsing.
 
 ## Identity / deduplication
 
-- [ ] app execution + matching Garmin = one canonical occurrence
+- [x] app execution + matching Garmin = one canonical occurrence
 - [ ] legacy app strength + matching Garmin = one canonical occurrence/read fact set
 - [ ] Garmin re-sync is idempotent
-- [ ] source arrival order does not change final semantics
+- [x] source arrival order does not change final semantics
 - [ ] two legitimate same-day strength workouts stay separate
 - [ ] manual keep-separate/unlink is respected by recommendation facts
 - [ ] merged loser occurrence never emits live duplicate facts
@@ -576,27 +576,27 @@ Assertions must verify behavior, not just parsing.
 
 - [ ] app exercises/sets/reps/load/RPE survive hydration
 - [ ] Garmin set rows do not override app detail
-- [ ] Garmin-only strength emits recent Strength exposure
-- [ ] low Garmin TE/training load does not erase strength occurrence
+- [x] Garmin-only strength emits recent Strength exposure
+- [x] low Garmin TE/training load does not erase strength occurrence
 - [ ] sparse Garmin set rows do not become fabricated hard-set volume
-- [ ] missing old RPE/rest is represented as unknown
+- [x] missing old RPE/rest is represented as unknown
 
 ## Weekly coverage
 
-- [ ] exact full-body maintenance workout earns `primary_strength` once
-- [ ] bodyweight full-body workout earns `primary_strength` once
-- [ ] compact strength does not silently satisfy `primary_strength`
-- [ ] upper-body/trunk does not satisfy `primary_strength`
-- [ ] generic Garmin strength does not automatically satisfy `primary_strength`
-- [ ] unresolved legacy identity produces explicit no/uncertain credit reason
+- [x] exact full-body maintenance workout earns `primary_strength` once
+- [x] bodyweight full-body workout earns `primary_strength` once
+- [x] compact strength does not silently satisfy `primary_strength`
+- [x] upper-body/trunk does not satisfy `primary_strength`
+- [x] generic Garmin strength does not automatically satisfy `primary_strength`
+- [x] unresolved legacy identity produces explicit no/uncertain credit reason
 
 ## Spacing / recommendation selection
 
-- [ ] previous-day Strength exposure influences full-body candidate eligibility/ranking
-- [ ] reported 2026-09-01 -> 2026-09-02 reproduction no longer yields duplicate full-body strength solely from weekly target
-- [ ] green HRV/sleep cannot bypass recent-strength spacing without explicit policy
+- [x] previous-day Strength exposure influences full-body candidate eligibility/ranking
+- [x] reported 2026-09-01 -> 2026-09-02 reproduction no longer yields duplicate full-body strength solely from weekly target
+- [x] green HRV/sleep cannot bypass recent-strength spacing without explicit policy
 - [ ] if a deliberate override exists, rationale shows it
-- [ ] cycling/running recommendations are unchanged unless their own canonical facts differ intentionally
+- [x] cycling/running recommendations are unchanged unless their own canonical facts differ intentionally
 
 ## Time / freshness
 

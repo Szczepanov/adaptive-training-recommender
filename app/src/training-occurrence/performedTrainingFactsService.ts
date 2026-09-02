@@ -43,12 +43,13 @@ export async function getPerformedTrainingFactsInRange(
     toDateExclusive: string,
     options: GetPerformedTrainingFactsOptions = {},
 ): Promise<PerformedTrainingFactsSnapshot> {
+    const descriptor = options.coverageSetDescriptor ?? EVERGREEN_GENERAL_COVERAGE_SET;
     const toDateInclusive = getPreviousLocalDateString(toDateExclusive);
     if (toDateInclusive < fromDateInclusive) {
         return {
             asOfDate: toDateExclusive,
             windowDays: 0,
-            revision: `canonical-facts-v1:${fromDateInclusive}:${toDateExclusive}:empty`,
+            revision: `canonical-facts-v1:${descriptor.id}:${fromDateInclusive}:${toDateExclusive}:empty`,
             exposures: [],
             coverageCredits: [],
         };
@@ -65,7 +66,6 @@ export async function getPerformedTrainingFactsInRange(
         activitiesById = new Map(activities.map(a => [a.activityId, a]));
     }
 
-    const descriptor = options.coverageSetDescriptor ?? EVERGREEN_GENERAL_COVERAGE_SET;
     const exposures: PerformedExposureFact[] = [];
     const coverageCredits: CoverageCreditFact[] = [];
 
@@ -164,7 +164,10 @@ export async function getPerformedTrainingFactsInRange(
         .map(o => `${o.performedOccurrenceId}:${o.updatedAt}`)
         .sort()
         .join('|');
-    const revision = `canonical-facts-v1:${fromDateInclusive}:${toDateExclusive}:${occurrenceRevision}`;
+    // Coverage credits are descriptor-scoped semantic facts. Include that scope in the
+    // snapshot revision so evergreen/event interpretations of the same occurrences never
+    // alias as one immutable fact revision in cache/audit/replay consumers.
+    const revision = `canonical-facts-v1:${descriptor.id}:${fromDateInclusive}:${toDateExclusive}:${occurrenceRevision}`;
 
     return {
         asOfDate: toDateExclusive,
