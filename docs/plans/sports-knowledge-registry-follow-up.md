@@ -161,9 +161,11 @@ The completion workstreams scoped in [`2026-09-02-skr3-completion-plan.md`](./20
 
 ## SKR4 — Athlete-specific evidence boundary
 
-**Status:** Planned
+**Status:** Complete (2026-09-02)
 
-Design an identity-scoped athlete evidence model for repeated personal response patterns. It must remain separate from global Sports Knowledge Registry claims and from raw decision evidence.
+Architecture and specification: [`2026-09-02-skr4-athlete-evidence-boundary.md`](./2026-09-02-skr4-athlete-evidence-boundary.md).
+
+Implemented the identity-scoped athlete evidence model for repeated personal response patterns (`app/src/knowledge/athleteEvidence.ts`), the pure policy refinement engine (`app/src/knowledge/athleteEvidencePolicy.ts`), and audit lineage tracking (`app/src/engine/knowledgeLineage.ts`).
 
 ```text
 general KnowledgeClaim (prior)
@@ -172,7 +174,10 @@ athlete-specific repeated observations
         -> athlete-specific policy refinement
 ```
 
-Do not store personal measurements in the global registry.
+Key guarantees:
+- **Registry Isolation:** Personal measurements and learned patterns are strictly segregated from the Git-backed Sports Knowledge Registry (`D-SKR-BOUNDARIES`).
+- **Safety Monotonicity:** Enforces `D-ATHLETE-SAFETY-PRESERVE`: athlete evidence can tighten constraints or calibrate scalars within physiological intervals, but cannot weaken clinical escalations, red flag findings, or medical clearance requirements.
+- **P0 Calibration Debt Path:** Formally defines the refinement contracts for the 7 high-safety SEP partial families (`subjective_mode_thresholds`, `tissue_response_severity`, regional loading restrictions, and `pain_envelope_mapping`).
 
 ## SKR5 — Freshness governance
 

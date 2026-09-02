@@ -1,5 +1,6 @@
-import type { DailyReadiness, KnowledgeLineageRef, UserContext, UserEvent } from './models';
+import type { AthleteEvidenceLineageRef, DailyReadiness, KnowledgeLineageRef, UserContext, UserEvent } from './models';
 import type { KnowledgeStatus } from '../knowledge/sportsKnowledge';
+import type { AthleteEvidenceRecord } from '../knowledge/athleteEvidence';
 import {
     getActiveKnowledgeClaim,
     getKnowledgeClaim,
@@ -212,4 +213,72 @@ export function trainingIntentKnowledgeRefs(intent: {
         );
     }
     return mergeKnowledgeRefs(refs);
+}
+
+/** Maximum number of athlete-specific evidence refs permitted in a decision lineage snapshot. */
+export const MAX_ATHLETE_EVIDENCE_LINEAGE_REFS = 16;
+
+/**
+ * Freeze the active athlete evidence records materially applied as policy refinements (SKR4).
+ */
+export function snapshotAthleteEvidenceLineage(
+    records: readonly AthleteEvidenceRecord[] | undefined
+): AthleteEvidenceLineageRef[] | undefined {
+    if (!records || records.length === 0) return undefined;
+    if (records.length > MAX_ATHLETE_EVIDENCE_LINEAGE_REFS) {
+        throw new Error(`Athlete evidence lineage exceeds ${MAX_ATHLETE_EVIDENCE_LINEAGE_REFS} records`);
+    }
+    return records.map(record => ({
+        recordId: record.id,
+        version: record.version,
+        domain: record.domain,
+        refinementType: record.refinementType,
+        baseKnowledgeClaimId: record.baseKnowledgeClaimId,
+    }));
+}
+
+export type AthleteEvidenceLineageStatus = 'matches_current' | 'drifted' | 'lineage_unavailable';
+
+export interface AthleteEvidenceLineageDrift {
+    recordId: string;
+    recordedVersion: number;
+    currentVersion?: number;
+    status: 'missing' | 'version_mismatch';
+}
+
+/**
+ * Compare persisted athlete evidence lineage against an athlete's current profile (SKR4).
+ */
+export function compareAthleteEvidenceLineage(
+    persistedLineage: readonly AthleteEvidenceLineageRef[] | undefined,
+    currentRecords: readonly AthleteEvidenceRecord[] | undefined
+): { status: AthleteEvidenceLineageStatus; drift: AthleteEvidenceLineageDrift[] } {
+    if (persistedLineage === undefined) return { status: 'lineage_unavailable', drift: [] };
+    if (persistedLineage.length === 0) return { status: 'matches_current', drift: [] };
+
+    const currentMap = new Map((currentRecords ?? []).map(r => [r.id, r]));
+    const drift: AthleteEvidenceLineageDrift[] = [];
+
+    for (const ref of persistedLineage) {
+        const current = currentMap.get(ref.recordId);
+        if (!current) {
+            drift.push({
+                recordId: ref.recordId,
+                recordedVersion: ref.version,
+                status: 'missing',
+            });
+        } else if (current.version !== ref.version) {
+            drift.push({
+                recordId: ref.recordId,
+                recordedVersion: ref.version,
+                currentVersion: current.version,
+                status: 'version_mismatch',
+            });
+        }
+    }
+
+    return {
+        status: drift.length > 0 ? 'drifted' : 'matches_current',
+        drift,
+    };
 }
