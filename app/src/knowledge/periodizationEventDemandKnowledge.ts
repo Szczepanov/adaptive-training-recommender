@@ -68,7 +68,7 @@ export const PERIODIZATION_EVENT_DEMAND_SOURCES: readonly KnowledgeSource[] = [
     {
         id: ISSURIN_PERIODIZATION_REVIEW,
         title: 'New Horizons for the Methodology and Physiology of Training Periodization',
-        sourceType: 'expert_practice',
+        sourceType: 'narrative_review',
         citation: 'Issurin VB. Sports Med. 2010;40(3):189-206. doi:10.2165/11319770-000000000-00000.',
         url: 'https://pubmed.ncbi.nlm.nih.gov/20199119/',
         publishedOn: '2010-03-01',
@@ -78,7 +78,7 @@ export const PERIODIZATION_EVENT_DEMAND_SOURCES: readonly KnowledgeSource[] = [
     {
         id: JOYNER_COYLE_PHYSIOLOGY_REVIEW,
         title: 'Endurance exercise performance: the physiology of champions',
-        sourceType: 'expert_practice',
+        sourceType: 'narrative_review',
         citation: 'Joyner MJ, Coyle EF. J Physiol. 2008;586(Pt 1):35-44. doi:10.1113/jphysiol.2007.143834.',
         url: 'https://pmc.ncbi.nlm.nih.gov/articles/PMC2375555/',
         publishedOn: '2008-01-01',
@@ -88,7 +88,7 @@ export const PERIODIZATION_EVENT_DEMAND_SOURCES: readonly KnowledgeSource[] = [
     {
         id: SANDERS_CYCLING_POWER_PROFILE_REVIEW,
         title: "The Physical Demands and Power Profile of Professional Men's Cycling Races: An Updated Review",
-        sourceType: 'expert_practice',
+        sourceType: 'narrative_review',
         citation: 'Sanders D, van Erp T. Int J Sports Physiol Perform. 2021;16(1):3-12. doi:10.1123/IJSPP.2020-0508.',
         url: 'https://pubmed.ncbi.nlm.nih.gov/33271501/',
         publishedOn: '2021-01-01',
