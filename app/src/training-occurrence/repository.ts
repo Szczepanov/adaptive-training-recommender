@@ -59,8 +59,7 @@ export class SourceLinkConflictError extends Error {
 }
 
 function newPerformedOccurrenceId(): string {
-    const uuid = globalThis.crypto?.randomUUID?.();
-    return uuid ? `pto-${uuid}` : `pto-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+    return `pto-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
 }
 
 function newOccurrenceDoc(
@@ -263,7 +262,7 @@ export class PerformedTrainingOccurrenceRepository {
             const linkSnap = await transaction.get(linkRef);
             if (linkSnap.exists()) {
                 const existingLink = parsePerformedOccurrenceSourceLink(linkSnap.data(), userId);
-                if (existingLink.performedOccurrenceId === occurrence.performedOccurrenceId) return occurrence; // already attached -- idempotent no-op
+                if (existingLink.performedOccurrenceId === occurrence.performedOccurrenceId) return occurrence;
                 throw new SourceLinkConflictError(sourceKey, existingLink.performedOccurrenceId, occurrence.performedOccurrenceId);
             }
 
@@ -388,7 +387,7 @@ export class PerformedTrainingOccurrenceRepository {
             if (!loserSnap.exists()) throw new Error(`Loser occurrence ${loserId} does not exist`);
             const survivor = parsePerformedTrainingOccurrence(survivorSnap.data(), userId);
             const loser = parsePerformedTrainingOccurrence(loserSnap.data(), userId);
-            if (loser.status === 'merged') return survivor; // already merged -- idempotent
+            if (loser.status === 'merged') return survivor;
 
             const now = new Date().toISOString();
             const survivorKeys = new Set(survivor.sourceRefs.map(sourceKeyForRef));
