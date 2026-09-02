@@ -89,8 +89,7 @@ export interface RecoveryKineticsResult {
  */
 export function applyAthleteRecoveryKinetics(
   profile: AthleteEvidenceProfile | null | undefined,
-  baseRecoveryHours: number,
-  _options?: { isStrenuousLowerBody?: boolean }
+  baseRecoveryHours: number
 ): RecoveryKineticsResult {
   const records = resolveActiveAthleteEvidenceRecords(profile, 'recovery_kinetics');
   const record = records.find(

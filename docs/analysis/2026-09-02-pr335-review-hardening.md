@@ -1,7 +1,7 @@
 # PR #335 Review Hardening — SKR4 Athlete Evidence Boundary
 
-**Date:** 2026-09-02  
-**PR:** #335  
+**Date:** 2026-09-02
+**PR:** #335
 **Scope:** architecture, safety semantics, identity isolation, audit/replay completeness, and stacked-branch consistency
 
 ## Findings corrected

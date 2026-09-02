@@ -1,9 +1,9 @@
 # SKR4 Architecture & Implementation Plan — Athlete-Specific Evidence Boundary
 
-**Date:** 2026-09-02  
-**Status:** Foundation implemented; production persistence/composition and outcome calibration deferred  
-**Parent Plan:** [`sports-knowledge-registry-follow-up.md`](./sports-knowledge-registry-follow-up.md) — SKR4  
-**Related ADRs:** ADR-0033 (§D-SKR-BOUNDARIES), ADR-0020 (§D-SUBJFLOOR), ADR-0028 (Identity Passport), ADR-0010 (Recommendation Audit)  
+**Date:** 2026-09-02
+**Status:** Foundation implemented; production persistence/composition and outcome calibration deferred
+**Parent Plan:** [`sports-knowledge-registry-follow-up.md`](./sports-knowledge-registry-follow-up.md) — SKR4
+**Related ADRs:** ADR-0033 (§D-SKR-BOUNDARIES), ADR-0020 (§D-SUBJFLOOR), ADR-0028 (Identity Passport), ADR-0010 (Recommendation Audit)
 **Branch:** `feat/skr4-athlete-evidence-boundary`
 
 ---

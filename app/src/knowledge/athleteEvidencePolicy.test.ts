@@ -129,7 +129,7 @@ describe('Athlete-Specific Evidence Policy Refinement Engine (SKR4)', () => {
 
   describe('applyAthleteRecoveryKinetics', () => {
     it('lengthens recovery hours by multiplier and enforced minimum', () => {
-      const res = applyAthleteRecoveryKinetics(profileWithCalibrations, 48, { isStrenuousLowerBody: true });
+      const res = applyAthleteRecoveryKinetics(profileWithCalibrations, 48);
       expect(res.effectiveRecoveryHours).toBe(60);
       expect(res.appliedRecord?.id).toBe('delayed_recovery_kinetics');
     });
@@ -139,7 +139,7 @@ describe('Athlete-Specific Evidence Policy Refinement Engine (SKR4)', () => {
         ...profileWithCalibrations,
         records: [{ ...profileWithCalibrations.records[2], parameters: { scalarMultiplier: 0.75 } }],
       };
-      const res = applyAthleteRecoveryKinetics(unsafeProfile, 48, { isStrenuousLowerBody: true });
+      const res = applyAthleteRecoveryKinetics(unsafeProfile, 48);
       expect(res.effectiveRecoveryHours).toBe(48);
       expect(res.appliedRecord).toBeUndefined();
     });
