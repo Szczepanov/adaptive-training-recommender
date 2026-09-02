@@ -9,6 +9,7 @@ import { addDaysToLocalDateString } from '../utils/localDate';
 import { resolvePlanningContext, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
 import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 
 export type PlannedRecoveryReason =
   | 'scheduled_recovery'   // Prescribed microcycle rest day
@@ -141,6 +142,13 @@ export async function resolveTrainingIntent(
     const periodization = planningContext.mode === 'event_directed'
         ? eventPeriodization
         : evaluatePeriodizationPhase([], date);
+    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
+    // CoverageCreditFact is descriptor-scoped. Derive canonical role facts against the same
+    // coverage set the live decision will consume; otherwise a workout whose role differs
+    // between evergreen and event plans can be silently reinterpreted at read time.
+    const performedFactsCoverageDescriptor = planDefinition
+        ? coverageSetFor(planDefinition.coverageSetId)
+        : EVERGREEN_GENERAL_COVERAGE_SET;
     const operationalSnapshot = preparedHistorySnapshot
         ?? await prepareTrainingHistorySnapshot(userId, date, windowDays, historyProvider);
     const provider = historyProvider ?? (await import('./firestoreTrainingHistory')).firestoreTrainingHistoryProvider;
@@ -151,15 +159,20 @@ export async function resolveTrainingIntent(
     // operational history explicitly bounded so a 28-day state-evidence read cannot widen
     // fatigue or microcycle bookkeeping by accident.
     const history = operationalHistory.filter(exposure => exposure.date >= operationalWindowStart && exposure.date < date);
-    // The live/default path reads canonical occurrences for the narrow spacing cutover.
+    // The live/default path reads canonical occurrences for the narrow spacing/coverage cutovers.
     // Injected history providers are also used by deterministic projections (including
     // tomorrow's hypothetical "today was completed" history), so they deliberately keep
-    // their self-contained reconstructed history as the spacing fallback.
+    // their self-contained reconstructed history as the fallback.
     const performedTrainingFacts = preparedHistorySnapshot
         ? (preparedHistorySnapshot.performedTrainingFacts ?? null)
         : historyProvider
             ? null
-            : await (await import('../training-occurrence/performedTrainingFactsService')).getPerformedTrainingFactsInRange(userId, operationalWindowStart, date);
+            : await (await import('../training-occurrence/performedTrainingFactsService')).getPerformedTrainingFactsInRange(
+                userId,
+                operationalWindowStart,
+                date,
+                { coverageSetDescriptor: performedFactsCoverageDescriptor },
+            );
 
     let historySnapshot = operationalSnapshot;
     if (needsEstablishedPerformanceEvidence(planningContext) && operationalSnapshot) {
@@ -183,7 +196,6 @@ export async function resolveTrainingIntent(
         };
     }
 
-    const planDefinition = resolvePlanDefinitionForEvent(periodization.focusEvent, authoredPlanBlocks);
     const builtMicrocycle = buildMicrocycleState(
         periodization.phase,
         addDaysToLocalDateString(date, -windowDays),
