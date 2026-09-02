@@ -231,7 +231,7 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         )).toBeCloseTo(0.8 * 0.8 * 1.5 + 0.5, 5);
         expect(calculateStimulusBenefit(
             mockTemplate({ stimulusProfile: profile('aerobicEndurance') }),
-            [objective('aerobic_endurance', { aerobicEndurance: 0.8 }, 'Cycling')],
+            [objective('zone2_aerobic', { aerobicEndurance: 0.8 }, 'Cycling')],
         )).toBeCloseTo(0.8 * 0.8 * 1.2 + 0.5, 5);
         expect(calculateStimulusBenefit(
             mockTemplate({ stimulusProfile: profile('fatigueResistance') }),
