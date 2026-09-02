@@ -222,4 +222,24 @@ describe('canonical coverage semantic authority', () => {
 
         expect(state.requirements.find(item => item.key === 'primary_strength')?.completedSessions).toBe(1);
     });
+
+    it('records hypothetical planner entries as projected rather than completed coverage', () => {
+        const projectedHistory = resolveCoverageHistory(undefined, [{
+            date: '2026-09-02',
+            templateId: 'full_body_strength_01',
+            modality: 'Strength',
+            category: 'Full-body Strength',
+            source: 'projected',
+        }]);
+
+        const state = buildCoverageState(
+            plan('evergreen_general', 'general', 'primary_strength'),
+            '2026-09-03',
+            projectedHistory,
+        );
+        const requirement = state.requirements.find(item => item.key === 'primary_strength');
+
+        expect(requirement?.completedSessions).toBe(0);
+        expect(requirement?.projectedSessions).toBe(1);
+    });
 });
