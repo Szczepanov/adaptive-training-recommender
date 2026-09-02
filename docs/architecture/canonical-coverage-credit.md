@@ -59,6 +59,12 @@ This keeps the semantic boundary clean:
 - fact layer: *which role identity is proven?*
 - coverage layer: *is that proven role eligible in this plan window and was enough dose performed?*
 
+## Revision identity
+
+`PerformedTrainingFactsSnapshot.revision` includes the active `coverageSetId` as well as the occurrence revision inputs. This is required because `coverageCredits` are descriptor-scoped semantic facts: the same physical occurrence can legitimately yield a different role set under `evergreen_general` and `september_cycling_event`.
+
+Without coverage-set scope in the revision, two semantically different snapshots could alias in cache, audit, or replay consumers even though their `coverageCredits` differ.
+
 ## Invariants
 
 1. One active canonical occurrence can award a given exact role at most once.
@@ -69,6 +75,7 @@ This keeps the semantic boundary clean:
 6. `semantic_confident` is observational only until an explicit policy enables it.
 7. Phase and minimum-dose checks still apply after semantic cutover.
 8. Legacy/projected histories retain their existing fallback because projected sessions may not have canonical occurrence facts yet.
+9. Snapshot revisions cannot alias two coverage-set interpretations of the same occurrence set.
 
 ## Regression coverage
 
@@ -82,6 +89,8 @@ This keeps the semantic boundary clean:
 - disabled `semantic_confident` credit;
 - preservation of the aerobic minimum-duration gate;
 - exposure-only projection/test compatibility.
+
+`performedTrainingFactsService.revision.test.ts` verifies that empty and non-empty snapshots with identical physical-occurrence inputs receive different revisions when derived under different coverage sets.
 
 ## Rollout boundary
 
