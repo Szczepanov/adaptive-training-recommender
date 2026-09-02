@@ -66,7 +66,7 @@ export const TAPER_FUELING_SOURCES: readonly KnowledgeSource[] = [
     {
         id: BURKE_CARBOHYDRATE_SOURCE,
         title: 'Carbohydrates for training and competition',
-        sourceType: 'expert_practice',
+        sourceType: 'narrative_review',
         citation: 'Burke LM, Hawley JA, Wong SH, Jeukendrup AE. J Sports Sci. 2011;29 Suppl 1:S17-S27. doi:10.1080/02640414.2011.585473.',
         url: 'https://pubmed.ncbi.nlm.nih.gov/21660838/',
         publishedOn: '2011-06-09',
@@ -93,7 +93,7 @@ export const TAPER_FUELING_SOURCES: readonly KnowledgeSource[] = [
     {
         id: MORTON_CARBOHYDRATE_SOURCE,
         title: 'From Metabolism to Medals: Contemporary Perspectives and Revisiting Carbohydrate Guidelines for Fueling Endurance Athletes during Exercise',
-        sourceType: 'expert_practice',
+        sourceType: 'narrative_review',
         citation: 'Morton JP, Fell JM, Gonzalez JT, Hearris MA, Podlogar T, Pugh JN, Wallis GA. J Nutr. 2026;156(5):101442. doi:10.1016/j.tjnut.2026.101442.',
         url: 'https://pubmed.ncbi.nlm.nih.gov/41759826/',
         publishedOn: '2026-02-25',
@@ -107,7 +107,7 @@ export const TAPER_FUELING_SOURCES: readonly KnowledgeSource[] = [
     {
         id: PLEWS_ULTRA_HIGH_CARBOHYDRATE_SOURCE,
         title: 'Fuelled or Fooled? Examining the Evidence and Mechanisms Behind Ultra-High Carbohydrate Intake in Endurance Athletes',
-        sourceType: 'expert_practice',
+        sourceType: 'narrative_review',
         citation: 'Plews DJ, Booth PD, Krieger T, Maunder E. Sports Med. 2026. doi:10.1007/s40279-026-02462-z.',
         url: 'https://pubmed.ncbi.nlm.nih.gov/42258036/',
         publishedOn: '2026-06-08',
