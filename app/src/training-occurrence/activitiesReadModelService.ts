@@ -41,10 +41,15 @@ async function hydrateOccurrence(
     activitiesById: Map<string, NormalizedGarminActivity>,
 ): Promise<CompletedWorkoutView> {
     const structuredRef = occurrence.sourceRefs.find(ref => ref.kind === 'structured_execution');
-    const providerRef = occurrence.sourceRefs.find(ref => ref.kind === 'provider_activity');
+    // The domain is provider-neutral and may contain multiple provider sources, but the
+    // v1 DTO has a specifically-Garmin telemetry slot. Never treat the first arbitrary
+    // provider source as Garmin merely because it happens to precede a Garmin ref.
+    const garminRef = occurrence.sourceRefs.find(
+        ref => ref.kind === 'provider_activity' && ref.provider.toLowerCase() === 'garmin',
+    );
 
     const structured = structuredRef ? await resolveStructuredDetail(userId, structuredRef.executionId) : undefined;
-    const garmin = providerRef ? activitiesById.get(providerRef.activityId) : undefined;
+    const garmin = garminRef ? activitiesById.get(garminRef.activityId) : undefined;
 
     return {
         performedOccurrenceId: occurrence.performedOccurrenceId,
