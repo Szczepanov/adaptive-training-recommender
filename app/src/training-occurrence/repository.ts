@@ -65,8 +65,9 @@ function newPerformedOccurrenceId(): string {
 function newOccurrenceDoc(
     userId: string,
     sourceRef: PerformedOccurrenceSourceRef,
-    projection: ReturnType<typeof buildProjection>,
+    projection: ReturnType<typeof buildProjection> | OccurrenceProjection,
     now: string,
+    reconciliation: ReconciliationProvenance = { state: 'single_source' },
 ): PerformedTrainingOccurrence {
     return {
         schemaVersion: PERFORMED_OCCURRENCE_SCHEMA_VERSION,
@@ -75,7 +76,7 @@ function newOccurrenceDoc(
         status: 'active',
         ...projection,
         sourceRefs: [sourceRef],
-        reconciliation: { state: 'single_source' },
+        reconciliation,
         createdAt: now,
         updatedAt: now,
     };
@@ -202,10 +203,16 @@ export class PerformedTrainingOccurrenceRepository {
      * Idempotent: the first caller for a given source creates the occurrence + source
      * link atomically; every later caller for the same source (repeated sync, concurrent
      * arrival) observes the existing link and returns the same occurrence unchanged.
+     *
+     * `initialReconciliation` lets the orchestration layer persist an ambiguity decision
+     * in the SAME transaction as first creation. This is important: an ambiguous source
+     * must never spend a transient committed interval looking like `single_source`, or a
+     * concurrent repair sweep could auto-merge the exact case policy refused to guess.
      */
     async createOrGetForSource(
         userId: string,
         facts: ReconciliationSourceFacts,
+        initialReconciliation: ReconciliationProvenance = { state: 'single_source' },
     ): Promise<{ occurrence: PerformedTrainingOccurrence; created: boolean }> {
         const sourceKey = sourceKeyForRef(facts.sourceRef);
         const linkRef = this.sourceLinkRef(userId, sourceKey);
@@ -222,7 +229,7 @@ export class PerformedTrainingOccurrenceRepository {
 
             const now = new Date().toISOString();
             const projection = buildProjection([facts]);
-            const occurrence = newOccurrenceDoc(userId, facts.sourceRef, projection, now);
+            const occurrence = newOccurrenceDoc(userId, facts.sourceRef, projection, now, initialReconciliation);
             transaction.set(this.occurrenceRef(userId, occurrence.performedOccurrenceId), occurrence);
             transaction.set(linkRef, {
                 schemaVersion: PERFORMED_OCCURRENCE_SCHEMA_VERSION,
@@ -320,22 +327,23 @@ export class PerformedTrainingOccurrenceRepository {
             if (occurrence.sourceRefs.length <= 1) throw new Error(`Cannot unlink the only source on occurrence ${performedOccurrenceId}`);
 
             const now = new Date().toISOString();
+            const remainingRefs = occurrence.sourceRefs.filter(ref => sourceKeyForRef(ref) !== sourceKey);
+            const remainingSourceKeys = remainingRefs.map(sourceKeyForRef);
+            const survivorState = remainingRefs.length <= 1 ? 'single_source' : occurrence.reconciliation.state;
             const decision: ManualReconciliationDecision = {
                 decision: 'unlink',
                 actor,
                 decidedAt: now,
                 previousState: occurrence.reconciliation.state,
-                resultingState: 'single_source',
+                resultingState: survivorState,
                 ...(reason ? { reason } : {}),
             };
-            const remainingRefs = occurrence.sourceRefs.filter(ref => sourceKeyForRef(ref) !== sourceKey);
-            const remainingSourceKeys = remainingRefs.map(sourceKeyForRef);
             const survivor: PerformedTrainingOccurrence = {
                 ...occurrence,
                 sourceRefs: remainingRefs,
                 reconciliation: {
                     ...occurrence.reconciliation,
-                    state: remainingRefs.length <= 1 ? 'single_source' : occurrence.reconciliation.state,
+                    state: survivorState,
                     manualDecision: decision,
                     excludedSourceKeys: uniqueSourceKeys(occurrence.reconciliation.excludedSourceKeys, [sourceKey]),
                 },
