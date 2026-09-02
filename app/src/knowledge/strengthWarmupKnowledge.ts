@@ -25,7 +25,7 @@ export const STRENGTH_WARMUP_SOURCES: readonly KnowledgeSource[] = [
     {
         id: RESISTANCE_WARMUP_SCOPING_REVIEW,
         title: 'Acute Effects of Resistance Training Warm-Up and Re-Warm-Up on Dynamic Strength Performance: A Scoping Review',
-        sourceType: 'systematic_review',
+        sourceType: 'scoping_review',
         citation: 'Neves PP, Marques DL, Neiva HP, Alves AR. J Sci Sport Exerc. 2026. doi:10.1007/s42978-025-00361-9.',
         url: 'https://doi.org/10.1007/s42978-025-00361-9',
         publishedOn: '2026-01-19',
