@@ -347,10 +347,10 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'periodization.taper_windows_volume', domain: 'periodization_taper', title: 'Event taper windows and volume reduction',
-        currentRule: 'Cycling A events taper from race-week Monday with a 3-day minimum; legacy A/B defaults are 14/5 days. Taper intensityScale stays 1.0 while volumeScale linearly falls toward 0.6.',
+        currentRule: 'An athlete-authored taper start date overrides all defaults. Otherwise cycling A events taper from race-week Monday with a 3-day minimum; non-general-target A/B events fall back to 14/5 days. Taper intensityScale stays 1.0 while volumeScale linearly falls toward 0.6.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/taperPolicy.ts:resolveEventTaper', 'engine/periodization.ts:evaluatePeriodizationPhase'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper, KNOWLEDGE_CLAIM_IDS.taperWindowsVolumePolicy],
-        coverageRationale: 'The pre-event volume-reduction-while-preserving-intensity boundary has a moderate-certainty scientific claim; the exact window lengths (3-day cycling-A minimum, legacy 14/5-day defaults) and the 0.6 volume endpoint are separately registered as an explicit product-policy scalar record, not scientific constants. SKR1 runtime lineage (`knowledgeLineage.ts:trainingIntentKnowledgeRefs`) already emits both claims while a taper is active for an endurance event.',
+        coverageRationale: 'The pre-event volume-reduction-while-preserving-intensity boundary has a moderate-certainty scientific claim; exact default scheduling (authored-start override precedence, cycling-A race-week alignment with a 3-day minimum, and legacy 14/5-day fallback for non-general targets) plus the 0.6 volume endpoint are separately registered as explicit product policy, not scientific constants. SKR1 runtime lineage (`knowledgeLineage.ts:trainingIntentKnowledgeRefs`) already emits both claims while a taper is active for an endurance event.',
     },
     {
         id: 'periodization.post_event_recovery_window', domain: 'periodization_taper', title: 'A-event post-event recovery window',
@@ -374,9 +374,9 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'periodization.multi_event_contribution', domain: 'periodization_taper', title: 'Multi-event contribution window and taper authority',
-        currentRule: 'Secondary events contribute objectives inside 35 days; authority taper can drop threshold work; contributor A/B taper windows use 14/5 days and same-key requirements merge by max rather than sum.',
+        currentRule: 'Secondary events contribute objectives inside 35 days; authority taper can drop threshold work; each contributor uses its canonical resolved taper (athlete-authored start override first, cycling-A race-week alignment next, otherwise the applicable legacy A/B default), and same-key requirements merge by max rather than sum.',
         classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p2',
-        codeRefs: ['engine/periodization.ts:resolveMultiEventObjectives'], knowledgeRefs: [], coverageRationale: 'Mostly conflict-resolution product policy, but its 35/14/5-day timing assumptions can alter training and should be documented/calibrated.',
+        codeRefs: ['engine/periodization.ts:resolveMultiEventObjectives'], knowledgeRefs: [], coverageRationale: 'Mostly conflict-resolution product policy, but its 35-day contribution window, contributor taper-resolution semantics/defaults, authority-taper drop behavior and same-key merge rule can alter training and should be documented/calibrated.',
     },
     {
         id: 'event.demand_presets', domain: 'event_demand', title: 'Sport/event demand profiles',
