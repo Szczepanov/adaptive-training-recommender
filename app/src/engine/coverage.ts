@@ -5,7 +5,7 @@ import { workoutForTemplate } from '../workouts/prescription';
 import type { ObjectivePriority, SessionTemplate } from './models';
 import type { PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import type { CoverageCreditFact, PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import type { CompletedExposure } from './trainingHistory';
 
 /**
@@ -72,6 +72,13 @@ export interface CoverageState {
 export interface CoverageHistoryEntry extends ExposureIdentity {
     date: string;
     source?: CoverageCreditSource;
+    /**
+     * Canonical semantic role decisions emitted by performedTrainingFacts.ts. Presence is
+     * authoritative even when the array is empty: buildCoverageState must not re-infer a
+     * role from workout/template identity after the canonical fact layer declined credit.
+     * Legacy/projected entries leave this undefined and retain descriptor lookup below.
+     */
+    canonicalCoverageCredits?: readonly Pick<CoverageCreditFact, 'coverageSetId' | 'coverageKey' | 'creditKind'>[];
 }
 
 export type CoverageHistoryInput =
@@ -98,14 +105,40 @@ export interface CoverageExposureLike {
     category?: SessionTemplate['category'] | string;
 }
 
+export type CoverageCreditLike = Pick<CoverageCreditFact,
+    'performedOccurrenceId' | 'coverageSetId' | 'coverageKey' | 'creditKind'>;
+
 export type CoveragePerformedFacts =
     | PerformedTrainingFactsSnapshot
     | {
         exposures: readonly CoverageExposureLike[];
+        /** Transitional compatibility: older injected fixtures may omit the semantic
+         * ledger. Production PerformedTrainingFactsSnapshot always supplies it. */
+        coverageCredits?: readonly CoverageCreditLike[];
     };
 
-export function coverageHistoryFromFacts(facts: readonly CoverageExposureLike[]): CoverageHistoryEntry[] {
-    return facts.flatMap(fact => {
+export function coverageHistoryFromFacts(performedFacts: CoveragePerformedFacts): CoverageHistoryEntry[] {
+    const hasCanonicalCreditLedger = performedFacts.coverageCredits !== undefined;
+    const creditsByOccurrence = new Map<string, CoverageHistoryEntry['canonicalCoverageCredits']>();
+
+    if (hasCanonicalCreditLedger) {
+        for (const credit of performedFacts.coverageCredits ?? []) {
+            // PR 3 intentionally enables exact identity only. semantic_confident remains
+            // disabled until a separately authored policy defines its threshold/semantics;
+            // `none` is observability, never role fulfillment.
+            if (credit.creditKind !== 'exact') continue;
+            const current = creditsByOccurrence.get(credit.performedOccurrenceId) ?? [];
+            if (!current.some(item => item.coverageSetId === credit.coverageSetId && item.coverageKey === credit.coverageKey)) {
+                creditsByOccurrence.set(credit.performedOccurrenceId, [...current, {
+                    coverageSetId: credit.coverageSetId,
+                    coverageKey: credit.coverageKey,
+                    creditKind: credit.creditKind,
+                }]);
+            }
+        }
+    }
+
+    return performedFacts.exposures.flatMap(fact => {
         if (!fact.localDate) return [];
         return [{
             occurrenceKey: fact.performedOccurrenceId ?? `occ-${fact.localDate}-${fact.workoutId ?? fact.templateId ?? 'unknown'}`,
@@ -115,6 +148,11 @@ export function coverageHistoryFromFacts(facts: readonly CoverageExposureLike[])
             ...(fact.durationMin !== undefined ? { durationMin: fact.durationMin } : {}),
             ...(fact.modality && fact.modality !== 'Unknown' ? { modality: fact.modality as SessionTemplate['modality'] } : {}),
             ...(fact.category ? { category: fact.category as SessionTemplate['category'] } : {}),
+            ...(hasCanonicalCreditLedger ? {
+                canonicalCoverageCredits: fact.performedOccurrenceId
+                    ? (creditsByOccurrence.get(fact.performedOccurrenceId) ?? [])
+                    : [],
+            } : {}),
             source: 'completed' as const,
         }];
     });
@@ -153,7 +191,7 @@ export function resolveCoverageHistory(
     legacyHistory?: readonly CoverageHistoryInput[],
 ): CoverageHistoryEntry[] {
     if (performedFacts && performedFacts.exposures) {
-        return coverageHistoryFromFacts(performedFacts.exposures);
+        return coverageHistoryFromFacts(performedFacts);
     }
     if (legacyHistory) {
         return coverageHistoryFromCompletedExposures(legacyHistory);
@@ -202,6 +240,14 @@ export function workoutIdForTemplateId(templateId: string | undefined): string |
     return workoutForTemplate(templateId)?.id;
 }
 
+function hasRequiredAerobicDose(identity: ExposureIdentity, workoutId: string): boolean {
+    const minimumDuration = WORKOUTS_BY_ID.get(workoutId)?.duration.minimumMin;
+    return typeof minimumDuration === 'number'
+        && typeof identity.durationMin === 'number'
+        && Number.isFinite(identity.durationMin)
+        && identity.durationMin >= minimumDuration;
+}
+
 export function coverageKeysForExposure(
     identity: ExposureIdentity,
     phase: PlanPhase | null,
@@ -212,15 +258,33 @@ export function coverageKeysForExposure(
     if (!workoutId) return [];
     return descriptor.coverage
         .filter(item => item.phases.includes(phase) && item.workoutIds.includes(workoutId))
-        .filter(item => {
-            if (item.key !== 'aerobic_volume') return true;
-            const minimumDuration = WORKOUTS_BY_ID.get(workoutId)?.duration.minimumMin;
-            return typeof minimumDuration === 'number'
-                && typeof identity.durationMin === 'number'
-                && Number.isFinite(identity.durationMin)
-                && identity.durationMin >= minimumDuration;
-        })
+        .filter(item => item.key !== 'aerobic_volume' || hasRequiredAerobicDose(identity, workoutId))
         .map(item => item.key);
+}
+
+function canonicalCoverageKeysForExposure(
+    exposure: CoverageHistoryEntry,
+    phase: PlanPhase,
+    descriptor: CoverageSetDescriptor,
+    workoutId: string | undefined,
+): PlanCoverageKey[] | null {
+    if (exposure.canonicalCoverageCredits === undefined) return null;
+
+    const keys = exposure.canonicalCoverageCredits
+        .filter(credit => credit.creditKind === 'exact' && credit.coverageSetId === descriptor.id)
+        .map(credit => credit.coverageKey)
+        .filter((key, index, all) => all.indexOf(key) === index)
+        .filter(key => {
+            const definition = coverageFor(descriptor, key);
+            if (!definition || !definition.phases.includes(phase)) return false;
+            // Identity comes from the canonical semantic ledger; dose eligibility remains a
+            // coverage-state concern so a short exact Z2 execution cannot satisfy the
+            // authored aerobic-volume floor merely because its catalog id is known.
+            if (key !== 'aerobic_volume') return true;
+            return workoutId !== undefined && hasRequiredAerobicDose(exposure, workoutId);
+        });
+
+    return keys;
 }
 
 export function coverageKeysForTemplate(
@@ -359,7 +423,8 @@ export function buildCoverageState(
         if (seenOccurrences.has(occurrenceKey)) continue;
         seenOccurrences.add(occurrenceKey);
 
-        const keys = coverageKeysForExposure(exposure, block.phase, descriptor);
+        const canonicalKeys = canonicalCoverageKeysForExposure(exposure, block.phase, descriptor, workoutId);
+        const keys = canonicalKeys ?? coverageKeysForExposure(exposure, block.phase, descriptor);
         for (const key of keys) {
             const requirement = requirementsByKey.get(key);
             if (!requirement) continue;
