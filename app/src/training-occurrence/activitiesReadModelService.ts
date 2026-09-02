@@ -52,7 +52,7 @@ async function hydrateOccurrence(
         .find(ref => ref.provider.toLowerCase() === 'garmin');
 
     const structured = structuredRef ? await resolveStructuredDetail(userId, structuredRef.executionId) : undefined;
-    const garmin = garminRef?.kind === 'provider_activity' ? activitiesById.get(garminRef.activityId) : undefined;
+    const garmin = garminRef ? activitiesById.get(garminRef.activityId) : undefined;
 
     return {
         performedOccurrenceId: occurrence.performedOccurrenceId,
