@@ -21,7 +21,7 @@ training policy / rule
        ↓
 recommendation decision
        ↓
-decision explanation / future audit lineage
+decision explanation / recommendation audit lineage (schema v4)
 
 athlete observations ──→ decision evidence ──┘
 ```
@@ -32,12 +32,19 @@ The two inputs meet at policy evaluation but keep independent provenance.
 
 | Path | Responsibility |
 |---|---|
-| `app/src/knowledge/sportsKnowledge.ts` | Types, checked-in sources/claims, lookup API and structural validator |
+| `app/src/knowledge/sportsKnowledgeRegistry.ts` | Canonical aggregate registry unifying domain modules, global validation and lookup API |
+| `app/src/knowledge/sportsKnowledge.ts` | Core types, core checked-in sources/claims, and structural validator |
+| `app/src/knowledge/*Knowledge.ts` | Domain-specific Git-backed knowledge modules (load, cardiorespiratory, injury/pain, strength, taper, periodization, subjective) |
+| `app/src/knowledge/athleteEvidence.ts` | Identity-scoped athlete-specific evidence contracts, domain models, and validator (SKR4) |
+| `app/src/knowledge/athleteEvidencePolicy.ts` | Pure policy refinement engine and safety monotonicity evaluator (SKR4) |
+| `app/src/knowledge/knowledgeCoverage.ts` | Engine knowledge coverage inventory (54 families) and completeness validator |
+| `app/src/engine/knowledgeLineage.ts` | Runtime decision knowledge-refs collector and lineage resolver for recommendation audits |
 | `app/src/knowledge/sportsKnowledge.test.ts` | Registry invariants and epistemic-boundary tests |
-| `app/scripts/validate-sports-knowledge.ts` | CI/CLI validation entry point |
-| `app/src/engine/evergreenStrategy.ts` | First policy consumer; references stable claim IDs and exposes claim-backed provenance |
+| `app/scripts/validate-sports-knowledge.ts` | CI/CLI validation entry point (`validate:knowledge`) |
+| `app/src/engine/evergreenStrategy.ts` | Evergreen policy consumer; references stable claim IDs and exposes claim-backed provenance |
+| Engine policy modules | Policy consumers (`rules.ts`, `fatigue.ts`, `optimizer.ts`, `taperPolicy.ts`, `periodization.ts`, `injuryPolicy.ts`) |
 
-`npm run check` executes `validate:knowledge`, so registry integrity is part of the normal pre-flight gate.
+`npm run check` executes `validate:knowledge` and `validate:knowledge-coverage`, so registry integrity and coverage accounting are part of the normal pre-flight gate.
 
 ## Claim model
 
@@ -167,22 +174,21 @@ return {
 
 `getActiveKnowledgeClaim` throws when an existing claim is not `active`. A contested/deprecated/rejected claim therefore cannot silently continue authorizing production policy through the normal path.
 
-## Evergreen migration
+## Policy migrations and evidence packs
 
-The Evergreen strategy is the first migrated consumer.
+Evergreen dose resolution was the first migrated policy consumer. Subsequent migrations under SKR3 have progressively established explicit claim-level lineage across the engine via focused evidence packs:
 
-The numeric behavior is unchanged:
+- **Evergreen Strategy**: WHO adult aerobic/strength volumes + explicit Evergreen product heuristics (max 3 strength sessions, conditional high-intensity prior).
+- **Pack 1 — Load, Intensity & Recovery**: Internal intensity semantics, rolling hard density, anchor spacing, recent-hard penalty, fatigue decay half-lives, strength/cycling adjacency.
+- **Pack 2 — Objective Readiness**: Cardiorespiratory strain boundaries (HRV, RHR, sleep, nocturnal respiration) paired with explicit product-policy thresholds and fusion weights.
+- **Safety Evidence Pack (SEP A/B/C)**: Subjective readiness boundaries and clinical pain/injury envelope constraints, explicitly separating product-policy heuristics from diagnostic/clinical validation.
+- **Pack 4 — Strength & Concurrent Training**: Supplemental strength training for endurance athletes and concurrent resistance/endurance sequencing boundaries.
+- **Pack 5 — Taper & Fueling**: Endurance pre-event volume reduction boundaries and carbohydrate fueling guidelines paired with product-policy taper windows and volume decay curves.
+- **Pack 6 — Periodization & Event Demand**: Mixed-evidence periodization organization boundary and event-duration limiter shift boundary, alongside product-policy phase boundaries, demand presets, and multi-event conflict resolution.
 
-| Requirement | Existing behavior | Knowledge lineage |
-|---|---|---|
-| Aerobic health volume | 150 min floor; 150–300 min target range | WHO adult aerobic recommendation |
-| Strength health frequency | 2-session floor/target | WHO adult muscle-strengthening recommendation |
-| Strength upper target | max 3 sessions | explicit Evergreen product heuristic |
-| Conditional high intensity | target 1; max/hard cap 2 when history qualifies | explicit Evergreen product heuristic |
+Across all migrations, numeric behavior remains unchanged unless explicitly identified, regression-tested, and accompanied by a `POLICY_VERSION` increment.
 
-The strength split is important: WHO recommends muscle strengthening on two or more days, but does not establish three as a scientific maximum. The registry prevents that product cap from inheriting WHO authority by proximity.
-
-`AdaptationDoseRequirement.evidence` remains as a compatibility projection for existing consumers. It now also carries:
+In legacy compatibility projections (e.g. `AdaptationDoseRequirement.evidence`), records carry:
 
 - `knowledgeClaimId`;
 - `knowledgeClaimVersion`;
@@ -191,7 +197,7 @@ The strength split is important: WHO recommends muscle strengthening on two or m
 - `maturity`;
 - `status`.
 
-Its pre-existing coarse `confidence` remains for compatibility and should not be treated as a synonym for scientific certainty.
+Coarse legacy `confidence` remains only for backward compatibility and is not treated as scientific certainty.
 
 ## Validation rules
 
@@ -260,12 +266,25 @@ Runtime policy carries stable IDs while evaluating a decision. `buildRecommendat
 
 `supersedes` is replacement lineage between claim IDs, not a substitute for the integer version of the same stable claim ID. Cycles are invalid and fail validation.
 
+## Athlete-Specific Evidence Boundary (SKR4)
+
+Per ADR-0033 (§D-SKR-BOUNDARIES), sports knowledge, acute decision evidence, and athlete-specific learned evidence are kept strictly distinct:
+1. **Sports Knowledge** (`KnowledgeClaim` in `app/src/knowledge/`): Universal, Git-backed priors and boundaries.
+2. **Acute Decision Evidence** (`DecisionEvidence`, `DailyReadiness` in `app/src/engine/`): Today's acute observations and safety checks.
+3. **Athlete-Specific Evidence** (`AthleteEvidenceRecord` in `app/src/knowledge/athleteEvidence.ts`): Longitudinal personal response patterns bound to a `userId`.
+
+### Core Guarantees & Monotonicity (`D-ATHLETE-SAFETY-PRESERVE`)
+- **Isolation:** Personal measurements and learned athlete patterns are stored under `users/{userId}/athlete_evidence/{patternId}` and are strictly prohibited from being committed to the global Git registry.
+- **Priors vs Refinements:** General sports knowledge claims act as priors. Athlete-specific evidence asserts typed refinements over a specific `baseKnowledgeClaimId`.
+- **Safety Monotonicity:** Athlete evidence can tighten restrictions, personalize recovery durations, or calibrate scalars within bounded physiological intervals, but cannot weaken clinical escalations, red flag findings, or mandatory medical clearance.
+- **Audit Lineage:** Materially applied athlete evidence refinements are recorded in `RecommendationAudit.athleteEvidenceLineage` for bit-for-bit replay auditability.
+
 ## Current limitations
 
 The registry is intentionally small. It does not yet provide:
 
 - complete coverage of all sports-science assumptions in the engine;
-- athlete-specific learned evidence;
+- automated literature freshness polling (SKR5);
 - automatic PubMed/Crossref/Cochrane literature ingestion or freshness monitoring;
 - structured ROBIS/AMSTAR 2 appraisal records;
 - formal GRADE assessments;
