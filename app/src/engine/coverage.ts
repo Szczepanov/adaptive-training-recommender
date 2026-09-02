@@ -86,6 +86,7 @@ export type CoverageHistoryInput =
     | CoverageHistoryEntry
     | {
         date?: string;
+        occurrenceKey?: string;
         templateId?: string;
         workoutId?: string;
         durationMin?: number;
@@ -168,6 +169,7 @@ export function coverageHistoryFromCompletedExposures(history: readonly Coverage
                 : undefined;
         return [{
             date: entry.date,
+            ...('occurrenceKey' in entry && entry.occurrenceKey ? { occurrenceKey: entry.occurrenceKey } : {}),
             ...(entry.templateId ? { templateId: entry.templateId } : {}),
             ...(entry.workoutId ? { workoutId: entry.workoutId } : {}),
             ...(durationMin !== undefined ? { durationMin } : {}),
