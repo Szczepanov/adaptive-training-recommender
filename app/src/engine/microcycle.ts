@@ -211,8 +211,9 @@ export function projectCompatibilityExposures(credit: number, targetExposures: n
  */
 export function updateMicrocycleProgress(
     currentMicrocycle: MicrocycleState,
-    activity: TrainingRecord | FixedActivity
+    activity: TrainingRecord | FixedActivity | undefined
 ): MicrocycleState {
+    if (!activity) return currentMicrocycle;
     const updatedObjectives = currentMicrocycle.objectives.map(obj => {
         let matched = false;
         const actType = ('type' in activity ? activity.type : activity.title).toLowerCase();

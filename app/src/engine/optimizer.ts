@@ -25,6 +25,7 @@ import { qualifiesForObjective } from './microcycle';
 import { buildCoverageState, coverageNeedTierForTemplate, type CoverageState } from './coverage';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveInjuryRestrictions } from './injuryPolicy';
+import { evaluateStrengthSpacingStatus } from './strengthSpacingPolicy';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
@@ -549,6 +550,13 @@ export function evaluateRecoveryConstraints(
         if (histSummary.priorHeavyLowerBody1d && (template.modality === 'Strength' || STRENGTH_CATEGORIES.includes(template.category))) {
             reasons.push('POST_HEAVY_STRENGTH_BUFFER');
         }
+    }
+
+    const strengthSpacing = evaluateStrengthSpacingStatus(history, targetDate, template, {
+        allowConsecutiveFullBody: minDaysSpacing === 1,
+    });
+    if (strengthSpacing.isRestricted && strengthSpacing.reasonCode) {
+        reasons.push(strengthSpacing.reasonCode);
     }
 
     return reasons;

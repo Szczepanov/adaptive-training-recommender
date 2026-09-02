@@ -195,6 +195,8 @@ app/src/engine/
   activityHrFidelityAdapters.ts # HR-dependent field/training-load/effect authority adapters over activityHrFidelity
   activityHrFidelityReplay.ts # Deterministic shadow-only HR-fidelity replay/report over real activity history (HRF7)
   sleepRecoveryEvidence.ts # Sleep-decision-authority evidence evaluator (2026-08-29 sleep-decision-authority plan)
+  performedTrainingFacts.ts # Canonical occurrence -> facts & weekly role credit derivation (ADR-0034)
+  strengthSpacingPolicy.ts # Pure resistance training spacing & recovery candidate suppression
   simulation/          # Scenario harness: runAllScenarios, decision-quality metrics, drift comparisons
   testing/             # Adversarial PRNG generators & property testing runner
   tests/safety/        # Adversarial domain scenarios, safety invariants, wellness language audit
