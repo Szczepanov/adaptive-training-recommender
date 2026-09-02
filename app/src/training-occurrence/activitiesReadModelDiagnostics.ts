@@ -43,6 +43,20 @@ export function compareActivitiesReadModels(
     };
 }
 
+// DataView still has a defensive best-effort comparison at the UI boundary. The service
+// now records the authoritative comparison once both inputs are known, so the two calls can
+// legitimately arrive back-to-back with the same payload. Coalesce only that very short
+// duplicate window; later refreshes still emit even when their aggregate values happen to
+// be identical.
+const DUPLICATE_LOG_WINDOW_MS = 250;
+let lastLogSignature: string | null = null;
+let lastLogAtMs = 0;
+
 export function recordActivitiesReadModelComparison(userId: string, comparison: ActivitiesReadModelComparison): void {
+    const signature = JSON.stringify([userId, comparison]);
+    const now = Date.now();
+    if (signature === lastLogSignature && now - lastLogAtMs <= DUPLICATE_LOG_WINDOW_MS) return;
+    lastLogSignature = signature;
+    lastLogAtMs = now;
     console.info('[training_occurrence] activity_read.shadow', { userId, ...comparison });
 }
