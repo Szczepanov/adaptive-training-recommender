@@ -50,6 +50,36 @@ function mockOccurrence(overrides: Partial<PerformedTrainingOccurrence> = {}): P
     };
 }
 
+function legacyEvent(
+    id: string,
+    date: string,
+    modality: 'Strength' | 'Cycling' | 'Running',
+): CompletedTrainingEvent {
+    return {
+        id,
+        date,
+        durationMin: 60,
+        modality,
+        intensity: 'easy',
+        evidenceTier: 'durationIntensity',
+    } as unknown as CompletedTrainingEvent;
+}
+
+function canonicalExposure(
+    id: string,
+    localDate: string,
+    modality: PerformedExposureFact['modality'],
+): PerformedExposureFact {
+    return {
+        performedOccurrenceId: id,
+        localDate,
+        modality,
+        confidence: 'inferred',
+        sourceKinds: ['provider_activity'],
+        evidenceTier: 'durationIntensity',
+    };
+}
+
 describe('performedTrainingFacts', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -70,7 +100,7 @@ describe('performedTrainingFacts', () => {
     });
 
     describe('deriveFactsFromOccurrence (pure derivation)', () => {
-        it('Garmin-only strength produces broad Strength exposure and generic_modality_only credit', () => {
+        it('Garmin-only strength produces broad Strength exposure without inventing an exact category', () => {
             const occurrence = mockOccurrence({
                 sourceRefs: [{ kind: 'provider_activity', provider: 'garmin', activityId: 'act-1' }],
             });
@@ -98,19 +128,35 @@ describe('performedTrainingFacts', () => {
             const { exposure, coverageCredits } = deriveFactsFromOccurrence(occurrence, hydrated);
 
             expect(exposure.modality).toBe('Strength');
+            expect(exposure.category).toBeUndefined();
             expect(exposure.confidence).toBe('inferred');
             expect(exposure.sourceKinds).toEqual(['provider_activity']);
             expect(exposure.durationMin).toBe(77);
             expect(exposure.workoutId).toBeUndefined();
 
-            // Weekly coverage credit should NOT be exact; generic modality only (D1, D5)
+            // Weekly coverage credit should NOT be exact; generic modality only (D1, D5).
             expect(coverageCredits).toHaveLength(1);
             expect(coverageCredits[0].coverageKey).toBe('primary_strength');
             expect(coverageCredits[0].creditKind).toBe('none');
             expect(coverageCredits[0].reasonCode).toBe('generic_modality_only');
         });
 
-        it('Structured strength + Garmin produces one exposure where structured execution semantics win (D4)', () => {
+        it('generic cycling exposure does not synthesize Easy Endurance role semantics', () => {
+            const occurrence = mockOccurrence({ modality: 'Cycling' });
+            const { exposure } = deriveFactsFromOccurrence(occurrence, {
+                provider: {
+                    activityId: 'ride-1',
+                    provider: 'garmin',
+                    modality: 'Cycling',
+                    durationMin: 45,
+                },
+            });
+
+            expect(exposure.modality).toBe('Cycling');
+            expect(exposure.category).toBeUndefined();
+        });
+
+        it('structured strength + Garmin produces one exposure and derives exact catalog category (D4)', () => {
             const occurrence = mockOccurrence({
                 sourceRefs: [
                     { kind: 'structured_execution', executionId: 'exec-1' },
@@ -123,7 +169,6 @@ describe('performedTrainingFacts', () => {
                     workoutId: 'strength_full_body_maintenance_01',
                     templateId: 'str_full_01',
                     modality: 'Strength',
-                    category: 'Full-body Strength',
                     durationMin: 45,
                 },
                 provider: {
@@ -144,14 +189,14 @@ describe('performedTrainingFacts', () => {
             expect(exposure.sourceKinds).toEqual(['structured_execution', 'provider_activity']);
             expect(exposure.durationMin).toBe(45); // structured duration wins
 
-            // Weekly coverage awards exact credit once (D1, D4)
+            // Weekly coverage awards exact credit once (D1, D4).
             expect(coverageCredits).toHaveLength(1);
             expect(coverageCredits[0].coverageKey).toBe('primary_strength');
             expect(coverageCredits[0].creditKind).toBe('exact');
             expect(coverageCredits[0].reasonCode).toBe('exact_workout_identity');
         });
 
-        it('Legacy strength produces broad Strength exposure with high confidence (D3)', () => {
+        it('legacy strength stays generic instead of inventing full-body role semantics (D3)', () => {
             const occurrence = mockOccurrence({
                 sourceRefs: [{ kind: 'structured_execution', executionId: 'legacy-sess-1' }],
             });
@@ -167,13 +212,22 @@ describe('performedTrainingFacts', () => {
             const { exposure, coverageCredits } = deriveFactsFromOccurrence(occurrence, hydrated);
 
             expect(exposure.modality).toBe('Strength');
+            expect(exposure.category).toBeUndefined();
             expect(exposure.confidence).toBe('high');
             expect(exposure.sourceKinds).toEqual(['legacy_strength']);
-            expect(exposure.workoutId).toBeUndefined(); // generic legacy does not invent exact workoutId
+            expect(exposure.workoutId).toBeUndefined();
 
             expect(coverageCredits).toHaveLength(1);
             expect(coverageCredits[0].creditKind).toBe('none');
             expect(coverageCredits[0].reasonCode).toBe('generic_modality_only');
+        });
+
+        it('fails visibly rather than fabricating a 1970 date when no performed date exists', () => {
+            const occurrence = mockOccurrence({ localDate: undefined, startedAt: undefined });
+
+            expect(() => deriveFactsFromOccurrence(occurrence, {})).toThrow(
+                'has no performed local date or start time',
+            );
         });
     });
 
@@ -184,11 +238,11 @@ describe('performedTrainingFacts', () => {
             expect(snapshot.coverageCredits).toHaveLength(0);
         });
 
-        it('hydrates active occurrences within range and ignores merged loser occurrences', async () => {
+        it('hydrates every active occurrence once so same-day unrelated workouts stay distinct', async () => {
             const occ1 = mockOccurrence({ performedOccurrenceId: 'pto-1', localDate: '2026-09-01' });
             const occ2 = mockOccurrence({ performedOccurrenceId: 'pto-2', localDate: '2026-09-01' });
 
-            // queryActiveInDateWindow already filters status == 'active', so merged occurrences are never returned
+            // queryActiveInDateWindow already filters status == 'active', so merged losers are never returned.
             vi.mocked(repository.queryActiveInDateWindow).mockResolvedValue([occ1, occ2]);
             vi.mocked(activityService.getActivitiesInRange).mockResolvedValue({
                 status: 'AVAILABLE',
@@ -197,53 +251,79 @@ describe('performedTrainingFacts', () => {
             });
 
             const snapshot = await getPerformedTrainingFactsInRange('user-1', '2026-08-31', '2026-09-02');
-            expect(snapshot.exposures).toHaveLength(2);
+            expect(snapshot.exposures.map(e => e.performedOccurrenceId)).toEqual(['pto-1', 'pto-2']);
             expect(repository.queryActiveInDateWindow).toHaveBeenCalledWith('user-1', '2026-08-31', '2026-09-01');
         });
     });
 
     describe('compareCanonicalVsLegacyFacts', () => {
-        it('reports parity when exposure counts match', () => {
-            const canonical: PerformedExposureFact[] = [{
-                performedOccurrenceId: 'pto-1',
-                localDate: '2026-09-01',
-                modality: 'Strength',
-                confidence: 'inferred',
-                sourceKinds: ['provider_activity'],
-                evidenceTier: 'durationIntensity',
-            }];
-            const legacy = [{
-                id: 'evt-1',
-                date: '2026-09-01',
-                durationMin: 77,
-                modality: 'Strength' as const,
-                intensity: 'easy' as const,
-                evidenceTier: 'durationIntensity' as const,
-            }] as unknown as CompletedTrainingEvent[];
+        it('reports parity when date, modality and multiplicity match', () => {
+            const result = compareCanonicalVsLegacyFacts(
+                [canonicalExposure('pto-1', '2026-09-01', 'Strength')],
+                [legacyEvent('evt-1', '2026-09-01', 'Strength')],
+            );
 
-            const result = compareCanonicalVsLegacyFacts(canonical, legacy);
             expect(result.exposureCountDelta).toBe(0);
             expect(result.mismatchCount).toBe(0);
+            expect(result.mismatches).toEqual([]);
         });
 
-        it('detects legacy duplicate split when legacy has 2 events for 1 physical session', () => {
-            const canonical: PerformedExposureFact[] = [{
-                performedOccurrenceId: 'pto-1',
-                localDate: '2026-09-01',
-                modality: 'Strength',
-                confidence: 'exact',
-                sourceKinds: ['structured_execution', 'provider_activity'],
-                evidenceTier: 'completedStructuredWorkout',
-            }];
-            const legacy = [
-                { id: 'evt-1', date: '2026-09-01', durationMin: 45, modality: 'Strength' as const, intensity: 'moderate' as const },
-                { id: 'evt-2', date: '2026-09-01', durationMin: 77, modality: 'Strength' as const, intensity: 'easy' as const },
-            ] as unknown as CompletedTrainingEvent[];
+        it('detects modality drift even when row counts match', () => {
+            const result = compareCanonicalVsLegacyFacts(
+                [canonicalExposure('pto-1', '2026-09-01', 'Strength')],
+                [legacyEvent('evt-1', '2026-09-01', 'Cycling')],
+            );
 
-            const result = compareCanonicalVsLegacyFacts(canonical, legacy);
+            expect(result.exposureCountDelta).toBe(0);
+            expect(result.mismatchCount).toBe(1);
+            expect(result.mismatches).toEqual([
+                expect.objectContaining({ type: 'modality_mismatch' }),
+            ]);
+        });
+
+        it('detects date drift even when row counts match', () => {
+            const result = compareCanonicalVsLegacyFacts(
+                [canonicalExposure('pto-1', '2026-09-02', 'Strength')],
+                [legacyEvent('evt-1', '2026-09-01', 'Strength')],
+            );
+
+            expect(result.exposureCountDelta).toBe(0);
+            expect(result.mismatchCount).toBe(1);
+            expect(result.mismatches).toEqual([
+                expect.objectContaining({ type: 'date_mismatch' }),
+            ]);
+        });
+
+        it('is multiset-aware and detects a legacy duplicate split after consuming an exact match', () => {
+            const result = compareCanonicalVsLegacyFacts(
+                [canonicalExposure('pto-1', '2026-09-01', 'Strength')],
+                [
+                    legacyEvent('evt-1', '2026-09-01', 'Strength'),
+                    legacyEvent('evt-2', '2026-09-01', 'Strength'),
+                ],
+            );
+
             expect(result.exposureCountDelta).toBe(-1);
             expect(result.mismatchCount).toBe(1);
-            expect(result.mismatches[0].type).toBe('legacy_duplicate');
+            expect(result.mismatches).toEqual([
+                expect.objectContaining({ type: 'legacy_duplicate' }),
+            ]);
+        });
+
+        it('detects canonical occurrences that have no legacy counterpart', () => {
+            const result = compareCanonicalVsLegacyFacts(
+                [
+                    canonicalExposure('pto-1', '2026-09-01', 'Strength'),
+                    canonicalExposure('pto-2', '2026-09-02', 'Cycling'),
+                ],
+                [legacyEvent('evt-1', '2026-09-01', 'Strength')],
+            );
+
+            expect(result.exposureCountDelta).toBe(1);
+            expect(result.mismatchCount).toBe(1);
+            expect(result.mismatches).toEqual([
+                expect.objectContaining({ type: 'legacy_unmatched' }),
+            ]);
         });
     });
 });
