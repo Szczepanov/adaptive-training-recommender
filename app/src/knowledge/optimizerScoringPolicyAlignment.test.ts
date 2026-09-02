@@ -5,6 +5,7 @@ import {
     calculateFatigueCostPenalty,
     calculateStimulusBenefit,
     rankCandidates,
+    type OptimizationOptions,
 } from '../engine/optimizer';
 import {
     getActiveKnowledgeClaim,
@@ -61,13 +62,12 @@ function mockTemplate(overrides: Partial<SessionTemplate> = {}): SessionTemplate
             fatigueResistance: 0.3,
             maxStrength: 0,
             hypertrophy: 0,
-            neuromuscular: 0.1,
         },
         ...overrides,
     } as SessionTemplate;
 }
 
-const AVAILABILITY: ResolvedAvailability = {
+const AVAILABILITY = {
     date: '2026-09-10',
     maxTimeMinutes: 60,
     availableEquipment: [],
@@ -82,9 +82,9 @@ const AVAILABILITY: ResolvedAvailability = {
         neuromuscular: 0,
     },
     environmentOverride: null,
-};
+} as ResolvedAvailability;
 
-const PREFERENCES: UserPreferences = {
+const PREFERENCES = {
     userId: 'alignment-test',
     avoidedModalities: [],
     deprioritizedModalities: [],
@@ -99,7 +99,7 @@ const PREFERENCES: UserPreferences = {
     schemaVersion: 1,
     createdAt: '',
     updatedAt: '',
-};
+} as UserPreferences;
 
 function cyclingEvent(priority: 'A' | 'B'): UserEvent {
     return {
@@ -118,14 +118,14 @@ function cyclingEvent(priority: 'A' | 'B'): UserEvent {
             fatigueResistance: 0.6,
             neuromuscular: 0.2,
         },
-    };
+    } as UserEvent;
 }
 
-function hardStreakHistory(length: number) {
+function hardStreakHistory(length: number): NonNullable<OptimizationOptions['recentHistory']> {
     return Array.from({ length }, (_, index) => ({
         date: `2026-09-${String(9 - index).padStart(2, '0')}`,
         modality: 'Cycling',
-        category: 'Moderate Endurance',
+        category: 'Moderate Endurance' as const,
         systemicCost: 0.4,
         lowerBodyCost: 0.2,
         type: 'Cycling',
