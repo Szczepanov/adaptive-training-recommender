@@ -7,6 +7,7 @@
  */
 import { useState } from 'react';
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
+import { sourceKeyForRef } from '../training-occurrence/sourceIdentity';
 import { copyActivityJsonToClipboard } from '../utils/activityJsonExport';
 import {
   formatRunningPower,
@@ -139,16 +140,20 @@ function GarminEnrichment({ workout }: { workout: CompletedWorkoutView }) {
 }
 
 function ProvenanceDisclosure({ workout, onUnlinkSource }: { workout: CompletedWorkoutView; onUnlinkSource?: CompletedWorkoutListProps['onUnlinkSource'] }) {
+  const garminSourceKey = workout.garmin
+    ? sourceKeyForRef({ kind: 'provider_activity', provider: 'garmin', activityId: workout.garmin.activityId })
+    : null;
+
   return (
     <details className="activity-telemetry-state" style={{ marginTop: '0.5rem', fontSize: '0.8rem' }}>
       <summary>Source provenance</summary>
       <p>State: {workout.reconciliation.state}{workout.reconciliation.matcherVersion ? ` · matcher ${workout.reconciliation.matcherVersion}` : ''}{workout.reconciliation.confidence != null ? ` · confidence ${workout.reconciliation.confidence.toFixed(2)}` : ''}</p>
       {workout.reconciliation.state === 'ambiguous' && <p>Ambiguous match -- kept separate rather than guessed.</p>}
-      {onUnlinkSource && workout.sourceBadge.hasStructured && workout.sourceBadge.hasProvider && (
+      {onUnlinkSource && workout.sourceBadge.hasStructured && garminSourceKey && (
         <button
           type="button"
           className="btn-reclassify-activity"
-          onClick={() => onUnlinkSource(workout.performedOccurrenceId, `provider_activity:${workout.sourceBadge.providers[0]}:${workout.garmin?.activityId}`)}
+          onClick={() => onUnlinkSource(workout.performedOccurrenceId, garminSourceKey)}
         >
           Unlink Garmin source
         </button>
