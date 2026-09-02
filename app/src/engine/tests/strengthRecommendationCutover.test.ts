@@ -89,7 +89,8 @@ describe('Strength Recommendation Canonical Occurrence Cutover (Incident Reprodu
     const readiness = createGreenReadiness();
 
     it('2026-09-02 engine does NOT recommend Full-body Strength following 2026-09-01 Garmin strength session', async () => {
-        // Completed exposure representing the 2026-09-01 Garmin activity
+        // A custom history provider intentionally exercises the projection/test fallback path.
+        // The production path reads canonical performed-training facts directly.
         const garminExposure: CompletedExposure = {
             date: '2026-09-01',
             modality: 'Strength',
@@ -116,14 +117,10 @@ describe('Strength Recommendation Canonical Occurrence Cutover (Incident Reprodu
             historyProvider,
         );
 
-        // Crucial invariant: The engine must NOT recommend Reduced Full-body Strength Maintenance (str_full_03)
-        // or any Full-body / Lower-body strength candidate simply because weekly full-body coverage appears unfulfilled.
         expect(rec.template.category).not.toBe('Full-body Strength');
         expect(rec.template.category).not.toBe('Lower-body Strength');
         expect(rec.template.id).not.toBe('str_full_03');
         expect(rec.template.id).not.toBe('str_full_01');
-
-        // Instead, the engine recommends a non-conflicting session (e.g. aerobic endurance or upper body or mobility)
         expect(['Easy Endurance', 'Moderate Endurance', 'Upper-body Strength', 'Mobility/Recovery']).toContain(rec.template.category);
     });
 
@@ -161,7 +158,7 @@ describe('Strength Recommendation Canonical Occurrence Cutover (Incident Reprodu
         expect(rec.template.category).not.toBe('Lower-body Strength');
     });
 
-    it('Allows full-body strength on Day +2 (2026-09-03) after 48 hours spacing has elapsed', async () => {
+    it('allows the configured two-local-day strength gap on Day +2 (2026-09-03)', async () => {
         const garminExposure: CompletedExposure = {
             date: '2026-09-01',
             modality: 'Strength',
@@ -183,13 +180,13 @@ describe('Strength Recommendation Canonical Occurrence Cutover (Incident Reprodu
             readiness,
             context,
             [],
-            '2026-09-03', // 2 days later (diff = 2)
+            '2026-09-03',
             undefined,
             historyProvider,
         );
 
-        // On Day +2 with green readiness, strength is once again admissible
-        // (the 48h spacing restriction no longer blocks full-body candidates).
+        // This proves only that the configured local-date spacing gate has elapsed; ranking
+        // remains free to choose another admissible session for other planning reasons.
         expect(rec).toBeDefined();
     });
 
@@ -219,21 +216,25 @@ describe('Strength Recommendation Canonical Occurrence Cutover (Incident Reprodu
 
         const { exposure, coverageCredits } = deriveFactsFromOccurrence(occurrence, hydrated);
 
-        // 1. Exposure represents the physical session as Strength with 77 min observed duration
         expect(exposure.modality).toBe('Strength');
         expect(exposure.durationMin).toBe(77);
         expect(exposure.localDate).toBe('2026-09-01');
 
-        // 2. Generic Garmin strength does NOT falsely satisfy exact full-body weekly role
+        // Generic Garmin strength establishes that strength occurred, but does not falsely
+        // satisfy an exact full-body weekly role whose workout identity is unknown.
         expect(coverageCredits[0].creditKind).toBe('none');
         expect(coverageCredits[0].reasonCode).toBe('generic_modality_only');
 
-        // 3. Spacing policy correctly recognizes the recent strength exposure and restricts Day +1 full-body
         const candidateFullBody = ENRICHED_TEMPLATES_BY_ID.get('str_full_03')!;
-
-        const spacingStatus = evaluateStrengthSpacingStatus([exposure], '2026-09-02', candidateFullBody);
+        const spacingStatus = evaluateStrengthSpacingStatus(
+            [exposure],
+            '2026-09-02',
+            candidateFullBody,
+            { minimumGapDays: 2 },
+        );
         expect(spacingStatus.isRestricted).toBe(true);
         expect(spacingStatus.reasonCode).toBe('RECENT_STRENGTH_SPACING_VIOLATION');
         expect(spacingStatus.rationale).toContain('2026-09-01');
+        expect(spacingStatus.rationale).toContain('minimum 2-day athlete-local date gap');
     });
 });
