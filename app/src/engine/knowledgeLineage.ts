@@ -154,6 +154,7 @@ export function readinessKnowledgeRefs(readiness: DailyReadiness, context: UserC
     return mergeKnowledgeRefs(refs, injuryPolicyKnowledgeRefs(readiness, context));
 }
 
+/** True when the event category is governed by the endurance taper knowledge claims. */
 function isEnduranceEvent(event: UserEvent | null | undefined): boolean {
     return event?.category === 'running_race'
         || event?.category === 'cycling_event'
