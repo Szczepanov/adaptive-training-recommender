@@ -80,12 +80,26 @@ export interface FactsComparisonResult {
     }>;
 }
 
-function templateForWorkoutId(workoutId: string) {
-    return ENRICHED_TEMPLATES.find(t => workoutForTemplate(t.id)?.id === workoutId);
+function templatesForWorkoutId(workoutId: string): SessionTemplate[] {
+    return ENRICHED_TEMPLATES.filter(t => workoutForTemplate(t.id)?.id === workoutId);
 }
 
+/**
+ * Reverse workout -> engine-template inference is only safe when exactly one template
+ * resolves to that workout. Some catalog workouts intentionally serve multiple engine
+ * templates (for example the full-body maintenance workout), so choosing the first match
+ * would fabricate prescribed identity that the structured source never proved.
+ */
 export function templateIdForWorkoutId(workoutId: string): string | undefined {
-    return templateForWorkoutId(workoutId)?.id;
+    const matches = templatesForWorkoutId(workoutId);
+    return matches.length === 1 ? matches[0].id : undefined;
+}
+
+function categoryForWorkoutId(workoutId: string): SessionTemplate['category'] | undefined {
+    const matches = templatesForWorkoutId(workoutId);
+    if (matches.length === 0) return undefined;
+    const categories = new Set(matches.map(template => template.category));
+    return categories.size === 1 ? matches[0].category : undefined;
 }
 
 export function normalizeModality(raw: string | undefined): SessionTemplate['modality'] | 'Unknown' {
@@ -169,16 +183,26 @@ export function deriveFactsFromOccurrence(
         sourceKinds.push('provider_activity');
     }
 
+    const occurrenceModality = occurrence.modality ? normalizeModality(occurrence.modality) : undefined;
+    const providerModality = hydrated.provider?.modality;
     const modality: SessionTemplate['modality'] | 'Unknown' =
         hydrated.structured?.modality
-        ?? (occurrence.modality ? normalizeModality(occurrence.modality) : undefined)
-        ?? hydrated.provider?.modality
+        ?? (occurrenceModality && occurrenceModality !== 'Unknown' ? occurrenceModality : undefined)
+        ?? (providerModality && providerModality !== 'Unknown' ? providerModality : undefined)
+        ?? occurrenceModality
+        ?? providerModality
         ?? 'Unknown';
 
     const workoutId = hydrated.structured?.workoutId;
-    const matchedTemplate = workoutId ? templateForWorkoutId(workoutId) : undefined;
-    const templateId = hydrated.structured?.templateId ?? matchedTemplate?.id;
-    const category = normalizeCategory(hydrated.structured?.category ?? matchedTemplate?.category);
+    const explicitTemplate = hydrated.structured?.templateId
+        ? ENRICHED_TEMPLATES.find(template => template.id === hydrated.structured?.templateId)
+        : undefined;
+    const templateId = hydrated.structured?.templateId ?? (workoutId ? templateIdForWorkoutId(workoutId) : undefined);
+    const category = normalizeCategory(
+        hydrated.structured?.category
+        ?? explicitTemplate?.category
+        ?? (workoutId ? categoryForWorkoutId(workoutId) : undefined),
+    );
 
     const startedAt = hydrated.structured?.startedAt ?? occurrence.startedAt ?? hydrated.provider?.startedAt;
     const endedAt = hydrated.structured?.endedAt ?? occurrence.endedAt ?? hydrated.provider?.endedAt;
@@ -324,9 +348,8 @@ export async function getPerformedTrainingFactsInRange(
                         isLegacyStrength = true;
                     } else {
                         workoutId = execution.sessionSource.workoutId;
-                        const matchedTemplate = templateForWorkoutId(workoutId);
-                        templateId = matchedTemplate?.id;
-                        category = matchedTemplate?.category;
+                        templateId = templateIdForWorkoutId(workoutId);
+                        category = categoryForWorkoutId(workoutId);
                     }
                 } else if (execution.sessionSource.kind === 'manual' && execution.sessionSource.definitionId === 'legacy_strength') {
                     isLegacyStrength = true;
