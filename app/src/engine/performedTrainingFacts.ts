@@ -80,9 +80,12 @@ export interface FactsComparisonResult {
     }>;
 }
 
+function templateForWorkoutId(workoutId: string) {
+    return ENRICHED_TEMPLATES.find(t => workoutForTemplate(t.id)?.id === workoutId);
+}
+
 export function templateIdForWorkoutId(workoutId: string): string | undefined {
-    const template = ENRICHED_TEMPLATES.find(t => workoutForTemplate(t.id)?.id === workoutId);
-    return template?.id;
+    return templateForWorkoutId(workoutId)?.id;
 }
 
 export function normalizeModality(raw: string | undefined): SessionTemplate['modality'] | 'Unknown' {
@@ -100,21 +103,15 @@ export function normalizeModality(raw: string | undefined): SessionTemplate['mod
     return 'Unknown';
 }
 
-function normalizeCategory(modality: SessionTemplate['modality'] | 'Unknown', category?: string): SessionTemplate['category'] | undefined {
-    if (category) {
-        const cat = category as SessionTemplate['category'];
-        const validCategories: SessionTemplate['category'][] = [
-            'Hard Endurance', 'Moderate Endurance', 'Easy Endurance', 'Race-Specific Endurance',
-            'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength',
-            'Power Maintenance', 'Field Maintenance', 'Technical Skill', 'Mobility/Recovery', 'Rest',
-        ];
-        if (validCategories.includes(cat)) return cat;
-    }
-    if (modality === 'Strength') return 'Full-body Strength';
-    if (modality === 'Cycling') return 'Easy Endurance';
-    if (modality === 'Mobility') return 'Mobility/Recovery';
-    if (modality === 'None') return 'Rest';
-    return undefined;
+function normalizeCategory(category?: string): SessionTemplate['category'] | undefined {
+    if (!category) return undefined;
+    const cat = category as SessionTemplate['category'];
+    const validCategories: SessionTemplate['category'][] = [
+        'Hard Endurance', 'Moderate Endurance', 'Easy Endurance', 'Race-Specific Endurance',
+        'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength',
+        'Power Maintenance', 'Field Maintenance', 'Technical Skill', 'Mobility/Recovery', 'Rest',
+    ];
+    return validCategories.includes(cat) ? cat : undefined;
 }
 
 export interface HydratedOccurrenceContext {
@@ -140,6 +137,21 @@ export interface HydratedOccurrenceContext {
     };
 }
 
+function requirePerformedLocalDate(
+    occurrence: PerformedTrainingOccurrence,
+    startedAt: string | undefined,
+    hydrated: HydratedOccurrenceContext,
+): string {
+    const localDate = occurrence.localDate
+        ?? (startedAt ? startedAt.split('T')[0] : undefined)
+        ?? hydrated.provider?.garminActivity?.date;
+
+    if (!localDate) {
+        throw new Error(`Performed training occurrence ${occurrence.performedOccurrenceId} has no performed local date or start time.`);
+    }
+    return localDate;
+}
+
 /**
  * Pure fact derivation from a single active occurrence and its hydrated sources.
  * Enforces field-level source precedence (D4, D5).
@@ -163,8 +175,10 @@ export function deriveFactsFromOccurrence(
         ?? hydrated.provider?.modality
         ?? 'Unknown';
 
-    const category: SessionTemplate['category'] | undefined =
-        hydrated.structured?.category ?? normalizeCategory(modality);
+    const workoutId = hydrated.structured?.workoutId;
+    const matchedTemplate = workoutId ? templateForWorkoutId(workoutId) : undefined;
+    const templateId = hydrated.structured?.templateId ?? matchedTemplate?.id;
+    const category = normalizeCategory(hydrated.structured?.category ?? matchedTemplate?.category);
 
     const startedAt = hydrated.structured?.startedAt ?? occurrence.startedAt ?? hydrated.provider?.startedAt;
     const endedAt = hydrated.structured?.endedAt ?? occurrence.endedAt ?? hydrated.provider?.endedAt;
@@ -173,9 +187,6 @@ export function deriveFactsFromOccurrence(
         hydrated.structured?.durationMin
         ?? hydrated.provider?.durationMin
         ?? (startedAt && endedAt ? Math.max(0, Math.round((Date.parse(endedAt) - Date.parse(startedAt)) / 60000)) : undefined);
-
-    const workoutId = hydrated.structured?.workoutId;
-    const templateId = hydrated.structured?.templateId ?? (workoutId ? templateIdForWorkoutId(workoutId) : undefined);
 
     let confidence: FactConfidence = 'unknown';
     let evidenceTier: EvidenceTier = 'genericModalityFallback';
@@ -198,11 +209,11 @@ export function deriveFactsFromOccurrence(
             trainingEffectAnaerobic: hydrated.provider.garminActivity.trainingEffectAnaerobic,
             intensityTag: hydrated.provider.garminActivity.intensityTag,
             activityTrainingLoad: hydrated.provider.garminActivity.activityTrainingLoad,
-            modalityKnown: true,
+            modalityKnown: modality !== 'Unknown',
         });
     }
 
-    const localDate = occurrence.localDate ?? (startedAt ? startedAt.split('T')[0] : '1970-01-01');
+    const localDate = requirePerformedLocalDate(occurrence, startedAt, hydrated);
 
     const exposure: PerformedExposureFact = {
         performedOccurrenceId: occurrence.performedOccurrenceId,
@@ -235,7 +246,7 @@ export function deriveFactsFromOccurrence(
             });
         }
     } else if (modality === 'Strength') {
-        // Generic strength occurred without proven exact full-body catalog identity (D1, D5)
+        // Generic strength occurred without proven exact catalog role (D1, D5).
         coverageCredits.push({
             performedOccurrenceId: occurrence.performedOccurrenceId,
             coverageSetId: descriptor.id,
@@ -305,6 +316,7 @@ export async function getPerformedTrainingFactsInRange(
                 const execution = execState.data;
                 let workoutId: string | undefined;
                 let templateId: string | undefined;
+                let category: SessionTemplate['category'] | undefined;
                 let isLegacyStrength = false;
 
                 if (execution.sessionSource.kind === 'catalog') {
@@ -312,7 +324,9 @@ export async function getPerformedTrainingFactsInRange(
                         isLegacyStrength = true;
                     } else {
                         workoutId = execution.sessionSource.workoutId;
-                        templateId = templateIdForWorkoutId(workoutId);
+                        const matchedTemplate = templateForWorkoutId(workoutId);
+                        templateId = matchedTemplate?.id;
+                        category = matchedTemplate?.category;
                     }
                 } else if (execution.sessionSource.kind === 'manual' && execution.sessionSource.definitionId === 'legacy_strength') {
                     isLegacyStrength = true;
@@ -349,6 +363,7 @@ export async function getPerformedTrainingFactsInRange(
                     ...(workoutId ? { workoutId } : {}),
                     ...(templateId ? { templateId } : {}),
                     ...(executionModality ? { modality: executionModality } : {}),
+                    ...(category ? { category } : {}),
                     startedAt: execution.startedAt,
                     ...(execution.completedAt ? { endedAt: execution.completedAt } : {}),
                     ...(durationMin !== undefined ? { durationMin } : {}),
@@ -394,25 +409,89 @@ export async function getPerformedTrainingFactsInRange(
     };
 }
 
+interface ComparableExposure {
+    date: string;
+    modality: SessionTemplate['modality'] | 'Unknown';
+}
+
+function consumeFirstMatch<T>(items: T[], predicate: (item: T) => boolean): T | undefined {
+    const index = items.findIndex(predicate);
+    if (index < 0) return undefined;
+    const [matched] = items.splice(index, 1);
+    return matched;
+}
+
 /**
  * Diagnostic helper comparing canonical facts vs legacy completed training events.
- * Emits structured mismatch counters without noisy per-session logs.
+ * Matching is multiset-aware: exact date+modality matches are consumed first, then
+ * equal-date and equal-modality leftovers are classified so equal row counts cannot
+ * hide semantic or date drift. Remaining rows expose split/unmatched-path differences.
  */
 export function compareCanonicalVsLegacyFacts(
     canonicalExposures: readonly PerformedExposureFact[],
     legacyEvents: readonly CompletedTrainingEvent[],
 ): FactsComparisonResult {
     const mismatches: FactsComparisonResult['mismatches'] = [];
+    const unmatchedLegacy: ComparableExposure[] = legacyEvents.map(event => ({
+        date: event.date,
+        modality: normalizeModality(event.modality),
+    }));
+    const unmatchedCanonical: ComparableExposure[] = [];
 
-    if (canonicalExposures.length < legacyEvents.length) {
+    for (const exposure of canonicalExposures) {
+        const canonical = { date: exposure.localDate, modality: exposure.modality };
+        const exact = consumeFirstMatch(
+            unmatchedLegacy,
+            legacy => legacy.date === canonical.date && legacy.modality === canonical.modality,
+        );
+        if (!exact) unmatchedCanonical.push(canonical);
+    }
+
+    let modalityMismatchCount = 0;
+    for (let index = unmatchedCanonical.length - 1; index >= 0; index -= 1) {
+        const canonical = unmatchedCanonical[index];
+        const sameDate = consumeFirstMatch(unmatchedLegacy, legacy => legacy.date === canonical.date);
+        if (sameDate) {
+            modalityMismatchCount += 1;
+            unmatchedCanonical.splice(index, 1);
+        }
+    }
+    if (modalityMismatchCount > 0) {
+        mismatches.push({
+            type: 'modality_mismatch',
+            detail: `${modalityMismatchCount} canonical/legacy event pair(s) share a local date but disagree on modality.`,
+        });
+    }
+
+    let dateMismatchCount = 0;
+    for (let index = unmatchedCanonical.length - 1; index >= 0; index -= 1) {
+        const canonical = unmatchedCanonical[index];
+        const sameModality = consumeFirstMatch(unmatchedLegacy, legacy => legacy.modality === canonical.modality);
+        if (sameModality) {
+            dateMismatchCount += 1;
+            unmatchedCanonical.splice(index, 1);
+        }
+    }
+    if (dateMismatchCount > 0) {
+        mismatches.push({
+            type: 'date_mismatch',
+            detail: `${dateMismatchCount} canonical/legacy event pair(s) share a modality but disagree on local date.`,
+        });
+    }
+
+    const legacyExtraCount = unmatchedLegacy.length;
+    if (legacyExtraCount > 0) {
         mismatches.push({
             type: 'legacy_duplicate',
-            detail: `Legacy path has ${legacyEvents.length} events while canonical has ${canonicalExposures.length} (potential legacy split).`,
+            detail: `${legacyExtraCount} legacy event(s) remain without a canonical counterpart (potential legacy split/duplicate).`,
         });
-    } else if (canonicalExposures.length > legacyEvents.length) {
+    }
+
+    const canonicalExtraCount = unmatchedCanonical.length;
+    if (canonicalExtraCount > 0) {
         mismatches.push({
             type: 'legacy_unmatched',
-            detail: `Canonical path has ${canonicalExposures.length} occurrences while legacy has ${legacyEvents.length} (unmatched structured sessions).`,
+            detail: `${canonicalExtraCount} canonical occurrence(s) remain without a legacy counterpart.`,
         });
     }
 
@@ -420,7 +499,7 @@ export function compareCanonicalVsLegacyFacts(
         canonicalExposureCount: canonicalExposures.length,
         legacyExposureCount: legacyEvents.length,
         exposureCountDelta: canonicalExposures.length - legacyEvents.length,
-        mismatchCount: mismatches.length,
+        mismatchCount: modalityMismatchCount + dateMismatchCount + legacyExtraCount + canonicalExtraCount,
         mismatches,
     };
 }
