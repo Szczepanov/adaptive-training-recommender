@@ -40,7 +40,7 @@ PR #320 now treats these as independent channels:
 
 Regression coverage: `redFlagIndependence.test.ts:mapCheckinToSubjectiveInput`.
 
-## 4. Engine invariants
+## 4. Engine and presentation invariants
 
 When a red-flag finding reaches the engine:
 - `redFlagActive = true`;
@@ -50,6 +50,16 @@ When a red-flag finding reaches the engine:
 - ranked catalog prescriptions collapse to Rest;
 - one-tap harder/easier alternatives are disabled;
 - the decision card presents clinical-escalation messaging.
+
+The **presentation layer must fail closed as well as the engine**. While `clinicalEscalationRequired` is true, the Morning Decision card:
+- does not expose **Start Session**;
+- does not expose **View Workout Targets**;
+- does not expose workout export/sync actions;
+- does not expose the **1-Tap Alternatives** tab or load stepper;
+- does not expose the **Workout Steps** tab or rendered structured targets;
+- keeps **Why & Invalidation Rules** available so the athlete can inspect the evidence and reason for the pause.
+
+This avoids a misleading state where execution is blocked in an event handler but the application still displays executable-looking training instructions.
 
 Severe fever/chills in structured health symptoms also creates an implicit `systemic_infection` finding even when the athlete did not use the explicit red-flag checklist.
 
@@ -62,12 +72,12 @@ The adjudication order is now:
 `clinical escalation -> event advisory / session skip -> ordinary clinical/feasibility -> readiness -> dose`
 
 Behavior:
-- imported **training sessions** under clinical escalation return `skip`, with no execution dose;
+- imported **training sessions** under clinical escalation return `skip`, with no execution dose and **no authored fallback suggestion**; even a fallback labelled as context can resemble an executable substitute, so the escalation path presents no training alternative;
 - imported **events** remain represented as `advisory` so the recommender does not silently delete a real-world commitment, but the advisory explicitly says the engine **cannot clear the athlete to start**, requires medical evaluation first, and tells the athlete to seek urgent or emergency medical care for acute chest pain/pressure, unexplained shortness of breath, fainting/near-fainting, new neurological symptoms, or another emergency concern;
 - the Morning Decision clinical-escalation banner uses the same urgent warning set rather than the narrower former wording that mentioned only chest pain, severe dyspnea, and fainting;
 - the permissive “decision to start is yours” copy is not used under clinical escalation.
 
-Regression coverage: `externalSessionClinicalEscalation.test.ts:adjudicate`, including the emergency-warning wording above.
+Regression coverage: `externalSessionClinicalEscalation.test.ts:adjudicate`, including the emergency-warning wording and the absence of an imported fallback prescription.
 
 ## 6. Evidence interpretation
 
@@ -78,11 +88,14 @@ Regression coverage: `externalSessionClinicalEscalation.test.ts:adjudicate`, inc
 
 **Product-policy boundary:** the application stops training recommendations when configured warning findings are reported. It does not determine the underlying diagnosis, severity, cause, or fitness to return to sport.
 
+The same evidence discipline applies to SEP-C2 and SEP-C3. Subjective wellness research supports using self-reported recovery/fatigue signals in load monitoring, but does **not** clinically validate the product's exact 1–10 thresholds. Likewise, next-morning symptom response is a useful load-monitoring concept in tendinopathy rehabilitation, but the product's latency rule is an adapted conservative heuristic rather than a universal tissue diagnostic criterion.
+
 ## 7. Verification additions in PR #320
 
 Focused regression tests added during review:
 - `injuryPolicyLatencySafety.test.ts:deriveTissueSeverity` — missing latency follow-up fails closed;
 - `subjectiveThresholdSafety.test.ts:evaluateReadinessAndSafetyEnvelope` — 8/10 fatigue or soreness cannot be diluted by other good answers;
-- `externalSessionClinicalEscalation.test.ts:adjudicate` — imported sessions/events cannot bypass escalation and the imported-event copy retains the urgent cardiopulmonary/neurological warning language;
+- `externalSessionClinicalEscalation.test.ts:adjudicate` — imported sessions/events cannot bypass escalation, imported training does not expose a fallback suggestion, and imported-event copy retains the urgent cardiopulmonary/neurological warning language;
+- `MorningDecisionCardClinicalEscalation.test.tsx` — clinical escalation keeps rationale visible while suppressing start/view/export/alternative/workout-step surfaces;
 - `redFlagIndependence.test.ts:mapCheckinToSubjectiveInput` — explicit red flags remain independent from the pain/injury toggle;
 - `redFlagReasonLabel.test.ts:evaluateEnvelopes` — the `systemic_infection` storage key renders as the non-diagnostic “systemic / cardiopulmonary warning” in user-facing clinical rationale.
