@@ -305,8 +305,8 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         id: 'spacing.pre_event_restrictions', domain: 'session_spacing', title: 'Pre-event strength, hard and exhaustive session restrictions',
         currentRule: 'For A/B cycling/running events: strength is blocked 1-3 days pre-race; hard work is blocked 1-2 days; exhaustive work (systemicCost >=0.75 or VO2 title) is blocked 3-7 days.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
-        codeRefs: ['engine/optimizer.ts:evaluateRecoveryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.preEventRestrictionsPolicy],
-        coverageRationale: 'Now recorded as an explicit product-policy claim (`policy.taper.pre_event_restrictions_v1`) so the exact 1-3/1-2/3-7-day windows have provenance. The underlying timing questions (how close to competition strength/hard/exhaustive work should stop) are directly researchable and remain unreviewed, so this stays partial/P1 pending Evidence Pack 6. SKR1 runtime lineage does not yet emit this claim: the optimizer evaluates the restriction against exact days-to-event, while `trainingIntentKnowledgeRefs` only has a coarser taper-active signal available, and attributing on that coarser signal would over-claim lineage on days where the restriction never actually evaluates. Wiring precise days-to-event into runtime lineage is a separate change.',
+        codeRefs: ['engine/optimizer.ts:evaluateRecoveryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.preEventRestrictionsPolicy, KNOWLEDGE_CLAIM_IDS.endurancePreEventTaper],
+        coverageRationale: 'Recorded as an explicit product-policy claim (`policy.taper.pre_event_restrictions_v1`) so the exact 1-3/1-2/3-7-day windows have provenance, and linked to the moderate-certainty pre-event taper boundary that competition load should fall while quality is preserved. Stays partial/P1: that boundary supports reducing load before competition in general, but validates none of these modality-specific day counts, and Evidence Pack 6 found no literature establishing per-session-type pre-competition blocking windows. SKR1 runtime lineage does not yet emit this claim: the optimizer evaluates the restriction against exact days-to-event, while `trainingIntentKnowledgeRefs` only has a coarser taper-active signal available, and attributing on that coarser signal would over-claim lineage on days where the restriction never actually evaluates. Wiring precise days-to-event into runtime lineage is a separate change.',
     },
     {
         id: 'optimizer.intensity_class_thresholds', domain: 'optimizer_scoring', title: 'Catalog systemic-cost intensity classification',
@@ -342,8 +342,9 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     {
         id: 'periodization.phase_boundaries_scales', domain: 'periodization_taper', title: 'Base/Build/Specificity phase boundaries and dose scales',
         currentRule: 'Specificity begins <=35 days; Build <=84 days; farther dates are Base. Build uses 0.6 event-demand blend, volume 1.1/intensity 0.9; Base uses 0.3 blend, volume 1.0/intensity 0.8; Specificity uses volume 1.0/intensity 1.1.',
-        classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
-        codeRefs: ['engine/periodization.ts:evaluatePeriodizationPhase'], knowledgeRefs: [], coverageRationale: 'Classic periodization concepts may be evidence-informed, but these exact phase boundaries, blends and scalars are unregistered product policy.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
+        codeRefs: ['engine/periodization.ts:evaluatePeriodizationPhase'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.blockStructuredProgression, KNOWLEDGE_CLAIM_IDS.phaseBoundariesScalesPolicy],
+        coverageRationale: 'Evidence Pack 6 registers a low-certainty boundary that progressive, event-specific block concentration can outperform simultaneous development, plus an explicit product-policy record of the exact scalars. Coverage stays partial at P1 because the 35/84-day boundaries, 0.6/0.3 blend weights and volume/intensity scalars remain uncalibrated product choices, and the supporting meta-analysis pool is small and of low methodological quality.',
     },
     {
         id: 'periodization.taper_windows_volume', domain: 'periodization_taper', title: 'Event taper windows and volume reduction',
@@ -362,8 +363,9 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     {
         id: 'periodization.objective_thresholds', domain: 'periodization_taper', title: 'Demand-to-weekly-objective thresholds',
         currentRule: 'Aerobic objective appears at demand >=0.4 and becomes two exposures at >=0.7; threshold at >=0.5; surge/VO2 at >=0.6; race-specific cycling at fatigue-resistance >=0.7 or surges >=0.6; qualification floors commonly use 0.6.',
-        classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
-        codeRefs: ['engine/periodization.ts:objectivesFromDemand', 'engine/microcycle.ts:generateWeeklyObjectives'], knowledgeRefs: [], coverageRationale: 'The normalized demand/stimulus scale is product-defined; threshold meanings and exposure counts are not registered or empirically calibrated.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'p1',
+        codeRefs: ['engine/periodization.ts:objectivesFromDemand', 'engine/microcycle.ts:generateWeeklyObjectives'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.objectiveThresholdsPolicy],
+        coverageRationale: 'Evidence Pack 6 records the exact inclusion thresholds as an explicit product-policy claim, so they now have provenance and drift protection. No scientific claim is attached and none applies: the normalized 0-1 demand scale is product-defined, so no external study can validate a cut point on it. Stays partial at P1 pending empirical calibration against athlete outcomes.',
     },
     {
         id: 'periodization.taper_sharpening_targets', domain: 'periodization_taper', title: 'Race-week sharpening and strength-primer targets',
@@ -375,14 +377,16 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     {
         id: 'periodization.multi_event_contribution', domain: 'periodization_taper', title: 'Multi-event contribution window and taper authority',
         currentRule: 'Secondary events contribute objectives inside 35 days; authority taper can drop threshold work; each contributor uses its canonical resolved taper (athlete-authored start override first, cycling-A race-week alignment next, otherwise the applicable legacy A/B default), and same-key requirements merge by max rather than sum.',
-        classification: 'product_heuristic', coverage: 'uncovered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p2',
-        codeRefs: ['engine/periodization.ts:resolveMultiEventObjectives'], knowledgeRefs: [], coverageRationale: 'Mostly conflict-resolution product policy, but its 35-day contribution window, contributor taper-resolution semantics/defaults, authority-taper drop behavior and same-key merge rule can alter training and should be documented/calibrated.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'p2',
+        codeRefs: ['engine/periodization.ts:resolveMultiEventObjectives', 'engine/taperPolicy.ts:resolveEventTaper'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.multiEventContributionPolicy],
+        coverageRationale: 'Evidence Pack 6 records the 35-day contribution window, the delegation of contributor taper resolution to the canonical taper policy, and the merge-by-max semantics as an explicit product-policy claim. Deliberately no scientific claim: this is deterministic conflict-resolution scheduling for concurrent goals, and no sports-science literature addresses it. Stays partial at P2 because the 35-day window, the taper defaults reached through the canonical policy, and the merge semantics all still alter training and remain uncalibrated.',
     },
     {
         id: 'event.demand_presets', domain: 'event_demand', title: 'Sport/event demand profiles',
         currentRule: 'Road race, criterium, TT, gran fondo, gravel, running distances, triathlon distances and strength events are mapped to authored 0..1 aerobic/threshold/VO2/surge/sprint/fatigue-resistance/neuromuscular demand vectors.',
-        classification: 'scientific_claim', coverage: 'uncovered', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'p1',
-        codeRefs: ['engine/eventPresets.ts:EVENT_PRESETS'], knowledgeRefs: [], coverageRationale: 'These profiles encode sport-specific physiological assumptions and directly shape objectives/periodization, but currently have no evidence sources or product-policy claims.',
+        classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'low', researchPriority: 'p1',
+        codeRefs: ['engine/eventPresets.ts:EVENT_PRESETS'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.eventDurationLimiterShift, KNOWLEDGE_CLAIM_IDS.eventDemandPresetsPolicy],
+        coverageRationale: 'Evidence Pack 6 reclassifies this from scientific_claim to product_heuristic (an authored 0-1 vector table is an encoding, not a measured constant) and registers both a moderate-certainty boundary that performance limiters shift with event duration and format, and a product-policy record of the 22 preset vectors. Stays partial at P1: no cited source validates any individual axis value, and the strength_meet/general_target presets have no cited literature behind them at all.',
     },
     {
         id: 'stimulus.objective_credit_confidence', domain: 'stimulus_credit', title: 'Stimulus-evidence confidence discount',

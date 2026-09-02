@@ -33,7 +33,7 @@ Initial baseline: 47 policy families — 4 covered, 38 uncovered and 5 deliberat
 
 For each migration, define the atomic claim first and then search the best applicable evidence. Each migration should be behavior-preserving unless the evidence review explicitly justifies a separate policy change and `POLICY_VERSION` bump.
 
-**Current totals (2026-09-02, post SKR3-W0):** 54 families — 18 covered / 10 partial / 20 uncovered / 6 not applicable. P0 / P1 / P2 / P3 = 7 / 13 / 8 / 2. High-impact uncovered = 7, high-safety uncovered = 0. The "Post-pack inventory" lines below are historical snapshots as of each pack's own merge, not a running total; several later packs (the SEP subjective/injury safety pack in particular) added coverage rows without restating a new running total, so those older snapshots should not be read as current. Scoping and rationale for the remaining SKR3 work: [`2026-09-02-skr3-completion-plan.md`](./2026-09-02-skr3-completion-plan.md).
+**Current totals (2026-09-02, post SKR3-W1):** 54 families — 18 covered / 14 partial / 16 uncovered / 6 not applicable. P0 / P1 / P2 / P3 = 7 / 13 / 8 / 2. High-impact uncovered = 4, high-safety uncovered = 0. The "Post-pack inventory" lines below are historical snapshots as of each pack's own merge, not a running total; several later packs (the SEP subjective/injury safety pack in particular) added coverage rows without restating a new running total, so those older snapshots should not be read as current. Scoping and rationale for the remaining SKR3 work: [`2026-09-02-skr3-completion-plan.md`](./2026-09-02-skr3-completion-plan.md).
 
 ### Evidence Pack 1 — Load + Intensity + Recovery
 
@@ -132,9 +132,22 @@ Fueling work establishes reusable claims for carbohydrate efficacy, event-scaled
 
 No executable recommendation behavior changes are made and `POLICY_VERSION` remains unchanged.
 
+### Evidence Pack 6 — Periodization Objectives + Sport/Event Demand
+
+**Status:** Complete (2026-09-02)
+
+Analysis: [`2026-09-02-evidence-pack-periodization-event-demand.md`](../analysis/2026-09-02-evidence-pack-periodization-event-demand.md)
+
+Registers a low-certainty block/phase-progression boundary (Mølmen 2019 meta-analysis, with its own low-study-quality caveat carried into the claim; Issurin 2010 as the conceptual framework) and a moderate-certainty event-demand boundary (Joyner & Coyle 2008; Sanders & van Erp 2021 for cycling format; Sharma & Périard 2020 for triathlon distance), plus four product-policy claims recording the exact phase boundaries/scales, objective-inclusion thresholds, multi-event contribution windows and the 19 authored event-preset demand vectors.
+
+All five families land **partial**, none covered: the boundaries are real but generic, while every scalar the engine uses stays uncalibrated. `event.demand_presets` is reclassified from `scientific_claim` to `product_heuristic` — an authored 0-1 vector table is an encoding, not a measured constant.
+
+Two families in this pack (`periodization.objective_thresholds`, `periodization.multi_event_contribution`) received **product-policy claims only**: the first gates on the product's own normalized 0-1 scale, and the second is deterministic scheduling conflict-resolution. Neither has a researchable physiological question, so no scientific claim was attached rather than citing adjacent evidence by proximity.
+
+Post-pack inventory: 54 families — 18 covered / 14 partial / 16 uncovered / 6 not applicable. High-impact uncovered falls from 7 to 4; the research backlog is deliberately unchanged (P0/P1/P2/P3 = 7/13/8/2), because these families moved from "no provenance" to "provenance recorded, calibration still owed". No executable recommendation behavior changed and `POLICY_VERSION` remains unchanged.
+
 ### Later SKR3 packs
 
-- periodization objectives and sport/event demand profiles;
 - stimulus-credit and optimizer calibration;
 - workout-specific recovery metadata audit;
 - fueling/recovery policy migration when those features gain live decision authority.
