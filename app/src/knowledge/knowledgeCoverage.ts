@@ -96,7 +96,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/evergreenStrategy.ts:DEFAULT_TRAINING_INTENT_PROFILE'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.defaultWeeklyCommitmentPolicy],
-        coverageRationale: 'Registered as an explicit product-policy claim (`policy.evergreen.default_weekly_commitment_v1`) with alignment testing. Authoring 2/3/4 provides a safe starting baseline within WHO guidelines for unprofiled athletes.',
+        coverageRationale: 'Registered as an explicit product-policy claim (`policy.evergreen.default_weekly_commitment_v1`) with alignment testing. Authoring 2/3/4 provides an authored conservative starting baseline for unprofiled athletes; it is not a WHO-derived session-count recommendation.',
     },
     {
         id: 'evergreen.training_history_qualification', domain: 'evergreen_dose', title: 'Training-history qualification for performance priors',
@@ -300,7 +300,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p1',
         codeRefs: ['engine/optimizer.ts:evaluateRecoveryConstraints', 'engine/planningCandidate.ts:resolveMinimumDaysAfterHardLowerBody', 'engine/planningCandidate.ts:resolveRecoveryHoursForTemplate'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.strenuousLowerBodyResidualFatigue, KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.hardLowerBodySpacing],
-        coverageRationale: 'The scientific recovery boundary and default 0.6/two-day product fallback have explicit lineage. Audited in docs/analysis/2026-09-02-workout-catalog-recovery-metadata-audit.md and validated in validateWorkoutLibrary: all 46 workouts declare bounded recoveryHours [0, 96] and 21 declare minimumDays [1, 2]. Coverage remains partial at P1 because 10 workouts with lowerBodyCost >=0.6 declare 1-day spacing overrides that weaken the two-day fallback and require a separate behavior-calibration change.',
+        coverageRationale: 'The scientific recovery boundary and default 0.6/two-day product fallback have explicit lineage. Audited in docs/analysis/2026-09-02-workout-catalog-recovery-metadata-audit.md and validated in validateWorkoutLibrary: all 46 workouts declare finite bounded recoveryHours [0, 96] and 21 declare minimumDays [1, 2]. Coverage remains partial at P1 because 11 workouts with lowerBodyCost >=0.6 declare 1-day spacing overrides that weaken the two-day fallback and require a separate behavior-calibration change.',
     },
     {
         id: 'spacing.strength_key_cycling_adjacency', domain: 'session_spacing', title: 'Heavy lower-body strength vs key-cycling adjacency',
@@ -325,15 +325,15 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'optimizer.fatigue_cost_weights', domain: 'optimizer_scoring', title: 'Fatigue cost-penalty weights',
-        currentRule: 'Candidate cost penalty weights systemic 2.0, cardiovascular 1.5, lower-body 2.5, upper-body 1.5, impact-tissue 2.0 and neuromuscular 1.8 against dimensional fatigue.',
+        currentRule: 'Candidate cost penalty weights systemic 2.0, cardiovascular 1.5, lower-body 2.5, upper-body 1.5, impact-tissue 2.0 and neuromuscular 1.8 against dimensional fatigue; rankCandidates adds +0.3 when extra recovery margin is active and systemicCost >0.5.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
-        codeRefs: ['engine/optimizer.ts:calculateFatigueCostPenalty'],
+        codeRefs: ['engine/optimizer.ts:calculateFatigueCostPenalty', 'engine/optimizer.ts:rankCandidates'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.fatigueDecayHalfLives, KNOWLEDGE_CLAIM_IDS.fatigueCostWeightsPolicy],
         coverageRationale: 'Registered as an explicit product-policy claim (`policy.optimizer.fatigue_cost_weights_v1`) with alignment testing. Residual fatigue evidence provides biological context for dimensional separation, while the exact penalty multipliers are explicit product heuristics rather than empirical constants.',
     },
     {
         id: 'optimizer.stimulus_benefit_weights', domain: 'optimizer_scoring', title: 'Objective stimulus-benefit weights',
-        currentRule: 'Threshold/surge/VO2 matches use 1.5 multipliers, aerobic/fatigue-resistance 1.2, strength 1.6, plus category baselines around 0.1-0.5.',
+        currentRule: 'Threshold/surge/VO2 matches use 1.5 multipliers, aerobic/fatigue-resistance 1.2, strength/hypertrophy 1.6; exact non-objective baselines are Rest 0.1, Mobility/Recovery 0.2, and all other categories 0.5.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:calculateStimulusBenefit'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.stimulusBenefitWeightsPolicy],
@@ -349,7 +349,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'optimizer.recovery_streak_heuristics', domain: 'optimizer_scoring', title: 'Recovery alternation and training-streak heuristics',
-        currentRule: 'A systemicCost >=0.40 streak is scanned up to 14 days; at >=3 consecutive non-recovery days with no unresolved objectives recovery is boosted 2x and easy aerobic suppressed, with stronger suppression at >=4. Previous high-intensity also applies a 0.35 multiplier to another >=0.5 candidate.',
+        currentRule: 'A systemicCost >=0.40 streak is scanned up to 14 days; with no unresolved objectives, >=3 consecutive non-recovery days boost Rest/Mobility by 2.0x and suppress easy aerobic to 0.3x, tightening to 0.1x at streak >=4. Previous high-intensity also applies a 0.35x multiplier to another >=0.5 candidate.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:buildHistoryFeatureSummary', 'engine/optimizer.ts:rankCandidates'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.recoveryStreakHeuristicsPolicy],
