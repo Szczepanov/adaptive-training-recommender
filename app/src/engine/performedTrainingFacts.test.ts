@@ -190,6 +190,11 @@ describe('performedTrainingFacts', () => {
                 durationMin: 45,
                 startedAt: '2026-09-02T00:05:00Z',
                 endedAt: '2026-09-02T00:50:00Z',
+                trainingEffectAerobic: 1.2,
+                trainingEffectAnaerobic: 0,
+                averageHr: 118,
+                activityTrainingLoad: 18,
+                intensityTag: 'easy',
             };
 
             const { exposure } = deriveFactsFromOccurrence(occurrence, {
