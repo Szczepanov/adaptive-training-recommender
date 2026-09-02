@@ -12,11 +12,11 @@
 As part of completing the Sports Knowledge Registry migration (SKR3), Workstream W3 audited every active workout in `app/src/workouts/catalog/` for declared recovery metadata (`loadProfile.recoveryHours` and `eligibility.minimumDaysAfterHardLowerBody`).
 
 ### Key Findings
-1. **Universal Recovery Hours:** All 46 catalog workouts declare finite `recoveryHours` within the range $[0, 96]$, validated to stay within the canonical band $[0, 168]$ (7 days).
+1. **Universal Recovery Hours:** All 46 catalog workouts currently declare finite `recoveryHours` within the range $[0, 96]$; library validation rejects values outside the canonical numeric band $[0, 168]$ (7 days), while the catalog audit test separately asserts finiteness.
 2. **Spacing Overrides:** 21 of 46 workouts declare `eligibility.minimumDaysAfterHardLowerBody` (18 workouts declare 1 day; 3 workouts declare 2 days).
-3. **High Lower-Body Interaction:** 10 workouts whose associated engine template has `lowerBodyCost >= 0.6` declare `minimumDaysAfterHardLowerBody: 1`. This authored override permits back-to-back hard lower-body scheduling in `optimizer.ts:evaluateRecoveryConstraints`, diverging from the 48-hour neuromuscular recovery boundary (`strenuousLowerBodyResidualFatigue`).
-4. **Protective Mitigation:** In most practical scenarios, consecutive placement is blocked by `RECOVERY_WINDOW_UNELAPSED` because these 10 workouts declare `recoveryHours: 48` or higher (which converts to $\lceil 48 / 24 \rceil = 2$ calendar days). However, an unelapsed recovery window only blocks candidates where `isHardOrAnchorCandidate` is true (`systemicCost >= 0.5` or anchor category).
-5. **Coverage Conclusion:** `spacing.hard_lower_body_recovery` correctly remains **`partial` at P1** in `knowledgeCoverage.ts`. The scientific boundary is registered (`strenuousLowerBodyResidualFatigue`), the 2-day product fallback is registered (`hardLowerBodySpacing`), but the individual catalog overrides remain authored product heuristics that weaken the spacing rule. Resolving this behavior requires a dedicated `POLICY_VERSION` increment and simulation calibration.
+3. **High Lower-Body Interaction:** 11 workouts whose associated engine template has `lowerBodyCost >= 0.6` declare `minimumDaysAfterHardLowerBody: 1`. This authored override permits next-day hard lower-body eligibility under `optimizer.ts:evaluateRecoveryConstraints` when no other recovery constraint blocks the candidate, diverging from the 2-day product fallback and the registered residual-fatigue boundary.
+4. **Protective Mitigation:** Most of those 11 workouts also declare recovery windows that reduce practical next-day placement risk, but the mechanisms are not equivalent: `RECOVERY_WINDOW_UNELAPSED` only blocks hard/anchor candidates and the exact declared `recoveryHours` vary by workout. The 1-day spacing override therefore remains behaviorally material and must not be described as universally neutralized by recovery-hours metadata.
+5. **Coverage Conclusion:** `spacing.hard_lower_body_recovery` correctly remains **`partial` at P1** in `knowledgeCoverage.ts`. The scientific recovery boundary is registered (`strenuousLowerBodyResidualFatigue`) and the 2-day product fallback is registered (`hardLowerBodySpacing`), but the individual catalog overrides remain authored product heuristics that weaken the fallback. Resolving this behavior requires dedicated policy calibration, simulation/outcome review, and a `POLICY_VERSION` increment if decision behavior changes.
 
 ---
 
@@ -97,13 +97,12 @@ When a workout declares `minimumDaysAfterHardLowerBody: 1`:
 - `minGapDays` evaluates to `1`.
 - If yesterday (`diff === 1`) had `lowerBodyCost >= 0.6`, `diff < minGapDays` evaluates to `1 < 1 === false`.
 - Consequently, `HARD_LOWER_BODY_SPACING_VIOLATION` **does not fire**.
-- For non-anchor workouts where `systemicCost < 0.5` (or when the preceding session had `recoveryHours < 48`), the candidate can be scheduled on consecutive calendar days.
+- A different recovery-window or eligibility constraint may still block the candidate, but the hard-lower-body spacing rule itself permits next-day placement.
 
-### 3.3 Coaching & Physiology Rationale for the Overrides
-Reviewing the authored workouts reveals why these overrides were introduced:
-- **Cycling Quality (`cycling_controlled_threshold_4x8_01`, `cycling_vo2_6x3_01`):** Non-impact, concentric pedal mechanics produce far lower delayed-onset muscle soreness and mechanical damage than running or heavy squats. Coaches often allow threshold cycling the day after moderate lower-body work if systemic freshness permits.
-- **Running Easy Continuous / Walk-Run:** Lower impact endurance runs were given `minimumDaysAfterHardLowerBody: 1` to prevent complete scheduling lockout in high-frequency training blocks.
-- **Full Body Strength:** Lower-body strength was authored with 1-day spacing in early iterations before the 2-day default was standardized across the engine.
+### 3.3 Interpretation of the Overrides
+The repository data show that 1-day overrides were authored across several modalities and workout roles, but the catalog metadata do not by themselves establish the physiological reason or safety of each override. Therefore this audit treats modality-specific explanations as hypotheses for future calibration rather than retrospective evidence.
+
+Relevant external evidence can justify broad boundaries (for example, recovery is highly dependent on exercise mode, eccentric loading, intensity, training status, and the outcome measured), but it does not validate the catalog's exact 1-day values workout by workout. That distinction is why the family remains `partial` rather than being promoted to `covered`.
 
 ---
 
@@ -111,13 +110,17 @@ Reviewing the authored workouts reveals why these overrides were introduced:
 
 To prevent unvalidated drift in recovery metadata:
 1. **Schema Validation (`validateWorkoutLibrary` in `app/src/workouts/validation.ts`):**
-   - Enforces $0 \le \text{recoveryHours} \le 168$ (finite number).
+   - Rejects `recoveryHours < 0` and `recoveryHours > 168`.
    - Enforces $1 \le \text{minimumDaysAfterHardLowerBody} \le 7$ (integer).
 2. **Automated Test Suite (`workoutRecoveryMetadata.test.ts`):**
-   - Verifies the bounds for all 46 active workouts.
+   - Verifies that current catalog `recoveryHours` values are finite and remain within $[0, 168]$.
    - Audits modality distribution.
-   - Asserts reject behavior on invalid values.
-3. **Execution Script:** `npm run validate:workouts` executes this check during CI and pre-flight dev server start.
+   - Asserts reject behavior for out-of-range recovery hours and invalid minimum-day values.
+3. **Execution Script:** `npm run validate:workouts` executes library validation during CI and pre-flight dev server start.
+
+### Validation gap retained as follow-up
+
+`validateWorkoutLibrary` currently checks the numeric bounds but does not explicitly reject `NaN`; JavaScript comparisons with `NaN` are false. The catalog test proves current authored values are finite, so this is not an active catalog defect, but validator-level finiteness should be added in a follow-up (with a `NaN` mutation test) rather than claiming the validator already enforces it.
 
 ---
 
