@@ -10,7 +10,11 @@ export function structuredExecutionSourceKey(executionId: string): string {
 }
 
 export function providerActivitySourceKey(provider: string, activityId: string): string {
-    return `provider_activity:${provider}:${activityId}`;
+    // Provider labels are identifiers, not display text. Normalizing case/outer
+    // whitespace prevents `Garmin:123` and `garmin:123` from claiming two different
+    // canonical source-link documents for the same physical provider record.
+    const normalizedProvider = provider.trim().toLowerCase();
+    return `provider_activity:${normalizedProvider}:${activityId}`;
 }
 
 export function sourceKeyForRef(sourceRef: PerformedOccurrenceSourceRef): string {
