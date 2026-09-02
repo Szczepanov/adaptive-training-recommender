@@ -41,6 +41,26 @@ export type PerformedOccurrenceSourceRef =
 
 export type PerformedOccurrenceSourceKind = PerformedOccurrenceSourceRef['kind'];
 
+export type StructuredExecutionSourceRef = Extract<PerformedOccurrenceSourceRef, { kind: 'structured_execution' }>;
+export type ProviderActivitySourceRef = Extract<PerformedOccurrenceSourceRef, { kind: 'provider_activity' }>;
+
+/**
+ * Explicit type predicates for narrowing `PerformedOccurrenceSourceRef` -- deliberately
+ * not left as inline `ref.kind === 'x'` checks inside `.find`/`.filter` callbacks.
+ * `Array.prototype.find`/`filter` only narrow their result when the predicate itself is
+ * an explicit type guard (`(x): x is Y => ...`); an inline discriminant comparison
+ * type-checks under some TypeScript engines' "inferred type predicate" support and not
+ * others (this repo hit exactly that divergence between a local toolchain and CI's).
+ * Using these named guards everywhere makes the narrowing portable across TS versions.
+ */
+export function isStructuredExecutionRef(ref: PerformedOccurrenceSourceRef): ref is StructuredExecutionSourceRef {
+    return ref.kind === 'structured_execution';
+}
+
+export function isProviderActivityRef(ref: PerformedOccurrenceSourceRef): ref is ProviderActivitySourceRef {
+    return ref.kind === 'provider_activity';
+}
+
 export type PerformedOccurrenceStatus = 'active' | 'merged';
 
 /** Mirrors ADR-0034's reconciliation evidence contract: `single_source` (only one kind of

@@ -14,7 +14,7 @@ import { getPreviousLocalDateString } from '../utils/localDate';
 import type { NormalizedGarminActivity } from '../engine/models';
 import type { CompletedWorkoutView } from './completedWorkoutView';
 import { sourceBadgeFor } from './completedWorkoutView';
-import type { PerformedTrainingOccurrence } from './models';
+import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence } from './models';
 import { performedTrainingOccurrenceRepository as repository } from './repository';
 
 async function resolveStructuredDetail(
@@ -40,13 +40,16 @@ async function hydrateOccurrence(
     occurrence: PerformedTrainingOccurrence,
     activitiesById: Map<string, NormalizedGarminActivity>,
 ): Promise<CompletedWorkoutView> {
-    const structuredRef = occurrence.sourceRefs.find(ref => ref.kind === 'structured_execution');
+    const structuredRef = occurrence.sourceRefs.find(isStructuredExecutionRef);
     // The domain is provider-neutral and may contain multiple provider sources, but the
     // v1 DTO has a specifically-Garmin telemetry slot. Never treat the first arbitrary
     // provider source as Garmin merely because it happens to precede a Garmin ref.
-    const garminRef = occurrence.sourceRefs.find(
-        ref => ref.kind === 'provider_activity' && ref.provider.toLowerCase() === 'garmin',
-    );
+    // isProviderActivityRef is an explicit type predicate (see models.ts) rather than an
+    // inline `ref.kind === '...'` check, so the narrowing survives `.find`/`.filter`
+    // across TypeScript toolchains that don't infer it from an arrow-function body.
+    const garminRef = occurrence.sourceRefs
+        .filter(isProviderActivityRef)
+        .find(ref => ref.provider.toLowerCase() === 'garmin');
 
     const structured = structuredRef ? await resolveStructuredDetail(userId, structuredRef.executionId) : undefined;
     const garmin = garminRef?.kind === 'provider_activity' ? activitiesById.get(garminRef.activityId) : undefined;

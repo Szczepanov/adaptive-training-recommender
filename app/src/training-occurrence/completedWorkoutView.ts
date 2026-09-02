@@ -13,7 +13,7 @@
  */
 import type { NormalizedGarminActivity } from '../engine/models';
 import type { PerformedSessionComparison } from '../sessions/performedComparison';
-import type { PerformedTrainingOccurrence, ReconciliationProvenance } from './models';
+import { isProviderActivityRef, isStructuredExecutionRef, type PerformedTrainingOccurrence, type ReconciliationProvenance } from './models';
 
 export interface CompletedWorkoutSourceBadge {
     hasStructured: boolean;
@@ -47,9 +47,9 @@ export interface CompletedWorkoutView {
 }
 
 export function sourceBadgeFor(occurrence: Pick<PerformedTrainingOccurrence, 'sourceRefs'>): CompletedWorkoutSourceBadge {
-    const providerRefs = occurrence.sourceRefs.filter(ref => ref.kind === 'provider_activity');
+    const providerRefs = occurrence.sourceRefs.filter(isProviderActivityRef);
     return {
-        hasStructured: occurrence.sourceRefs.some(ref => ref.kind === 'structured_execution'),
+        hasStructured: occurrence.sourceRefs.some(isStructuredExecutionRef),
         hasProvider: providerRefs.length > 0,
         providers: [...new Set(providerRefs.map(ref => ref.provider))],
     };
