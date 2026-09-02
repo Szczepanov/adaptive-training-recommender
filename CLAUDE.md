@@ -56,6 +56,9 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 - `src/garmin_sync/`: Core Python Garmin ingestion package.
 - `scripts/bootstrap_garmin_tokens.py`: Garmin OAuth token bootstrap utility.
 - `app/src/engine/`: Core adaptive engine modules (`rules.ts`, `schedule.ts`, `periodization.ts`, `microcycle.ts`, `fatigue.ts`, `optimizer.ts`).
+- `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/`: Source-neutral session authoring/execution, session-linked response evidence, metric testing, and outcome/goal-progress reporting (ADR-0023). See `AGENTS.md`'s package map for the full file-by-file breakdown — it has grown far beyond what fits here.
+- `app/src/training-occurrence/`: Canonical performed-training-occurrence reconciliation (ADR-0034) — shadow-mode only, not wired into recommendations yet (as of PR #324, open).
 - `app/src/utils/localDate.ts`: Frontend Warsaw date utility.
 - `app/src/services/recoverySnapshotService.ts`: User-scoped Firestore recovery reader.
 - `app/firestore.rules`: Security rules for user-owned paths.
+- `docs/plans/README.md`: Authoritative status board for every in-flight plan/capability — check here before assuming something is done or pending.

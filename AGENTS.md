@@ -42,10 +42,21 @@ This document outlines repository rules, code conventions, testing instructions,
 * `uv run ruff check .` — Run ruff linter & import sorter
 * `uv run ruff format --check .` — Check ruff code formatting (`uv run ruff format .` to format)
 * `uv run mypy src/garmin_sync` — Run static type checking on backend source
-* `uv run python -m garmin_sync sync` — Run daily ingestion
+* `uv run python -m garmin_sync sync` — Run daily ingestion for `APP_USER_ID`
+* `uv run python -m garmin_sync sync-all` — Run daily ingestion for every active Garmin link
 * `uv run python -m garmin_sync backfill --days 56` — Run historical backfill
+* `uv run python -m garmin_sync backfill-health --days 56` — Historical backfill for Google Health (Eight Sleep & Garmin)
+* `uv run python -m garmin_sync backfill-eight-sleep-direct --days 56` — Historical backfill for the direct Eight Sleep connector (ES8/ES9)
 * `uv run python -m garmin_sync audit --days 90` — Report sync/archive completeness
+* `uv run python -m garmin_sync audit-multisource --days 60` — Multisource shadow audit, Garmin Direct vs Eight Sleep (MS14)
 * `uv run python -m garmin_sync rebuild --start-date X --end-date Y` — Offline snapshot rebuild
+* `uv run python -m garmin_sync probe-health` — Google Health source-provenance probe (MS0)
+* `uv run python -m garmin_sync compare-transports --days 60` — Garmin direct vs Google Health transport equivalence (MS10)
+* `uv run python -m garmin_sync compare-eight-sleep-transports --days 60` — Eight Sleep direct vs Google Health transport equivalence (ES9)
+* `uv run python -m garmin_sync export-identity-replay --days 60` — Export real Garmin+Eight Sleep data as `identityReplay.ts`'s input shape (PI8)
+* `uv run python -m garmin_sync export-activities --days 7` — Export recent activity telemetry to JSON for AI agent planning
+* `uv run python -m garmin_sync push-workout` / `push-pending-workouts[-all]` — Push queued/pending structured workouts to Garmin
+* `uv run python -m garmin_sync poll-manual-sync[-all]` — Poll manual sync status for one or every active Garmin link
 
 ### Frontend App
 * `cd app && npm ci` — Install node dependencies
@@ -147,6 +158,43 @@ app/src/engine/
   subjectiveBaseline.ts # Phase 9.1: pure recent-vs-long subjective baseline
   subjectiveDriftAudit.ts # Phase 9.7: compact SubjectiveDriftAudit shape + replay validation
   decisionEvidence.ts  # Pure evidence ranking, DoD deltas, boundary classification, confidence tiers
+  adapters.ts           # mapSnapshotToEngineInput and the other read-model -> engine input mappers
+  validationCore.ts     # Validates untyped external input (raw Firestore docs/client payloads)
+  dataConfidence.ts     # Read-confidence classification shared across context/composer
+  eventPresets.ts       # Preset user-event -> demand-profile mapping (goalToUserEvent)
+  checkinCompletion.ts  # isCompletedSubjectiveCheckin / hasCompletedSubjectiveCheckinForDecision
+  fixedActivityIdentity.ts # Resolves a FixedActivity's catalog identity & occurrence key
+  firestoreTrainingHistory.ts # Firestore-backed TrainingHistoryProvider implementation
+  microcycleHistory.ts  # @deprecated -- import the TrainingHistoryProvider boundary from trainingHistory.ts instead
+  sessionChoiceEligibility.ts # Gates select_alternative choice options against resolved injury restrictions (D-MCHOICE)
+  contextBriefActivityTelemetry.ts # Renders/injects per-activity telemetry into the context brief
+  contextBriefPlanningHandoff.ts # Upcoming external-plan/recovery-timeline context for planning handoff
+  trainingSettingsSchema.ts # Persisted TrainingSettings schema version gate (current v3, supports v2)
+  strengthSessionLifecycle.ts # Strength session state machine (new/in_progress/... transitions)
+  strengthSessionValidation.ts # Shared persisted/UI bounds for ADR-0021 strength-session data
+  knowledgeLineage.ts   # Sports-knowledge-registry provenance lineage (ADR-0033)
+  healthContextDefaults.ts # Canonical defaults for a newly reported health-context block
+  healthContextValidation.ts # Health-context/symptom check-in raw-input validator
+  healthAnomalyModels.ts # HA domain models: anomaly features, thresholds, rationale, respiration elevation
+  respirationElevation.ts # Respiration-elevation status/evidence evaluator feeding healthAnomalyModels
+  garminTelemetryEvidence.ts # Power-zone feature extraction & direct-share stimulus candidate (measured, off by default)
+  garminTelemetryComparison.ts # compareGarminZoneCredit -- TE-derived vs power-zone credit comparison report
+  crossSourceTelemetry.ts # Cross-source sensor agreement/data-quality telemetry (MS13, ADR-0027)
+  multisourceBaselines.ts # Source-specific robust 7d/28d median+MAD baseline calculator (MS12, ADR-0024/0027)
+  multisourceFusion.ts  # Multi-source recovery evidence fusion evaluator (MS15, ADR-0027)
+  coPresenceValidator.ts # @deprecated secondary-source identity/session concordance validator; superseded by PI
+  identityFeatures.ts   # Cross-source night/session pairing & physiological relation features (PI2, ADR-0028)
+  identityLineage.ts    # Provenance-lineage independence evaluation feeding identity attribution (PI2)
+  identityAttribution.ts # Shadow-only ternary physiological-identity evaluator with abstention (PI4)
+  identityEligibility.ts # Pre-baseline effective-identity eligibility boundary (PI5, D-PID-PREBASE)
+  identityPassport.ts   # Versioned Physiological Identity Passport model + historical bootstrap (PI3)
+  identityProvenance.ts # Replay-oriented identity provenance for ADR-0010 recommendation audits (PI6)
+  identityReplay.ts     # Historical out-of-sample shadow replay of the PI2/PI3 pipeline (PI8)
+  identityReviewUi.ts   # Pure selection/copy/mapping logic for the suspicious-night review UI (PI7)
+  activityHrFidelity.ts # getHrUseAuthority -- per-use-case HR authority status (ALLOWED/BOUNDED/OBSERVATIONAL/BLOCKED) (HRF5)
+  activityHrFidelityAdapters.ts # HR-dependent field/training-load/effect authority adapters over activityHrFidelity
+  activityHrFidelityReplay.ts # Deterministic shadow-only HR-fidelity replay/report over real activity history (HRF7)
+  sleepRecoveryEvidence.ts # Sleep-decision-authority evidence evaluator (2026-08-29 sleep-decision-authority plan)
   simulation/          # Scenario harness: runAllScenarios, decision-quality metrics, drift comparisons
   testing/             # Adversarial PRNG generators & property testing runner
   tests/safety/        # Adversarial domain scenarios, safety invariants, wellness language audit
@@ -156,18 +204,51 @@ app/src/sessions/
   validation.ts        # Canonical schema validators for definitions, prescriptions, occurrences, entries
   sessionDefinitionResolver.ts # Pinned revision / occurrence resolution and hash verification
   sessionDefinitionHash.ts # Canonical SHA-256 content hashing for definition and prescription
+  sessionDefinitionDiff.ts # M3.7: fine-grained content diff between two definition revisions
   inputProfiles.ts     # Input card profiles (repetition, duration, distance, check-offs, gauges)
   performedComparison.ts # Planned vs completed steps, volume, omissions, hold duration
   legacyStrengthAdapter.ts # Two-way bridge between legacy strength_sessions and session_executions
   catalogSessionAdapter.ts # Adapts catalog templates to source-neutral SessionDefinition
+  canonicalWorkoutAdapter.ts # Adapts canonical (Garmin/import) workouts to SessionDefinition
+  externalPlanV2.ts    # M3.6: external-plan@2 imported-plan envelope
+  externalSessionAdapter.ts # Imported external session -> SessionDefinition shim
+  choiceResolution.ts  # Athlete-facing effective view from recorded branch-point choices (D-MCHOICE)
+  groupProgression.ts  # Repeating-rotation execution-mode step sequencing
+  occurrenceReconciliation.ts # M4.3: companion occurrence identity & duplicate reconciliation
+  sessionDraft.ts       # In-progress authored-definition draft field mutations
+  sessionLaunch.ts       # Persisted definition + immutable execution snapshot pairing to run it
+  restTiming.ts          # Advisory rest countdown resolution after a logged entry
+  loadDisplay.ts         # Human-readable, source-neutral load copy (never resolves to kg)
+  stepDisplay.ts         # Athlete-facing step label fallback order (title -> exercise name -> id)
+
+app/src/responses/
+  models.ts             # M5.1: SessionResponse linkage & non-tissue session facts (ADR-0023 D-MRESP)
+  validation.ts         # Pure SessionResponse validator; self-contained, distinct lifecycle from sessions/
+  followupSchedule.ts   # M5.2: which body regions a completed session's movements make worth follow-up
+  outcome.ts             # M5.3: deriveSessionOutcome -- passed/caution/reactive/unknown evidence summary
+  outcomeReport.ts       # M5.3: deterministic report/export over SessionOutcome[]
 
 app/src/observations/
-  models.ts            # Canonical metric observation definitions, series, and attempts
-  validation.ts        # Strict observation schema validators and comparability gates
+  models.ts             # Canonical metric observation definitions, series, and attempts
+  validation.ts         # Strict observation schema validators and comparability gates
+  identityModels.ts     # Physiological Identity Passport & measurement-trust contracts (PI1, ADR-0028)
+  protocols.ts           # Testing-protocol definitions consumed by the observation registry
+  registry.ts             # Observation/protocol lookup and registration
+  observationCanonical.ts # Canonicalization of raw observation input into the shared model
+  manualAdapter.ts        # Manually-entered observation -> canonical model adapter
+  reliability.ts          # Evidence-provenance reliability metadata (source + statistic, not a probability model)
+  performanceTestingCatalog.ts # Catalog of structured performance-testing protocols
+  progress.ts             # Series comparison and true-change interpretation against noise thresholds
+  testingWorkflow.ts      # Testing-session workflow state machine
 
 app/src/outcomes/
-  models.ts            # Progress interpretation, goal targets, block outcome reports
-  assessmentSeriesService.ts # Series comparison and true-change interpretation against noise thresholds
+  evaluationSpec.ts       # OV: OutcomeEvaluationSpec/metric-binding contracts & validators
+  evaluationHash.ts       # OV: canonical content hash of an outcome evaluation snapshot
+  blockOutcome.ts         # OV: deriveBlockOutcome -- on_track/mixed/off_track/insufficient_evidence verdict
+  blockOutcomeReport.ts   # OV: block outcome -> CSV/JSON export + metric progress rows
+  blockProcessEvidence.ts # OV: deriveBlockProcessEvidence -- key-role/completed-session process evidence
+  feedbackLoopEvidence.ts # OV: deriveFeedbackLoopEvidence -- decision-action & counterfactual-regret counts
+  policySegments.ts       # OV: policy-version/planning-mode segment bookkeeping for evaluation windows
 ```
 
 This map is a routing aid, not a complete file listing. Where it disagrees with the
