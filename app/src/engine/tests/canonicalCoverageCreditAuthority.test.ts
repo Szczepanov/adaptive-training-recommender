@@ -226,7 +226,7 @@ describe('canonical coverage semantic authority', () => {
     it('records hypothetical planner entries as projected rather than completed coverage', () => {
         const projectedHistory = resolveCoverageHistory(undefined, [{
             date: '2026-09-02',
-            templateId: 'full_body_strength_01',
+            templateId: 'str_full_01',
             modality: 'Strength',
             category: 'Full-body Strength',
             source: 'projected',

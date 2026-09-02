@@ -25,6 +25,15 @@ const EMPTY_HISTORY: TrainingHistorySnapshot = {
     },
     generatedAt: '2026-08-18T05:00:00.000Z',
     revision: 'history-fixture-empty',
+    // Self-contained deterministic fixture: supplying the canonical fact ledger keeps
+    // resolveTrainingIntent from falling through to the Firestore occurrence read.
+    performedTrainingFacts: {
+        asOfDate: DATE,
+        windowDays: 7,
+        revision: 'performed-facts-fixture-empty',
+        exposures: [],
+        coverageCredits: [],
+    },
 };
 
 function readiness(s: Partial<SubjectiveInput> = {}, o: Partial<EngineObjectiveInput> = {}): DailyReadiness {
