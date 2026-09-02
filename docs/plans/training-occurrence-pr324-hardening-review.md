@@ -1,6 +1,6 @@
 # PR #324 hardening review — ADR-0034 performed-training occurrence
 
-**Reviewed:** 2 September 2026  
+**Reviewed:** 2 September 2026
 **Scope:** PR1–PR5 implementation in PR #324, with emphasis on identity safety, manual reconciliation durability, deterministic merge authority, rebuild behavior, multi-provider behavior, and FIT structured-workout evidence.
 
 This note records the post-implementation review so later rollout work can distinguish **fixed correctness defects** from **deliberate rollout gates / remaining scope**. It supplements ADR-0034 and the implementation checklist; it does not replace either document.
