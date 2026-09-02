@@ -175,7 +175,9 @@ export function adjudicateExternalSession(
         return {
             decision: 'skip',
             gateFailures,
-            ...(session.scaling?.fallback ? { fallbackSuggestion: session.scaling.fallback } : {}),
+            // Do not echo the author's fallback here. Under escalation even a context-only
+            // fallback can look like an executable alternative, while SEP-C4 requires the
+            // training prescription surface to go fully quiet until evaluation.
             rationale: `${reason} Automated training prescriptions are paused until appropriate medical evaluation.`,
         };
     }
