@@ -82,6 +82,27 @@ class FitWorkoutStepEvidence:
     equipment: str | int | None
 
 
+class FitWorkoutStepIndices(tuple):
+    """Tuple-compatible observed step indexes with optional semantic definition metadata.
+
+    The existing sync boundary already passes `workout_step_indices` into the fingerprint
+    function. Keeping this value tuple-compatible avoids widening that service API while
+    allowing the decoder to attach the stronger Workout Step definition for consumers that
+    understand it. Normal tuple behavior/equality is unchanged for existing callers.
+    """
+
+    workout_steps: tuple[FitWorkoutStepEvidence, ...]
+
+    def __new__(
+        cls,
+        values: list[int] | tuple[int, ...],
+        workout_steps: tuple[FitWorkoutStepEvidence, ...] = (),
+    ) -> "FitWorkoutStepIndices":
+        instance = super().__new__(cls, values)
+        instance.workout_steps = workout_steps
+        return instance
+
+
 @dataclass(frozen=True)
 class FitActivityEvidence:
     """Compact decoded evidence; callers must not persist ``records`` verbatim."""
@@ -258,6 +279,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
     # step list ambiguous, so expose no semantic definition rather than hashing a blend.
     semantic_workout_steps = tuple(workout_steps) if workout_definition_count <= 1 else ()
     workout_name = workout_name_from_definition or workout_name_from_session
+    observed_step_indices = FitWorkoutStepIndices(workout_step_indices, semantic_workout_steps)
 
     return FitActivityEvidence(
         devices=tuple(devices),
@@ -266,7 +288,7 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
         lap_average_heart_rate_bpm=tuple(lap_average_heart_rate_bpm),
         time_in_hr_zone_seconds=tuple(time_in_hr_zone_seconds),
         timer_events=tuple(timer_events),
-        workout_step_indices=tuple(workout_step_indices),
+        workout_step_indices=observed_step_indices,
         workout_name=workout_name,
         workout_steps=semantic_workout_steps,
     )
