@@ -74,7 +74,17 @@ def compute_fit_workout_fingerprint(
     present, steps are normalized into canonical message-index order so equivalent files
     with harmless message-order differences converge. Without definitions, distinct
     observed indexes retain first-seen order as weaker execution-linkage evidence.
+
+    `FitActivityEvidence.workout_step_indices` is a tuple-compatible value that can carry
+    its decoded Workout Step definitions as metadata. Reading that metadata here keeps the
+    existing service call shape backward compatible while upgrading its evidence quality;
+    explicit `workout_steps` still wins for direct callers/tests.
     """
+    if not workout_steps:
+        attached_steps = getattr(workout_step_indices, "workout_steps", ())
+        if isinstance(attached_steps, tuple):
+            workout_steps = attached_steps
+
     normalized_name = _normalize_text(workout_name)
 
     if workout_steps:
