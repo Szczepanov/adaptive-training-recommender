@@ -69,12 +69,15 @@ describe('taper and fueling evidence pack', () => {
         expect(dose.limitations.join(' ')).toContain('not sufficiently substantiated');
         expect(dose.limitations.join(' ')).toContain('amateur/recreational');
 
+        const establishedReview = getKnowledgeSource('BURKE-2011-CARBOHYDRATE-PRACTICE');
+        expect(establishedReview.sourceType).toBe('narrative_review');
+
         const meta = getKnowledgeSource('RAMOS-CAMPO-2024-CARBOHYDRATE-META');
         expect(meta.publishedOn).toBe('2023-07-14');
         expect(meta.notes).toContain('136 studies');
 
         const contemporary = getKnowledgeSource('MORTON-2026-ENDURANCE-CARBOHYDRATE-REVIEW');
-        expect(contemporary.sourceType).toBe('expert_practice');
+        expect(contemporary.sourceType).toBe('narrative_review');
         expect(contemporary.externalIds).toEqual(expect.arrayContaining([
             { type: 'pmid', value: '41759826' },
             { type: 'pmcid', value: 'PMC13197957' },
@@ -83,7 +86,7 @@ describe('taper and fueling evidence pack', () => {
         expect(contemporary.notes).toContain('not yet substantiated');
 
         const ultraHigh = getKnowledgeSource('PLEWS-2026-ULTRA-HIGH-CARBOHYDRATE-OPINION');
-        expect(ultraHigh.sourceType).toBe('expert_practice');
+        expect(ultraHigh.sourceType).toBe('narrative_review');
         expect(ultraHigh.externalIds).toEqual(expect.arrayContaining([
             { type: 'pmid', value: '42258036' },
             { type: 'doi', value: '10.1007/s40279-026-02462-z' },
