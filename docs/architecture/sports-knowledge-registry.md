@@ -269,15 +269,23 @@ Runtime policy carries stable IDs while evaluating a decision. `buildRecommendat
 ## Athlete-Specific Evidence Boundary (SKR4)
 
 Per ADR-0033 (§D-SKR-BOUNDARIES), sports knowledge, acute decision evidence, and athlete-specific learned evidence are kept strictly distinct:
+
 1. **Sports Knowledge** (`KnowledgeClaim` in `app/src/knowledge/`): Universal, Git-backed priors and boundaries.
 2. **Acute Decision Evidence** (`DecisionEvidence`, `DailyReadiness` in `app/src/engine/`): Today's acute observations and safety checks.
 3. **Athlete-Specific Evidence** (`AthleteEvidenceRecord` in `app/src/knowledge/athleteEvidence.ts`): Longitudinal personal response patterns bound to a `userId`.
 
-### Core Guarantees & Monotonicity (`D-ATHLETE-SAFETY-PRESERVE`)
-- **Isolation:** Personal measurements and learned athlete patterns are stored under `users/{userId}/athlete_evidence/{patternId}` and are strictly prohibited from being committed to the global Git registry.
-- **Priors vs Refinements:** General sports knowledge claims act as priors. Athlete-specific evidence asserts typed refinements over a specific `baseKnowledgeClaimId`.
-- **Safety Monotonicity:** Athlete evidence can tighten restrictions, personalize recovery durations, or calibrate scalars within bounded physiological intervals, but cannot weaken clinical escalations, red flag findings, or mandatory medical clearance.
-- **Audit Lineage:** Materially applied athlete evidence refinements are recorded in `RecommendationAudit.athleteEvidenceLineage` for bit-for-bit replay auditability.
+### Current SKR4 foundation
+
+- **Isolation:** Personal measurements and athlete-response patterns never enter the global Git registry. The domain model is identity-scoped, and both validation and pure policy resolution fail closed on cross-user records.
+- **Priors vs refinements:** General Sports Knowledge claims act as priors. Athlete-specific records reference a specific `baseKnowledgeClaimId` and express a bounded refinement over that prior.
+- **Safety monotonicity:** v1 deciding-path refinements are tighten-only for safety-sensitive rules. They may add restrictions, lengthen recovery, or conservatively increase subjective soreness/fatigue; they may not lower ADR-0020 subjective hard floors, shorten safety-linked recovery priors, or remove clinical/red-flag authority.
+- **Audit capability:** `buildRecommendationAudit()` can snapshot compact materially applied athlete-evidence lineage and the associated base Sports Knowledge claim versions without persisting `userId`, rationale, notes, or raw observations.
+
+### Not yet activated
+
+SKR4 does **not** currently persist `AthleteEvidenceProfile` in Firestore, infer personal patterns automatically, or wire athlete evidence into the production recommendation composition path. A user-scoped path such as `users/{userId}/athlete_evidence/{recordId}` is a proposed persistence shape, not a current implementation. The seven high-safety SEP calibration families remain partial/P0 until prospective calibration and activation work is completed.
+
+Because no production recommendation path currently supplies athlete-evidence records to the audit/composition layer, this foundation does not itself create a new live deciding signal. Production activation requires persistence/authorization review, identity-gated observation provenance, shadow/simulation evaluation, and a fresh ADR-0010 policy-version decision.
 
 ## Current limitations
 
