@@ -66,8 +66,8 @@ function preparedHistory(): TrainingHistorySnapshot {
         completedEvents: [],
         exposures: [],
         sourceStates: {
-            activities: { status: 'AVAILABLE' },
-            recommendations: { status: 'AVAILABLE' },
+            activities: { status: 'AVAILABLE', revision: 'activities-rev' },
+            recommendations: { status: 'AVAILABLE', revision: 'recommendations-rev' },
             manualTraining: { status: 'MISSING' },
         },
         generatedAt: '2026-09-02T05:00:00Z',
