@@ -87,6 +87,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 
 * [**ADR-0032: Cause-Aware Subjective Symptom Gating**](./adr/0032-cause-aware-subjective-symptom-gating.md) — *Accepted.* Connects subjective symptom check-ins to engine-aware cause categories to safely differentiate ambient fatigue from illness risk.
 * [**ADR-0033: Versioned Sports Knowledge Registry and Claim-Level Evidence Lineage**](./adr/0033-sports-knowledge-registry.md) — *Accepted.* Claim-level evidence lineage, separating sports knowledge from athlete observations.
+* [**ADR-0034: Canonical Performed Training Occurrence and Multisource Reconciliation**](./adr/0034-canonical-performed-training-occurrence-and-multisource-reconciliation.md) — *Proposed.* Introduces `PerformedTrainingOccurrence` as the single canonical performed-workout record reconciling `SessionExecution` and provider (Garmin) evidence, distinct from `SessionOccurrence`'s planning authority; implemented behind shadow mode in [PR #324](https://github.com/Szczepanov/adaptive-training-recommender/pull/324), not yet merged.
 ---
 
 ### 🔍 Reviews & Analysis
@@ -199,6 +200,8 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Multisource Health & Recovery Ingestion**](./plans/multisource-health-and-recovery-ingestion.md) — *Approved (MS0 ready).* Source-aware observation contract, Google Health raw ingestion, Eight Sleep export probing, transport-equivalence testing, and evidence-gated recovery fusion (ADR-0027).
 * [**Physiological Identity Passport & Measurement Trust**](./plans/physiological-identity-passport-and-measurement-trust.md) — *Approved, in progress (PI0–PI7 done, PI8/PI9/PI10 partial).* Provider-neutral identity-attribution/measurement-trust layer (ADR-0028) between shared-source observations and baseline/fusion logic; a production activation decision remains explicitly open pending real historical/prospective evidence.
 * [**Sports Knowledge Registry Follow-up**](./plans/sports-knowledge-registry-follow-up.md) — *In progress.* Follow-up to ADR-0033.
+* [**Training occurrence reconciliation & structured strength unification**](./plans/training-occurrence-reconciliation-and-strength-session-unification.md) — *In progress (implemented, shadow-only).* ADR-0034: canonical `PerformedTrainingOccurrence` reconciling structured execution and Garmin evidence, a gated Activities read model, durable performed-rest timing, a history shadow diff, and FIT workout-identity decoding — all five PRs implemented in [PR #324](https://github.com/Szczepanov/adaptive-training-recommender/pull/324) (not yet merged); see the [implementation checklist](./plans/training-occurrence-implementation-checklist.md) and [architecture summary](./plans/training-occurrence-summary.md) for the companion docs.
+* [**Safety evidence pack — subjective readiness, injury/pain**](./plans/2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md) — *Implemented.* P0 evidence/policy migration for the four previously-unresolved high-safety Sports Knowledge Registry families; SEP-A, SEP-B, and SEP-C1–C4 (clinical envelope decoupling, running-restriction contextualization, tissue-response latency, fail-closed clinical escalation) are all merged to `main` via PRs #317–#320.
 
 ---
 
