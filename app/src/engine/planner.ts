@@ -65,7 +65,7 @@ import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate }
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
-import { buildCoverageState, coverageNeedTierForTemplate, workoutIdForTemplateId } from './coverage';
+import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { applyPlanningOverlays } from './planningOverlays';
 import {
@@ -536,7 +536,13 @@ export function evaluateProjectedDate(
         {
             anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier,
             authoredPlanBlocks: shared.authoredPlanBlocks,
-            ...(shared.planDefinition ? { coverageState: buildCoverageState(planDefinition, date) } : {}),
+            ...(shared.planDefinition ? {
+                coverageState: buildCoverageState(
+                    planDefinition,
+                    date,
+                    resolveCoverageHistory(undefined, state.projectedHistory),
+                ),
+            } : {}),
         },
         shared.fixedActivities,
     );

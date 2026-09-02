@@ -1,11 +1,12 @@
 /** Increment whenever a change can alter a persisted recommendation decision. (Refactoring does not require a bump) */
 
-export const POLICY_VERSION = '2026-09-canonical-strength-spacing-v1';
+export const POLICY_VERSION = '2026-09-canonical-coverage-credit-v1';
 
 /** Historical versions are intentionally not re-executed by this build. Their compact
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-09-canonical-strength-spacing-v1',
     '2026-09-skr3-taper-resolution-v1',
     '2026-09-safety-policy-remediation-sep-c4',
     '2026-09-structured-strength-warmups-v1',

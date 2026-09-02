@@ -5,6 +5,8 @@ import { workoutForTemplate } from '../workouts/prescription';
 import type { ObjectivePriority, SessionTemplate } from './models';
 import type { PlanDefinition } from './planSchedule';
 import { addDaysToLocalDateString } from '../utils/localDate';
+import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
+import type { CompletedExposure } from './trainingHistory';
 
 /**
  * Phase 6.2c / ADR-0016: physiological stimulus credit and programming-role coverage
@@ -70,6 +72,93 @@ export interface CoverageState {
 export interface CoverageHistoryEntry extends ExposureIdentity {
     date: string;
     source?: CoverageCreditSource;
+}
+
+export type CoverageHistoryInput =
+    | CompletedExposure
+    | CoverageHistoryEntry
+    | {
+        date?: string;
+        templateId?: string;
+        workoutId?: string;
+        durationMin?: number;
+        modality?: SessionTemplate['modality'] | string;
+        category?: SessionTemplate['category'] | string;
+        source?: CoverageCreditSource;
+        trainingRecordLike?: unknown;
+    };
+
+export interface CoverageExposureLike {
+    performedOccurrenceId?: string;
+    localDate?: string;
+    workoutId?: string;
+    templateId?: string;
+    durationMin?: number;
+    modality?: SessionTemplate['modality'] | string;
+    category?: SessionTemplate['category'] | string;
+}
+
+export type CoveragePerformedFacts =
+    | PerformedTrainingFactsSnapshot
+    | {
+        exposures: readonly CoverageExposureLike[];
+    };
+
+export function coverageHistoryFromFacts(facts: readonly CoverageExposureLike[]): CoverageHistoryEntry[] {
+    return facts.flatMap(fact => {
+        if (!fact.localDate) return [];
+        return [{
+            occurrenceKey: fact.performedOccurrenceId ?? `occ-${fact.localDate}-${fact.workoutId ?? fact.templateId ?? 'unknown'}`,
+            date: fact.localDate,
+            ...(fact.workoutId ? { workoutId: fact.workoutId } : {}),
+            ...(fact.templateId ? { templateId: fact.templateId } : {}),
+            ...(fact.durationMin !== undefined ? { durationMin: fact.durationMin } : {}),
+            ...(fact.modality && fact.modality !== 'Unknown' ? { modality: fact.modality as SessionTemplate['modality'] } : {}),
+            ...(fact.category ? { category: fact.category as SessionTemplate['category'] } : {}),
+            source: 'completed' as const,
+        }];
+    });
+}
+
+export function coverageHistoryFromCompletedExposures(history: readonly CoverageHistoryInput[]): CoverageHistoryEntry[] {
+    return history.flatMap(entry => {
+        if (!entry.date) return [];
+        const durationMin = ('durationMin' in entry && typeof entry.durationMin === 'number')
+            ? entry.durationMin
+            : ('trainingRecordLike' in entry && entry.trainingRecordLike && typeof entry.trainingRecordLike === 'object' && 'duration_min' in entry.trainingRecordLike && typeof (entry.trainingRecordLike as { duration_min?: unknown }).duration_min === 'number')
+                ? (entry.trainingRecordLike as { duration_min: number }).duration_min
+                : undefined;
+        return [{
+            date: entry.date,
+            ...(entry.templateId ? { templateId: entry.templateId } : {}),
+            ...(entry.workoutId ? { workoutId: entry.workoutId } : {}),
+            ...(durationMin !== undefined ? { durationMin } : {}),
+            ...(entry.modality && entry.modality !== 'Unknown' ? { modality: entry.modality as SessionTemplate['modality'] } : {}),
+            ...(entry.category ? { category: entry.category as SessionTemplate['category'] } : {}),
+            source: ('source' in entry && entry.source) ? entry.source : 'completed' as const,
+        }];
+    });
+}
+
+/**
+ * Resolves coverage history entries prioritizing ADR-0034 canonical performed facts over
+ * legacy reconstructed history.
+ *
+ * If canonical facts are supplied (even if empty, representing zero performed sessions),
+ * they are authoritative. Only when canonical facts are null/undefined does it fall back
+ * to legacy reconstructed history.
+ */
+export function resolveCoverageHistory(
+    performedFacts?: CoveragePerformedFacts | null,
+    legacyHistory?: readonly CoverageHistoryInput[],
+): CoverageHistoryEntry[] {
+    if (performedFacts && performedFacts.exposures) {
+        return coverageHistoryFromFacts(performedFacts.exposures);
+    }
+    if (legacyHistory) {
+        return coverageHistoryFromCompletedExposures(legacyHistory);
+    }
+    return [];
 }
 
 /** Descriptor-scoped lookup keeps the registry generic without reintroducing the old

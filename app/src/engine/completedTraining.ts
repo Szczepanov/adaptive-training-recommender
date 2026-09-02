@@ -151,7 +151,7 @@ export function classifyGarminTier(signals: GarminEvidenceSignals): EvidenceTier
     const hasTrainingLoad = signals.activityTrainingLoad !== null && signals.activityTrainingLoad > 0;
     if (hasTrainingEffect && hasTrainingLoad) return 'measuredEffort';
     if (hasTrainingEffect) return 'garminTrainingEffect';
-    if (signals.intensityTag.trim() !== '') return 'durationIntensity';
+    if (signals.intensityTag && signals.intensityTag.trim() !== '') return 'durationIntensity';
     if (signals.modalityKnown) return 'athleteClassification';
     return 'genericModalityFallback';
 }

@@ -249,7 +249,7 @@ export function deriveFactsFromOccurrence(
         evidenceTier = classifyGarminTier({
             trainingEffectAerobic: hydrated.provider.garminActivity.trainingEffectAerobic,
             trainingEffectAnaerobic: hydrated.provider.garminActivity.trainingEffectAnaerobic,
-            intensityTag: hydrated.provider.garminActivity.intensityTag,
+            intensityTag: hydrated.provider.garminActivity.intensityTag ?? '',
             activityTrainingLoad: hydrated.provider.garminActivity.activityTrainingLoad,
             modalityKnown: modality !== 'Unknown',
         });
