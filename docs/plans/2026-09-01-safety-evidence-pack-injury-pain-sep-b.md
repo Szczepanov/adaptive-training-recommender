@@ -1,8 +1,8 @@
 # SEP-B — Injury, Tissue-Response, and Clinical-Symptom Evidence Pack
 
-**Status:** Implemented locally — PR pending review
+**Status:** Implemented — merged to `main` via [PR #318](https://github.com/Szczepanov/adaptive-training-recommender/pull/318)
 
-**Prerequisite:** Merge PR #317 (`codex/sep-a-plan-review`) and rebase this work on `main`
+**Prerequisite:** PR #317 (`codex/sep-a-plan-review`) merged; this work was rebased on `main` and merged
 
 **Parent plan:** [`2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md`](./2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md)
 
