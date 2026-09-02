@@ -240,8 +240,12 @@ def decode_activity_original(original: bytes) -> FitActivityEvidence:
                             duration_value=_number(_value(message, "duration_value")),
                             target_type=_identifier(_value(message, "target_type")),
                             target_value=_number(_value(message, "target_value")),
-                            custom_target_value_low=_number(_value(message, "custom_target_value_low")),
-                            custom_target_value_high=_number(_value(message, "custom_target_value_high")),
+                            custom_target_value_low=_number(
+                                _value(message, "custom_target_value_low")
+                            ),
+                            custom_target_value_high=_number(
+                                _value(message, "custom_target_value_high")
+                            ),
                             intensity=_identifier(_value(message, "intensity")),
                             equipment=_identifier(_value(message, "equipment")),
                         )

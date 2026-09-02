@@ -83,6 +83,6 @@ def test_cosmetic_name_and_enum_case_do_not_churn_semantic_fingerprint():
         equipment="BIKE",
     )
 
-    assert compute_fit_workout_fingerprint("  BUILDER ", (0,), (upper,)) == compute_fit_workout_fingerprint(
-        "builder", (0,), (lower,)
-    )
+    assert compute_fit_workout_fingerprint(
+        "  BUILDER ", (0,), (upper,)
+    ) == compute_fit_workout_fingerprint("builder", (0,), (lower,))
