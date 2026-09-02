@@ -263,6 +263,8 @@ app/src/knowledge/
   readinessSleepHrvKnowledge.ts # Scientific and heuristic claims for HRV, sleep, and recovery balance
   strengthWarmupKnowledge.ts # General and specific warm-up protocol claims
   taperFuelingKnowledge.ts # Pre-event taper boundaries and fueling/hydration claims
+  athleteEvidence.ts   # Identity-scoped athlete-specific evidence contracts, domain models, and validator (SKR4)
+  athleteEvidencePolicy.ts # Pure policy refinement engine and safety monotonicity evaluator (SKR4)
 ```
 
 This map is a routing aid, not a complete file listing. Where it disagrees with the

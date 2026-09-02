@@ -35,6 +35,8 @@ The two inputs meet at policy evaluation but keep independent provenance.
 | `app/src/knowledge/sportsKnowledgeRegistry.ts` | Canonical aggregate registry unifying domain modules, global validation and lookup API |
 | `app/src/knowledge/sportsKnowledge.ts` | Core types, core checked-in sources/claims, and structural validator |
 | `app/src/knowledge/*Knowledge.ts` | Domain-specific Git-backed knowledge modules (load, cardiorespiratory, injury/pain, strength, taper, periodization, subjective) |
+| `app/src/knowledge/athleteEvidence.ts` | Identity-scoped athlete-specific evidence contracts, domain models, and validator (SKR4) |
+| `app/src/knowledge/athleteEvidencePolicy.ts` | Pure policy refinement engine and safety monotonicity evaluator (SKR4) |
 | `app/src/knowledge/knowledgeCoverage.ts` | Engine knowledge coverage inventory (54 families) and completeness validator |
 | `app/src/engine/knowledgeLineage.ts` | Runtime decision knowledge-refs collector and lineage resolver for recommendation audits |
 | `app/src/knowledge/sportsKnowledge.test.ts` | Registry invariants and epistemic-boundary tests |
@@ -264,12 +266,25 @@ Runtime policy carries stable IDs while evaluating a decision. `buildRecommendat
 
 `supersedes` is replacement lineage between claim IDs, not a substitute for the integer version of the same stable claim ID. Cycles are invalid and fail validation.
 
+## Athlete-Specific Evidence Boundary (SKR4)
+
+Per ADR-0033 (§D-SKR-BOUNDARIES), sports knowledge, acute decision evidence, and athlete-specific learned evidence are kept strictly distinct:
+1. **Sports Knowledge** (`KnowledgeClaim` in `app/src/knowledge/`): Universal, Git-backed priors and boundaries.
+2. **Acute Decision Evidence** (`DecisionEvidence`, `DailyReadiness` in `app/src/engine/`): Today's acute observations and safety checks.
+3. **Athlete-Specific Evidence** (`AthleteEvidenceRecord` in `app/src/knowledge/athleteEvidence.ts`): Longitudinal personal response patterns bound to a `userId`.
+
+### Core Guarantees & Monotonicity (`D-ATHLETE-SAFETY-PRESERVE`)
+- **Isolation:** Personal measurements and learned athlete patterns are stored under `users/{userId}/athlete_evidence/{patternId}` and are strictly prohibited from being committed to the global Git registry.
+- **Priors vs Refinements:** General sports knowledge claims act as priors. Athlete-specific evidence asserts typed refinements over a specific `baseKnowledgeClaimId`.
+- **Safety Monotonicity:** Athlete evidence can tighten restrictions, personalize recovery durations, or calibrate scalars within bounded physiological intervals, but cannot weaken clinical escalations, red flag findings, or mandatory medical clearance.
+- **Audit Lineage:** Materially applied athlete evidence refinements are recorded in `RecommendationAudit.athleteEvidenceLineage` for bit-for-bit replay auditability.
+
 ## Current limitations
 
 The registry is intentionally small. It does not yet provide:
 
 - complete coverage of all sports-science assumptions in the engine;
-- athlete-specific learned evidence;
+- automated literature freshness polling (SKR5);
 - automatic PubMed/Crossref/Cochrane literature ingestion or freshness monitoring;
 - structured ROBIS/AMSTAR 2 appraisal records;
 - formal GRADE assessments;

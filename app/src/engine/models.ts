@@ -1755,6 +1755,18 @@ export interface KnowledgeLineageRef {
     version: number;
 }
 
+/**
+ * Compact, replayable record of an athlete-specific evidence record materially
+ * applied as a policy refinement in this recommendation decision (SKR4).
+ */
+export interface AthleteEvidenceLineageRef {
+    recordId: string;
+    version: number;
+    domain: string;
+    refinementType: string;
+    baseKnowledgeClaimId: string;
+}
+
 export interface RecommendationAudit {
     policyVersion: string;
     evaluatedAt: string;
@@ -1793,6 +1805,8 @@ export interface RecommendationAudit {
     identityDecision?: IdentityDecisionProvenance;
     /** Exact reviewed knowledge versions materially consumed by this historical decision. */
     knowledgeLineage?: KnowledgeLineageRef[];
+    /** Exact athlete-specific evidence records materially applied as policy refinements (SKR4). */
+    athleteEvidenceLineage?: AthleteEvidenceLineageRef[];
 }
 
 /** A compact, replayable record that a replacement occurrence, not catalog ranking,
