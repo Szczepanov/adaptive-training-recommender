@@ -121,11 +121,11 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'readiness.subjective_mode_thresholds', domain: 'readiness_recovery', title: 'Subjective readiness mode thresholds',
-        currentRule: 'Five-item equal-weight fatigue average (fatigue, soreness, inverted readiness/sleep quality/motivation) >5 modifies and >7 recovers; additional fatigue/soreness/readiness/stress combinations at 3/4/6/8/9 thresholds can force modify/recover. Missing non-safety scale dimensions normalize to 5 after minimum-safety completion.',
+        currentRule: 'Four-item physical fatigue average (fatigue, soreness, inverted readiness/sleep quality) >5 modifies and >7 recovers; motivation is excluded from the physical composite. Complete minimum-safety check-ins average only answered physical dimensions without neutral-default imputation. Additional fatigue/soreness/readiness/stress combinations at 3/4/6/8/9 thresholds can force modify/recover.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/rules.ts:evaluateReadinessAndSafetyEnvelope', 'engine/adapters.ts:mapCheckinToSubjectiveInput', 'engine/safetyCheckin.ts:getMinimumSafetyCheckinStatus'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.contextualMonitoring, KNOWLEDGE_CLAIM_IDS.measurementQualityLimits, KNOWLEDGE_CLAIM_IDS.exactCutpointLimits, KNOWLEDGE_CLAIM_IDS.modeThresholdsPolicy],
-        coverageRationale: 'SEP-A supports repeated subjective measures as contextual monitoring and explicitly records the classifier as product policy. The reviewed evidence does not validate the equal-weight composite, exact cut-points, combinations, or neutral-default participation as universal readiness thresholds; outcome-linked calibration and partial-check-in review remain P0 debt.',
+        coverageRationale: 'SEP-C2 recalibrates the subjective classifier: motivation is decoupled from physical fatigue, unmeasured dimensions in partial check-ins participate dynamically without neutral-5 dilution, and clinical painFlag is decoupled from extreme fatigue. Direct action thresholds remain an explicit product heuristic rather than a universal constant; outcome-linked calibration remains P0 research debt.',
     },
     {
         id: 'readiness.absolute_device_floors', domain: 'readiness_recovery', title: 'Absolute sleep-score and Body Battery floors',
@@ -218,11 +218,18 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'This is conservative missing-data behavior, not a physiological threshold. Scientific evidence may inform which fields are useful, but fail-closed handling is a product safety contract.',
     },
     {
+        id: 'safety.clinical_escalation_protocol', domain: 'injury_safety', title: 'Red-flag and clinical escalation protocol',
+        currentRule: 'Red-flag presentations (neurological deficit, acute traumatic non-weight-bearing / instability, severe systemic infection with high fever, or rapidly worsening symptoms) halt all physical training recommendations, cap the plan envelope at Rest, and mandate medical evaluation before resuming physical loading.',
+        classification: 'safety_invariant', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'none',
+        codeRefs: ['engine/models.ts:RedFlagFinding', 'engine/adapters.ts:resolveRedFlagFindings', 'engine/rules.ts:evaluateEnvelopes'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.clinicalEscalationProtocol],
+        coverageRationale: 'The specific red-flag categories, the Rest cap, and the mandatory-referral routing are conservative product policy (CLINICAL_ESCALATION_PRODUCT_POLICY_SOURCE, SEP-C4). Hainline 2017 IOC Pain Consensus and Herring 2024 Initial MSK Assessment support only the boundary that automated athletic prescription must defer to medical evaluation; neither validates this specific routing protocol.',
+    },
+    {
         id: 'injury.tissue_response_severity', domain: 'injury_safety', title: 'Tissue-response to restriction severity mapping',
-        currentRule: 'Worst daily tissue response maps severe -> exclude, moderate -> limit, mild -> monitor, normal -> no added restriction; observed response can only preserve or tighten a standing constraint.',
+        currentRule: 'Tissue response evaluates 24-hour response latency: severe at any point maps to exclude; persistent post-session or delayed next-morning moderate irritability (or waking state) maps to limit; transient during-session moderate loading discomfort that settles by next morning maps to monitor (tolerable loading, Escriche-Escuder 2020); mild maps to monitor; normal maps to null. Observed response can only preserve or tighten standing constraints.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:deriveTissueSeverity', 'engine/injuryPolicy.ts:resolveEffectiveInjuryConstraints'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.tissueResponseTemporalMonitoring, KNOWLEDGE_CLAIM_IDS.tissueResponseSeverityPolicy],
-        coverageRationale: 'SEP-B records condition-specific lower-limb tendinopathy evidence that symptom criteria are commonly used but weakly compared, plus the exact product state machine. The evidence does not validate the cross-tissue normal/mild/moderate/severe or monitor/limit/exclude translation, so this high-safety mapping remains partial P0 debt.',
+        coverageRationale: 'SEP-C3 refines the latency model to distinguish tolerable during-session loading from persistent or delayed irritability using tendinopathy load-tolerance criteria. Comparative evidence across multiple tissues remains limited, so this high-safety mapping remains partial P0 debt.',
     },
     {
         id: 'injury.standing_constraint_preserve_or_tighten', domain: 'injury_safety', title: 'Standing injury constraint preserve-or-tighten invariant',
@@ -247,10 +254,10 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'injury.region_mapping.lumbar_loading', domain: 'injury_safety', title: 'Lumbar loading restriction mapping',
-        currentRule: 'Lower-back limit/exclude constraints imply avoid-heavy-spinal-loading; exclude additionally implies avoid-heavy-lower-body.',
+        currentRule: 'Lower-back limit/exclude constraints imply avoid-heavy-spinal-loading; exclude additionally implies avoid-heavy-lower-body and avoid-high-impact.',
         classification: 'product_heuristic', coverage: 'partial', decisionImpact: 'high', safetyImpact: 'high', researchPriority: 'p0',
         codeRefs: ['engine/injuryPolicy.ts:resolveInjuryRestrictions'], knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.returnToSportCriteriaBasedRiskManagement, KNOWLEDGE_CLAIM_IDS.lumbarLoadingPolicy],
-        coverageRationale: 'SEP-B records the return-to-sport assessment boundary and exact policy mapping. Lower-back symptoms are heterogeneous and the product does not collect diagnosis or functional testing, so this remains partial P0 debt.',
+        coverageRationale: 'SEP-C3 adds avoid-high-impact to severe lower-back exclusions as conservative product policy (LUMBAR_LOADING_PRODUCT_POLICY_V2_SOURCE) to offload repetitive axial shock. Herring 2024 supports deferring to clinical assessment for lumbar injury, not this specific mapping; lower-back symptoms are heterogeneous, so this remains partial P0 debt.',
     },
     {
         id: 'injury.region_mapping.upper_limb_loading', domain: 'injury_safety', title: 'Upper-limb loading restriction mapping',

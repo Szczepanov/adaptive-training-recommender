@@ -954,11 +954,10 @@ Reason to split from SEP-A: clinical directness and region heterogeneity make th
 
 Possible independent PRs:
 
-- replace generic pain->Running/Mobility mapping with structured pain context;
-- recalibrate subjective thresholds;
-- change tissue severity semantics;
-- refine one region cluster's restriction rules;
-- add clinical escalation/red-flag flow.
+- replace generic pain->Running/Mobility mapping with structured pain context (**SEP-C1 — PR #319 merged**);
+- recalibrate subjective thresholds (**SEP-C2 — implemented & verified**);
+- change tissue severity semantics & lumbar guardrails (**SEP-C3 — implemented & verified**);
+- add clinical escalation/red-flag flow (**SEP-C4 — implemented & verified**).
 
 Each behavior PR requires:
 
