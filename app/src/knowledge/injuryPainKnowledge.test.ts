@@ -22,6 +22,17 @@ describe('injury and clinical-symptom knowledge pack', () => {
         });
     });
 
+    it('does not present tendinopathy pain-monitoring practice as validation of the product latency thresholds', () => {
+        const review = getKnowledgeSource('ESCRICHE-ESCUDER-2020-LOWER-LIMB-TENDINOPATHY-PROGRESSION-REVIEW');
+        const policy = getKnowledgeSource('PRODUCT-TISSUE-RESPONSE-SEVERITY-POLICY-V2');
+
+        expect(review.notes).toContain('not supported by strong comparative evidence');
+        expect(review.notes).toContain('does not validate the product severity state machine');
+        expect(policy.notes).toContain('product calibration');
+        expect(policy.notes).toContain('insufficient comparative evidence for one universal criterion');
+        expect(policy.notes).not.toContain('tolerable loading, Escriche-Escuder 2020');
+    });
+
     it('records each executable family as high-safety product policy', () => {
         const policyIds = [
             INJURY_PAIN_CLAIM_IDS.tissueResponseSeverityPolicy,

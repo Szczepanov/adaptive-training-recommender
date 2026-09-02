@@ -89,7 +89,7 @@ describe('sports knowledge registry', () => {
         };
         const result = validateSportsKnowledgeRegistry([...SPORTS_KNOWLEDGE_SOURCES, invalidSource], SPORTS_KNOWLEDGE_CLAIMS);
         expect(result.valid).toBe(false);
-        expect(result.errors).toContain('source TEST-RCT-WITH-META: synthesisMethods are reserved for systematic/umbrella reviews');
+        expect(result.errors).toContain('source TEST-RCT-WITH-META: synthesisMethods are reserved for systematic/scoping/umbrella reviews');
     });
 
     it('rejects duplicate stable external identifiers across source records', () => {

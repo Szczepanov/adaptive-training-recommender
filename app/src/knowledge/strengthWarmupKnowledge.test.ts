@@ -11,10 +11,22 @@ describe('structured strength warm-up evidence', () => {
         expect(validateCanonicalSportsKnowledgeRegistry()).toEqual({ valid: true, errors: [], warnings: [] });
     });
 
+    it('records the broad warm-up meta-analysis with stable PMID and DOI provenance', () => {
+        const source = getKnowledgeSource('FRADKIN-2010-WARMUP-META');
+        expect(source).toMatchObject({
+            sourceType: 'systematic_review',
+            synthesisMethods: ['meta_analysis'],
+        });
+        expect(source.externalIds).toEqual(expect.arrayContaining([
+            { type: 'pmid', value: '19996770' },
+            { type: 'doi', value: '10.1519/JSC.0b013e3181c643a0' },
+        ]));
+    });
+
     it('records the 2026 resistance warm-up scoping review with stable provenance', () => {
         const source = getKnowledgeSource('NEVES-2026-RESISTANCE-WARMUP-SCOPING');
         expect(source).toMatchObject({
-            sourceType: 'systematic_review',
+            sourceType: 'scoping_review',
             synthesisMethods: ['narrative_synthesis'],
         });
         expect(source.externalIds).toContainEqual({ type: 'doi', value: '10.1007/s42978-025-00361-9' });
