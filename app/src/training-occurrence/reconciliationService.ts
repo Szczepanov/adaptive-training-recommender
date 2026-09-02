@@ -13,6 +13,7 @@ import { activityService } from '../services/activityService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { filterCandidates } from './reconciliationCandidates';
+import { orderOccurrencesForMerge } from './mergeIdentity';
 import { RECONCILIATION_MATCHER_VERSION, RECONCILIATION_POLICY_VERSION } from './models';
 import type { PerformedTrainingOccurrence, ReconciliationSourceFacts } from './models';
 import { decideReconciliation, type ScoredCandidate } from './reconciliationPolicy';
@@ -211,7 +212,7 @@ async function mergeDuplicatesInWindow(userId: string, fromDateInclusive: string
         if (decision.outcome !== 'auto_link') continue;
 
         const other = decision.candidate.occurrence;
-        const [survivor, loser] = occurrence.createdAt.localeCompare(other.createdAt) <= 0 ? [occurrence, other] : [other, occurrence];
+        const [survivor, loser] = orderOccurrencesForMerge(occurrence, other);
         try {
             await repository.mergeOccurrences(userId, survivor.performedOccurrenceId, loser.performedOccurrenceId, {
                 state: 'matched',
