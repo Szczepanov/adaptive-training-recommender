@@ -65,7 +65,7 @@ import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate }
 import { resolvePlannedDoseForDate, resolveTrainingIntent } from './trainingIntent';
 import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedule';
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
-import { buildCoverageState, coverageNeedTierForTemplate, workoutIdForTemplateId } from './coverage';
+import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { applyPlanningOverlays } from './planningOverlays';
 import {
@@ -145,6 +145,9 @@ export interface WeekAheadPlanSeed {
     microcycle: MicrocycleState;
     fatigue: FatigueState;
     trailingHistory?: (RecentHistoryEntry | SessionHistoryEntry)[];
+    /** Canonical completed-role history. Operational/projected history stays separate so
+     * future recommendations never reclassify completed occurrences through legacy lookup. */
+    completedCoverageHistory?: CoverageHistoryEntry[];
     droppedContributorObjectives?: DroppedContributorObjective[];
 }
 
@@ -457,6 +460,9 @@ export interface ProjectedDateState {
     microcycle: MicrocycleState;
     externalFatigue: FatigueState;
     projectedHistory: (RecentHistoryEntry | SessionHistoryEntry)[];
+    /** Coverage history is a separate semantic ledger: canonical completed facts plus
+     * hypothetical projected/fixed entries. */
+    coverageHistory?: CoverageHistoryEntry[];
 }
 
 export interface ProjectedDateEvaluation {
@@ -537,7 +543,13 @@ export function evaluateProjectedDate(
         {
             anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier,
             authoredPlanBlocks: shared.authoredPlanBlocks,
-            ...(shared.planDefinition ? { coverageState: buildCoverageState(planDefinition, date) } : {}),
+            ...(planDefinition ? {
+                coverageState: buildCoverageState(
+                    planDefinition,
+                    date,
+                    state.coverageHistory ?? resolveCoverageHistory(undefined, state.projectedHistory),
+                ),
+            } : {}),
         },
         shared.fixedActivities,
     );
@@ -1182,7 +1194,8 @@ export function generateWeekAheadPlan(
         todayDate,
     };
 
-    const historyEntryFor = (date: string, template: SessionTemplate): RecentHistoryEntry => ({
+    type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected' };
+    const historyEntryFor = (date: string, template: SessionTemplate): ProjectedHistoryEntry => ({
         date,
         templateId: template.id,
         category: template.category,
@@ -1193,12 +1206,23 @@ export function generateWeekAheadPlan(
         durationMin: template.durationMin,
         recoveryHours: resolveRecoveryHoursForTemplate(template.id),
         type: template.title,
+        source: 'projected',
     });
 
     const liveProjectedHistory = (): (RecentHistoryEntry | SessionHistoryEntry)[] => [
         ...(seed.trailingHistory ?? []),
         historyEntryFor(todayDate, todayRec.template),
         ...resultDays.map(day => historyEntryFor(day.date, day.template)),
+    ];
+
+    const completedCoverageHistory = seed.completedCoverageHistory
+        ?? resolveCoverageHistory(undefined, seed.trailingHistory ?? []);
+    const liveProjectedCoverageHistory = (): CoverageHistoryEntry[] => [
+        ...completedCoverageHistory,
+        ...resolveCoverageHistory(undefined, [
+            historyEntryFor(todayDate, todayRec.template),
+            ...resultDays.map(day => historyEntryFor(day.date, day.template)),
+        ]),
     ];
 
     const forecastDatesFrom = (startOffset: number): string[] => {
@@ -1233,6 +1257,7 @@ export function generateWeekAheadPlan(
         const cached = evaluationCache.get(cacheKey);
         if (cached) return cached;
         const history = liveProjectedHistory();
+        const coverageHistory = liveProjectedCoverageHistory();
         const loads: Array<{ date: string; cost: WorkoutCostProfile }> = [];
         fixedActivities
             .filter(activity => !activity.isCompleted && activity.expectedCost
@@ -1245,14 +1270,16 @@ export function generateWeekAheadPlan(
             const template = ENRICHED_TEMPLATES_BY_ID.get(item.templateId);
             if (!template) return;
             loads.push({ date: item.date, cost: enrichedCostProfile(item.templateId) });
-            history.push(historyEntryFor(item.date, template));
+            const projectedEntry = historyEntryFor(item.date, template);
+            history.push(projectedEntry);
+            coverageHistory.push(...resolveCoverageHistory(undefined, [projectedEntry]));
         });
         const fatigue = loads
             .sort((left, right) => left.date.localeCompare(right.date))
             .reduce((state, load) => applyCompletedSessionLoad(state, load.date, load.cost, fatigueFusionPolicy), externalFatigue);
         const evaluation = evaluateProjectedDate(
             date,
-            { microcycle, externalFatigue: fatigue, projectedHistory: history },
+            { microcycle, externalFatigue: fatigue, projectedHistory: history, coverageHistory },
             sharedProjection,
         );
         evaluationCache.set(cacheKey, evaluation);
@@ -1576,6 +1603,7 @@ export async function generateWeekAheadPlanWithIntent(
             microcycle: evergreen?.microcycle ?? intent.microcycle,
             fatigue: intent.fatigue,
             trailingHistory: trailingHistoryFromCompletedExposures(intent.history, todayDate),
+            completedCoverageHistory: resolveCoverageHistory(intent.performedTrainingFacts, intent.history),
             droppedContributorObjectives: intent.droppedContributorObjectives,
         },
         { ...options, fatigueFusionPolicy, events: intent.planningContext.mode === 'event_directed' ? events : [], ...(evergreen ? { planDefinition: evergreen.planDefinition } : {}) },

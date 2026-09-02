@@ -17,7 +17,9 @@ export type KnowledgeHorizon = 'acute' | 'chronic' | 'both' | 'not_applicable';
 export type KnowledgeSourceType =
     | 'guideline'
     | 'systematic_review'
+    | 'scoping_review'
     | 'umbrella_review'
+    | 'narrative_review'
     | 'randomized_trial'
     | 'cohort'
     | 'cross_sectional'
@@ -36,6 +38,7 @@ export interface KnowledgeExternalId {
 export interface KnowledgeSource {
     id: string;
     title: string;
+    /** Publication/study design. Do not use this field as a shortcut for evidence certainty or recommendation strength. */
     sourceType: KnowledgeSourceType;
     citation: string;
     url?: string;
@@ -607,7 +610,7 @@ const PMID_PATTERN = /^\d+$/;
 const PMCID_PATTERN = /^PMC\d+$/i;
 const PROSPERO_PATTERN = /^CRD\d+$/i;
 const DOI_PATTERN = /^10\.\d{4,9}\/\S+$/i;
-const REVIEW_SOURCE_TYPES: readonly KnowledgeSourceType[] = ['systematic_review', 'umbrella_review'];
+const SYNTHESIS_SOURCE_TYPES: readonly KnowledgeSourceType[] = ['systematic_review', 'scoping_review', 'umbrella_review'];
 
 /** Validate both ISO date shape and Gregorian calendar validity without timezone-dependent parsing. */
 function isIsoCalendarDate(value: string): boolean {
@@ -672,7 +675,7 @@ export function validateSportsKnowledgeRegistry(
             if (sourceSynthesisMethods.has(method)) errors.push(`source ${source.id}: duplicate synthesis method ${method}`);
             sourceSynthesisMethods.add(method);
         }
-        if (sourceSynthesisMethods.size > 0 && !REVIEW_SOURCE_TYPES.includes(source.sourceType)) errors.push(`source ${source.id}: synthesisMethods are reserved for systematic/umbrella reviews`);
+        if (sourceSynthesisMethods.size > 0 && !SYNTHESIS_SOURCE_TYPES.includes(source.sourceType)) errors.push(`source ${source.id}: synthesisMethods are reserved for systematic/scoping/umbrella reviews`);
         for (const identifier of source.externalIds ?? []) {
             const formatError = externalIdFormatError(identifier);
             if (formatError) errors.push(`source ${source.id}: invalid ${identifier.type} identifier: ${formatError}`);

@@ -42,7 +42,7 @@ import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBa
 import { resolveAvailability } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
-import { buildCoverageState } from './coverage';
+import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
 import { mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
 
@@ -711,7 +711,13 @@ export async function evaluateTrainingWithIntent(
         date,
         {
             resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, resolvedAvailability: availability, fatigueTier: mode, authoredPlanBlocks,
-            ...(evergreen ? { coverageState: buildCoverageState(evergreen.planDefinition, date) } : {}),
+            ...(evergreen ? {
+                coverageState: buildCoverageState(
+                    evergreen.planDefinition,
+                    date,
+                    resolveCoverageHistory(intent.performedTrainingFacts, intent.history),
+                ),
+            } : {}),
         },
         fixedActivities,
     );

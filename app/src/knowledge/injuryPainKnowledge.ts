@@ -148,7 +148,7 @@ export const INJURY_PAIN_SOURCES: readonly KnowledgeSource[] = [
         title: 'Tissue response severity policy v2 (SEP-C3 latency-aware)',
         sourceType: 'product_policy',
         citation: 'Adaptive Training Recommender product policy: tissue-response-severity-v2 (SEP-C3).',
-        notes: 'Evaluates tissue response with 24-hour response latency: severe at any point maps to exclude; persistent post-session or delayed next-morning moderate irritability maps to limit; transient during-session moderate loading discomfort that settles post-session and next morning maps to monitor (tolerable loading, Escriche-Escuder 2020); mild maps to monitor; normal maps to null.',
+        notes: 'Evaluates tissue response with 24-hour response latency: severe at any point maps to exclude; persistent post-session or delayed next-morning moderate irritability maps to limit; transient during-session moderate loading discomfort that settles post-session and next morning maps to monitor; mild maps to monitor; normal maps to null. The 24-hour timing and monitor/limit/exclude thresholds are product calibration; Escriche-Escuder 2020 supports only that pain/symptom response is commonly used in lower-limb tendinopathy progression and explicitly reports insufficient comparative evidence for one universal criterion.',
     },
     {
         id: LUMBAR_LOADING_PRODUCT_POLICY_V2_SOURCE,
