@@ -73,13 +73,22 @@ def run_audit(
         except Exception:
             snapshots_by_date = None
 
+    if snapshots_by_date is None:
+        get_batch = getattr(repository, "get_snapshots_batch", None)
+        if callable(get_batch):
+            date_isos = [get_date_string(d) for d in expected_dates]
+            snapshots_by_date = repository.get_snapshots_batch(date_isos)
+        else:
+            snapshots_by_date = {}
+            for target_date in expected_dates:
+                date_iso = get_date_string(target_date)
+                snapshot = repository.get_snapshot(date_iso)
+                if snapshot:
+                    snapshots_by_date[date_iso] = snapshot
+
     for target_date in expected_dates:
         date_iso = get_date_string(target_date)
-        snapshot = (
-            snapshots_by_date.get(date_iso)
-            if snapshots_by_date is not None
-            else repository.get_snapshot(date_iso)
-        )
+        snapshot = snapshots_by_date.get(date_iso)
         if not snapshot:
             missing_snapshots.append(date_iso)
             continue
