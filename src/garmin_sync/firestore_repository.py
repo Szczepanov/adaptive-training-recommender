@@ -664,13 +664,27 @@ class FirestoreRecoveryRepository:
         )
 
         docs: list[dict[str, Any]] = []
-        for doc in query.stream():
-            data = doc.to_dict()
-            if provider and data.get("provider") != provider:
-                continue
-            if transport and data.get("transport") != transport:
-                continue
-            docs.append(data)
+        chunk_size = 500
+        paged_query = query.limit(chunk_size)
+
+        while True:
+            chunk_docs = list(paged_query.stream())
+            if not chunk_docs:
+                break
+
+            for doc in chunk_docs:
+                data = doc.to_dict()
+                if provider and data.get("provider") != provider:
+                    continue
+                if transport and data.get("transport") != transport:
+                    continue
+                docs.append(data)
+
+            if len(chunk_docs) < chunk_size:
+                break
+
+            last_doc = chunk_docs[-1]
+            paged_query = query.start_after(last_doc).limit(chunk_size)
 
         docs.sort(key=lambda d: d.get("logicalDate", ""))
         return docs
