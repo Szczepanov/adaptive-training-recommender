@@ -1,7 +1,5 @@
 """Map Eight Sleep trend payloads into ADR-0027 source-aware observations."""
 
-from __future__ import annotations
-
 import hashlib
 import json
 from datetime import datetime, timedelta
