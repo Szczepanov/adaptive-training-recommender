@@ -110,3 +110,81 @@ def test_log_exception_emits_structured_sanitized_diagnostics(
     assert secret not in text
     assert "user-123" not in text
     assert '"user_index":2' in text
+
+
+class ConfigurationError(RuntimeError):
+    pass
+
+
+class ConflictError(RuntimeError):
+    pass
+
+
+class NotFoundError(RuntimeError):
+    pass
+
+
+def test_exception_classification_additional_branches() -> None:
+    assert classify_exception(ConfigurationError()) == ("configuration", False)
+    assert classify_exception(ConflictError()) == ("conflict", False)
+    assert classify_exception(NotFoundError()) == ("not_found", False)
+
+
+def test_build_error_report_no_traceback_and_empty_operation() -> None:
+    # Error instantiated but not raised, so it has no traceback
+    error = RuntimeError("test error")
+    report = build_error_report(" !@# ", error, context=None)
+
+    assert report.code == "operation.unexpected"
+    assert report.operation == " !@# "
+    assert report.context == {}
+    assert report.stack == ()
+
+
+def test_sanitize_context_with_iterables() -> None:
+    context = sanitize_context(
+        {
+            "list_val": ["a", "b"],
+            "tuple_val": (1, 2),
+            "set_val": {"x", "y"},
+        }
+    )
+
+    assert context["list_val"] == ["a", "b"]
+    assert context["tuple_val"] == [1, 2]  # tuples are converted to lists
+    # Sets are converted to lists in JSON serialization usually,
+    # but here our function returns a list for them.
+    # Let's just check the elements are preserved.
+    assert sorted(context["set_val"]) == ["x", "y"]
+
+
+def test_sanitize_context_with_unhandled_types() -> None:
+    # Just to be sure we cover all bases, maybe an unhandled type?
+    class CustomObj:
+        def __str__(self) -> str:
+            return "custom"
+
+    context = sanitize_context({"obj": CustomObj()})
+    assert context["obj"] == "custom"
+
+
+def test_build_error_report_unmatched_stack_frame_path() -> None:
+    # We need a frame that doesn't match "/src/", "/tests/", "/app/"
+    # to cover the loop exit without breaking (line 142->147).
+    # We can create a fake error with a fake traceback, or execute code
+    # from a dynamic eval/exec so the filename doesn't match.
+    # Alternatively, the standard library throws an error.
+    try:
+        import json
+
+        json.loads("{invalid json}")
+    except Exception as e:
+        report = build_error_report("json_parse", e)
+
+    assert report.code == "json_parse.validation"
+    assert len(report.stack) > 0
+    # There should be frames from json/__init__.py which will not match
+    # the markers and fallback to Path(normalized).name
+    assert any("decoder.py" in frame for frame in report.stack) or any(
+        "__init__.py" in frame for frame in report.stack
+    )
