@@ -1,7 +1,10 @@
+import logging
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-from garmin_sync.archive import NullArchiveStore
+import pytest
+
+from garmin_sync.archive import NullArchiveStore, RawArchiveStore
 from garmin_sync.canonical import (
     CanonicalHealthObservation,
     ObservationBatch,
@@ -177,3 +180,203 @@ def test_health_observation_service_tombstones_bundles_on_empty_repeat_batch() -
         [("2026-08-27", "garmin", "google_health")]
     )
     assert res["google_health"]["reconciledStale"] == ["garmin_google_health"]
+
+
+def test_health_observation_service_register_provider() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+    )
+
+    assert len(service.providers) == 0
+
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    service.register_provider("test_provider", mock_provider)
+
+    assert service.providers == {"test_provider": mock_provider}
+
+    replacement = MagicMock(spec=RecoveryObservationProvider)
+    service.register_provider("test_provider", replacement)
+    assert service.providers == {"test_provider": replacement}
+
+
+def test_observation_to_dto() -> None:
+    from garmin_sync.canonical import CanonicalHealthObservation, ObservationSource
+    from garmin_sync.health_observation_service import observation_to_dto
+
+    now = datetime.now(timezone.utc)
+    obs = CanonicalHealthObservation(
+        metric="sleep_duration_seconds",
+        value=28000,
+        unit="seconds",
+        source=ObservationSource(
+            provider="garmin",
+            transport="google_health",
+            origin_application="com.garmin.connect",
+            origin_device="garmin-watch-abc",
+            source_record_id="garmin-12345",
+        ),
+        observed_start=now,
+        observed_end=now,
+        logical_date="2026-08-27",
+        quality={"confidence": "high"},
+        semantic_version="1.2.0",
+    )
+
+    dto = observation_to_dto(user_id="test_uid", obs=obs)
+
+    assert dto.metric == "sleep_duration_seconds"
+    assert dto.value == 28000
+    assert dto.unit == "seconds"
+    assert dto.sourceRecordId == "garmin-12345"
+    assert dto.observedStart == now.isoformat()
+    assert dto.observedEnd == now.isoformat()
+    assert dto.originApplication == "com.garmin.connect"
+    assert dto.originDevice == "garmin-watch-abc"
+    assert dto.quality == {"confidence": "high"}
+    assert dto.semanticVersion == "1.2.0"
+    assert dto.observationId is not None
+    assert dto.observationId.startswith("sha256:")
+
+
+def test_observation_to_dto_no_dates_or_optionals() -> None:
+    from garmin_sync.canonical import CanonicalHealthObservation, ObservationSource
+    from garmin_sync.health_observation_service import observation_to_dto
+
+    obs = CanonicalHealthObservation(
+        metric="steps_count",
+        value=5000,
+        unit="count",
+        source=ObservationSource(provider="google_health", transport="api"),
+        observed_start=None,
+        observed_end=None,
+        logical_date="2026-08-28",
+    )
+
+    dto = observation_to_dto(user_id="test_uid2", obs=obs)
+
+    assert dto.metric == "steps_count"
+    assert dto.value == 5000
+    assert dto.unit == "count"
+    assert dto.sourceRecordId is None
+    assert dto.observedStart is None
+    assert dto.observedEnd is None
+    assert dto.originApplication is None
+    assert dto.originDevice is None
+    assert dto.quality is None
+    assert dto.semanticVersion == "1.0.0"
+    assert dto.observationId.startswith("sha256:")
+
+
+def test_health_observation_service_sync_date_error_handling() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    mock_provider.fetch_observations.side_effect = Exception("Simulated fetch error")
+
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+        providers={"google_health": mock_provider},
+    )
+
+    res = service.sync_date("2026-08-27")
+
+    assert res["google_health"] == {
+        "status": "error",
+        "error": "Simulated fetch error",
+    }
+    mock_repo.save_health_observation_day_bundle.assert_not_called()
+
+
+def test_health_observation_service_sync_repair() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    mock_provider.fetch_observations.return_value = ObservationBatch(
+        logical_date="2026-08-27",
+        observations=[],
+        source_payload_hash="sha256:empty",
+    )
+
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+        providers={"google_health": mock_provider},
+    )
+
+    summary = service.sync_repair("2026-08-27", days_lookback=2)
+    assert [item["date"] for item in summary] == ["2026-08-27", "2026-08-26", "2026-08-25"]
+    assert mock_provider.fetch_observations.call_count == 3
+
+
+def test_health_observation_service_sync_repair_default_lookback() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    mock_provider.fetch_observations.return_value = ObservationBatch(
+        logical_date="2026-08-27",
+        observations=[],
+        source_payload_hash="sha256:empty",
+    )
+
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+        providers={"google_health": mock_provider},
+    )
+
+    summary = service.sync_repair("2026-08-27")
+    assert len(summary) == 4
+    assert summary[-1]["date"] == "2026-08-24"
+    assert mock_provider.fetch_observations.call_count == 4
+
+
+def test_health_observation_service_archive_exception_handled(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    now = datetime.now(timezone.utc)
+    observation = CanonicalHealthObservation(
+        metric="sleep_duration_seconds",
+        value=28000,
+        unit="seconds",
+        source=ObservationSource(provider="garmin", transport="google_health"),
+        observed_start=now,
+        observed_end=now,
+        logical_date="2026-08-27",
+    )
+    mock_provider.fetch_observations.return_value = ObservationBatch(
+        logical_date="2026-08-27",
+        observations=[observation],
+        source_payload_hash="sha256:garmin_only",
+    )
+
+    mock_archive_store = MagicMock(spec=RawArchiveStore)
+    mock_archive_store.archive_health.side_effect = Exception("Simulated archive error")
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=mock_archive_store,
+        providers={"google_health": mock_provider},
+    )
+
+    with caplog.at_level(logging.WARNING):
+        result = service.sync_date("2026-08-27")
+
+    assert "Failed to archive raw health observations: Simulated archive error" in caplog.text
+    assert result["google_health"]["status"] == "success"
+    assert result["google_health"]["totalObservations"] == 1
+    mock_repo.save_health_observation_day_bundle.assert_called_once()
