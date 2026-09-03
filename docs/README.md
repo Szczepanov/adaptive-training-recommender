@@ -176,6 +176,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-02 Workout Catalog Recovery Metadata Audit**](./analysis/2026-09-02-workout-catalog-recovery-metadata-audit.md) — SKR3 W3 audit focusing on session spacing heuristics and recovery defaults.
 * [**Strength recommendation occurrence-credit gap — 2026-09-02**](./analysis/strength-recommendation-occurrence-credit-gap-2026-09-02.md) — Production reproduction of strength occurrence-credit gap across ADR-0016, ADR-0023, and ADR-0034 boundaries.
 * [**Structured Strength and Garmin Activity Reconciliation Analysis**](./analysis/structured-strength-garmin-activity-reconciliation-analysis.md) — Architectural analysis for reconciling structured strength executions and Garmin activities into a canonical training occurrence.
+* [**2026-09-03 Persona AI Judge Safety & Modality Tuning Review**](./analysis/2026-09-03-persona-judge-safety-and-modality-tuning.md) — AI judge stability evaluation, candidate ranking modality deprioritization, and evergreen adverse recovery dose withholding.
+* [**2026-09-03 PR 388 auth and wearable-free review**](./analysis/2026-09-03-pr-388-auth-wearable-free-review.md) — Review of PR 388 covering authentication and provider-link boundaries, recommendation composition, and 7-day planning.
 
 ---
 
