@@ -6,7 +6,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from typing import Any
 
 from firebase_admin import auth as firebase_auth
@@ -19,8 +19,9 @@ from .account_link import (
     GarminLinkConfigurationError,
     GarminLinkConflictError,
 )
+from .base_api import BaseJSONRequestHandler
 from .connection_status import reconcile_garmin_connection_status
-from .error_reporting import log_exception, sanitize_text
+from .error_reporting import log_exception
 
 logging.basicConfig(
     level=logging.INFO,
@@ -94,9 +95,8 @@ def _verified_uid(authorization: str | None) -> str | None:
     return str(uid)
 
 
-class GarminAccountLinkHandler(BaseHTTPRequestHandler):
+class GarminAccountLinkHandler(BaseJSONRequestHandler):
     server_version = "GarminAccountLink/1"
-    request_id: str | None = None
 
     def log_message(self, format: str, *args: Any) -> None:
         # BaseHTTPRequestHandler includes the path but never request bodies. Keep logs
@@ -106,35 +106,6 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
             sanitized_path = self.path.split("?", 1)[0]
             message = message.replace(self.path, sanitized_path)
         logger.info("%s - %s", self.address_string(), message)
-
-    def _json_response(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
-        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        self.send_response(status.value)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        if self.request_id:
-            self.send_header("X-Request-ID", self.request_id)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _error_response(
-        self,
-        status: HTTPStatus,
-        *,
-        message: str,
-        error_code: str,
-        retryable: bool,
-    ) -> None:
-        payload: dict[str, Any] = {
-            "error": sanitize_text(message),
-            "errorCode": error_code,
-            "retryable": retryable,
-        }
-        if self.request_id:
-            payload["requestId"] = self.request_id
-        self._json_response(status, payload)
 
     def _read_json(self) -> dict[str, Any]:
         raw_length = self.headers.get("Content-Length", "0")
