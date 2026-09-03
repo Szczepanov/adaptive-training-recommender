@@ -314,11 +314,11 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         expect(bufferClaim.status).toBe('active');
         expect(bufferClaim.statement).toContain("a day that evaluates to train is downgraded to modify when the previous day's resolved mode was recover");
 
-        const withoutPreviousRecover = evaluateReadinessAndSafetyEnvelope(greenReadiness(), context, '2026-09-10', 'train');
+        const withoutPreviousRecover = evaluateReadinessAndSafetyEnvelope(greenReadiness(), context, undefined, 'train');
         expect(withoutPreviousRecover.mode).toBe('train');
         expect(withoutPreviousRecover.postRecoverBufferApplied).toBe(false);
 
-        const afterRecover = evaluateReadinessAndSafetyEnvelope(greenReadiness(), context, '2026-09-10', 'recover');
+        const afterRecover = evaluateReadinessAndSafetyEnvelope(greenReadiness(), context, undefined, 'recover');
         expect(afterRecover.mode).toBe('modify');
         expect(afterRecover.postRecoverBufferApplied).toBe(true);
     });
