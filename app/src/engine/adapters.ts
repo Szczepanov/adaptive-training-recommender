@@ -146,14 +146,67 @@ function mapTrainingRecord(raw: RawActivitySummary | null | undefined): Training
 export type RespirationStrainPolicy = 'off' | 'median-mad-v1';
 
 /**
+ * Creates an empty objective input for subjective-only / wearable-free recommendation mode.
+ * All wearable biometric measurements and delta strains are null, and activity counts are 0.
+ */
+export function createSubjectiveOnlyObjectiveInput(): EngineObjectiveInput {
+    return {
+        total_steps: null,
+        sleep_score: null,
+        sleep_duration_min: null,
+        rhr: null,
+        rhr_7d_avg: null,
+        rhr_delta: null,
+        hrv_weekly_avg: null,
+        hrv_last_night: null,
+        hrv_delta: null,
+        respiration: null,
+        respiration_delta: null,
+        respiration_delta_28d: null,
+        respiration_mad_28d: null,
+        body_battery_wake: null,
+        last_3_days_hard_sessions_count: 0,
+        yesterday_training: null,
+        today_training: null,
+        sleep_score_delta_7d: null,
+        rhr_delta_28d: null,
+        hrv_delta_28d: null,
+        sleep_score_delta_28d: null,
+        steps_7d_avg: null,
+        steps_28d_avg: null,
+        steps_delta_7d: null,
+        steps_delta_28d: null,
+        hrv_stdev_28d: null,
+        rhr_stdev_28d: null,
+        sleep_score_stdev_28d: null,
+        steps_stdev_28d: null,
+        sleep_duration_delta_7d_min: null,
+        sleep_duration_delta_28d_min: null,
+        sleep_duration_accumulated_2d_deficit_min: null,
+        sleep_duration_accumulated_3d_deficit_min: null,
+        bedtime_deviation_7d_min: null,
+        bedtime_deviation_28d_min: null,
+        wake_time_deviation_7d_min: null,
+        wake_time_deviation_28d_min: null,
+        sleep_midpoint_deviation_7d_min: null,
+        sleep_midpoint_deviation_28d_min: null,
+    };
+}
+
+/**
  * Maps the Firestore canonical model (DailyRecoverySnapshot) to the internal engine
  * input model (EngineObjectiveInput) expected by the rules engine.
  * This decouples the rules engine from the Firestore schema.
+ * When snapshot is null or undefined (wearable-free / subjective-only), returns a clean zeroed objective input.
  */
 export function mapSnapshotToEngineInput(
-    snapshot: DailyRecoverySnapshot,
+    snapshot: DailyRecoverySnapshot | null | undefined,
     respirationStrainPolicy: RespirationStrainPolicy = 'off',
 ): EngineObjectiveInput {
+    if (!snapshot) {
+        return createSubjectiveOnlyObjectiveInput();
+    }
+
     // Determine the sleep_min: convert from seconds
     const sleepDurationMin = snapshot.raw.sleepDurationSec
         ? Math.round(snapshot.raw.sleepDurationSec / 60)

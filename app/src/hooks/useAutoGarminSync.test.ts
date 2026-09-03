@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { garminSyncRequestService } from '../services/garminSyncRequestService';
+import { garminConnectionService } from '../services/garminConnectionService';
 import { getAwaitedSyncOutcome, isAwaitedSyncComplete } from '../utils/garminSyncRequestState';
 import { useAutoGarminSync } from './useAutoGarminSync';
 import type { GarminSyncRequest } from '../services/garminSyncRequestService';
@@ -9,6 +10,16 @@ vi.mock('../services/garminSyncRequestService', () => ({
         subscribeToRequest: vi.fn(),
         requestSync: vi.fn(async () => '2026-08-23T06:00:00.000Z'),
         getRequest: vi.fn(async () => null),
+    },
+}));
+
+vi.mock('../services/garminConnectionService', () => ({
+    garminConnectionService: {
+        subscribeToGarminConnection: vi.fn((_userId: string, callback: (connected: boolean) => void) => {
+            callback(true);
+            return vi.fn();
+        }),
+        isGarminConnected: vi.fn(async () => true),
     },
 }));
 
@@ -37,6 +48,10 @@ describe('useAutoGarminSync', () => {
         expect(garminSyncRequestService.subscribeToRequest).toBeDefined();
         expect(garminSyncRequestService.requestSync).toBeDefined();
         expect(garminSyncRequestService.getRequest).toBeDefined();
+    });
+
+    it('subscribes to garmin connection status to suppress sync for unlinked accounts', () => {
+        expect(garminConnectionService.subscribeToGarminConnection).toBeDefined();
     });
 });
 

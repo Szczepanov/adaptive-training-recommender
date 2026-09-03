@@ -1,6 +1,7 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { DailyDecisionInput } from '../engine/models';
 import { garminSyncRequestService } from '../services/garminSyncRequestService';
+import { garminConnectionService } from '../services/garminConnectionService';
 import { getAwaitedSyncOutcome } from '../utils/garminSyncRequestState';
 import { isRecoverySnapshotStale } from '../utils/garminSyncStaleness';
 import { triggerGarminShadowReconciliationSweep } from '../training-occurrence';
@@ -52,9 +53,22 @@ export function useAutoGarminSync({
         activeTriggerRef.current = null;
     }, [userId, decisionInput?.date]);
 
+    const [isGarminConnected, setIsGarminConnected] = useState<boolean | null>(null);
+
+    // Track whether this user account has ever linked Garmin
+    useEffect(() => {
+        if (!userId || !enabled) {
+            setIsGarminConnected(false);
+            return;
+        }
+        return garminConnectionService.subscribeToGarminConnection(userId, (connected) => {
+            setIsGarminConnected(connected);
+        });
+    }, [userId, enabled]);
+
     // Subscribe to sync request state changes to notify caller when our sync finishes.
     useEffect(() => {
-        if (!userId || !enabled) return;
+        if (!userId || !enabled || isGarminConnected !== true) return;
 
         const unsubscribe = garminSyncRequestService.subscribeToRequest(
             userId,
@@ -77,11 +91,11 @@ export function useAutoGarminSync({
         );
 
         return unsubscribe;
-    }, [userId, enabled]);
+    }, [userId, enabled, isGarminConnected]);
 
     // Check staleness and trigger sync if needed.
     useEffect(() => {
-        if (!enabled || !userId || !decisionInput) return;
+        if (!enabled || !userId || !decisionInput || isGarminConnected !== true) return;
 
         const targetDate = decisionInput.date;
         if (hasTriggeredForDateRef.current === targetDate) return;

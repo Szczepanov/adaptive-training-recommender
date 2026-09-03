@@ -1,5 +1,6 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useGarminSyncStatus } from '../hooks/useGarminSyncStatus';
+import { garminConnectionService } from '../services/garminConnectionService';
 import './GarminSyncBadge.css';
 
 export interface GarminSyncBadgeProps {
@@ -49,11 +50,28 @@ export const GarminSyncBadge: React.FC<GarminSyncBadgeProps> = ({ userId, date, 
         triggerSync,
     } = useGarminSyncStatus(userId, date, onSynced);
 
+    const [isGarminConnected, setIsGarminConnected] = useState<boolean | null>(null);
+
+    useEffect(() => {
+        if (!userId) {
+            setIsGarminConnected(false);
+            return;
+        }
+        return garminConnectionService.subscribeToGarminConnection(userId, (connected) => {
+            setIsGarminConnected(connected);
+        });
+    }, [userId]);
+
     const handleClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
         e.stopPropagation();
         if (isBusy) return;
         await triggerSync();
     }, [isBusy, triggerSync]);
+
+    // Do not show an idle Garmin sync badge to wearable-free users who have never linked Garmin
+    if (isGarminConnected === false && status === 'idle') {
+        return null;
+    }
 
     let badgeClass = 'garmin-sync-badge';
     let icon: string;

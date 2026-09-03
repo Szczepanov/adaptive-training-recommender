@@ -8,7 +8,7 @@ import {
 import type { TrainingHistoryProvider } from './trainingHistory';
 import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput, TrainingSettings } from './models';
 import type { SubjectiveBaseline, SubjectiveBaselineMetric, SubjectiveMetricBaseline } from './subjectiveBaseline';
-import { mapContextFromGoalsAndTrainingSettings } from './adapters';
+import { createSubjectiveOnlyObjectiveInput, mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { TEMPLATES_BY_ID } from './templates';
 
 // --- Fixtures --------------------------------------------------------------
@@ -1511,5 +1511,46 @@ describe('Phase 9.3: no production call site passes subjectiveDriftPolicy "drift
             if (valueUsage) offenders.push(file);
         }
         expect(offenders).toEqual([]);
+    });
+});
+
+describe('Subjective-Only / Wearable-Free Recommendation Support', () => {
+    const objective = createSubjectiveOnlyObjectiveInput();
+    const context = baseContext();
+
+    it('evaluates green subjective check-in as train mode with zero wearable delta strain', () => {
+        const subjective = greenSubjective();
+        const state = evaluateReadinessAndSafetyEnvelope({ subjective, objective }, context);
+
+        expect(state.mode).toBe('train');
+        expect(state.telemetry.metricStrain.acuteDeviation).toBe(0);
+        expect(state.telemetry.metricStrain.multiDayDrift).toBe(0);
+        expect(state.telemetry.metricStrain.totalMetricStrain).toBe(0);
+    });
+
+    it('evaluates severe subjective fatigue (>=8) as recover mode with subjective-only inputs', () => {
+        const subjective = neutralSubjective({ fatigue: 8 });
+        const state = evaluateReadinessAndSafetyEnvelope({ subjective, objective }, context);
+
+        expect(state.mode).toBe('recover');
+        expect(state.fatigueTriggeredRecover).toBe(true);
+    });
+
+    it('evaluates moderate soreness as modify mode with subjective-only inputs', () => {
+        const subjective = neutralSubjective({ soreness: 7 });
+        const state = evaluateReadinessAndSafetyEnvelope({ subjective, objective }, context);
+
+        expect(state.mode).toBe('modify');
+    });
+
+    it('generates a valid recommendation without mentioning Garmin baselines when wearable data is absent', () => {
+        const subjective = greenSubjective();
+        const recommendation = evaluateTraining({ subjective, objective }, context, '2026-09-03');
+
+        expect(recommendation.mode).toBe('train');
+        expect(recommendation.template).toBeDefined();
+        expect(recommendation.rationale).not.toContain('Garmin baselines');
+        expect(recommendation.rationale).toContain('morning check-in');
+        expect(recommendation.telemetry?.metricStrain.totalMetricStrain).toBe(0);
     });
 });

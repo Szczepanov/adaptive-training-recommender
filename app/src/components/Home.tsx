@@ -358,7 +358,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       );
 
       const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
-      if (input.recoverySnapshot && canGenerateNormalRecommendation(safetyStatus)) {
+      if (canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, input.subjectiveCheckin);
@@ -622,7 +622,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   };
 
   const engineInputs = useMemo(() => {
-    if (!decisionInput || !decisionInput.recoverySnapshot) return null;
+    if (!decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
     const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, decisionInput.subjectiveCheckin);
@@ -630,7 +630,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   }, [decisionInput]);
 
   const forecastEngineInputs = useMemo(() => {
-    if (!decisionInput || !decisionInput.recoverySnapshot) return null;
+    if (!decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
     const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, null);
@@ -1058,8 +1058,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           ) : (
             <div className="dashboard-card empty-recommendation-card">
               <p className="card-empty">
-                {!decisionInput?.dataQuality.hasRecoverySnapshot
-                  ? "No Garmin recovery data synced today yet — that's required to generate a recommendation."
+                {!decisionInput?.dataQuality.hasSubjectiveCheckin
+                  ? "Complete your morning check-in to generate today's recommendation."
                   : decisionInput.subjectiveCheckin && !decisionInput.dataQuality.subjectiveCheckinComplete
                   ? "Today's check-in is only partially filled in — finish it to get a recommendation."
                   : 'Unable to compute a recommendation yet.'}
@@ -1154,7 +1154,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                     Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
                   </span>
                 ) : (
-                  <span className="status-badge warning">No Data</span>
+                  <span className="status-badge status-neutral">Wearable Optional</span>
                 )}
               </div>
 
@@ -1188,7 +1188,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                   </>
                 </div>
               ) : (
-                <p className="card-empty">No Garmin data synced today</p>
+                <p className="card-empty">No wearable synced. Training readiness is guided by your daily check-in.</p>
               )}
             </div>
 

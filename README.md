@@ -75,6 +75,7 @@ Adaptive Training Recommendations & Native Session Execution
 16. **Physiological Anomaly & Pre-Symptomatic Illness Alerting (ADR-0025)**: Evaluates unusual multi-night deviations across respiration rate, RHR, and HRV, explicitly accounting for training, sleep, stress, alcohol, and travel confounders in a fail-closed shadow mode.
 17. **Multi-User Family Accounts & Self-Service Linking**: Single-project multi-tenant architecture supporting family members via self-service Garmin login with MFA, server-side identity hashing, and automated multi-user batch sync without hardcoded deployment lists.
 18. **Automated Garmin Workout Push & Calendar Scheduling**: Direct structured workout export queueing from the web app (`garmin_workout_queue`) to Garmin Connect with power zone and interval repeat resolution (`workout_export.py`).
+19. **First-Class Email Authentication & Wearable-Free Operation**: Full support for native email/password sign-in, account creation, and password reset alongside Garmin linking. Allows athletes without wearables to generate recommendations and adaptive plans driven directly by their daily subjective check-in, availability, and injury gates without requiring synced Garmin hardware.
 
 ---
 
