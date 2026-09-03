@@ -139,3 +139,31 @@ def test_status_handler_returns_reconciled_status(monkeypatch: Any) -> None:
     assert captured == [
         (HTTPStatus.OK, {"status": "active", "linkedAt": "2026-08-01T12:30:00+00:00"})
     ]
+
+
+def test_linked_at_json_returns_none_for_invalid_value() -> None:
+    assert connection_status._linked_at_json("not-a-datetime") is None
+
+
+def test_reconcile_garmin_connection_status_requires_uid() -> None:
+    with pytest.raises(ValueError, match="uid is required"):
+        connection_status.reconcile_garmin_connection_status("")
+
+
+def test_reconcile_handles_missing_identity_kind_and_linked_at(monkeypatch: Any) -> None:
+    monkeypatch.setattr(connection_status.google_firestore, "transactional", lambda fn: fn)
+    db = _Db()
+    db.collection("garminConnections").document("uid-1").data = {
+        "userId": "uid-1",
+        "status": "active",
+    }
+
+    result = connection_status.reconcile_garmin_connection_status("uid-1", db=db)
+
+    assert result == {"status": "active", "linkedAt": None}
+    mirror = _mirror(db, "uid-1").data
+    assert mirror is not None
+    assert mirror["status"] == "active"
+    assert "identityKind" not in mirror
+    assert mirror["linkedAt"] == connection_status.google_firestore.SERVER_TIMESTAMP
+    assert "updatedAt" in mirror
