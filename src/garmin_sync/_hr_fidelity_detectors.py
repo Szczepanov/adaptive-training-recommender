@@ -1,7 +1,5 @@
 """Deterministic artifact candidates for HRF3."""
 
-from __future__ import annotations
-
 from collections.abc import Iterator
 from datetime import datetime, timedelta
 from statistics import median
