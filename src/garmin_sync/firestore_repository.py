@@ -118,6 +118,28 @@ class FirestoreRecoveryRepository:
             )
             return None
 
+    def get_snapshots_batch(self, date_isos: list[str]) -> dict[str, dict[str, Any]]:
+        """Fetch multiple recovery snapshots efficiently in batches."""
+        db = self._get_db()
+        refs = [self._get_doc_ref(d) for d in date_isos]
+        snapshots = {}
+
+        chunk_size = 400
+        for i in range(0, len(refs), chunk_size):
+            chunk = refs[i : i + chunk_size]
+            try:
+                for doc_snap in db.get_all(chunk):
+                    if doc_snap.exists:
+                        data = doc_snap.to_dict()
+                        if data.get("userId") == self.user_id:
+                            snapshots[doc_snap.id] = data
+            except Exception as e:
+                logger.warning(
+                    f"Error reading batch of Firestore snapshots for user {self.user_id}: {e}"
+                )
+                raise
+        return snapshots
+
     def is_fresh(
         self,
         date_iso: str,
