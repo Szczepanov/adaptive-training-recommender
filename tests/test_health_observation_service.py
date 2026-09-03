@@ -177,3 +177,25 @@ def test_health_observation_service_tombstones_bundles_on_empty_repeat_batch() -
         "2026-08-27", "garmin", "google_health"
     )
     assert res["google_health"]["reconciledStale"] == ["garmin_google_health"]
+
+
+def test_health_observation_service_sync_date_error_handling() -> None:
+    """Test that errors raised during fetch_observations are caught and logged."""
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+
+    mock_provider.fetch_observations.side_effect = Exception("Simulated fetch error")
+
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+        providers={"google_health": mock_provider},
+    )
+
+    res = service.sync_date("2026-08-27")
+
+    assert "google_health" in res
+    assert res["google_health"]["status"] == "error"
+    assert res["google_health"]["error"] == "Simulated fetch error"
+    assert mock_repo.save_health_observation_day_bundle.call_count == 0
