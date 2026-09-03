@@ -68,10 +68,6 @@ class HealthObservationService:
         # empty batch (see _reconcile_missing_sources).
         self._provider_transports: dict[str, set[str]] = {}
 
-    def register_provider(self, name: str, provider: RecoveryObservationProvider) -> None:
-        """Register a recovery observation provider."""
-        self.providers[name] = provider
-
     def _reconcile_missing_sources(
         self,
         logical_date_iso: str,
