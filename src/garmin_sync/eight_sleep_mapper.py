@@ -103,7 +103,7 @@ ORIGIN_APPLICATION = "eight_sleep_private_api"
 # across all sessions, e.g. a two-session night with a nap, so wasoDuration is summed the
 # same way for consistency). A real cross-device check against Garmin's true within-session
 # awakeSleepSec (34 duration-agreement nights) found r=0.461, mean abs delta 9min --
-# comparable to REM's r=0.44 (real disagreement, not a units bug), unlike the removed
+# comparable to REM's r=0.44 (real disagreement, not a units issue), unlike the removed
 # presence-minus-sleep proxy's r=0.17/~115min mismatch. See the ES-EXT-4 removal comment
 # above and this metric's emission site further down for the full history.
 NORMALIZER_VERSION: int = 7
@@ -309,7 +309,7 @@ def map_trends_to_observation_batch(
     # with that, not a new assumption. A real cross-device check (34 duration-agreement
     # nights) found wasoDuration correlates with Garmin's true within-session awakeSleepSec
     # at r=0.461 (mean abs delta 9min, means 524s vs 881s) -- comparable to REM's r=0.44
-    # (real device disagreement, not a units/definition bug), nothing like the removed
+    # (real device disagreement, not a units/definition issue), nothing like the removed
     # proxy's r=0.17/~115min mismatch. sleepQualityScore.waso.current is still a fraction
     # with no documented conversion (unrelated field) and remains unextracted.
     waso_total = 0.0
