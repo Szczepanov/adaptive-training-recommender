@@ -255,3 +255,40 @@ def test_cadence_lock_flags_clean() -> None:
         )
 
     assert not cadence_lock_flags("run", records, policy)
+
+
+def test_activity_motion_risk_normalizes_and_covers_known_variants() -> None:
+    assert activity_motion_risk("  cyCling  ") == "moderate"
+    assert activity_motion_risk("gravel_cycling") == "moderate"
+    assert activity_motion_risk("  Trail_Running  ") == "moderate"
+    assert activity_motion_risk("SOCCER") == "high"
+
+
+def test_workload_flags_ignores_insufficient_duration() -> None:
+    policy = MockArtifactPolicy(plateau_min_duration_seconds=180.0)
+    records = [
+        _sample(datetime(2025, 1, 1, 10, 0), hr=140.0),
+        _sample(datetime(2025, 1, 1, 10, 2), hr=140.0),
+    ]
+    assert workload_flags(records, policy) == set()
+
+
+def test_transition_flags_does_not_call_power_change_an_hr_artifact() -> None:
+    policy = MockArtifactPolicy(
+        abrupt_change_bpm=15.0,
+        abrupt_context_seconds=10.0,
+        abrupt_persistence_seconds=3.0,
+        abrupt_workload_context_seconds=10.0,
+        abrupt_min_power_coverage_pct=0.0,
+    )
+    base_time = datetime(2025, 1, 1, 10, 0, 0)
+    records = [
+        _sample(
+            base_time + timedelta(seconds=second),
+            hr=130.0 if second < 60 else 170.0,
+            power=120.0 if second < 60 else 260.0,
+        )
+        for second in range(121)
+    ]
+
+    assert "ABRUPT_JUMP" not in transition_flags(records, policy)
