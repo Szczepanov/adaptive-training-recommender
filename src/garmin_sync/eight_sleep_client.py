@@ -1,7 +1,5 @@
 """Minimal read-only client for Eight Sleep's unsupported private API."""
 
-from __future__ import annotations
-
 import json
 import time
 from dataclasses import dataclass
