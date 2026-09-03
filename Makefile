@@ -78,6 +78,10 @@ deploy-indexes:
 # Python Backend Targets
 # -----------------------------------------------------------------------------
 
+## Run pre-commit hooks across all files
+pre-commit:
+	uv run pre-commit run --all-files
+
 ## Lint Python backend source and tests with ruff (including code formatting)
 lint-python:
 	uv run ruff check .
@@ -194,6 +198,7 @@ help:
 	@echo Python Targets:
 	@echo   make check-python      - Run ruff, format-check, mypy, and pytest
 	@echo   make lint-python       - Run ruff linter and format check
+	@echo   make pre-commit        - Run pre-commit hooks across all files
 	@echo   make format-python     - Format Python code with ruff
 	@echo   make typecheck-python  - Run mypy type checker
 	@echo   make test-python       - Run pytest test suite
