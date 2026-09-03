@@ -1564,4 +1564,25 @@ describe('Subjective-Only / Wearable-Free Recommendation Support', () => {
         expect(recommendation.rationale).toContain('Garmin baselines');
         expect(recommendation.rationale).not.toContain('based on your morning check-in.');
     });
+
+    // Regression: hasWearableObjectiveData previously only checked absolute values
+    // (sleep_score, rhr, hrv_last_night, ...), so a snapshot carrying only delta fields
+    // -- which do feed metricStrain and can move the mode -- was misclassified as
+    // subjective-only, and the rationale wrongly attributed the decision to the morning
+    // check-in instead of Garmin baselines.
+    it.each([
+        ['rhr_delta', { rhr_delta: 6 }],
+        ['hrv_delta', { hrv_delta: -15 }],
+        ['respiration_delta', { respiration_delta: 3 }],
+        ['sleep_score_delta_7d', { sleep_score_delta_7d: -20 }],
+    ])('does not label a delta-only wearable snapshot (%s) as subjective-only', (_label, deltaOverride) => {
+        const recommendation = evaluateTraining(
+            { subjective: greenSubjective(), objective: { ...objective, ...deltaOverride } },
+            context,
+            '2026-09-03',
+        );
+
+        expect(recommendation.rationale).toContain('Garmin baselines');
+        expect(recommendation.rationale).not.toContain('based on your morning check-in.');
+    });
 });

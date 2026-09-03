@@ -436,13 +436,20 @@ function hasWearableObjectiveData(objective: EngineObjectiveInput): boolean {
         objective.sleep_duration_min,
         objective.rhr,
         objective.rhr_7d_avg,
+        objective.rhr_delta,
         objective.hrv_weekly_avg,
         objective.hrv_last_night,
+        objective.hrv_delta,
         objective.respiration,
+        objective.respiration_delta,
         objective.body_battery_wake,
         objective.yesterday_training,
         objective.today_training,
-    ].some(value => value !== null)
+        // sleep_score_delta_7d, not sleep_score itself: metricStrain() short-circuits to
+        // zero strain whenever deltaVs7d is null (see metricStrain above), so a delta-only
+        // snapshot with sleep_score already null can still move the mode via sleepStrain.
+        objective.sleep_score_delta_7d,
+    ].some(value => value !== null && value !== undefined)
         || objective.last_3_days_hard_sessions_count > 0;
 }
 

@@ -14,7 +14,10 @@ function mapFirebaseAuthError(error: unknown): string {
   const errCode = (error as { code?: string })?.code;
   switch (errCode) {
     case 'auth/email-already-in-use':
-      return 'Unable to create this account. Try signing in or resetting your password.';
+      // Deliberately non-account-specific: naming "already registered" here would let an
+      // attacker enumerate valid emails by probing sign-up. Same generic wording a real
+      // sign-up failure would get.
+      return 'Unable to create this account. Please try again.';
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
     case 'auth/weak-password':
