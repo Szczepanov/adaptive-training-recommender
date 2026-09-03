@@ -101,3 +101,20 @@ The change set is covered by:
 - usability-metrics unit tests for first-action timing behavior;
 - Firestore emulator tests for activity-override owner CRUD, cross-user denial, malformed writes, and immutable identity/date/creation fields;
 - the repository CI typecheck, lint, unit-test, catalog-validation, and production-build gates.
+
+## 10. Wearable-Free & First-Class Email Authentication Support
+
+### Authentication Flows
+`LoginScreen.tsx` provides native email and password authentication:
+- Segmented tab control toggling between **Sign In** and **Create Account (Sign Up)**;
+- Password reset link generation via Firebase Auth `sendPasswordResetEmail`;
+- **Continue with Garmin** is retained as an accessible alternative sign-in and account linking flow rather than the exclusive entry point;
+- Newly registered users automatically trigger `initializeUserData` in `AuthContext.tsx`, creating default user preferences and v3 training settings under strict `users/{userId}/...` path isolation.
+
+### Wearable-Free Recommendation Mode
+When an athlete has no wearable connected or synced (`DailyRecoverySnapshot` is null):
+- `adapters.ts` provides `createSubjectiveOnlyObjectiveInput()`, setting all wearable biometric metrics and delta strains to `null` and activity counts to 0;
+- Once the athlete completes their morning check-in (fulfilling `canGenerateNormalRecommendation(safetyStatus)`), the recommendation engine produces a valid daily recommendation and 7-day plan forecast driven by subjective fatigue, soreness, sleep quality, stress, availability, and active injury gates;
+- The user-facing rationale references the morning check-in directly rather than claiming Garmin baselines;
+- Accounts without linked Garmin hardware suppress automated background sync polling (`useAutoGarminSync.ts`) and hide the idle Garmin sync badge in navigation (`GarminSyncBadge.tsx`);
+- The dashboard replaces the Garmin recovery panel with a neutral **Wearable Optional** status.

@@ -165,7 +165,7 @@ ownership and constrain availability before candidates are selected.
 
 | Module | Responsibility |
 |---|---|
-| `adapters.ts` | Firestore canonical models → engine inputs |
+| `adapters.ts` | Firestore canonical models → engine inputs; provides `createSubjectiveOnlyObjectiveInput()` for wearable-free operation |
 | `validation.ts` | Schema validation and sanitisation at the persistence boundary |
 | `eligibility.ts` | The single hard-gate resolver: time, equipment, environment, guardrails |
 | `rules.ts` | Strain scoring, `train`/`modify`/`recover` mode, safety & plan envelopes, adjustment tiers |
