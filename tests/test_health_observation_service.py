@@ -177,3 +177,59 @@ def test_health_observation_service_tombstones_bundles_on_empty_repeat_batch() -
         "2026-08-27", "garmin", "google_health"
     )
     assert res["google_health"]["reconciledStale"] == ["garmin_google_health"]
+
+
+def test_health_observation_service_sync_repair() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    mock_provider.fetch_observations.return_value = ObservationBatch(
+        logical_date="2026-08-27",
+        observations=[],
+        source_payload_hash="sha256:empty",
+    )
+
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+        providers={"google_health": mock_provider},
+    )
+
+    summary = service.sync_repair("2026-08-27", days_lookback=2)
+    assert len(summary) == 3
+    assert summary[0]["date"] == "2026-08-27"
+    assert summary[1]["date"] == "2026-08-26"
+    assert summary[2]["date"] == "2026-08-25"
+    assert mock_provider.fetch_observations.call_count == 3
+    mock_provider.fetch_observations.assert_any_call("2026-08-27", "2026-08-26")
+    mock_provider.fetch_observations.assert_any_call("2026-08-26", "2026-08-25")
+    mock_provider.fetch_observations.assert_any_call("2026-08-25", "2026-08-24")
+
+
+def test_health_observation_service_sync_repair_default_lookback() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    mock_provider.fetch_observations.return_value = ObservationBatch(
+        logical_date="2026-08-27",
+        observations=[],
+        source_payload_hash="sha256:empty",
+    )
+
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+        providers={"google_health": mock_provider},
+    )
+
+    summary = service.sync_repair("2026-08-27")
+    assert len(summary) == 4
+    assert summary[0]["date"] == "2026-08-27"
+    assert summary[3]["date"] == "2026-08-24"
+    assert mock_provider.fetch_observations.call_count == 4
