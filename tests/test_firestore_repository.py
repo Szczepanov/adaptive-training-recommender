@@ -296,3 +296,28 @@ def test_save_health_observation_day_bundle_persists_when_hash_changed_regardles
 
     assert (changed, revision) == (True, 4)
     doc_ref.set.assert_called_once()
+
+
+def test_delete_health_observation_day_bundles_batch_chunks_writes() -> None:
+    mock_db = MagicMock()
+    mock_batch = MagicMock()
+    mock_db.batch.return_value = mock_batch
+    collection_ref = MagicMock()
+    mock_db.collection.return_value.document.return_value.collection.return_value = collection_ref
+    collection_ref.document.side_effect = lambda doc_id: MagicMock(name=doc_id)
+
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+    keys = [(f"2026-08-{(index % 28) + 1:02d}", "garmin", "google_health") for index in range(501)]
+
+    assert repo.delete_health_observation_day_bundles_batch(keys) == 501
+    assert mock_db.batch.call_count == 2
+    assert mock_batch.delete.call_count == 501
+    assert mock_batch.commit.call_count == 2
+
+
+def test_delete_health_observation_day_bundles_batch_empty_is_noop() -> None:
+    mock_db = MagicMock()
+    repo = FirestoreRecoveryRepository(user_id="real_uid_456", db=mock_db)
+
+    assert repo.delete_health_observation_day_bundles_batch([]) == 0
+    mock_db.batch.assert_not_called()

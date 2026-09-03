@@ -93,9 +93,11 @@ class HealthObservationService:
             return []
 
         stale_ids: list[str] = []
+        keys_to_delete: list[tuple[str, str, str]] = []
         existing = self.repository.get_health_observation_bundles_in_range(
             logical_date_iso, logical_date_iso
         )
+
         for doc in existing:
             doc_provider = doc.get("provider")
             doc_transport = doc.get("transport")
@@ -104,18 +106,22 @@ class HealthObservationService:
             key = (doc_provider, doc_transport)
             if key[1] not in provider_transports or key in current_keys:
                 continue
-            if self.repository.delete_health_observation_day_bundle(
-                logical_date_iso, key[0], key[1]
-            ):
-                stale_ids.append(f"{key[0]}_{key[1]}")
+
+            keys_to_delete.append((logical_date_iso, key[0], key[1]))
+            stale_ids.append(f"{key[0]}_{key[1]}")
+
+        if keys_to_delete:
+            self.repository.delete_health_observation_day_bundles_batch(keys_to_delete)
+            for logical_date, doc_provider, doc_transport in keys_to_delete:
                 logger.info(
                     "Tombstoned stale health observation bundle %s_%s_%s: absent from "
                     "current batch for transports %s.",
-                    logical_date_iso,
-                    key[0],
-                    key[1],
+                    logical_date,
+                    doc_provider,
+                    doc_transport,
                     sorted(provider_transports),
                 )
+
         return stale_ids
 
     def sync_date(

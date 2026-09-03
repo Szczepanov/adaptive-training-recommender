@@ -1,5 +1,7 @@
+import itertools
 import logging
 import os
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from typing import Any, Mapping, cast
 
@@ -605,6 +607,44 @@ class FirestoreRecoveryRepository:
             return False
         doc_ref.delete()
         return True
+
+    def delete_health_observation_day_bundles_batch(
+        self,
+        keys: list[tuple[str, str, str]],
+    ) -> int:
+        """Batch delete multiple day-source bundles from Firestore.
+
+        Keys should be a list of (logical_date, provider, transport) tuples.
+        Deletes are executed in batches of 500 to respect Firestore limits.
+
+        Returns the total number of deletion operations submitted to batches.
+        """
+        if not keys:
+            return 0
+
+        db = self._get_db()
+        collection_ref = (
+            db.collection("users").document(self.user_id).collection("health_observation_days")
+        )
+
+        def batched(
+            iterable: Iterable[tuple[str, str, str]], n: int
+        ) -> Iterator[list[tuple[str, str, str]]]:
+            it = iter(iterable)
+            while chunk := list(itertools.islice(it, n)):
+                yield chunk
+
+        deleted_count = 0
+        for chunk in batched(keys, 500):
+            batch = db.batch()
+            for logical_date, provider, transport in chunk:
+                doc_id = f"{logical_date}_{provider}_{transport}"
+                doc_ref = collection_ref.document(doc_id)
+                batch.delete(doc_ref)
+                deleted_count += 1
+            batch.commit()
+
+        return deleted_count
 
     def get_health_observation_bundles_in_range(
         self,
