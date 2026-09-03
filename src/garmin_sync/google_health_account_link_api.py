@@ -8,18 +8,18 @@ verification being unresolved means every linked user will see Google's "unverif
 warning -- that's a known, accepted limitation of this phase, not a bug in this service.
 """
 
-import json
 import logging
 import os
 import secrets
 import urllib.parse
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from typing import Any
 
 from firebase_admin import auth as firebase_auth
 
-from .error_reporting import log_exception, sanitize_text
+from .base_api import BaseJSONRequestHandler
+from .error_reporting import log_exception
 from .firestore_repository import init_firestore_client
 from .google_health_account_link import (
     GoogleHealthConnectionRepository,
@@ -74,38 +74,13 @@ def _env(name: str) -> str:
     return value
 
 
-class GoogleHealthAccountLinkHandler(BaseHTTPRequestHandler):
+class GoogleHealthAccountLinkHandler(BaseJSONRequestHandler):
     server_version = "GoogleHealthAccountLink/1"
-    request_id: str | None = None
 
     def log_message(self, format: str, *args: Any) -> None:
         # Never log query strings here -- the callback URL carries `code`/`state`, both of
         # which are effectively bearer credentials for this flow.
         logger.info("%s - %s %s", self.address_string(), self.command, self.path.split("?")[0])
-
-    def _json_response(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
-        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        self.send_response(status.value)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        if self.request_id:
-            self.send_header("X-Request-ID", self.request_id)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _error_response(
-        self, status: HTTPStatus, *, message: str, error_code: str, retryable: bool
-    ) -> None:
-        payload: dict[str, Any] = {
-            "error": sanitize_text(message),
-            "errorCode": error_code,
-            "retryable": retryable,
-        }
-        if self.request_id:
-            payload["requestId"] = self.request_id
-        self._json_response(status, payload)
 
     def _redirect(self, location: str) -> None:
         self.send_response(HTTPStatus.FOUND.value)
