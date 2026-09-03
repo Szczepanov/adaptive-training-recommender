@@ -156,7 +156,7 @@ describe('diffPlans — M3.7 fine-grained v2 content diff', () => {
  * the requirement -- the initial disabled/enabled state on first render -- via `PlanPreview`
  * directly (exported for exactly this). The other half (clicking the checkbox re-enables
  * Import) needs simulated interaction this repo's tooling can't do; the underlying state
- * (`acknowledged`) is a plain `useState` toggle with no logic of its own to hide a bug in.
+ * (`acknowledged`) is a plain `useState` toggle with no logic of its own to conceal defects.
  */
 describe('PlanPreview — M3.7 import acknowledgement gating', () => {
     function behaviorChangingDiff(): PlanDiffRow[] {
