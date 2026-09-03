@@ -118,18 +118,9 @@ export default defineConfig({
             return 'engine-context';
           }
 
-          // ── App: core decision engine (rules + planner + optimizer) ───────
-          // rules.ts (~67 kB) + planner.ts (~74 kB) + optimizer.ts (~49 kB)
-          // + periodization.ts (~36 kB) + templates.ts (~39 kB) + supporting modules
+          // ── App: planning & schedule subsystem ────────────────────────────
           if (
-            id.includes('/engine/rules') ||
             id.includes('/engine/planner') ||
-            id.includes('/engine/optimizer') ||
-            id.includes('/engine/periodization') ||
-            id.includes('/engine/templates') ||
-            id.includes('/engine/eligibility') ||
-            id.includes('/engine/schedule') ||
-            id.includes('/engine/stimulus') ||
             id.includes('/engine/coverage') ||
             id.includes('/engine/weeklyAllocation') ||
             id.includes('/engine/weeklyDosePacking') ||
@@ -139,14 +130,29 @@ export default defineConfig({
             id.includes('/engine/planningMode') ||
             id.includes('/engine/planningOverlays') ||
             id.includes('/engine/planSchedule') ||
-            id.includes('/engine/dose') ||
             id.includes('/engine/trainingCapacity') ||
-            id.includes('/engine/injuryPolicy') ||
-            id.includes('/engine/taperPolicy') ||
             id.includes('/engine/externalSession') ||
             id.includes('/engine/externalSessionProfiles') ||
             id.includes('/engine/externalPlacement') ||
             id.includes('/engine/externalCritique')
+          ) {
+            return 'engine-planning';
+          }
+
+          // ── App: core decision engine (rules + optimizer + templates) ─────
+          // rules.ts (~67 kB) + optimizer.ts (~49 kB) + periodization.ts (~36 kB)
+          // + templates.ts (~39 kB) + supporting modules
+          if (
+            id.includes('/engine/rules') ||
+            id.includes('/engine/optimizer') ||
+            id.includes('/engine/periodization') ||
+            id.includes('/engine/templates') ||
+            id.includes('/engine/eligibility') ||
+            id.includes('/engine/schedule') ||
+            id.includes('/engine/stimulus') ||
+            id.includes('/engine/dose') ||
+            id.includes('/engine/injuryPolicy') ||
+            id.includes('/engine/taperPolicy')
           ) {
             return 'engine-core';
           }
