@@ -26,9 +26,10 @@ Measured from `knowledgeCoverage.ts:summarizeKnowledgeCoverage` on completion of
 | High-safety uncovered | 0 | **0** |
 
 Five evidence packs are complete (load/intensity/recovery, readiness/sleep/HRV/RHR/respiration,
-the subjective+injury safety pack SEP-A→C4, strength/concurrent, taper/fueling). The parent plan
-lists four remaining packs: periodization + event demand, stimulus/optimizer calibration,
-workout-specific recovery metadata, and fueling-when-it-gains-authority.
+the subjective+injury safety pack SEP-A→C4, strength/concurrent, taper/fueling). SKR3 W0–W3 have
+now completed the periodization/event-demand reconciliation, optimizer/stimulus product-policy
+migration, and workout-specific recovery-metadata audit. Fueling remains intentionally deferred
+until it gains live decision authority (W4).
 
 ## 3. Findings from the analysis
 
