@@ -261,11 +261,11 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
             },
         }), [])).toBe(0.75);
 
-        const profile = (axis: 'thresholdPower' | 'aerobicEndurance' | 'fatigueResistance' | 'maxStrength' | 'hypertrophy') => ({
+        const profile = (axis: 'thresholdPower' | 'repeatedSurges' | 'vo2MaxPower' | 'aerobicEndurance' | 'fatigueResistance' | 'maxStrength' | 'hypertrophy') => ({
             aerobicEndurance: axis === 'aerobicEndurance' ? 0.8 : 0,
             thresholdPower: axis === 'thresholdPower' ? 0.8 : 0,
-            vo2MaxPower: 0,
-            repeatedSurges: 0,
+            vo2MaxPower: axis === 'vo2MaxPower' ? 0.8 : 0,
+            repeatedSurges: axis === 'repeatedSurges' ? 0.8 : 0,
             sprintPower: 0,
             fatigueResistance: axis === 'fatigueResistance' ? 0.8 : 0,
             maxStrength: axis === 'maxStrength' ? 0.8 : 0,
@@ -275,6 +275,14 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(calculateStimulusBenefit(
             mockTemplate({ category: 'Hard Endurance', stimulusProfile: profile('thresholdPower') }),
             [objective('threshold_quality', { thresholdPower: 0.8 }, 'Cycling')],
+        )).toBeCloseTo(0.8 * 0.8 * 1.5 + 0.5, 5);
+        expect(calculateStimulusBenefit(
+            mockTemplate({ category: 'Hard Endurance', stimulusProfile: profile('repeatedSurges') }),
+            [objective('threshold_quality', { repeatedSurges: 0.8 }, 'Cycling')],
+        )).toBeCloseTo(0.8 * 0.8 * 1.5 + 0.5, 5);
+        expect(calculateStimulusBenefit(
+            mockTemplate({ category: 'Hard Endurance', stimulusProfile: profile('vo2MaxPower') }),
+            [objective('threshold_quality', { vo2MaxPower: 0.8 }, 'Cycling')],
         )).toBeCloseTo(0.8 * 0.8 * 1.5 + 0.5, 5);
         expect(calculateStimulusBenefit(
             mockTemplate({ stimulusProfile: profile('aerobicEndurance') }),
