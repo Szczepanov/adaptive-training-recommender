@@ -18,7 +18,8 @@ def test_audit_math_helpers() -> None:
 
     xs = [1.0, 2.0, 3.0, 4.0, 5.0]
     ys = [2.0, 4.0, 6.0, 8.0, 10.0]
-    assert round(_calc_correlation(xs, ys), 2) == 1.0
+    corr = _calc_correlation(xs, ys)
+    assert corr is not None and round(corr, 2) == 1.0
 
 
 def test_calc_percentile() -> None:
