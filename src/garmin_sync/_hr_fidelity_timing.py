@@ -1,7 +1,5 @@
 """Timer-window, sampling, and coverage primitives for HRF3."""
 
-from __future__ import annotations
-
 from datetime import datetime
 from statistics import median
 from typing import TYPE_CHECKING
