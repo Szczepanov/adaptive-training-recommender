@@ -1,12 +1,13 @@
 """Tests for HR fidelity deterministic artifact detectors."""
 
+from __future__ import annotations
+
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 import pytest
 
 from garmin_sync._hr_fidelity_detectors import (
-    ArtifactPolicy,
     activity_motion_risk,
     cadence_lock_flags,
     transition_flags,
@@ -14,9 +15,11 @@ from garmin_sync._hr_fidelity_detectors import (
 )
 from garmin_sync.fit_activity import FitRecordSample
 
+
 @dataclass(frozen=True)
 class MockArtifactPolicy:
     """A mock implementation of ArtifactPolicy for testing."""
+
     contiguous_sample_seconds: float = 5.0
     isolated_spike_bpm: float = 10.0
     isolated_neighbor_delta_bpm: float = 5.0
@@ -190,7 +193,7 @@ def test_cadence_lock_flags_running() -> None:
         lock_min_samples=3,
         lock_min_cadence_coverage_pct=80.0,
         cadence_tolerance_bpm=5.0,
-        lock_min_target_range_bpm=5.0, # Make this small enough to pass
+        lock_min_target_range_bpm=5.0,  # Make this small enough to pass
         lock_stable_power_delta_watts=20.0,
         lock_stable_power_relative_delta=0.2,
         lock_min_match_pct=80.0,
@@ -207,7 +210,9 @@ def test_cadence_lock_flags_running() -> None:
     for i in range(11):
         cad = 80.0 if i < 5 else 85.0
         # HR matches 2x cadence exactly
-        records.append(_sample(base_time + timedelta(seconds=i), hr=cad * 2.0, power=100.0, cadence=cad))
+        records.append(
+            _sample(base_time + timedelta(seconds=i), hr=cad * 2.0, power=100.0, cadence=cad)
+        )
 
     flags = cadence_lock_flags("run", records, policy)
     assert "CADENCE_LOCK_SUSPECTED" in flags
@@ -230,7 +235,9 @@ def test_cadence_lock_flags_cycling() -> None:
     # Same setup but for cycling. Cadence * 2 = Harmonic lock.
     for i in range(11):
         cad = 80.0 if i < 5 else 85.0
-        records.append(_sample(base_time + timedelta(seconds=i), hr=cad * 2.0, power=100.0, cadence=cad))
+        records.append(
+            _sample(base_time + timedelta(seconds=i), hr=cad * 2.0, power=100.0, cadence=cad)
+        )
 
     flags = cadence_lock_flags("cycling", records, policy)
     assert "HARMONIC_LOCK_SUSPECTED" in flags
@@ -243,6 +250,8 @@ def test_cadence_lock_flags_clean() -> None:
 
     # Cadence is 80 (target 160), HR is 130. They don't match.
     for i in range(11):
-        records.append(_sample(base_time + timedelta(seconds=i), hr=130.0, power=100.0, cadence=80.0))
+        records.append(
+            _sample(base_time + timedelta(seconds=i), hr=130.0, power=100.0, cadence=80.0)
+        )
 
     assert not cadence_lock_flags("run", records, policy)
