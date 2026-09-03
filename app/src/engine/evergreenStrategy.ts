@@ -1,5 +1,5 @@
 import type { CompletedExposure } from './trainingHistory';
-import type { TrainingIntentProfile, TrainingPriority } from './models';
+import type { DailyReadiness, TrainingIntentProfile, TrainingPriority } from './models';
 import {
     getActiveKnowledgeClaim,
     KNOWLEDGE_CLAIM_IDS,
@@ -94,6 +94,34 @@ export interface AthleteTrainingState {
 
 export interface GoalOrEventContext {
     priorities: readonly TrainingPriority[];
+    isAdverseRecovery?: boolean;
+}
+
+export function isSevereAdverseRecoveryReadiness(
+    readiness: DailyReadiness | null | undefined,
+    mode?: 'train' | 'modify' | 'recover',
+): boolean {
+    if (!readiness) return false;
+    const isRecoverMode = mode ? mode === 'recover' : true;
+    const obj = readiness.objective ?? {};
+    let adverseCount = 0;
+    if (obj.hrv_delta !== null && obj.hrv_delta !== undefined && obj.hrv_delta <= -10) adverseCount++;
+    if (obj.rhr_delta !== null && obj.rhr_delta !== undefined && obj.rhr_delta >= 5) adverseCount++;
+    if (obj.body_battery_wake !== null && obj.body_battery_wake !== undefined && obj.body_battery_wake <= 35) adverseCount++;
+    if (obj.sleep_score !== null && obj.sleep_score !== undefined && obj.sleep_score <= 55) adverseCount++;
+
+    const subj = readiness.subjective ?? {};
+    let distressCount = 0;
+    if (subj.fatigue !== undefined && subj.fatigue !== null && subj.fatigue >= 7) distressCount++;
+    if (subj.soreness !== undefined && subj.soreness !== null && subj.soreness >= 7) distressCount++;
+    if (subj.stress !== undefined && subj.stress !== null && subj.stress >= 8) distressCount++;
+    if (subj.readiness !== undefined && subj.readiness !== null && subj.readiness <= 4) distressCount++;
+
+    return isRecoverMode && (
+        adverseCount >= 2
+        || distressCount >= 2
+        || (adverseCount >= 1 && distressCount >= 1)
+    );
 }
 
 export interface PolicyWarning {
@@ -258,7 +286,9 @@ export function resolveEvidenceBackedStrategy(
     if (healthOrBalanced || priorities.has('strength_muscle')) requirements.push(strengthRequirement('required'));
 
     const performancePriority = priorities.has('endurance') || priorities.has('speed_power') || priorities.has('sport_readiness');
-    const canUseConditionalPrior = athleteState.inference.dataQuality === 'high' && athleteState.trainingAgeProxy === 'established';
+    const canUseConditionalPrior = athleteState.inference.dataQuality === 'high'
+        && athleteState.trainingAgeProxy === 'established'
+        && !goalOrEvent.isAdverseRecovery;
     const warnings: PolicyWarning[] = [];
     if (performancePriority && canUseConditionalPrior) {
         const primaryClaimId = KNOWLEDGE_CLAIM_IDS.conditionalHighIntensityPrior;
@@ -270,7 +300,12 @@ export function resolveEvidenceBackedStrategy(
             evidence: evidenceProvenance(primaryClaimId, 'conditional_prior', 'low'),
         });
     } else if (performancePriority) {
-        warnings.push({ code: 'conditional_prior_withheld', message: 'Performance-intensity work is withheld until sufficient, consistent recent training evidence is available.' });
+        warnings.push({
+            code: 'conditional_prior_withheld',
+            message: goalOrEvent.isAdverseRecovery
+                ? 'Performance-intensity work is withheld during acute adverse recovery.'
+                : 'Performance-intensity work is withheld until sufficient, consistent recent training evidence is available.',
+        });
     }
     return { requirements, ...(canUseConditionalPrior ? { hardSessionCap: 2 } : {}), warnings };
 }

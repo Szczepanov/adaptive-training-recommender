@@ -667,7 +667,19 @@ export function buildOptimizationContext(
         avoidedModalities: context.preferences.avoidedModalities ?? [],
         conservativeBias: context.preferences.conservativeBias ?? false,
     } : DEFAULT_PREFERENCES;
-    const basePrefs = preferences ? { ...DEFAULT_PREFERENCES, ...preferences } : contextPrefs;
+    const basePrefs = preferences ? {
+        ...DEFAULT_PREFERENCES,
+        ...preferences,
+        preferredModalities: (preferences.preferredModalities && preferences.preferredModalities.length > 0)
+            ? preferences.preferredModalities
+            : contextPrefs.preferredModalities,
+        deprioritizedModalities: (preferences.deprioritizedModalities && preferences.deprioritizedModalities.length > 0)
+            ? preferences.deprioritizedModalities
+            : contextPrefs.deprioritizedModalities,
+        avoidedModalities: (preferences.avoidedModalities && preferences.avoidedModalities.length > 0)
+            ? preferences.avoidedModalities
+            : contextPrefs.avoidedModalities,
+    } : contextPrefs;
     const userId = (context.trainingSettings?.userId && context.trainingSettings.userId !== '')
         ? context.trainingSettings.userId : (basePrefs.userId ?? '');
     const effectivePreferences: UserPreferences = {
@@ -777,6 +789,7 @@ export function rankCandidates(
 ): RankCandidatesResult {
     const isDisliked = (t: SessionTemplate) => preferences.avoidedModalities.some(m => m.toLowerCase() === (t.modality ?? '').toLowerCase());
     const isPreferred = (t: SessionTemplate) => preferences.preferredModalities.some(m => m.toLowerCase() === (t.modality ?? '').toLowerCase());
+    const isDeprioritized = (t: SessionTemplate) => preferences.deprioritizedModalities.some(m => m.toLowerCase() === (t.modality ?? '').toLowerCase());
 
     const extraMargin = preferences.extraRecoveryMargin ?? preferences.conservativeBias ?? false;
     const focusEvent = options.focusEvent;
@@ -889,7 +902,8 @@ export function rankCandidates(
 
         let prefMultiplier = 1.0;
         if (isDisliked(template)) prefMultiplier = 0.2;
-        else if (isPreferred(template)) prefMultiplier = 1.3;
+        else if (isPreferred(template)) prefMultiplier = 1.35;
+        else if (isDeprioritized(template)) prefMultiplier = 0.25;
         if (preferences.conservativeBias) {
             if (template.category === 'Rest' || template.category === 'Mobility/Recovery') prefMultiplier *= 1.25;
             else if (template.systemicCost <= 0.4) prefMultiplier *= 1.15;
