@@ -844,6 +844,12 @@ export function rankCandidates(
             : 3;
         const recoveryPreferenceTier = recoveryPreferenceTierFor(template);
 
+        const satisfiesUnresolvedObjective = unresolvedObjectives.some(obj =>
+            obj.qualification?.allowedModalities
+                ? obj.qualification.allowedModalities.includes(template.modality)
+                : (template.modality === 'Strength' && (obj.key === 'strength_maintenance' || obj.key === 'strength_development'))
+        );
+
         if (focusEvent && (focusEvent.priority === 'A' || focusEvent.priority === 'B')) {
             const categoryLower = focusEvent.category.toLowerCase();
             const templateModLower = (template.modality ?? '').toLowerCase();
@@ -852,11 +858,6 @@ export function rankCandidates(
                 (categoryLower.includes('running') && templateModLower.includes('running')) ||
                 (categoryLower.includes('strength') && templateModLower.includes('strength')) ||
                 (categoryLower === 'triathlon' && (templateModLower.includes('cycling') || templateModLower.includes('running')));
-            const satisfiesUnresolvedObjective = unresolvedObjectives.some(obj =>
-                obj.qualification?.allowedModalities
-                    ? obj.qualification.allowedModalities.includes(template.modality)
-                    : (template.modality === 'Strength' && (obj.key === 'strength_maintenance' || obj.key === 'strength_development'))
-            );
             const eventPriorityApplies = !categoryLower.includes('strength') || satisfiesUnresolvedObjective || fulfilsNominatedAnchor;
             if (matchesEvent && eventPriorityApplies) {
                 benefit *= focusEvent.priority === 'A' ? 1.40 : 1.25;
@@ -876,6 +877,12 @@ export function rankCandidates(
                 }
             } else if (!matchesEvent && !isPreferred(template) && !satisfiesUnresolvedObjective && unresolvedObjectives.length > 0) {
                 benefit *= 0.20;
+            }
+        } else if (!satisfiesUnresolvedObjective) {
+            if (isDisliked(template)) {
+                benefit *= 0.20;
+            } else if (isDeprioritized(template)) {
+                benefit *= 0.25;
             }
         }
 
