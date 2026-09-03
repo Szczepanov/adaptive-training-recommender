@@ -25,8 +25,6 @@ the fact that ``RespirationStrainPolicy`` defaults to ``'off'`` in production; t
 only produces measurement evidence for that future calibration decision.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import random
