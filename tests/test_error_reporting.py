@@ -13,15 +13,7 @@ from garmin_sync.error_reporting import (
 )
 
 
-class GarminConnectTooManyRequestsError(RuntimeError):
-    pass
-
-
 class GarminConnectConnectionError(RuntimeError):
-    pass
-
-
-class GarminConnectAuthenticationError(RuntimeError):
     pass
 
 
@@ -63,12 +55,49 @@ def test_sanitize_context_redacts_sensitive_keys_recursively() -> None:
     }
 
 
-def test_exception_classification_is_stable_and_marks_retryable_failures() -> None:
-    assert classify_exception(GarminConnectTooManyRequestsError()) == ("rate_limited", True)
-    assert classify_exception(GarminConnectConnectionError()) == ("upstream_unavailable", True)
-    assert classify_exception(GarminConnectAuthenticationError()) == ("authentication", False)
-    assert classify_exception(ValueError()) == ("validation", False)
-    assert classify_exception(RuntimeError()) == ("unexpected", False)
+@pytest.mark.parametrize(
+    ("error_class_name", "expected_category", "expected_retryable"),
+    [
+        # Rate Limited
+        ("TooManyRequestsError", "rate_limited", True),
+        ("RateLimitExceeded", "rate_limited", True),
+        ("ResourceExhaustedException", "rate_limited", True),
+        # Authentication
+        ("AuthenticationError", "authentication", False),
+        ("UnauthenticatedClient", "authentication", False),
+        ("PermissionDeniedError", "authentication", False),
+        # Configuration
+        ("ConfigurationError", "configuration", False),
+        ("DefaultCredentialError", "configuration", False),
+        ("CredentialsError", "configuration", False),
+        # Upstream Unavailable
+        ("ConnectionResetError", "upstream_unavailable", True),
+        ("TimeoutError", "upstream_unavailable", True),
+        ("DeadlineExceeded", "upstream_unavailable", True),
+        ("ServiceUnavailable", "upstream_unavailable", True),
+        ("TransportError", "upstream_unavailable", True),
+        # Conflict
+        ("ConflictError", "conflict", False),
+        ("AlreadyExistsException", "conflict", False),
+        # Validation
+        ("ValidationError", "validation", False),
+        ("JSONDecodeError", "validation", False),
+        # Not Found
+        ("NotFoundError", "not_found", False),
+        # Unexpected
+        ("RuntimeError", "unexpected", False),
+        ("KeyError", "unexpected", False),
+    ],
+)
+def test_exception_classification_is_stable_and_marks_retryable_failures(
+    error_class_name: str, expected_category: str, expected_retryable: bool
+) -> None:
+    error_class = type(error_class_name, (Exception,), {})
+    assert classify_exception(error_class()) == (expected_category, expected_retryable)
+
+
+def test_exception_classification_handles_value_error_by_instance() -> None:
+    assert classify_exception(ValueError("bad value")) == ("validation", False)
 
 
 def test_error_report_has_stable_code_and_safe_stack() -> None:
