@@ -121,6 +121,26 @@ function cyclingEvent(priority: 'A' | 'B', date = '2026-09-20'): UserEvent {
     } as UserEvent;
 }
 
+function strengthEvent(priority: 'A' | 'B', date = '2026-09-20'): UserEvent {
+    return {
+        id: `strength-event-${priority}-${date}`,
+        title: `${priority} strength event`,
+        date,
+        priority,
+        lifecycle: 'scheduled',
+        category: 'strength_meet',
+        demandProfile: {
+            aerobicEndurance: 0.1,
+            thresholdPower: 0.1,
+            vo2MaxPower: 0.1,
+            repeatedSurges: 0.1,
+            sprintPower: 0.3,
+            fatigueResistance: 0.3,
+            neuromuscular: 0.9,
+        },
+    } as UserEvent;
+}
+
 function hardStreakHistory(length: number): NonNullable<OptimizationOptions['recentHistory']> {
     return Array.from({ length }, (_, index) => ({
         date: `2026-09-${String(9 - index).padStart(2, '0')}`,
@@ -228,7 +248,8 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         expect(claim.status).toBe('active');
         expect(claim.statement).toContain('1.5 for thresholdPower, repeatedSurges and vo2MaxPower');
         expect(claim.statement).toContain('1.2 for aerobicEndurance and fatigueResistance');
-        expect(claim.statement).toContain('1.6 for maxStrength or hypertrophy');
+        expect(claim.statement).toContain('1.6 * max(target.maxStrength, target.hypertrophy) * max(stimulus.maxStrength, stimulus.hypertrophy)');
+        expect(claim.statement).toContain('sprintPower has no dedicated objective-benefit term');
         expect(claim.statement).toContain('Technical Skill returns 0.3');
         expect(claim.statement).toContain('min(0.75, 0.45 + 0.2*(aerobicEndurance + thresholdPower))');
 
@@ -261,12 +282,12 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
             },
         }), [])).toBe(0.75);
 
-        const profile = (axis: 'thresholdPower' | 'repeatedSurges' | 'vo2MaxPower' | 'aerobicEndurance' | 'fatigueResistance' | 'maxStrength' | 'hypertrophy') => ({
+        const profile = (axis: 'thresholdPower' | 'repeatedSurges' | 'vo2MaxPower' | 'aerobicEndurance' | 'fatigueResistance' | 'maxStrength' | 'hypertrophy' | 'sprintPower') => ({
             aerobicEndurance: axis === 'aerobicEndurance' ? 0.8 : 0,
             thresholdPower: axis === 'thresholdPower' ? 0.8 : 0,
             vo2MaxPower: axis === 'vo2MaxPower' ? 0.8 : 0,
             repeatedSurges: axis === 'repeatedSurges' ? 0.8 : 0,
-            sprintPower: 0,
+            sprintPower: axis === 'sprintPower' ? 0.8 : 0,
             fatigueResistance: axis === 'fatigueResistance' ? 0.8 : 0,
             maxStrength: axis === 'maxStrength' ? 0.8 : 0,
             hypertrophy: axis === 'hypertrophy' ? 0.8 : 0,
@@ -278,11 +299,11 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         )).toBeCloseTo(0.8 * 0.8 * 1.5 + 0.5, 5);
         expect(calculateStimulusBenefit(
             mockTemplate({ category: 'Hard Endurance', stimulusProfile: profile('repeatedSurges') }),
-            [objective('threshold_quality', { repeatedSurges: 0.8 }, 'Cycling')],
+            [objective('surge_repeatability', { repeatedSurges: 0.8 }, 'Cycling')],
         )).toBeCloseTo(0.8 * 0.8 * 1.5 + 0.5, 5);
         expect(calculateStimulusBenefit(
             mockTemplate({ category: 'Hard Endurance', stimulusProfile: profile('vo2MaxPower') }),
-            [objective('threshold_quality', { vo2MaxPower: 0.8 }, 'Cycling')],
+            [objective('vo2_max', { vo2MaxPower: 0.8 }, 'Cycling')],
         )).toBeCloseTo(0.8 * 0.8 * 1.5 + 0.5, 5);
         expect(calculateStimulusBenefit(
             mockTemplate({ stimulusProfile: profile('aerobicEndurance') }),
@@ -300,6 +321,14 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
             mockTemplate({ category: 'Full-body Strength', modality: 'Strength', stimulusProfile: profile('hypertrophy') }),
             [objective('strength_development', { hypertrophy: 0.8 }, 'Strength')],
         )).toBeCloseTo(0.8 * 0.8 * 1.6 + 0.5, 5);
+        expect(calculateStimulusBenefit(
+            mockTemplate({ category: 'Full-body Strength', modality: 'Strength', stimulusProfile: profile('hypertrophy') }),
+            [objective('strength_development', { maxStrength: 0.8 }, 'Strength')],
+        )).toBeCloseTo(0.8 * 0.8 * 1.6 + 0.5, 5);
+        expect(calculateStimulusBenefit(
+            mockTemplate({ category: 'Hard Endurance', stimulusProfile: profile('sprintPower') }),
+            [objective('surge_repeatability', { sprintPower: 0.8 }, 'Cycling')],
+        )).toBe(0.5);
         expect(calculateStimulusBenefit(
             mockTemplate({ category: 'Easy Endurance', modality: 'Cycling', stimulusProfile: profile('aerobicEndurance') }),
             [objective('threshold_quality', { thresholdPower: 0.8 }, 'Running')],
@@ -354,19 +383,53 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
         );
         expect(nonMatching.accepted[0].benefitScore).toBeCloseTo(0.45 * 0.20, 5);
 
+        const strength = mockTemplate({
+            id: 'strength-event-test',
+            category: 'Full-body Strength',
+            modality: 'Strength',
+            stimulusProfile: {
+                aerobicEndurance: 0,
+                thresholdPower: 0,
+                vo2MaxPower: 0,
+                repeatedSurges: 0,
+                sprintPower: 0,
+                fatigueResistance: 0,
+                maxStrength: 0.8,
+                hypertrophy: 0,
+            },
+        });
+        const strengthNoObjective = rankCandidates([strength], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-10', focusEvent: strengthEvent('A'),
+        });
+        expect(strengthNoObjective.accepted[0].benefitScore).toBeCloseTo(0.45, 5);
+
+        const strengthObjective = [objective('strength_development', { maxStrength: 0.8 }, 'Strength')];
+        const strengthBaseline = rankCandidates([strength], strengthObjective, mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-10',
+        });
+        const strengthWithAEvent = rankCandidates([strength], strengthObjective, mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-10', focusEvent: strengthEvent('A'),
+        });
+        expect(strengthWithAEvent.accepted[0].benefitScore).toBeCloseTo(strengthBaseline.accepted[0].benefitScore * 1.40, 5);
+
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.eventPriorityMultipliersPolicy);
-        expect(claim.statement).toContain('1.40 for A-priority events and 1.25 for B-priority events');
+        expect(claim.statement).toContain('1.40 for an A-priority event and 1.25 for a B-priority event');
+        expect(claim.statement).toContain('for strength_meet, that priority boost applies only when the candidate satisfies an unresolved objective');
         expect(claim.statement).toContain('multiplied by 0.35');
         expect(claim.statement).toContain('multiplied by 0.50');
         expect(claim.statement).toContain('multiplied by 0.20');
     });
 
-    it('pins recovery-streak and consecutive-high-intensity multipliers to production ranking', () => {
+    it('pins recovery alternation, recovery-streak, and prior-high-intensity multipliers to production ranking', () => {
         const easy = mockTemplate({ stimulusProfile: undefined });
         const rest = mockTemplate({ id: 'rest-test', category: 'Rest', modality: 'None', systemicCost: 0, costProfile: undefined, stimulusProfile: undefined });
+        const mobility = mockTemplate({ id: 'mobility-test', category: 'Mobility/Recovery', modality: 'Mobility', systemicCost: 0, costProfile: undefined, stimulusProfile: undefined });
         const streak3 = hardStreakHistory(3);
         const streak4 = hardStreakHistory(4);
 
+        const easyNoStreak = rankCandidates([easy], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
+            date: '2026-09-10', recentHistory: [],
+        });
         const easyAt3 = rankCandidates([easy], [], mockFatigueState(), AVAILABILITY, [], PREFERENCES, {
             date: '2026-09-10', recentHistory: streak3,
         });
@@ -377,9 +440,29 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
             date: '2026-09-10', recentHistory: streak3,
         });
 
+        expect(easyNoStreak.accepted[0].utilityScore).toBeCloseTo(0.45 * 1.25, 5);
         expect(easyAt3.accepted[0].utilityScore).toBeCloseTo(0.45 * 0.3, 5);
         expect(easyAt4.accepted[0].utilityScore).toBeCloseTo(0.45 * 0.1, 5);
         expect(restAt3.accepted[0].utilityScore).toBeCloseTo(0.1 * 2.0, 5);
+
+        const mixedPreferences = { ...PREFERENCES, preferredRecoveryStyle: 'mixed' as const };
+        const mobilityAfterNoRecovery = rankCandidates([mobility], [], mockFatigueState(), AVAILABILITY, [], mixedPreferences, {
+            date: '2026-09-10', recentHistory: [],
+        });
+        expect(mobilityAfterNoRecovery.accepted[0].utilityScore).toBeCloseTo(0.2 * 1.4, 5);
+
+        const restAfterMobility = rankCandidates([rest], [], mockFatigueState(), AVAILABILITY, [], mixedPreferences, {
+            date: '2026-09-10',
+            recentHistory: [{
+                date: '2026-09-09',
+                category: 'Mobility/Recovery',
+                modality: 'Mobility',
+                systemicCost: 0,
+                lowerBodyCost: 0,
+                type: 'Mobility',
+            }],
+        });
+        expect(restAfterMobility.accepted[0].utilityScore).toBeCloseTo(0.1 * 1.4, 5);
 
         const highIntensity = mockTemplate({
             systemicCost: 0.5,
@@ -407,10 +490,14 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
                 type: 'Cycling',
             }],
         });
+        expect(noPriorHigh.accepted[0].utilityScore).toBeCloseTo(0.45 * 1.25, 5);
         expect(afterHigh.accepted[0].utilityScore).toBeCloseTo(noPriorHigh.accepted[0].utilityScore * 0.35, 5);
 
         const streakClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.recoveryStreakHeuristicsPolicy);
-        expect(streakClaim.statement).toContain('Rest/Mobility is boosted by 2.0x while aerobic defaults are multiplied by 0.3 (or 0.1 at streak >= 4)');
-        expect(streakClaim.statement).toContain('0.35x penalty multiplier');
+        expect(streakClaim.statement).toContain('mixed recovery style');
+        expect(streakClaim.statement).toContain('multiplied by 1.40');
+        expect(streakClaim.statement).toContain('aerobic defaults are multiplied by 1.25');
+        expect(streakClaim.statement).toContain('Rest/Mobility is multiplied by 2.0');
+        expect(streakClaim.statement).toContain('0.35x multiplier');
     });
 });
