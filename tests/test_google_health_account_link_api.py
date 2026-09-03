@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from http import HTTPStatus
 from typing import Any
 
@@ -104,7 +102,7 @@ def test_app_redirect_falls_back_to_relative_path_without_app_base_url(monkeypat
 
 def test_handle_start_link_requires_auth(monkeypatch: Any) -> None:
     handler = _handler()
-    handler.headers = {}
+    handler.headers = {}  # type: ignore[assignment]
     with pytest.raises(GoogleHealthLinkError):
         handler._handle_start_link()
 
@@ -129,7 +127,7 @@ def test_handle_start_link_returns_authorize_url(monkeypatch: Any) -> None:
     )
 
     handler = _handler()
-    handler.headers = {"Authorization": "Bearer token"}
+    handler.headers = {"Authorization": "Bearer token"}  # type: ignore[assignment]
     captured = _capture_json(handler)
 
     handler._handle_start_link()
