@@ -1,3 +1,4 @@
+from typing import Any
 from unittest.mock import MagicMock
 
 from garmin_sync.identity_replay_export import export_identity_replay_input
@@ -18,7 +19,7 @@ def _complete_garmin_snapshot(date: str) -> dict:
     }
 
 
-def _eight_sleep_bundle(date: str, **overrides) -> dict:
+def _eight_sleep_bundle(date: str, **overrides: Any) -> dict:
     bundle = {
         "logicalDate": date,
         "provider": "eight_sleep",
@@ -76,7 +77,7 @@ def test_export_paired_night_with_anchor_present() -> None:
     assert anchor_ref["lineageKey"] != shared_ref["lineageKey"]
 
     # This fixture's raw snapshot has no sleepSessionStart/sleepSessionEnd (e.g. a night
-    # synced before the sleep-timing plumbing fix) -- see
+    # synced before the sleep-timing plumbing update) -- see
     # test_export_garmin_session_populated_when_raw_has_sleep_timing for the positive case.
     assert night["garminSessions"] == []
     assert night["eightSleepSessions"] == [
