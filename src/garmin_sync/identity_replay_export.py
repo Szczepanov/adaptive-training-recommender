@@ -26,8 +26,6 @@ bespoke backfill script needed); `garminSessions` is `[]` for those exactly as b
 accurate for them, not a synthesized placeholder.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 from dataclasses import dataclass, field
