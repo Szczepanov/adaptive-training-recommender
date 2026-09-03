@@ -39,6 +39,7 @@ def _policy() -> HrFidelityPolicy:
         dropout_gap_seconds=15.0,
     )
 
+
 def test_timestamped_records_sorts_and_filters() -> None:
     records = (
         _record(10),
@@ -69,9 +70,7 @@ def test_window_duration_computes_sum_of_durations() -> None:
 
 
 def test_window_duration_ignores_negative_durations() -> None:
-    windows = (
-        (_START + timedelta(seconds=10), _START),
-    )
+    windows = ((_START + timedelta(seconds=10), _START),)
     assert window_duration(windows) == 0.0
 
 
@@ -247,7 +246,16 @@ def test_coverage_calculates_sample_coverage_and_max_gap() -> None:
 
 
 def test_coverage_detects_dropout() -> None:
-    records = [_record(0), _record(10), _record(20), _record(30), _record(40), _record(50), _record(60), _record(70)]
+    records = [
+        _record(0),
+        _record(10),
+        _record(20),
+        _record(30),
+        _record(40),
+        _record(50),
+        _record(60),
+        _record(70),
+    ]
     valid = [_record(0), _record(70)]
     windows = ((_START, _START + timedelta(seconds=70)),)
 
