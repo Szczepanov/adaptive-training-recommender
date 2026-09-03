@@ -32,21 +32,21 @@ export const OPTIMIZER_SCORING_SOURCES: readonly KnowledgeSource[] = [
 export const OPTIMIZER_SCORING_CLAIMS: readonly KnowledgeClaim[] = [
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.fatigueCostWeightsPolicy,
-        statement: "Product optimizer scoring v1: candidate session fatigue penalty weights dimensional fatigue as systemic 2.0, cardiovascular 1.5, lower-body 2.5, upper-body 1.5, impact-tissue 2.0 and neuromuscular 1.8 against the workout's costProfile. An extraMargin requirement with systemicCost > 0.5 adds a fixed 0.3 cost penalty.",
+        statement: "Product optimizer scoring v1: candidate session fatigue penalty weights dimensional fatigue as systemic 2.0, cardiovascular 1.5, lower-body 2.5, upper-body 1.5, impact-tissue 2.0 and neuromuscular 1.8 against the workout's costProfile. An explicit extraRecoveryMargin, or conservativeBias when extraRecoveryMargin is unset, adds a fixed 0.3 cost penalty when systemicCost > 0.5; conservativeBias additionally adds 0.35 when systemicCost >= 0.6.",
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'moderate',
         applicability: { contexts: ['candidate_selection', 'fatigue_cost_penalty'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['candidate_cost_penalty'], horizon: 'acute' },
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
         limitations: ['These weights materially alter candidate ranking and session selection; they are internal product heuristics balancing dimensional recovery times rather than empirical physiological interaction coefficients.'],
-        reviewedOn: '2026-09-02', version: 1,
+        reviewedOn: '2026-09-03', version: 1,
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.stimulusBenefitWeightsPolicy,
-        statement: 'Product optimizer scoring v1: candidate session stimulus benefit scores qualified weekly objectives using multipliers of 1.5 for thresholdPower, repeatedSurges and vo2MaxPower; 1.2 for aerobicEndurance and fatigueResistance; 1.6 for maxStrength or hypertrophy; a non-objective baseline of 0.2 for Mobility/Recovery and 0.5 for other categories is added to non-zero benefits, or 0.1 for Rest.',
+        statement: 'Product optimizer scoring v1: Rest returns 0.1. When stimulusProfile is absent or unresolvedObjectives is empty, Mobility/Recovery returns 0.2, Technical Skill returns 0.3, and every other category returns min(0.75, 0.45 + 0.2*(aerobicEndurance + thresholdPower)), with missing stimulusProfile contributing zero to that sum. When objective scoring is active, qualified weekly objectives use multipliers of 1.5 for thresholdPower, repeatedSurges and vo2MaxPower; 1.2 for aerobicEndurance and fatigueResistance; and 1.6 for maxStrength or hypertrophy. In that objective-scoring branch, Mobility/Recovery uses a 0.2 non-objective baseline and other non-Rest categories use 0.5; the baseline is returned when no qualified target contributes and is added when benefit is non-zero.',
         claimType: 'heuristic', maturity: 'heuristic', status: 'active', evidenceCertainty: 'not_applicable', recommendationStrength: 'conditional', safetyImpact: 'low',
         applicability: { contexts: ['candidate_selection', 'stimulus_benefit_scoring'], sports: ['all_supported_sports'], populations: ['app_users'], outcomes: ['candidate_benefit_score'], horizon: 'acute' },
         evidence: [{ sourceId: OPTIMIZER_SCORING_PRODUCT_POLICY_SOURCE, directness: 'direct' }],
-        limitations: ['Utility calibration determines relative preference among candidate sessions that satisfy constraints; the multipliers reflect product emphasis across adaptation targets, not empirical effect sizes.'],
-        reviewedOn: '2026-09-02', version: 1,
+        limitations: ['Utility calibration determines relative preference among candidate sessions that satisfy constraints; the multipliers and fallback curve reflect product emphasis across adaptation targets, not empirical effect sizes.'],
+        reviewedOn: '2026-09-03', version: 1,
     },
     {
         id: OPTIMIZER_SCORING_CLAIM_IDS.eventPriorityMultipliersPolicy,
