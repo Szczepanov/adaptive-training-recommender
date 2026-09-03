@@ -73,4 +73,18 @@ describe('catalog workout recovery metadata audit (SKR3 W3)', () => {
     const resFloat = validateWorkoutLibrary(EXERCISES, [invalidMinDaysNonInt]);
     expect(resFloat.errors).toContain('test_mindays_float: minimumDaysAfterHardLowerBody must be an integer between 1 and 7');
   });
+
+  it('rejects non-finite recoveryHours values before range validation', () => {
+    const base = WORKOUTS[0];
+    for (const [suffix, recoveryHours] of [
+      ['nan', Number.NaN],
+      ['positive_infinity', Number.POSITIVE_INFINITY],
+      ['negative_infinity', Number.NEGATIVE_INFINITY],
+    ] as const) {
+      const id = `test_rec_${suffix}`;
+      const invalidWorkout = { ...base, id, loadProfile: { ...base.loadProfile, recoveryHours } };
+      const result = validateWorkoutLibrary(EXERCISES, [invalidWorkout]);
+      expect(result.errors).toContain(`${id}: recoveryHours must be finite`);
+    }
+  });
 });

@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { DimensionalFatigue } from '../engine/models';
+import type {
+    DailyReadiness,
+    DimensionalFatigue,
+    EngineObjectiveInput,
+    SubjectiveInput,
+    UserContext,
+} from '../engine/models';
 import type { CompletedExposure } from '../engine/microcycleHistory';
 import {
     CONFIDENCE_CREDIT_WEIGHT,
@@ -11,6 +17,7 @@ import {
 } from '../engine/microcycle';
 import {
     combineFatigue,
+    computeInternalResponseStrain,
     estimateActivitySteps,
 } from '../engine/fatigue';
 import {
@@ -19,10 +26,95 @@ import {
 } from '../engine/evergreenStrategy';
 import { LEGACY_SESSION_COUNT_TIE_BREAKER } from '../engine/weeklyDosePacking';
 import {
+    evaluateEnvelopes,
+    evaluateReadinessAndSafetyEnvelope,
+} from '../engine/rules';
+import {
     getActiveKnowledgeClaim,
     KNOWLEDGE_CLAIM_IDS,
     validateCanonicalSportsKnowledgeRegistry,
 } from './sportsKnowledgeRegistry';
+
+function baseContext(overrides: Partial<UserContext['preferences']> = {}): UserContext {
+    return {
+        goals: { shortTerm: '', midTerm: '', longTerm: '' },
+        constraints: {
+            hasCableMachine: false,
+            hasFreeWeights: true,
+            hasTreadmill: false,
+            hasIndoorBike: false,
+            restrictedModalities: [],
+            maxTimeMinutes: 90,
+        },
+        preferences: {
+            avoidedModalities: [],
+            deprioritizedModalities: [],
+            preferredModalities: [],
+            conservativeBias: false,
+            ...overrides,
+        },
+    };
+}
+
+function greenSubjective(overrides: Partial<SubjectiveInput> = {}): SubjectiveInput {
+    return {
+        readiness: 9,
+        sleepQuality: 9,
+        fatigue: 2,
+        soreness: 2,
+        stress: 2,
+        motivation: 9,
+        timeAvailable: 60,
+        painFlag: false,
+        alreadyTrainedToday: false,
+        preferredModalityToday: null,
+        ...overrides,
+    };
+}
+
+function quietObjective(overrides: Partial<EngineObjectiveInput> = {}): EngineObjectiveInput {
+    return {
+        total_steps: 8000,
+        sleep_score: 85,
+        sleep_duration_min: 450,
+        rhr: 50,
+        rhr_7d_avg: 50,
+        rhr_delta: 0,
+        hrv_weekly_avg: 50,
+        hrv_last_night: 50,
+        hrv_delta: 0,
+        respiration: 14,
+        body_battery_wake: 85,
+        last_3_days_hard_sessions_count: 0,
+        yesterday_training: null,
+        today_training: null,
+        sleep_score_delta_7d: 0,
+        rhr_delta_28d: 0,
+        hrv_delta_28d: 0,
+        sleep_score_delta_28d: 0,
+        hrv_stdev_28d: 8.5,
+        rhr_stdev_28d: 3.5,
+        sleep_score_stdev_28d: 7.8,
+        ...overrides,
+    };
+}
+
+function greenReadiness(
+    subjectiveOverrides: Partial<SubjectiveInput> = {},
+    objectiveOverrides: Partial<EngineObjectiveInput> = {},
+): DailyReadiness {
+    return {
+        subjective: greenSubjective(subjectiveOverrides),
+        objective: quietObjective(objectiveOverrides),
+    };
+}
+
+function ambientLoadReadiness(objectiveOverrides: Partial<EngineObjectiveInput>): DailyReadiness {
+    return greenReadiness(
+        { fatigue: 1, soreness: 1, stress: 1, motivation: 10 },
+        objectiveOverrides,
+    );
+}
 
 describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () => {
     it('passes canonical sports knowledge registry validation with all stimulus heuristics claims included', () => {
@@ -56,10 +148,9 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
             targetStimulus: {},
         };
 
-        // Case A: fatigueResistance is greater
         const profileA = {
             aerobicEndurance: 0.4,
-            repeatedSurges: 0.4, // blend = 0.4
+            repeatedSurges: 0.4,
             fatigueResistance: 0.7,
             thresholdPower: 0,
             vo2MaxPower: 0,
@@ -71,10 +162,9 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         const creditA = deriveObjectiveCreditFromProfile(objective, profileA, { plannedDurationMin: 60, completedDurationMin: 60 });
         expect(creditA.earnedCredit).toBeCloseTo(0.7, 5);
 
-        // Case B: blend is greater
         const profileB = {
             aerobicEndurance: 0.8,
-            repeatedSurges: 0.6, // blend = 0.7
+            repeatedSurges: 0.6,
             fatigueResistance: 0.5,
             thresholdPower: 0,
             vo2MaxPower: 0,
@@ -97,7 +187,7 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         expect(LEGACY_KEYWORD_COMPATIBILITY_CREDIT).toBe(0.5);
     });
 
-    it('pins the fatigue max fusion and ambient step surge policies to production functions', () => {
+    it('pins fatigue max fusion and ambient-step surge thresholds to production behavior', () => {
         const fusionClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.maxFusionPolicy);
         expect(fusionClaim.statement).toContain('dimensional maximum across all six dimensions');
 
@@ -115,11 +205,52 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
 
         const stepClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.ambientStepSurgePolicy);
         expect(stepClaim.statement).toContain('1.8x the 7-day average baseline with >=6000 excess ambient steps');
+        expect(stepClaim.statement).toContain('0.4 cap at +15,000 excess steps');
         expect(stepClaim.statement).toContain('155 and 110 steps per minute');
 
-        // Verify activity step estimation deductions
         expect(estimateActivitySteps({ type: 'running', duration_min: 30 })).toBe(30 * 155);
         expect(estimateActivitySteps({ type: 'walking', duration_min: 40 })).toBe(40 * 110);
+
+        const belowRatio = computeInternalResponseStrain(ambientLoadReadiness({
+            total_steps: 17_999,
+            steps_7d_avg: 10_000,
+        }));
+        expect(belowRatio.lowerBody).toBe(0);
+        expect(belowRatio.impactTissue).toBe(0);
+
+        const belowExcess = computeInternalResponseStrain(ambientLoadReadiness({
+            total_steps: 9_000,
+            steps_7d_avg: 5_000,
+        }));
+        expect(belowExcess.lowerBody).toBe(0);
+        expect(belowExcess.impactTissue).toBe(0);
+
+        const triggered = computeInternalResponseStrain(ambientLoadReadiness({
+            total_steps: 18_000,
+            steps_7d_avg: 10_000,
+        }));
+        expect(triggered.lowerBody).toBeCloseTo((8_000 / 15_000) * 0.4, 5);
+        expect(triggered.impactTissue).toBeCloseTo((8_000 / 15_000) * 0.4, 5);
+
+        const capped = computeInternalResponseStrain(ambientLoadReadiness({
+            total_steps: 25_000,
+            steps_7d_avg: 10_000,
+        }));
+        expect(capped.lowerBody).toBeCloseTo(0.4, 5);
+        expect(capped.impactTissue).toBeCloseTo(0.4, 5);
+
+        const activityDeducted = computeInternalResponseStrain(ambientLoadReadiness({
+            total_steps: 18_000,
+            steps_7d_avg: 10_000,
+            yesterday_training: {
+                type: 'running',
+                duration_min: 30,
+                training_effect: 0,
+                intensity_tag: '',
+            },
+        }));
+        expect(activityDeducted.lowerBody).toBe(0);
+        expect(activityDeducted.impactTissue).toBe(0);
     });
 
     it('pins the evergreen training history qualification and commitment profile to production rules', () => {
@@ -128,7 +259,6 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         expect(historyClaim.statement).toContain('<28 days is classified as limited');
         expect(historyClaim.statement).toContain('>=28 observed days, >=12 completed sessions, and >=720 total training minutes');
 
-        // Test state transitions
         const exposures: CompletedExposure[] = Array.from({ length: 12 }, (_, i) => ({
             id: `exp-${i}`,
             date: '2026-08-01',
@@ -139,7 +269,7 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
                 id: `rec-${i}`,
                 date: '2026-08-01',
                 type: 'cycling',
-                duration_min: 60, // 12 * 60 = 720 minutes
+                duration_min: 60,
             },
         } as unknown as CompletedExposure));
 
@@ -158,9 +288,9 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         });
     });
 
-    it('pins the legacy session spacing tie breaker to production values', () => {
+    it('pins the legacy session spacing tie breaker to production values including the 7+ clamp', () => {
         const tiebreakClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.legacySessionSpacingTiebreakPolicy);
-        expect(tiebreakClaim.statement).toContain('3 days for 2 sessions/week, 2 days for 3 sessions/week, and 1 day for 4 to 6 sessions/week');
+        expect(tiebreakClaim.statement).toContain('1 day for 4-6+ sessions/week');
 
         expect(LEGACY_SESSION_COUNT_TIE_BREAKER[2].preferredSpacingDays).toBe(3);
         expect(LEGACY_SESSION_COUNT_TIE_BREAKER[3].preferredSpacingDays).toBe(2);
@@ -169,13 +299,27 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         expect(LEGACY_SESSION_COUNT_TIE_BREAKER[6].preferredSpacingDays).toBe(1);
     });
 
-    it('pins the readiness plan tier cost ceilings and post-recover buffer claims', () => {
+    it('exercises production readiness tier routing and post-recover hysteresis', () => {
         const ceilingsClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.planTierCostCeilingsPolicy);
         expect(ceilingsClaim.status).toBe('active');
         expect(ceilingsClaim.statement).toContain('Rest caps at 0, Mobility caps at 0.15, Easy caps at 0.50 (matching the modify mode ceiling), Moderate caps at 0.80, and Hard allows uncapped systemic cost');
 
+        const context = baseContext();
+        expect(evaluateEnvelopes(greenReadiness(), context).plan.maxAllowableTier).toBe('Hard');
+        expect(evaluateEnvelopes(greenReadiness({}, { body_battery_wake: 25 }), context).plan.maxAllowableTier).toBe('Easy');
+        expect(evaluateEnvelopes(greenReadiness({ painFlag: true }), context).plan.maxAllowableTier).toBe('Mobility');
+        expect(evaluateEnvelopes(greenReadiness({ alreadyTrainedToday: true }), context).plan.maxAllowableTier).toBe('Rest');
+
         const bufferClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.postRecoverBufferPolicy);
         expect(bufferClaim.status).toBe('active');
         expect(bufferClaim.statement).toContain("a day that evaluates to train is downgraded to modify when the previous day's resolved mode was recover");
+
+        const withoutPreviousRecover = evaluateReadinessAndSafetyEnvelope(greenReadiness(), context, undefined, 'train');
+        expect(withoutPreviousRecover.mode).toBe('train');
+        expect(withoutPreviousRecover.postRecoverBufferApplied).toBe(false);
+
+        const afterRecover = evaluateReadinessAndSafetyEnvelope(greenReadiness(), context, undefined, 'recover');
+        expect(afterRecover.mode).toBe('modify');
+        expect(afterRecover.postRecoverBufferApplied).toBe(true);
     });
 });
