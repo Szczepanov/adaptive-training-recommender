@@ -165,7 +165,7 @@ ownership and constrain availability before candidates are selected.
 
 | Module | Responsibility |
 |---|---|
-| `adapters.ts` | Firestore canonical models → engine inputs |
+| `adapters.ts` | Firestore canonical models → engine inputs; provides `createSubjectiveOnlyObjectiveInput()` for wearable-free operation |
 | `validation.ts` | Schema validation and sanitisation at the persistence boundary |
 | `eligibility.ts` | The single hard-gate resolver: time, equipment, environment, guardrails |
 | `rules.ts` | Strain scoring, `train`/`modify`/`recover` mode, safety & plan envelopes, adjustment tiers |
@@ -178,6 +178,16 @@ ownership and constrain availability before candidates are selected.
 | `dose.ts` | Validates and intersects planned dose with the clinical ceiling and athlete adjustment |
 | `planner.ts` / `weeklyAllocation.ts` | Rolling 7-day projection, projected-credit ledger, exact-role reservation evidence and weekly anchor preferences |
 | `provenance.ts` / `replay.ts` | Audit construction and current-policy verification; historical policies are audit-only |
+
+### Wearable-free composition boundary
+
+`mapSnapshotToEngineInput(null)` supplies unavailable wearable telemetry and therefore adds
+no wearable-derived strain. This adapter behavior does not by itself authorize planning.
+`Home.tsx` and `PlanView.tsx` first require a complete minimum safety check-in and either a
+usable recovery snapshot or a Garmin state canonically confirmed as disconnected through
+ADR-0029. A connected account with a missing snapshot is directed to sync; an unknown
+connection state fails closed. Training history, clinical/injury restrictions, equipment,
+availability, post-recovery buffering, and the normal planner remain unchanged.
 
 ---
 

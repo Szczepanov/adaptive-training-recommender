@@ -58,12 +58,18 @@ def _verified_uid(authorization: str | None) -> str:
     if scheme.lower() != "bearer" or not token.strip():
         raise GoogleHealthLinkError("Invalid app authorization header.")
     try:
-        decoded = firebase_auth.verify_id_token(token.strip())
+        decoded = firebase_auth.verify_id_token(token.strip(), check_revoked=True)
     except Exception as exc:
         raise GoogleHealthLinkError("App session is invalid or expired.") from exc
     uid = decoded.get("uid")
     if not uid:
         raise GoogleHealthLinkError("App session has no user identity.")
+    firebase_claim = decoded.get("firebase")
+    sign_in_provider = (
+        firebase_claim.get("sign_in_provider") if isinstance(firebase_claim, dict) else None
+    )
+    if sign_in_provider == "password" and decoded.get("email_verified") is not True:
+        raise GoogleHealthLinkError("Verify your email before linking Google Health.")
     return str(uid)
 
 

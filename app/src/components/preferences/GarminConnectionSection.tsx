@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { signInWithCustomToken } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
-import { getAuthInstance, getDb } from '../../firebase';
+import { getAuthInstance } from '../../firebase';
 import { garminAuthService } from '../../services/garminAuthService';
+import { garminConnectionService } from '../../services/garminConnectionService';
 import { getErrorMessage } from '../../utils/errors';
 import { firestoreDateToDate, type FirestoreDateValue } from '../../utils/firestoreDate';
 import { getLocalDateString } from '../../utils/localDate';
@@ -30,52 +30,21 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
   const [success, setSuccess] = useState(false);
 
   useEffect(() => {
-    let cancelled = false;
-    let reconciliationStarted = false;
     setLoadingConnection(true);
     setConnectionError(null);
-
-    const reconcileWithServer = async () => {
-      if (reconciliationStarted) return;
-      reconciliationStarted = true;
-      try {
-        const status = await garminAuthService.getConnectionStatus();
-        if (cancelled) return;
-        setConnection(status.status === 'active' ? status : null);
+    return garminConnectionService.subscribeToGarminConnection(userId, (result) => {
+      setLoadingConnection(false);
+      if (result.state === 'connected') {
+        setConnection({ status: 'active', linkedAt: result.linkedAt as FirestoreDateValue });
         setConnectionError(null);
-      } catch (err: unknown) {
-        if (cancelled) return;
-        setConnectionError(getErrorMessage(err) || 'Could not verify Garmin connection status.');
-      } finally {
-        if (!cancelled) setLoadingConnection(false);
+      } else if (result.state === 'disconnected') {
+        setConnection(null);
+        setConnectionError(null);
+      } else {
+        setConnection(null);
+        setConnectionError(getErrorMessage(result.error) || 'Could not verify Garmin connection status.');
       }
-    };
-
-    const ref = doc(getDb(), 'users', userId, 'connections', 'garmin');
-    const unsubscribe = onSnapshot(
-      ref,
-      (snap) => {
-        if (snap.exists() && snap.data().status === 'active') {
-          setConnection(snap.data() as GarminConnection);
-          setConnectionError(null);
-          setLoadingConnection(false);
-          return;
-        }
-        // Older links have no mirror. Ask the authenticated backend for canonical state;
-        // it transactionally repairs the non-secret mirror so subsequent loads are direct.
-        void reconcileWithServer();
-      },
-      () => {
-        // Firestore may be temporarily unavailable or the mirror may not exist yet. The
-        // canonical server-only connection record remains the authority for this fallback.
-        void reconcileWithServer();
-      },
-    );
-
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
+    });
   }, [userId]);
 
   const isConnected = connection?.status === 'active';

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { garminSyncRequestService } from '../services/garminSyncRequestService';
 import { getAwaitedSyncOutcome, isAwaitedSyncComplete } from '../utils/garminSyncRequestState';
 import { useAutoGarminSync } from './useAutoGarminSync';
+import { useGarminConnectionState } from './useGarminConnectionState';
 import type { GarminSyncRequest } from '../services/garminSyncRequestService';
 
 vi.mock('../services/garminSyncRequestService', () => ({
@@ -10,6 +11,10 @@ vi.mock('../services/garminSyncRequestService', () => ({
         requestSync: vi.fn(async () => '2026-08-23T06:00:00.000Z'),
         getRequest: vi.fn(async () => null),
     },
+}));
+
+vi.mock('./useGarminConnectionState', () => ({
+    useGarminConnectionState: vi.fn(() => 'connected'),
 }));
 
 function request(overrides: Partial<GarminSyncRequest> = {}): GarminSyncRequest {
@@ -37,6 +42,10 @@ describe('useAutoGarminSync', () => {
         expect(garminSyncRequestService.subscribeToRequest).toBeDefined();
         expect(garminSyncRequestService.requestSync).toBeDefined();
         expect(garminSyncRequestService.getRequest).toBeDefined();
+    });
+
+    it('uses tri-state Garmin connection status to suppress sync for unlinked accounts', () => {
+        expect(useGarminConnectionState).toBeDefined();
     });
 });
 

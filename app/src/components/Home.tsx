@@ -51,6 +51,7 @@ import { MorningDecisionCard } from './MorningDecisionCard';
 import { ActivityReclassificationModal } from './ActivityReclassificationModal';
 import { assembleMorningDecisionEvidence } from '../engine/decisionEvidence';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
+import { garminConnectionService } from '../services/garminConnectionService';
 import { activityOverrideService } from '../services/activityOverrideService';
 import { activityService } from '../services/activityService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
@@ -58,6 +59,7 @@ import { TEMPLATES, TEMPLATES_BY_ID } from '../engine/templates';
 import type { ActivityOverride, DailyRecoverySnapshot, NormalizedGarminActivity } from '../engine/models';
 import type { ErrorRepairAction } from './errorRepairAction';
 import { useAutoGarminSync } from '../hooks/useAutoGarminSync';
+import { resolveWearablePlanningMode } from '../utils/wearablePlanningGate';
 import {
   canGenerateNormalRecommendation,
   createProvisionalSafetyRecommendation,
@@ -284,6 +286,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           : 'Recovery data needs repair before generating a plan.');
         return;
       }
+
       const decisionSourceFailure = input.sourceStates
         && [input.sourceStates.activeGoals, input.sourceStates.preferences, input.sourceStates.trainingSettings]
           .find(state => state.status === 'INVALID' || state.status === 'UNAVAILABLE');
@@ -305,6 +308,27 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           ? 'Decision inputs are temporarily unavailable. Please retry before generating a plan.'
           : 'Decision inputs need repair before generating a plan.');
         return;
+      }
+
+      if (!input.recoverySnapshot) {
+        const connection = await garminConnectionService.getConnectionState(userId);
+        if (!isCurrent()) return;
+        const wearableMode = resolveWearablePlanningMode(false, connection.state);
+        if (wearableMode === 'sync_required') {
+          setRecommendation(null);
+          setNextDayPlan(null);
+          clearExternalPlanState();
+          setErrorRepairTargets([{ kind: 'resync' }]);
+          setError('Garmin is connected, but today\'s recovery data is missing. Sync before generating a plan.');
+          return;
+        }
+        if (wearableMode === 'unavailable') {
+          setRecommendation(null);
+          setNextDayPlan(null);
+          clearExternalPlanState();
+          setError('Garmin connection status could not be verified. Retry before using wearable-free mode.');
+          return;
+        }
       }
 
       const yesterday = getPreviousLocalDateString(input.date);
@@ -358,7 +382,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       );
 
       const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
-      if (input.recoverySnapshot && canGenerateNormalRecommendation(safetyStatus)) {
+      if (canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, input.subjectiveCheckin);
@@ -613,16 +637,15 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     if (!decisionInput) return 0;
     const { dataQuality } = decisionInput;
     const items = [
-      dataQuality.hasRecoverySnapshot,
-      dataQuality.hasSubjectiveCheckin,
-      dataQuality.profileReady
+      dataQuality.subjectiveCheckinComplete,
+      dataQuality.profileReady,
     ];
     const completed = items.filter(Boolean).length;
     return Math.round((completed / items.length) * 100);
   };
 
   const engineInputs = useMemo(() => {
-    if (!decisionInput || !decisionInput.recoverySnapshot) return null;
+    if (!decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
     const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, decisionInput.subjectiveCheckin);
@@ -630,7 +653,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   }, [decisionInput]);
 
   const forecastEngineInputs = useMemo(() => {
-    if (!decisionInput || !decisionInput.recoverySnapshot) return null;
+    if (!decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
     const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, null);
@@ -1058,8 +1081,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           ) : (
             <div className="dashboard-card empty-recommendation-card">
               <p className="card-empty">
-                {!decisionInput?.dataQuality.hasRecoverySnapshot
-                  ? "No Garmin recovery data synced today yet — that's required to generate a recommendation."
+                {!decisionInput?.dataQuality.hasSubjectiveCheckin
+                  ? "Complete your morning check-in to generate today's recommendation."
                   : decisionInput.subjectiveCheckin && !decisionInput.dataQuality.subjectiveCheckinComplete
                   ? "Today's check-in is only partially filled in — finish it to get a recommendation."
                   : 'Unable to compute a recommendation yet.'}
@@ -1154,7 +1177,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                     Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
                   </span>
                 ) : (
-                  <span className="status-badge warning">No Data</span>
+                  <span className="status-badge status-neutral">Wearable Optional</span>
                 )}
               </div>
 
@@ -1188,7 +1211,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                   </>
                 </div>
               ) : (
-                <p className="card-empty">No Garmin data synced today</p>
+                <p className="card-empty">No wearable synced. Training readiness is guided by your daily check-in.</p>
               )}
             </div>
 

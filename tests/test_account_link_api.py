@@ -106,7 +106,8 @@ def test_handle_login_enforces_per_account_rate_limiting(monkeypatch: Any) -> No
 def test_verified_uid_raises_authentication_error_on_verify_id_token_exception(
     monkeypatch: Any,
 ) -> None:
-    def mock_verify_id_token(token: str) -> dict[str, Any]:
+    def mock_verify_id_token(token: str, *, check_revoked: bool) -> dict[str, Any]:
+        assert check_revoked is True
         raise Exception("Firebase verification failed")
 
     monkeypatch.setattr(account_link_api.firebase_auth, "verify_id_token", mock_verify_id_token)
@@ -115,6 +116,24 @@ def test_verified_uid_raises_authentication_error_on_verify_id_token_exception(
         GarminConnectAuthenticationError, match="App session is invalid or expired."
     ):
         account_link_api._verified_uid("Bearer any-token")  # noqa: SLF001
+
+
+def test_verified_uid_checks_revocation_and_rejects_unverified_password_user(
+    monkeypatch: Any,
+) -> None:
+    def mock_verify_id_token(token: str, *, check_revoked: bool) -> dict[str, Any]:
+        assert token == "valid-token"
+        assert check_revoked is True
+        return {
+            "uid": "uid-1",
+            "email_verified": False,
+            "firebase": {"sign_in_provider": "password"},
+        }
+
+    monkeypatch.setattr(account_link_api.firebase_auth, "verify_id_token", mock_verify_id_token)
+
+    with pytest.raises(GarminConnectAuthenticationError, match="Verify your email"):
+        account_link_api._verified_uid("Bearer valid-token")  # noqa: SLF001
 
 
 def test_log_message_redacts_query_parameters(monkeypatch: Any) -> None:

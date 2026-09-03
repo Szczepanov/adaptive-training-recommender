@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapSnapshotToEngineInput, resolveClinicalEnvelopeSources, resolveRedFlagFindings } from './adapters';
+import {
+    createSubjectiveOnlyObjectiveInput,
+    mapCheckinToSubjectiveInput,
+    mapContextFromGoalsAndTrainingSettings,
+    mapSnapshotToEngineInput,
+    resolveClinicalEnvelopeSources,
+    resolveRedFlagFindings,
+} from './adapters';
 import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
@@ -517,6 +524,30 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
             });
             expect(resolveRedFlagFindings(checkin)).toEqual([]);
             expect(resolveClinicalEnvelopeSources(checkin)).not.toContain('red_flag');
+        });
+    });
+
+    describe('createSubjectiveOnlyObjectiveInput and wearable-free snapshot mapping', () => {
+        it('returns zeroed and null objective telemetry from createSubjectiveOnlyObjectiveInput', () => {
+            const input = createSubjectiveOnlyObjectiveInput();
+            expect(input.rhr).toBeNull();
+            expect(input.hrv_weekly_avg).toBeNull();
+            expect(input.hrv_delta).toBeNull();
+            expect(input.rhr_delta).toBeNull();
+            expect(input.sleep_score).toBeNull();
+            expect(input.body_battery_wake).toBeNull();
+            expect(input.last_3_days_hard_sessions_count).toBe(0);
+            expect(input.yesterday_training).toBeNull();
+            expect(input.today_training).toBeNull();
+            expect(input.sleep_score_delta_7d).toBeNull();
+            expect(input.respiration_delta).toBeNull();
+        });
+
+        it('mapSnapshotToEngineInput delegates to createSubjectiveOnlyObjectiveInput when snapshot is null or undefined', () => {
+            const fromNull = mapSnapshotToEngineInput(null);
+            const fromUndefined = mapSnapshotToEngineInput(undefined);
+            expect(fromNull).toEqual(createSubjectiveOnlyObjectiveInput());
+            expect(fromUndefined).toEqual(createSubjectiveOnlyObjectiveInput());
         });
     });
 });

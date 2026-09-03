@@ -138,6 +138,7 @@ def test_scoped_for_user() -> None:
 
 def test_load_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     # Test missing APP_USER_ID
+    monkeypatch.setattr("garmin_sync.config.load_dotenv", lambda **kwargs: None)
     monkeypatch.delenv("APP_USER_ID", raising=False)
     with pytest.raises(ValueError, match="APP_USER_ID is required for this single-user command"):
         load_settings()
