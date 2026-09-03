@@ -5,8 +5,6 @@ quality metadata. It deliberately has no persistence, provider, or recommendatio
 dependencies: a weak measurement reduces available HR evidence, never athlete state.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from typing import Literal
 
