@@ -5,6 +5,7 @@ import logging
 import pytest
 
 from garmin_sync.error_reporting import (
+    ErrorReport,
     build_error_report,
     classify_exception,
     log_exception,
@@ -69,6 +70,33 @@ def test_exception_classification_is_stable_and_marks_retryable_failures() -> No
     assert classify_exception(GarminConnectAuthenticationError()) == ("authentication", False)
     assert classify_exception(ValueError()) == ("validation", False)
     assert classify_exception(RuntimeError()) == ("unexpected", False)
+
+
+def test_error_report_as_log_dict() -> None:
+    report = ErrorReport(
+        code="sync.failure",
+        category="upstream",
+        exception_type="ValueError",
+        message="Invalid token",
+        retryable=False,
+        operation="sync_user",
+        context={"user_id": "123"},
+        stack=("frame1", "frame2"),
+    )
+
+    log_dict = report.as_log_dict()
+
+    assert log_dict == {
+        "code": "sync.failure",
+        "category": "upstream",
+        "exceptionType": "ValueError",
+        "message": "Invalid token",
+        "retryable": False,
+        "operation": "sync_user",
+        "context": {"user_id": "123"},
+        "stack": ["frame1", "frame2"],
+    }
+    assert isinstance(log_dict["stack"], list)
 
 
 def test_error_report_has_stable_code_and_safe_stack() -> None:
