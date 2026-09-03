@@ -6,8 +6,6 @@ or complete traces. A decoder error is all-or-nothing: callers must retain the b
 activity and treat fidelity as unassessed rather than using partial messages.
 """
 
-from __future__ import annotations
-
 from dataclasses import dataclass
 from datetime import datetime
 from io import BytesIO
