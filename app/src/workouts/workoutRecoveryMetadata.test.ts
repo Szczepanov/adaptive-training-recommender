@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { ENRICHED_TEMPLATES } from '../engine/templates';
 import { WORKOUTS } from './catalog';
 import { EXERCISES } from './exercises';
 import { validateWorkoutLibrary } from './validation';
@@ -52,6 +53,18 @@ describe('catalog workout recovery metadata audit (SKR3 W3)', () => {
     expect(byModality.strength.minDays2).toBe(0);
     expect(byModality.field.minDays1).toBe(1);
     expect(byModality.field.minDays2).toBe(2);
+  });
+
+  it('pins the safety-relevant one-day overrides whose associated engine template has lowerBodyCost >= 0.6', () => {
+    const templateById = new Map(ENRICHED_TEMPLATES.map(template => [template.id, template]));
+    const oneDayHighLowerBodyOverrides = WORKOUTS.filter(workout => {
+      if (workout.eligibility.minimumDaysAfterHardLowerBody !== 1) return false;
+      return (workout.engineTemplateIds ?? []).some(templateId =>
+        (templateById.get(templateId)?.costProfile?.lowerBody ?? 0) >= 0.6
+      );
+    });
+
+    expect(oneDayHighLowerBodyOverrides).toHaveLength(11);
   });
 
   it('rejects workouts with out-of-bounds recoveryHours or invalid minimumDaysAfterHardLowerBody', () => {
