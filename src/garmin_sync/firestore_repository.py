@@ -468,8 +468,9 @@ class FirestoreRecoveryRepository:
             return int(result[0][0].value)
         except Exception:
             # Firestore aggregation queries may be unavailable in older emulators/mocks --
-            # fall back to a client-side count.
-            return sum(1 for _ in query.stream())
+            # fall back to a client-side count. Use select([]) to project only document
+            # IDs, avoiding full document payload transfer.
+            return sum(1 for _ in query.select([]).stream())
 
     def save_health_observation_day_bundle(
         self,
