@@ -17,6 +17,7 @@ import {
 } from '../engine/microcycle';
 import {
     combineFatigue,
+    computeInternalResponseStrain,
     estimateActivitySteps,
 } from '../engine/fatigue';
 import {
@@ -108,6 +109,13 @@ function greenReadiness(
     };
 }
 
+function ambientLoadReadiness(objectiveOverrides: Partial<EngineObjectiveInput>): DailyReadiness {
+    return greenReadiness(
+        { fatigue: 1, soreness: 1, stress: 1, motivation: 10 },
+        objectiveOverrides,
+    );
+}
+
 describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () => {
     it('passes canonical sports knowledge registry validation with all stimulus heuristics claims included', () => {
         const result = validateCanonicalSportsKnowledgeRegistry();
@@ -179,7 +187,7 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
         expect(LEGACY_KEYWORD_COMPATIBILITY_CREDIT).toBe(0.5);
     });
 
-    it('pins the fatigue max fusion and ambient step surge policies to production functions', () => {
+    it('pins fatigue max fusion and ambient-step surge thresholds to production behavior', () => {
         const fusionClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.maxFusionPolicy);
         expect(fusionClaim.statement).toContain('dimensional maximum across all six dimensions');
 
@@ -197,10 +205,52 @@ describe('stimulus credit & heuristics product-claim alignment (SKR3 W2b)', () =
 
         const stepClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.ambientStepSurgePolicy);
         expect(stepClaim.statement).toContain('1.8x the 7-day average baseline with >=6000 excess ambient steps');
+        expect(stepClaim.statement).toContain('0.4 cap at +15,000 excess steps');
         expect(stepClaim.statement).toContain('155 and 110 steps per minute');
 
         expect(estimateActivitySteps({ type: 'running', duration_min: 30 })).toBe(30 * 155);
         expect(estimateActivitySteps({ type: 'walking', duration_min: 40 })).toBe(40 * 110);
+
+        const belowRatio = computeInternalResponseStrain(ambientLoadReadiness({
+            total_steps: 17_999,
+            steps_7d_avg: 10_000,
+        }));
+        expect(belowRatio.lowerBody).toBe(0);
+        expect(belowRatio.impactTissue).toBe(0);
+
+        const belowExcess = computeInternalResponseStrain(ambientLoadReadiness({
+            total_steps: 9_000,
+            steps_7d_avg: 5_000,
+        }));
+        expect(belowExcess.lowerBody).toBe(0);
+        expect(belowExcess.impactTissue).toBe(0);
+
+        const triggered = computeInternalResponseStrain(ambientLoadReadiness({
+            total_steps: 18_000,
+            steps_7d_avg: 10_000,
+        }));
+        expect(triggered.lowerBody).toBeCloseTo((8_000 / 15_000) * 0.4, 5);
+        expect(triggered.impactTissue).toBeCloseTo((8_000 / 15_000) * 0.4, 5);
+
+        const capped = computeInternalResponseStrain(ambientLoadReadiness({
+            total_steps: 25_000,
+            steps_7d_avg: 10_000,
+        }));
+        expect(capped.lowerBody).toBeCloseTo(0.4, 5);
+        expect(capped.impactTissue).toBeCloseTo(0.4, 5);
+
+        const activityDeducted = computeInternalResponseStrain(ambientLoadReadiness({
+            total_steps: 18_000,
+            steps_7d_avg: 10_000,
+            yesterday_training: {
+                type: 'running',
+                duration_min: 30,
+                training_effect: 0,
+                intensity_tag: '',
+            },
+        }));
+        expect(activityDeducted.lowerBody).toBe(0);
+        expect(activityDeducted.impactTissue).toBe(0);
     });
 
     it('pins the evergreen training history qualification and commitment profile to production rules', () => {
