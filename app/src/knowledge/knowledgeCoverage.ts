@@ -325,7 +325,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'optimizer.fatigue_cost_weights', domain: 'optimizer_scoring', title: 'Fatigue cost-penalty weights',
-        currentRule: 'Candidate cost penalty weights systemic 2.0, cardiovascular 1.5, lower-body 2.5, upper-body 1.5, impact-tissue 2.0 and neuromuscular 1.8 against dimensional fatigue; rankCandidates adds +0.3 when extra recovery margin is active and systemicCost >0.5.',
+        currentRule: 'Candidate cost penalty weights systemic 2.0, cardiovascular 1.5, lower-body 2.5, upper-body 1.5, impact-tissue 2.0 and neuromuscular 1.8 against dimensional fatigue; extraRecoveryMargin, or conservativeBias when the margin is unset, adds +0.3 when systemicCost >0.5, and conservativeBias additionally adds +0.35 at systemicCost >=0.6.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:calculateFatigueCostPenalty', 'engine/optimizer.ts:rankCandidates'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.trainingStressRecoveryBalance, KNOWLEDGE_CLAIM_IDS.fatigueDecayHalfLives, KNOWLEDGE_CLAIM_IDS.fatigueCostWeightsPolicy],
@@ -333,7 +333,7 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
     },
     {
         id: 'optimizer.stimulus_benefit_weights', domain: 'optimizer_scoring', title: 'Objective stimulus-benefit weights',
-        currentRule: 'Threshold/surge/VO2 matches use 1.5 multipliers, aerobic/fatigue-resistance 1.2, strength/hypertrophy 1.6; exact non-objective baselines are Rest 0.1, Mobility/Recovery 0.2, and all other categories 0.5.',
+        currentRule: 'Rest returns 0.1. With no stimulus profile or no unresolved objectives: Mobility/Recovery returns 0.2, Technical Skill 0.3, and other categories return min(0.75, 0.45 + 0.2*(aerobicEndurance + thresholdPower)). With objective scoring active, qualified threshold/surge/VO2 matches use 1.5, aerobic/fatigue-resistance 1.2, strength/hypertrophy 1.6; Mobility uses a 0.2 fallback/additive baseline and other non-Rest categories 0.5.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'moderate', safetyImpact: 'low', researchPriority: 'none',
         codeRefs: ['engine/optimizer.ts:calculateStimulusBenefit'],
         knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.stimulusBenefitWeightsPolicy],
