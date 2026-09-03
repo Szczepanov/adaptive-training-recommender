@@ -5,6 +5,7 @@ import {
     summarizeKnowledgeCoverage,
     validateKnowledgeCoverageInventory,
 } from './knowledgeCoverage';
+import { KNOWLEDGE_CLAIM_IDS } from './sportsKnowledgeRegistry';
 
 const byId = (id: string) => ENGINE_KNOWLEDGE_COVERAGE.find(item => item.id === id);
 
@@ -91,44 +92,46 @@ describe('engine knowledge coverage inventory', () => {
         expect(byId('data_trust.identity_gated_source_fail_closed')).toMatchObject({ classification: 'safety_invariant', coverage: 'not_applicable' });
     });
 
-    it('keeps optimizer scoring heuristics covered with explicit product policy (SKR3 W2a)', () => {
-        const optimizerCovered = [
-            'optimizer.fatigue_cost_weights',
-            'optimizer.stimulus_benefit_weights',
-            'optimizer.event_priority_multipliers',
-            'optimizer.recovery_streak_heuristics',
-        ];
-        optimizerCovered.forEach(id => {
+    it('keeps optimizer scoring heuristics covered with the intended product-policy claims (SKR3 W2a)', () => {
+        const expectedClaims = {
+            'optimizer.fatigue_cost_weights': KNOWLEDGE_CLAIM_IDS.fatigueCostWeightsPolicy,
+            'optimizer.stimulus_benefit_weights': KNOWLEDGE_CLAIM_IDS.stimulusBenefitWeightsPolicy,
+            'optimizer.event_priority_multipliers': KNOWLEDGE_CLAIM_IDS.eventPriorityMultipliersPolicy,
+            'optimizer.recovery_streak_heuristics': KNOWLEDGE_CLAIM_IDS.recoveryStreakHeuristicsPolicy,
+        } as const;
+
+        Object.entries(expectedClaims).forEach(([id, claimId]) => {
             expect(byId(id)).toMatchObject({
                 coverage: 'covered',
                 classification: 'product_heuristic',
                 researchPriority: 'none',
             });
-            expect(byId(id)?.knowledgeRefs.length).toBeGreaterThanOrEqual(1);
+            expect(byId(id)?.knowledgeRefs).toContain(claimId);
         });
     });
 
-    it('keeps stimulus credit, fatigue heuristics, and planning priors covered with product policy (SKR3 W2b)', () => {
-        const w2bCovered = [
-            'stimulus.objective_credit_confidence',
-            'stimulus.legacy_keyword_credit',
-            'stimulus.race_specific_credit_formula',
-            'stimulus.coverage_threshold',
-            'fatigue.ambient_step_surge',
-            'fatigue.max_fusion_policy',
-            'readiness.post_recover_buffer',
-            'readiness.plan_tier_cost_ceilings',
-            'evergreen.default_weekly_commitment',
-            'evergreen.training_history_qualification',
-            'packing.legacy_session_spacing_tiebreak',
-        ];
-        w2bCovered.forEach(id => {
+    it('keeps W2b families covered with their intended product-policy claims', () => {
+        const expectedClaims = {
+            'stimulus.objective_credit_confidence': KNOWLEDGE_CLAIM_IDS.objectiveCreditConfidencePolicy,
+            'stimulus.legacy_keyword_credit': KNOWLEDGE_CLAIM_IDS.legacyKeywordCreditPolicy,
+            'stimulus.race_specific_credit_formula': KNOWLEDGE_CLAIM_IDS.raceSpecificCreditFormulaPolicy,
+            'stimulus.coverage_threshold': KNOWLEDGE_CLAIM_IDS.coverageThresholdPolicy,
+            'fatigue.ambient_step_surge': KNOWLEDGE_CLAIM_IDS.ambientStepSurgePolicy,
+            'fatigue.max_fusion_policy': KNOWLEDGE_CLAIM_IDS.maxFusionPolicy,
+            'readiness.post_recover_buffer': KNOWLEDGE_CLAIM_IDS.postRecoverBufferPolicy,
+            'readiness.plan_tier_cost_ceilings': KNOWLEDGE_CLAIM_IDS.planTierCostCeilingsPolicy,
+            'evergreen.default_weekly_commitment': KNOWLEDGE_CLAIM_IDS.defaultWeeklyCommitmentPolicy,
+            'evergreen.training_history_qualification': KNOWLEDGE_CLAIM_IDS.trainingHistoryQualificationPolicy,
+            'packing.legacy_session_spacing_tiebreak': KNOWLEDGE_CLAIM_IDS.legacySessionSpacingTiebreakPolicy,
+        } as const;
+
+        Object.entries(expectedClaims).forEach(([id, claimId]) => {
             expect(byId(id)).toMatchObject({
                 coverage: 'covered',
                 classification: 'product_heuristic',
                 researchPriority: 'none',
             });
-            expect(byId(id)?.knowledgeRefs.length).toBeGreaterThanOrEqual(1);
+            expect(byId(id)?.knowledgeRefs).toContain(claimId);
         });
     });
 
