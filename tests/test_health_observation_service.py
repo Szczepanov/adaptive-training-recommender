@@ -1,7 +1,10 @@
+import logging
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-from garmin_sync.archive import NullArchiveStore
+import pytest
+
+from garmin_sync.archive import NullArchiveStore, RawArchiveStore
 from garmin_sync.canonical import (
     CanonicalHealthObservation,
     ObservationBatch,
@@ -177,3 +180,49 @@ def test_health_observation_service_tombstones_bundles_on_empty_repeat_batch() -
         "2026-08-27", "garmin", "google_health"
     )
     assert res["google_health"]["reconciledStale"] == ["garmin_google_health"]
+
+
+def test_health_observation_service_archive_exception_handled(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """If archive_store.archive_health raises an exception, it should be caught and logged as a warning, and execution should continue."""
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    now = datetime.now(timezone.utc)
+
+    garmin_obs = CanonicalHealthObservation(
+        metric="sleep_duration_seconds",
+        value=28000,
+        unit="seconds",
+        source=ObservationSource(provider="garmin", transport="google_health"),
+        observed_start=now,
+        observed_end=now,
+        logical_date="2026-08-27",
+    )
+    mock_provider.fetch_observations.return_value = ObservationBatch(
+        logical_date="2026-08-27",
+        observations=[garmin_obs],
+        source_payload_hash="sha256:garmin_only",
+    )
+
+    mock_archive_store = MagicMock(spec=RawArchiveStore)
+    mock_archive_store.archive_health.side_effect = Exception("Simulated archive error")
+
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=mock_archive_store,
+        providers={"google_health": mock_provider},
+    )
+
+    with caplog.at_level(logging.WARNING):
+        res = service.sync_date("2026-08-27")
+
+    assert "Failed to archive raw health observations: Simulated archive error" in caplog.text
+    assert "google_health" in res
+    assert res["google_health"]["status"] == "success"
+    assert res["google_health"]["totalObservations"] == 1
+    assert mock_repo.save_health_observation_day_bundle.call_count == 1
