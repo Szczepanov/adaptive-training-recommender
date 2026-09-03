@@ -203,7 +203,7 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
 
         expect(calculateStimulusBenefit(mockTemplate({ category: 'Rest', stimulusProfile: undefined }), [])).toBe(0.1);
         expect(calculateStimulusBenefit(mockTemplate({ category: 'Mobility/Recovery', stimulusProfile: undefined }), [])).toBe(0.2);
-        expect(calculateStimulusBenefit(mockTemplate({ category: 'Easy Endurance', stimulusProfile: undefined }), [])).toBe(0.5);
+        expect(calculateStimulusBenefit(mockTemplate({ category: 'Easy Endurance', stimulusProfile: undefined }), [])).toBe(0.45);
 
         const objective = (key: WeeklyObjective['key'], targetStimulus: WeeklyObjective['targetStimulus'], allowedModality: SessionTemplate['modality']): WeeklyObjective => ({
             id: `obj-${key}`,
@@ -245,6 +245,10 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
             mockTemplate({ category: 'Full-body Strength', modality: 'Strength', stimulusProfile: profile('hypertrophy') }),
             [objective('strength_development', { hypertrophy: 0.8 }, 'Strength')],
         )).toBeCloseTo(0.8 * 0.8 * 1.6 + 0.5, 5);
+        expect(calculateStimulusBenefit(
+            mockTemplate({ category: 'Easy Endurance', modality: 'Cycling', stimulusProfile: profile('aerobicEndurance') }),
+            [objective('threshold_quality', { thresholdPower: 0.8 }, 'Running')],
+        )).toBe(0.5);
     });
 
     it('pins A/B event-priority multipliers to production rankCandidates behavior', () => {
@@ -277,8 +281,8 @@ describe('optimizer scoring product-claim alignment (SKR3 W2a)', () => {
             date: '2026-09-10', recentHistory: streak3,
         });
 
-        expect(easyAt3.accepted[0].utilityScore).toBeCloseTo(0.5 * 0.3, 5);
-        expect(easyAt4.accepted[0].utilityScore).toBeCloseTo(0.5 * 0.1, 5);
+        expect(easyAt3.accepted[0].utilityScore).toBeCloseTo(0.45 * 0.3, 5);
+        expect(easyAt4.accepted[0].utilityScore).toBeCloseTo(0.45 * 0.1, 5);
         expect(restAt3.accepted[0].utilityScore).toBeCloseTo(0.1 * 2.0, 5);
 
         const priorityClaim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.eventPriorityMultipliersPolicy);
