@@ -107,14 +107,17 @@ The change set is covered by:
 ### Authentication Flows
 `LoginScreen.tsx` provides native email and password authentication:
 - Segmented tab control toggling between **Sign In** and **Create Account (Sign Up)**;
-- Password reset link generation via Firebase Auth `sendPasswordResetEmail`;
+- New password accounts are validated against the Firebase project password policy, receive an email-verification message, and remain signed out until the address is verified;
+- Password reset always returns the same "if an account exists" acknowledgement, including on older Firebase projects that still return `user-not-found`;
 - **Continue with Garmin** is retained as an accessible alternative sign-in and account linking flow rather than the exclusive entry point;
-- Newly registered users automatically trigger `initializeUserData` in `AuthContext.tsx`, creating default user preferences and v3 training settings under strict `users/{userId}/...` path isolation.
+- After a verified first login, `initializeUserData` in `AuthContext.tsx` creates default user preferences and v3 training settings under strict `users/{userId}/...` path isolation. Garmin custom-token identities are not subject to the email-verification gate.
 
 ### Wearable-Free Recommendation Mode
-When an athlete has no wearable connected or synced (`DailyRecoverySnapshot` is null):
-- `adapters.ts` provides `createSubjectiveOnlyObjectiveInput()`, setting all wearable biometric metrics and delta strains to `null` and activity counts to 0;
+When an athlete has no recovery snapshot and Garmin is canonically confirmed as disconnected:
+- `garminConnectionService.ts` first observes the non-secret connection mirror, then lazily reconciles missing/unreadable mirrors through authenticated `POST /api/garmin/status` as required by ADR-0029. Connected, disconnected, and unknown remain distinct;
+- `adapters.ts` provides `createSubjectiveOnlyObjectiveInput()`, setting wearable metrics and delta strains to unavailable (`null`) while revisioned training history remains completed-load authority;
 - Once the athlete completes their morning check-in (fulfilling `canGenerateNormalRecommendation(safetyStatus)`), the recommendation engine produces a valid daily recommendation and 7-day plan forecast driven by subjective fatigue, soreness, sleep quality, stress, availability, and active injury gates;
 - The user-facing rationale references the morning check-in directly rather than claiming Garmin baselines;
 - Accounts without linked Garmin hardware suppress automated background sync polling (`useAutoGarminSync.ts`) and hide the idle Garmin sync badge in navigation (`GarminSyncBadge.tsx`);
-- The dashboard replaces the Garmin recovery panel with a neutral **Wearable Optional** status.
+- The dashboard replaces the Garmin recovery panel with a neutral **Wearable Optional** status;
+- A connected account with a missing snapshot receives a sync/repair action. If both mirror observation and canonical verification fail, planning is blocked as unknown rather than silently treated as wearable-free.

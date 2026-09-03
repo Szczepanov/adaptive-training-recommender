@@ -147,7 +147,9 @@ export type RespirationStrainPolicy = 'off' | 'median-mad-v1';
 
 /**
  * Creates an empty objective input for subjective-only / wearable-free recommendation mode.
- * All wearable biometric measurements and delta strains are null, and activity counts are 0.
+ * Wearable measurements and delta strains are unavailable (`null`). The required recent-hard
+ * count uses its neutral numeric value; revisioned training history remains the authority for
+ * completed load rather than this absent wearable summary.
  */
 export function createSubjectiveOnlyObjectiveInput(): EngineObjectiveInput {
     return {
@@ -197,7 +199,8 @@ export function createSubjectiveOnlyObjectiveInput(): EngineObjectiveInput {
  * Maps the Firestore canonical model (DailyRecoverySnapshot) to the internal engine
  * input model (EngineObjectiveInput) expected by the rules engine.
  * This decouples the rules engine from the Firestore schema.
- * When snapshot is null or undefined (wearable-free / subjective-only), returns a clean zeroed objective input.
+ * When snapshot is null or undefined (wearable-free / subjective-only), returns an objective
+ * input with unavailable wearable telemetry and no wearable-derived strain.
  */
 export function mapSnapshotToEngineInput(
     snapshot: DailyRecoverySnapshot | null | undefined,

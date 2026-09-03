@@ -1553,4 +1553,15 @@ describe('Subjective-Only / Wearable-Free Recommendation Support', () => {
         expect(recommendation.rationale).toContain('morning check-in');
         expect(recommendation.telemetry?.metricStrain.totalMetricStrain).toBe(0);
     });
+
+    it('does not label a partial wearable snapshot as subjective-only', () => {
+        const recommendation = evaluateTraining(
+            { subjective: greenSubjective(), objective: { ...objective, sleep_score: 82 } },
+            context,
+            '2026-09-03',
+        );
+
+        expect(recommendation.rationale).toContain('Garmin baselines');
+        expect(recommendation.rationale).not.toContain('based on your morning check-in.');
+    });
 });

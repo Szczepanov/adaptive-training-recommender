@@ -6,6 +6,7 @@ import {
 import { externalPlanService } from '../services/externalPlanService';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { planBlockService } from '../services/planBlockService';
+import { garminConnectionService } from '../services/garminConnectionService';
 import { decisionComposer } from '../engine/composer';
 import {
   applyConfirmedProposal,
@@ -38,6 +39,10 @@ import { ExternalPlanImport } from './ExternalPlanImport';
 import { WeekAheadStrip } from './WeekAheadStrip';
 import { GarminSyncNowButton } from './GarminSyncNowButton';
 import type { ErrorRepairAction } from './errorRepairAction';
+import {
+  resolveWearablePlanningMode,
+  type WearablePlanningMode,
+} from '../utils/wearablePlanningGate';
 import './PlanView.css';
 
 interface PlanViewProps {
@@ -68,6 +73,10 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const [loadError, setLoadError] = useState<string | null>(null);
   const [forecastUnavailable, setForecastUnavailable] = useState<string | null>(null);
   const [forecastRepairTargets, setForecastRepairTargets] = useState<ErrorRepairAction[]>([]);
+  const [wearableForecastBlock, setWearableForecastBlock] = useState<{
+    message: string;
+    canResync: boolean;
+  } | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [showImport, setShowImport] = useState<boolean>(false);
   // SEP-C4: the imported-plan weekly view must fail closed the same way MorningDecisionCard
@@ -80,6 +89,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     setLoadError(null);
     setForecastUnavailable(null);
     setForecastRepairTargets([]);
+    setWearableForecastBlock(null);
     setWeekAheadPlan(null);
     setNextDayPlan(null);
     setCritique(null);
@@ -148,6 +158,24 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         return;
       }
 
+      let wearableMode: WearablePlanningMode = 'wearable';
+      if (!input.recoverySnapshot) {
+        const connection = await garminConnectionService.getConnectionState(userId);
+        wearableMode = resolveWearablePlanningMode(false, connection.state);
+        if (wearableMode === 'sync_required') {
+          setWearableForecastBlock({
+            message: 'Garmin is connected, but today\'s recovery data is missing. Sync before generating a forecast.',
+            canResync: true,
+          });
+        }
+        if (wearableMode === 'unavailable') {
+          setWearableForecastBlock({
+            message: 'Garmin connection status could not be verified. Retry before using wearable-free mode.',
+            canResync: false,
+          });
+        }
+      }
+
       const acts = actState.data;
       const blocks = blocksState.data;
       setFixedActivities(acts);
@@ -173,7 +201,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
       const canGenerateNormalPlan = canGenerateNormalRecommendation(safetyStatus);
 
-      if (input.recoverySnapshot && canGenerateNormalPlan) {
+      if (canGenerateNormalPlan && (wearableMode === 'wearable' || wearableMode === 'subjective_only')) {
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const events = mapGoalsToUserEvents(input.activeGoals);
@@ -492,7 +520,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
               <p>
                 {activePlan
                   ? 'Alternative 7-day projection dynamically optimized by the engine.'
-                  : 'The engine dynamically prescribes and balances workouts across your microcycle objectives based on daily recovery, readiness scores, and training goals.'}
+                  : 'The engine dynamically prescribes and balances workouts across your microcycle objectives based on your daily check-in, available recovery data, and training goals.'}
               </p>
             </div>
             {!activePlan && (
@@ -506,12 +534,17 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             )}
           </div>
 
-          {!decisionInput?.recoverySnapshot ? (
+          {wearableForecastBlock ? (
             <div className="plan-missing-recovery-card">
-              <p>
-                📊 No Garmin recovery data synced today yet. Sync your Garmin device
-                to compute the dynamic 7-day projection.
-              </p>
+              <p>📊 {wearableForecastBlock.message}</p>
+              <div className="plan-unavailable-actions">
+                {wearableForecastBlock.canResync && (
+                  <GarminSyncNowButton userId={userId} onSynced={loadPlanData} />
+                )}
+                <button type="button" className="plan-retry-btn" onClick={loadPlanData}>
+                  🔄 Retry
+                </button>
+              </div>
             </div>
           ) : !canGenerateAdaptiveForecast ? (
             <div className="plan-missing-checkin-card">

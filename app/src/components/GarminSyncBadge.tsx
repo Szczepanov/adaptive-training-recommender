@@ -1,6 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback } from 'react';
 import { useGarminSyncStatus } from '../hooks/useGarminSyncStatus';
-import { garminConnectionService } from '../services/garminConnectionService';
+import { useGarminConnectionState } from '../hooks/useGarminConnectionState';
 import './GarminSyncBadge.css';
 
 export interface GarminSyncBadgeProps {
@@ -38,6 +38,7 @@ function formatDetailedTimestamp(isoString: string | null | undefined): string {
 }
 
 export const GarminSyncBadge: React.FC<GarminSyncBadgeProps> = ({ userId, date, onSynced }) => {
+    const garminConnectionState = useGarminConnectionState(userId);
     const {
         status,
         queuedWorkout,
@@ -48,19 +49,11 @@ export const GarminSyncBadge: React.FC<GarminSyncBadgeProps> = ({ userId, date, 
         latestGetSyncedAt,
         latestPostSyncedAt,
         triggerSync,
-    } = useGarminSyncStatus(userId, date, onSynced);
-
-    const [isGarminConnected, setIsGarminConnected] = useState<boolean | null>(null);
-
-    useEffect(() => {
-        if (!userId) {
-            setIsGarminConnected(false);
-            return;
-        }
-        return garminConnectionService.subscribeToGarminConnection(userId, (connected) => {
-            setIsGarminConnected(connected);
-        });
-    }, [userId]);
+    } = useGarminSyncStatus(
+        garminConnectionState === 'connected' ? userId : null,
+        date,
+        onSynced,
+    );
 
     const handleClick = useCallback(async (e: React.MouseEvent<HTMLButtonElement>) => {
         e.stopPropagation();
@@ -68,9 +61,24 @@ export const GarminSyncBadge: React.FC<GarminSyncBadgeProps> = ({ userId, date, 
         await triggerSync();
     }, [isBusy, triggerSync]);
 
-    // Do not show an idle Garmin sync badge to wearable-free users who have never linked Garmin
-    if (isGarminConnected === false && status === 'idle') {
+    // Do not install queue/recovery listeners or show a sync action until connection status
+    // is positively known. Unknown is intentionally distinct from disconnected (ADR-0029).
+    if (garminConnectionState === 'checking' || garminConnectionState === 'disconnected') {
         return null;
+    }
+    if (garminConnectionState === 'unknown') {
+        return (
+            <button
+                type="button"
+                className="garmin-sync-badge status-failed"
+                title="Garmin connection status could not be verified. Refresh to retry."
+                aria-label="Garmin connection status could not be verified. Refresh to retry."
+                disabled
+            >
+                <span className="garmin-sync-icon" aria-hidden="true">⚠️</span>
+                <span className="garmin-sync-label">Garmin: Status unavailable</span>
+            </button>
+        );
     }
 
     let badgeClass = 'garmin-sync-badge';

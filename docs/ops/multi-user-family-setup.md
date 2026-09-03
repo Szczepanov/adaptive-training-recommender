@@ -19,6 +19,28 @@ web app
 
 Scheduled jobs then discover `garminConnections` with `status=active`; there is no `APP_USER_IDS` deployment setting.
 
+## Email/password accounts
+
+Email/password is an independent Firebase sign-in route; it does not create or imply a
+Garmin link. Before deploying it:
+
+1. Enable the **Email/Password** provider in Firebase Authentication.
+2. Configure the project password policy. The client calls Firebase `validatePassword`, so
+   the UI follows the deployed policy rather than a hard-coded minimum.
+3. Enable **email enumeration protection** in Authentication settings and keep it enabled.
+4. Configure the Firebase verification/reset email templates and authorized continue URLs.
+
+Signup sends a verification message and signs the new user out. `AuthContext` also rejects a
+restored unverified password session, while Garmin custom-token identities continue normally.
+Password-reset UX is deliberately generic and does not reveal whether an address is registered.
+Authenticated provider-link endpoints verify Firebase ID tokens with revocation/disabled-user
+checks before accepting the UID.
+
+These controls follow Firebase/Identity Platform guidance for
+[password policy validation](https://firebase.google.com/docs/auth/web/password-auth),
+[email enumeration protection](https://docs.cloud.google.com/identity-platform/docs/admin/email-enumeration-protection),
+and [revoked-session detection](https://firebase.google.com/docs/auth/admin/manage-sessions).
+
 ## Security boundary
 
 This integration currently uses the unofficial `garminconnect` login flow. It is appropriate for this private/family deployment, but it should not be presented as the final authentication architecture for a public SaaS. A public product should prefer an approved Garmin Developer Program / OAuth integration.

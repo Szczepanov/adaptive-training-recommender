@@ -8,10 +8,15 @@ vi.mock('../firebase', () => ({
 }));
 
 vi.mock('firebase/auth', () => ({
-  signInWithEmailAndPassword: vi.fn(),
-  createUserWithEmailAndPassword: vi.fn(),
-  sendPasswordResetEmail: vi.fn(),
   signInWithCustomToken: vi.fn(),
+}));
+
+vi.mock('../services/emailAuthService', () => ({
+  emailAuthService: {
+    signIn: vi.fn(),
+    signUp: vi.fn(),
+    requestPasswordReset: vi.fn(),
+  },
 }));
 
 vi.mock('../services/garminAuthService', () => ({

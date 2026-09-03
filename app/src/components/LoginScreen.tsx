@@ -2,13 +2,11 @@ import React, { useState } from 'react';
 import { getAuthInstance } from '../firebase';
 import {
   signInWithCustomToken,
-  signInWithEmailAndPassword,
-  createUserWithEmailAndPassword,
-  sendPasswordResetEmail,
 } from 'firebase/auth';
 import { getDetailedErrorMessage, getErrorDetails, getErrorMessage } from '../utils/errors';
 import { useAuth } from '../contexts/AuthContext';
 import { garminAuthService } from '../services/garminAuthService';
+import { emailAuthService } from '../services/emailAuthService';
 
 export type AuthMode = 'sign-in' | 'sign-up' | 'forgot-password' | 'garmin';
 
@@ -16,11 +14,12 @@ function mapFirebaseAuthError(error: unknown): string {
   const errCode = (error as { code?: string })?.code;
   switch (errCode) {
     case 'auth/email-already-in-use':
-      return 'This email address is already registered. Please sign in instead.';
+      return 'Unable to create this account. Try signing in or resetting your password.';
     case 'auth/invalid-email':
       return 'Please enter a valid email address.';
     case 'auth/weak-password':
-      return 'Password should be at least 6 characters long.';
+    case 'auth/password-does-not-meet-requirements':
+      return 'Password does not meet this project\'s password policy.';
     case 'auth/user-not-found':
     case 'auth/wrong-password':
     case 'auth/invalid-credential':
@@ -81,7 +80,11 @@ export const LoginScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      await signInWithEmailAndPassword(getAuthInstance(), trimmedEmail, password);
+      const result = await emailAuthService.signIn(getAuthInstance(), trimmedEmail, password);
+      setPassword('');
+      if (result.status === 'verification_required') {
+        setInfoMsg('Verify your email before signing in. We sent a new verification link.');
+      }
     } catch (error: unknown) {
       console.error('Sign-in failed:', getErrorDetails(error));
       setErrorMsg(mapFirebaseAuthError(error));
@@ -100,8 +103,8 @@ export const LoginScreen: React.FC = () => {
       setErrorMsg('Please enter a valid email address.');
       return;
     }
-    if (password.length < 6) {
-      setErrorMsg('Password must be at least 6 characters long.');
+    if (!password) {
+      setErrorMsg('Please enter a password.');
       return;
     }
     if (password !== confirmPassword) {
@@ -111,7 +114,11 @@ export const LoginScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      await createUserWithEmailAndPassword(getAuthInstance(), trimmedEmail, password);
+      await emailAuthService.signUp(getAuthInstance(), trimmedEmail, password);
+      setPassword('');
+      setConfirmPassword('');
+      setMode('sign-in');
+      setInfoMsg('Account created. Check your inbox to verify your email before signing in.');
     } catch (error: unknown) {
       console.error('Account creation failed:', getErrorDetails(error));
       setErrorMsg(mapFirebaseAuthError(error));
@@ -133,8 +140,8 @@ export const LoginScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      await sendPasswordResetEmail(getAuthInstance(), trimmedEmail);
-      setInfoMsg('Password reset link sent! Check your inbox.');
+      await emailAuthService.requestPasswordReset(getAuthInstance(), trimmedEmail);
+      setInfoMsg('If an account exists for that email, a password reset link has been sent.');
     } catch (error: unknown) {
       console.error('Password reset failed:', getErrorDetails(error));
       setErrorMsg(mapFirebaseAuthError(error));
@@ -367,7 +374,6 @@ export const LoginScreen: React.FC = () => {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete={mode === 'sign-in' ? 'current-password' : 'new-password'}
-              minLength={mode === 'sign-up' ? 6 : undefined}
               required
             />
           </div>
@@ -380,7 +386,6 @@ export const LoginScreen: React.FC = () => {
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
                 autoComplete="new-password"
-                minLength={6}
                 required
               />
             </div>

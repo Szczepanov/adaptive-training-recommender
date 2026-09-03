@@ -51,6 +51,7 @@ import { MorningDecisionCard } from './MorningDecisionCard';
 import { ActivityReclassificationModal } from './ActivityReclassificationModal';
 import { assembleMorningDecisionEvidence } from '../engine/decisionEvidence';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
+import { garminConnectionService } from '../services/garminConnectionService';
 import { activityOverrideService } from '../services/activityOverrideService';
 import { activityService } from '../services/activityService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
@@ -58,6 +59,7 @@ import { TEMPLATES, TEMPLATES_BY_ID } from '../engine/templates';
 import type { ActivityOverride, DailyRecoverySnapshot, NormalizedGarminActivity } from '../engine/models';
 import type { ErrorRepairAction } from './errorRepairAction';
 import { useAutoGarminSync } from '../hooks/useAutoGarminSync';
+import { resolveWearablePlanningMode } from '../utils/wearablePlanningGate';
 import {
   canGenerateNormalRecommendation,
   createProvisionalSafetyRecommendation,
@@ -284,6 +286,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           : 'Recovery data needs repair before generating a plan.');
         return;
       }
+
       const decisionSourceFailure = input.sourceStates
         && [input.sourceStates.activeGoals, input.sourceStates.preferences, input.sourceStates.trainingSettings]
           .find(state => state.status === 'INVALID' || state.status === 'UNAVAILABLE');
@@ -305,6 +308,27 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           ? 'Decision inputs are temporarily unavailable. Please retry before generating a plan.'
           : 'Decision inputs need repair before generating a plan.');
         return;
+      }
+
+      if (!input.recoverySnapshot) {
+        const connection = await garminConnectionService.getConnectionState(userId);
+        if (!isCurrent()) return;
+        const wearableMode = resolveWearablePlanningMode(false, connection.state);
+        if (wearableMode === 'sync_required') {
+          setRecommendation(null);
+          setNextDayPlan(null);
+          clearExternalPlanState();
+          setErrorRepairTargets([{ kind: 'resync' }]);
+          setError('Garmin is connected, but today\'s recovery data is missing. Sync before generating a plan.');
+          return;
+        }
+        if (wearableMode === 'unavailable') {
+          setRecommendation(null);
+          setNextDayPlan(null);
+          clearExternalPlanState();
+          setError('Garmin connection status could not be verified. Retry before using wearable-free mode.');
+          return;
+        }
       }
 
       const yesterday = getPreviousLocalDateString(input.date);
@@ -613,9 +637,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     if (!decisionInput) return 0;
     const { dataQuality } = decisionInput;
     const items = [
-      dataQuality.hasRecoverySnapshot,
-      dataQuality.hasSubjectiveCheckin,
-      dataQuality.profileReady
+      dataQuality.subjectiveCheckinComplete,
+      dataQuality.profileReady,
     ];
     const completed = items.filter(Boolean).length;
     return Math.round((completed / items.length) * 100);

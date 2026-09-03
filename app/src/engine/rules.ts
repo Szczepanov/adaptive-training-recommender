@@ -18,6 +18,7 @@ import type {
     WorkoutCostProfile,
     WorkoutStimulusProfile,
     FatigueState,
+    EngineObjectiveInput,
 } from './models';
 import { TEMPLATES, ENRICHED_TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
@@ -428,6 +429,23 @@ export function evaluateReadinessAndSafetyEnvelope(
     };
 }
 
+function hasWearableObjectiveData(objective: EngineObjectiveInput): boolean {
+    return [
+        objective.total_steps,
+        objective.sleep_score,
+        objective.sleep_duration_min,
+        objective.rhr,
+        objective.rhr_7d_avg,
+        objective.hrv_weekly_avg,
+        objective.hrv_last_night,
+        objective.respiration,
+        objective.body_battery_wake,
+        objective.yesterday_training,
+        objective.today_training,
+    ].some(value => value !== null)
+        || objective.last_3_days_hard_sessions_count > 0;
+}
+
 export function evaluateTraining(
     readiness: DailyReadiness,
     context: UserContext,
@@ -477,7 +495,7 @@ export function evaluateTraining(
                     : "Your fatigue markers are also elevated today, so prioritize recovery (hydration, nutrition, sleep) rather than adding anything further.";
             rationale = fatigueTriggeredRecover ? `${sessionDescription} ${cautionNote}` : `${sessionDescription} Nice work -- no further training is needed. Focus on recovery (hydration, nutrition, sleep) for the rest of the day.`;
         } else {
-            rationale = (objective.rhr === null && objective.hrv_weekly_avg === null)
+            rationale = !hasWearableObjectiveData(objective)
                 ? 'Your overall fatigue markers are elevated today based on your morning check-in. Pushing hard could be counter-productive; focus on active or passive recovery.'
                 : 'Your overall fatigue markers are high today (combining subjective feel with drops in objective baselines). Pushing hard could be counter-productive; focus on active or passive recovery.';
         }
@@ -487,7 +505,7 @@ export function evaluateTraining(
         modalityNote = preferenceResult.note;
         const rankedModifyOptions = rankByModalityPreference(preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities);
         selectedTemplate = rankedModifyOptions.length > 0 ? pickTemplate(rankedModifyOptions, date)! : (availableTemplates.find(t => t.category === 'Rest') ?? getCanonicalRestTemplate());
-        rationale = (objective.rhr === null && objective.hrv_weekly_avg === null)
+        rationale = !hasWearableObjectiveData(objective)
             ? "You're showing moderate soreness or elevated fatigue in your morning check-in. We're capping today's systemic load rather than ruling out a whole modality."
             : "You're showing moderate soreness or slight downward trends in Garmin baselines. We're capping today's systemic/autonomic load rather than ruling out a whole modality.";
         if (selectedTemplate.category === 'Upper-body Strength') rationale += " Upper-body strength is included: it's a low-systemic-load, muscle-local stimulus, so softer HRV/RHR readings are a better reason to skip legs or intervals than to skip push/pull work.";
@@ -499,7 +517,7 @@ export function evaluateTraining(
         if (rankedTrainOptions.length > 0) selectedTemplate = pickTemplate(rankedTrainOptions, date)!;
         rationale = !trainOptions.some(t => t.id === selectedTemplate!.id)
             ? `Readiness is solid -- you'd be fine pushing harder -- but you asked for ${selectedTemplate.modality.toLowerCase()} today, so going with that instead.`
-            : (objective.rhr === null && objective.hrv_weekly_avg === null)
+            : !hasWearableObjectiveData(objective)
                 ? 'Readiness is solid based on your morning check-in. Great day for a session aligned with your primary goals!'
                 : 'Readiness is solid across both subjective feelings and Garmin baselines. Great day for a hard session aligned with your primary goals!';
     }
