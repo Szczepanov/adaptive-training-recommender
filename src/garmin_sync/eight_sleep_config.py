@@ -1,7 +1,5 @@
 """Configuration for the opt-in direct Eight Sleep observation transport."""
 
-from __future__ import annotations
-
 import os
 from dataclasses import dataclass
 from zoneinfo import ZoneInfo
