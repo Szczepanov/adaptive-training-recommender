@@ -826,15 +826,50 @@ class FirestoreRecoveryRepository:
         events.sort(key=lambda item: (item.get("recordedAt", ""), item.get("id", "")))
         return events
 
+    def get_identity_review_events_for_assessments(
+        self, assessment_ids: list[str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        if not assessment_ids:
+            return {}
+
+        reviews_by_assessment: dict[str, list[dict[str, Any]]] = {
+            assessment_id: [] for assessment_id in assessment_ids
+        }
+
+        chunk_size = 30
+        for i in range(0, len(assessment_ids), chunk_size):
+            chunk = assessment_ids[i : i + chunk_size]
+            query = self._identity_collection("health_identity_review_events").where(
+                filter=FieldFilter("assessmentId", "in", chunk)
+            )
+            events = [doc.to_dict() for doc in query.stream()]
+            for event in events:
+                recorded_at = event.get("recordedAt")
+                if isinstance(recorded_at, datetime):
+                    event["recordedAt"] = (
+                        recorded_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                    )
+                assessment_id = event.get("assessmentId")
+                if isinstance(assessment_id, str) and assessment_id in reviews_by_assessment:
+                    reviews_by_assessment[assessment_id].append(event)
+
+        for events in reviews_by_assessment.values():
+            events.sort(key=lambda item: (item.get("recordedAt", ""), item.get("id", "")))
+
+        return reviews_by_assessment
+
     def get_effective_identity_decision_projections_in_range(
         self, start_night_key: str, end_night_key: str
     ) -> dict[IdentityBundleKey, EffectiveIdentityDecisionProjection]:
         """Derive baseline-authoritative decisions from immutable persisted evidence."""
 
         assessments = self.get_identity_assessments_in_range(start_night_key, end_night_key)
-        reviews = {
-            assessment_id: self.get_identity_review_events(assessment_id)
+
+        assessment_ids = [
+            assessment_id
             for assessment in assessments
             if isinstance((assessment_id := assessment.get("id")), str)
-        }
+        ]
+
+        reviews = self.get_identity_review_events_for_assessments(assessment_ids)
         return build_effective_identity_decision_index(assessments, reviews)
