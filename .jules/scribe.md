@@ -5,3 +5,7 @@
 ## 2026-08-26 - README.md Index Missing Recent Analysis Documents
 **Learning:** The documentation hub (docs/README.md) acts as the routing table but can easily fall out of sync with newly added review/analysis files in docs/analysis/.
 **Action:** Always verify that newly added files in docs/analysis/ are indexed in the root docs/README.md.
+
+## 2026-09-02 - docs/README.md Index Missing Recent Analysis Documents
+**Learning:** The documentation hub (docs/README.md) acts as the routing table but can easily fall out of sync with newly added review/analysis files in docs/analysis/.
+**Action:** Always verify that newly added files in docs/analysis/ are indexed in the root docs/README.md.
