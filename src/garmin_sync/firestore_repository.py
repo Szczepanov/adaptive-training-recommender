@@ -1,5 +1,7 @@
+import itertools
 import logging
 import os
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from typing import Any, Mapping, cast
 
@@ -624,9 +626,9 @@ class FirestoreRecoveryRepository:
             db.collection("users").document(self.user_id).collection("health_observation_days")
         )
 
-        import itertools
-
-        def batched(iterable: Any, n: int) -> Any:
+        def batched(
+            iterable: Iterable[tuple[str, str, str]], n: int
+        ) -> Iterator[list[tuple[str, str, str]]]:
             it = iter(iterable)
             while chunk := list(itertools.islice(it, n)):
                 yield chunk
