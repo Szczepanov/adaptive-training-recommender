@@ -177,3 +177,28 @@ def test_health_observation_service_tombstones_bundles_on_empty_repeat_batch() -
         "2026-08-27", "garmin", "google_health"
     )
     assert res["google_health"]["reconciledStale"] == ["garmin_google_health"]
+
+
+def test_health_observation_service_register_provider() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+    )
+
+    assert len(service.providers) == 0
+
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    service.register_provider("test_provider", mock_provider)
+
+    assert len(service.providers) == 1
+    assert "test_provider" in service.providers
+    assert service.providers["test_provider"] is mock_provider
+
+    # Test overwriting an existing provider
+    mock_provider2 = MagicMock(spec=RecoveryObservationProvider)
+    service.register_provider("test_provider", mock_provider2)
+
+    assert len(service.providers) == 1
+    assert service.providers["test_provider"] is mock_provider2
