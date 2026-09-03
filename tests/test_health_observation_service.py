@@ -96,7 +96,7 @@ def test_health_observation_service_tombstones_source_dropped_from_mixed_batch()
         {"provider": "garmin", "transport": "google_health", "logicalDate": "2026-08-27"},
         {"provider": "eight_sleep", "transport": "google_health", "logicalDate": "2026-08-27"},
     ]
-    mock_repo.delete_health_observation_day_bundle.return_value = True
+    mock_repo.delete_health_observation_day_bundles_batch.return_value = 1
 
     mock_provider = MagicMock(spec=RecoveryObservationProvider)
     now = datetime.now(timezone.utc)
@@ -124,8 +124,8 @@ def test_health_observation_service_tombstones_source_dropped_from_mixed_batch()
 
     res = service.sync_date("2026-08-27")
 
-    mock_repo.delete_health_observation_day_bundle.assert_called_once_with(
-        "2026-08-27", "eight_sleep", "google_health"
+    mock_repo.delete_health_observation_day_bundles_batch.assert_called_once_with(
+        [("2026-08-27", "eight_sleep", "google_health")]
     )
     assert res["google_health"]["reconciledStale"] == ["eight_sleep_google_health"]
 
@@ -135,7 +135,7 @@ def test_health_observation_service_tombstones_bundles_on_empty_repeat_batch() -
     none must have its earlier bundle(s) reconciled away, not silently left in place."""
     mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
     mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
-    mock_repo.delete_health_observation_day_bundle.return_value = True
+    mock_repo.delete_health_observation_day_bundles_batch.return_value = 1
 
     mock_provider = MagicMock(spec=RecoveryObservationProvider)
     now = datetime.now(timezone.utc)
@@ -173,7 +173,7 @@ def test_health_observation_service_tombstones_bundles_on_empty_repeat_batch() -
     )
     res = service.sync_date("2026-08-27")
 
-    mock_repo.delete_health_observation_day_bundle.assert_called_once_with(
-        "2026-08-27", "garmin", "google_health"
+    mock_repo.delete_health_observation_day_bundles_batch.assert_called_once_with(
+        [("2026-08-27", "garmin", "google_health")]
     )
     assert res["google_health"]["reconciledStale"] == ["garmin_google_health"]
