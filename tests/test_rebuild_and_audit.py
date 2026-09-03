@@ -312,3 +312,39 @@ def test_audit_distinguishes_sleep_present_from_timing_missing() -> None:
     assert report.sleep_available == 2
     assert report.sleep_timing_available == 1
     assert report.sleep_missing_timing_dates == ["2026-08-06"]
+
+
+def test_audit_uses_batch_snapshot_read_after_historical_read_fails() -> None:
+    settings = Settings(app_user_id="test_uid_batch")
+    mock_repo = MagicMock()
+    mock_repo.get_historical_snapshots.side_effect = RuntimeError("query unavailable")
+    mock_repo.get_snapshots_batch.return_value = {
+        "2026-08-06": {"dataQuality": {"sleepScoreAvailable": True}}
+    }
+    mock_repo.count_activities_in_range.return_value = 0
+
+    archive_store = MagicMock()
+    archive_store.list_archived_dates.return_value = set()
+
+    report = run_audit(settings, mock_repo, archive_store, days=1, end_date_str="2026-08-06")
+
+    assert report.snapshots_present == 1
+    mock_repo.get_snapshots_batch.assert_called_once_with(["2026-08-06"])
+    mock_repo.get_snapshot.assert_not_called()
+
+
+def test_audit_falls_back_to_point_reads_when_batch_snapshot_read_fails() -> None:
+    settings = Settings(app_user_id="test_uid_batch_fallback")
+    mock_repo = MagicMock()
+    mock_repo.get_historical_snapshots.side_effect = RuntimeError("query unavailable")
+    mock_repo.get_snapshots_batch.side_effect = RuntimeError("batch unavailable")
+    mock_repo.get_snapshot.return_value = {"dataQuality": {"sleepScoreAvailable": True}}
+    mock_repo.count_activities_in_range.return_value = 0
+
+    archive_store = MagicMock()
+    archive_store.list_archived_dates.return_value = set()
+
+    report = run_audit(settings, mock_repo, archive_store, days=1, end_date_str="2026-08-06")
+
+    assert report.snapshots_present == 1
+    mock_repo.get_snapshot.assert_called_once_with("2026-08-06")

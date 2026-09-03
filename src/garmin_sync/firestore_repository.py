@@ -135,6 +135,7 @@ class FirestoreRecoveryRepository:
                 logger.warning(
                     f"Error reading batch of Firestore snapshots for user {self.user_id}: {e}"
                 )
+                raise
         return snapshots
 
     def is_fresh(
