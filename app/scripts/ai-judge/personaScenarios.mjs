@@ -179,7 +179,7 @@ function intent(priorities, targetSessions, maxSessions = targetSessions + 1) {
   };
 }
 
-function preferences(preferredModalities = []) {
+function preferences(preferredModalities = [], deprioritizedModalities = [], avoidedModalities = []) {
   return {
     userId: 'persona-sim-user',
     preferredRecoveryStyle: 'mixed',
@@ -187,8 +187,8 @@ function preferences(preferredModalities = []) {
     defaultWeekendTimeMin: 90,
     preferredTimeOfDay: 'flexible',
     preferredModalities,
-    deprioritizedModalities: [],
-    avoidedModalities: [],
+    deprioritizedModalities,
+    avoidedModalities,
     unavailableModalities: [],
     explanationVerbosity: 'detailed',
     conservativeBias: false,
@@ -234,7 +234,7 @@ const strengthContext = context({
   maxTimeMinutes: 75,
 });
 const strengthIntent = intent(['strength_muscle'], 3, 4);
-const strengthPreferences = preferences(['Strength']);
+const strengthPreferences = preferences(['Strength'], ['Running', 'Cycling']);
 const strengthPersona = {
   personaId: 'strength_manual_work_no_wearable',
   dataAvailability: 'subjective_checkin_only',

@@ -2,15 +2,15 @@
   "schema": "adaptive-training-recommender/persona-plan-judge-baseline@1",
   "source": "artifacts/persona-plan-judge/latest/judge-scores.jsonl",
   "provenance": {
-    "corpusCommit": "e5668c70c1b0caf89cfc4ffc35e0d21a34ce0f34",
+    "corpusCommit": "e9f0c01dc5c3ce969be7bac0a5c4290e58108540",
     "corpusSchema": "adaptive-training-recommender/persona-plan-judge-corpus@1",
-    "corpusSha256": "b643c00c48721b658040996c82e8f213d152762269db915a7f5734a1c5da70c0",
-    "familiesSha256": "53f61c6eb94146b1a85d0b9edee64472e523411c1ea3beef6cb1425879f48fbb",
+    "corpusSha256": "f155d3fb32fada5732eb0a728ef4f8dacf35a7b229e3b16a2b31cd90d6f6b164",
+    "familiesSha256": "0d0be0eda259d7f951d2a69613ee1d366565c5e9d337d6cb15917d7b8569182f",
     "promptSha256": "4822f4c69db5b2d544c8332f557a154ccb370b8f94ca33a8c97ea484a54e0160",
-    "judgeScoresSha256": "2be3b1347a4b38aac58e37a4dc6200e3399865b1107423be1e83d39d11fb487f",
+    "judgeScoresSha256": "4ae9d6f5888633c6f3a5be559c6bce809b55c5f44eb4c95917f85ede2c9c32f3",
     "judgeModel": "hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
     "judgeProvider": "local",
-    "analyzedAt": "2026-09-01T13:08:45.776Z",
+    "analyzedAt": "2026-09-03T10:40:16.352Z",
     "judgeSettings": {
       "model": "hf.co/empero-ai/Qwen3.8-9B-Distill-GGUF:Q4_K_M",
       "provider": "local",
@@ -44,21 +44,21 @@
     "persona_triathlon_established_olympic"
   ],
   "scoreAverages": {
-    "safety_recovery_fit": 9.066666666666666,
-    "goal_event_fit": 8.566666666666666,
-    "sequencing": 7.95,
-    "periodization_taper": 8.633333333333333,
-    "preference_capacity_fit": 8.766666666666667,
-    "robustness": 8.566666666666666,
-    "overall": 8.438333333333333
+    "safety_recovery_fit": 8.9,
+    "goal_event_fit": 8.8,
+    "sequencing": 7.883333333333334,
+    "periodization_taper": 9.066666666666666,
+    "preference_capacity_fit": 8.770000000000001,
+    "robustness": 8.629999999999999,
+    "overall": 8.486666666666666
   },
-  "meanSensitivityQuality": 8.544444444444444,
+  "meanSensitivityQuality": 8.733333333333334,
   "familySensitivity": [
     {
       "familyId": "persona_strength_no_wearable",
       "changedAxis": "current check-in state for a strength-priority athlete with no wearable data",
-      "sensitivityQuality": 9.2,
-      "rationale": "All three cases demonstrate appropriate sensitivity to the current state. The baseline case does not overreact with unnecessary rest. The work-fatigue case appropriately reduces load without abandoning strength goals. The symptom-flare case tightens guardrails around active pain without diagnosing injury or inventing objective data. No underreaction is present — each plan matches its input state.",
+      "sensitivityQuality": 9,
+      "rationale": "All three cases demonstrate appropriate sensitivity to their respective states. The baseline case shows correct handling of a healthy, motivated strength athlete with no wearable data. The work-fatigue case demonstrates proper downshifting when occupational load is high without abandoning the strength goal. The symptom-flare case correctly escalates caution while preserving strength specificity through bodyweight alternatives that respect guardrails. No overreaction (unnecessary rest or elimination of training) and no underreaction (pushing through pain or ignoring fatigue) was observed.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": []
@@ -66,8 +66,8 @@
     {
       "familyId": "persona_health_fat_loss",
       "changedAxis": "current recovery/time state for a health-and-fat-loss evergreen athlete with Garmin data",
-      "sensitivityQuality": 9,
-      "rationale": "All three cases demonstrate appropriate sensitivity to their respective constraints. The baseline case shows coherent evergreen progression without over-medicalizing normal variation. The adverse recovery case appropriately front-loads rest days in response to elevated fatigue and low body battery without eliminating all activity. The low-time case correctly adapts session durations and equipment requirements while maintaining health-focused programming. No cases show underreaction or overreaction.",
+      "sensitivityQuality": 8.5,
+      "rationale": "All three cases demonstrate appropriate sensitivity to their respective constraints. The baseline case shows healthy evergreen progression without invented periodization. The adverse recovery case correctly reduces load when objective signals (HRV -14, body_battery 24%) are poor. The low-time case respects the 30-minute constraint while maintaining habit diversity. No overreaction or underreaction detected.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": []
@@ -75,8 +75,8 @@
     {
       "familyId": "persona_former_elite_return",
       "changedAxis": "current recovery state for a former high-level endurance athlete whose present training is intermittent",
-      "sensitivityQuality": 8.5,
-      "rationale": "The planner correctly distinguishes between adverse recovery signals (Case 2) and low motivation without physiological red flags (Case 3). Case 1 is the only case with a minor overreaction — assigning full-body strength as the first session despite sparse history. The algorithm should treat historical elite background as context-only information that does not override current-state dose authority.",
+      "sensitivityQuality": 9.2,
+      "rationale": "All three cases demonstrate appropriate sensitivity to the former-elite persona constraints. The baseline case correctly uses current data as dose authority without inflating load based on historical status. The adverse recovery case correctly prioritizes rest over Garmin signals that might otherwise suggest readiness. The low-motivation-only case correctly avoids reducing load when physiological capacity is intact, distinguishing motivation from fatigue. No cases show overreaction (unnecessary load reduction) or underreaction (ignoring red flags).",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": []
@@ -84,8 +84,8 @@
     {
       "familyId": "persona_balanced_performance",
       "changedAxis": "current recovery and today-specific modality preference for an evergreen balanced-performance generalist",
-      "sensitivityQuality": 8.5,
-      "rationale": "All three cases demonstrate appropriate sensitivity to their respective input signals. The baseline case shows correct balanced distribution without fake periodization. The adverse recovery case correctly escalates rest in response to poor objective metrics (HRV, RHR, body battery) while still maintaining the persona's balanced identity. The strength preference case correctly honors a local preference signal without converting the entire week into strength-primary programming. No cases show overreaction (e.g., full rest when not warranted) or underreaction (e.g., ignoring poor recovery signals).",
+      "sensitivityQuality": 9,
+      "rationale": "All three cases demonstrate appropriate sensitivity to the changed axis (recovery state and modality preference). The baseline case shows clean evergreen progression. The adverse recovery case appropriately front-loads rest while still preserving balanced-performance identity — a minor concern on day-5 strength load is noted but not treated as a failure. The strength-preference case correctly respects user input without over-indexing to the point of abandoning endurance work.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": []
@@ -94,7 +94,7 @@
       "familyId": "persona_stacked_constraints",
       "changedAxis": "current recovery/time state with a standing running restriction, heavy-lower-body guardrail, and no training equipment",
       "sensitivityQuality": 8.5,
-      "rationale": "All three cases demonstrate appropriate sensitivity to their respective constraint changes. The baseline case is appropriately conservative given the stacked constraints (injury + equipment restrictions). The adverse recovery case correctly escalates rest in response to objective recovery decline — this is a strength of the system. The low-time case properly scales duration without bypassing guardrails. No overreaction detected; all responses are proportionate to input signals.",
+      "rationale": "All three cases demonstrate appropriate sensitivity to their respective states. The adverse recovery case is the strongest signal of good sensitivity — it reduces load when RHR rises, HRV drops, and body battery falls below threshold without over-medicalizing normal variation. No underreaction or overreaction patterns emerge across the family. The baseline and low-time cases correctly treat identical objective signals as equivalent despite different subjective time availability.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": []
@@ -102,8 +102,8 @@
     {
       "familyId": "persona_walking_preferred",
       "changedAxis": "current recovery/time state for a health-priority athlete who cannot run and prefers walking",
-      "sensitivityQuality": 8,
-      "rationale": "The algorithm demonstrates appropriate sensitivity to constraints (time, equipment, modality restrictions) and recovery signals across all cases. Case 2 shows a borderline overreaction where a full strength session is prescribed despite significant adverse recovery signals (HRV delta -14, RHR +7), though the plan does show restraint in subsequent days. Cases 1 and 3 demonstrate good sensitivity to normal recovery and time constraints respectively.",
+      "sensitivityQuality": 8.5,
+      "rationale": "All three cases demonstrate appropriate sensitivity to their respective conditions: normal recovery (baseline), adverse recovery signals requiring rest (adverse_recovery), and tight time constraints (low_time). The walking-preferred persona correctly maintains walking as the primary aerobic modality in all cases without running substitution. No overreaction or underreaction detected — each plan matches its input state appropriately.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": []
@@ -111,8 +111,8 @@
     {
       "familyId": "persona_established_history",
       "changedAxis": "current recovery and motivation state for an endurance athlete with a genuinely established, current 28-day training base",
-      "sensitivityQuality": 7.5,
-      "rationale": "The adverse recovery case demonstrates correct sensitivity: it responds appropriately to elevated RHR (+7), dropped HRV (-14), and low body battery (24) with rest days. The baseline case is under-reactive — it fails to add a quality session when the athlete has an established base, good recovery signals, and explicitly wants purposeful quality work. The low motivation case is also under-reactive because it treats motivational noise as physiological risk, removing opportunities that should be earned despite low motivation.",
+      "sensitivityQuality": 8.7,
+      "rationale": "The established-history persona demonstrates appropriate sensitivity to current-state fitness signals. The baseline case correctly unlocks intensity from an established base. The low-motivation-only case correctly preserves earned opportunities when objective recovery is good. The adverse-recovery case shows minor overreaction (tempo run on day 5) but overall behavior is appropriately conservative given the physiological red flags.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": []
@@ -120,8 +120,8 @@
     {
       "familyId": "persona_cycling_primary_hybrid",
       "changedAxis": "recovery, local mechanical constraint, today-specific modality preference, and time availability for a cycling-primary hybrid athlete",
-      "sensitivityQuality": 9.2,
-      "rationale": "All five cases demonstrate appropriate sensitivity to the changed axis (recovery, local mechanical constraint, modality preference, time availability). The planner consistently respects the cycling-primary goal hierarchy while adapting to each state change. No overreaction was observed — rest is not treated as punishment but as dose reduction; guardrails are respected even when wearables look favorable; strength preference is honored without converting the entire week to strength-primary.",
+      "sensitivityQuality": 8.7,
+      "rationale": "The cycling-primary hybrid persona evaluation shows consistent, appropriate responses across all five test cases. The system correctly prioritizes recovery signals over training willingness (case 2), pain/guardrails over favorable wearables (case 3), and respects time constraints without hallucinating data (case 5). Cycling remains the primary performance objective throughout while strength is maintained as a retention goal. No overreactions detected — all load reductions are justified by actual signals rather than arbitrary conservatism.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": []
@@ -130,7 +130,7 @@
       "familyId": "persona_triathlon_established_olympic",
       "changedAxis": "recovery, weekday capacity, and race proximity for one established Olympic-distance triathlete",
       "sensitivityQuality": 8.5,
-      "rationale": "The system demonstrates appropriate sensitivity across all four cases. The baseline case correctly maintains three-discipline coverage without fabrication. The adverse recovery case appropriately responds to clear physiological red flags (HRV -14, RHR +7) with rest and reduced load — this is not an overreaction but correct calibration. The short-time case respects constraints while preserving discipline diversity. The taper case correctly enforces taper restraint in the final 14-day window without inventing hard sessions or open-water assumptions. No cases represent true overreactions; all responses are appropriately calibrated to their respective conditions.",
+      "rationale": "The model demonstrates appropriate sensitivity across all four cases: normal recovery is respected (baseline), adverse signals trigger rest days (adverse_recovery), time constraints are honored without sacrificing discipline coverage (short_time), and taper restraint is applied without inventing bricks or swim assumptions (taper). No overreactions detected — the model does not shut down training for minor fatigue variations.",
       "overreactionCases": [],
       "underreactionCases": [],
       "algorithmAdjustmentHypotheses": []
@@ -146,44 +146,46 @@
         "periodization_taper": 9,
         "preference_capacity_fit": 9,
         "robustness": 9,
-        "overall": 9
+        "overall": 8.5
       },
       "confidence": 0.92,
       "flags": [],
-      "rationale": "Baseline case shows high subjective readiness (readiness=8, fatigue=3, soreness=3) with no pain flag. The plan appropriately maintains strength specificity using free weights while alternating full-body and reduced sessions with rest days. No wearable data is hallucinated; the system correctly relies on subjective check-in only. Strength goals are preserved without over-medicalizing normal variation.",
+      "rationale": "Baseline case demonstrates appropriate handling of a strength-focused athlete with no wearable data. The plan preserves strength specificity using free weights while including light walking for aerobic volume without making it the primary modality. Subjective readiness signals (readiness=8, fatigue=3, soreness=3) are respected appropriately. No objective recovery metrics are hallucinated. The sequencing alternates between full-body and upper-body strength work with rest days interspersed, avoiding same-tissue stacking. Evergreen progression is maintained without fake race periodization.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_strength_no_wearable_work_fatigue",
       "scores": {
         "safety_recovery_fit": 9,
-        "goal_event_fit": 8,
+        "goal_event_fit": 9,
         "sequencing": 8,
         "periodization_taper": 9,
         "preference_capacity_fit": 9,
         "robustness": 9,
-        "overall": 8.75
+        "overall": 8.5
       },
-      "confidence": 0.92,
+      "confidence": 0.88,
       "flags": [],
-      "rationale": "Elevated fatigue (8/10) and soreness (7/10) from physically demanding work are appropriately responded to with rest-first approach followed by gradual return. The plan avoids inventing objective recovery data while respecting the non-training load signal. Strength specificity is preserved within safe bounds.",
+      "rationale": "The plan appropriately downshifts from full-load strength to 'Reduced Full-body Strength Maintenance' when fatigue (8/10) and soreness (7/10) are elevated. Rest days are inserted more frequently without abandoning the strength goal entirely. The system does not overreact by eliminating all training, nor underreact by pushing through high occupational load. It respects the no-wearable constraint and maintains strength specificity with free weights where available. This demonstrates proper handling of non-training load as decision-relevant information.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_strength_no_wearable_symptom_flare",
       "scores": {
-        "safety_recovery_fit": 10,
-        "goal_event_fit": 8,
-        "sequencing": 8,
-        "periodization_taper": 8,
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 7,
+        "periodization_taper": 9,
         "preference_capacity_fit": 9,
         "robustness": 9,
-        "overall": 9
+        "overall": 8.5
       },
       "confidence": 0.94,
       "flags": [],
-      "rationale": "The plan correctly tightens for active shoulder/back symptoms with painFlag=true. It uses bodyweight-only strength work (avoiding overhead pressing and heavy spinal loading per guardrails), adds more rest days, and includes mobility sessions. No wearable data is invented despite the absence of objective metrics. The response is appropriately cautious without being paralyzed — some strength work continues via safer modalities.",
-      "suggestedChanges": []
+      "rationale": "The plan correctly treats the pain flag as a hard constraint and enforces implied guardrails (avoid_overhead_pressing, avoid_heavy_spinal_loading) by switching to bodyweight-only full-body work. Multiple rest days are appropriate for an active symptom flare without over-medicalizing normal variation. The system does not invent objective recovery data or substitute swimming/cycling as silent substitutes. Strength specificity is preserved through bodyweight pressing/pulling patterns that respect the shoulder/back guardrails. This demonstrates proper escalation of caution when pain signals are present.",
+      "suggestedChanges": [
+        "Consider adding a brief mobility session on one of the rest days to maintain shoulder range of motion without provoking symptoms."
+      ]
     },
     {
       "caseId": "persona_health_fatloss_baseline",
@@ -198,7 +200,7 @@
       },
       "confidence": 0.92,
       "flags": [],
-      "rationale": "Baseline plan shows coherent evergreen progression with strength + walking + running mix. Recovery days are appropriately interspersed. No event means no fake tapering. Respects 60min constraint and free-weights-only equipment. The plan is sustainable without over-medicalizing normal variation.",
+      "rationale": "Baseline plan correctly aligns with health/fat-loss goals using free weights and walking as preferred modalities. Recovery signals are good (body_battery 72%, stable RHR/HRV), so a full-body strength session on day 1 is appropriate for habit-building. Sequencing alternates well between train/modify/recover modes without same-tissue stacking. No event means no fake tapering. The plan respects the 60-minute time constraint and available equipment (free weights only).",
       "suggestedChanges": []
     },
     {
@@ -206,16 +208,18 @@
       "scores": {
         "safety_recovery_fit": 9,
         "goal_event_fit": 9,
-        "sequencing": 8,
+        "sequencing": 7.5,
         "periodization_taper": 9,
         "preference_capacity_fit": 8,
         "robustness": 9,
         "overall": 8.5
       },
-      "confidence": 0.94,
+      "confidence": 0.88,
       "flags": [],
-      "rationale": "Adverse recovery signals (fatigue 7, body_battery 24%, rhr +7, hrv -14) are appropriately respected with front-loaded rest days and reduced load. The plan does not overreact by eliminating all activity but instead prioritizes recovery while maintaining minimal health-supporting movement. This is a well-calibrated response to adverse data without inventing medical diagnoses.",
-      "suggestedChanges": []
+      "rationale": "Adverse recovery signals are clearly present: HRV delta -14, RHR delta +7, sleep score delta -24, body battery at 24%. The plan appropriately front-loads rest days before reintroducing load. This is correct evergreen behavior — no fake event peak is invented. Minor note: day-3 walk after only 2 rest days with such low body battery could be slightly more conservative, but for an evergreen health persona this is acceptable.",
+      "suggestedChanges": [
+        "Consider adding a third rest day before the first walk session given body battery at 24% and HRV delta of -14."
+      ]
     },
     {
       "caseId": "persona_health_fatloss_low_time",
@@ -228,57 +232,57 @@
         "robustness": 8,
         "overall": 8.5
       },
-      "confidence": 0.91,
+      "confidence": 0.9,
       "flags": [],
-      "rationale": "The plan correctly adapts to the 30-minute constraint by using bodyweight strength (no equipment needed) and shorter sessions. Recovery days remain interspersed for sustainability. The plan does not hallucinate measurements or invent goals. It maintains health-focused programming while respecting the time limitation.",
+      "rationale": "Low-time constraint (30 min) is respected without hallucinating measurements or inventing data. Session durations are explicitly shortened to fit the window while maintaining habit-building frequency. Recovery signals remain healthy so no unnecessary rest escalation. The system correctly treats this as a capacity constraint rather than an adverse signal — distinct from case 2.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_former_elite_sparse_history_baseline",
       "scores": {
         "safety_recovery_fit": 9,
-        "goal_event_fit": 8,
-        "sequencing": 7.5,
-        "periodization_taper": 9,
-        "preference_capacity_fit": 8,
-        "robustness": 8,
-        "overall": 8.2
+        "goal_event_fit": 9,
+        "sequencing": 8,
+        "periodization_taper": 10,
+        "preference_capacity_fit": 9.8,
+        "robustness": 9,
+        "overall": 9
       },
-      "confidence": 0.92,
+      "confidence": 0.95,
       "flags": [],
-      "rationale": "Plan correctly treats sparse current history as the dose authority rather than assuming historical elite capacity. High subjective readiness (8/10) and excellent objective signals (rhr stable at 58, hrv stable at 42, sleep score 80) justify a full-strength Day 1 without overcautiousness. The evergreen pattern avoids fake race periodization. Strength priority is honored while aerobic volume rebuilds gradually. No pain flag means no guardrail tightening needed.",
+      "rationale": "Plan correctly treats sparse history as the dose authority rather than historical elite status. The good Garmin day (HRV 42, RHR stable at 58, sleep score 80) combined with low subjective fatigue/soreness supports a moderate training load. Strength is preserved alongside easy aerobic work in an evergreen mode. No fake periodization or invented peaking. Respects free-weights-only constraint.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_former_elite_adverse_recovery",
       "scores": {
-        "safety_recovery_fit": 9,
-        "goal_event_fit": 8,
+        "safety_recovery_fit": 9.7,
+        "goal_event_fit": 9,
         "sequencing": 8,
-        "periodization_taper": 8,
-        "preference_capacity_fit": 8,
-        "robustness": 9,
-        "overall": 8.5
+        "periodization_taper": 10,
+        "preference_capacity_fit": 9.5,
+        "robustness": 9.5,
+        "overall": 8.8
       },
-      "confidence": 0.95,
+      "confidence": 0.92,
       "flags": [],
-      "rationale": "The plan correctly responds to adverse recovery signals (RHR delta +7, HRV delta -14, body battery 24%, sleep score drop) with rest days and reduced load despite the athlete's strong historical background. This demonstrates proper calibration: current-state reactions govern dose authority over historical competitive level. The response is appropriately conservative without being excessive.",
+      "rationale": "Plan correctly identifies adverse recovery (HRV delta -14, RHR +7, sleep score down 24, body battery 24) and responds with rest days on 31/1/5/7/8. Light work is deferred until day 2 onward. This avoids the common error of overriding Garmin signals with historical fitness assumptions. Strength remains available but not forced into a hard session while recovery lags.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_former_elite_low_motivation_only",
       "scores": {
-        "safety_recovery_fit": 9,
-        "goal_event_fit": 8,
+        "safety_recovery_fit": 9.3,
+        "goal_event_fit": 9,
         "sequencing": 8,
-        "periodization_taper": 9,
-        "preference_capacity_fit": 8,
-        "robustness": 9,
-        "overall": 8.5
+        "periodization_taper": 10,
+        "preference_capacity_fit": 9.8,
+        "robustness": 9.4,
+        "overall": 9
       },
-      "confidence": 0.94,
+      "confidence": 0.93,
       "flags": [],
-      "rationale": "The plan correctly distinguishes low motivation (subjective only) from physiological red flags. All objective signals are green (HRV stable at 42, RHR stable at 58, sleep score 80). The system does not over-react to a non-physiological signal and proceeds with normal evergreen progression. This demonstrates proper calibration between subjective and objective evidence.",
+      "rationale": "Plan correctly distinguishes low motivation (subjective only) from physiological red flags. All objective metrics are healthy (HRV 42, RHR stable at 58, sleep score 80, body battery 72). The plan maintains full training load because the data supports it — low motivation alone is not a physiological contraindication. This demonstrates proper calibration: subjective mood ≠ physiological readiness.",
       "suggestedChanges": []
     },
     {
@@ -286,80 +290,90 @@
       "scores": {
         "safety_recovery_fit": 9,
         "goal_event_fit": 9,
-        "sequencing": 7.5,
+        "sequencing": 8,
         "periodization_taper": 9,
         "preference_capacity_fit": 9,
         "robustness": 8,
-        "overall": 8.2
+        "overall": 8.7
       },
       "confidence": 0.92,
       "flags": [],
-      "rationale": "Baseline case shows a well-balanced week with 3 strength sessions and 4 aerobic sessions across 14 days. The plan respects the balanced-performance goal without inventing event-specific periodization. Strength is distributed on non-consecutive days (Aug 31, Sep 5, Sep 8) avoiding same-tissue stacking. Aerobic work uses running/walking appropriately for a generalist with no indoor bike available. Rest days are placed coherently after training blocks. The plan respects the evergreen planning mode and does not hallucinate event targets or performance metrics.",
+      "rationale": "Baseline plan correctly balances aerobic and strength work over the week with no event target. Three strength sessions (days 1,4,8) and four endurance sessions (days 2,3,7,10,13) provide balanced progression. Equipment constraints respected (free weights only). No fake periodization since no event exists.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_balanced_performance_adverse_recovery",
       "scores": {
         "safety_recovery_fit": 9,
-        "goal_event_fit": 9,
-        "sequencing": 8,
+        "goal_event_fit": 8,
+        "sequencing": 7,
         "periodization_taper": 9,
         "preference_capacity_fit": 8,
         "robustness": 9,
-        "overall": 8.5
+        "overall": 8.3
       },
-      "confidence": 0.91,
-      "flags": [],
-      "rationale": "Adverse recovery case correctly identifies poor objective signals (rhr_delta=+7, hrv_delta=-14, body_battery_wake=24) and responds with two consecutive rest days at the start of the week before reintroducing load. The plan maintains balanced performance identity without over-medicalizing into injury territory. Strength is still included on Sep 4 and Sep 6 once recovery signals improve. This demonstrates appropriate sensitivity to conflicting subjective (motivation=7) vs objective (poor HRV, elevated RHR) signals.",
-      "suggestedChanges": []
+      "confidence": 0.88,
+      "flags": [
+        "HRV delta of -14 is a significant red flag requiring rest"
+      ],
+      "rationale": "Adverse recovery case correctly responds with three rest days and reduced load. The planner recognizes elevated RHR (+7), poor sleep score (52), and HRV drop (-14) as legitimate signals warranting recovery. Strength work is preserved but scaled down to bodyweight on day 6, avoiding complete deconditioning while respecting the adverse state.",
+      "suggestedChanges": [
+        "Consider adding a brief mobility session on day 3 to maintain tissue quality during rest-heavy week"
+      ]
     },
     {
       "caseId": "persona_balanced_performance_strength_preference",
       "scores": {
         "safety_recovery_fit": 9,
         "goal_event_fit": 9,
-        "sequencing": 7.5,
+        "sequencing": 8,
         "periodization_taper": 9,
         "preference_capacity_fit": 9,
         "robustness": 8,
-        "overall": 8.3
+        "overall": 8.7
       },
-      "confidence": 0.91,
+      "confidence": 0.92,
       "flags": [],
-      "rationale": "Strength preference case correctly honors the explicit preferredModalityToday='Strength' on Aug 31 with a full-body strength session. The remainder of the week maintains balanced performance identity without turning into strength-primary programming (only 3 strength sessions total across 2 weeks). Aerobic work is preserved throughout via running/walking sessions. This demonstrates that preference signals are respected locally while the overall persona goal remains intact.",
+      "rationale": "Strength preference today is correctly honored with a full strength session on day 1. The planner does not over-index to strength at the expense of aerobic work—the remaining week still includes four endurance sessions. This respects both the user's stated preference and the balanced-performance goal without turning the plan into a strength-primary program.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_stacked_constraints_baseline",
       "scores": {
         "safety_recovery_fit": 9,
-        "goal_event_fit": 8,
+        "goal_event_fit": 9,
         "sequencing": 8,
-        "periodization_taper": 8,
+        "periodization_taper": 9,
         "preference_capacity_fit": 9,
         "robustness": 8,
         "overall": 8.5
       },
       "confidence": 0.92,
       "flags": [],
-      "rationale": "Baseline case handles a healthy athlete with running restrictions and no equipment well. Plan uses bodyweight strength (str_full_02) and walking sessions only — no equipment hallucination. Rest days are appropriately spaced between strength sessions. No fake periodization or invented peaking since there is no event. The plan respects the 60-minute max time constraint on all training days. Sequencing alternates strength/walk/rest coherently over two weeks with adequate recovery between strength loads.",
-      "suggestedChanges": []
+      "rationale": "Baseline case demonstrates solid constraint handling: running restriction respected via bodyweight strength + walking only; no equipment hallucinated (all sessions use zero equipment); health priority maintained with balanced strength/aerobic load; rest days appropriately interspersed. The plan avoids inventing cardio when none is needed and respects the 60-minute weekday cap. Sequencing alternates train/recover without same-tissue stacking. No fake periodization present.",
+      "suggestedChanges": [
+        "Consider adding a brief mobility note on strength days to reinforce the 'no equipment' constraint explicitly in user-facing copy.",
+        "Walking sessions could occasionally be labeled as 'easy aerobic' rather than generic walking to better communicate health-focused intent."
+      ]
     },
     {
       "caseId": "persona_stacked_constraints_adverse_recovery",
       "scores": {
-        "safety_recovery_fit": 9,
-        "goal_event_fit": 8,
+        "safety_recovery_fit": 10,
+        "goal_event_fit": 9,
         "sequencing": 8,
-        "periodization_taper": 7,
+        "periodization_taper": 9,
         "preference_capacity_fit": 9,
         "robustness": 9,
-        "overall": 8.5
+        "overall": 9
       },
-      "confidence": 0.92,
+      "confidence": 0.94,
       "flags": [],
-      "rationale": "Plan appropriately responds to adverse recovery signals (fatigue=7, hrv_delta=-14, rhr_delta=+7, body_battery_wake=24) by front-loading rest days and reducing load. The system does not overreact to the point of zero training forever — it still schedules some work after recovery windows close. This demonstrates good sensitivity: it respects guardrails without being needlessly conservative. No equipment hallucination, no running substitution, all sessions use available modalities.",
-      "suggestedChanges": []
+      "rationale": "Adverse recovery case shows excellent sensitivity: HRV delta of -14, RHR up +7, body battery at 24%, fatigue at 7/10 all trigger appropriate rest-day escalation. The plan shifts from train-heavy to recover-heavy (3 rest days vs 1 in baseline) without inventing a race taper or performance peaking. Strength remains available but deferred until recovery signals improve. This is the correct response to elevated physiological stress under stacked constraints.",
+      "suggestedChanges": [
+        "The transition back to training on 2026-09-04 (strength) after only one rest day could be slightly more conservative given the HRV delta of -14; consider adding a second recover day before returning to strength.",
+        "Walking sessions in the recovery phase should explicitly note 'easy aerobic' to reinforce health priority over performance."
+      ]
     },
     {
       "caseId": "persona_stacked_constraints_low_time",
@@ -367,16 +381,16 @@
         "safety_recovery_fit": 8,
         "goal_event_fit": 8,
         "sequencing": 7,
-        "periodization_taper": 7,
-        "preference_capacity_fit": 9,
+        "periodization_taper": 9,
+        "preference_capacity_fit": 8,
         "robustness": 8,
-        "overall": 7.8
+        "overall": 8
       },
       "confidence": 0.88,
       "flags": [],
-      "rationale": "Low time case appropriately constrains day-1 strength to 15-25 min (within the 30-min availability) and caps walk durations at 30 min max on constrained days. No equipment is hallucinated; bodyweight strength remains the only viable option. Rest days are preserved. The plan does not invent a longer session or substitute modalities that would violate constraints. Evergreen pattern maintained without fake periodization.",
+      "rationale": "Low-time case correctly adjusts session durations (strength to 15-25 min, walks capped at 30 min) while maintaining the health-focused structure. The plan respects both equipment constraints and the reduced time window. Sequencing remains coherent with rest days preserved. No fake event periodization is introduced. This demonstrates robust handling of a constraint change without compromising safety or goal alignment.",
       "suggestedChanges": [
-        "Consider adding a brief mobility note on day 13 to complement the strength session given the reduced time budget earlier in the week."
+        "Consider adding a brief note that if motivation dips below threshold on any day, the user may swap to rest without penalty—this supports adherence under time pressure."
       ]
     },
     {
@@ -385,106 +399,103 @@
         "safety_recovery_fit": 9,
         "goal_event_fit": 9,
         "sequencing": 8,
-        "periodization_taper": 8,
+        "periodization_taper": 9,
         "preference_capacity_fit": 9,
         "robustness": 8,
-        "overall": 8.5
+        "overall": 9
       },
-      "confidence": 0.95,
+      "confidence": 0.92,
       "flags": [],
-      "rationale": "Baseline case shows healthy Garmin signals (stable RHR/HRV, good sleep score). Plan appropriately balances walking aerobic volume with strength maintenance. Walking is treated as genuine aerobic training (not filler), rest days are placed sensibly, and the 60min time constraint is respected without inventing running sessions.",
+      "rationale": "Baseline case shows healthy Garmin signals (rhr_delta=0, hrv_delta=0, body_battery=72) with good subjective readiness. The plan correctly treats walking as genuine aerobic volume across multiple sessions rather than filler. Strength is appropriately sized for a health-focused persona without cable machines. No running is hallucinated despite the 'no running' constraint being absent from constraints — it's simply not offered because the persona identity states running isn't viable. Sequencing alternates strength/walking/mobility/rest coherently.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_walking_adverse_recovery",
       "scores": {
-        "safety_recovery_fit": 8,
+        "safety_recovery_fit": 9,
         "goal_event_fit": 9,
         "sequencing": 7,
         "periodization_taper": 8,
         "preference_capacity_fit": 9,
-        "robustness": 8,
+        "robustness": 9,
         "overall": 8
       },
-      "confidence": 0.85,
+      "confidence": 0.88,
       "flags": [
-        "Day-5 full-strength session may be slightly aggressive given fatigue=7 and body_battery_wake=24; consider delaying to day 6 or reducing intensity further."
+        "Adverse recovery signals (rhr_delta=+7, hrv_delta=-14, body_battery=24) warrant the two consecutive rest days at week start — this is appropriate restraint, not overreaction."
       ],
-      "rationale": "Adverse recovery signals (fatigue=7, rhr_delta=+7, hrv_delta=-14, body_battery_wake=24) are correctly recognized. Rest days on days 1-2 and light walking on days 3-4 show appropriate load reduction. Walking is used as genuine aerobic volume throughout. The day-5 full strength session is the only minor concern — it's not a failure but could be slightly more conservative.",
+      "rationale": "The plan appropriately responds to adverse Garmin signals with initial rest days before gradually reintroducing walking and strength. Walking remains the primary aerobic modality (not replaced by running). The gradual re-introduction of load after two rest days is sensible for a health-focused persona. Strength is reintroduced at reduced volume on Sep 4, which is appropriate given the elevated fatigue/soreness signals.",
       "suggestedChanges": [
-        "Consider delaying the day-5 full-strength session to day 6 or replacing with a reduced-intensity bodyweight session given fatigue=7 and body_battery_wake=24."
+        "Consider adding a third rest day if fatigue continues to decline slowly; the current plan reintroduces load on Sep 4 which is acceptable but could be more conservative depending on how quickly body_battery recovers."
       ]
     },
     {
       "caseId": "persona_walking_low_time",
       "scores": {
         "safety_recovery_fit": 9,
-        "goal_event_fit": 8,
+        "goal_event_fit": 9,
         "sequencing": 8,
         "periodization_taper": 8,
         "preference_capacity_fit": 9,
         "robustness": 8,
-        "overall": 8.5
+        "overall": 9
       },
-      "confidence": 0.9,
+      "confidence": 0.93,
       "flags": [],
-      "rationale": "Low time constraint (30min) is respected without inventing running or hallucinating measurements. Walking sessions are exactly 30min each, bodyweight strength fits within the window. No fake race periodization. The plan maintains walking as the primary aerobic modality while fitting in strength work — a good balance for health-focused training under time pressure.",
+      "rationale": "Plan respects the 30-minute time constraint without hallucinating objective measurements or inventing data. Walking sessions are capped at 30 min matching available capacity. Strength is bodyweight-only on day 1 to fit within constraints. Walking remains the primary aerobic modality throughout — never silently replaced by running. Evergreen habit-building goal is preserved despite tight windows.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_established_history_baseline",
       "scores": {
         "safety_recovery_fit": 9,
-        "goal_event_fit": 8,
-        "sequencing": 8,
-        "periodization_taper": 8,
-        "preference_capacity_fit": 9,
-        "robustness": 8,
-        "overall": 8
-      },
-      "confidence": 0.92,
-      "flags": [],
-      "rationale": "Baseline case with good recovery signals (rhr_delta=0, hrv_delta=0, body_battery_wake=72%, sleep_score=80). Plan provides steady aerobic volume with running preference respected. No event means no fake peaking/tapering. Evergreen progression from current base is appropriate. Score reduced slightly for conservative load given 'established' identity — could warrant one purposeful quality session per week as stated in mid-term goal.",
-      "suggestedChanges": [
-        "Consider adding one purposeful quality session (e.g., threshold or tempo run) per week to align with mid-term goal of 'adding purposeful quality work on top of established aerobic volume.'"
-      ]
-    },
-    {
-      "caseId": "persona_established_history_adverse_recovery",
-      "scores": {
-        "safety_recovery_fit": 10,
         "goal_event_fit": 9,
         "sequencing": 8,
         "periodization_taper": 8,
         "preference_capacity_fit": 9,
         "robustness": 9,
-        "overall": 9
+        "overall": 8.7
       },
-      "confidence": 0.95,
+      "confidence": 0.92,
       "flags": [],
-      "rationale": "Adverse recovery signals are clear and unambiguous: rhr_delta=+7 (elevated resting HR), hrv_delta=-14 (significant drop from baseline), body_battery_wake=24% (critically low). Plan correctly reduces load with two rest days at start, then resumes light work. This is appropriate — more recovery is not automatically better; the system correctly interprets objective signals as adverse rather than missing data.",
+      "rationale": "Good recovery signals (rhr_delta=0, hrv_delta=0, body_battery_wake=72) combined with high subjective readiness/motivation justify a purposeful tempo run on top of established aerobic volume. The plan is coherent: easy runs interspersed with one quality session and rest days. No pain flag, no event to taper for. Respects running preference without requiring unavailable equipment.",
       "suggestedChanges": []
+    },
+    {
+      "caseId": "persona_established_history_adverse_recovery",
+      "scores": {
+        "safety_recovery_fit": 7,
+        "goal_event_fit": 7,
+        "sequencing": 7,
+        "periodization_taper": 8,
+        "preference_capacity_fit": 8,
+        "robustness": 8,
+        "overall": 7
+      },
+      "confidence": 0.92,
+      "flags": [
+        "tempo_run_on_day_5_may_be_aggressive_given_hrv_delta_minus_14"
+      ],
+      "rationale": "The plan correctly reduces load with rest days and walks given adverse recovery signals (rhr_delta=+7, hrv_delta=-14, body_battery_wake=24). However, the tempo run on 09-05 may be slightly aggressive given the significant HRV drop and elevated RHR. The system appropriately prioritizes recovery over motivation (motivation=7 is high but recovery signals are poor), which is correct behavior for an established athlete whose authority comes from current state, not history.",
+      "suggestedChanges": [
+        "Consider removing the tempo run on 09-05 and replacing with a moderate easy run or walk given hrv_delta=-14 and fatigue=7"
+      ]
     },
     {
       "caseId": "persona_established_history_low_motivation_only",
       "scores": {
         "safety_recovery_fit": 9,
-        "goal_event_fit": 7,
+        "goal_event_fit": 9,
         "sequencing": 8,
         "periodization_taper": 8,
         "preference_capacity_fit": 9,
-        "robustness": 8,
-        "overall": 7.5
+        "robustness": 9,
+        "overall": 8.7
       },
-      "confidence": 0.94,
-      "flags": [
-        "under-reaction to low motivation when objective signals are green"
-      ],
-      "rationale": "Low motivation alone (motivation 2/10) is not a physiological red flag — all other subjective signals are good (readiness 7, fatigue 3, soreness 2) and all objective signals are green (rhr delta 0, hrv delta 0, sleep score delta 0, body battery 72%). The plan mirrors the baseline case with no higher-intensity sessions, which is an under-reaction. A good athlete with a current training base should still be able to handle one purposeful quality session even if motivation dips temporarily.",
-      "suggestedChanges": [
-        "Add one purposeful quality session (e.g., threshold or tempo run) in the second week. Low motivation alone should not override good objective recovery signals when the athlete has an established current training base.",
-        "Consider a lower-intensity but still purposeful session rather than defaulting to easy-only work."
-      ]
+      "confidence": 0.95,
+      "flags": [],
+      "rationale": "Low motivation (2) alone is not a physiological red flag when objective signals are green (rhr_delta=0, hrv_delta=0, body_battery_wake=72). The plan correctly retains the tempo run — low motivation should not remove an otherwise-earned higher-intensity opportunity. This demonstrates proper robustness: distinguishing psychological state from physiological capacity.",
+      "suggestedChanges": []
     },
     {
       "caseId": "persona_cycling_hybrid_baseline",
@@ -495,46 +506,48 @@
         "periodization_taper": 10,
         "preference_capacity_fit": 9,
         "robustness": 9,
-        "overall": 9
-      },
-      "confidence": 0.95,
-      "flags": [],
-      "rationale": "Baseline case shows coherent cycling-primary programming with strength retention woven in as a secondary goal. Rest days are appropriately placed (every other day). Cycling dominates the volume while strength sessions maintain muscle without competing for primary performance time. No event means no fake periodization. Wearable data is respected but not over-weighted against subjective readiness.",
-      "suggestedChanges": []
-    },
-    {
-      "caseId": "persona_cycling_hybrid_adverse_recovery",
-      "scores": {
-        "safety_recovery_fit": 10,
-        "goal_event_fit": 9,
-        "sequencing": 8,
-        "periodization_taper": 10,
-        "preference_capacity_fit": 8,
-        "robustness": 9,
         "overall": 8.5
       },
       "confidence": 0.92,
       "flags": [],
-      "rationale": "Adverse recovery case correctly prioritizes rest over favorable cycling desire (preferred modality is Cycling but fatigue=7, hrv_delta=-14). The plan starts with two full rest days before reintroducing light work. Strength is still included as a retention goal without becoming the primary focus. This demonstrates that active guardrails outrank wearable signals — a key calibration point for this persona.",
+      "rationale": "Baseline case shows a well-structured evergreen plan for a cycling-primary hybrid athlete with good recovery signals. Cycling remains the primary modality throughout the week while strength is included as a retention goal. The sequencing alternates between cycling, strength, and rest appropriately without same-tissue stacking. No event means no tapering needed. Minor suggestion: could slightly increase cycling volume on non-strength days to better reflect 'cycling-primary' identity.",
+      "suggestedChanges": [
+        "Consider adding one additional Zone 2 cycling session mid-week to better reflect cycling-primary identity while maintaining strength retention."
+      ]
+    },
+    {
+      "caseId": "persona_cycling_hybrid_adverse_recovery",
+      "scores": {
+        "safety_recovery_fit": 9,
+        "goal_event_fit": 9,
+        "sequencing": 8,
+        "periodization_taper": 10,
+        "preference_capacity_fit": 9,
+        "robustness": 9.5,
+        "overall": 8.5
+      },
+      "confidence": 0.92,
+      "flags": [],
+      "rationale": "Adverse recovery case correctly responds to elevated fatigue (7), reduced HRV (-14 delta), and elevated RHR (+7). The plan appropriately reduces load with rest days and lower-intensity cycling. Cycling remains the primary modality at reduced volume while strength is maintained as a retention goal. This demonstrates proper prioritization of recovery signals over training willingness.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_cycling_hybrid_local_tissue_conflict",
       "scores": {
-        "safety_recovery_fit": 10,
+        "safety_recovery_fit": 9,
         "goal_event_fit": 9,
         "sequencing": 8,
         "periodization_taper": 10,
-        "preference_capacity_fit": 8,
+        "preference_capacity_fit": 9,
         "robustness": 9,
         "overall": 8.5
       },
-      "confidence": 0.94,
-      "flags": [
-        "wearable_recovery_conflict"
-      ],
-      "rationale": "This case tests the critical principle that active pain/guardrails outrank favorable wearable readiness. Despite excellent sleep_score=92 and hrv_last_night=51, the athlete reports painFlag=true with guardrails ['avoid_high_impact','avoid_heavy_lower_body'] and soreness=6. The plan correctly responds by substituting bodyweight strength (no free weights) for lower-body loading days and using walk instead of cycling on some days. This is a good sensitivity case — it does not reward the wearable over the active guardrail.",
-      "suggestedChanges": []
+      "confidence": 0.88,
+      "flags": [],
+      "rationale": "This is the critical test case: favorable wearable signals (HRV up, sleep good) conflict with active pain flag and implied guardrails for lower body. The plan correctly prioritizes the subjective pain/guardrail over favorable wearables by avoiding heavy lower-body work and using bodyweight strength instead of free weights. Cycling remains primary but respects the mechanical constraint. This demonstrates proper hierarchy: pain/guardrails > wearable signals.",
+      "suggestedChanges": [
+        "Consider explicitly noting in the plan explanation that bodyweight strength is substituted to respect lower-body guardrails while maintaining strength retention."
+      ]
     },
     {
       "caseId": "persona_cycling_hybrid_strength_preference",
@@ -547,9 +560,9 @@
         "robustness": 9,
         "overall": 8.5
       },
-      "confidence": 0.93,
+      "confidence": 0.91,
       "flags": [],
-      "rationale": "Strength preference today is respected by placing a full-body strength session first day while cycling remains the primary performance objective throughout the week. The plan does not silently convert the entire week into strength-primary programming — cycling still dominates volume and frequency. This balances retention goals with the primary goal hierarchy correctly.",
+      "rationale": "Strength preference case correctly schedules a full-body strength session first when the user prefers it today. Cycling remains primary throughout the week (not silently converted to strength-primary programming). The plan respects the declared preference without over-indexing on strength at the expense of cycling performance goals. This demonstrates proper handling of modality preferences within the cycling-primary framework.",
       "suggestedChanges": []
     },
     {
@@ -561,75 +574,89 @@
         "periodization_taper": 10,
         "preference_capacity_fit": 9,
         "robustness": 9,
-        "overall": 8
+        "overall": 8.5
       },
-      "confidence": 0.91,
+      "confidence": 0.87,
       "flags": [],
-      "rationale": "The 35-minute constraint is respected across all sessions without hallucinating equipment or inventing modalities. Bodyweight strength (no cable machine needed) and shorter cycling windows are used appropriately. The plan maintains the cycling-primary identity while working within the hard time constraint. No invented brick workouts, no fabricated swim anchors — just honest adaptation to available capacity.",
-      "suggestedChanges": []
+      "rationale": "Low time case correctly respects the 35-minute constraint by reducing session durations across all modalities. Cycling remains the primary modality while strength is maintained as a retention goal within the reduced window. The plan avoids hallucinating measurements and works with sparse data (no wearable override). This demonstrates robust handling of capacity constraints.",
+      "suggestedChanges": [
+        "Consider explicitly noting in the plan that bodyweight strength is used to fit within the 35-minute window when free weights would require more setup time."
+      ]
     },
     {
       "caseId": "persona_triathlon_established_olympic_baseline",
       "scores": {
         "safety_recovery_fit": 9,
         "goal_event_fit": 9,
-        "sequencing": 9,
+        "sequencing": 8,
         "periodization_taper": 9,
-        "preference_capacity_fit": 9,
-        "robustness": 9,
-        "overall": 8.5
+        "preference_capacity_fit": 8,
+        "robustness": 8,
+        "overall": 8.7
       },
       "confidence": 0.92,
       "flags": [],
-      "rationale": "Baseline case shows a well-structured Olympic triathlon preparation plan across ~7 weeks to event date (Oct 12). All three disciplines are maintained with appropriate cycling-specific aerobic work as the primary performance objective. Strength training is preserved on free weights (no cable machine available). The sequencing avoids unnecessary same-tissue stacking and respects equipment constraints. No fake periodization or invented peaking/tapering since this is early preparation territory.",
+      "rationale": "Baseline case shows a well-structured plan for an established Olympic-distance triathlete ~7 weeks from event. All three disciplines are present with appropriate progression. Strength is included as retention requirement. No taper yet which is correct for this phase. Equipment constraints (no cable machine, free weights available) are respected.",
       "suggestedChanges": []
     },
     {
       "caseId": "persona_triathlon_established_olympic_adverse_recovery",
       "scores": {
-        "safety_recovery_fit": 9,
+        "safety_recovery_fit": 7,
         "goal_event_fit": 8,
         "sequencing": 8,
-        "periodization_taper": 7,
-        "preference_capacity_fit": 9,
-        "robustness": 9,
-        "overall": 8
+        "periodization_taper": 8,
+        "preference_capacity_fit": 8,
+        "robustness": 8,
+        "overall": 7
       },
       "confidence": 0.92,
-      "flags": [],
-      "rationale": "Adverse recovery signals are correctly identified and acted upon: fatigue 7, soreness 5, stress 6, motivation 7, plus objective red flags (sleep_score 52 vs baseline 80, RHR delta +7, HRV last night 28 vs weekly avg 42, hrv_delta -14, body_battery_wake 24). Plan appropriately starts with two rest days before gradual re-introduction. The system does not overreact by eliminating all training — instead it uses a measured recovery-to-load ramp. This demonstrates good sensitivity to conflicting signals (weekly HRV avg still looks okay but single-night drop is the actionable signal).",
-      "suggestedChanges": []
+      "flags": [
+        "hrv_delta=-14 indicates significant autonomic stress",
+        "rhr_delta=+7 shows elevated resting heart rate",
+        "sleep_score dropped from baseline (80→52)",
+        "cycling session on Sep 12 at 50-90min may be slightly aggressive given recovery signals"
+      ],
+      "rationale": "Adverse recovery signals are correctly recognized and responded to with initial rest days. However, the cycling session on Sep 12 (50-90 min) is borderline aggressive given hrv_delta=-14 and rhr_delta=+7. The long lead time to race (Oct 12) provides some buffer, but a more conservative approach would cap all sessions at ≤45min for the first 3 days after adverse signals.",
+      "suggestedChanges": [
+        "Consider capping the Sep 12 cycling session at ≤45min given hrv_delta=-14 and rhr_delta=+7",
+        "Add a rest day between Sep 6 (swim) and Sep 9 (run) to provide additional recovery buffer"
+      ]
     },
     {
       "caseId": "persona_triathlon_established_olympic_short_time",
       "scores": {
         "safety_recovery_fit": 9,
-        "goal_event_fit": 9,
+        "goal_event_fit": 8,
         "sequencing": 8,
-        "periodization_taper": 8,
-        "preference_capacity_fit": 9,
-        "robustness": 9,
-        "overall": 8.7
+        "periodization_taper": 9,
+        "preference_capacity_fit": 7,
+        "robustness": 8,
+        "overall": 8
       },
-      "confidence": 0.91,
-      "flags": [],
-      "rationale": "Short weekday time constraint (~45 min) is respected while maintaining all three disciplines. No fabricated swims or substituted modalities. The plan correctly uses shorter duration sessions (20-35 min runs, 30-60 min swims) without sacrificing discipline coverage. Equipment constraints are honored. Sequencing remains coherent within the compressed window.",
-      "suggestedChanges": []
+      "confidence": 0.88,
+      "flags": [
+        "weekday_cap_may_be_exceeded_in_some_sessions"
+      ],
+      "rationale": "Short time case (45-minute weekday cap) shows good adaptation but some swim sessions have durationMax:60 which could exceed the cap if set to maximum. The running session on 08-31 at 20-35 min fits well within constraints. Overall structure is sound for an established athlete with limited time.",
+      "suggestedChanges": [
+        "Consider reducing swim session durationMax to 45 min on weekdays to strictly honor the time cap"
+      ]
     },
     {
       "caseId": "persona_triathlon_established_olympic_taper",
       "scores": {
         "safety_recovery_fit": 9,
         "goal_event_fit": 9,
-        "sequencing": 8,
+        "sequencing": 9,
         "periodization_taper": 9,
-        "preference_capacity_fit": 9,
-        "robustness": 8,
-        "overall": 8.7
+        "preference_capacity_fit": 8,
+        "robustness": 8.5,
+        "overall": 9
       },
       "confidence": 0.93,
       "flags": [],
-      "rationale": "Final 14-day taper window (event date 2026-09-14 is ~14 days from start). Plan correctly shows taper restraint: reduced volumes across all three disciplines, no fake build load in the final week. All three race disciplines remain present (swim, cycle, run) — this is critical per persona calibration that pool and bicycle access exist so a single discipline should not substitute for others. Strength maintenance is included but reduced (Day 5 full-body at 20-30 min). No invented brick workouts, swim pace/CSS anchors, or open-water assumptions are present.",
+      "rationale": "Final 14-day taper window (Aug 31–Sep 13) before Sep 14 Olympic triathlon. Plan demonstrates excellent taper restraint: no hard sessions in final week, reduced volume across all disciplines, rest days strategically placed, strength reduced to maintenance only. All three race disciplines remain represented without inventing brick workouts or open-water assumptions. The plan respects the established persona's mixed-discipline base while appropriately reducing load for peak performance.",
       "suggestedChanges": []
     }
   ],
@@ -637,17 +664,17 @@
     {
       "familyId": "persona_strength_no_wearable",
       "samples": 5,
-      "familySensitivityMedian": 9.2,
+      "familySensitivityMedian": 9,
       "familySensitivityMad": 0,
-      "familySensitivitySpread": 0.7,
+      "familySensitivitySpread": 0.5,
       "dimensionMadAverages": {
         "safety_recovery_fit": 0,
         "goal_event_fit": 0,
-        "sequencing": 0.33,
+        "sequencing": 0,
         "periodization_taper": 0,
         "preference_capacity_fit": 0,
         "robustness": 0,
-        "overall": 0.08
+        "overall": 0
       },
       "cases": {
         "persona_strength_no_wearable_baseline": {
@@ -658,7 +685,7 @@
             "periodization_taper": 9,
             "preference_capacity_fit": 9,
             "robustness": 9,
-            "overall": 9
+            "overall": 8.5
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
@@ -674,12 +701,12 @@
         "persona_strength_no_wearable_work_fatigue": {
           "scoreMedians": {
             "safety_recovery_fit": 9,
-            "goal_event_fit": 8,
+            "goal_event_fit": 9,
             "sequencing": 8,
             "periodization_taper": 9,
             "preference_capacity_fit": 9,
             "robustness": 9,
-            "overall": 8.75
+            "overall": 8.5
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
@@ -688,47 +715,47 @@
             "periodization_taper": 0,
             "preference_capacity_fit": 0,
             "robustness": 0,
-            "overall": 0.25
+            "overall": 0
           },
-          "maxSpread": 1
+          "maxSpread": 1.5
         },
         "persona_strength_no_wearable_symptom_flare": {
           "scoreMedians": {
-            "safety_recovery_fit": 10,
-            "goal_event_fit": 8,
-            "sequencing": 8,
-            "periodization_taper": 8,
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 9,
+            "sequencing": 7,
+            "periodization_taper": 9,
             "preference_capacity_fit": 9,
             "robustness": 9,
-            "overall": 9
+            "overall": 8.5
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
             "goal_event_fit": 0,
-            "sequencing": 1,
+            "sequencing": 0,
             "periodization_taper": 0,
             "preference_capacity_fit": 0,
             "robustness": 0,
             "overall": 0
           },
-          "maxSpread": 2
+          "maxSpread": 1.5
         }
       }
     },
     {
       "familyId": "persona_health_fat_loss",
       "samples": 5,
-      "familySensitivityMedian": 9,
-      "familySensitivityMad": 0.1999999999999993,
-      "familySensitivitySpread": 0.75,
+      "familySensitivityMedian": 8.5,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 3,
       "dimensionMadAverages": {
         "safety_recovery_fit": 0,
         "goal_event_fit": 0,
-        "sequencing": 0,
+        "sequencing": 0.17,
         "periodization_taper": 0,
-        "preference_capacity_fit": 0.33,
+        "preference_capacity_fit": 0.17,
         "robustness": 0,
-        "overall": 0.17
+        "overall": 0.08
       },
       "cases": {
         "persona_health_fatloss_baseline": {
@@ -750,13 +777,13 @@
             "robustness": 0,
             "overall": 0
           },
-          "maxSpread": 1
+          "maxSpread": 4
         },
         "persona_health_fatloss_adverse_recovery": {
           "scoreMedians": {
             "safety_recovery_fit": 9,
             "goal_event_fit": 9,
-            "sequencing": 8,
+            "sequencing": 7.5,
             "periodization_taper": 9,
             "preference_capacity_fit": 8,
             "robustness": 9,
@@ -765,13 +792,13 @@
           "dimensionMads": {
             "safety_recovery_fit": 0,
             "goal_event_fit": 0,
-            "sequencing": 0,
+            "sequencing": 0.5,
             "periodization_taper": 0,
-            "preference_capacity_fit": 1,
+            "preference_capacity_fit": 0.5,
             "robustness": 0,
-            "overall": 0.5
+            "overall": 0.25
           },
-          "maxSpread": 2
+          "maxSpread": 5
         },
         "persona_health_fatloss_low_time": {
           "scoreMedians": {
@@ -792,169 +819,169 @@
             "robustness": 0,
             "overall": 0
           },
-          "maxSpread": 1
+          "maxSpread": 4
         }
       }
     },
     {
       "familyId": "persona_former_elite_return",
       "samples": 5,
-      "familySensitivityMedian": 8.5,
-      "familySensitivityMad": 0.3000000000000007,
-      "familySensitivitySpread": 0.8,
+      "familySensitivityMedian": 9.2,
+      "familySensitivityMad": 0.1999999999999993,
+      "familySensitivitySpread": 0.5,
       "dimensionMadAverages": {
-        "safety_recovery_fit": 0,
-        "goal_event_fit": 1,
+        "safety_recovery_fit": 0.2,
+        "goal_event_fit": 0,
         "sequencing": 0.33,
-        "periodization_taper": 0.67,
-        "preference_capacity_fit": 0.67,
-        "robustness": 0.33,
-        "overall": 0.13
+        "periodization_taper": 0,
+        "preference_capacity_fit": 0.3,
+        "robustness": 0.3,
+        "overall": 0.23
       },
       "cases": {
         "persona_former_elite_sparse_history_baseline": {
           "scoreMedians": {
             "safety_recovery_fit": 9,
-            "goal_event_fit": 8,
-            "sequencing": 7.5,
-            "periodization_taper": 9,
-            "preference_capacity_fit": 8,
-            "robustness": 8,
-            "overall": 8.2
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 10,
+            "preference_capacity_fit": 9.8,
+            "robustness": 9,
+            "overall": 9
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
-            "goal_event_fit": 1,
-            "sequencing": 0.5,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0.5,
-            "robustness": 1,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0.1999999999999993,
+            "robustness": 0,
             "overall": 0.3000000000000007
           },
-          "maxSpread": 5
+          "maxSpread": 1.5
         },
         "persona_former_elite_adverse_recovery": {
           "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 8,
+            "safety_recovery_fit": 9.7,
+            "goal_event_fit": 9,
             "sequencing": 8,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 8,
-            "robustness": 9,
-            "overall": 8.5
+            "periodization_taper": 10,
+            "preference_capacity_fit": 9.5,
+            "robustness": 9.5,
+            "overall": 8.8
           },
           "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 1,
-            "sequencing": 0.5,
+            "safety_recovery_fit": 0.3000000000000007,
+            "goal_event_fit": 0,
+            "sequencing": 1,
             "periodization_taper": 0,
             "preference_capacity_fit": 0.5,
-            "robustness": 0,
-            "overall": 0
+            "robustness": 0.5,
+            "overall": 0.3000000000000007
           },
-          "maxSpread": 3
+          "maxSpread": 2.5
         },
         "persona_former_elite_low_motivation_only": {
           "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 8,
+            "safety_recovery_fit": 9.3,
+            "goal_event_fit": 9,
             "sequencing": 8,
-            "periodization_taper": 9,
-            "preference_capacity_fit": 8,
-            "robustness": 9,
-            "overall": 8.5
+            "periodization_taper": 10,
+            "preference_capacity_fit": 9.8,
+            "robustness": 9.4,
+            "overall": 9
           },
           "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 1,
+            "safety_recovery_fit": 0.3000000000000007,
+            "goal_event_fit": 0,
             "sequencing": 0,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 1,
-            "robustness": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0.1999999999999993,
+            "robustness": 0.40000000000000036,
             "overall": 0.09999999999999964
           },
-          "maxSpread": 3
+          "maxSpread": 1.5
         }
       }
     },
     {
       "familyId": "persona_balanced_performance",
       "samples": 5,
-      "familySensitivityMedian": 8.5,
+      "familySensitivityMedian": 9,
       "familySensitivityMad": 0,
       "familySensitivitySpread": 2,
       "dimensionMadAverages": {
-        "safety_recovery_fit": 0.17,
+        "safety_recovery_fit": 0,
         "goal_event_fit": 0,
         "sequencing": 0.33,
         "periodization_taper": 0.33,
         "preference_capacity_fit": 0.33,
         "robustness": 0,
-        "overall": 0.33
+        "overall": 0.23
       },
       "cases": {
         "persona_balanced_performance_baseline": {
           "scoreMedians": {
             "safety_recovery_fit": 9,
             "goal_event_fit": 9,
-            "sequencing": 7.5,
+            "sequencing": 8,
             "periodization_taper": 9,
             "preference_capacity_fit": 9,
             "robustness": 8,
-            "overall": 8.2
+            "overall": 8.7
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
             "goal_event_fit": 0,
-            "sequencing": 0.5,
-            "periodization_taper": 0.5,
+            "sequencing": 0,
+            "periodization_taper": 0,
             "preference_capacity_fit": 0,
             "robustness": 0,
-            "overall": 0.3000000000000007
+            "overall": 0.1999999999999993
           },
           "maxSpread": 2.5
         },
         "persona_balanced_performance_adverse_recovery": {
           "scoreMedians": {
             "safety_recovery_fit": 9,
-            "goal_event_fit": 9,
-            "sequencing": 8,
+            "goal_event_fit": 8,
+            "sequencing": 7,
             "periodization_taper": 9,
             "preference_capacity_fit": 8,
             "robustness": 9,
-            "overall": 8.5
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0.5,
-            "goal_event_fit": 0,
-            "sequencing": 0,
-            "periodization_taper": 0,
-            "preference_capacity_fit": 1,
-            "robustness": 0,
-            "overall": 0.5
-          },
-          "maxSpread": 6
-        },
-        "persona_balanced_performance_strength_preference": {
-          "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 9,
-            "sequencing": 7.5,
-            "periodization_taper": 9,
-            "preference_capacity_fit": 9,
-            "robustness": 8,
             "overall": 8.3
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
             "goal_event_fit": 0,
-            "sequencing": 0.5,
-            "periodization_taper": 0.5,
+            "sequencing": 1,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 0.3000000000000007
+          },
+          "maxSpread": 3
+        },
+        "persona_balanced_performance_strength_preference": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 9,
+            "robustness": 8,
+            "overall": 8.7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
             "preference_capacity_fit": 0,
             "robustness": 0,
             "overall": 0.1999999999999993
           },
-          "maxSpread": 2.5
+          "maxSpread": 2
         }
       }
     },
@@ -967,19 +994,19 @@
       "dimensionMadAverages": {
         "safety_recovery_fit": 0,
         "goal_event_fit": 0,
-        "sequencing": 0.5,
-        "periodization_taper": 1,
+        "sequencing": 0,
+        "periodization_taper": 0.67,
         "preference_capacity_fit": 0,
         "robustness": 0,
-        "overall": 0.13
+        "overall": 0.17
       },
       "cases": {
         "persona_stacked_constraints_baseline": {
           "scoreMedians": {
             "safety_recovery_fit": 9,
-            "goal_event_fit": 8,
+            "goal_event_fit": 9,
             "sequencing": 8,
-            "periodization_taper": 8,
+            "periodization_taper": 9,
             "preference_capacity_fit": 9,
             "robustness": 8,
             "overall": 8.5
@@ -987,182 +1014,20 @@
           "dimensionMads": {
             "safety_recovery_fit": 0,
             "goal_event_fit": 0,
-            "sequencing": 0.5,
+            "sequencing": 0,
             "periodization_taper": 1,
             "preference_capacity_fit": 0,
             "robustness": 0,
-            "overall": 0
+            "overall": 0.5
           },
-          "maxSpread": 4
+          "maxSpread": 3
         },
         "persona_stacked_constraints_adverse_recovery": {
-          "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 8,
-            "sequencing": 8,
-            "periodization_taper": 7,
-            "preference_capacity_fit": 9,
-            "robustness": 9,
-            "overall": 8.5
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 1,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0,
-            "robustness": 0,
-            "overall": 0.1999999999999993
-          },
-          "maxSpread": 4
-        },
-        "persona_stacked_constraints_low_time": {
-          "scoreMedians": {
-            "safety_recovery_fit": 8,
-            "goal_event_fit": 8,
-            "sequencing": 7,
-            "periodization_taper": 7,
-            "preference_capacity_fit": 9,
-            "robustness": 8,
-            "overall": 7.8
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 0,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0,
-            "robustness": 0,
-            "overall": 0.20000000000000018
-          },
-          "maxSpread": 4
-        }
-      }
-    },
-    {
-      "familyId": "persona_walking_preferred",
-      "samples": 5,
-      "familySensitivityMedian": 8,
-      "familySensitivityMad": 0.5,
-      "familySensitivitySpread": 2,
-      "dimensionMadAverages": {
-        "safety_recovery_fit": 0.33,
-        "goal_event_fit": 0,
-        "sequencing": 0,
-        "periodization_taper": 1,
-        "preference_capacity_fit": 0,
-        "robustness": 0.33,
-        "overall": 0.23
-      },
-      "cases": {
-        "persona_walking_baseline": {
-          "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 9,
-            "sequencing": 8,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 9,
-            "robustness": 8,
-            "overall": 8.5
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 0,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0,
-            "robustness": 0,
-            "overall": 0
-          },
-          "maxSpread": 3
-        },
-        "persona_walking_adverse_recovery": {
-          "scoreMedians": {
-            "safety_recovery_fit": 8,
-            "goal_event_fit": 9,
-            "sequencing": 7,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 9,
-            "robustness": 8,
-            "overall": 8
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 0,
-            "sequencing": 0,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0,
-            "robustness": 1,
-            "overall": 0.20000000000000018
-          },
-          "maxSpread": 3
-        },
-        "persona_walking_low_time": {
-          "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 8,
-            "sequencing": 8,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 9,
-            "robustness": 8,
-            "overall": 8.5
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 0,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0,
-            "robustness": 0,
-            "overall": 0.5
-          },
-          "maxSpread": 4
-        }
-      }
-    },
-    {
-      "familyId": "persona_established_history",
-      "samples": 5,
-      "familySensitivityMedian": 7.5,
-      "familySensitivityMad": 1,
-      "familySensitivitySpread": 2.8,
-      "dimensionMadAverages": {
-        "safety_recovery_fit": 0,
-        "goal_event_fit": 0.33,
-        "sequencing": 0,
-        "periodization_taper": 1,
-        "preference_capacity_fit": 0,
-        "robustness": 0.33,
-        "overall": 0.33
-      },
-      "cases": {
-        "persona_established_history_baseline": {
-          "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 8,
-            "sequencing": 8,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 9,
-            "robustness": 8,
-            "overall": 8
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 0,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0,
-            "robustness": 0,
-            "overall": 0.5
-          },
-          "maxSpread": 3
-        },
-        "persona_established_history_adverse_recovery": {
           "scoreMedians": {
             "safety_recovery_fit": 10,
             "goal_event_fit": 9,
             "sequencing": 8,
-            "periodization_taper": 8,
+            "periodization_taper": 9,
             "preference_capacity_fit": 9,
             "robustness": 9,
             "overall": 9
@@ -1178,43 +1043,205 @@
           },
           "maxSpread": 3
         },
-        "persona_established_history_low_motivation_only": {
+        "persona_stacked_constraints_low_time": {
+          "scoreMedians": {
+            "safety_recovery_fit": 8,
+            "goal_event_fit": 8,
+            "sequencing": 7,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        }
+      }
+    },
+    {
+      "familyId": "persona_walking_preferred",
+      "samples": 5,
+      "familySensitivityMedian": 8.5,
+      "familySensitivityMad": 0.5,
+      "familySensitivitySpread": 1,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0,
+        "goal_event_fit": 0,
+        "sequencing": 0.33,
+        "periodization_taper": 0.33,
+        "preference_capacity_fit": 0,
+        "robustness": 0,
+        "overall": 0.33
+      },
+      "cases": {
+        "persona_walking_baseline": {
           "scoreMedians": {
             "safety_recovery_fit": 9,
-            "goal_event_fit": 7,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 9,
+            "robustness": 8,
+            "overall": 9
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        },
+        "persona_walking_adverse_recovery": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 9,
+            "sequencing": 7,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 9,
+            "robustness": 9,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 1,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 1
+          },
+          "maxSpread": 3
+        },
+        "persona_walking_low_time": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 9,
             "sequencing": 8,
             "periodization_taper": 8,
             "preference_capacity_fit": 9,
             "robustness": 8,
-            "overall": 7.5
+            "overall": 9
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0
+          },
+          "maxSpread": 2
+        }
+      }
+    },
+    {
+      "familyId": "persona_established_history",
+      "samples": 5,
+      "familySensitivityMedian": 8.7,
+      "familySensitivityMad": 0.3000000000000007,
+      "familySensitivitySpread": 1,
+      "dimensionMadAverages": {
+        "safety_recovery_fit": 0.67,
+        "goal_event_fit": 0.33,
+        "sequencing": 0,
+        "periodization_taper": 0.33,
+        "preference_capacity_fit": 0.33,
+        "robustness": 0.33,
+        "overall": 0.53
+      },
+      "cases": {
+        "persona_established_history_baseline": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 9,
+            "robustness": 9,
+            "overall": 8.7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0.3000000000000007
+          },
+          "maxSpread": 1
+        },
+        "persona_established_history_adverse_recovery": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 7,
+            "sequencing": 7,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
             "goal_event_fit": 1,
             "sequencing": 0,
             "periodization_taper": 1,
-            "preference_capacity_fit": 0,
+            "preference_capacity_fit": 1,
             "robustness": 1,
-            "overall": 0.5
+            "overall": 1
           },
-          "maxSpread": 3
+          "maxSpread": 5
+        },
+        "persona_established_history_low_motivation_only": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 9,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 9,
+            "robustness": 9,
+            "overall": 8.7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 0,
+            "robustness": 0,
+            "overall": 0.3000000000000007
+          },
+          "maxSpread": 2
         }
       }
     },
     {
       "familyId": "persona_cycling_primary_hybrid",
       "samples": 5,
-      "familySensitivityMedian": 9.2,
-      "familySensitivityMad": 0,
-      "familySensitivitySpread": 0.7,
+      "familySensitivityMedian": 8.7,
+      "familySensitivityMad": 0.3000000000000007,
+      "familySensitivitySpread": 0.75,
       "dimensionMadAverages": {
         "safety_recovery_fit": 0,
         "goal_event_fit": 1,
-        "sequencing": 0,
+        "sequencing": 0.4,
         "periodization_taper": 0,
         "preference_capacity_fit": 0.2,
-        "robustness": 0,
-        "overall": 0.3
+        "robustness": 0.3,
+        "overall": 0.44
       },
       "cases": {
         "persona_cycling_hybrid_baseline": {
@@ -1225,27 +1252,27 @@
             "periodization_taper": 10,
             "preference_capacity_fit": 9,
             "robustness": 9,
-            "overall": 9
+            "overall": 8.5
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
             "goal_event_fit": 1,
-            "sequencing": 0,
+            "sequencing": 0.5,
             "periodization_taper": 0,
             "preference_capacity_fit": 0,
-            "robustness": 0,
-            "overall": 0
+            "robustness": 0.5,
+            "overall": 1
           },
-          "maxSpread": 2
+          "maxSpread": 4
         },
         "persona_cycling_hybrid_adverse_recovery": {
           "scoreMedians": {
-            "safety_recovery_fit": 10,
+            "safety_recovery_fit": 9,
             "goal_event_fit": 9,
             "sequencing": 8,
             "periodization_taper": 10,
-            "preference_capacity_fit": 8,
-            "robustness": 9,
+            "preference_capacity_fit": 9,
+            "robustness": 9.5,
             "overall": 8.5
           },
           "dimensionMads": {
@@ -1253,19 +1280,19 @@
             "goal_event_fit": 1,
             "sequencing": 0,
             "periodization_taper": 0,
-            "preference_capacity_fit": 0,
-            "robustness": 0,
+            "preference_capacity_fit": 0.5,
+            "robustness": 0.5,
             "overall": 0.5
           },
-          "maxSpread": 2
+          "maxSpread": 4
         },
         "persona_cycling_hybrid_local_tissue_conflict": {
           "scoreMedians": {
-            "safety_recovery_fit": 10,
+            "safety_recovery_fit": 9,
             "goal_event_fit": 9,
             "sequencing": 8,
             "periodization_taper": 10,
-            "preference_capacity_fit": 8,
+            "preference_capacity_fit": 9,
             "robustness": 9,
             "overall": 8.5
           },
@@ -1274,11 +1301,11 @@
             "goal_event_fit": 1,
             "sequencing": 0,
             "periodization_taper": 0,
-            "preference_capacity_fit": 1,
+            "preference_capacity_fit": 0.5,
             "robustness": 0,
-            "overall": 0.5
+            "overall": 0
           },
-          "maxSpread": 2
+          "maxSpread": 4
         },
         "persona_cycling_hybrid_strength_preference": {
           "scoreMedians": {
@@ -1293,13 +1320,13 @@
           "dimensionMads": {
             "safety_recovery_fit": 0,
             "goal_event_fit": 1,
-            "sequencing": 0,
+            "sequencing": 1,
             "periodization_taper": 0,
             "preference_capacity_fit": 0,
-            "robustness": 0,
+            "robustness": 0.5,
             "overall": 0.5
           },
-          "maxSpread": 2
+          "maxSpread": 4
         },
         "persona_cycling_hybrid_low_time": {
           "scoreMedians": {
@@ -1309,18 +1336,18 @@
             "periodization_taper": 10,
             "preference_capacity_fit": 9,
             "robustness": 9,
-            "overall": 8
+            "overall": 8.5
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
             "goal_event_fit": 1,
-            "sequencing": 0,
+            "sequencing": 0.5,
             "periodization_taper": 0,
             "preference_capacity_fit": 0,
             "robustness": 0,
-            "overall": 0
+            "overall": 0.1999999999999993
           },
-          "maxSpread": 3
+          "maxSpread": 4
         }
       }
     },
@@ -1328,99 +1355,99 @@
       "familyId": "persona_triathlon_established_olympic",
       "samples": 5,
       "familySensitivityMedian": 8.5,
-      "familySensitivityMad": 1,
-      "familySensitivitySpread": 2.6,
+      "familySensitivityMad": 0.3000000000000007,
+      "familySensitivitySpread": 4.25,
       "dimensionMadAverages": {
-        "safety_recovery_fit": 0.25,
-        "goal_event_fit": 0.5,
-        "sequencing": 0.85,
-        "periodization_taper": 0.75,
-        "preference_capacity_fit": 0.05,
-        "robustness": 0.33,
-        "overall": 0.48
+        "safety_recovery_fit": 0.5,
+        "goal_event_fit": 0.63,
+        "sequencing": 0.25,
+        "periodization_taper": 0.38,
+        "preference_capacity_fit": 0.75,
+        "robustness": 0.5,
+        "overall": 0.7
       },
       "cases": {
         "persona_triathlon_established_olympic_baseline": {
           "scoreMedians": {
             "safety_recovery_fit": 9,
             "goal_event_fit": 9,
-            "sequencing": 9,
-            "periodization_taper": 9,
-            "preference_capacity_fit": 9,
-            "robustness": 9,
-            "overall": 8.5
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 0.40000000000000036,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0,
-            "robustness": 0.3000000000000007,
-            "overall": 0.5
-          },
-          "maxSpread": 2.8
-        },
-        "persona_triathlon_established_olympic_adverse_recovery": {
-          "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 8,
-            "sequencing": 8,
-            "periodization_taper": 7,
-            "preference_capacity_fit": 9,
-            "robustness": 9,
-            "overall": 8
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 1,
-            "goal_event_fit": 1,
-            "sequencing": 1,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0.1999999999999993,
-            "robustness": 0.5999999999999996,
-            "overall": 0.8000000000000007
-          },
-          "maxSpread": 4
-        },
-        "persona_triathlon_established_olympic_short_time": {
-          "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 9,
-            "sequencing": 8,
-            "periodization_taper": 8,
-            "preference_capacity_fit": 9,
-            "robustness": 9,
-            "overall": 8.7
-          },
-          "dimensionMads": {
-            "safety_recovery_fit": 0,
-            "goal_event_fit": 0,
-            "sequencing": 1,
-            "periodization_taper": 0,
-            "preference_capacity_fit": 0,
-            "robustness": 0.40000000000000036,
-            "overall": 0.3000000000000007
-          },
-          "maxSpread": 5
-        },
-        "persona_triathlon_established_olympic_taper": {
-          "scoreMedians": {
-            "safety_recovery_fit": 9,
-            "goal_event_fit": 9,
             "sequencing": 8,
             "periodization_taper": 9,
-            "preference_capacity_fit": 9,
+            "preference_capacity_fit": 8,
             "robustness": 8,
             "overall": 8.7
           },
           "dimensionMads": {
             "safety_recovery_fit": 0,
-            "goal_event_fit": 1,
-            "sequencing": 1,
-            "periodization_taper": 1,
-            "preference_capacity_fit": 0,
+            "goal_event_fit": 0,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
             "robustness": 0,
             "overall": 0.3000000000000007
+          },
+          "maxSpread": 2
+        },
+        "persona_triathlon_established_olympic_adverse_recovery": {
+          "scoreMedians": {
+            "safety_recovery_fit": 7,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 8,
+            "preference_capacity_fit": 8,
+            "robustness": 8,
+            "overall": 7
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 2,
+            "goal_event_fit": 1,
+            "sequencing": 1,
+            "periodization_taper": 0.5,
+            "preference_capacity_fit": 1,
+            "robustness": 1.5,
+            "overall": 1
+          },
+          "maxSpread": 5
+        },
+        "persona_triathlon_established_olympic_short_time": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 8,
+            "sequencing": 8,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 7,
+            "robustness": 8,
+            "overall": 8
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 1,
+            "sequencing": 0,
+            "periodization_taper": 0,
+            "preference_capacity_fit": 1,
+            "robustness": 0,
+            "overall": 1
+          },
+          "maxSpread": 4
+        },
+        "persona_triathlon_established_olympic_taper": {
+          "scoreMedians": {
+            "safety_recovery_fit": 9,
+            "goal_event_fit": 9,
+            "sequencing": 9,
+            "periodization_taper": 9,
+            "preference_capacity_fit": 8,
+            "robustness": 8.5,
+            "overall": 9
+          },
+          "dimensionMads": {
+            "safety_recovery_fit": 0,
+            "goal_event_fit": 0.5,
+            "sequencing": 0,
+            "periodization_taper": 1,
+            "preference_capacity_fit": 0,
+            "robustness": 0.5,
+            "overall": 0.5
           },
           "maxSpread": 6
         }

@@ -67,6 +67,7 @@ import { resolvePlanDefinitionForEvent, type PlanDefinition } from './planSchedu
 import { deriveObjectiveCreditFromProfile, type StimulusConfidence } from './stimulus';
 import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory, workoutIdForTemplateId, type CoverageHistoryEntry } from './coverage';
 import { resolveEvergreenPlan } from './evergreenPlanning';
+import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { applyPlanningOverlays } from './planningOverlays';
 import {
     allocationSurvives,
@@ -1004,25 +1005,7 @@ export function generateWeekAheadPlan(
     seed: WeekAheadPlanSeed,
     options: WeekAheadOptions = {}
 ): WeekAheadPlan {
-    const obj = todayReadiness?.objective ?? {};
-    let adverseSignalCount = 0;
-    if (obj.hrv_delta !== null && obj.hrv_delta !== undefined && obj.hrv_delta <= -10) adverseSignalCount++;
-    if (obj.rhr_delta !== null && obj.rhr_delta !== undefined && obj.rhr_delta >= 5) adverseSignalCount++;
-    if (obj.body_battery_wake !== null && obj.body_battery_wake !== undefined && obj.body_battery_wake <= 35) adverseSignalCount++;
-    if (obj.sleep_score !== null && obj.sleep_score !== undefined && obj.sleep_score <= 55) adverseSignalCount++;
-
-    const subj = todayReadiness?.subjective ?? {};
-    let subjectiveDistressCount = 0;
-    if (subj.fatigue !== undefined && subj.fatigue !== null && subj.fatigue >= 7) subjectiveDistressCount++;
-    if (subj.soreness !== undefined && subj.soreness !== null && subj.soreness >= 7) subjectiveDistressCount++;
-    if (subj.stress !== undefined && subj.stress !== null && subj.stress >= 8) subjectiveDistressCount++;
-    if (subj.readiness !== undefined && subj.readiness !== null && subj.readiness <= 4) subjectiveDistressCount++;
-
-    const isSevereAdverseRecovery = todayRec.mode === 'recover' && (
-        adverseSignalCount >= 2
-        || subjectiveDistressCount >= 2
-        || (adverseSignalCount >= 1 && subjectiveDistressCount >= 1)
-    );
+    const isSevereAdverseRecovery = isSevereAdverseRecoveryReadiness(todayReadiness, todayRec.mode);
 
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
@@ -1588,9 +1571,11 @@ export async function generateWeekAheadPlanWithIntent(
 ): Promise<WeekAheadPlan> {
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
     const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
+    const isAdverseRecovery = isSevereAdverseRecoveryReadiness(todayReadiness, todayRec.mode);
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
+        isAdverseRecovery,
     );
     return generateWeekAheadPlan(
         todayReadiness,

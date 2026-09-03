@@ -42,6 +42,7 @@ import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBa
 import { resolveAvailability } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
+import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
 import { mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
@@ -657,9 +658,10 @@ export async function evaluateTrainingWithIntent(
         };
     }
 
+    const isAdverseRecovery = isSevereAdverseRecoveryReadiness(readiness, mode);
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
-        preferences, context, date, fixedActivities,
+        preferences, context, date, fixedActivities, 7, isAdverseRecovery,
     );
     if (evergreen) {
         const unresolvedObjectives = getUnresolvedObjectives(evergreen.microcycle);

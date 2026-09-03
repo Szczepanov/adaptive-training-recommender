@@ -31,6 +31,7 @@ export function resolveEvergreenPlan(
     date: string,
     fixedActivities: readonly FixedActivity[],
     days: number = 7,
+    isAdverseRecovery: boolean = false,
 ): ResolvedEvergreenPlan | null {
     if (planningContext.mode !== 'evergreen' || !preferences) return null;
     const availability = Array.from({ length: Math.max(1, days) }, (_, index) => {
@@ -43,7 +44,7 @@ export function resolveEvergreenPlan(
     const capacity = resolveTrainingCapacity(planningContext.profile.weeklyCommitment, preferences, availability);
     const stateEvidence = historySnapshot?.athleteStateEvidence;
     const strategy = resolveEvidenceBackedStrategy(
-        { priorities: planningContext.profile.priorities },
+        { priorities: planningContext.profile.priorities, isAdverseRecovery },
         inferAthleteTrainingState(
             stateEvidence?.exposures ?? history,
             stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0,
