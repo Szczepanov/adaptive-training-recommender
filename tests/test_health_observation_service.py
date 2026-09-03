@@ -177,3 +177,74 @@ def test_health_observation_service_tombstones_bundles_on_empty_repeat_batch() -
         "2026-08-27", "garmin", "google_health"
     )
     assert res["google_health"]["reconciledStale"] == ["garmin_google_health"]
+
+
+def test_observation_to_dto() -> None:
+    from datetime import datetime, timezone
+
+    from garmin_sync.canonical import CanonicalHealthObservation, ObservationSource
+    from garmin_sync.health_observation_service import observation_to_dto
+
+    now = datetime.now(timezone.utc)
+
+    obs = CanonicalHealthObservation(
+        metric="sleep_duration_seconds",
+        value=28000,
+        unit="seconds",
+        source=ObservationSource(
+            provider="garmin",
+            transport="google_health",
+            origin_application="com.garmin.connect",
+            origin_device="garmin-watch-abc",
+            source_record_id="garmin-12345",
+        ),
+        observed_start=now,
+        observed_end=now,
+        logical_date="2026-08-27",
+        quality={"confidence": "high"},
+        semantic_version="1.2.0",
+    )
+
+    dto = observation_to_dto(user_id="test_uid", obs=obs)
+
+    assert dto.metric == "sleep_duration_seconds"
+    assert dto.value == 28000
+    assert dto.unit == "seconds"
+    assert dto.sourceRecordId == "garmin-12345"
+    assert dto.observedStart == now.isoformat()
+    assert dto.observedEnd == now.isoformat()
+    assert dto.originApplication == "com.garmin.connect"
+    assert dto.originDevice == "garmin-watch-abc"
+    assert dto.quality == {"confidence": "high"}
+    assert dto.semanticVersion == "1.2.0"
+    assert dto.observationId is not None
+    assert dto.observationId.startswith("sha256:")
+
+
+def test_observation_to_dto_no_dates_or_optionals() -> None:
+    from garmin_sync.canonical import CanonicalHealthObservation, ObservationSource
+    from garmin_sync.health_observation_service import observation_to_dto
+
+    obs = CanonicalHealthObservation(
+        metric="steps_count",
+        value=5000,
+        unit="count",
+        source=ObservationSource(provider="google_health", transport="api"),
+        observed_start=None,
+        observed_end=None,
+        logical_date="2026-08-28",
+    )
+
+    dto = observation_to_dto(user_id="test_uid2", obs=obs)
+
+    assert dto.metric == "steps_count"
+    assert dto.value == 5000
+    assert dto.unit == "count"
+    assert dto.sourceRecordId is None
+    assert dto.observedStart is None
+    assert dto.observedEnd is None
+    assert dto.originApplication is None
+    assert dto.originDevice is None
+    assert dto.quality is None
+    assert dto.semanticVersion == "1.0.0"
+    assert dto.observationId.startswith("sha256:")
