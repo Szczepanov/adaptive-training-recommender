@@ -231,24 +231,6 @@ class HealthObservationService:
 
         return results
 
-    def sync_repair(
-        self,
-        target_date_iso: str,
-        days_lookback: int = 3,
-    ) -> list[dict[str, Any]]:
-        """Run scheduled repair sync for [target_date - days_lookback, target_date]."""
-        target_dt = datetime.strptime(target_date_iso, "%Y-%m-%d")
-        summary: list[dict[str, Any]] = []
-
-        for i in range(days_lookback + 1):
-            date_dt = target_dt - timedelta(days=i)
-            date_iso = date_dt.strftime("%Y-%m-%d")
-            prev_iso = (date_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-            date_result = self.sync_date(date_iso, prev_iso)
-            summary.append({"date": date_iso, "results": date_result})
-
-        return summary
-
     def backfill_range(
         self,
         start_date_iso: str,
