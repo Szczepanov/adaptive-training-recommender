@@ -12,7 +12,7 @@
 As part of completing the Sports Knowledge Registry migration (SKR3), Workstream W3 audited every active workout in `app/src/workouts/catalog/` for declared recovery metadata (`loadProfile.recoveryHours` and `eligibility.minimumDaysAfterHardLowerBody`).
 
 ### Key Findings
-1. **Universal Recovery Hours:** All 46 catalog workouts currently declare finite `recoveryHours` within the range $[0, 96]$; library validation rejects values outside the canonical numeric band $[0, 168]$ (7 days), while the catalog audit test separately asserts finiteness.
+1. **Universal Recovery Hours:** All 46 catalog workouts currently declare finite `recoveryHours` within the range $[0, 96]$; library validation rejects non-finite values and finite values outside the canonical numeric band $[0, 168]$ (7 days), while the catalog audit test separately pins the current authored range.
 2. **Spacing Overrides:** 21 of 46 workouts declare `eligibility.minimumDaysAfterHardLowerBody` (18 workouts declare 1 day; 3 workouts declare 2 days).
 3. **High Lower-Body Interaction:** 11 workouts whose associated engine template has `lowerBodyCost >= 0.6` declare `minimumDaysAfterHardLowerBody: 1`. This authored override permits next-day hard lower-body eligibility under `optimizer.ts:evaluateRecoveryConstraints` when no other recovery constraint blocks the candidate, diverging from the 2-day product fallback and the registered residual-fatigue boundary.
 4. **Protective Mitigation:** Most of those 11 workouts also declare recovery windows that reduce practical next-day placement risk, but the mechanisms are not equivalent: `RECOVERY_WINDOW_UNELAPSED` only blocks hard/anchor candidates and the exact declared `recoveryHours` vary by workout. The 1-day spacing override therefore remains behaviorally material and must not be described as universally neutralized by recovery-hours metadata.
@@ -110,17 +110,19 @@ Relevant external evidence can justify broad boundaries (for example, recovery i
 
 To prevent unvalidated drift in recovery metadata:
 1. **Schema Validation (`validateWorkoutLibrary` in `app/src/workouts/validation.ts`):**
-   - Rejects `recoveryHours < 0` and `recoveryHours > 168`.
+   - Rejects non-finite `recoveryHours` (`NaN`, `+Infinity`, `-Infinity`).
+   - Rejects finite `recoveryHours < 0` and `recoveryHours > 168`.
    - Enforces $1 \le \text{minimumDaysAfterHardLowerBody} \le 7$ (integer).
 2. **Automated Test Suite (`workoutRecoveryMetadata.test.ts`):**
    - Verifies that current catalog `recoveryHours` values are finite and remain within $[0, 168]$.
    - Audits modality distribution.
-   - Asserts reject behavior for out-of-range recovery hours and invalid minimum-day values.
+   - Pins the safety-relevant subset at 11 one-day overrides whose associated enriched engine template has lower-body cost `>= 0.6`.
+   - Asserts reject behavior for out-of-range and non-finite recovery hours plus invalid minimum-day values.
 3. **Execution Script:** `npm run validate:workouts` executes library validation during CI and pre-flight dev server start.
 
-### Validation gap retained as follow-up
+### Validator finiteness gap — closed
 
-`validateWorkoutLibrary` currently checks the numeric bounds but does not explicitly reject `NaN`; JavaScript comparisons with `NaN` are false. The catalog test proves current authored values are finite, so this is not an active catalog defect, but validator-level finiteness should be added in a follow-up (with a `NaN` mutation test) rather than claiming the validator already enforces it.
+The original audit identified a JavaScript `NaN` validation gap because ordinary numeric comparisons do not reject `NaN`. This PR closes that gap with an explicit `Number.isFinite` guard and mutation coverage for `NaN`, positive infinity, and negative infinity. The remaining P1 debt is calibration of the 11 authored one-day hard-lower-body overrides, not numeric validator hygiene.
 
 ---
 
