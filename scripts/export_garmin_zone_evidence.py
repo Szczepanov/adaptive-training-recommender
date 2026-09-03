@@ -7,8 +7,6 @@ Pipe it directly to ``app/scripts/measure-garmin-zone-credit.mjs``; do not archi
 intermediate output.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import sys
