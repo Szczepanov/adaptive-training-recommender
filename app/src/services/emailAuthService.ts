@@ -3,23 +3,11 @@ import {
     sendEmailVerification,
     sendPasswordResetEmail,
     signInWithEmailAndPassword,
-    signOut,
     validatePassword,
     type Auth,
-    type User,
 } from 'firebase/auth';
 
-export type EmailSignInResult =
-    | { status: 'authenticated' }
-    | { status: 'verification_required' };
-
-type VerificationUser = Pick<User, 'emailVerified' | 'providerData'>;
-
-/** Garmin custom-token identities are not email/password accounts and remain unaffected. */
-export function requiresEmailVerification(user: VerificationUser): boolean {
-    return !user.emailVerified
-        && user.providerData.some((provider) => provider.providerId === 'password');
-}
+export type EmailSignInResult = { status: 'authenticated' };
 
 function authCode(error: unknown): string | undefined {
     return (error as { code?: string })?.code;
@@ -27,17 +15,8 @@ function authCode(error: unknown): string | undefined {
 
 export const emailAuthService = {
     async signIn(auth: Auth, email: string, password: string): Promise<EmailSignInResult> {
-        const credential = await signInWithEmailAndPassword(auth, email, password);
-        if (!requiresEmailVerification(credential.user)) return { status: 'authenticated' };
-
-        try {
-            // Re-send on a successful password proof so users can recover from an expired or
-            // misplaced initial message. Firebase applies its own abuse throttling.
-            await sendEmailVerification(credential.user);
-        } finally {
-            await signOut(auth);
-        }
-        return { status: 'verification_required' };
+        await signInWithEmailAndPassword(auth, email, password);
+        return { status: 'authenticated' };
     },
 
     async signUp(auth: Auth, email: string, password: string): Promise<void> {
@@ -50,12 +29,11 @@ export const emailAuthService = {
         }
 
         const credential = await createUserWithEmailAndPassword(auth, email, password);
-        try {
-            await sendEmailVerification(credential.user);
-        } finally {
-            // Account initialization and health-data access wait for verified ownership.
-            await signOut(auth);
-        }
+        // Firebase signs the newly created user in automatically. Verification is best-effort
+        // and must not keep account creation/loading blocked on email delivery latency.
+        void sendEmailVerification(credential.user).catch((error) => {
+            console.warn('Failed to send email verification:', error);
+        });
     },
 
     async requestPasswordReset(auth: Auth, email: string): Promise<void> {

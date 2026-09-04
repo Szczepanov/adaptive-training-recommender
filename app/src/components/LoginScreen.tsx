@@ -83,11 +83,8 @@ export const LoginScreen: React.FC = () => {
 
     setLoading(true);
     try {
-      const result = await emailAuthService.signIn(getAuthInstance(), trimmedEmail, password);
+      await emailAuthService.signIn(getAuthInstance(), trimmedEmail, password);
       setPassword('');
-      if (result.status === 'verification_required') {
-        setInfoMsg('Verify your email before signing in. We sent a new verification link.');
-      }
     } catch (error: unknown) {
       console.error('Sign-in failed:', getErrorDetails(error));
       setErrorMsg(mapFirebaseAuthError(error));
@@ -120,8 +117,6 @@ export const LoginScreen: React.FC = () => {
       await emailAuthService.signUp(getAuthInstance(), trimmedEmail, password);
       setPassword('');
       setConfirmPassword('');
-      setMode('sign-in');
-      setInfoMsg('Account created. Check your inbox to verify your email before signing in.');
     } catch (error: unknown) {
       console.error('Account creation failed:', getErrorDetails(error));
       setErrorMsg(mapFirebaseAuthError(error));
