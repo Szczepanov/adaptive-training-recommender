@@ -103,6 +103,53 @@ def test_handle_login_enforces_per_account_rate_limiting(monkeypatch: Any) -> No
     assert captured_errors[0]["error_code"] == "garmin_link.rate_limited"
 
 
+def test_handle_login_requires_verified_email_for_authenticated_link(monkeypatch: Any) -> None:
+    handler = object.__new__(GarminAccountLinkHandler)
+    handler.headers = {"Authorization": "Bearer app-token"}  # type: ignore[assignment]
+    handler.client_address = ("127.0.0.1", 12345)
+    handler._read_json = lambda: {"email": "athlete@example.com", "password": "secret"}  # type: ignore[method-assign]  # noqa: SLF001
+    captured: list[tuple[HTTPStatus, dict[str, Any]]] = []
+    handler._json_response = lambda status, payload: captured.append(  # type: ignore[method-assign]  # noqa: SLF001
+        (status, payload)
+    )
+
+    limiter = LoginRateLimiter()
+    monkeypatch.setattr(limiter, "allow", lambda _key: True)
+    monkeypatch.setattr(account_link_api, "RATE_LIMITER", limiter)
+
+    policies: list[bool] = []
+
+    def mock_verified_uid(
+        authorization: str | None,
+        *,
+        require_verified_email: bool,
+    ) -> str:
+        assert authorization == "Bearer app-token"
+        policies.append(require_verified_email)
+        return "uid-1"
+
+    class _Service:
+        def start_login(
+            self,
+            email: str,
+            password: str,
+            *,
+            requested_uid: str | None,
+        ) -> dict[str, Any]:
+            assert email == "athlete@example.com"
+            assert password == "secret"
+            assert requested_uid == "uid-1"
+            return {"status": "authenticated"}
+
+    monkeypatch.setattr(account_link_api, "_verified_uid", mock_verified_uid)
+    monkeypatch.setattr(account_link_api, "_service", lambda: _Service())
+
+    handler._handle_login()  # noqa: SLF001
+
+    assert policies == [True]
+    assert captured == [(HTTPStatus.OK, {"status": "authenticated"})]
+
+
 def test_verified_uid_raises_authentication_error_on_verify_id_token_exception(
     monkeypatch: Any,
 ) -> None:
@@ -118,9 +165,7 @@ def test_verified_uid_raises_authentication_error_on_verify_id_token_exception(
         account_link_api._verified_uid("Bearer any-token")  # noqa: SLF001
 
 
-def test_verified_uid_checks_revocation_and_rejects_unverified_password_user(
-    monkeypatch: Any,
-) -> None:
+def test_verified_uid_rejects_unverified_password_user_by_default(monkeypatch: Any) -> None:
     def mock_verify_id_token(token: str, *, check_revoked: bool) -> dict[str, Any]:
         assert token == "valid-token"
         assert check_revoked is True
@@ -134,6 +179,28 @@ def test_verified_uid_checks_revocation_and_rejects_unverified_password_user(
 
     with pytest.raises(GarminConnectAuthenticationError, match="Verify your email"):
         account_link_api._verified_uid("Bearer valid-token")  # noqa: SLF001
+
+
+def test_verified_uid_allows_unverified_password_user_when_email_verification_not_required(
+    monkeypatch: Any,
+) -> None:
+    def mock_verify_id_token(token: str, *, check_revoked: bool) -> dict[str, Any]:
+        assert token == "valid-token"
+        assert check_revoked is True
+        return {
+            "uid": "uid-1",
+            "email_verified": False,
+            "firebase": {"sign_in_provider": "password"},
+        }
+
+    monkeypatch.setattr(account_link_api.firebase_auth, "verify_id_token", mock_verify_id_token)
+
+    uid = account_link_api._verified_uid(  # noqa: SLF001
+        "Bearer valid-token",
+        require_verified_email=False,
+    )
+
+    assert uid == "uid-1"
 
 
 def test_log_message_redacts_query_parameters(monkeypatch: Any) -> None:
