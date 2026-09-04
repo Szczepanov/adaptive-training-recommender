@@ -5,20 +5,9 @@ import {
     signInWithEmailAndPassword,
     validatePassword,
     type Auth,
-    type User,
 } from 'firebase/auth';
 
-export type EmailSignInResult =
-    | { status: 'authenticated' }
-    | { status: 'verification_required' };
-
-type VerificationUser = Pick<User, 'emailVerified' | 'providerData'>;
-
-/** Garmin custom-token identities are not email/password accounts and remain unaffected. */
-export function requiresEmailVerification(user: VerificationUser): boolean {
-    return !user.emailVerified
-        && user.providerData.some((provider) => provider.providerId === 'password');
-}
+export type EmailSignInResult = { status: 'authenticated' };
 
 function authCode(error: unknown): string | undefined {
     return (error as { code?: string })?.code;
@@ -40,11 +29,11 @@ export const emailAuthService = {
         }
 
         const credential = await createUserWithEmailAndPassword(auth, email, password);
-        try {
-            await sendEmailVerification(credential.user);
-        } catch (error) {
+        // Firebase signs the newly created user in automatically. Verification is best-effort
+        // and must not keep account creation/loading blocked on email delivery latency.
+        void sendEmailVerification(credential.user).catch((error) => {
             console.warn('Failed to send email verification:', error);
-        }
+        });
     },
 
     async requestPasswordReset(auth: Auth, email: string): Promise<void> {
