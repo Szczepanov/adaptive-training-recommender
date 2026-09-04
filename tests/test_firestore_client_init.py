@@ -6,7 +6,8 @@ from garmin_sync import firestore_repository
 
 
 def test_init_firestore_client_uses_credentials_path_from_environment(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ):
     credential_file = tmp_path / "firebase-service-account.json"
     credential_file.write_text("{}", encoding="utf-8")
@@ -19,7 +20,9 @@ def test_init_firestore_client_uses_credentials_path_from_environment(
 
     monkeypatch.setattr(firestore_repository.firebase_admin, "_apps", {})
     monkeypatch.setattr(firestore_repository.credentials, "Certificate", certificate)
-    monkeypatch.setattr(firestore_repository.firebase_admin, "initialize_app", initialize_app)
+    monkeypatch.setattr(
+        firestore_repository.firebase_admin, "initialize_app", initialize_app
+    )
     monkeypatch.setattr(firestore_repository.firestore, "client", firestore_client)
     monkeypatch.setenv("FIREBASE_CREDENTIALS_PATH", str(credential_file))
 
@@ -31,7 +34,10 @@ def test_init_firestore_client_uses_credentials_path_from_environment(
     firestore_client.assert_called_once_with()
 
 
-def test_init_firestore_client_explicit_path_overrides_environment(monkeypatch, tmp_path):
+def test_init_firestore_client_explicit_path_overrides_environment(
+    monkeypatch,
+    tmp_path,
+):
     explicit_file = tmp_path / "explicit.json"
     env_file = tmp_path / "env.json"
     explicit_file.write_text("{}", encoding="utf-8")
@@ -52,17 +58,21 @@ def test_init_firestore_client_explicit_path_overrides_environment(monkeypatch, 
 
 
 def test_init_firestore_client_rejects_missing_configured_credentials(
-    monkeypatch, tmp_path,
+    monkeypatch,
+    tmp_path,
 ):
     missing_file = tmp_path / "missing-service-account.json"
     initialize_app = MagicMock()
 
     monkeypatch.setattr(firestore_repository.firebase_admin, "_apps", {})
-    monkeypatch.setattr(firestore_repository.firebase_admin, "initialize_app", initialize_app)
+    monkeypatch.setattr(
+        firestore_repository.firebase_admin, "initialize_app", initialize_app
+    )
     monkeypatch.setenv("FIREBASE_CREDENTIALS_PATH", str(missing_file))
 
     with pytest.raises(
-        FileNotFoundError, match="does not exist or is not a regular file"
+        FileNotFoundError,
+        match="does not exist or is not a regular file",
     ):
         firestore_repository.init_firestore_client()
 
@@ -74,7 +84,9 @@ def test_init_firestore_client_uses_adc_when_no_path_is_configured(monkeypatch):
     firestore_client = MagicMock(return_value=object())
 
     monkeypatch.setattr(firestore_repository.firebase_admin, "_apps", {})
-    monkeypatch.setattr(firestore_repository.firebase_admin, "initialize_app", initialize_app)
+    monkeypatch.setattr(
+        firestore_repository.firebase_admin, "initialize_app", initialize_app
+    )
     monkeypatch.setattr(firestore_repository.firestore, "client", firestore_client)
     monkeypatch.delenv("FIREBASE_CREDENTIALS_PATH", raising=False)
 
