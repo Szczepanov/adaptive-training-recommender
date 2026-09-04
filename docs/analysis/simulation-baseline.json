@@ -12,20 +12,23 @@
       "weeksSimulated": 2,
       "totalDays": 14,
       "categoryDistribution": {
-        "Full-body Strength": 4,
-        "Easy Endurance": 7,
-        "Rest": 3
+        "Full-body Strength": 2,
+        "Easy Endurance": 2,
+        "Mobility/Recovery": 1,
+        "Lower-body Strength": 1,
+        "Rest": 5,
+        "Moderate Endurance": 3
       },
       "modalityDistribution": {
-        "Strength": 4,
+        "Strength": 3,
         "Cycling": 5,
-        "Walking": 2,
-        "None": 3
+        "Mobility": 1,
+        "None": 5
       },
-      "restOrRecoveryDayCount": 3,
-      "restOrRecoveryDayPct": 21.4,
-      "maxConsecutiveSameTemplateStreakWithinCall": 1,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
+      "restOrRecoveryDayCount": 6,
+      "restOrRecoveryDayPct": 42.9,
+      "maxConsecutiveSameTemplateStreakWithinCall": 2,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -74,8 +77,8 @@
           "date": "2026-08-10",
           "objectiveKey": "strength_development",
           "objectiveTitle": "Strength Development",
-          "templateId": "str_full_03",
-          "templateTitle": "Reduced Full-body Strength Maintenance",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
           "modality": "Strength",
           "earnedCredit": 0.19999999999999996
         }
@@ -111,155 +114,21 @@
       "anchorScopeNote": "Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates' phaseEligibility.requiresFocusEvent doesn't check event category), so a nomination can appear even here -- but the optimizer's event-priority penalty for non-matching modalities makes it unlikely to actually win the day's pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.",
       "fatigueTierDayCounts": {
         "train": 4,
-        "modify": 3,
-        "recover": 3
+        "modify": 1,
+        "recover": 5
       },
       "constraintViolations": [],
       "allocationReports": [
         {
           "weekIndex": 0,
           "report": {
-            "outcomes": [
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "aerobic_volume",
-                  "authoredSessionIdentity": "evergreen_general:aerobic_volume",
-                  "phase": "general",
-                  "windowStart": "2026-08-07",
-                  "windowEnd": "2026-08-13",
-                  "ordinal": 0,
-                  "label": "Continuous aerobic volume",
-                  "eligibleTemplateIds": [
-                    "end_easy_01",
-                    "end_easy_02",
-                    "end_walk_01"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "cycling_zone2_standard_01",
-                    "running_easy_continuous_01",
-                    "walking_brisk_continuous_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "nominatedDate": "2026-08-09",
-                  "assignedDate": "2026-08-09",
-                  "templateId": "end_walk_01",
-                  "workoutId": "walking_brisk_continuous_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled"
-              },
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-07|2026-08-13|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "primary_strength",
-                  "authoredSessionIdentity": "evergreen_general:primary_strength",
-                  "phase": "general",
-                  "windowStart": "2026-08-07",
-                  "windowEnd": "2026-08-13",
-                  "ordinal": 0,
-                  "label": "Primary full-body strength",
-                  "eligibleTemplateIds": [
-                    "str_full_01",
-                    "str_full_02",
-                    "str_full_03"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "strength_bodyweight_full_body_01",
-                    "strength_full_body_maintenance_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-07|2026-08-13|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "nominatedDate": "2026-08-10",
-                  "assignedDate": "2026-08-10",
-                  "templateId": "str_full_03",
-                  "workoutId": "strength_full_body_maintenance_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled",
-                "observedBlockers": [
-                  "2026-08-10:PROJECTED_FATIGUE_CEILING"
-                ]
-              }
-            ]
+            "outcomes": []
           }
         },
         {
           "weekIndex": 1,
           "report": {
-            "outcomes": [
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "aerobic_volume",
-                  "authoredSessionIdentity": "evergreen_general:aerobic_volume",
-                  "phase": "general",
-                  "windowStart": "2026-08-14",
-                  "windowEnd": "2026-08-20",
-                  "ordinal": 0,
-                  "label": "Continuous aerobic volume",
-                  "eligibleTemplateIds": [
-                    "end_easy_01",
-                    "end_easy_02",
-                    "end_walk_01"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "cycling_zone2_standard_01",
-                    "running_easy_continuous_01",
-                    "walking_brisk_continuous_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "nominatedDate": "2026-08-17",
-                  "assignedDate": "2026-08-17",
-                  "templateId": "end_easy_01",
-                  "workoutId": "cycling_zone2_standard_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled"
-              },
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-14|2026-08-20|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "primary_strength",
-                  "authoredSessionIdentity": "evergreen_general:primary_strength",
-                  "phase": "general",
-                  "windowStart": "2026-08-14",
-                  "windowEnd": "2026-08-20",
-                  "ordinal": 0,
-                  "label": "Primary full-body strength",
-                  "eligibleTemplateIds": [
-                    "str_full_01",
-                    "str_full_02",
-                    "str_full_03"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "strength_bodyweight_full_body_01",
-                    "strength_full_body_maintenance_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-14|2026-08-20|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "nominatedDate": "2026-08-18",
-                  "assignedDate": "2026-08-18",
-                  "templateId": "str_full_03",
-                  "workoutId": "strength_full_body_maintenance_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled",
-                "observedBlockers": [
-                  "2026-08-18:PROJECTED_FATIGUE_CEILING"
-                ]
-              }
-            ]
+            "outcomes": []
           }
         }
       ],
@@ -268,19 +137,19 @@
           "weekIndex": 0,
           "fatigueTierDayCounts": {
             "train": 2,
-            "modify": 2,
-            "recover": 1
+            "modify": 1,
+            "recover": 2
           },
-          "restOrRecoveryDayCount": 1
+          "restOrRecoveryDayCount": 3
         },
         {
           "weekIndex": 1,
           "fatigueTierDayCounts": {
             "train": 2,
-            "modify": 1,
-            "recover": 2
+            "modify": 0,
+            "recover": 3
           },
-          "restOrRecoveryDayCount": 2
+          "restOrRecoveryDayCount": 3
         }
       ]
     },
@@ -292,13 +161,258 @@
       "weeksSimulated": 2,
       "totalDays": 14,
       "categoryDistribution": {
-        "Full-body Strength": 4,
-        "Easy Endurance": 6,
+        "Full-body Strength": 3,
+        "Easy Endurance": 4,
+        "Mobility/Recovery": 1,
+        "Rest": 4,
+        "Moderate Endurance": 2
+      },
+      "modalityDistribution": {
+        "Strength": 3,
+        "Cycling": 5,
+        "Walking": 1,
+        "Mobility": 1,
+        "None": 4
+      },
+      "restOrRecoveryDayCount": 5,
+      "restOrRecoveryDayPct": 35.7,
+      "maxConsecutiveSameTemplateStreakWithinCall": 2,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
+      "objectiveResolution": [
+        {
+          "key": "zone2_aerobic",
+          "timesGenerated": 2,
+          "timesResolved": 2
+        },
+        {
+          "key": "strength_development",
+          "timesGenerated": 2,
+          "timesResolved": 2
+        }
+      ],
+      "objectiveCredits": [
+        {
+          "weekIndex": 0,
+          "date": "2026-08-07",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "str_full_01",
+          "templateTitle": "Hybrid Full Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.2
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-07",
+          "objectiveKey": "strength_development",
+          "objectiveTitle": "Strength Development",
+          "templateId": "str_full_01",
+          "templateTitle": "Hybrid Full Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-08",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_01",
+          "templateTitle": "Zone 2 Spin",
+          "modality": "Cycling",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-09",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_walk_01",
+          "templateTitle": "Brisk Continuous Walk",
+          "modality": "Walking",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-10",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "mob_01",
+          "templateTitle": "Active Recovery & Mobility",
+          "modality": "Mobility",
+          "earnedCredit": 0.1
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-11",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "str_full_02",
+          "templateTitle": "Bodyweight Full Body Strength",
+          "modality": "Strength",
+          "earnedCredit": 0.09999999999999987
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-11",
+          "objectiveKey": "strength_development",
+          "objectiveTitle": "Strength Development",
+          "templateId": "str_full_02",
+          "templateTitle": "Bodyweight Full Body Strength",
+          "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        }
+      ],
+      "utilityDiagnostics": {
+        "fragileSelectionCount": 5,
+        "lowerBenefitSelectionCount": 5,
+        "trainTierRestOrRecoveryCount": 0
+      },
+      "qualityWarnings": [],
+      "anchorWeeks": [
+        {
+          "weekIndex": 0,
+          "weekStartDate": "2026-08-07",
+          "eventSpecificAnchorDate": null,
+          "qualityAnchorDate": null,
+          "eventSpecificAnchorHit": null,
+          "eventSpecificExposureDates": [],
+          "eventSpecificAnchorFulfilled": null,
+          "qualityAnchorHit": null
+        },
+        {
+          "weekIndex": 1,
+          "weekStartDate": "2026-08-14",
+          "eventSpecificAnchorDate": null,
+          "qualityAnchorDate": null,
+          "eventSpecificAnchorHit": null,
+          "eventSpecificExposureDates": [],
+          "eventSpecificAnchorFulfilled": null,
+          "qualityAnchorHit": null
+        }
+      ],
+      "anchorScopeNote": "Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates' phaseEligibility.requiresFocusEvent doesn't check event category), so a nomination can appear even here -- but the optimizer's event-priority penalty for non-matching modalities makes it unlikely to actually win the day's pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.",
+      "fatigueTierDayCounts": {
+        "train": 4,
+        "modify": 2,
+        "recover": 4
+      },
+      "constraintViolations": [],
+      "allocationReports": [
+        {
+          "weekIndex": 0,
+          "report": {
+            "outcomes": [
+              {
+                "occurrence": {
+                  "id": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
+                  "coverageSetId": "evergreen_general",
+                  "coverageKey": "aerobic_volume",
+                  "authoredSessionIdentity": "evergreen_general:aerobic_volume",
+                  "phase": "general",
+                  "windowStart": "2026-08-07",
+                  "windowEnd": "2026-08-13",
+                  "ordinal": 1,
+                  "label": "Continuous aerobic volume",
+                  "eligibleTemplateIds": [
+                    "end_easy_01",
+                    "end_easy_02",
+                    "end_walk_01"
+                  ],
+                  "eligibleWorkoutIds": [
+                    "cycling_zone2_standard_01",
+                    "running_easy_continuous_01",
+                    "walking_brisk_continuous_01"
+                  ]
+                },
+                "reservation": {
+                  "occurrenceId": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
+                  "nominatedDate": "2026-08-09",
+                  "assignedDate": "2026-08-09",
+                  "templateId": "end_walk_01",
+                  "workoutId": "walking_brisk_continuous_01",
+                  "wasMoved": false
+                },
+                "status": "fulfilled"
+              }
+            ]
+          }
+        },
+        {
+          "weekIndex": 1,
+          "report": {
+            "outcomes": [
+              {
+                "occurrence": {
+                  "id": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
+                  "coverageSetId": "evergreen_general",
+                  "coverageKey": "aerobic_volume",
+                  "authoredSessionIdentity": "evergreen_general:aerobic_volume",
+                  "phase": "general",
+                  "windowStart": "2026-08-14",
+                  "windowEnd": "2026-08-20",
+                  "ordinal": 1,
+                  "label": "Continuous aerobic volume",
+                  "eligibleTemplateIds": [
+                    "end_easy_01",
+                    "end_easy_02",
+                    "end_walk_01"
+                  ],
+                  "eligibleWorkoutIds": [
+                    "cycling_zone2_standard_01",
+                    "running_easy_continuous_01",
+                    "walking_brisk_continuous_01"
+                  ]
+                },
+                "reservation": {
+                  "occurrenceId": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
+                  "nominatedDate": "2026-08-17",
+                  "assignedDate": "2026-08-17",
+                  "templateId": "end_easy_01",
+                  "workoutId": "cycling_zone2_standard_01",
+                  "wasMoved": false
+                },
+                "status": "fulfilled"
+              }
+            ]
+          }
+        }
+      ],
+      "weekSummaries": [
+        {
+          "weekIndex": 0,
+          "fatigueTierDayCounts": {
+            "train": 1,
+            "modify": 2,
+            "recover": 2
+          },
+          "restOrRecoveryDayCount": 3
+        },
+        {
+          "weekIndex": 1,
+          "fatigueTierDayCounts": {
+            "train": 3,
+            "modify": 0,
+            "recover": 2
+          },
+          "restOrRecoveryDayCount": 2
+        }
+      ]
+    },
+    {
+      "scenarioId": "evergreen_strength_six_sessions",
+      "label": "Evergreen strength-leaning (6 sessions)",
+      "description": "A higher-frequency strength athlete confirms the dedicated development objective survives weekly planning.",
+      "tags": [],
+      "weeksSimulated": 2,
+      "totalDays": 14,
+      "categoryDistribution": {
+        "Full-body Strength": 3,
+        "Easy Endurance": 7,
         "Rest": 4
       },
       "modalityDistribution": {
-        "Strength": 4,
-        "Cycling": 4,
+        "Strength": 3,
+        "Cycling": 5,
         "Walking": 2,
         "None": 4
       },
@@ -367,7 +481,17 @@
           "templateId": "end_easy_01",
           "templateTitle": "Zone 2 Spin",
           "modality": "Cycling",
-          "earnedCredit": 0.19999999999999996
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "str_full_02",
+          "templateTitle": "Bodyweight Full Body Strength",
+          "modality": "Strength",
+          "earnedCredit": 0.2
         },
         {
           "weekIndex": 0,
@@ -378,10 +502,20 @@
           "templateTitle": "Bodyweight Full Body Strength",
           "modality": "Strength",
           "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-14",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Aerobic Base (Zone 2)",
+          "templateId": "end_easy_01",
+          "templateTitle": "Zone 2 Spin",
+          "modality": "Cycling",
+          "earnedCredit": 0.19999999999999973
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 6,
+        "fragileSelectionCount": 5,
         "lowerBenefitSelectionCount": 4,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -422,38 +556,6 @@
             "outcomes": [
               {
                 "occurrence": {
-                  "id": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "aerobic_volume",
-                  "authoredSessionIdentity": "evergreen_general:aerobic_volume",
-                  "phase": "general",
-                  "windowStart": "2026-08-07",
-                  "windowEnd": "2026-08-13",
-                  "ordinal": 0,
-                  "label": "Continuous aerobic volume",
-                  "eligibleTemplateIds": [
-                    "end_easy_01",
-                    "end_easy_02",
-                    "end_walk_01"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "cycling_zone2_standard_01",
-                    "running_easy_continuous_01",
-                    "walking_brisk_continuous_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "nominatedDate": "2026-08-09",
-                  "assignedDate": "2026-08-09",
-                  "templateId": "end_walk_01",
-                  "workoutId": "walking_brisk_continuous_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled"
-              },
-              {
-                "occurrence": {
                   "id": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
                   "coverageSetId": "evergreen_general",
                   "coverageKey": "aerobic_volume",
@@ -476,381 +578,10 @@
                 },
                 "reservation": {
                   "occurrenceId": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
-                  "nominatedDate": "2026-08-10",
-                  "assignedDate": "2026-08-10",
-                  "templateId": "end_easy_01",
-                  "workoutId": "cycling_zone2_standard_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled"
-              },
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-07|2026-08-13|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "primary_strength",
-                  "authoredSessionIdentity": "evergreen_general:primary_strength",
-                  "phase": "general",
-                  "windowStart": "2026-08-07",
-                  "windowEnd": "2026-08-13",
-                  "ordinal": 0,
-                  "label": "Primary full-body strength",
-                  "eligibleTemplateIds": [
-                    "str_full_01",
-                    "str_full_02",
-                    "str_full_03"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "strength_bodyweight_full_body_01",
-                    "strength_full_body_maintenance_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-07|2026-08-13|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "nominatedDate": "2026-08-12",
-                  "assignedDate": "2026-08-12",
-                  "templateId": "str_full_02",
-                  "workoutId": "strength_bodyweight_full_body_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled"
-              }
-            ]
-          }
-        },
-        {
-          "weekIndex": 1,
-          "report": {
-            "outcomes": [
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "aerobic_volume",
-                  "authoredSessionIdentity": "evergreen_general:aerobic_volume",
-                  "phase": "general",
-                  "windowStart": "2026-08-14",
-                  "windowEnd": "2026-08-20",
-                  "ordinal": 0,
-                  "label": "Continuous aerobic volume",
-                  "eligibleTemplateIds": [
-                    "end_easy_01",
-                    "end_easy_02",
-                    "end_walk_01"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "cycling_zone2_standard_01",
-                    "running_easy_continuous_01",
-                    "walking_brisk_continuous_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "nominatedDate": "2026-08-17",
-                  "assignedDate": "2026-08-17",
-                  "templateId": "end_easy_01",
-                  "workoutId": "cycling_zone2_standard_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled"
-              },
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "aerobic_volume",
-                  "authoredSessionIdentity": "evergreen_general:aerobic_volume",
-                  "phase": "general",
-                  "windowStart": "2026-08-14",
-                  "windowEnd": "2026-08-20",
-                  "ordinal": 1,
-                  "label": "Continuous aerobic volume",
-                  "eligibleTemplateIds": [
-                    "end_easy_01",
-                    "end_easy_02",
-                    "end_walk_01"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "cycling_zone2_standard_01",
-                    "running_easy_continuous_01",
-                    "walking_brisk_continuous_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
-                  "nominatedDate": "2026-08-18",
-                  "assignedDate": "2026-08-18",
-                  "templateId": "end_walk_01",
-                  "workoutId": "walking_brisk_continuous_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled"
-              },
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-14|2026-08-20|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "primary_strength",
-                  "authoredSessionIdentity": "evergreen_general:primary_strength",
-                  "phase": "general",
-                  "windowStart": "2026-08-14",
-                  "windowEnd": "2026-08-20",
-                  "ordinal": 0,
-                  "label": "Primary full-body strength",
-                  "eligibleTemplateIds": [
-                    "str_full_01",
-                    "str_full_02",
-                    "str_full_03"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "strength_bodyweight_full_body_01",
-                    "strength_full_body_maintenance_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-14|2026-08-20|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "nominatedDate": "2026-08-19",
-                  "assignedDate": "2026-08-19",
-                  "templateId": "str_full_03",
-                  "workoutId": "strength_full_body_maintenance_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled",
-                "observedBlockers": [
-                  "2026-08-19:PROJECTED_FATIGUE_CEILING"
-                ]
-              }
-            ]
-          }
-        }
-      ],
-      "weekSummaries": [
-        {
-          "weekIndex": 0,
-          "fatigueTierDayCounts": {
-            "train": 1,
-            "modify": 2,
-            "recover": 2
-          },
-          "restOrRecoveryDayCount": 2
-        },
-        {
-          "weekIndex": 1,
-          "fatigueTierDayCounts": {
-            "train": 1,
-            "modify": 2,
-            "recover": 2
-          },
-          "restOrRecoveryDayCount": 2
-        }
-      ]
-    },
-    {
-      "scenarioId": "evergreen_strength_six_sessions",
-      "label": "Evergreen strength-leaning (6 sessions)",
-      "description": "A higher-frequency strength athlete confirms the dedicated development objective survives weekly planning.",
-      "tags": [],
-      "weeksSimulated": 2,
-      "totalDays": 14,
-      "categoryDistribution": {
-        "Full-body Strength": 3,
-        "Easy Endurance": 8,
-        "Rest": 3
-      },
-      "modalityDistribution": {
-        "Strength": 3,
-        "Cycling": 6,
-        "Walking": 2,
-        "None": 3
-      },
-      "restOrRecoveryDayCount": 3,
-      "restOrRecoveryDayPct": 21.4,
-      "maxConsecutiveSameTemplateStreakWithinCall": 2,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
-      "objectiveResolution": [
-        {
-          "key": "zone2_aerobic",
-          "timesGenerated": 2,
-          "timesResolved": 2
-        },
-        {
-          "key": "strength_development",
-          "timesGenerated": 2,
-          "timesResolved": 2
-        }
-      ],
-      "objectiveCredits": [
-        {
-          "weekIndex": 0,
-          "date": "2026-08-07",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "str_full_01",
-          "templateTitle": "Hybrid Full Body Push/Pull",
-          "modality": "Strength",
-          "earnedCredit": 0.2
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-07",
-          "objectiveKey": "strength_development",
-          "objectiveTitle": "Strength Development",
-          "templateId": "str_full_01",
-          "templateTitle": "Hybrid Full Body Push/Pull",
-          "modality": "Strength",
-          "earnedCredit": 0.8
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-08",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_01",
-          "templateTitle": "Zone 2 Spin",
-          "modality": "Cycling",
-          "earnedCredit": 0.8
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-09",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_walk_01",
-          "templateTitle": "Brisk Continuous Walk",
-          "modality": "Walking",
-          "earnedCredit": 0.8
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-10",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_01",
-          "templateTitle": "Zone 2 Spin",
-          "modality": "Cycling",
-          "earnedCredit": 0.8
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-12",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_01",
-          "templateTitle": "Zone 2 Spin",
-          "modality": "Cycling",
-          "earnedCredit": 0.3999999999999999
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-13",
-          "objectiveKey": "strength_development",
-          "objectiveTitle": "Strength Development",
-          "templateId": "str_full_02",
-          "templateTitle": "Bodyweight Full Body Strength",
-          "modality": "Strength",
-          "earnedCredit": 0.19999999999999996
-        }
-      ],
-      "utilityDiagnostics": {
-        "fragileSelectionCount": 6,
-        "lowerBenefitSelectionCount": 3,
-        "trainTierRestOrRecoveryCount": 0
-      },
-      "qualityWarnings": [],
-      "anchorWeeks": [
-        {
-          "weekIndex": 0,
-          "weekStartDate": "2026-08-07",
-          "eventSpecificAnchorDate": null,
-          "qualityAnchorDate": null,
-          "eventSpecificAnchorHit": null,
-          "eventSpecificExposureDates": [],
-          "eventSpecificAnchorFulfilled": null,
-          "qualityAnchorHit": null
-        },
-        {
-          "weekIndex": 1,
-          "weekStartDate": "2026-08-14",
-          "eventSpecificAnchorDate": null,
-          "qualityAnchorDate": null,
-          "eventSpecificAnchorHit": null,
-          "eventSpecificExposureDates": [],
-          "eventSpecificAnchorFulfilled": null,
-          "qualityAnchorHit": null
-        }
-      ],
-      "anchorScopeNote": "Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates' phaseEligibility.requiresFocusEvent doesn't check event category), so a nomination can appear even here -- but the optimizer's event-priority penalty for non-matching modalities makes it unlikely to actually win the day's pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.",
-      "fatigueTierDayCounts": {
-        "train": 5,
-        "modify": 2,
-        "recover": 3
-      },
-      "constraintViolations": [],
-      "allocationReports": [
-        {
-          "weekIndex": 0,
-          "report": {
-            "outcomes": [
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "aerobic_volume",
-                  "authoredSessionIdentity": "evergreen_general:aerobic_volume",
-                  "phase": "general",
-                  "windowStart": "2026-08-07",
-                  "windowEnd": "2026-08-13",
-                  "ordinal": 0,
-                  "label": "Continuous aerobic volume",
-                  "eligibleTemplateIds": [
-                    "end_easy_01",
-                    "end_easy_02",
-                    "end_walk_01"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "cycling_zone2_standard_01",
-                    "running_easy_continuous_01",
-                    "walking_brisk_continuous_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
                   "nominatedDate": "2026-08-09",
                   "assignedDate": "2026-08-09",
                   "templateId": "end_walk_01",
                   "workoutId": "walking_brisk_continuous_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled"
-              },
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "aerobic_volume",
-                  "authoredSessionIdentity": "evergreen_general:aerobic_volume",
-                  "phase": "general",
-                  "windowStart": "2026-08-07",
-                  "windowEnd": "2026-08-13",
-                  "ordinal": 1,
-                  "label": "Continuous aerobic volume",
-                  "eligibleTemplateIds": [
-                    "end_easy_01",
-                    "end_easy_02",
-                    "end_walk_01"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "cycling_zone2_standard_01",
-                    "running_easy_continuous_01",
-                    "walking_brisk_continuous_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
-                  "nominatedDate": "2026-08-10",
-                  "assignedDate": "2026-08-10",
-                  "templateId": "end_easy_01",
-                  "workoutId": "cycling_zone2_standard_01",
                   "wasMoved": false
                 },
                 "status": "fulfilled"
@@ -879,41 +610,10 @@
                 },
                 "reservation": {
                   "occurrenceId": "evergreen_general|2026-08-07|2026-08-13|general|aerobic_volume|evergreen_general%3Aaerobic_volume|2",
-                  "nominatedDate": "2026-08-12",
-                  "assignedDate": "2026-08-12",
+                  "nominatedDate": "2026-08-10",
+                  "assignedDate": "2026-08-10",
                   "templateId": "end_easy_01",
                   "workoutId": "cycling_zone2_standard_01",
-                  "wasMoved": false
-                },
-                "status": "fulfilled"
-              },
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-07|2026-08-13|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "primary_strength",
-                  "authoredSessionIdentity": "evergreen_general:primary_strength",
-                  "phase": "general",
-                  "windowStart": "2026-08-07",
-                  "windowEnd": "2026-08-13",
-                  "ordinal": 0,
-                  "label": "Primary full-body strength",
-                  "eligibleTemplateIds": [
-                    "str_full_01",
-                    "str_full_02",
-                    "str_full_03"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "strength_bodyweight_full_body_01",
-                    "strength_full_body_maintenance_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-07|2026-08-13|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "nominatedDate": "2026-08-13",
-                  "assignedDate": "2026-08-13",
-                  "templateId": "str_full_02",
-                  "workoutId": "strength_bodyweight_full_body_01",
                   "wasMoved": false
                 },
                 "status": "fulfilled"
@@ -925,38 +625,6 @@
           "weekIndex": 1,
           "report": {
             "outcomes": [
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "aerobic_volume",
-                  "authoredSessionIdentity": "evergreen_general:aerobic_volume",
-                  "phase": "general",
-                  "windowStart": "2026-08-14",
-                  "windowEnd": "2026-08-20",
-                  "ordinal": 0,
-                  "label": "Continuous aerobic volume",
-                  "eligibleTemplateIds": [
-                    "end_easy_01",
-                    "end_easy_02",
-                    "end_walk_01"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "cycling_zone2_standard_01",
-                    "running_easy_continuous_01",
-                    "walking_brisk_continuous_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|0",
-                  "nominatedDate": "2026-08-17",
-                  "assignedDate": "2026-08-18",
-                  "templateId": "end_easy_01",
-                  "workoutId": "cycling_zone2_standard_01",
-                  "wasMoved": true
-                },
-                "status": "fulfilled"
-              },
               {
                 "occurrence": {
                   "id": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
@@ -981,10 +649,10 @@
                 },
                 "reservation": {
                   "occurrenceId": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|1",
-                  "nominatedDate": "2026-08-19",
-                  "assignedDate": "2026-08-19",
-                  "templateId": "end_walk_01",
-                  "workoutId": "walking_brisk_continuous_01",
+                  "nominatedDate": "2026-08-17",
+                  "assignedDate": "2026-08-17",
+                  "templateId": "end_easy_01",
+                  "workoutId": "cycling_zone2_standard_01",
                   "wasMoved": false
                 },
                 "status": "fulfilled"
@@ -1013,45 +681,13 @@
                 },
                 "reservation": {
                   "occurrenceId": "evergreen_general|2026-08-14|2026-08-20|general|aerobic_volume|evergreen_general%3Aaerobic_volume|2",
-                  "nominatedDate": "2026-08-20",
-                  "assignedDate": "2026-08-20",
-                  "templateId": "end_easy_01",
-                  "workoutId": "cycling_zone2_standard_01",
+                  "nominatedDate": "2026-08-18",
+                  "assignedDate": "2026-08-18",
+                  "templateId": "end_walk_01",
+                  "workoutId": "walking_brisk_continuous_01",
                   "wasMoved": false
                 },
                 "status": "fulfilled"
-              },
-              {
-                "occurrence": {
-                  "id": "evergreen_general|2026-08-14|2026-08-20|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "coverageSetId": "evergreen_general",
-                  "coverageKey": "primary_strength",
-                  "authoredSessionIdentity": "evergreen_general:primary_strength",
-                  "phase": "general",
-                  "windowStart": "2026-08-14",
-                  "windowEnd": "2026-08-20",
-                  "ordinal": 0,
-                  "label": "Primary full-body strength",
-                  "eligibleTemplateIds": [
-                    "str_full_01",
-                    "str_full_02",
-                    "str_full_03"
-                  ],
-                  "eligibleWorkoutIds": [
-                    "strength_bodyweight_full_body_01",
-                    "strength_full_body_maintenance_01"
-                  ]
-                },
-                "reservation": {
-                  "occurrenceId": "evergreen_general|2026-08-14|2026-08-20|general|primary_strength|evergreen_general%3Aprimary_strength|0",
-                  "nominatedDate": null,
-                  "assignedDate": null,
-                  "templateId": null,
-                  "workoutId": null,
-                  "wasMoved": false
-                },
-                "status": "missed",
-                "reason": "no_conflict_free_date"
               }
             ]
           }
@@ -1061,17 +697,17 @@
         {
           "weekIndex": 0,
           "fatigueTierDayCounts": {
-            "train": 2,
+            "train": 1,
             "modify": 2,
-            "recover": 1
+            "recover": 2
           },
-          "restOrRecoveryDayCount": 1
+          "restOrRecoveryDayCount": 2
         },
         {
           "weekIndex": 1,
           "fatigueTierDayCounts": {
-            "train": 3,
-            "modify": 0,
+            "train": 1,
+            "modify": 2,
             "recover": 2
           },
           "restOrRecoveryDayCount": 2
@@ -2568,23 +2204,22 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Rest": 13,
+        "Rest": 14,
         "Easy Endurance": 6,
-        "Race-Specific Endurance": 3,
+        "Full-body Strength": 3,
         "Hard Endurance": 2,
-        "Full-body Strength": 2,
-        "Upper-body Strength": 1,
-        "Moderate Endurance": 1
+        "Technical Skill": 1,
+        "Race-Specific Endurance": 2
       },
       "modalityDistribution": {
-        "None": 13,
-        "Cycling": 12,
+        "None": 14,
+        "Cycling": 11,
         "Strength": 3
       },
-      "restOrRecoveryDayCount": 13,
-      "restOrRecoveryDayPct": 46.4,
+      "restOrRecoveryDayCount": 14,
+      "restOrRecoveryDayPct": 50,
       "maxConsecutiveSameTemplateStreakWithinCall": 2,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 3,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 4,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -2594,12 +2229,12 @@
         {
           "key": "race_specific_endurance",
           "timesGenerated": 4,
-          "timesResolved": 4
+          "timesResolved": 3
         },
         {
           "key": "strength_maintenance",
           "timesGenerated": 4,
-          "timesResolved": 3
+          "timesResolved": 4
         },
         {
           "key": "threshold_quality",
@@ -2628,84 +2263,14 @@
           "date": "2026-08-10",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_crit_surges_01",
-          "templateTitle": "Compact Criterium Surge Session",
-          "modality": "Cycling",
-          "earnedCredit": 0.45
+          "templateId": "str_full_01",
+          "templateTitle": "Hybrid Full Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.2
         },
         {
           "weekIndex": 0,
           "date": "2026-08-10",
-          "objectiveKey": "race_specific_endurance",
-          "objectiveTitle": "Cycling Race-Specific Endurance",
-          "templateId": "end_crit_surges_01",
-          "templateTitle": "Compact Criterium Surge Session",
-          "modality": "Cycling",
-          "earnedCredit": 0.7
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-10",
-          "objectiveKey": "threshold_quality",
-          "objectiveTitle": "Threshold Development",
-          "templateId": "end_crit_surges_01",
-          "templateTitle": "Compact Criterium Surge Session",
-          "modality": "Cycling",
-          "earnedCredit": 0.65
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-10",
-          "objectiveKey": "surge_repeatability",
-          "objectiveTitle": "Surge & High-Intensity Repeatability",
-          "templateId": "end_crit_surges_01",
-          "templateTitle": "Compact Criterium Surge Session",
-          "modality": "Cycling",
-          "earnedCredit": 0.95
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-11",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_01",
-          "templateTitle": "Zone 2 Spin",
-          "modality": "Cycling",
-          "earnedCredit": 0.75
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-12",
-          "objectiveKey": "threshold_quality",
-          "objectiveTitle": "Threshold Development",
-          "templateId": "end_hard_02",
-          "templateTitle": "Bike VO2 Intervals",
-          "modality": "Cycling",
-          "earnedCredit": 0.35
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-12",
-          "objectiveKey": "surge_repeatability",
-          "objectiveTitle": "Surge & High-Intensity Repeatability",
-          "templateId": "end_hard_02",
-          "templateTitle": "Bike VO2 Intervals",
-          "modality": "Cycling",
-          "earnedCredit": 0.050000000000000044
-        },
-        {
-          "weekIndex": 1,
-          "date": "2026-08-17",
-          "objectiveKey": "race_specific_endurance",
-          "objectiveTitle": "Cycling Race-Specific Endurance",
-          "templateId": "end_race_sim_01",
-          "templateTitle": "Race Simulation",
-          "modality": "Cycling",
-          "earnedCredit": 0.30000000000000004
-        },
-        {
-          "weekIndex": 1,
-          "date": "2026-08-20",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
           "templateId": "str_full_01",
@@ -2714,13 +2279,53 @@
           "earnedCredit": 0.8
         },
         {
-          "weekIndex": 2,
-          "date": "2026-08-23",
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_hard_02",
+          "templateTitle": "Bike VO2 Intervals",
+          "modality": "Cycling",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-12",
+          "objectiveKey": "surge_repeatability",
+          "objectiveTitle": "Surge & High-Intensity Repeatability",
+          "templateId": "end_hard_02",
+          "templateTitle": "Bike VO2 Intervals",
+          "modality": "Cycling",
+          "earnedCredit": 1
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-17",
           "objectiveKey": "strength_maintenance",
           "objectiveTitle": "Strength & Neuromuscular Maintenance",
-          "templateId": "str_upper_01",
-          "templateTitle": "Upper Body Push/Pull",
+          "templateId": "str_full_01",
+          "templateTitle": "Hybrid Full Body Push/Pull",
           "modality": "Strength",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-20",
+          "objectiveKey": "race_specific_endurance",
+          "objectiveTitle": "Cycling Race-Specific Endurance",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.85
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-20",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
           "earnedCredit": 0.19999999999999996
         },
         {
@@ -2741,38 +2346,39 @@
           "templateId": "str_full_03",
           "templateTitle": "Reduced Full-body Strength Maintenance",
           "modality": "Strength",
-          "earnedCredit": 0.19999999999999996
+          "earnedCredit": 0.7
         },
         {
           "weekIndex": 3,
-          "date": "2026-08-31",
-          "objectiveKey": "threshold_quality",
-          "objectiveTitle": "Threshold Development",
-          "templateId": "end_mod_02",
-          "templateTitle": "Tempo Ride",
-          "modality": "Cycling",
-          "earnedCredit": 0.19999999999999996
-        },
-        {
-          "weekIndex": 3,
-          "date": "2026-09-02",
+          "date": "2026-09-01",
           "objectiveKey": "race_specific_endurance",
           "objectiveTitle": "Cycling Race-Specific Endurance",
           "templateId": "end_race_sim_01",
           "templateTitle": "Race Simulation",
           "modality": "Cycling",
           "earnedCredit": 0.85
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-09-01",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_race_sim_01",
+          "templateTitle": "Race Simulation",
+          "modality": "Cycling",
+          "earnedCredit": 0.19999999999999996
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 12,
-        "lowerBenefitSelectionCount": 7,
+        "fragileSelectionCount": 15,
+        "lowerBenefitSelectionCount": 13,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
-        "Unresolved weekly objectives: strength_maintenance 3/4.",
-        "Event-specific anchor missed in 1 nominated week(s).",
-        "Event-specific exposure occurred off the nominated anchor date in 3 week(s) (adaptively fulfilled in-window)."
+        "Unresolved weekly objectives: race_specific_endurance 3/4.",
+        "Event-specific anchor missed in 2 nominated week(s).",
+        "Event-specific exposure occurred off the nominated anchor date in 2 week(s) (adaptively fulfilled in-window).",
+        "Same-template streak reached 4 days."
       ],
       "anchorWeeks": [
         {
@@ -2781,10 +2387,8 @@
           "eventSpecificAnchorDate": "2026-08-09",
           "qualityAnchorDate": "2026-08-11",
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [
-            "2026-08-10"
-          ],
-          "eventSpecificAnchorFulfilled": true,
+          "eventSpecificExposureDates": [],
+          "eventSpecificAnchorFulfilled": false,
           "qualityAnchorHit": false
         },
         {
@@ -2794,7 +2398,7 @@
           "qualityAnchorDate": "2026-08-18",
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [
-            "2026-08-17"
+            "2026-08-20"
           ],
           "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": false
@@ -2816,7 +2420,7 @@
           "qualityAnchorDate": "2026-09-01",
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [
-            "2026-09-02"
+            "2026-09-01"
           ],
           "eventSpecificAnchorFulfilled": true,
           "qualityAnchorHit": false
@@ -2825,8 +2429,8 @@
       "anchorScopeNote": null,
       "fatigueTierDayCounts": {
         "train": 13,
-        "modify": 2,
-        "recover": 5
+        "modify": 1,
+        "recover": 6
       },
       "constraintViolations": [],
       "allocationReports": [
@@ -2887,15 +2491,15 @@
                 "reservation": {
                   "occurrenceId": "september_cycling_event|2026-08-02|2026-08-11|build|outdoor_event_specific|september_cycling_event%3Aoutdoor_event_specific|0",
                   "nominatedDate": "2026-08-10",
-                  "assignedDate": "2026-08-10",
-                  "templateId": "end_crit_surges_01",
-                  "workoutId": "cycling_criterium_surges_01",
+                  "assignedDate": null,
+                  "templateId": null,
+                  "workoutId": null,
                   "wasMoved": false
                 },
-                "status": "fulfilled",
+                "status": "missed",
+                "reason": "projected_fatigue",
                 "observedBlockers": [
-                  "2026-08-10:NOT_ELIGIBLE_ON_DATE",
-                  "2026-08-11:NOT_ELIGIBLE_ON_DATE"
+                  "2026-08-13:PROJECTED_FATIGUE_CEILING"
                 ]
               },
               {
@@ -2920,15 +2524,15 @@
                 "reservation": {
                   "occurrenceId": "september_cycling_event|2026-08-02|2026-08-11|build|primary_strength|september_cycling_event%3Aprimary_strength|0",
                   "nominatedDate": null,
-                  "assignedDate": null,
-                  "templateId": null,
-                  "workoutId": null,
+                  "assignedDate": "2026-08-10",
+                  "templateId": "str_full_01",
+                  "workoutId": "strength_full_body_maintenance_01",
                   "wasMoved": false
                 },
-                "status": "missed",
-                "reason": "projected_fatigue",
+                "status": "fulfilled",
                 "observedBlockers": [
-                  "2026-08-13:PROJECTED_FATIGUE_CEILING"
+                  "2026-08-11:ANCHOR_PROTECTION_VIOLATION",
+                  "2026-08-11:RECOVERY_WINDOW_UNELAPSED"
                 ]
               },
               {
@@ -3019,10 +2623,10 @@
                 "reservation": {
                   "occurrenceId": "september_cycling_event|2026-08-12|2026-09-12|peak|outdoor_event_specific|september_cycling_event%3Aoutdoor_event_specific|0",
                   "nominatedDate": "2026-08-17",
-                  "assignedDate": "2026-08-17",
+                  "assignedDate": "2026-08-20",
                   "templateId": "end_race_sim_01",
                   "workoutId": "cycling_race_simulation_50_01",
-                  "wasMoved": false
+                  "wasMoved": true
                 },
                 "status": "fulfilled"
               },
@@ -3047,13 +2651,18 @@
                 },
                 "reservation": {
                   "occurrenceId": "september_cycling_event|2026-08-12|2026-09-12|peak|primary_strength|september_cycling_event%3Aprimary_strength|0",
-                  "nominatedDate": "2026-08-20",
-                  "assignedDate": "2026-08-20",
+                  "nominatedDate": null,
+                  "assignedDate": "2026-08-17",
                   "templateId": "str_full_01",
                   "workoutId": "strength_full_body_maintenance_01",
                   "wasMoved": false
                 },
-                "status": "fulfilled"
+                "status": "fulfilled",
+                "observedBlockers": [
+                  "2026-08-18:ANCHOR_PROTECTION_VIOLATION",
+                  "2026-08-18:PROJECTED_FATIGUE_CEILING",
+                  "2026-08-18:RECOVERY_WINDOW_UNELAPSED"
+                ]
               }
             ]
           }
@@ -3122,7 +2731,7 @@
                 "reservation": {
                   "occurrenceId": "september_cycling_event|2026-08-23|2026-09-12|peak|outdoor_event_specific|september_cycling_event%3Aoutdoor_event_specific|0",
                   "nominatedDate": "2026-08-30",
-                  "assignedDate": "2026-09-02",
+                  "assignedDate": "2026-09-01",
                   "templateId": "end_race_sim_01",
                   "workoutId": "cycling_race_simulation_50_01",
                   "wasMoved": true
@@ -3172,17 +2781,17 @@
         {
           "weekIndex": 0,
           "fatigueTierDayCounts": {
-            "train": 4,
+            "train": 3,
             "modify": 0,
-            "recover": 1
+            "recover": 2
           },
-          "restOrRecoveryDayCount": 3
+          "restOrRecoveryDayCount": 4
         },
         {
           "weekIndex": 1,
           "fatigueTierDayCounts": {
-            "train": 4,
-            "modify": 0,
+            "train": 3,
+            "modify": 1,
             "recover": 1
           },
           "restOrRecoveryDayCount": 3
@@ -3190,20 +2799,20 @@
         {
           "weekIndex": 2,
           "fatigueTierDayCounts": {
-            "train": 2,
-            "modify": 2,
-            "recover": 1
-          },
-          "restOrRecoveryDayCount": 3
-        },
-        {
-          "weekIndex": 3,
-          "fatigueTierDayCounts": {
             "train": 3,
             "modify": 0,
             "recover": 2
           },
           "restOrRecoveryDayCount": 4
+        },
+        {
+          "weekIndex": 3,
+          "fatigueTierDayCounts": {
+            "train": 4,
+            "modify": 0,
+            "recover": 1
+          },
+          "restOrRecoveryDayCount": 3
         }
       ]
     },
@@ -3760,7 +3369,7 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 14,
+        "fragileSelectionCount": 13,
         "lowerBenefitSelectionCount": 11,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -4940,8 +4549,8 @@
         "Upper-body Strength": 2
       },
       "modalityDistribution": {
-        "Cycling": 5,
-        "Running": 4,
+        "Cycling": 6,
+        "Running": 3,
         "None": 1,
         "Swimming": 2,
         "Strength": 2
@@ -5045,7 +4654,7 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 5,
+        "fragileSelectionCount": 4,
         "lowerBenefitSelectionCount": 1,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -8538,7 +8147,7 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 4,
+        "fragileSelectionCount": 3,
         "lowerBenefitSelectionCount": 4,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -8746,7 +8355,7 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 4,
+        "fragileSelectionCount": 3,
         "lowerBenefitSelectionCount": 4,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -10389,19 +9998,18 @@
       "weeksSimulated": 2,
       "totalDays": 14,
       "categoryDistribution": {
-        "Rest": 5,
-        "Moderate Endurance": 4,
+        "Rest": 6,
+        "Moderate Endurance": 3,
         "Upper-body Strength": 2,
         "Easy Endurance": 3
       },
       "modalityDistribution": {
-        "None": 5,
-        "Cycling": 6,
-        "Strength": 2,
-        "Walking": 1
+        "None": 6,
+        "Running": 6,
+        "Strength": 2
       },
-      "restOrRecoveryDayCount": 5,
-      "restOrRecoveryDayPct": 35.7,
+      "restOrRecoveryDayCount": 6,
+      "restOrRecoveryDayPct": 42.9,
       "maxConsecutiveSameTemplateStreakWithinCall": 2,
       "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
       "objectiveResolution": [
@@ -10427,9 +10035,9 @@
           "date": "2026-08-09",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_mod_02",
-          "templateTitle": "Tempo Ride",
-          "modality": "Cycling",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
           "earnedCredit": 0.7
         },
         {
@@ -10437,9 +10045,9 @@
           "date": "2026-08-09",
           "objectiveKey": "threshold_quality",
           "objectiveTitle": "Threshold Development",
-          "templateId": "end_mod_02",
-          "templateTitle": "Tempo Ride",
-          "modality": "Cycling",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
           "earnedCredit": 0.8
         },
         {
@@ -10467,9 +10075,9 @@
           "date": "2026-08-12",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_01",
-          "templateTitle": "Zone 2 Spin",
-          "modality": "Cycling",
+          "templateId": "end_easy_02",
+          "templateTitle": "Light Base Run",
+          "modality": "Running",
           "earnedCredit": 0.8
         },
         {
@@ -10477,9 +10085,9 @@
           "date": "2026-08-13",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_walk_01",
-          "templateTitle": "Brisk Continuous Walk",
-          "modality": "Walking",
+          "templateId": "end_easy_03",
+          "templateTitle": "Recovery Walk/Jog Intervals",
+          "modality": "Running",
           "earnedCredit": 0.5
         },
         {
@@ -10487,15 +10095,15 @@
           "date": "2026-08-16",
           "objectiveKey": "threshold_quality",
           "objectiveTitle": "Threshold Development",
-          "templateId": "end_mod_02",
-          "templateTitle": "Tempo Ride",
-          "modality": "Cycling",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
           "earnedCredit": 0.19999999999999996
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 5,
-        "lowerBenefitSelectionCount": 1,
+        "fragileSelectionCount": 6,
+        "lowerBenefitSelectionCount": 2,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [],
@@ -10523,9 +10131,9 @@
       ],
       "anchorScopeNote": "Anchor-day nomination only requires SOME focus event (Race-Specific Endurance templates' phaseEligibility.requiresFocusEvent doesn't check event category), so a nomination can appear even here -- but the optimizer's event-priority penalty for non-matching modalities makes it unlikely to actually win the day's pick. Treat eventSpecificAnchorHit/qualityAnchorHit, not the raw nomination, as the meaningful signal for non-cycling scenarios.",
       "fatigueTierDayCounts": {
-        "train": 6,
-        "modify": 3,
-        "recover": 1
+        "train": 4,
+        "modify": 4,
+        "recover": 2
       },
       "constraintViolations": [],
       "allocationReports": [
@@ -10555,11 +10163,11 @@
         {
           "weekIndex": 1,
           "fatigueTierDayCounts": {
-            "train": 4,
-            "modify": 0,
-            "recover": 1
+            "train": 2,
+            "modify": 1,
+            "recover": 2
           },
-          "restOrRecoveryDayCount": 3
+          "restOrRecoveryDayCount": 4
         }
       ]
     },
@@ -11245,10 +10853,10 @@
       "trajectory": "stressed",
       "scenarioId": "cycling_criterium_stressed_A",
       "baselineScenarioId": "cycling_criterium_A",
-      "changedPlannedDays": 4,
-      "restOrRecoveryDayDelta": 4,
-      "raceSpecificExposureDelta": -1,
-      "summary": "stressed trajectory: 4 modality day(s) changed; Rest/Mobility delta +4; race-specific exposure delta -1."
+      "changedPlannedDays": 5,
+      "restOrRecoveryDayDelta": 5,
+      "raceSpecificExposureDelta": -2,
+      "summary": "stressed trajectory: 5 modality day(s) changed; Rest/Mobility delta +5; race-specific exposure delta -2."
     }
   ]
 }
