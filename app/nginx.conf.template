@@ -1,0 +1,55 @@
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "DENY" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=()" always;
+
+    # Local parity with Firebase Hosting's "/api/garmin/**" -> garmin-account-link Cloud Run
+    # rewrite (see app/firebase.json). ${BACKEND_HOST}/${BACKEND_PORT} are substituted at
+    # container startup by the official nginx image's docker-entrypoint envsubst step (this
+    # file lives under /etc/nginx/templates/, not conf.d/ -- see app/Dockerfile) and default
+    # to the `backend` compose service (docker-compose.yml); override via env if needed.
+    location ^~ /api/garmin/ {
+        proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+
+    # Local parity with Firebase Hosting's "/api/google-health/**" -> google-health-account-link
+    # Cloud Run rewrite (see app/firebase.json).
+    location ^~ /api/google-health/ {
+        proxy_pass http://${GOOGLE_HEALTH_BACKEND_HOST}:${BACKEND_PORT};
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+
+    # SPA fallback: let the React app's router handle unknown paths.
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+
+    # Long-cache immutable static assets emitted by the Vite build.
+    location ~* \.(?:css|js|mjs|svg|png|jpg|jpeg|gif|ico|webp|woff2?)$ {
+        expires 30d;
+        access_log off;
+        add_header Cache-Control "public, max-age=2592000, immutable";
+    }
+
+    # Never cache the HTML entrypoint so new deploys are picked up immediately.
+    location = /index.html {
+        add_header Cache-Control "no-cache";
+    }
+}

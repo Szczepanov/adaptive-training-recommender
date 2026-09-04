@@ -26,11 +26,12 @@ logger = logging.getLogger(__name__)
 def init_firestore_client(credentials_path: str | None = None) -> Any:
     """Initialize Firebase Admin SDK and return Firestore client."""
     if not firebase_admin._apps:
-        if credentials_path and os.path.exists(credentials_path):
+        resolved_path = credentials_path or os.getenv("FIREBASE_CREDENTIALS_PATH")
+        if resolved_path and os.path.exists(resolved_path):
             logger.info(
-                f"Initializing Firebase Admin with service account from '{credentials_path}'..."
+                f"Initializing Firebase Admin with service account from '{resolved_path}'..."
             )
-            cred = credentials.Certificate(credentials_path)
+            cred = credentials.Certificate(resolved_path)
             firebase_admin.initialize_app(cred)
         else:
             logger.info("Initializing Firebase Admin with Application Default Credentials (ADC)...")

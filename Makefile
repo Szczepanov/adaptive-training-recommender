@@ -8,7 +8,8 @@
         simulate-calibrate simulate-fatigue-fusion simulate-subjective-drift \
         compare-sequence-search build build-frontend \
         deploy deploy-hosting deploy-all deploy-rules deploy-indexes \
-        install clean
+        install clean \
+        docker-build docker-up docker-down docker-smoke
 
 # -----------------------------------------------------------------------------
 # Main Verification Targets
@@ -169,6 +170,26 @@ install:
 	uv sync
 	npm --prefix app ci
 
+# -----------------------------------------------------------------------------
+# Docker Targets
+# -----------------------------------------------------------------------------
+
+## Build all Docker images with docker compose
+docker-build:
+	docker compose build
+
+## Start all services in background with docker compose
+docker-up:
+	docker compose up -d
+
+## Stop and clean up running docker compose services
+docker-down:
+	docker compose down
+
+## Run smoke test against running docker compose services
+docker-smoke:
+	python -c "import urllib.request, urllib.error; assert urllib.request.urlopen('http://127.0.0.1:8081/health').status == 200; assert b'root' in urllib.request.urlopen('http://127.0.0.1:8080/').read(); req = urllib.request.Request('http://127.0.0.1:8080/api/garmin/status', method='POST'); code = 0; exec('try:\n urllib.request.urlopen(req)\nexcept urllib.error.HTTPError as e:\n global code; code = e.code'); assert code == 401; print('[OK] Docker compose smoke checks passed successfully!')"
+
 ## Clean temporary build, test, and cache artifacts
 clean:
 	-rmdir /s /q .pytest_cache 2>nul || rm -rf .pytest_cache 2>/dev/null || true
@@ -213,3 +234,9 @@ help:
 	@echo   make simulate-scenarios- Run scenario simulations
 	@echo   make simulate-diff     - Compare scenario simulation against baseline
 	@echo   make build-frontend    - Build production Vite bundle
+	@echo --------------------------------------------------------------------------------
+	@echo Docker Targets:
+	@echo   make docker-build      - Build all Docker images with docker compose
+	@echo   make docker-up         - Start services in background with docker compose
+	@echo   make docker-down       - Stop running docker compose services
+	@echo   make docker-smoke      - Run smoke test against running docker compose services

@@ -21,6 +21,18 @@ export default defineConfig({
     'import.meta.env.VITE_GIT_SHA': JSON.stringify(gitSha),
     'import.meta.env.VITE_GIT_DIRTY': JSON.stringify(String(gitDirty)),
   },
+  server: {
+    proxy: {
+      '/api/garmin': {
+        target: process.env.VITE_GARMIN_BACKEND_URL || 'http://localhost:8081',
+        changeOrigin: true,
+      },
+      '/api/google-health': {
+        target: process.env.VITE_GOOGLE_HEALTH_BACKEND_URL || 'http://localhost:8081',
+        changeOrigin: true,
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
