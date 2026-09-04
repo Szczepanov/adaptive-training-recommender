@@ -1,7 +1,6 @@
-﻿import { describe, it, expect } from 'vitest';
-import { resolveDefaultTimeAvailableMin } from './checkinDefaults';
+import { describe, expect, it } from 'vitest';
+import { resolveDefaultTimeAvailable, resolveDefaultTimeAvailableMin } from './checkinDefaults';
 import { isWeekendLocalDateString } from './localDate';
-import type { TrainingSettings } from '../engine/models';
 
 describe('isWeekendLocalDateString', () => {
   it('identifies Saturday and Sunday as weekends', () => {
@@ -18,60 +17,48 @@ describe('isWeekendLocalDateString', () => {
   });
 });
 
-describe('resolveDefaultTimeAvailableMin', () => {
+describe('resolveDefaultTimeAvailable', () => {
   const weekdayDate = '2026-09-04'; // Friday
   const weekendDate = '2026-09-05'; // Saturday
 
-  it('falls back to 45 min on weekdays and 60 min on weekends when settings are null or undefined', () => {
-    expect(resolveDefaultTimeAvailableMin(null, weekdayDate)).toBe(45);
-    expect(resolveDefaultTimeAvailableMin(null, weekendDate)).toBe(60);
-    expect(resolveDefaultTimeAvailableMin(undefined, weekdayDate)).toBe(45);
-    expect(resolveDefaultTimeAvailableMin(undefined, weekendDate)).toBe(60);
+  it('falls back to the standard 45/60 minute defaults when preferences are unavailable', () => {
+    expect(resolveDefaultTimeAvailable(null, weekdayDate)).toEqual({
+      minutes: 45,
+      dayType: 'weekday',
+      source: 'standard_default',
+    });
+    expect(resolveDefaultTimeAvailable(undefined, weekendDate)).toEqual({
+      minutes: 60,
+      dayType: 'weekend',
+      source: 'standard_default',
+    });
   });
 
-  it('falls back to 45 min on weekdays and 60 min on weekends when settings defaults are null', () => {
-    const emptySettings = {
-      defaults: {
-        weekdayMaxMinutes: null,
-        weekendMaxMinutes: null,
-      },
-    } as unknown as TrainingSettings;
+  it('uses the canonical Default Available Duration preference for the matching day type', () => {
+    const preferences = {
+      defaultWeekdayTimeMin: 35,
+      defaultWeekendTimeMin: 105,
+    };
 
-    expect(resolveDefaultTimeAvailableMin(emptySettings, weekdayDate)).toBe(45);
-    expect(resolveDefaultTimeAvailableMin(emptySettings, weekendDate)).toBe(60);
+    expect(resolveDefaultTimeAvailable(preferences, weekdayDate)).toEqual({
+      minutes: 35,
+      dayType: 'weekday',
+      source: 'preferences',
+    });
+    expect(resolveDefaultTimeAvailable(preferences, weekendDate)).toEqual({
+      minutes: 105,
+      dayType: 'weekend',
+      source: 'preferences',
+    });
   });
 
-  it('uses configured weekdayMaxMinutes on weekdays', () => {
-    const customSettings = {
-      defaults: {
-        weekdayMaxMinutes: 30,
-        weekendMaxMinutes: 90,
-      },
-    } as unknown as TrainingSettings;
+  it('defensively falls back when an unvalidated preference duration is outside the stored contract', () => {
+    const malformedPreferences = {
+      defaultWeekdayTimeMin: 0,
+      defaultWeekendTimeMin: 1441,
+    };
 
-    expect(resolveDefaultTimeAvailableMin(customSettings, weekdayDate)).toBe(30);
-  });
-
-  it('uses configured weekendMaxMinutes on weekends', () => {
-    const customSettings = {
-      defaults: {
-        weekdayMaxMinutes: 30,
-        weekendMaxMinutes: 90,
-      },
-    } as unknown as TrainingSettings;
-
-    expect(resolveDefaultTimeAvailableMin(customSettings, weekendDate)).toBe(90);
-  });
-
-  it('uses default when specific day preference is null but the other is set', () => {
-    const partialSettings = {
-      defaults: {
-        weekdayMaxMinutes: 75,
-        weekendMaxMinutes: null,
-      },
-    } as unknown as TrainingSettings;
-
-    expect(resolveDefaultTimeAvailableMin(partialSettings, weekdayDate)).toBe(75);
-    expect(resolveDefaultTimeAvailableMin(partialSettings, weekendDate)).toBe(60);
+    expect(resolveDefaultTimeAvailableMin(malformedPreferences, weekdayDate)).toBe(45);
+    expect(resolveDefaultTimeAvailableMin(malformedPreferences, weekendDate)).toBe(60);
   });
 });
