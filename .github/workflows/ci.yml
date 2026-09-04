@@ -180,6 +180,10 @@ jobs:
       - name: Build root Garmin sync Docker image
         run: docker build -t adaptive-training-garmin-sync .
 
+      - name: Create mock service account for smoke test
+        run: |
+          python3 -c "import json, subprocess; pem = subprocess.check_output(['openssl', 'genrsa', '2048'], stderr=subprocess.DEVNULL).decode(); json.dump({'type':'service_account','project_id':'test-project','private_key_id':'mock-key','private_key':pem,'client_email':'mock@test-project.iam.gserviceaccount.com','token_uri':'https://oauth2.googleapis.com/token'}, open('firebase-service-account.json', 'w'))"
+
       - name: Validate Docker Compose configuration
         env:
           VITE_FIREBASE_API_KEY: test-api-key
@@ -201,10 +205,6 @@ jobs:
           VITE_FIREBASE_APP_ID: 1:123456789:web:abcdef
           VITE_FIREBASE_MEASUREMENT_ID: G-TEST
         run: docker compose build
-
-      - name: Create mock service account for smoke test
-        run: |
-          python3 -c "import json, subprocess; pem = subprocess.check_output(['openssl', 'genrsa', '2048'], stderr=subprocess.DEVNULL).decode(); json.dump({'type':'service_account','project_id':'test-project','private_key_id':'mock-key','private_key':pem,'client_email':'mock@test-project.iam.gserviceaccount.com','token_uri':'https://oauth2.googleapis.com/token'}, open('firebase-service-account.json', 'w'))"
 
       - name: Start services
         env:

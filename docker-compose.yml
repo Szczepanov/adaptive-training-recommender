@@ -13,7 +13,8 @@ services:
     ports:
       - "8081:8080"
     env_file:
-      - .env
+      - path: .env
+        required: false
     environment:
       PORT: "8080"
       APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Warsaw}
