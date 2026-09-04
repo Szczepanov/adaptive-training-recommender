@@ -82,8 +82,15 @@ def _service() -> GarminAccountLinkService:
 def _verified_uid(
     authorization: str | None,
     *,
-    require_verified_email: bool = False,
+    require_verified_email: bool = True,
 ) -> str | None:
+    """Return the UID from a valid, unrevoked app token.
+
+    Password-provider sessions require verified email ownership by default. Callers may
+    opt out only when the operation is safe for an authenticated-but-unverified account;
+    Garmin status reconciliation is one such case because it is scoped solely by the UID
+    from the validated token and cannot bind external credentials to that UID.
+    """
     if not authorization:
         return None
     scheme, _, token = authorization.partition(" ")
@@ -259,7 +266,10 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
             )
 
     def _handle_status(self) -> None:
-        uid = _verified_uid(self.headers.get("Authorization"))
+        uid = _verified_uid(
+            self.headers.get("Authorization"),
+            require_verified_email=False,
+        )
         if not uid:
             raise GarminConnectAuthenticationError("App authentication is required.")
         result = reconcile_garmin_connection_status(uid)
