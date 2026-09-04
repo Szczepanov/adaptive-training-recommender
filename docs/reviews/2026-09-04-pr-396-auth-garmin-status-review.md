@@ -1,6 +1,6 @@
 # PR #396 review — Garmin status for unverified email accounts
 
-**Date:** 2026-09-04  
+**Date:** 2026-09-04
 **PR:** #396 — `fix(auth): allow unverified email accounts to check garmin status for wearable-free mode`
 
 ## Problem
