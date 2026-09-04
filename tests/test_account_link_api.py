@@ -122,7 +122,7 @@ def test_handle_login_requires_verified_email_for_authenticated_link(monkeypatch
     def mock_verified_uid(
         authorization: str | None,
         *,
-        require_verified_email: bool = True,
+        require_verified_email: bool,
     ) -> str:
         assert authorization == "Bearer app-token"
         policies.append(require_verified_email)
