@@ -27,12 +27,7 @@ def init_firestore_client(credentials_path: str | None = None) -> Any:
     """Initialize Firebase Admin SDK and return Firestore client."""
     if not firebase_admin._apps:
         resolved_path = credentials_path or os.getenv("FIREBASE_CREDENTIALS_PATH")
-        if resolved_path:
-            if not os.path.isfile(resolved_path):
-                raise FileNotFoundError(
-                    "Configured Firebase credentials path does not exist or is not a regular "
-                    f"file: {resolved_path}"
-                )
+        if resolved_path and os.path.exists(resolved_path):
             logger.info(
                 f"Initializing Firebase Admin with service account from '{resolved_path}'..."
             )
@@ -68,557 +63,850 @@ class FirestoreRecoveryRepository:
     def __init__(
         self,
         user_id: str,
-        collection_name: str | None = None,
-        db: Any | None = None,
-    ) -> None:
-        normalized_user_id = user_id.strip()
-        if not normalized_user_id or normalized_user_id == "default_user":
-            raise ValueError("FirestoreRecoveryRepository requires a valid non-default user_id")
-        self.user_id = user_id
-        self.collection_name = collection_name or os.getenv(
-            "FIRESTORE_RECOVERY_COLLECTION", "daily_recovery_snapshots"
-        )
-        self.db = db or init_firestore_client()
-
-    def _collection(self) -> Any:
-        return self.db.collection("users").document(self.user_id).collection(self.collection_name)
-
-    def upsert_snapshot(self, date: str, payload: dict[str, Any]) -> None:
-        """Upsert recovery snapshot with idempotent merge semantics."""
-        payload_user_id = payload.get("userId")
-        if payload_user_id != self.user_id:
+        collection_name: str = "daily_recovery_snapshots",
+        db: Any = None,
+        credentials_path: str | None = None,
+    ):
+        if not user_id or not user_id.strip() or user_id.strip() == "default_user":
             raise ValueError(
-                f"Snapshot userId '{payload_user_id}' does not match configured user_id '{self.user_id}'"
+                "FirestoreRecoveryRepository requires a valid non-default user_id (Firebase UID)."
             )
+        # Firebase Auth UIDs are identifiers, not free-form display text. Preserve the
+        # exact value supplied by Auth instead of normalizing it: stripping would make
+        # distinct legal UIDs share Firestore/token/archive scopes.
+        self.user_id = user_id
+        self.collection_name = collection_name
+        self._db = db
+        self.credentials_path = credentials_path
 
-        doc_ref = self._collection().document(date)
-        now = datetime.now(timezone.utc).isoformat()
+    @property
+    def db(self) -> Any:
+        return self._get_db()
 
-        doc = doc_ref.get()
-        data = dict(payload)
-        data["updatedAt"] = now
-        if not doc.exists:
-            data["createdAt"] = now
+    @db.setter
+    def db(self, value: Any) -> None:
+        self._db = value
 
-        doc_ref.set(data, merge=True)
+    def _get_db(self) -> Any:
+        if self._db is None:
+            self._db = init_firestore_client(self.credentials_path)
+        return self._db
 
-    def get_snapshot(self, date: str) -> dict[str, Any] | None:
-        """Return a recovery snapshot by date, or None if not found."""
-        doc = self._collection().document(date).get()
-        if not doc.exists:
+    def _get_doc_ref(self, date_iso: str) -> Any:
+        db = self._get_db()
+        return (
+            db.collection("users")
+            .document(self.user_id)
+            .collection(self.collection_name)
+            .document(date_iso)
+        )
+
+    def get_snapshot(self, date_iso: str) -> dict[str, Any] | None:
+        """Fetch recovery snapshot for target date."""
+        try:
+            doc_snap = self._get_doc_ref(date_iso).get()
+            if doc_snap.exists:
+                data = doc_snap.to_dict()
+                if data.get("userId") != self.user_id:
+                    raise ValueError(
+                        f"Document userId '{data.get('userId')}' does not match repository user_id '{self.user_id}'"
+                    )
+                return data
             return None
-        return cast(dict[str, Any], doc.to_dict())
+        except Exception as e:
+            logger.warning(
+                f"Error reading Firestore snapshot for user {self.user_id} date {date_iso}: {e}"
+            )
+            return None
+
+    def get_snapshots_batch(self, date_isos: list[str]) -> dict[str, dict[str, Any]]:
+        """Fetch multiple recovery snapshots efficiently in batches."""
+        db = self._get_db()
+        refs = [self._get_doc_ref(d) for d in date_isos]
+        snapshots = {}
+
+        chunk_size = 400
+        for i in range(0, len(refs), chunk_size):
+            chunk = refs[i : i + chunk_size]
+            try:
+                for doc_snap in db.get_all(chunk):
+                    if doc_snap.exists:
+                        data = doc_snap.to_dict()
+                        if data.get("userId") == self.user_id:
+                            snapshots[doc_snap.id] = data
+            except Exception as e:
+                logger.warning(
+                    f"Error reading batch of Firestore snapshots for user {self.user_id}: {e}"
+                )
+                raise
+        return snapshots
 
     def is_fresh(
         self,
-        date: str,
-        *,
-        staleness_minutes: int,
-        incomplete_staleness_minutes: int,
+        date_iso: str,
+        staleness_minutes: int = 60,
+        incomplete_staleness_minutes: int = 5,
+        require_complete: bool = True,
     ) -> bool:
-        """Return whether an existing snapshot is fresh enough to skip another sync.
+        """Check if date's snapshot was synced within staleness threshold.
 
-        Complete snapshots get the normal cooldown. Incomplete snapshots use a much shorter
-        cooldown so late-arriving Garmin metrics can be picked up quickly.
+        If require_complete is True and the snapshot is missing any core recovery metric
+        (sleep, resting HR, HRV, respiration, body battery wake, steps), it is considered
+        incomplete and only remains fresh for incomplete_staleness_minutes (a short rate-limit
+        cooldown). Once complete, it respects staleness_minutes.
         """
-        snapshot = self.get_snapshot(date)
+        snapshot = self.get_snapshot(date_iso)
         if not snapshot:
             return False
 
-        source = snapshot.get("source", {})
-        synced_at = source.get("garminSyncedAt") if isinstance(source, dict) else None
-        if not isinstance(synced_at, str):
+        synced_at_str = snapshot.get("source", {}).get("garminSyncedAt") or snapshot.get(
+            "updatedAt"
+        )
+        if not synced_at_str:
             return False
 
         try:
-            synced_dt = datetime.fromisoformat(synced_at.replace("Z", "+00:00"))
-        except ValueError:
-            return False
-        if synced_dt.tzinfo is None:
-            synced_dt = synced_dt.replace(tzinfo=timezone.utc)
+            synced_at = datetime.fromisoformat(synced_at_str)
+            if synced_at.tzinfo is None:
+                synced_at = synced_at.replace(tzinfo=timezone.utc)
+            now_utc = datetime.now(timezone.utc)
+            age_minutes = (now_utc - synced_at).total_seconds() / 60.0
 
-        age_minutes = (datetime.now(timezone.utc) - synced_dt).total_seconds() / 60.0
-        threshold = (
-            staleness_minutes
-            if is_snapshot_complete(snapshot)
-            else incomplete_staleness_minutes
-        )
-        return age_minutes < threshold
+            if require_complete and not is_snapshot_complete(snapshot):
+                return age_minutes < incomplete_staleness_minutes
 
-    def get_snapshots(self, dates: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """Return existing snapshots keyed by date."""
-        snapshots: dict[str, dict[str, Any]] = {}
-        for date in dates:
-            snapshot = self.get_snapshot(date)
-            if snapshot:
-                snapshots[date] = snapshot
-        return snapshots
-
-    def iter_snapshots(self, *, start_date: str, end_date: str) -> Iterator[dict[str, Any]]:
-        """Yield snapshots in date order for the inclusive date range."""
-        query = (
-            self._collection()
-            .where(filter=FieldFilter("date", ">=", start_date))
-            .where(filter=FieldFilter("date", "<=", end_date))
-            .order_by("date")
-        )
-        for doc in query.stream():
-            data = doc.to_dict()
-            if isinstance(data, dict):
-                yield data
-
-    def delete_snapshot(self, date: str) -> None:
-        """Delete a snapshot by date."""
-        self._collection().document(date).delete()
-
-    def upsert_observation_bundle(
-        self,
-        bundle: "HealthObservationDayBundle",
-        *,
-        document_id: str | None = None,
-    ) -> bool:
-        """Persist a canonical observation bundle if source/version content changed.
-
-        Returns True when a write occurred, False when an existing row already has the
-        same `sourcePayloadHash` and `normalizerVersion`.
-        """
-        from .models import HealthObservationDayBundle
-
-        if not isinstance(bundle, HealthObservationDayBundle):
-            raise TypeError("bundle must be a HealthObservationDayBundle")
-        if bundle.userId != self.user_id:
-            raise ValueError(
-                f"Observation bundle userId '{bundle.userId}' does not match configured "
-                f"user_id '{self.user_id}'"
-            )
-
-        doc_id = document_id or f"{bundle.logicalDate}_{bundle.provider}_{bundle.transport}"
-        doc_ref = (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("health_observations")
-            .document(doc_id)
-        )
-        payload = bundle.model_dump(mode="json")
-
-        transaction_factory = getattr(self.db, "transaction", None)
-        if callable(transaction_factory):
-            transaction = transaction_factory()
-
-            @firestore.transactional
-            def _upsert_in_transaction(txn: Any) -> bool:
-                existing = doc_ref.get(transaction=txn)
-                existing_data = existing.to_dict() if existing.exists else None
-                if isinstance(existing_data, dict) and (
-                    existing_data.get("sourcePayloadHash") == bundle.sourcePayloadHash
-                    and existing_data.get("normalizerVersion") == bundle.normalizerVersion
-                ):
-                    return False
-
-                previous_revision = 0
-                if isinstance(existing_data, dict):
-                    try:
-                        previous_revision = int(existing_data.get("revision") or 0)
-                    except (TypeError, ValueError):
-                        previous_revision = 0
-
-                write_payload = {
-                    **payload,
-                    "revision": max(1, previous_revision + 1),
-                    "updatedAt": firestore.SERVER_TIMESTAMP,
-                }
-                if not existing.exists:
-                    write_payload["createdAt"] = firestore.SERVER_TIMESTAMP
-                txn.set(doc_ref, write_payload, merge=True)
-                return True
-
-            return bool(_upsert_in_transaction(transaction))
-
-        # Fallback is primarily for deterministic tests/fakes that do not implement
-        # transactions. Production Firestore clients provide transaction().
-        existing = doc_ref.get()
-        existing_data = existing.to_dict() if existing.exists else None
-        if isinstance(existing_data, dict) and (
-            existing_data.get("sourcePayloadHash") == bundle.sourcePayloadHash
-            and existing_data.get("normalizerVersion") == bundle.normalizerVersion
-        ):
+            return age_minutes < staleness_minutes
+        except Exception as e:
+            logger.warning(f"Failed to parse synced_at timestamp '{synced_at_str}': {e}")
             return False
 
-        previous_revision = 0
-        if isinstance(existing_data, dict):
-            try:
-                previous_revision = int(existing_data.get("revision") or 0)
-            except (TypeError, ValueError):
-                previous_revision = 0
-        write_payload = {
-            **payload,
-            "revision": max(1, previous_revision + 1),
-            "updatedAt": firestore.SERVER_TIMESTAMP,
-        }
-        if not existing.exists:
-            write_payload["createdAt"] = firestore.SERVER_TIMESTAMP
-        doc_ref.set(write_payload, merge=True)
-        return True
-
-    def _identity_bundle_doc_ref(self, bundle_id: str) -> Any:
-        return (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("health_identity_bundles")
-            .document(bundle_id)
-        )
-
-    def _identity_current_doc_ref(self) -> Any:
-        return (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("identity_passports")
-            .document("current")
-        )
-
-    def save_identity_assessment(self, assessment: Mapping[str, Any]) -> None:
-        """Persist one immutable physiological identity assessment."""
-        validated = validate_automatic_identity_assessment(dict(assessment))
-        if validated.userId != self.user_id:
+    def upsert_snapshot(self, date_iso: str, payload: dict[str, Any]) -> None:
+        """Upsert user-scoped recovery snapshot document."""
+        if payload.get("userId") != self.user_id:
             raise ValueError(
-                "Identity assessment userId does not match configured Firestore repository user_id"
+                f"Payload userId '{payload.get('userId')}' does not match configured user_id '{self.user_id}'"
             )
-        doc_ref = self._identity_bundle_doc_ref(validated.bundleId)
-        payload = validated.model_dump(mode="json")
-        payload["updatedAt"] = firestore.SERVER_TIMESTAMP
-        try:
-            doc_ref.create(payload)
-        except Conflict as exc:
-            raise ValueError(
-                f"Identity assessment bundle '{validated.bundleId}' is immutable and already exists"
-            ) from exc
 
-    def get_identity_assessment(self, bundle_id: str) -> dict[str, Any] | None:
-        """Return one immutable physiological identity assessment."""
-        doc = self._identity_bundle_doc_ref(bundle_id).get()
-        if not doc.exists:
-            return None
-        data = doc.to_dict()
-        return dict(data) if isinstance(data, dict) else None
+        now_iso = datetime.now(timezone.utc).isoformat()
+        doc_ref = self._get_doc_ref(date_iso)
+        doc_snap = doc_ref.get()
 
-    def save_identity_passport_version(self, passport: Mapping[str, Any]) -> None:
-        """Persist one immutable Physiological Identity Passport version."""
-        validated = validate_identity_passport_version(dict(passport))
-        if validated.userId != self.user_id:
-            raise ValueError(
-                "Identity passport userId does not match configured Firestore repository user_id"
-            )
-        doc_ref = (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("identity_passport_versions")
-            .document(validated.passportVersionId)
-        )
-        payload = validated.model_dump(mode="json")
-        payload["updatedAt"] = firestore.SERVER_TIMESTAMP
-        try:
-            doc_ref.create(payload)
-        except Conflict as exc:
-            raise ValueError(
-                f"Identity passport version '{validated.passportVersionId}' is immutable and already exists"
-            ) from exc
+        if not doc_snap.exists:
+            payload["createdAt"] = payload.get("createdAt") or now_iso
 
-    def get_identity_passport_version(self, passport_version_id: str) -> dict[str, Any] | None:
-        """Return one immutable Physiological Identity Passport version."""
-        doc = (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("identity_passport_versions")
-            .document(passport_version_id)
-            .get()
-        )
-        if not doc.exists:
-            return None
-        data = doc.to_dict()
-        return dict(data) if isinstance(data, dict) else None
+        payload["updatedAt"] = now_iso
 
-    def save_identity_passport_current(self, current: Mapping[str, Any]) -> None:
-        """Persist the mutable pointer to the currently active passport version."""
-        validated = validate_identity_passport_current(dict(current))
-        if validated.userId != self.user_id:
-            raise ValueError(
-                "Identity passport current userId does not match configured Firestore repository user_id"
-            )
-        payload = validated.model_dump(mode="json")
-        payload["updatedAt"] = firestore.SERVER_TIMESTAMP
-        self._identity_current_doc_ref().set(payload, merge=False)
-
-    def get_identity_passport_current(self) -> dict[str, Any] | None:
-        """Return the mutable pointer to the currently active passport version."""
-        doc = self._identity_current_doc_ref().get()
-        if not doc.exists:
-            return None
-        data = doc.to_dict()
-        return dict(data) if isinstance(data, dict) else None
-
-    def save_identity_review_event(self, event: Mapping[str, Any]) -> None:
-        """Persist one immutable user review decision for a suspicious identity bundle."""
-        validated = validate_identity_review_event(dict(event))
-        if validated.userId != self.user_id:
-            raise ValueError(
-                "Identity review event userId does not match configured Firestore repository user_id"
-            )
-        doc_ref = (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("health_identity_reviews")
-            .document(validated.reviewId)
-        )
-        payload = validated.model_dump(mode="json")
-        payload["updatedAt"] = firestore.SERVER_TIMESTAMP
-        try:
-            doc_ref.create(payload)
-        except Conflict as exc:
-            raise ValueError(
-                f"Identity review '{validated.reviewId}' is immutable and already exists"
-            ) from exc
-
-    def get_identity_review_event(self, review_id: str) -> dict[str, Any] | None:
-        """Return one immutable user review decision."""
-        doc = (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("health_identity_reviews")
-            .document(review_id)
-            .get()
-        )
-        if not doc.exists:
-            return None
-        data = doc.to_dict()
-        return dict(data) if isinstance(data, dict) else None
-
-    def iter_identity_assessments(
-        self,
-        *,
-        start_date: str,
-        end_date: str,
-    ) -> Iterator[dict[str, Any]]:
-        """Yield physiological identity assessments in deterministic date/bundle order."""
-        query = (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("health_identity_bundles")
-            .where(filter=FieldFilter("logicalDate", ">=", start_date))
-            .where(filter=FieldFilter("logicalDate", "<=", end_date))
-            .order_by("logicalDate")
-        )
-        rows: list[dict[str, Any]] = []
-        for doc in query.stream():
-            data = doc.to_dict()
-            if isinstance(data, dict):
-                rows.append(dict(data))
-        rows.sort(key=lambda row: (str(row.get("logicalDate", "")), str(row.get("bundleId", ""))))
-        yield from rows
-
-    def iter_identity_reviews(
-        self,
-        *,
-        start_date: str,
-        end_date: str,
-    ) -> Iterator[dict[str, Any]]:
-        """Yield immutable identity review events in deterministic date/review order."""
-        query = (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("health_identity_reviews")
-            .where(filter=FieldFilter("logicalDate", ">=", start_date))
-            .where(filter=FieldFilter("logicalDate", "<=", end_date))
-            .order_by("logicalDate")
-        )
-        rows: list[dict[str, Any]] = []
-        for doc in query.stream():
-            data = doc.to_dict()
-            if isinstance(data, dict):
-                rows.append(dict(data))
-        rows.sort(key=lambda row: (str(row.get("logicalDate", "")), str(row.get("reviewId", ""))))
-        yield from rows
-
-    def build_effective_identity_decision_index(
-        self,
-        *,
-        start_date: str,
-        end_date: str,
-    ) -> dict[IdentityBundleKey, EffectiveIdentityDecisionProjection]:
-        """Build effective identity outcomes with immutable user reviews overriding automation."""
-        return build_effective_identity_decision_index(
-            self.iter_identity_assessments(start_date=start_date, end_date=end_date),
-            self.iter_identity_reviews(start_date=start_date, end_date=end_date),
+        doc_ref.set(payload, merge=True)
+        logger.info(
+            f"Successfully saved user-scoped snapshot users/{self.user_id}/{self.collection_name}/{date_iso}."
         )
 
-    def list_identity_training_observations(
-        self,
-        *,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return identity-attributed historical observations newest-first.
-
-        This bounded read powers PI3 historical passport bootstrap. Observations are read
-        from the canonical `health_observations` collection and the persisted `identity`
-        attribution block is preserved for caller-side filtering.
-        """
-        query = self.db.collection("users").document(self.user_id).collection("health_observations")
-        if hasattr(query, "order_by"):
-            query = query.order_by("logicalDate", direction=firestore.Query.DESCENDING)
-        if limit is not None and hasattr(query, "limit"):
-            query = query.limit(limit)
-
-        rows: list[dict[str, Any]] = []
-        for doc in query.stream():
-            data = doc.to_dict()
-            if isinstance(data, dict):
-                rows.append(dict(data))
-        return rows
-
-    def list_identity_reviewed_reference_rows(
-        self,
-        *,
-        limit: int | None = None,
-    ) -> list[dict[str, Any]]:
-        """Return reviewed identity bundles as signed reference rows for passport bootstrap."""
-        reviews_query = (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("health_identity_reviews")
-        )
-        if hasattr(reviews_query, "order_by"):
-            reviews_query = reviews_query.order_by(
-                "logicalDate", direction=firestore.Query.DESCENDING
-            )
-        if limit is not None and hasattr(reviews_query, "limit"):
-            reviews_query = reviews_query.limit(limit)
-
-        rows: list[dict[str, Any]] = []
-        for review_doc in reviews_query.stream():
-            review = review_doc.to_dict()
-            if not isinstance(review, dict):
-                continue
-            bundle_id = review.get("bundleId")
-            if not isinstance(bundle_id, str) or not bundle_id:
-                continue
-            bundle = self.get_identity_assessment(bundle_id)
-            if not bundle:
-                continue
-            rows.append(
-                {
-                    "review": dict(review),
-                    "bundle": bundle,
-                }
-            )
-        return rows
-
-    def list_identity_passport_versions(self, *, limit: int | None = None) -> list[dict[str, Any]]:
-        """Return immutable passport versions newest-first."""
-        query = (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("identity_passport_versions")
-        )
-        if hasattr(query, "order_by"):
-            query = query.order_by("createdAt", direction=firestore.Query.DESCENDING)
-        if limit is not None and hasattr(query, "limit"):
-            query = query.limit(limit)
-
-        rows: list[dict[str, Any]] = []
-        for doc in query.stream():
-            data = doc.to_dict()
-            if isinstance(data, dict):
-                rows.append(dict(data))
-        return rows
-
-    def list_identity_review_events(self, *, limit: int | None = None) -> list[dict[str, Any]]:
-        """Return immutable identity review events newest-first."""
-        query = (
-            self.db.collection("users")
-            .document(self.user_id)
-            .collection("health_identity_reviews")
-        )
-        if hasattr(query, "order_by"):
-            query = query.order_by("createdAt", direction=firestore.Query.DESCENDING)
-        if limit is not None and hasattr(query, "limit"):
-            query = query.limit(limit)
-
-        rows: list[dict[str, Any]] = []
-        for doc in query.stream():
-            data = doc.to_dict()
-            if isinstance(data, dict):
-                rows.append(dict(data))
-        return rows
-
-    def get_identity_bundle_evidence_rows(
-        self,
-        *,
-        bundle_id: str,
-    ) -> list[dict[str, Any]]:
-        """Return the persisted observation rows referenced by one identity bundle."""
-        bundle = self.get_identity_assessment(bundle_id)
-        if not bundle:
-            return []
-
-        observation_ids = bundle.get("observationIds")
-        if not isinstance(observation_ids, list):
-            return []
-
-        collection = (
-            self.db.collection("users").document(self.user_id).collection("health_observations")
-        )
-        rows: list[dict[str, Any]] = []
-        for observation_id in observation_ids:
-            if not isinstance(observation_id, str) or not observation_id:
-                continue
-            doc = collection.document(observation_id).get()
-            if doc.exists:
-                data = doc.to_dict()
-                if isinstance(data, dict):
-                    rows.append(dict(data))
-        return rows
-
-    def batch_get_identity_assessments(self, bundle_ids: Iterable[str]) -> dict[str, dict[str, Any]]:
-        """Return existing physiological identity assessments keyed by bundle id."""
-        ids = list(dict.fromkeys(bundle_ids))
-        if not ids:
-            return {}
-        refs = [self._identity_bundle_doc_ref(bundle_id) for bundle_id in ids]
-        documents = self.db.get_all(refs)
-        result: dict[str, dict[str, Any]] = {}
-        for doc in documents:
-            if not doc.exists:
-                continue
-            data = doc.to_dict()
-            if isinstance(data, dict):
-                bundle_id = data.get("bundleId")
-                if isinstance(bundle_id, str):
-                    result[bundle_id] = dict(data)
-        return result
-
-    def batch_get_identity_reviews_by_bundle_id(
-        self, bundle_ids: Iterable[str]
+    def get_historical_snapshots(
+        self, start_date_iso: str, end_date_iso: str
     ) -> dict[str, dict[str, Any]]:
-        """Return latest review for each physiological identity bundle."""
-        ids = list(dict.fromkeys(bundle_ids))
-        if not ids:
-            return {}
+        """Fetch historical snapshots in range [start_date_iso, end_date_iso]."""
+        db = self._get_db()
+        docs = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection(self.collection_name)
+            .where(filter=FieldFilter("date", ">=", start_date_iso))
+            .where(filter=FieldFilter("date", "<=", end_date_iso))
+            .stream()
+        )
 
         results: dict[str, dict[str, Any]] = {}
-        collection = (
-            self.db.collection("users").document(self.user_id).collection("health_identity_reviews")
-        )
-        for chunk in itertools.batched(ids, 30):
-            query = collection.where(filter=FieldFilter("bundleId", "in", list(chunk)))
-            for doc in query.stream():
-                data = doc.to_dict()
-                if not isinstance(data, dict):
-                    continue
-                bundle_id = data.get("bundleId")
-                if not isinstance(bundle_id, str):
-                    continue
-                previous = results.get(bundle_id)
-                if previous is None or str(data.get("createdAt", "")) > str(
-                    previous.get("createdAt", "")
-                ):
-                    results[bundle_id] = dict(data)
+        for doc in docs:
+            data = doc.to_dict()
+            date_key = data.get("date") or doc.id
+            results[date_key] = data
         return results
+
+    def upsert_activity(self, activity_id: str | int, payload: dict[str, Any]) -> None:
+        """Upsert a normalized activity record at users/{userId}/activities/{activityId}.
+        Doc ID = activityId, so re-fetching the same activity across overlapping sync
+        windows (e.g. daily 3-day lookback, backfill) naturally dedups instead of
+        creating duplicate records."""
+        db = self._get_db()
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("activities")
+            .document(str(activity_id))
+        )
+        doc_ref.set(payload, merge=True)
+
+    def upsert_activities(self, activities: list[tuple[str | int, dict[str, Any]]]) -> None:
+        """Batch upsert normalized activity records.
+        Handles Firestore's 500 document limit per batch automatically."""
+        if not activities:
+            return
+
+        db = self._get_db()
+        collection_ref = db.collection("users").document(self.user_id).collection("activities")
+
+        # Firestore batches are limited to 500 operations
+        batch_size = 500
+        for i in range(0, len(activities), batch_size):
+            chunk = activities[i : i + batch_size]
+            batch = db.batch()
+            for activity_id, payload in chunk:
+                doc_ref = collection_ref.document(str(activity_id))
+                batch.set(doc_ref, payload, merge=True)
+            batch.commit()
+
+    def get_activities_in_range(
+        self, start_date_iso: str, end_date_iso: str
+    ) -> list[dict[str, Any]]:
+        """Fetch normalized activities in range [start_date_iso, end_date_iso]."""
+        db = self._get_db()
+        docs = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("activities")
+            .where(filter=FieldFilter("date", ">=", start_date_iso))
+            .where(filter=FieldFilter("date", "<=", end_date_iso))
+            .order_by("date")
+            .stream()
+        )
+        return [doc.to_dict() for doc in docs]
+
+    def upsert_garmin_performance_targets(self, targets: Any) -> None:
+        """Merge Garmin's current targets into the user's preference profile.
+
+        Active targets are intentionally field-level owned: importing a new Garmin
+        value never replaces a target the coach/user marked ``manual``. Existing
+        target values without provenance predate this feature and are conservatively
+        treated as manual on their first import.
+        """
+        db = self._get_db()
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("preferences")
+            .document("profile")
+        )
+        now_iso = datetime.now(timezone.utc).isoformat()
+        incoming = {
+            "ftpWatts": targets.cycling_ftp_watts,
+            "thresholdPaceSecPerKm": targets.running_threshold_pace_sec_per_km,
+            "lthrBpm": targets.running_lthr_bpm,
+            "weightKg": targets.weight_kg,
+            "bodyFatPct": targets.body_fat_pct,
+        }
+        measured_at = {
+            "ftpMeasuredAt": targets.ftp_measured_at,
+            "thresholdMeasuredAt": targets.threshold_measured_at,
+            "lthrMeasuredAt": targets.lthr_measured_at,
+            "weightMeasuredAt": targets.weight_measured_at,
+        }
+
+        @firestore.transactional  # pyright: ignore[reportAttributeAccessIssue]
+        def merge_targets(transaction: Any) -> None:
+            snapshot = doc_ref.get(transaction=transaction)
+            existing: dict[str, Any] = cast(
+                dict[str, Any], snapshot.to_dict() if snapshot.exists else {}
+            )
+            raw_profile = existing.get("performanceProfile")
+            profile: dict[str, Any] = (
+                cast(dict[str, Any], raw_profile) if isinstance(raw_profile, dict) else {}
+            )
+            raw_sources = profile.get("targetSources")
+            sources: dict[str, Any] = (
+                cast(dict[str, Any], raw_sources) if isinstance(raw_sources, dict) else {}
+            )
+
+            raw_garmin = profile.get("garmin")
+            garmin: dict[str, Any] = (
+                cast(dict[str, Any], raw_garmin) if isinstance(raw_garmin, dict) else {}
+            )
+            # A partial Garmin response must not erase a previously successful import
+            # for another target (for example, cycling FTP can be available while
+            # running lactate threshold is not configured on the account).
+            garmin.update({key: value for key, value in incoming.items() if value is not None})
+            garmin.update({key: value for key, value in measured_at.items() if value is not None})
+            if targets.race_predictions is not None:
+                raw_race_predictions = garmin.get("racePredictions")
+                race_predictions: dict[str, Any] = (
+                    dict(raw_race_predictions) if isinstance(raw_race_predictions, dict) else {}
+                )
+                incoming_race_predictions = {
+                    "fiveKmSec": targets.race_predictions.five_km_sec,
+                    "tenKmSec": targets.race_predictions.ten_km_sec,
+                    "halfMarathonSec": targets.race_predictions.half_marathon_sec,
+                    "marathonSec": targets.race_predictions.marathon_sec,
+                }
+                race_predictions.update(
+                    {
+                        key: value
+                        for key, value in incoming_race_predictions.items()
+                        if value is not None
+                    }
+                )
+                race_predictions["fetchedAt"] = now_iso
+                garmin["racePredictions"] = race_predictions
+                profile["racePredictions"] = dict(race_predictions)
+            garmin["fetchedAt"] = now_iso
+            profile["garmin"] = garmin
+
+            for key, value in incoming.items():
+                if value is None:
+                    continue
+                source = sources.get(key)
+                existing_value = profile.get(key)
+                if source in {"manual", "coach"}:
+                    continue
+                if source == "garmin" or existing_value is None:
+                    profile[key] = value
+                    sources[key] = "garmin"
+                else:
+                    # Old documents have active values but no ownership metadata. The
+                    # safe migration is manual; an explicit UI action can adopt Garmin.
+                    sources[key] = "manual"
+
+            if sources:
+                profile["targetSources"] = sources
+
+            payload: dict[str, Any] = {
+                "userId": self.user_id,
+                "performanceProfile": profile,
+                "updatedAt": now_iso,
+            }
+            # A scheduled Garmin sync can run before the client has opened the app and
+            # created preferences. Do not leave that first-run document partial: the
+            # frontend treats an existing preferences record as complete.
+            if not snapshot.exists:
+                payload.update(
+                    {
+                        "preferredRecoveryStyle": "mixed",
+                        "defaultWeekdayTimeMin": 45,
+                        "defaultWeekendTimeMin": 60,
+                        "preferredTimeOfDay": "flexible",
+                        "preferredModalities": ["Running", "Cycling", "Strength"],
+                        "deprioritizedModalities": [],
+                        "avoidedModalities": [],
+                        "unavailableModalities": [],
+                        "explanationVerbosity": "detailed",
+                        "conservativeBias": False,
+                        "preferredUnits": {
+                            "distance": "km",
+                            "weight": "kg",
+                            "temperature": "celsius",
+                        },
+                        "schemaVersion": 1,
+                        "createdAt": now_iso,
+                    }
+                )
+            transaction.set(doc_ref, payload, merge=True)
+
+        merge_targets(db.transaction())
+        logger.info(
+            "Updated Garmin performance targets in user-scoped preferences for user=<UID-redacted>."
+        )
+
+    def upsert_garmin_gear(self, gear_items: list[Any]) -> None:
+        """Persist gear items to user collection and update preferences profile gearTracker."""
+        if not gear_items:
+            return
+        db = self._get_db()
+        now_iso = datetime.now(timezone.utc).isoformat()
+
+        profile_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("preferences")
+            .document("profile")
+        )
+
+        gear_dicts = [
+            {
+                key: value
+                for key, value in {
+                    "gearPk": item.gear_pk,
+                    "uuid": item.uuid,
+                    "customMakeModel": item.custom_make_model,
+                    "displayName": item.display_name,
+                    "gearType": item.gear_type,
+                    "brand": item.brand,
+                    "model": item.model,
+                    "totalDistanceKm": item.total_distance_km,
+                    "maximumDistanceKm": item.maximum_distance_km,
+                    "dateBegin": item.date_begin,
+                    "dateEnd": item.date_end,
+                    "status": item.status,
+                }.items()
+                if value is not None
+            }
+            for item in gear_items
+        ]
+
+        batch = db.batch()
+        batch.set(
+            profile_ref,
+            {
+                "userId": self.user_id,
+                "gearTracker": {
+                    "items": gear_dicts,
+                    "syncedAt": now_iso,
+                },
+                "updatedAt": now_iso,
+            },
+            merge=True,
+        )
+
+        for item, g_dict in zip(gear_items, gear_dicts, strict=True):
+            gear_doc_ref = (
+                db.collection("users")
+                .document(self.user_id)
+                .collection("gear")
+                .document(item.gear_pk)
+            )
+            batch.set(
+                gear_doc_ref,
+                {
+                    "userId": self.user_id,
+                    **g_dict,
+                    "updatedAt": now_iso,
+                },
+                merge=True,
+            )
+
+        batch.commit()
+        logger.info(
+            "Updated Garmin gear items (%d) for user=<UID-redacted>.",
+            len(gear_items),
+        )
+
+    def count_activities_in_range(self, start_date_iso: str, end_date_iso: str) -> int:
+        """Count normalized activity records with date in [start_date_iso, end_date_iso]."""
+        db = self._get_db()
+        query = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("activities")
+            .where(filter=FieldFilter("date", ">=", start_date_iso))
+            .where(filter=FieldFilter("date", "<=", end_date_iso))
+        )
+        try:
+            agg = query.count()
+            result = agg.get()
+            return int(result[0][0].value)
+        except Exception:
+            # Firestore aggregation queries may be unavailable in older emulators/mocks --
+            # fall back to a client-side count. Use select([]) to project only document
+            # IDs, avoiding full document payload transfer.
+            return sum(1 for _ in query.select([]).stream())
+
+    def save_health_observation_day_bundle(
+        self,
+        bundle: Any,  # HealthObservationDayBundle
+    ) -> tuple[bool, int]:
+        """Save a day-source observation bundle to Firestore under
+        users/{userId}/health_observation_days/{YYYY-MM-DD}_{provider}_{transport}.
+
+        Returns (changed: bool, revision: int). If identical payload exists, returns (False, rev).
+        If payload updated, increments revision and saves.
+        """
+        db = self._get_db()
+        doc_id = f"{bundle.logicalDate}_{bundle.provider}_{bundle.transport}"
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("health_observation_days")
+            .document(doc_id)
+        )
+
+        now_iso = datetime.now(timezone.utc).isoformat()
+        transaction = getattr(db, "transaction", None)
+
+        if callable(transaction) and firestore is not None:
+
+            @firestore.transactional
+            def _update_in_txn(txn: Any) -> tuple[bool, int]:
+                existing_doc = doc_ref.get(transaction=txn)
+                current_rev = 1
+                if existing_doc.exists:
+                    data = existing_doc.to_dict() or {}
+                    existing_hash = data.get("sourcePayloadHash")
+                    existing_normalizer_version = data.get("normalizerVersion", 1)
+                    current_rev = data.get("revision", 1)
+                    if (
+                        existing_hash == bundle.sourcePayloadHash
+                        and existing_normalizer_version >= bundle.normalizerVersion
+                    ):
+                        return False, current_rev
+                    current_rev += 1
+
+                bundle.revision = current_rev
+                bundle.ingestedAt = now_iso
+                bundle.effectiveAt = now_iso
+                txn.set(doc_ref, bundle.to_dict())
+                return True, current_rev
+
+            txn = db.transaction()
+            changed, current_rev = _update_in_txn(txn)
+        else:
+            existing_doc = doc_ref.get()
+            current_rev = 1
+            if existing_doc.exists:
+                data = existing_doc.to_dict() or {}
+                existing_hash = data.get("sourcePayloadHash")
+                existing_normalizer_version = data.get("normalizerVersion", 1)
+                current_rev = data.get("revision", 1)
+                if (
+                    existing_hash == bundle.sourcePayloadHash
+                    and existing_normalizer_version >= bundle.normalizerVersion
+                ):
+                    logger.debug(
+                        "Health observation bundle %s already up to date at revision %d.",
+                        doc_id,
+                        current_rev,
+                    )
+                    return False, current_rev
+                current_rev += 1
+
+            bundle.revision = current_rev
+            bundle.ingestedAt = now_iso
+            bundle.effectiveAt = now_iso
+            doc_ref.set(bundle.to_dict())
+            changed = True
+
+        if changed:
+            logger.info(
+                "Saved health observation bundle %s for user=<UID-redacted> at revision %d (%d observations).",
+                doc_id,
+                current_rev,
+                len(bundle.observations),
+            )
+        else:
+            logger.debug(
+                "Health observation bundle %s already up to date at revision %d.",
+                doc_id,
+                current_rev,
+            )
+        return changed, current_rev
+
+    def get_health_observation_day_bundle(
+        self,
+        logical_date: str,
+        provider: str,
+        transport: str,
+    ) -> dict[str, Any] | None:
+        """Retrieve a specific day-source bundle from Firestore."""
+        db = self._get_db()
+        doc_id = f"{logical_date}_{provider}_{transport}"
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("health_observation_days")
+            .document(doc_id)
+        )
+        doc = doc_ref.get()
+        return doc.to_dict() if doc.exists else None
+
+    def delete_health_observation_day_bundle(
+        self,
+        logical_date: str,
+        provider: str,
+        transport: str,
+    ) -> bool:
+        """Delete a specific day-source bundle from Firestore, e.g. when a source that
+        was present in a prior sync is absent from the current authoritative batch and
+        must stop being queryable by fusion/audit code (D-MS reconciliation).
+
+        Returns True if a document existed and was deleted, False if there was nothing
+        to delete.
+        """
+        db = self._get_db()
+        doc_id = f"{logical_date}_{provider}_{transport}"
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("health_observation_days")
+            .document(doc_id)
+        )
+        existing_doc = doc_ref.get()
+        if not existing_doc.exists:
+            return False
+        doc_ref.delete()
+        return True
+
+    def delete_health_observation_day_bundles_batch(
+        self,
+        keys: list[tuple[str, str, str]],
+    ) -> int:
+        """Batch delete multiple day-source bundles from Firestore.
+
+        Keys should be a list of (logical_date, provider, transport) tuples.
+        Deletes are executed in batches of 500 to respect Firestore limits.
+
+        Returns the total number of deletion operations submitted to batches.
+        """
+        if not keys:
+            return 0
+
+        db = self._get_db()
+        collection_ref = (
+            db.collection("users").document(self.user_id).collection("health_observation_days")
+        )
+
+        def batched(
+            iterable: Iterable[tuple[str, str, str]], n: int
+        ) -> Iterator[list[tuple[str, str, str]]]:
+            it = iter(iterable)
+            while chunk := list(itertools.islice(it, n)):
+                yield chunk
+
+        deleted_count = 0
+        for chunk in batched(keys, 500):
+            batch = db.batch()
+            for logical_date, provider, transport in chunk:
+                doc_id = f"{logical_date}_{provider}_{transport}"
+                doc_ref = collection_ref.document(doc_id)
+                batch.delete(doc_ref)
+                deleted_count += 1
+            batch.commit()
+
+        return deleted_count
+
+    def get_health_observation_bundles_in_range(
+        self,
+        start_date: str,
+        end_date: str,
+        provider: str | None = None,
+        transport: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Retrieve all health observation day bundles within [start_date, end_date]."""
+        db = self._get_db()
+        query = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("health_observation_days")
+            .where(filter=FieldFilter("logicalDate", ">=", start_date))
+            .where(filter=FieldFilter("logicalDate", "<=", end_date))
+        )
+
+        docs: list[dict[str, Any]] = []
+        chunk_size = 500
+        paged_query = query.limit(chunk_size)
+
+        while True:
+            chunk_docs = list(paged_query.stream())
+            if not chunk_docs:
+                break
+
+            for doc in chunk_docs:
+                data = doc.to_dict()
+                if provider and data.get("provider") != provider:
+                    continue
+                if transport and data.get("transport") != transport:
+                    continue
+                docs.append(data)
+
+            if len(chunk_docs) < chunk_size:
+                break
+
+            last_doc = chunk_docs[-1]
+            paged_query = query.start_after(last_doc).limit(chunk_size)
+
+        docs.sort(key=lambda d: d.get("logicalDate", ""))
+        return docs
+
+    def save_connection_metadata(
+        self,
+        connection_name: str,
+        metadata: dict[str, Any],
+    ) -> None:
+        """Save non-secret connection metadata to users/{userId}/connections/{connection_name}."""
+        db = self._get_db()
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("connections")
+            .document(connection_name)
+        )
+        doc_ref.set(metadata, merge=True)
+
+    def get_connection_metadata(
+        self,
+        connection_name: str,
+    ) -> dict[str, Any] | None:
+        """Retrieve connection metadata from users/{userId}/connections/{connection_name}."""
+        db = self._get_db()
+        doc_ref = (
+            db.collection("users")
+            .document(self.user_id)
+            .collection("connections")
+            .document(connection_name)
+        )
+        doc = doc_ref.get()
+        return doc.to_dict() if doc.exists else None
+
+    def _identity_collection(self, collection_name: str) -> Any:
+        return self._get_db().collection("users").document(self.user_id).collection(collection_name)
+
+    def _save_immutable_identity_document(
+        self,
+        collection_name: str,
+        document_id: str,
+        payload: Mapping[str, Any],
+    ) -> bool:
+        """Create an immutable server-owned identity document atomically and idempotently.
+
+        Firestore ``create`` is a single create-only write. Replaying the exact bytes after a
+        conflict is a no-op; reusing an existing identity for different content is rejected so a
+        concurrent writer cannot overwrite evidence needed by historical replay.
+        """
+
+        if not document_id:
+            raise ValueError("Identity document id must be non-empty.")
+        stored = dict(payload)
+        doc_ref = self._identity_collection(collection_name).document(document_id)
+        try:
+            doc_ref.create(stored)
+            return True
+        except Conflict as error:
+            snapshot = doc_ref.get()
+            if snapshot.exists and snapshot.to_dict() == stored:
+                return False
+            raise ValueError(
+                f"Immutable identity document {collection_name}/{document_id} already exists "
+                "with different content."
+            ) from error
+
+    def save_identity_passport_version(self, passport: Mapping[str, Any]) -> bool:
+        """Persist one fully validated immutable/replayable passport version."""
+
+        if not validate_identity_passport_version(passport):
+            raise ValueError("Identity passport version does not match the persisted schema.")
+        version = cast(str, passport.get("passportVersion"))
+        return self._save_immutable_identity_document(
+            "physiological_identity_passport_versions", version, passport
+        )
+
+    def set_current_identity_passport(self, passport: Mapping[str, Any]) -> None:
+        """Replace the fully validated server-owned online passport materialization."""
+
+        if not validate_identity_passport_current(passport):
+            raise ValueError("Current identity passport does not match the persisted schema.")
+        self._identity_collection("physiological_identity_passports").document("current").set(
+            dict(passport)
+        )
+
+    def get_current_identity_passport(self) -> dict[str, Any] | None:
+        snapshot = (
+            self._identity_collection("physiological_identity_passports").document("current").get()
+        )
+        return snapshot.to_dict() if snapshot.exists else None
+
+    def get_identity_passport_version(self, version: str) -> dict[str, Any] | None:
+        snapshot = (
+            self._identity_collection("physiological_identity_passport_versions")
+            .document(version)
+            .get()
+        )
+        return snapshot.to_dict() if snapshot.exists else None
+
+    def save_automatic_identity_assessment(self, assessment: Mapping[str, Any]) -> bool:
+        """Persist fully validated immutable model output and every contributing bundle ref."""
+
+        if not validate_automatic_identity_assessment(assessment):
+            raise ValueError("Automatic identity assessment does not match the persisted schema.")
+        assessment_id = cast(str, assessment.get("id"))
+        return self._save_immutable_identity_document(
+            "health_identity_assessments", assessment_id, assessment
+        )
+
+    def get_automatic_identity_assessment(self, assessment_id: str) -> dict[str, Any] | None:
+        snapshot = (
+            self._identity_collection("health_identity_assessments").document(assessment_id).get()
+        )
+        return snapshot.to_dict() if snapshot.exists else None
+
+    def save_identity_review_event(self, event: Mapping[str, Any]) -> bool:
+        """Persist a fully validated append-only admin/user review event."""
+
+        if not validate_identity_review_event(event):
+            raise ValueError("Identity review event does not match the persisted schema.")
+        event_id = cast(str, event.get("id"))
+        stored_event = dict(event)
+        recorded_at = cast(str, stored_event["recordedAt"])
+        parsed = datetime.fromisoformat(recorded_at.replace("Z", "+00:00"))
+        stored_event["recordedAt"] = parsed
+        return self._save_immutable_identity_document(
+            "health_identity_review_events", event_id, stored_event
+        )
+
+    def get_identity_assessments_in_range(
+        self, start_night_key: str, end_night_key: str
+    ) -> list[dict[str, Any]]:
+        query = (
+            self._identity_collection("health_identity_assessments")
+            .where(filter=FieldFilter("sourceNightKey", ">=", start_night_key))
+            .where(filter=FieldFilter("sourceNightKey", "<=", end_night_key))
+        )
+        assessments = [doc.to_dict() for doc in query.stream()]
+        assessments.sort(key=lambda item: (item.get("sourceNightKey", ""), item.get("id", "")))
+        return assessments
+
+    def get_identity_review_events(self, assessment_id: str) -> list[dict[str, Any]]:
+        query = self._identity_collection("health_identity_review_events").where(
+            filter=FieldFilter("assessmentId", "==", assessment_id)
+        )
+        events = [doc.to_dict() for doc in query.stream()]
+        for event in events:
+            recorded_at = event.get("recordedAt")
+            if isinstance(recorded_at, datetime):
+                event["recordedAt"] = (
+                    recorded_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                )
+        events.sort(key=lambda item: (item.get("recordedAt", ""), item.get("id", "")))
+        return events
+
+    def get_identity_review_events_for_assessments(
+        self, assessment_ids: list[str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        if not assessment_ids:
+            return {}
+
+        reviews_by_assessment: dict[str, list[dict[str, Any]]] = {
+            assessment_id: [] for assessment_id in assessment_ids
+        }
+
+        chunk_size = 30
+        for i in range(0, len(assessment_ids), chunk_size):
+            chunk = assessment_ids[i : i + chunk_size]
+            query = self._identity_collection("health_identity_review_events").where(
+                filter=FieldFilter("assessmentId", "in", chunk)
+            )
+            events = [doc.to_dict() for doc in query.stream()]
+            for event in events:
+                recorded_at = event.get("recordedAt")
+                if isinstance(recorded_at, datetime):
+                    event["recordedAt"] = (
+                        recorded_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                    )
+                assessment_id = event.get("assessmentId")
+                if isinstance(assessment_id, str) and assessment_id in reviews_by_assessment:
+                    reviews_by_assessment[assessment_id].append(event)
+
+        for events in reviews_by_assessment.values():
+            events.sort(key=lambda item: (item.get("recordedAt", ""), item.get("id", "")))
+
+        return reviews_by_assessment
+
+    def get_effective_identity_decision_projections_in_range(
+        self, start_night_key: str, end_night_key: str
+    ) -> dict[IdentityBundleKey, EffectiveIdentityDecisionProjection]:
+        """Derive baseline-authoritative decisions from immutable persisted evidence."""
+
+        assessments = self.get_identity_assessments_in_range(start_night_key, end_night_key)
+
+        assessment_ids = [
+            assessment_id
+            for assessment in assessments
+            if isinstance((assessment_id := assessment.get("id")), str)
+        ]
+
+        reviews = self.get_identity_review_events_for_assessments(assessment_ids)
+        return build_effective_identity_decision_index(assessments, reviews)
