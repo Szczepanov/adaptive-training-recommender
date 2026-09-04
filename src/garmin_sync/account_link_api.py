@@ -79,7 +79,11 @@ def _service() -> GarminAccountLinkService:
         return _SERVICE
 
 
-def _verified_uid(authorization: str | None) -> str | None:
+def _verified_uid(
+    authorization: str | None,
+    *,
+    require_verified_email: bool = False,
+) -> str | None:
     if not authorization:
         return None
     scheme, _, token = authorization.partition(" ")
@@ -96,7 +100,11 @@ def _verified_uid(authorization: str | None) -> str | None:
     sign_in_provider = (
         firebase_claim.get("sign_in_provider") if isinstance(firebase_claim, dict) else None
     )
-    if sign_in_provider == "password" and decoded.get("email_verified") is not True:
+    if (
+        require_verified_email
+        and sign_in_provider == "password"
+        and decoded.get("email_verified") is not True
+    ):
         raise GarminConnectAuthenticationError("Verify your email before linking Garmin.")
     return str(uid)
 
@@ -281,7 +289,10 @@ class GarminAccountLinkHandler(BaseJSONRequestHandler):
                 retryable=True,
             )
             return
-        requested_uid = _verified_uid(self.headers.get("Authorization"))
+        requested_uid = _verified_uid(
+            self.headers.get("Authorization"),
+            require_verified_email=True,
+        )
         result = _service().start_login(email, password, requested_uid=requested_uid)
         self._json_response(HTTPStatus.OK, result)
 

@@ -141,6 +141,35 @@ def test_status_handler_returns_reconciled_status(monkeypatch: Any) -> None:
     ]
 
 
+def test_status_handler_allows_unverified_password_user(monkeypatch: Any) -> None:
+    handler = account_link_api.GarminAccountLinkHandler.__new__(
+        account_link_api.GarminAccountLinkHandler
+    )
+    handler.headers = {"Authorization": "Bearer app-token"}  # type: ignore[assignment]
+    captured: list[tuple[HTTPStatus, dict[str, Any]]] = []
+    handler._json_response = lambda status, payload: captured.append(  # type: ignore[method-assign]
+        (status, payload)
+    )
+
+    def mock_verify_id_token(token: str, *, check_revoked: bool) -> dict[str, Any]:
+        return {
+            "uid": "uid-1",
+            "email_verified": False,
+            "firebase": {"sign_in_provider": "password"},
+        }
+
+    monkeypatch.setattr(account_link_api.firebase_auth, "verify_id_token", mock_verify_id_token)
+    monkeypatch.setattr(
+        account_link_api,
+        "reconcile_garmin_connection_status",
+        lambda uid: {"status": "disconnected", "linkedAt": None},
+    )
+
+    handler._handle_status()  # noqa: SLF001 - endpoint contract regression
+
+    assert captured == [(HTTPStatus.OK, {"status": "disconnected", "linkedAt": None})]
+
+
 def test_linked_at_json_returns_none_for_invalid_value() -> None:
     assert connection_status._linked_at_json("not-a-datetime") is None
 

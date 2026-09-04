@@ -118,7 +118,7 @@ def test_verified_uid_raises_authentication_error_on_verify_id_token_exception(
         account_link_api._verified_uid("Bearer any-token")  # noqa: SLF001
 
 
-def test_verified_uid_checks_revocation_and_rejects_unverified_password_user(
+def test_verified_uid_checks_revocation_and_rejects_unverified_password_user_when_required(
     monkeypatch: Any,
 ) -> None:
     def mock_verify_id_token(token: str, *, check_revoked: bool) -> dict[str, Any]:
@@ -133,7 +133,27 @@ def test_verified_uid_checks_revocation_and_rejects_unverified_password_user(
     monkeypatch.setattr(account_link_api.firebase_auth, "verify_id_token", mock_verify_id_token)
 
     with pytest.raises(GarminConnectAuthenticationError, match="Verify your email"):
-        account_link_api._verified_uid("Bearer valid-token")  # noqa: SLF001
+        account_link_api._verified_uid(
+            "Bearer valid-token",
+            require_verified_email=True,
+        )  # noqa: SLF001
+
+
+def test_verified_uid_allows_unverified_password_user_when_email_verification_not_required(
+    monkeypatch: Any,
+) -> None:
+    def mock_verify_id_token(token: str, *, check_revoked: bool) -> dict[str, Any]:
+        assert token == "valid-token"
+        assert check_revoked is True
+        return {
+            "uid": "uid-1",
+            "email_verified": False,
+            "firebase": {"sign_in_provider": "password"},
+        }
+
+    monkeypatch.setattr(account_link_api.firebase_auth, "verify_id_token", mock_verify_id_token)
+
+    assert account_link_api._verified_uid("Bearer valid-token") == "uid-1"  # noqa: SLF001
 
 
 def test_log_message_redacts_query_parameters(monkeypatch: Any) -> None:
