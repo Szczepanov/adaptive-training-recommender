@@ -51,7 +51,9 @@ def test_init_firestore_client_explicit_path_overrides_environment(monkeypatch, 
     certificate.assert_called_once_with(str(explicit_file))
 
 
-def test_init_firestore_client_rejects_missing_configured_credentials(monkeypatch, tmp_path):
+def test_init_firestore_client_rejects_missing_configured_credentials(
+    monkeypatch, tmp_path,
+):
     missing_file = tmp_path / "missing-service-account.json"
     initialize_app = MagicMock()
 
@@ -59,7 +61,9 @@ def test_init_firestore_client_rejects_missing_configured_credentials(monkeypatc
     monkeypatch.setattr(firestore_repository.firebase_admin, "initialize_app", initialize_app)
     monkeypatch.setenv("FIREBASE_CREDENTIALS_PATH", str(missing_file))
 
-    with pytest.raises(FileNotFoundError, match="does not exist or is not a regular file"):
+    with pytest.raises(
+        FileNotFoundError, match="does not exist or is not a regular file"
+    ):
         firestore_repository.init_firestore_client()
 
     initialize_app.assert_not_called()
