@@ -1,10 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import {
-  ExerciseDaysSlider,
-  OnboardingWizard,
-  weeklyCommitmentFromExerciseDays,
-} from './OnboardingWizard';
+import { ExerciseDaysSlider, OnboardingWizard } from './OnboardingWizard';
+import { weeklyCommitmentFromExerciseDays } from './onboarding/weeklyCommitment';
 
 describe('OnboardingWizard', () => {
   it('renders Step 1 welcome screen by default', () => {
