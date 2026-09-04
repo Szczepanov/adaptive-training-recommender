@@ -1,10 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { getAuthInstance } from '../firebase';
-import { onAuthStateChanged, signOut } from 'firebase/auth';
+import { onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
 import { preferencesService } from '../services/preferencesService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
-import { requiresEmailVerification } from '../services/emailAuthService';
 
 type AuthPhase = 'CHECKING' | 'LOGIN' | 'AUTHENTICATED';
 
@@ -43,15 +42,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const unsubscribe = onAuthStateChanged(getAuthInstance(), async (firebaseUser) => {
       setUser(firebaseUser);
       if (firebaseUser) {
-        if (requiresEmailVerification(firebaseUser)) {
-          setUser(null);
-          setUserId(null);
-          setAuthPhase('LOGIN');
-          void signOut(getAuthInstance()).catch((error) => {
-            console.error('Failed to clear unverified email session:', error);
-          });
-          return;
-        }
         setUserId(firebaseUser.uid);
         setAuthPhase('AUTHENTICATED');
         // Initialize user data in the background

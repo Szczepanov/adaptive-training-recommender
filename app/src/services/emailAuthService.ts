@@ -3,7 +3,6 @@ import {
     sendEmailVerification,
     sendPasswordResetEmail,
     signInWithEmailAndPassword,
-    signOut,
     validatePassword,
     type Auth,
     type User,
@@ -27,17 +26,8 @@ function authCode(error: unknown): string | undefined {
 
 export const emailAuthService = {
     async signIn(auth: Auth, email: string, password: string): Promise<EmailSignInResult> {
-        const credential = await signInWithEmailAndPassword(auth, email, password);
-        if (!requiresEmailVerification(credential.user)) return { status: 'authenticated' };
-
-        try {
-            // Re-send on a successful password proof so users can recover from an expired or
-            // misplaced initial message. Firebase applies its own abuse throttling.
-            await sendEmailVerification(credential.user);
-        } finally {
-            await signOut(auth);
-        }
-        return { status: 'verification_required' };
+        await signInWithEmailAndPassword(auth, email, password);
+        return { status: 'authenticated' };
     },
 
     async signUp(auth: Auth, email: string, password: string): Promise<void> {
@@ -52,9 +42,8 @@ export const emailAuthService = {
         const credential = await createUserWithEmailAndPassword(auth, email, password);
         try {
             await sendEmailVerification(credential.user);
-        } finally {
-            // Account initialization and health-data access wait for verified ownership.
-            await signOut(auth);
+        } catch (error) {
+            console.warn('Failed to send email verification:', error);
         }
     },
 

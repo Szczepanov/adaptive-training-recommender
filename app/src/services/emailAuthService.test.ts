@@ -36,14 +36,13 @@ describe('emailAuthService', () => {
         } as never)).toBe(false);
     });
 
-    it('signs out an unverified password user and re-sends verification', async () => {
+    it('authenticates unverified password users without signing them out', async () => {
         firebaseAuth.signInWithEmailAndPassword.mockResolvedValue({ user: passwordUser(false) });
 
         await expect(emailAuthService.signIn(auth, 'athlete@example.com', 'secret')).resolves.toEqual({
-            status: 'verification_required',
+            status: 'authenticated',
         });
-        expect(firebaseAuth.sendEmailVerification).toHaveBeenCalledOnce();
-        expect(firebaseAuth.signOut).toHaveBeenCalledWith(auth);
+        expect(firebaseAuth.signOut).not.toHaveBeenCalled();
     });
 
     it('allows verified password users and Garmin custom-token users', async () => {
@@ -63,13 +62,22 @@ describe('emailAuthService', () => {
         expect(firebaseAuth.createUserWithEmailAndPassword).not.toHaveBeenCalled();
     });
 
-    it('sends verification and signs out after account creation', async () => {
+    it('sends verification and keeps user signed in after account creation', async () => {
         const user = passwordUser(false);
         firebaseAuth.createUserWithEmailAndPassword.mockResolvedValue({ user });
 
         await emailAuthService.signUp(auth, 'athlete@example.com', 'strong-password');
         expect(firebaseAuth.sendEmailVerification).toHaveBeenCalledWith(user);
-        expect(firebaseAuth.signOut).toHaveBeenCalledWith(auth);
+        expect(firebaseAuth.signOut).not.toHaveBeenCalled();
+    });
+
+    it('does not fail account creation if sending verification email fails', async () => {
+        const user = passwordUser(false);
+        firebaseAuth.createUserWithEmailAndPassword.mockResolvedValue({ user });
+        firebaseAuth.sendEmailVerification.mockRejectedValue(new Error('Network error'));
+
+        await expect(emailAuthService.signUp(auth, 'athlete@example.com', 'strong-password')).resolves.toBeUndefined();
+        expect(firebaseAuth.signOut).not.toHaveBeenCalled();
     });
 
     it('keeps password reset responses generic for legacy user-not-found errors', async () => {

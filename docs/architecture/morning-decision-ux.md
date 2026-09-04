@@ -107,10 +107,10 @@ The change set is covered by:
 ### Authentication Flows
 `LoginScreen.tsx` provides native email and password authentication:
 - Segmented tab control toggling between **Sign In** and **Create Account (Sign Up)**;
-- New password accounts are validated against the Firebase project password policy, receive an email-verification message, and remain signed out until the address is verified;
+- New password accounts are validated against the Firebase project password policy, receive an email-verification message in the background, and are automatically logged in upon creation;
 - Password reset always returns the same "if an account exists" acknowledgement, including on older Firebase projects that still return `user-not-found`;
 - **Continue with Garmin** is retained as an accessible alternative sign-in and account linking flow rather than the exclusive entry point;
-- After a verified first login, `initializeUserData` in `AuthContext.tsx` creates default user preferences and v3 training settings under strict `users/{userId}/...` path isolation. Garmin custom-token identities are not subject to the email-verification gate.
+- Upon first login, `initializeUserData` in `AuthContext.tsx` creates default user preferences and v3 training settings under strict `users/{userId}/...` path isolation.
 
 ### Wearable-Free Recommendation Mode
 When an athlete has no recovery snapshot and Garmin is canonically confirmed as disconnected:

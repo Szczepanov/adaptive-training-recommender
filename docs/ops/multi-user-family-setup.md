@@ -30,8 +30,7 @@ Garmin link. Before deploying it:
 3. Enable **email enumeration protection** in Authentication settings and keep it enabled.
 4. Configure the Firebase verification/reset email templates and authorized continue URLs.
 
-Signup sends a verification message and signs the new user out. `AuthContext` also rejects a
-restored unverified password session, while Garmin custom-token identities continue normally.
+Signup sends a verification message in the background and automatically logs the user in.
 Password-reset UX is deliberately generic and does not reveal whether an address is registered.
 Authenticated provider-link endpoints verify Firebase ID tokens with revocation/disabled-user
 checks before accepting the UID.
