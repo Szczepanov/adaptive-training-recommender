@@ -3,13 +3,15 @@ import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
+import { trainingSettingsService } from '../services/trainingSettingsService';
 import { relevantFollowupRegions } from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import type { BodyRegion, DailySubjectiveCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
+import type { BodyRegion, DailySubjectiveCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel, TrainingSettings } from '../engine/models';
 import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
 import { isCompletedSubjectiveCheckin } from '../engine/checkinCompletion';
-import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
+import { getLocalDateString, addDaysToLocalDateString, isWeekendLocalDateString } from '../utils/localDate';
+import { resolveDefaultTimeAvailableMin } from '../utils/checkinDefaults';
 import { getErrorMessage } from '../utils/errors';
 import type { Screen } from '../types/navigation';
 import { HealthContextSection } from './checkin/HealthContextSection';
@@ -138,6 +140,17 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       const today = getLocalDateString();
 
       try {
+        let trainingSettings: TrainingSettings | null = null;
+        try {
+          const settingsState = await trainingSettingsService.peekTrainingSettingsState(userId);
+          if (settingsState.status === 'AVAILABLE') {
+            trainingSettings = settingsState.data;
+          }
+        } catch {
+          // Fallback to standard preferences (45m weekday / 60m weekend) if settings can't be fetched
+        }
+
+        const defaultTimeAvailable = resolveDefaultTimeAvailableMin(trainingSettings, today);
         const existing = await checkinService.getCheckin(userId, today);
         const snapshot = await recoverySnapshotService.getRecoverySnapshotByDate(userId, today);
         setRecoverySnapshot(snapshot ?? null);
@@ -196,7 +209,22 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
         setPendingFollowups(needed);
 
         if (existing) {
-          setCheckin(existing);
+          if (
+            (existing.availability?.timeAvailableMin === null || existing.availability?.timeAvailableMin === undefined) &&
+            !isCompletedSubjectiveCheckin(existing)
+          ) {
+            setCheckin({
+              ...existing,
+              availability: {
+                ...existing.availability,
+                timeAvailableMin: defaultTimeAvailable,
+                preferredModalityToday: existing.availability?.preferredModalityToday ?? null,
+                indoorOnly: existing.availability?.indoorOnly ?? false,
+              },
+            });
+          } else {
+            setCheckin(existing);
+          }
         } else {
           // Do not fabricate neutral subjective observations. Missing scores remain null so
           // they cannot contaminate the athlete's longitudinal subjective baseline; the
@@ -220,7 +248,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
             unusuallyLimitedTime: false,
             alreadyTrainedToday: false,
             availability: {
-              timeAvailableMin: null,
+              timeAvailableMin: defaultTimeAvailable,
               preferredModalityToday: null,
               indoorOnly: false,
             },
@@ -851,6 +879,9 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                 onChange={(e) => handleAvailabilityChange('timeAvailableMin', e.target.value === '' ? null : Number(e.target.value))}
                 className="number-input"
               />
+              <span className="availability-hint">
+                Prefilled from your preferences ({isWeekendLocalDateString(checkin.date || getLocalDateString()) ? 'weekend' : 'weekday'}). You can adjust this for today.
+              </span>
             </div>
 
             <div className="form-group">

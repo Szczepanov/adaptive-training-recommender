@@ -7,13 +7,14 @@ import './OnboardingWizard.css';
 interface OnboardingWizardProps {
     userId: string;
     onCompleted: () => void;
+    initialStep?: 1 | 2 | 3;
 }
 
 type GoalFocus = 'general_fitness' | 'running' | 'cycling' | 'triathlon' | 'strength';
 type EquipmentTier = 'full_gym' | 'home_dumbbells' | 'minimal';
 
-export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompleted }: OnboardingWizardProps) {
-    const [step, setStep] = useState<1 | 2 | 3>(1);
+export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompleted, initialStep = 1 }: OnboardingWizardProps) {
+    const [step, setStep] = useState<1 | 2 | 3>(initialStep);
     const [focus, setFocus] = useState<GoalFocus>('general_fitness');
     const [equipment, setEquipment] = useState<EquipmentTier>('full_gym');
     const [sessionsPerWeek, setSessionsPerWeek] = useState<number>(4);
@@ -189,14 +190,35 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                             </div>
                         </div>
 
-                        <div className="choice-group">
-                            <label className="group-heading">Weekly Training Sessions:</label>
-                            <div className="days-selector-row">
-                                {[3, 4, 5, 6, 7, 8, 9, 10].map(sessions => (
-                                    <button key={sessions} type="button" className={`days-pill ${sessionsPerWeek === sessions ? 'active' : ''}`} onClick={() => setSessionsPerWeek(sessions)} disabled={saving}>
-                                        {sessions} / week
-                                    </button>
-                                ))}
+                        <div className="choice-group days-slider-group">
+                            <div className="days-slider-header">
+                                <label htmlFor="onboarding-days-slider" className="group-heading">
+                                    How many days a week can you exercise?
+                                </label>
+                                <span className="days-slider-badge">
+                                    <strong>{sessionsPerWeek}</strong> {sessionsPerWeek === 1 ? 'day' : 'days'} / week
+                                </span>
+                            </div>
+                            <input
+                                id="onboarding-days-slider"
+                                type="range"
+                                min="1"
+                                max="7"
+                                step="1"
+                                value={sessionsPerWeek}
+                                onChange={(e) => setSessionsPerWeek(Number(e.target.value))}
+                                disabled={saving}
+                                className="days-range-slider"
+                                aria-label="How many days a week can you exercise"
+                            />
+                            <div className="days-slider-labels">
+                                <span>1 min</span>
+                                <span>2</span>
+                                <span>3</span>
+                                <span>4</span>
+                                <span>5</span>
+                                <span>6</span>
+                                <span>7 max</span>
                             </div>
                         </div>
 

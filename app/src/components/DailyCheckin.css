@@ -227,6 +227,14 @@
   line-height: 1.4;
 }
 
+.availability-hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+
 /* Preset Quick-Fill Bar */
 .checkin-preset-bar {
   margin-bottom: 1rem;
