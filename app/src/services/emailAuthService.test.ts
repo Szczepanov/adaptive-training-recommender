@@ -5,13 +5,12 @@ const firebaseAuth = vi.hoisted(() => ({
     sendEmailVerification: vi.fn(),
     sendPasswordResetEmail: vi.fn(),
     signInWithEmailAndPassword: vi.fn(),
-    signOut: vi.fn(),
     validatePassword: vi.fn(),
 }));
 
 vi.mock('firebase/auth', () => firebaseAuth);
 
-import { emailAuthService, requiresEmailVerification } from './emailAuthService';
+import { emailAuthService } from './emailAuthService';
 
 const auth = {} as Parameters<typeof emailAuthService.signIn>[0];
 const passwordUser = (emailVerified: boolean) => ({
@@ -23,34 +22,23 @@ describe('emailAuthService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         firebaseAuth.sendEmailVerification.mockResolvedValue(undefined);
-        firebaseAuth.signOut.mockResolvedValue(undefined);
         firebaseAuth.validatePassword.mockResolvedValue({ isValid: true });
     });
 
-    it('requires verification only for unverified password identities', () => {
-        expect(requiresEmailVerification(passwordUser(false) as never)).toBe(true);
-        expect(requiresEmailVerification(passwordUser(true) as never)).toBe(false);
-        expect(requiresEmailVerification({
-            emailVerified: false,
-            providerData: [{ providerId: 'custom' }],
-        } as never)).toBe(false);
-    });
-
-    it('authenticates unverified password users without signing them out', async () => {
+    it('authenticates unverified password users', async () => {
         firebaseAuth.signInWithEmailAndPassword.mockResolvedValue({ user: passwordUser(false) });
 
         await expect(emailAuthService.signIn(auth, 'athlete@example.com', 'secret')).resolves.toEqual({
             status: 'authenticated',
         });
-        expect(firebaseAuth.signOut).not.toHaveBeenCalled();
     });
 
-    it('allows verified password users and Garmin custom-token users', async () => {
-        firebaseAuth.signInWithEmailAndPassword.mockResolvedValueOnce({ user: passwordUser(true) });
+    it('authenticates verified password users', async () => {
+        firebaseAuth.signInWithEmailAndPassword.mockResolvedValue({ user: passwordUser(true) });
+
         await expect(emailAuthService.signIn(auth, 'athlete@example.com', 'secret')).resolves.toEqual({
             status: 'authenticated',
         });
-        expect(firebaseAuth.signOut).not.toHaveBeenCalled();
     });
 
     it('validates project password policy before creating an account', async () => {
@@ -68,16 +56,35 @@ describe('emailAuthService', () => {
 
         await emailAuthService.signUp(auth, 'athlete@example.com', 'strong-password');
         expect(firebaseAuth.sendEmailVerification).toHaveBeenCalledWith(user);
-        expect(firebaseAuth.signOut).not.toHaveBeenCalled();
+    });
+
+    it('does not block account creation on verification email delivery', async () => {
+        const user = passwordUser(false);
+        let resolveVerification: (() => void) | undefined;
+        firebaseAuth.createUserWithEmailAndPassword.mockResolvedValue({ user });
+        firebaseAuth.sendEmailVerification.mockImplementationOnce(() => new Promise<void>((resolve) => {
+            resolveVerification = resolve;
+        }));
+
+        await expect(emailAuthService.signUp(auth, 'athlete@example.com', 'strong-password')).resolves.toBeUndefined();
+        expect(firebaseAuth.sendEmailVerification).toHaveBeenCalledWith(user);
+
+        resolveVerification?.();
     });
 
     it('does not fail account creation if sending verification email fails', async () => {
         const user = passwordUser(false);
+        const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
         firebaseAuth.createUserWithEmailAndPassword.mockResolvedValue({ user });
         firebaseAuth.sendEmailVerification.mockRejectedValue(new Error('Network error'));
 
-        await expect(emailAuthService.signUp(auth, 'athlete@example.com', 'strong-password')).resolves.toBeUndefined();
-        expect(firebaseAuth.signOut).not.toHaveBeenCalled();
+        try {
+            await expect(emailAuthService.signUp(auth, 'athlete@example.com', 'strong-password')).resolves.toBeUndefined();
+            await Promise.resolve();
+            expect(warn).toHaveBeenCalledWith('Failed to send email verification:', expect.any(Error));
+        } finally {
+            warn.mockRestore();
+        }
     });
 
     it('keeps password reset responses generic for legacy user-not-found errors', async () => {
