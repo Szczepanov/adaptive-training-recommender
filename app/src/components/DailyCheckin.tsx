@@ -3,6 +3,7 @@ import { checkinService } from '../services/checkinService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
+import { preferencesService } from '../services/preferencesService';
 import { relevantFollowupRegions } from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 import type { BodyRegion, DailySubjectiveCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
@@ -10,6 +11,7 @@ import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
 import { isCompletedSubjectiveCheckin } from '../engine/checkinCompletion';
 import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
+import { resolveDefaultTimeAvailable, type CheckinAvailabilityDefault } from '../utils/checkinDefaults';
 import { getErrorMessage } from '../utils/errors';
 import type { Screen } from '../types/navigation';
 import { HealthContextSection } from './checkin/HealthContextSection';
@@ -125,6 +127,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
   const [recoverySnapshot, setRecoverySnapshot] = useState<Awaited<ReturnType<typeof recoverySnapshotService.getRecoverySnapshotByDate>>>(null);
   const [pendingFollowups, setPendingFollowups] = useState<Array<{ region: BodyRegion; sessionRef?: RegionTissueResponse['sourceSessionRef'] }>>([]);
   const [pendingTissueRegion, setPendingTissueRegion] = useState<BodyRegion | ''>('');
+  const [availabilityDefault, setAvailabilityDefault] = useState<CheckinAvailabilityDefault | null>(null);
 
   const tissueSelectId = useId();
   const timeInputId = useId();
@@ -135,10 +138,23 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     try {
       setLoading(true);
       setError(null);
+      setAvailabilityDefault(null);
       const today = getLocalDateString();
 
       try {
+        // Persisted check-in state is authoritative. Only resolve a preference default when
+        // constructing a brand-new day, so a deliberate custom value or explicit blank is
+        // never silently replaced on reload after a partial/follow-up write.
         const existing = await checkinService.getCheckin(userId, today);
+        let resolvedAvailabilityDefault: CheckinAvailabilityDefault | null = null;
+        if (!existing) {
+          const preferencesState = await preferencesService.getPreferencesState(userId);
+          resolvedAvailabilityDefault = resolveDefaultTimeAvailable(
+            preferencesState.status === 'AVAILABLE' ? preferencesState.data : null,
+            today,
+          );
+        }
+
         const snapshot = await recoverySnapshotService.getRecoverySnapshotByDate(userId, today);
         setRecoverySnapshot(snapshot ?? null);
 
@@ -198,6 +214,9 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
         if (existing) {
           setCheckin(existing);
         } else {
+          const defaultTimeAvailable = resolvedAvailabilityDefault
+            ?? resolveDefaultTimeAvailable(null, today);
+          setAvailabilityDefault(defaultTimeAvailable);
           // Do not fabricate neutral subjective observations. Missing scores remain null so
           // they cannot contaminate the athlete's longitudinal subjective baseline; the
           // engine already has a neutral fallback for a deliberately partial safety check-in.
@@ -220,7 +239,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
             unusuallyLimitedTime: false,
             alreadyTrainedToday: false,
             availability: {
-              timeAvailableMin: null,
+              timeAvailableMin: defaultTimeAvailable.minutes,
               preferredModalityToday: null,
               indoorOnly: false,
             },
@@ -851,6 +870,14 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
                 onChange={(e) => handleAvailabilityChange('timeAvailableMin', e.target.value === '' ? null : Number(e.target.value))}
                 className="number-input"
               />
+              {availabilityDefault && (
+                <span className="availability-hint">
+                  {availabilityDefault.source === 'preferences'
+                    ? `Prefilled from your ${availabilityDefault.dayType} Default Available Duration.`
+                    : `Using the standard ${availabilityDefault.dayType} default (${availabilityDefault.minutes} min).`}
+                  {' '}Adjust or clear it for today.
+                </span>
+              )}
             </div>
 
             <div className="form-group">

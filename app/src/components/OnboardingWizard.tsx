@@ -2,6 +2,7 @@ import { useState, memo } from 'react';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
+import { weeklyCommitmentFromExerciseDays } from './onboarding/weeklyCommitment';
 import './OnboardingWizard.css';
 
 interface OnboardingWizardProps {
@@ -12,11 +13,52 @@ interface OnboardingWizardProps {
 type GoalFocus = 'general_fitness' | 'running' | 'cycling' | 'triathlon' | 'strength';
 type EquipmentTier = 'full_gym' | 'home_dumbbells' | 'minimal';
 
+interface ExerciseDaysSliderProps {
+    value: number;
+    onChange: (days: number) => void;
+    disabled?: boolean;
+}
+
+export function ExerciseDaysSlider({ value, onChange, disabled = false }: ExerciseDaysSliderProps) {
+    return (
+        <div className="choice-group days-slider-group">
+            <div className="days-slider-header">
+                <label htmlFor="onboarding-days-slider" className="group-heading">
+                    How many days a week can you exercise?
+                </label>
+                <span className="days-slider-badge">
+                    <strong>{value}</strong> {value === 1 ? 'day' : 'days'} / week
+                </span>
+            </div>
+            <input
+                id="onboarding-days-slider"
+                type="range"
+                min="1"
+                max="7"
+                step="1"
+                value={value}
+                onChange={(event) => onChange(Number(event.target.value))}
+                disabled={disabled}
+                className="days-range-slider"
+            />
+            <div className="days-slider-labels" aria-hidden="true">
+                <span>1 day</span>
+                <span>2</span>
+                <span>3</span>
+                <span>4</span>
+                <span>5</span>
+                <span>6</span>
+                <span>7 days</span>
+            </div>
+        </div>
+    );
+}
+
 export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompleted }: OnboardingWizardProps) {
     const [step, setStep] = useState<1 | 2 | 3>(1);
     const [focus, setFocus] = useState<GoalFocus>('general_fitness');
     const [equipment, setEquipment] = useState<EquipmentTier>('full_gym');
-    const [sessionsPerWeek, setSessionsPerWeek] = useState<number>(4);
+    const [exerciseDaysPerWeek, setExerciseDaysPerWeek] = useState<number>(4);
     const [sportAccess, setSportAccess] = useState({ outdoor_bike: false, swim_access: false });
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
@@ -56,7 +98,7 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
             await trainingSettingsService.updateTrainingSettings(userId, {
                 equipment: equipmentMap,
                 defaults: {
-                    weekdayMaxMinutes: sessionsPerWeek >= 5 ? 60 : 45,
+                    weekdayMaxMinutes: exerciseDaysPerWeek >= 5 ? 60 : 45,
                     weekendMaxMinutes: focus === 'running' || focus === 'cycling' || focus === 'triathlon' ? 180 : 90,
                     environment: 'either',
                 },
@@ -67,11 +109,7 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                 priorities: [
                     domain === 'endurance' ? 'endurance' : domain === 'strength' ? 'strength_muscle' : 'health',
                 ],
-                weeklyCommitment: {
-                    minSessions: Math.max(1, sessionsPerWeek - 1),
-                    targetSessions: sessionsPerWeek,
-                    maxSessions: Math.min(14, sessionsPerWeek + 1),
-                },
+                weeklyCommitment: weeklyCommitmentFromExerciseDays(exerciseDaysPerWeek),
                 organizationPreference: 'auto',
                 schemaVersion: 1,
             });
@@ -189,16 +227,11 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                             </div>
                         </div>
 
-                        <div className="choice-group">
-                            <label className="group-heading">Weekly Training Sessions:</label>
-                            <div className="days-selector-row">
-                                {[3, 4, 5, 6, 7, 8, 9, 10].map(sessions => (
-                                    <button key={sessions} type="button" className={`days-pill ${sessionsPerWeek === sessions ? 'active' : ''}`} onClick={() => setSessionsPerWeek(sessions)} disabled={saving}>
-                                        {sessions} / week
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
+                        <ExerciseDaysSlider
+                            value={exerciseDaysPerWeek}
+                            onChange={setExerciseDaysPerWeek}
+                            disabled={saving}
+                        />
 
                         {saveError && <p className="form-error-msg" role="alert">{saveError}</p>}
 

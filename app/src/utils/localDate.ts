@@ -65,3 +65,13 @@ export function getDayDiff(dateStrA: string, dateStrB: string): number {
     const utcB = toUtcMidnight(dateStrB);
     return Math.round((utcA - utcB) / (24 * 60 * 60 * 1000));
 }
+
+/**
+ * Determines whether a Warsaw-local YYYY-MM-DD calendar date is a weekend (Saturday or Sunday).
+ * Uses UTC date components so timezone transitions or local runtime offsets cannot shift the day.
+ */
+export function isWeekendLocalDateString(dateStr: string): boolean {
+    const [yearPart, monthPart, dayPart] = dateStr.split('-').map(Number);
+    const day = new Date(Date.UTC(yearPart, monthPart - 1, dayPart)).getUTCDay();
+    return day === 0 || day === 6;
+}
