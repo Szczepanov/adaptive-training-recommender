@@ -49,8 +49,14 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 - Visual Review Harness: `cd app && npm run visual:refresh` (captures screenshots to `artifacts/visual-review/latest/`)
 - Firestore Rules Tests: `cd app && npm run test:rules` (executes Vitest in Firebase Firestore emulator)
 
-### Docker Container
-- Build: `docker build -t adaptive-training-garmin-sync .`
+### Docker
+* `docker compose build` (or `make docker-build`) — Build backend and frontend images
+* `docker compose up -d` (or `make docker-up`) — Start backend API (port 8081) and frontend Nginx SPA (port 8080)
+* `docker compose down` (or `make docker-down`) — Stop and remove compose services and networks
+* `make docker-smoke` — Run health and reverse-proxy smoke checks against running containers
+* `docker build -t adaptive-training-garmin-sync .` — Build standalone Garmin sync container image
+
+---
 
 ## Key Code Locations
 - `src/garmin_sync/`: Core Python Garmin ingestion package.

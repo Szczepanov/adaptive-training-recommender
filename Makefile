@@ -8,7 +8,8 @@
         simulate-calibrate simulate-fatigue-fusion simulate-subjective-drift \
         compare-sequence-search build build-frontend \
         deploy deploy-hosting deploy-all deploy-rules deploy-indexes \
-        install clean
+        install clean \
+        docker-build docker-up docker-down docker-smoke
 
 # -----------------------------------------------------------------------------
 # Main Verification Targets
@@ -169,6 +170,26 @@ install:
 	uv sync
 	npm --prefix app ci
 
+# -----------------------------------------------------------------------------
+# Docker Targets
+# -----------------------------------------------------------------------------
+
+## Build all Docker images with docker compose
+docker-build:
+	docker compose build
+
+## Start all services and wait until every healthcheck is ready
+docker-up:
+	docker compose up -d --wait --wait-timeout 90
+
+## Stop and clean up running docker compose services
+docker-down:
+	docker compose down
+
+## Run the same full-stack smoke contract used by CI
+docker-smoke:
+	python scripts/docker_compose_smoke.py
+
 ## Clean temporary build, test, and cache artifacts
 clean:
 	-rmdir /s /q .pytest_cache 2>nul || rm -rf .pytest_cache 2>/dev/null || true
@@ -181,7 +202,7 @@ help:
 	@echo Adaptive Training Recommender - Makefile Commands
 	@echo --------------------------------------------------------------------------------
 	@echo Main Targets:
-	@echo   make all               - Run all code checks, tests, simulations, and build
+	@echo   make all               - Run all code checks, test suites, simulations, and build
 	@echo   make check             - Run all Python and Frontend checks and tests
 	@echo   make test              - Run backend and frontend test suites
 	@echo   make lint              - Run backend and frontend linters
@@ -213,3 +234,9 @@ help:
 	@echo   make simulate-scenarios- Run scenario simulations
 	@echo   make simulate-diff     - Compare scenario simulation against baseline
 	@echo   make build-frontend    - Build production Vite bundle
+	@echo --------------------------------------------------------------------------------
+	@echo Docker Targets:
+	@echo   make docker-build      - Build Garmin, Google Health, and frontend images
+	@echo   make docker-up         - Start all services and wait for healthchecks
+	@echo   make docker-down       - Stop running docker compose services
+	@echo   make docker-smoke      - Run direct/proxy/security smoke checks

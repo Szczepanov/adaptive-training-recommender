@@ -76,7 +76,11 @@ This document outlines repository rules, code conventions, testing instructions,
 
 
 ### Docker
-* `docker build -t adaptive-training-garmin-sync .` — Build container image
+* `docker compose build` (or `make docker-build`) — Build backend and frontend images
+* `docker compose up -d` (or `make docker-up`) — Start backend API (port 8081) and frontend Nginx SPA (port 8080)
+* `docker compose down` (or `make docker-down`) — Stop and remove compose services and networks
+* `make docker-smoke` — Run health and reverse-proxy smoke checks against running containers
+* `docker build -t adaptive-training-garmin-sync .` — Build standalone Garmin sync container image
 
 ---
 

@@ -172,10 +172,56 @@ jobs:
         run: npm audit --audit-level=high
 
   docker-build:
-    name: Docker Image Build
+    name: Docker Build & Compose Smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
 
-      - name: Build Docker image
+      - name: Build root Garmin sync Docker image
         run: docker build -t adaptive-training-garmin-sync .
+
+      - name: Create mock service account for smoke test
+        run: |
+          python3 -c "import json, subprocess; pem = subprocess.check_output(['openssl', 'genrsa', '2048'], stderr=subprocess.DEVNULL).decode(); json.dump({'type':'service_account','project_id':'test-project','private_key_id':'mock-key','private_key':pem,'client_email':'mock@test-project.iam.gserviceaccount.com','token_uri':'https://oauth2.googleapis.com/token'}, open('firebase-service-account.json', 'w'))"
+
+      - name: Validate Docker Compose configuration
+        env:
+          VITE_FIREBASE_API_KEY: test-api-key
+          VITE_FIREBASE_AUTH_DOMAIN: test-project.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: test-project
+          VITE_FIREBASE_STORAGE_BUCKET: test-project.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: "123456789"
+          VITE_FIREBASE_APP_ID: 1:123456789:web:abcdef
+          VITE_FIREBASE_MEASUREMENT_ID: G-TEST
+        run: docker compose config
+
+      - name: Build Docker Compose services
+        env:
+          VITE_FIREBASE_API_KEY: test-api-key
+          VITE_FIREBASE_AUTH_DOMAIN: test-project.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: test-project
+          VITE_FIREBASE_STORAGE_BUCKET: test-project.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: "123456789"
+          VITE_FIREBASE_APP_ID: 1:123456789:web:abcdef
+          VITE_FIREBASE_MEASUREMENT_ID: G-TEST
+        run: docker compose build
+
+      - name: Start services and wait for healthchecks
+        env:
+          APP_USER_ID: test-user
+          GARMIN_TOKEN_BUCKET: test-bucket
+          GCP_PROJECT_ID: test-project
+          VITE_FIREBASE_API_KEY: test-api-key
+          VITE_FIREBASE_PROJECT_ID: test-project
+        run: docker compose up -d --wait --wait-timeout 90
+
+      - name: Smoke test full-stack routing and headers
+        run: python3 scripts/docker_compose_smoke.py
+
+      - name: Display container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Clean up containers
+        if: always()
+        run: docker compose down -v

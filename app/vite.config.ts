@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -16,10 +17,27 @@ const gitDirty = process.env.VITE_GIT_DIRTY !== undefined
   ? process.env.VITE_GIT_DIRTY === 'true'
   : Boolean(readGit(['status', '--porcelain']));
 
+// Vite evaluates this config before it injects .env/.env.local into process.env. The proxy
+// is a development-only concern, so load the normal development env set explicitly here;
+// shell variables still win and .env.local is included by loadEnv.
+const localProxyEnv = loadEnv('development', process.cwd(), 'VITE_');
+
 export default defineConfig({
   define: {
     'import.meta.env.VITE_GIT_SHA': JSON.stringify(gitSha),
     'import.meta.env.VITE_GIT_DIRTY': JSON.stringify(String(gitDirty)),
+  },
+  server: {
+    proxy: {
+      '/api/garmin': {
+        target: localProxyEnv.VITE_GARMIN_BACKEND_URL || 'http://localhost:8081',
+        changeOrigin: true,
+      },
+      '/api/google-health': {
+        target: localProxyEnv.VITE_GOOGLE_HEALTH_BACKEND_URL || 'http://localhost:8082',
+        changeOrigin: true,
+      },
+    },
   },
   plugins: [
     react(),
