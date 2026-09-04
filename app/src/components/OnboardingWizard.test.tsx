@@ -1,6 +1,10 @@
-import { describe, it, expect } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { OnboardingWizard } from './OnboardingWizard';
+import {
+  ExerciseDaysSlider,
+  OnboardingWizard,
+  weeklyCommitmentFromExerciseDays,
+} from './OnboardingWizard';
 
 describe('OnboardingWizard', () => {
   it('renders Step 1 welcome screen by default', () => {
@@ -11,30 +15,60 @@ describe('OnboardingWizard', () => {
     expect(html).toContain('Welcome to Adaptive Training');
     expect(html).toContain('Let&#x27;s Set Up Your Profile →');
   });
+});
 
-  it('renders Step 3 with exercise days slider (min 1, max 7) instead of session pill buttons', () => {
+describe('ExerciseDaysSlider', () => {
+  it('renders a native 1-7 day range with an associated visible label', () => {
     const html = renderToStaticMarkup(
-      <OnboardingWizard userId="athlete-1" onCompleted={() => {}} initialStep={3} />
+      <ExerciseDaysSlider value={4} onChange={() => {}} />
     );
 
-    // Prompt & slider
     expect(html).toContain('How many days a week can you exercise?');
+    expect(html).toContain('for="onboarding-days-slider"');
     expect(html).toContain('id="onboarding-days-slider"');
     expect(html).toContain('type="range"');
     expect(html).toContain('min="1"');
     expect(html).toContain('max="7"');
     expect(html).toContain('step="1"');
-
-    // Default 4 days / week badge
     expect(html).toContain('4');
     expect(html).toContain('days / week');
-
-    // Min and max scale tick markers
-    expect(html).toContain('1 min');
-    expect(html).toContain('7 max');
-
-    // Old pill buttons are replaced
+    expect(html).toContain('1 day');
+    expect(html).toContain('7 days');
+    expect(html).not.toContain('aria-label="How many days a week can you exercise"');
     expect(html).not.toContain('days-pill');
     expect(html).not.toContain('10 / week');
+  });
+
+  it('uses singular day copy at the lower bound', () => {
+    const html = renderToStaticMarkup(
+      <ExerciseDaysSlider value={1} onChange={() => {}} />
+    );
+
+    expect(html).toContain('<strong>1</strong> day / week');
+  });
+});
+
+describe('weeklyCommitmentFromExerciseDays', () => {
+  it('maps available days onto the session-based planning contract with one-session flexibility', () => {
+    expect(weeklyCommitmentFromExerciseDays(1)).toEqual({
+      minSessions: 1,
+      targetSessions: 1,
+      maxSessions: 2,
+    });
+    expect(weeklyCommitmentFromExerciseDays(4)).toEqual({
+      minSessions: 3,
+      targetSessions: 4,
+      maxSessions: 5,
+    });
+    expect(weeklyCommitmentFromExerciseDays(7)).toEqual({
+      minSessions: 6,
+      targetSessions: 7,
+      maxSessions: 8,
+    });
+  });
+
+  it('defensively clamps non-slider inputs to the supported 1-7 day range', () => {
+    expect(weeklyCommitmentFromExerciseDays(0).targetSessions).toBe(1);
+    expect(weeklyCommitmentFromExerciseDays(9).targetSessions).toBe(7);
   });
 });
