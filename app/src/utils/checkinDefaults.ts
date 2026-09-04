@@ -16,7 +16,10 @@ const STANDARD_WEEKDAY_MINUTES = 45;
 const STANDARD_WEEKEND_MINUTES = 60;
 
 function isValidPreferenceDuration(value: unknown): value is number {
-  return Number.isInteger(value) && typeof value === 'number' && value >= 1 && value <= 1440;
+  return typeof value === 'number'
+    && Number.isInteger(value)
+    && value >= 1
+    && value <= 1440;
 }
 
 /**
