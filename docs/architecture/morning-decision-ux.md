@@ -112,6 +112,8 @@ The change set is covered by:
 - **Continue with Garmin** is retained as an accessible alternative sign-in and account linking flow rather than the exclusive entry point;
 - Upon first login, `initializeUserData` in `AuthContext.tsx` creates default user preferences and v3 training settings under strict `users/{userId}/...` path isolation.
 
+Email verification is best-effort identity hygiene in the current product, not an authorization gate. User data authorization remains scoped to the authenticated Firebase UID. If a future feature requires verified email ownership, enforce `email_verified` at that feature's backend or Security Rules boundary instead of reintroducing a global client-side sign-out gate.
+
 ### Wearable-Free Recommendation Mode
 When an athlete has no recovery snapshot and Garmin is canonically confirmed as disconnected:
 - `garminConnectionService.ts` first observes the non-secret connection mirror, then lazily reconciles missing/unreadable mirrors through authenticated `POST /api/garmin/status` as required by ADR-0029. Connected, disconnected, and unknown remain distinct;
