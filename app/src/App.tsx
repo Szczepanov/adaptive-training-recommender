@@ -34,6 +34,8 @@ const ManualSessionBuilder = lazy(() => import('./components/session/ManualSessi
 const SessionJsonImport = lazy(() => import('./components/session/SessionJsonImport').then(m => ({ default: m.SessionJsonImport })));
 const TestingWorkflow = lazy(() => import('./components/testing/TestingWorkflow').then(m => ({ default: m.TestingWorkflow })));
 
+import { getOnboardingDoneStorageKey, isOnboardingDismissedForUser } from './utils/onboardingStorage';
+
 function App() {
   const { userId, authPhase } = useAuth();
   const [screen, setScreen] = useState<Screen>('home');
@@ -56,14 +58,7 @@ function App() {
   const [sessionAuthoringMode, setSessionAuthoringMode] = useState<'import' | 'manual' | null>(null);
   const [sessionAuthoringDefinition, setSessionAuthoringDefinition] = useState<SessionDefinition | null>(null);
   const [sessionLaunch, setSessionLaunch] = useState<PreparedSessionLaunch | null>(null);
-  const [onboardingDismissed, setOnboardingDismissed] = useState(() => {
-    if (typeof window === 'undefined') return false;
-    try {
-      return window.localStorage.getItem('adaptive_training_onboarding_done') === 'true';
-    } catch {
-      return false;
-    }
-  });
+  const [onboardingDismissed, setOnboardingDismissed] = useState(() => isOnboardingDismissedForUser(userId));
 
   const loadDecisionInput = useCallback(async () => {
     if (!userId) return;
@@ -160,6 +155,12 @@ function App() {
     // the prior account's in-progress definition under its own identity.
     setSessionAuthoringMode(null);
     setSessionAuthoringDefinition(null);
+    setSessionLaunch(null);
+    setDesktopSettingsOpen(false);
+    setMobileMoreOpen(false);
+    currentScreenRef.current = 'home';
+    setScreen('home');
+    setOnboardingDismissed(isOnboardingDismissedForUser(userId));
     if (!userId || authPhase !== 'AUTHENTICATED') return;
     let cancelled = false;
     Promise.allSettled([
@@ -301,7 +302,7 @@ function App() {
               onCompleted={() => {
                 setOnboardingDismissed(true);
                 try {
-                  window.localStorage.setItem('adaptive_training_onboarding_done', 'true');
+                  window.localStorage.setItem(getOnboardingDoneStorageKey(userId), 'true');
                 } catch {
                   // Ignore localStorage unavailable errors
                 }
@@ -312,7 +313,7 @@ function App() {
 
           {screen === 'home' && (
             <Home
-              key={dailyViewDate}
+              key={`${userId}:${dailyViewDate}`}
               userId={userId!}
               onNavigate={handleNavigate}
               onViewData={() => {
@@ -339,6 +340,7 @@ function App() {
           {screen === 'data' && (
             <>
               <DataView
+                key={userId}
                 decisionInput={decisionInput}
                 userId={userId!}
                 onBack={() => handleNavigate('home')}
@@ -358,6 +360,7 @@ function App() {
 
           {screen === 'brief' && (
             <DataView
+              key={userId}
               decisionInput={decisionInput}
               userId={userId!}
               initialTab="brief"
@@ -367,7 +370,7 @@ function App() {
 
           {screen === 'checkin' && (
             <DailyCheckin
-              key={dailyViewDate}
+              key={`${userId}:${dailyViewDate}`}
               userId={userId!}
               onNavigate={handleNavigate}
               onBack={() => handleNavigate('home')}
@@ -376,20 +379,21 @@ function App() {
           )}
 
           {screen === 'goals' && (
-            <Goals userId={userId!} onNavigate={handleNavigate} />
+            <Goals key={userId} userId={userId!} onNavigate={handleNavigate} />
           )}
 
           {screen === 'constraints' && (
-            <TrainingSettings userId={userId!} />
+            <TrainingSettings key={userId} userId={userId!} />
           )}
 
           {screen === 'preferences' && (
-            <Preferences userId={userId!} onNavigate={handleNavigate} />
+            <Preferences key={userId} userId={userId!} onNavigate={handleNavigate} />
           )}
 
           {screen === 'sessions' && (
             sessionAuthoringMode === 'import' ? (
               <SessionJsonImport
+                key={userId}
                 userId={userId!}
                 onClose={() => setSessionAuthoringMode(null)}
                 onStartExecution={session => {
@@ -399,6 +403,7 @@ function App() {
               />
             ) : sessionAuthoringMode === 'manual' ? (
               <ManualSessionBuilder
+                key={userId}
                 userId={userId!}
                 initialDefinition={sessionAuthoringDefinition ?? undefined}
                 onClose={() => {
@@ -414,6 +419,7 @@ function App() {
             ) : (
               <div className="sessions-screen-container">
                 <SessionRunner
+                  key={userId}
                   userId={userId!}
                   initialSession={sessionLaunch ?? undefined}
                   onInitialSessionHandled={() => setSessionLaunch(null)}
@@ -429,7 +435,7 @@ function App() {
                   onClose={() => handleNavigate('home')}
                 />
                 <div className="dashboard-card strength-history-card" style={{ marginTop: '1.5rem' }}>
-                  <StrengthOverloadHistory userId={userId!} />
+                  <StrengthOverloadHistory key={userId} userId={userId!} />
                 </div>
               </div>
             )
@@ -437,6 +443,7 @@ function App() {
 
           {screen === 'testing' && (
             <TestingWorkflow
+              key={userId}
               userId={userId!}
               onSessionStateChange={session => {
                 setActiveStructuredSession(session?.state === 'in_progress' ? session : null);
@@ -448,6 +455,7 @@ function App() {
 
           {screen === 'plan' && (
             <PlanView
+              key={userId}
               userId={userId!}
               onNavigate={handleNavigate}
               onPlanChanged={() => {
