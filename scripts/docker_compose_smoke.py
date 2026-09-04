@@ -36,9 +36,7 @@ def _expect_status(url: str, expected: int, *, method: str = "GET") -> tuple[Mes
 def _expect_header(headers: Message, name: str, expected_fragment: str) -> None:
     value = headers.get(name, "")
     if expected_fragment not in value:
-        raise AssertionError(
-            f"Expected {name!r} to contain {expected_fragment!r}, got {value!r}"
-        )
+        raise AssertionError(f"Expected {name!r} to contain {expected_fragment!r}, got {value!r}")
 
 
 def _expect_security_headers(headers: Message) -> None:
