@@ -4,7 +4,7 @@ from garmin_sync import firestore_repository
 
 
 def test_init_firestore_client_uses_credentials_path_from_environment(
-    monkeypatch, tmp_path
+    monkeypatch, tmp_path,
 ):
     credential_file = tmp_path / "firebase-service-account.json"
     credential_file.write_text("{}", encoding="utf-8")
