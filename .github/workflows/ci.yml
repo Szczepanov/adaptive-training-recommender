@@ -206,40 +206,17 @@ jobs:
           VITE_FIREBASE_MEASUREMENT_ID: G-TEST
         run: docker compose build
 
-      - name: Start services
+      - name: Start services and wait for healthchecks
         env:
           APP_USER_ID: test-user
           GARMIN_TOKEN_BUCKET: test-bucket
           GCP_PROJECT_ID: test-project
-          FIRESTORE_EMULATOR_HOST: 127.0.0.1:8080
           VITE_FIREBASE_API_KEY: test-api-key
           VITE_FIREBASE_PROJECT_ID: test-project
-        run: |
-          docker compose up -d
-          for i in {1..30}; do
-            STATUS=$(docker compose ps backend --format '{{.Health}}')
-            if [ "$STATUS" = "healthy" ]; then
-              echo "Backend is healthy!"
-              break
-            fi
-            echo "Waiting for backend health (current: $STATUS)... ($i/30)"
-            sleep 1
-          done
-          docker compose ps
+        run: docker compose up -d --wait --wait-timeout 90
 
-      - name: Smoke test endpoints
-        run: |
-          # 1. Direct backend health check
-          curl -fsS http://127.0.0.1:8081/health
-          # 2. Frontend index
-          curl -fsS http://127.0.0.1:8080/ | grep -q '<div id="root">'
-          # 3. Frontend reverse proxy to backend
-          HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:8080/api/garmin/status)
-          if [ "$HTTP_CODE" != "401" ]; then
-            echo "Expected HTTP 401 from /api/garmin/status via proxy, got $HTTP_CODE"
-            exit 1
-          fi
-          echo "All Docker smoke checks passed successfully!"
+      - name: Smoke test full-stack routing and headers
+        run: python3 scripts/docker_compose_smoke.py
 
       - name: Display container logs on failure
         if: failure()

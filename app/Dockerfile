@@ -40,20 +40,20 @@ COPY . .
 RUN npm run build:bundle
 
 # ---- Runtime stage: serve the static bundle with nginx ----
-FROM nginx:1.27-alpine AS runtime
+# Track the current stable nginx line rather than the obsolete 1.27 development line.
+FROM nginx:1.30.4-alpine AS runtime
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 COPY --from=builder /app/dist /usr/share/nginx/html
 # nginx's official entrypoint envsubst's every *.template in this directory into
-# /etc/nginx/conf.d/ at container start, substituting only the listed variables below --
-# this resolves BACKEND_HOST/BACKEND_PORT for the /api/garmin/** proxy_pass in
-# nginx.conf.template at runtime, so the same built image works both in compose (backend
-# service) and standalone (falls back to the defaults set here).
+# /etc/nginx/conf.d/ at container start. This resolves backend service names at runtime,
+# so the same frontend image can be wired differently without rebuilding the SPA.
 COPY nginx.conf.template /etc/nginx/templates/default.conf.template
+COPY security-headers.conf /etc/nginx/security-headers.conf
 ENV BACKEND_HOST=backend \
     BACKEND_PORT=8080 \
-    GOOGLE_HEALTH_BACKEND_HOST=backend
+    GOOGLE_HEALTH_BACKEND_HOST=google-health-backend
 
 # nginx needs write access to these paths (including the templated conf dir + generated
 # conf) even when running as a non-root user; nginx's entrypoint envsubst step needs to

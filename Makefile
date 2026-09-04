@@ -178,17 +178,17 @@ install:
 docker-build:
 	docker compose build
 
-## Start all services in background with docker compose
+## Start all services and wait until every healthcheck is ready
 docker-up:
-	docker compose up -d
+	docker compose up -d --wait --wait-timeout 90
 
 ## Stop and clean up running docker compose services
 docker-down:
 	docker compose down
 
-## Run smoke test against running docker compose services
+## Run the same full-stack smoke contract used by CI
 docker-smoke:
-	python -c "import urllib.request, urllib.error; assert urllib.request.urlopen('http://127.0.0.1:8081/health').status == 200; assert b'root' in urllib.request.urlopen('http://127.0.0.1:8080/').read(); req = urllib.request.Request('http://127.0.0.1:8080/api/garmin/status', method='POST'); code = 0; exec('try:\n urllib.request.urlopen(req)\nexcept urllib.error.HTTPError as e:\n global code; code = e.code'); assert code == 401; print('[OK] Docker compose smoke checks passed successfully!')"
+	python scripts/docker_compose_smoke.py
 
 ## Clean temporary build, test, and cache artifacts
 clean:
@@ -202,7 +202,7 @@ help:
 	@echo Adaptive Training Recommender - Makefile Commands
 	@echo --------------------------------------------------------------------------------
 	@echo Main Targets:
-	@echo   make all               - Run all code checks, tests, simulations, and build
+	@echo   make all               - Run all code checks, test suites, simulations, and build
 	@echo   make check             - Run all Python and Frontend checks and tests
 	@echo   make test              - Run backend and frontend test suites
 	@echo   make lint              - Run backend and frontend linters
@@ -236,7 +236,7 @@ help:
 	@echo   make build-frontend    - Build production Vite bundle
 	@echo --------------------------------------------------------------------------------
 	@echo Docker Targets:
-	@echo   make docker-build      - Build all Docker images with docker compose
-	@echo   make docker-up         - Start services in background with docker compose
+	@echo   make docker-build      - Build Garmin, Google Health, and frontend images
+	@echo   make docker-up         - Start all services and wait for healthchecks
 	@echo   make docker-down       - Stop running docker compose services
-	@echo   make docker-smoke      - Run smoke test against running docker compose services
+	@echo   make docker-smoke      - Run direct/proxy/security smoke checks
