@@ -32,7 +32,7 @@ H3 was investigated (see the work order below and the evaluation plan). The unpl
 fallback, missed-session replacement, imported-event quality credit, and full/reduced
 immutable-session contracts are implemented. Existing evidence was sufficient for three of
 those; this PR adds `h3AuthoredPlanContracts.test.ts` because the prior event-credit test
-only proved aerobic credit and was too indirect for the specific quality-replacement claim.
+only proved aerobic credit and was too indirect for the specific quality-credit claim.
 No production decision logic changed.
 
 The remaining H3 gap is explicit rest: neither external-plan schema can distinguish
@@ -128,10 +128,12 @@ handling are delivered capabilities, not missing features.
 - missed-session proposals respect occupied dates and per-session `ifMissed`, and only a
   confirmed proposal mutates placement (`externalPlacement.test.ts`);
 - imported hard cycling events are reconciled to `FixedActivity`, retain inferred
-  external-authored stimulus identity, and can satisfy a `threshold_quality` objective
-  before catalog ranking (`h3AuthoredPlanContracts.test.ts`; the older
-  `externalEventFixedActivityCredit.test.ts` still covers confidence discount and
-  qualification refusal);
+  external-authored stimulus identity, and can contribute enough projected stimulus to
+  resolve a `threshold_quality` objective when projected commitments are included
+  (`h3AuthoredPlanContracts.test.ts`; the older `externalEventFixedActivityCredit.test.ts`
+  still covers confidence discount and qualification refusal). The production evaluator
+  currently applies fixed-activity credit before `rankCandidates`, but this focused test
+  covers the credit/resolution layer rather than executing catalog ranking itself;
 - full/reduced dose and immutable revision/replay behavior remain covered by
   `externalSession.test.ts`, `provenance.test.ts`, `replay.test.ts` and validation tests.
 
