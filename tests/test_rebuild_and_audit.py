@@ -247,7 +247,7 @@ def test_audit_reports_missing_snapshots_and_availability() -> None:
     assert report.snapshots_present == 4
     assert report.missing_snapshots == ["2026-08-04"]
     assert report.sleep_available == 4
-    # None of the fake snapshots set sleepTimingAvailable -- exercises the pre-fix
+    # None of the fake snapshots set sleepTimingAvailable -- exercises the earlier
     # (legacy) shape where the field is simply absent, same as real historical snapshots
     # synced before RawMetrics.sleepSessionStart/End existed.
     assert report.sleep_timing_available == 0
