@@ -54,6 +54,7 @@
     "judge:diff:prev": "node scripts/check-plan-judge-drift.mjs --previous",
     "judge:update-baseline": "node scripts/update-plan-judge-baseline.mjs",
     "persona:build": "node scripts/run-persona-ai-judge.mjs --build-only",
+    "persona:hybrid:build": "node scripts/run-persona-ai-judge.mjs --hybrid-expansion --build-only",
     "persona:run": "node scripts/run-persona-ai-judge.mjs --fresh",
     "persona:resume": "node scripts/run-persona-ai-judge.mjs --resume",
     "persona:quick": "node scripts/run-persona-ai-judge.mjs --flash --fresh",

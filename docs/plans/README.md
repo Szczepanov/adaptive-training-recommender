@@ -51,6 +51,14 @@ a delivery queue.
 
 ## Current plans
 
+The [cycling-primary hybrid evaluation plan](./cycling-primary-hybrid-evaluation.md)
+has delivered opt-in deterministic persona scenarios; outdoor aerobic specificity and
+authored block/execution contracts are the next bounded work items. It does not replace
+the reviewed active persona-judge baseline.
+The [implementation handoff](./cycling-primary-hybrid-implementation-handoff.md) provides
+the first task prompt, code entry points, dependency gates, acceptance matrices and
+verification commands for H2–H5. Start with H2 outdoor aerobic specificity.
+
 These implement the way forward in
 [`docs/analysis/2026-08-08-architecture-review.md`](../analysis/2026-08-08-architecture-review.md)
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.

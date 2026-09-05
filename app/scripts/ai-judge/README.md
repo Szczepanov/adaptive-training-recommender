@@ -60,6 +60,46 @@ The active hybrid family is evergreen rather than tied to a specific race date. 
 
 When this contract changes, update fixture integrity assertions and tests in the same PR.
 
+## Targeted hybrid expansion
+
+`hybridScenarioFamilies.mjs` reuses the hybrid persona identity for two opt-in comparison
+families: capacity/equipment (reference, extra time, a binding 20-minute weekend stress
+case, outdoor bicycle only) and event lifecycle (build, adverse build, authored taper).
+All seven cases share a synthetic four-week history of four 80-minute rides and two
+50-minute strength sessions per week. This is seven hours/week of observed synthetic
+training, not a declaration that the athlete already tolerates the larger time windows.
+The default active suite and its reviewed baseline remain 9 families / 30 cases.
+
+Run `npm run persona:hybrid:build` to generate 11 families / 37 cases, including the existing
+controls, in `artifacts/hybrid-persona-plan-judge/latest/`. `corpus.json` is blinded;
+`deterministic-results.json` separately records constraint violations, objective resolution,
+effective session duration ranges and modeled cost/stimulus for inspection. These are
+synthetic forecasts, not performed training or evidence of physiological adaptation.
+Only the seven opt-in H1 packets expose the additional training-settings and authored-taper
+facts required to judge their equipment, weekday/weekend limits and taper contract. The
+existing 30 control packets keep the reviewed active-suite judge-visible shape.
+
+To judge this corpus using configured local infrastructure:
+
+```bash
+node scripts/run-persona-ai-judge.mjs --hybrid-expansion --provider local --fresh --samples 5
+```
+
+For repeated hybrid judging, the two opt-in H1 families cyclically rotate case presentation
+order by sample. The per-sample strict response schema uses that same presented case order,
+including the ordered `prefixItems` required by the local/Ollama adapter. Validation then
+normalizes results back to canonical case IDs before aggregation. The hybrid run manifest
+records this order strategy. This uses repeated samples to expose order-sensitive judge
+behavior without changing the active suite or the deterministic corpus.
+
+The existing seven scoring dimensions are sufficient; no hybrid-only rubric score is
+introduced. These targeted artifacts are intentionally separate from the active baseline
+promotion/diff path. They are exploratory until case-level findings and repeated judge
+results have been reviewed. Do not copy scores into the active baseline or interpret a
+passing deterministic safety test as proof of training adequacy. See
+[`cycling-primary-hybrid-evaluation.md`](../../../docs/plans/cycling-primary-hybrid-evaluation.md)
+for findings and the next acceptance contracts.
+
 ## Validation
 
 From `app/`:
