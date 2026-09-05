@@ -75,14 +75,20 @@ controls, in `artifacts/hybrid-persona-plan-judge/latest/`. `corpus.json` is bli
 `deterministic-results.json` separately records constraint violations, objective resolution,
 effective session duration ranges and modeled cost/stimulus for inspection. These are
 synthetic forecasts, not performed training or evidence of physiological adaptation.
-The targeted packets expose training settings and authored taper boundaries so the judge
-can actually see the equipment, weekday/weekend limits and taper contract it evaluates.
+Only the seven opt-in H1 packets expose the additional training-settings and authored-taper
+facts required to judge their equipment, weekday/weekend limits and taper contract. The
+existing 30 control packets keep the reviewed active-suite judge-visible shape.
 
 To judge this corpus using configured local infrastructure:
 
 ```bash
 node scripts/run-persona-ai-judge.mjs --hybrid-expansion --provider local --fresh --samples 5
 ```
+
+For repeated hybrid judging, the two opt-in H1 families cyclically rotate case presentation
+order by sample. Results are normalized back to canonical case IDs before aggregation. This
+uses repeated samples to expose order-sensitive judge behavior without changing the active
+suite or the deterministic corpus.
 
 The existing seven scoring dimensions are sufficient; no hybrid-only rubric score is
 introduced. These targeted artifacts are intentionally separate from the active baseline

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildPersonaFamilies, assertPersonaFixtureIntegrity } from '../personaSuite.mjs';
+import { familyForJudgeSample, shouldExposeHybridExpansionFacts } from '../hybridJudgeSampling.mjs';
 import { runScenario } from '../../../src/engine/simulation/analyze.ts';
 import { ENRICHED_TEMPLATES } from '../../../src/engine/templates.ts';
 import { EVENT_PRESETS } from '../../../src/engine/eventPresets.ts';
@@ -22,6 +23,24 @@ describe('cycling hybrid targeted evaluation', () => {
     expect(assertPersonaFixtureIntegrity(families)).toEqual({ familyCount: 11, caseCount: 37 });
     expect(definitions).toHaveLength(7);
     expect(new Set(definitions.map(({ persona }) => persona.personaId)).size).toBe(1);
+  });
+
+  it('scopes expanded judge facts to the seven opt-in cases only', () => {
+    const activeDefinitions = buildPersonaFamilies().flatMap(({ cases }) => cases);
+    expect(activeDefinitions.every(({ scenario }) => !shouldExposeHybridExpansionFacts(scenario, true))).toBe(true);
+    expect(definitions.every(({ scenario }) => shouldExposeHybridExpansionFacts(scenario, true))).toBe(true);
+    expect(definitions.every(({ scenario }) => !shouldExposeHybridExpansionFacts(scenario, false))).toBe(true);
+  });
+
+  it('rotates only targeted hybrid family order across repeated judge samples', () => {
+    const targeted = families.find(({ familyId }) => familyId === 'persona_hybrid_capacity_equipment');
+    const ids = targeted.cases.map(({ scenario }) => scenario.id);
+    const rotated = familyForJudgeSample(targeted, { hybridExpansion: true, sampleIndex: 1 });
+    expect(rotated.cases.map(({ scenario }) => scenario.id)).toEqual([...ids.slice(1), ids[0]]);
+
+    const activeFamily = buildPersonaFamilies()[0];
+    expect(familyForJudgeSample(activeFamily, { hybridExpansion: true, sampleIndex: 1 })).toBe(activeFamily);
+    expect(familyForJudgeSample(targeted, { hybridExpansion: false, sampleIndex: 1 })).toBe(targeted);
   });
 
   it('changes availability rather than fabricating extra capacity or experience', () => {

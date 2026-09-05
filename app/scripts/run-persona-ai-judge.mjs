@@ -8,6 +8,7 @@ import { generateFamilyResponseSchema } from './ai-judge/schema.mjs';
 import { validateAndNormalizeJudgeRow } from './ai-judge/validation.mjs';
 import { callProvider } from './ai-judge/providers/index.mjs';
 import { aggregateFamilySamples, deriveSampleSeed } from './ai-judge/aggregate.mjs';
+import { familyForJudgeSample, shouldExposeHybridExpansionFacts } from './ai-judge/hybridJudgeSampling.mjs';
 
 const HYBRID_EXPANSION = process.argv.includes('--hybrid-expansion');
 const OUTPUT_DIR = resolve(HYBRID_EXPANSION ? 'artifacts/hybrid-persona-plan-judge/latest' : 'artifacts/persona-plan-judge/latest');
@@ -25,14 +26,14 @@ function personaFacts(persona) {
 }
 
 /** Reduce an event to the user-visible facts needed by the persona judge. */
-function eventFacts(event) {
+function eventFacts(event, includeHybridFacts = false) {
   if (!event) return null;
   return {
     title: event.title,
     date: event.date,
     priority: event.priority,
     category: event.category,
-    ...(HYBRID_EXPANSION ? { taper: clone(event.taper ?? null) } : {}),
+    ...(includeHybridFacts ? { taper: clone(event.taper ?? null) } : {}),
   };
 }
 
@@ -60,6 +61,7 @@ function planFromResult(result, templatesById) {
 function packetFromResult(definition, result, templatesById) {
   const scenario = definition.scenario;
   const readiness = scenario.readinessForDate?.(scenario.startDate, 0) ?? scenario.readinessForWeek(0);
+  const exposeHybridFacts = shouldExposeHybridExpansionFacts(scenario, HYBRID_EXPANSION);
   return {
     input: {
       caseId: scenario.id,
@@ -69,9 +71,9 @@ function packetFromResult(definition, result, templatesById) {
       weeks: scenario.weeks,
       readiness: clone(readiness),
       goals: clone(scenario.context.goals),
-      event: eventFacts(scenario.event),
+      event: eventFacts(scenario.event, exposeHybridFacts),
       constraints: clone(scenario.context.constraints),
-      ...(HYBRID_EXPANSION ? { trainingSettings: clone(scenario.context.trainingSettings) } : {}),
+      ...(exposeHybridFacts ? { trainingSettings: clone(scenario.context.trainingSettings) } : {}),
       preferences: clone(scenario.preferences ?? scenario.context.preferences),
       trainingIntentProfile: clone(scenario.trainingIntentProfile),
       initialHistory: clone(scenario.initialHistory ?? []),
@@ -199,8 +201,9 @@ async function judgeCorpus(corpus) {
 
     for (let sampleIndex = 0; sampleIndex < config.samples; sampleIndex += 1) {
       const seed = deriveSampleSeed(config.baseSeed, family.familyId, sampleIndex, config.seedStrategy);
+      const familyPacket = familyForJudgeSample(family, { hybridExpansion: HYBRID_EXPANSION, sampleIndex });
       const response = await callProvider({
-        packetJson: JSON.stringify(family),
+        packetJson: JSON.stringify(familyPacket),
         schema: familySchema,
         promptContent: PROMPT,
         schemaContent: JSON.stringify(familySchema),
