@@ -122,6 +122,51 @@ const baseline = normalizeToSummary(rawBaseline, baselineLabel);
 const fatal = [];
 const warnings = [];
 
+// Baseline stability (per-dimension MAD from the baseline's own multi-sample run, if it recorded
+// one) lives in a sibling file referenced by `stabilitySource`, not inlined in the baseline JSON.
+// Loading it lets dimension-level comparisons account for baseline noise, not just current-run
+// noise — a single-sample baseline (or one whose stability file is missing) contributes 0 here,
+// which degrades gracefully to "current-run noise only".
+function loadBaselineStability(rawBaselineData, baselinePathForFallback) {
+  const source = rawBaselineData?.stabilitySource;
+  const candidates = [];
+  if (source) candidates.push(resolve('..', source));
+  // Fall back to a same-directory `*-stability.json`/`*-stability.4b.json` next to the baseline
+  // file itself, in case `stabilitySource` is absent from an older or custom baseline artifact.
+  candidates.push(baselinePathForFallback.replace(/\.json$/, '').replace(/^(.*[\\/])(plan-judge-baseline)(\.4b)?$/, '$1plan-judge-stability$3.json'));
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) {
+      try {
+        return JSON.parse(readFileSync(candidate, 'utf8'));
+      } catch {
+        // Best-effort only; fall through to try the next candidate or give up.
+      }
+    }
+  }
+  return null;
+}
+
+const baselineStability = loadBaselineStability(rawBaseline, baselinePath);
+
+// Pool per-case dimension MADs across every family/case in a stability record into one
+// mean-MAD-per-dimension figure. Averaging the raw per-case MADs (rather than averaging each
+// family's already-averaged `dimensionMadAverages`) weights every case equally regardless of how
+// many cases its family has.
+function poolDimensionMads(stabilityRecord, dimensionKeys) {
+  const pooled = {};
+  for (const key of dimensionKeys) {
+    const values = [];
+    for (const family of stabilityRecord?.families ?? []) {
+      for (const caseEntry of Object.values(family.cases ?? {})) {
+        const v = caseEntry?.dimensionMads?.[key];
+        if (typeof v === 'number' && Number.isFinite(v)) values.push(v);
+      }
+    }
+    pooled[key] = values.length ? round2(values.reduce((a, b) => a + b, 0) / values.length) : 0;
+  }
+  return pooled;
+}
+
 if (baseline.schema !== EXPECTED_SCHEMA) fatal.push(`Baseline schema is ${JSON.stringify(baseline.schema)}, expected ${EXPECTED_SCHEMA}.`);
 if (current.schema !== EXPECTED_SCHEMA) fatal.push(`Current schema is ${JSON.stringify(current.schema)}, expected ${EXPECTED_SCHEMA}.`);
 
@@ -202,39 +247,65 @@ let notableCount = 0;
 const stability = current.judgeStability;
 const familyStabilityMap = new Map((stability?.families ?? []).map((f) => [f.familyId, f]));
 
+const dimensionKeys = Object.keys(baseline.scoreAverages);
+const currentDimensionMads = stability ? poolDimensionMads(stability, dimensionKeys) : {};
+const baselineDimensionMads = baselineStability ? poolDimensionMads(baselineStability, dimensionKeys) : {};
+if (!stability) warnings.push('Current run has no judgeStability data (single sample, or non-local provider); dimension comparisons cannot be checked against measurement noise.');
+if (baseline.provenance && !baselineStability) warnings.push(`No baseline stability record found (checked stabilitySource${rawBaseline?.stabilitySource ? ` "${rawBaseline.stabilitySource}"` : ''}); dimension comparisons only account for current-run noise, not baseline noise.`);
+
 const dimensionDeltas = {};
 console.log('--- Dimension Score Comparison ---');
-for (const key of Object.keys(baseline.scoreAverages)) {
+for (const key of dimensionKeys) {
   const baseValue = numeric(baseline.scoreAverages[key], `baseline.scoreAverages.${key}`, fatal);
   const currentValue = numeric(current.scoreAverages[key], `current.scoreAverages.${key}`, fatal);
   const delta = currentValue - baseValue;
+  // Pooled noise: both sides of the comparison are themselves noisy estimates (each drawn from a
+  // handful of LLM-judge samples), so the meaningful threshold is baseline noise + current noise,
+  // not zero. This mirrors the family-level sensitivity check below, applied per score dimension.
+  const dimNoise = round2((currentDimensionMads[key] ?? 0) + (baselineDimensionMads[key] ?? 0));
+
   let flag = '';
   let status = 'unchanged';
   if (delta < -0.1) {
-    flag = ' [REGRESSION]';
-    status = 'regression';
-    regressionCount += 1;
-    notableCount += 1;
+    if (dimNoise > 0 && Math.abs(delta) <= dimNoise) {
+      flag = ` [INCONCLUSIVE (within noise ±${dimNoise})]`;
+      status = 'inconclusive';
+    } else {
+      flag = ' [REGRESSION]';
+      status = 'regression';
+      regressionCount += 1;
+      notableCount += 1;
+    }
   } else if (delta > 0.1) {
-    flag = ' [IMPROVEMENT]';
-    status = 'improvement';
-    improvementCount += 1;
-    notableCount += 1;
+    if (dimNoise > 0 && Math.abs(delta) <= dimNoise) {
+      flag = ` [INCONCLUSIVE (within noise ±${dimNoise})]`;
+      status = 'inconclusive';
+    } else {
+      flag = ' [IMPROVEMENT]';
+      status = 'improvement';
+      improvementCount += 1;
+      notableCount += 1;
+    }
   }
-  dimensionDeltas[key] = { baseline: round2(baseValue), current: round2(currentValue), delta: round2(delta), status };
+  dimensionDeltas[key] = { baseline: round2(baseValue), current: round2(currentValue), delta: round2(delta), status, ...(dimNoise > 0 ? { noise: dimNoise } : {}) };
   console.log(`  ${key.padEnd(24)}: ${round2(baseValue).toFixed(2)} -> ${round2(currentValue).toFixed(2)} (delta: ${delta >= 0 ? '+' : ''}${round2(delta).toFixed(2)})${flag}`);
 }
 
 const familyDeltas = {};
 console.log('\n--- Family Sensitivity Comparison ---');
 const baselineFamilyMap = new Map(baseline.familySensitivity.map((item) => [item.familyId, item]));
+const baselineFamilyStabilityMap = new Map((baselineStability?.families ?? []).map((f) => [f.familyId, f]));
 for (const currentFamily of [...current.familySensitivity].sort((a, b) => a.familyId.localeCompare(b.familyId))) {
   const baselineFamily = baselineFamilyMap.get(currentFamily.familyId);
   const baseValue = numeric(baselineFamily.sensitivityQuality, `baseline.${currentFamily.familyId}.sensitivityQuality`, fatal);
   const currentValue = numeric(currentFamily.sensitivityQuality, `current.${currentFamily.familyId}.sensitivityQuality`, fatal);
   const delta = currentValue - baseValue;
   const famStab = familyStabilityMap.get(currentFamily.familyId);
-  const noiseMad = famStab?.familySensitivityMad ?? 0;
+  const baseFamStab = baselineFamilyStabilityMap.get(currentFamily.familyId);
+  // Pool both sides' family-sensitivity MAD, same reasoning as the dimension-level noise band
+  // above: a baseline run is just as noisy a sample as the current run, so its own MAD (when
+  // recorded) belongs in the threshold, not only the current run's.
+  const noiseMad = round2((famStab?.familySensitivityMad ?? 0) + (baseFamStab?.familySensitivityMad ?? 0));
 
   let flag = '';
   let status = 'unchanged';
@@ -259,7 +330,7 @@ for (const currentFamily of [...current.familySensitivity].sort((a, b) => a.fami
       notableCount += 1;
     }
   }
-  familyDeltas[currentFamily.familyId] = { baseline: round2(baseValue), current: round2(currentValue), delta: round2(delta), status, ...(famStab ? { mad: famStab.familySensitivityMad } : {}) };
+  familyDeltas[currentFamily.familyId] = { baseline: round2(baseValue), current: round2(currentValue), delta: round2(delta), status, ...(famStab ? { mad: famStab.familySensitivityMad } : {}), ...(noiseMad > 0 ? { pooledNoise: noiseMad } : {}) };
   console.log(`  ${currentFamily.familyId.padEnd(30)}: ${baseValue.toFixed(1)}/10 -> ${currentValue.toFixed(1)}/10 (delta: ${delta >= 0 ? '+' : ''}${round2(delta).toFixed(2)})${flag}`);
 }
 
