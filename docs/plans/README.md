@@ -54,12 +54,14 @@ a delivery queue.
 The [cycling-primary hybrid evaluation plan](./cycling-primary-hybrid-evaluation.md) has
 delivered opt-in deterministic persona scenarios (H1), outdoor easy-cycling equipment
 specificity plus an anchor-date coverage-ordering fix (H2/H2b), and an H3 investigation
-that found the authored-block/rest/replacement contract already correct except one open
-product question (can a plan author an explicit rest day at all — currently no). It does
-not replace the reviewed active persona-judge baseline.
-The [implementation handoff](./cycling-primary-hybrid-implementation-handoff.md) provides
-code entry points, dependency gates, acceptance matrices and verification commands for
-H3's open question and H4–H5.
+that verified existing authored-block/replacement contracts. Explicit rest is accepted in
+[ADR-0035](../adr/0035-explicit-rest-day-authoring.md), and H4 intraday windows/reassessment
+is accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md); both
+implementations are unstarted. H4 runtime release needs rest support and verified same-day
+canonical performed facts. H5 still needs its own decision. The work does not replace the
+reviewed active persona-judge baseline. The
+[implementation handoff](./cycling-primary-hybrid-implementation-handoff.md) provides
+sequenced work orders, dependency gates and acceptance requirements.
 
 These implement the way forward in
 [`docs/analysis/2026-08-08-architecture-review.md`](../analysis/2026-08-08-architecture-review.md)
