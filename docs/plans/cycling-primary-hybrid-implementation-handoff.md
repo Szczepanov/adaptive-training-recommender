@@ -160,6 +160,29 @@ escape hatch), `ExternalRestProvenance` persistence/audit/replay
 (`models.ts`/`provenance.ts`/`replay.ts`'s fail-closed `externalRestErrors`), and matching
 `firestore.rules` coverage. `POLICY_VERSION` is `2026-09-authored-rest-day-v1`.
 
+**Explicit check-in override, fully audited.** `athleteOverridesAuthoredRest` never fires
+from readiness data -- only an explicit same-day request. When it does, evaluation proceeds
+exactly as if no rest directive existed (full normal ranking, every safety/clinical/
+availability/equipment/readiness gate applies), but the persisted `externalRest` provenance
+still names the directive that was present and adds an `overridden: true` marker
+(`externalRestProvenance.ts`'s `ExternalRestDecisionProvenance`). Replay branches on that
+marker: an overridden decision replays through the ordinary ranked-decision checks
+(`authoredOccurrenceDecisionErrors`), not the canonical-Rest/empty-candidates checks a
+default authored-rest decision requires. `firestore.rules` mirrors the same branch --
+`candidateScores` and `templateId` are unconstrained precisely when
+`audit.externalRest.overridden == true`, otherwise the default authored-rest constraints
+(empty candidates, `templateId == 'rest_01'`) still apply; `overridden` is only ever
+accepted as the literal `true`.
+
+**Storage bounds aligned end to end.** A rest directive `id` is bounded to 64 characters at
+import validation (`externalPlanV3.ts`), matching the bound `firestore.rules` already
+enforced on the persisted `externalRest.restDirectiveId` -- a directive that passed import
+could previously exceed the audit's own bound and fail to persist later. `restDays` itself
+is capped at 26 entries (one per supported week) at both the TS validator and the Firestore
+rules layer (`hasValidExternalRestDirectives`, which validates each of up to 26 directives'
+shape -- `id`/`week`/`day` presence, week range, weekday vocabulary, and no unrecognized
+field -- individually, since Firestore rules cannot loop).
+
 The import authoring prompt now emits `external-plan@3`, requires `restDays` (an empty list
 is valid), spells out relative `{ id, week, day }` semantics and explicitly distinguishes
 protected rest from an omitted/unplanned day. This prevents the product's own published

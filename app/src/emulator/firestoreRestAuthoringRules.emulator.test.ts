@@ -118,4 +118,45 @@ emulatorDescribe('Firestore rules — ADR-0035 authored rest', () => {
         recommendation.recommendationAudit.candidateScores = [{ templateId: 'easy_01', utilityScore: 1, excludedReasons: [] }];
         await assertFails(setDoc(doc(ownerDb, recommendationPath), recommendation));
     });
+
+    describe('explicit athlete override (ADR-0035)', () => {
+        function overriddenRecommendation() {
+            const recommendation = validRecommendation();
+            recommendation.templateId = 'easy_01';
+            recommendation.templateTitle = 'Zone 2 Spin';
+            recommendation.category = 'Easy Endurance';
+            recommendation.modality = 'Cycling';
+            recommendation.recommendationAudit.candidateScores = [{ templateId: 'easy_01', utilityScore: 1, excludedReasons: [] }];
+            (recommendation.recommendationAudit.externalRest as Record<string, unknown>).overridden = true;
+            return recommendation;
+        }
+
+        it('accepts a non-rest template and ranked candidates once the directive is marked overridden', async () => {
+            const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+            await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), overriddenRecommendation()));
+        });
+
+        it('still rejects mutual exclusion with externalPlan even when overridden', async () => {
+            const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+            const recommendation = overriddenRecommendation();
+            recommendation.recommendationAudit.externalPlan = {
+                planId: 'autumn-block', revision: 1, sessionId: 'w1-threshold', contentHash: 'a'.repeat(64),
+            };
+            await assertFails(setDoc(doc(ownerDb, recommendationPath), recommendation));
+        });
+
+        it('rejects overridden set to false -- the marker is only ever written as literal true', async () => {
+            const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+            const recommendation = overriddenRecommendation();
+            (recommendation.recommendationAudit.externalRest as Record<string, unknown>).overridden = false;
+            await assertFails(setDoc(doc(ownerDb, recommendationPath), recommendation));
+        });
+
+        it('rejects an unrecognized field on externalRest even alongside a valid overridden marker', async () => {
+            const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+            const recommendation = overriddenRecommendation();
+            (recommendation.recommendationAudit.externalRest as Record<string, unknown>).reason = 'felt strong';
+            await assertFails(setDoc(doc(ownerDb, recommendationPath), recommendation));
+        });
+    });
 });

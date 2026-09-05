@@ -347,7 +347,13 @@ service cloud.firestore {
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
         && !(('externalPlan' in audit) && ('externalRest' in audit))
-        && (!('externalRest' in audit) || audit.candidateScores.size() == 0)
+        // ADR-0035: default authored rest bypasses ranking entirely, so candidateScores must
+        // be empty. An explicit athlete override (audit.externalRest.overridden == true)
+        // suspends only the protected-rest short circuit -- selection is the ordinary ranked
+        // planner path, so candidateScores is populated exactly like any other decision.
+        && (!('externalRest' in audit)
+          || (('overridden' in audit.externalRest) && audit.externalRest.overridden == true)
+          || audit.candidateScores.size() == 0)
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
         && (!('primarySession' in audit) || hasValidSessionReferenceBinding(audit.primarySession))
         && (!('additionalSessions' in audit) || hasValidAdditionalSessions(audit.additionalSessions))
@@ -362,13 +368,17 @@ service cloud.firestore {
         ))
         && (!('externalRest' in audit) || (
           audit.externalRest is map
-          && audit.externalRest.keys().hasOnly(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date'])
+          // 'overridden' is optional and, when present, must be the literal true -- the TS
+          // ExternalRestDecisionProvenance type never writes false; absence means the
+          // default (non-overridden) protected-rest path.
+          && audit.externalRest.keys().hasOnly(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date', 'overridden'])
           && audit.externalRest.keys().hasAll(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date'])
           && audit.externalRest.planId is string && audit.externalRest.planId.size() <= 64
           && audit.externalRest.revision is int && audit.externalRest.revision >= 1
           && audit.externalRest.contentHash is string && audit.externalRest.contentHash.size() <= 128
           && audit.externalRest.restDirectiveId is string && audit.externalRest.restDirectiveId.size() <= 64
           && audit.externalRest.date is string && isValidActivityDate(audit.externalRest.date)
+          && (!('overridden' in audit.externalRest) || audit.externalRest.overridden == true)
         ))
         && (!('authoredOccurrence' in audit) || (
           audit.authoredOccurrence is map
@@ -402,7 +412,13 @@ service cloud.firestore {
         && (request.resource.data.schemaVersion < 3
           || ('recommendationAudit' in request.resource.data
             && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit, request.resource.data.schemaVersion)
-            && (!('externalRest' in request.resource.data.recommendationAudit) || request.resource.data.templateId == 'rest_01')));
+            // ADR-0035: the canonical-Rest binding applies only to the default (non-
+            // overridden) authored-rest path. An explicit athlete override runs the
+            // ordinary ranked planner and may legitimately persist any template.
+            && (!('externalRest' in request.resource.data.recommendationAudit)
+              || (('overridden' in request.resource.data.recommendationAudit.externalRest)
+                && request.resource.data.recommendationAudit.externalRest.overridden == true)
+              || request.resource.data.templateId == 'rest_01')));
     }
 
     function schemaRatchets() {

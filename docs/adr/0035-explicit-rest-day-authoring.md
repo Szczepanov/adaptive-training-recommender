@@ -163,6 +163,17 @@ override must be visible and auditable and must still pass all safety, clinical,
 availability, equipment and readiness constraints. There is no silent automatic override
 because wearable/readiness data look favorable.
 
+**Implemented as:** a boolean parameter (`athleteOverridesAuthoredRest`) the caller passes
+only for an explicit same-day request -- never inferred from readiness. When set, the day
+is evaluated exactly as if no rest directive existed, so the resulting recommendation still
+passes every normal safety/clinical/availability/equipment/readiness gate. The resulting
+decision's persisted `externalRest` provenance still names the directive that was present
+but carries an additional `overridden: true` marker (`externalRestProvenance.ts`'s
+`ExternalRestDecisionProvenance`), so audit and replay can distinguish "rest was authored
+here and the athlete explicitly trained anyway" from an ordinary unplanned date or an
+undisturbed protected-rest day. The marker is absent on the default (non-overridden) path,
+keeping historical authored-rest audits unchanged.
+
 #### Persistence, audit and replay
 
 The persisted decision should carry enough source identity to reproduce why the date was
@@ -171,16 +182,21 @@ closed to discretionary planning, at minimum:
 - `planId`;
 - plan revision;
 - immutable plan content hash;
-- rest directive `id`;
+- rest directive `id` (bounded to 64 characters -- the same bound the persisted audit and
+  Firestore rules enforce, so a directive that imports successfully cannot later fail to
+  persist);
 - resolved plan-local date;
 - an authored-rest reason/source label distinct from physiological `recover` and from
-  `externalFallback`.
+  `externalFallback`;
+- an `overridden` marker when an explicit athlete override applied (see above).
 
 Replay may apply authored rest only when **every persisted source-identity field matches**
 the loaded immutable artifact and the directive re-resolved from it: `planId`, revision,
 content hash, rest directive `id`, and resolved plan-local date. Any mismatch fails closed
 as unreplayable; replay must not infer rest from session absence or substitute a different
-directive/date from the same plan.
+directive/date from the same plan. An overridden decision replays against the same identity
+fields plus its own selected template/candidates, exactly like an ordinary ranked decision,
+since overriding suspends only the protected-rest short circuit, not adjudication.
 
 Because this capability changes the recommendation on a date that previously fell through
 to evergreen planning, implementation requires a `POLICY_VERSION` bump plus matching
