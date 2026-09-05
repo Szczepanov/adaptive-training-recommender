@@ -129,6 +129,7 @@ describe('cycling hybrid targeted evaluation', () => {
     const outdoor = await resultFor(find('outdoor_only'));
     const cyclingTraces = outdoor.decisionTraces.filter((trace) => trace.selected.modality === 'Cycling');
     expect(cyclingTraces.length).toBeGreaterThan(0);
+    expect(cyclingTraces.some((trace) => trace.selected.templateId === 'end_easy_04')).toBe(true);
     for (const trace of cyclingTraces) {
       const template = ENRICHED_TEMPLATES.find(({ id }) => id === trace.selected.templateId);
       expect(template.requiredEquipment).toContain('outdoor_bike');
@@ -142,7 +143,8 @@ describe('cycling hybrid targeted evaluation', () => {
     expect(cyclingTraces.length).toBeGreaterThan(0);
     for (const trace of cyclingTraces) {
       const template = ENRICHED_TEMPLATES.find(({ id }) => id === trace.selected.templateId);
-      expect(template.requiredEquipment.some((item) => item === 'indoor_bike' || item === 'outdoor_bike')).toBe(true);
+      expect(template.requiredEquipment).toContain('indoor_bike');
+      expect(template.requiredEquipment).not.toContain('outdoor_bike');
     }
   });
 
