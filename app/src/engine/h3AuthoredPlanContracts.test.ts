@@ -6,6 +6,7 @@ import type { ExternalPlanSession, MicrocycleState } from './models';
 
 const DATE = '2026-08-20';
 
+/** Builds the synthetic imported hard-cycling event used by the H3 replacement contract. */
 function hardCyclingEvent(): ExternalPlanSession {
     return {
         id: 'w1-race',
@@ -31,6 +32,7 @@ function hardCyclingEvent(): ExternalPlanSession {
     };
 }
 
+/** Builds a threshold objective whose qualification can be met by the imported event stimulus. */
 function thresholdMicrocycle(): MicrocycleState {
     return {
         windowStartDate: '2026-08-17',
