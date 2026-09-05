@@ -56,7 +56,7 @@ function thresholdMicrocycle(): MicrocycleState {
 }
 
 describe('H3 authored-plan replacement contracts', () => {
-    it('lets an imported hard cycling event satisfy threshold quality before catalog ranking', () => {
+    it('projects imported hard cycling event credit that resolves threshold quality', () => {
         const fixed = externalEventAsFixedActivity(hardCyclingEvent(), 'autumn-block', 1, 'u1', DATE);
         expect(fixed).not.toBeNull();
         expect(fixed?.externalAuthoredIdentity).toMatchObject({
@@ -76,8 +76,8 @@ describe('H3 authored-plan replacement contracts', () => {
             completedExposures: 1,
             projectedCredit: 0.5,
         });
-        // Fixed activities are projected commitments, so the production ranking path asks
-        // unresolved-objective resolution to include projected credit (rules.ts does this).
+        // Fixed activities are projected commitments, not completed training. Including
+        // projected credit is what makes this objective resolved for downstream planning.
         expect(getUnresolvedObjectives(credited.microcycle, true)).toEqual([]);
     });
 });
