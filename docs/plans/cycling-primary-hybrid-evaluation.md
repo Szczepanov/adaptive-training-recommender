@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1, H2 and H2b delivered; H3 investigated and contract-tested, with explicit-rest authoring still requiring a schema/authority decision; H4-H5 remain planned
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; explicit-rest, intraday and progression changes require the relevant authority/schema decisions.
+**Status:** In progress — H1, H2 and H2b delivered; H3 investigated and contract-tested, explicit-rest authoring accepted as ADR-0035 (implementation not started); H4-H5 remain planned
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; explicit-rest implementation is unblocked (ADR-0035 accepted) but unscheduled; intraday and progression changes require their own authority/schema decisions.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -219,35 +219,22 @@ and `external-plan@2` deliberately say "Rest days are not sessions"; omission is
 indistinguishable from "the plan says nothing about this day," which activates the labelled
 catalog fallback.
 
-External product precedent supports treating those as different calendar states rather
-than synonyms. Garmin Coach explicitly schedules unchecked training days as **Rest Days**,
-while TrainingPeaks plans can show **Rest Day** separately from **No Planned Workouts**.
-Those precedents do not dictate this repository's schema, but they confirm the product
-requirement is coherent rather than an unusual edge case:
+This evaluation no longer uses external-product behavior as architecture evidence. The
+rest-vs-unplanned requirement follows from the repository's own authored-instruction-vs-
+absence semantics and immutable/versioned import contract; product observations, if
+retained elsewhere, are non-normative research only.
 
-- Garmin cycling-plan scheduling: https://support.garmin.com/en-IE/aviation/faq/9WEulyuZyf6aDpcxPH1PI9/
-- TrainingPeaks example distinguishing `REST DAY` from `No Planned Workouts`: https://www.trainingpeaks.com/training-plans/cycling/tp-497950/consistency-intensity-volume-for-fitness-cycling
+**Follow-up architecture decision:** [ADR-0035](../adr/0035-explicit-rest-day-authoring.md)
+(Accepted) decides a single compatibility model: protected rest is added only in
+`adaptive-training-recommender/external-plan@3`, inheriting v2 session semantics unchanged,
+through relative plan-level `restDays` directives (`{ id, week, day }`). v1/v2 remain
+immutable and continue rejecting the new field. The ADR also separates plan intent from
+readiness: authored rest blocks ordinary fallback/ranking and resolves the default planning
+outcome to canonical Rest without fabricating a physiological `recover` verdict. Placement
+and missed-session replacement must treat rest dates as blocked, while an explicit athlete
+override remains auditable and still passes the normal safety/readiness/availability gates.
 
-**Recommended follow-up architecture:** represent protected rest as a **day-level plan
-directive in a new external-plan schema revision**, not as a fake session modality.
-A rest directive has no training duration, equipment, stimulus, execution dose or
-adherence occurrence; forcing it through `ExternalPlanSession` would pollute the very
-source-neutral session contracts ADR-0019/0023 are trying to preserve. A bounded follow-up
-ADR should define at least these semantics before implementation:
-
-- an explicit rest directive blocks `any_day` placement and missed-session replacement onto
-  that date;
-- evaluating that date does **not** fall through to evergreen discretionary training;
-- unplanned dates retain the current labelled fallback;
-- the persisted audit/replay record identifies the plan/revision/content hash and the rest
-  directive that owned the date;
-- v1/v2 remain readable as-is; the new representation receives a new schema version rather
-  than silently broadening an immutable import contract;
-- because the directive changes recommendations, implementation evaluates/bump
-  `POLICY_VERSION` and updates persistence/rules/replay tests.
-
-This PR intentionally does not implement that schema extension: the representation and
-precedence rules need an accepted architecture decision first. Personal M00/M01 import
+This PR intentionally does not implement that schema extension. Personal M00/M01 import
 also remains blocked on current-workload/restriction confirmation.
 
 ## H4 — Intraday capacity and post-AM reassessment

@@ -88,6 +88,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0032: Cause-Aware Subjective Symptom Gating**](./adr/0032-cause-aware-subjective-symptom-gating.md) — *Accepted.* Connects subjective symptom check-ins to engine-aware cause categories to safely differentiate ambient fatigue from illness risk.
 * [**ADR-0033: Versioned Sports Knowledge Registry and Claim-Level Evidence Lineage**](./adr/0033-sports-knowledge-registry.md) — *Accepted.* Claim-level evidence lineage, separating sports knowledge from athlete observations.
 * [**ADR-0034: Canonical Performed Training Occurrence and Multisource Reconciliation**](./adr/0034-canonical-performed-training-occurrence-and-multisource-reconciliation.md) — *Proposed.* Introduces `PerformedTrainingOccurrence` as the single canonical performed-workout record reconciling `SessionExecution` and provider (Garmin) evidence, distinct from `SessionOccurrence`'s planning authority; implemented behind shadow mode in [PR #324](https://github.com/Szczepanov/adaptive-training-recommender/pull/324), not yet merged.
+* [**ADR-0035: Explicit Rest-Day Authoring in External Plans**](./adr/0035-explicit-rest-day-authoring.md) — *Accepted.* Distinguishes a plan author's deliberate protected rest day from an ordinary unplanned date via a new, relative `restDays` directive in `external-plan@3` (v1/v2 stay immutable); keeps readiness separate from plan intent. Not yet implemented.
 ---
 
 ### 🔍 Reviews & Analysis
