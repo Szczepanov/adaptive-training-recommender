@@ -7,7 +7,7 @@ import { replayRecommendationAudit } from './replay';
 function auditedRecommendation(): DailyRecommendation {
     return {
         userId: 'u1', date: '2026-08-18', templateId: 'rest_01', templateTitle: 'Rest',
-        category: 'Rest', modality: 'Recovery', mode: 'train', rationale: 'test', schemaVersion: 3,
+        category: 'Rest', modality: 'None', mode: 'train', rationale: 'test', schemaVersion: 3,
         createdAt: '', updatedAt: '',
         adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
         recommendationAudit: {
