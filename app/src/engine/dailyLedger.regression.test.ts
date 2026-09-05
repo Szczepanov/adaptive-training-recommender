@@ -45,11 +45,29 @@ describe('daily ledger regression coverage', () => {
         expect(admitsCandidate(ledger, 60, 0, 0.1)).toEqual({ admittedMinutes: 60, admitted: false });
     });
 
-    it('rejects invalid reconciliation facts before they can enter the ledger', () => {
+    it('treats an exhausted systemic-cost dimension as closed even for a nominal zero-cost candidate', () => {
+        const ledger = computeDailyLedger(CEILINGS, [
+            entry({ occurrenceId: 'spent', reservedMinutes: 20, reservedSystemicCost: 0.6 }),
+        ]);
+
+        expect(ledger.remainingSystemicCost).toBe(0);
+        expect(admitsCandidate(ledger, 60, 20, 0)).toEqual({ admittedMinutes: 60, admitted: false });
+    });
+
+    it('rejects invalid reconciliation facts before they can enter a newer ledger revision', () => {
         const reserved = entry({ occurrenceId: 'am' });
 
         expect(() => reconcileEntry(reserved, { minutes: -1, state: 'completed' }, 2)).toThrow(/actual.minutes/);
         expect(() => reconcileEntry(reserved, { systemicCost: Number.NaN, state: 'completed' }, 2)).toThrow(/actual.systemicCost/);
         expect(() => reconcileEntry(reserved, { minutes: 20, state: 'completed' }, 1.5)).toThrow(/evidenceRevision/);
+    });
+
+    it('ignores stale/duplicate payload bytes completely once that revision is already applied', () => {
+        const current = entry({
+            occurrenceId: 'am', revision: 2, state: 'completed', actualMinutes: 20, actualSystemicCost: 0.1,
+        });
+
+        expect(reconcileEntry(current, { minutes: -999, systemicCost: Number.NaN, state: 'abandoned' }, 2)).toBe(current);
+        expect(reconcileEntry(current, { minutes: -999, systemicCost: Number.NaN, state: 'abandoned' }, 1)).toBe(current);
     });
 });
