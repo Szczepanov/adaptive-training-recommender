@@ -196,12 +196,13 @@ async function judgeCorpus(corpus) {
   console.log(`Persona judge: ${config.provider}/${config.model}; samples=${config.samples}`);
   for (const family of corpus.families) {
     const expectedCaseIds = family.cases.map((item) => item.input.caseId);
-    const familySchema = generateFamilyResponseSchema(family.familyId, expectedCaseIds);
     const samples = [];
 
     for (let sampleIndex = 0; sampleIndex < config.samples; sampleIndex += 1) {
       const seed = deriveSampleSeed(config.baseSeed, family.familyId, sampleIndex, config.seedStrategy);
       const familyPacket = familyForJudgeSample(family, { hybridExpansion: HYBRID_EXPANSION, sampleIndex });
+      const presentedCaseIds = familyPacket.cases.map((item) => item.input.caseId);
+      const familySchema = generateFamilyResponseSchema(family.familyId, presentedCaseIds);
       const response = await callProvider({
         packetJson: JSON.stringify(familyPacket),
         schema: familySchema,
@@ -234,6 +235,10 @@ async function judgeCorpus(corpus) {
     seedStrategy: config.seedStrategy,
     thinkingEnabled: config.thinkingEnabled,
     concurrency: config.concurrency,
+    ...(HYBRID_EXPANSION ? {
+      suite: 'hybrid_expansion',
+      caseOrderStrategy: 'targeted_hybrid_cyclic_rotation',
+    } : {}),
     completedAt: new Date().toISOString(),
   };
   writeFileSync(resolve(OUTPUT_DIR, 'judge-run-manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);

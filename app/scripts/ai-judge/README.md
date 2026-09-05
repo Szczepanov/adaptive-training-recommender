@@ -86,9 +86,11 @@ node scripts/run-persona-ai-judge.mjs --hybrid-expansion --provider local --fres
 ```
 
 For repeated hybrid judging, the two opt-in H1 families cyclically rotate case presentation
-order by sample. Results are normalized back to canonical case IDs before aggregation. This
-uses repeated samples to expose order-sensitive judge behavior without changing the active
-suite or the deterministic corpus.
+order by sample. The per-sample strict response schema uses that same presented case order,
+including the ordered `prefixItems` required by the local/Ollama adapter. Validation then
+normalizes results back to canonical case IDs before aggregation. The hybrid run manifest
+records this order strategy. This uses repeated samples to expose order-sensitive judge
+behavior without changing the active suite or the deterministic corpus.
 
 The existing seven scoring dimensions are sufficient; no hybrid-only rubric score is
 introduced. These targeted artifacts are intentionally separate from the active baseline

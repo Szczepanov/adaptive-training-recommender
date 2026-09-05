@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { buildPersonaFamilies, assertPersonaFixtureIntegrity } from '../personaSuite.mjs';
 import { familyForJudgeSample, shouldExposeHybridExpansionFacts } from '../hybridJudgeSampling.mjs';
+import { generateFamilyResponseSchema } from '../schema.mjs';
+import { transformSchemaForOllama } from '../providers/ollama.mjs';
 import { runScenario } from '../../../src/engine/simulation/analyze.ts';
 import { ENRICHED_TEMPLATES } from '../../../src/engine/templates.ts';
 import { EVENT_PRESETS } from '../../../src/engine/eventPresets.ts';
@@ -41,6 +43,16 @@ describe('cycling hybrid targeted evaluation', () => {
     const activeFamily = buildPersonaFamilies()[0];
     expect(familyForJudgeSample(activeFamily, { hybridExpansion: true, sampleIndex: 1 })).toBe(activeFamily);
     expect(familyForJudgeSample(targeted, { hybridExpansion: false, sampleIndex: 1 })).toBe(targeted);
+  });
+
+  it('keeps the strict output schema aligned with rotated judge presentation order', () => {
+    const targeted = families.find(({ familyId }) => familyId === 'persona_hybrid_capacity_equipment');
+    const rotated = familyForJudgeSample(targeted, { hybridExpansion: true, sampleIndex: 1 });
+    const ids = rotated.cases.map(({ scenario }) => scenario.id);
+    const schema = generateFamilyResponseSchema(targeted.familyId, ids);
+    expect(schema.properties.caseScores.items.properties.caseId.enum).toEqual(ids);
+    const ollamaSchema = transformSchemaForOllama(schema);
+    expect(ollamaSchema.properties.caseScores.prefixItems.map((item) => item.properties.caseId.const)).toEqual(ids);
   });
 
   it('changes availability rather than fabricating extra capacity or experience', () => {
