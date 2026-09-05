@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { validateExternalTrainingPlan } from '../engine/validation';
 import { impliedDate } from '../engine/externalPlacement';
-import { EXTERNAL_PLAN_SCHEMA, type ExternalPlanHeader, type ObjectiveKey } from '../engine/models';
+import { type ExternalPlanHeader, type ObjectiveKey } from '../engine/models';
 import { externalPlanService } from '../services/externalPlanService';
 import { getLocalDateString } from '../utils/localDate';
 import { diffPlans, type PlanDiffRow } from './externalPlanDiff';
@@ -46,6 +46,7 @@ const OBJECTIVE_CHOICES: ObjectiveKey[] = [
     'strength_maintenance', 'strength_development', 'race_specific_endurance',
 ];
 
+/** Parses pasted JSON without throwing into the component event path. */
 function parseJson(text: string): { value: unknown } | { error: string } {
     try {
         return { value: JSON.parse(text) };
@@ -56,9 +57,11 @@ function parseJson(text: string): { value: unknown } | { error: string } {
 
 const AI_PROMPT_TEMPLATE = `Output the plan as a single JSON document and nothing else. Follow this contract exactly.
 
-Top level: schema (literal "${EXTERNAL_PLAN_SCHEMA_V2}"), planId (lowercase slug, unchanged between revisions of the same plan), revision (integer, increment when revising), title, startDate (the Monday week 1 begins, YYYY-MM-DD), weekCount, optional notes, and sessions.
+Top level: schema (literal "${EXTERNAL_PLAN_SCHEMA_V3}"), planId (lowercase slug, unchanged between revisions of the same plan), revision (integer, increment when revising), title, startDate (the Monday week 1 begins, YYYY-MM-DD), weekCount, optional notes, required restDays, and sessions.
 
-Do not compute calendar dates for sessions and do not include rest days. Each session has id, title, priority (key/supporting/optional), and:
+restDays is a list of deliberate protected-rest directives. It may be empty. Each directive is exactly {"id": "<stable-unique-id>", "week": <1-based-week>, "day": "<lowercase-weekday>"}. Use the same monday/tuesday/wednesday/thursday/friday/saturday/sunday vocabulary as session placement. Do not put absolute dates in restDays: startDate is the plan's only authored absolute date, and the app resolves week/day to a calendar date. Do not use omission to mean protected rest — a date with neither a session nor a restDays directive is intentionally unplanned and may use the app's normal fallback. Never place a fixed session and a restDays directive on the same week/day.
+
+Do not compute calendar dates for sessions. Each session has id, title, priority (key/supporting/optional), and:
 
 - placement: week (1-based), optional preferredDay (lowercase weekday), flexibility (fixed/preferred/any_day), ifMissed (drop/reschedule_within_week/carry_forward).
 - gating: modality (cycling/running/strength/field/mobility/cross_training), intensity (recovery/easy/moderate/hard/max), durationMin, durationMax (minutes), environment (indoor/outdoor/either), equipment (subset of free_weights, cable_machine, treadmill, indoor_bike, pullup_bar).
@@ -67,7 +70,7 @@ Do not compute calendar dates for sessions and do not include rest days. Each se
 - isEvent: true only on the target event itself (a race, a test event). An event session must also use flexibility: "fixed" with a preferredDay. Do not mark ordinary hard sessions as events.
 - scaling: reducible (boolean; set to false when the session has no useful reduced form — e.g. a race simulation or test. When reducible is false, omit reducedSummary and reducedDurationMin entirely), reducedSummary (how to cut this session down while keeping its purpose; only include when reducible is true), reducedDurationMin (minutes; only include when reducible is true), minimumUsefulDurationMin (below this, skipping is better than a fragment), fallback (advisory author suggestion shown if the equipment or venue is unavailable; it is not an executable substitute).
 
-Do not include travel weeks, illness, or time off — those are handled separately by the app's own calendar. Plan as if every scheduled day is available.
+Do not encode travel weeks, illness, or externally imposed time off as restDays — those are handled separately by the app's own calendar. restDays is only for deliberate plan-authored protected rest such as sequencing, taper or deload intent. Plan as if every otherwise scheduled day is available.
 
 Do not encode readiness or autoregulation rules anywhere, including notes. The app adjudicates each session against that morning's data and owns all green/yellow/red decisions. Use notes only for context the app cannot know: which power meter is the reference, whether wattage targets or RPE take precedence, what block preceded this one.
 
@@ -191,7 +194,7 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                     onChange={event => handleTextChange(event.target.value)}
                     rows={14}
                     spellCheck={false}
-                    placeholder={`{ "schema": "${EXTERNAL_PLAN_SCHEMA}", "planId": "...", ... }`}
+                    placeholder={`{ "schema": "${EXTERNAL_PLAN_SCHEMA_V3}", "planId": "...", "restDays": [], ... }`}
                     aria-label="Plan JSON"
                 />
 
