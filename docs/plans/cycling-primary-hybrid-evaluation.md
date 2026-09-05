@@ -190,17 +190,19 @@ regression test where the prior evidence was too indirect:
    honours each session's own `ifMissed` (`drop` / `reschedule_within_week` /
    `carry_forward`) rather than inventing catch-up debt. `externalPlacement.test.ts`
    includes `does not propose a day another session already holds` directly on point.
-3. **An imported hard cycling event replacing a quality requirement rather than leaving it
-   unresolved for catalog ranking.** `externalEventAsFixedActivity` derives typed
-   `expectedStimulus` and an inferred-confidence external identity; then
-   `applyFixedActivityStimulusCredit` credits the commitment before the day's catalog
-   ranking. Existing `externalEventFixedActivityCredit.test.ts` covered aerobic credit and
-   qualification semantics, but that was not direct evidence for the H3 quality-replacement
-   claim. `h3AuthoredPlanContracts.test.ts` now exercises the real imported hard-cycling
-   event adapter and verifies that it satisfies a `threshold_quality` objective before
-   catalog ranking. This is deliberately narrower than claiming every free-text "hard group
-   ride" is equivalent: a non-event group ride must enter the typed `FixedActivity`
-   identity/stimulus path to earn the same objective credit.
+3. **An imported hard cycling event contributing enough typed stimulus to resolve a quality
+   requirement.** `externalEventAsFixedActivity` derives typed `expectedStimulus` and an
+   inferred-confidence external identity. `h3AuthoredPlanContracts.test.ts` exercises that
+   adapter plus `applyFixedActivityStimulusCredit` and verifies the resulting projected
+   credit resolves a `threshold_quality` objective when projected commitments are included.
+   This closes the prior evidence gap in `externalEventFixedActivityCredit.test.ts`, which
+   covered aerobic credit and qualification semantics only. The production evaluator in
+   `rules.ts` currently performs the same fixed-activity credit step before `rankCandidates`,
+   but this focused regression does **not** itself execute catalog ranking; ordering was
+   source-reviewed rather than independently integration-tested here. This is also narrower
+   than claiming every free-text "hard group ride" is equivalent: a non-event group ride
+   must enter the typed `FixedActivity` identity/stimulus path to earn the same objective
+   credit.
 4. **Full and reduced session forms with correct minutes and immutable revisions.**
    Content-hash immutability (`contentHash` on `ExternalPlanContext`, verified against the
    stored revision) and reduced-dose scaling are exercised across
