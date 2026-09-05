@@ -47,6 +47,7 @@ export function isV3Plan(plan: { schema: string }): plan is ExternalTrainingPlan
 
 const REST_DAY_KEYS = ['id', 'week', 'day'];
 const EXTERNAL_PLAN_V3_MAX_REST_DAYS = EXTERNAL_PLAN_MAX_WEEKS;
+const EXTERNAL_REST_DIRECTIVE_ID_MAX_LENGTH = 64;
 
 /** Validates one untrusted v3 rest directive without assuming it is object-shaped. */
 function validateRestDirective(raw: any, index: number, weekCount: number, errors: ValidationError[]): void {
@@ -57,7 +58,11 @@ function validateRestDirective(raw: any, index: number, weekCount: number, error
     }
     const extra = unknownKeys(raw, REST_DAY_KEYS);
     if (extra.length) errors.push({ field: path, message: `Unrecognized rest directive field(s): ${extra.join(', ')}` });
-    if (typeof raw.id !== 'string' || !raw.id) errors.push({ field: `${path}.id`, message: 'Rest directive id is required' });
+    if (typeof raw.id !== 'string' || !raw.id) {
+        errors.push({ field: `${path}.id`, message: 'Rest directive id is required' });
+    } else if (raw.id.length > EXTERNAL_REST_DIRECTIVE_ID_MAX_LENGTH) {
+        errors.push({ field: `${path}.id`, message: `Rest directive id must be at most ${EXTERNAL_REST_DIRECTIVE_ID_MAX_LENGTH} characters` });
+    }
     if (!isPositiveInt(raw.week, 1, weekCount)) errors.push({ field: `${path}.week`, message: `week must be 1-${weekCount}` });
     if (!EXTERNAL_WEEKDAYS.includes(raw.day)) errors.push({ field: `${path}.day`, message: 'Unsupported weekday' });
 }
