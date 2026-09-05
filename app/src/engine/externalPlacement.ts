@@ -34,6 +34,7 @@ export interface PlacementOccupancy {
     fixedActivities?: readonly FixedActivity[];
 }
 
+/** Returns the Monday-like start of a plan-relative week. */
 function weekStart(plan: ExternalTrainingPlan, week: number): string {
     return addDaysToLocalDateString(plan.startDate, (week - 1) * 7);
 }
@@ -61,6 +62,7 @@ export function impliedDate(plan: ExternalTrainingPlan, session: ExternalPlanSes
     return addDaysToLocalDateString(weekStart(plan, session.placement.week), offset);
 }
 
+/** Materializes the seven plan-local dates for one relative week. */
 function weekDates(plan: ExternalTrainingPlan, week: number): string[] {
     const start = weekStart(plan, week);
     return Array.from({ length: 7 }, (_, offset) => addDaysToLocalDateString(start, offset));
@@ -77,11 +79,16 @@ function preferredBundleKey(session: ExternalPlanSession): string | null {
 }
 
 /**
- * Resolves every session to a date. The stored overlay wins. Movable sessions authored for
- * the same week + `preferredDay` are kept together as one intentional double/triple-day
- * bundle and, when their preferred date is occupied, move together within the week.
- * `fixed` sessions are placed first and never yield; `any_day` sessions then spread
+ * Resolves every legally placeable session to a date. The stored overlay wins. Movable
+ * sessions authored for the same week + `preferredDay` are kept together as one intentional
+ * double/triple-day bundle and, when their preferred date is occupied, move together within
+ * the week. `fixed` sessions are placed first and never yield; `any_day` sessions then spread
  * individually across the remaining open dates.
+ *
+ * If a movable session/bundle has **no** legal date left in its authored week, it remains
+ * unplaced and is omitted from this result rather than being forced back onto a blocked
+ * commitment or ADR-0035 protected-rest date. Callers already interpret absence as “not
+ * placed today”; fabricating an occupied date would violate the stronger calendar authority.
  */
 export function resolvePlacement(
     plan: ExternalTrainingPlan,
@@ -115,6 +122,16 @@ export function resolvePlacement(
         const occupants = occupiedByDate.get(date);
         if (!occupants) return false;
         return [...occupants].some(sessionId => !allowedSessionIds.has(sessionId));
+    };
+    const firstFreeDate = (
+        week: number,
+        wanted: string,
+        allowedSessionIds: ReadonlySet<string> = new Set<string>(),
+    ): string | null => {
+        const dates = weekDates(plan, week);
+        return dates.find(candidate => candidate > wanted && !isBlocked(candidate, allowedSessionIds))
+            ?? dates.find(candidate => !isBlocked(candidate, allowedSessionIds))
+            ?? null;
     };
 
     // Explicit overlay assignments are absolute per-session decisions and therefore win
@@ -176,13 +193,13 @@ export function resolvePlacement(
                 .map(session => session.id),
         );
 
-        let date = wanted;
-        if (isBlocked(wanted, sameBundleOverlayAtWanted)) {
-            const week = weekDates(plan, bundle[0].placement.week);
-            const free = week.find(candidate => candidate > wanted && !isBlocked(candidate))
-                ?? week.find(candidate => !isBlocked(candidate));
-            if (free) date = free;
-        }
+        const date = isBlocked(wanted, sameBundleOverlayAtWanted)
+            ? firstFreeDate(bundle[0].placement.week, wanted, sameBundleOverlayAtWanted)
+            : wanted;
+        // The week can be genuinely full (fixed commitments + protected rest). In that
+        // state, “unplaced” is safer and more truthful than falling back to `wanted` and
+        // silently violating the very occupancy constraint we just evaluated.
+        if (!date) continue;
 
         for (const session of bundle) {
             placed.push({ session, date, status: 'planned', moved: date !== wanted });
@@ -202,13 +219,10 @@ export function resolvePlacement(
 
     for (const session of floatingSessions) {
         const wanted = impliedDate(plan, session);
-        let date = wanted;
-        if (isBlocked(wanted)) {
-            const week = weekDates(plan, session.placement.week);
-            const free = week.find(candidate => candidate > wanted && !isBlocked(candidate))
-                ?? week.find(candidate => !isBlocked(candidate));
-            if (free) date = free;
-        }
+        const date = isBlocked(wanted)
+            ? firstFreeDate(session.placement.week, wanted)
+            : wanted;
+        if (!date) continue;
         addOccupancy(date, session.id);
         placed.push({ session, date, status: 'planned', moved: date !== wanted });
     }
