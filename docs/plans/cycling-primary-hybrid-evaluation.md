@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
 **Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 (implementation unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 implementation depends on ADR-0035 support and verification of same-day canonical performed facts; H5 runtime requires validated intent mappings and linked response evidence.
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 implementation depends on ADR-0035 support and verification of same-day canonical performed facts; H5 runtime requires validated intent mappings and linked response evidence, and cumulative `external-plan@5` acceptance additionally requires the landed H4 contract (ADR-0036).
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -259,8 +259,8 @@ one-session forecasts do not validate doubles.
 
 **Status:** Design accepted in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md); implementation unstarted.
 **Dependencies:** Validated intent-to-dose/coverage mappings and canonical completion/response
-linkage for runtime review. v5 import inherits ADR-0035/0036 contracts; manual intent and
-report-only groundwork does not require H4 runtime release.
+linkage for runtime review. `external-plan@5` acceptance depends on the landed H4 contract
+(ADR-0036); manual intent and report-only groundwork does not require H4 runtime release.
 
 Decision: per-objective `develop | maintain` intent is separate from priority and profile
 commitment. Use existing plan, dose, coverage, response and outcome authorities. New import
