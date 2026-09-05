@@ -252,8 +252,8 @@ def _extract_session_info(
         stage_summary = s.get("stageSummary")
         if not isinstance(stage_summary, dict):
             continue
-        waso_val = stage_summary.get("wasoDuration")
-        if isinstance(waso_val, (int, float)) and not isinstance(waso_val, bool):
+        waso_val = _num(stage_summary.get("wasoDuration"))
+        if waso_val is not None:
             waso_total += waso_val
             has_waso = True
 
