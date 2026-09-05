@@ -10,14 +10,16 @@
   [ADR-0033](./0033-sports-knowledge-registry.md),
   [ADR-0034](./0034-canonical-performed-training-occurrence-and-multisource-reconciliation.md),
   [ADR-0035](./0035-explicit-rest-day-authoring.md),
-  H4 intraday decision (ADR-0036 recorded in the preceding task discussion; file absent
-  from this checkout),
+  ADR-0036 / H4 intraday allocation as proposed in
+  [PR #404](https://github.com/Szczepanov/adaptive-training-recommender/pull/404),
   [evaluation plan](../plans/cycling-primary-hybrid-evaluation.md),
   [implementation handoff](../plans/cycling-primary-hybrid-implementation-handoff.md).
 
-> **Integration dependency:** This decision preserves the preceding H4 allocation of v4
-> and therefore allocates H5 to v5. Before import implementation, reconcile the missing
-> H4 decision artifact and inherited contract. Do not silently reuse v4 for H5.
+> **Integration dependency:** H5 preserves the H4 allocation of `external-plan@4` and
+> therefore allocates H5 to v5. PR #404 is the concrete H4 dependency while ADR-0036 has
+> not yet landed on the target branch. Before H5 import implementation is accepted, rebase
+> or otherwise reconcile this branch with the landed ADR-0036 artifact and inherited v4
+> contract. Do not silently reuse v4 for H5 or implement v5 against an inferred H4 contract.
 
 ## Context and code evidence
 
@@ -105,11 +107,12 @@ Authored block boundaries use relative `{ week, day }` endpoints, inclusive and 
 block authoring uses the same validated internal contract and Warsaw-local dates, through
 an explicitly versioned persistence schema. A resolved block retains its authored source.
 
-Content hashing includes objectives, bounds, substitutions and progression rules. Preserve
-one increasing revision sequence per `planId` across schemas and chosen-date-forward
-supersession. Activated block revisions are immutable; edits create a new revision.
-Definition/prescription and evaluation snapshots keep their own existing identities.
-Do not mutate a session definition because its block intent changed.
+Block content identity is the digest of the versioned canonical replay payload defined by
+D-REPLAY, not an ad-hoc subset of fields. Preserve one increasing revision sequence per
+`planId` across schemas and chosen-date-forward supersession. Activated block revisions are
+immutable; edits create a new revision. Definition/prescription and evaluation snapshots
+keep their own existing identities. Do not mutate a session definition because its block
+intent changed.
 
 v5 is a cumulative contract, not a reason to enable unsupported v4 windows. Import support
 requires inherited validation and authority handling; an implementation lacking a used
@@ -148,9 +151,11 @@ training. H4's ledger applies when intraday sessions are used.
 ### D-CHANGE — one bounded progression experiment at a time
 
 Progression is an explicit proposal to change future authored dose, not a readiness mode.
-At most one active progression experiment is allowed per athlete across active blocks in
-the initial release. Several objectives may develop while only one variable is being
-deliberately tested. This is a product rule for interpretable review, not causal proof.
+At most one **confirmed active** progression experiment is allowed per athlete across active
+blocks in the initial release. Several objectives may develop while only one variable is
+being deliberately tested. This is a product rule for interpretable review, not causal proof.
+Pending proposals are not active experiments and do not acquire the singleton slot; they may
+coexist until one is confirmed, rejected, superseded or withdrawn.
 
 An enabled progression contract must specify:
 
@@ -198,6 +203,30 @@ plan/definition revision through the existing authoring boundary; it is not a di
 from outcome reporting into selection. Recheck current source revision, constraints and
 capacity at confirmation; stale or duplicate confirmations cannot apply an increment twice.
 
+Confirmation/activation is also the atomic uniqueness boundary for the one-experiment rule.
+H5c must maintain one athlete-scoped active-experiment claim/sentinel whose identity is
+independent of block storage. Confirmation runs in a Firestore transaction (or an equivalent
+serializable compare-and-set mechanism) that reads the singleton claim and the expected
+source revision before writing. In the same atomic unit it must either:
+
+1. observe no competing non-terminal claim, validate the proposal against the still-current
+   source revision, write the resulting forward-only revision/activation records and acquire
+   the claim for that experiment; or
+2. fail deterministically without activating the proposal or applying any dose revision.
+
+A claim owned by a different non-terminal experiment produces an explicit
+`active_progression_experiment_exists` conflict. A stale source binding produces a separate
+stale-confirmation conflict. The implementation must never establish uniqueness by querying
+active block/proposal collections and then creating an experiment outside the same atomic
+operation; that check can race across blocks.
+
+Repeated confirmation of the same proposal is idempotent and returns/reuses the existing
+activation rather than applying another increment. Terminal/cancelled/redirected experiments
+release the singleton only with a compare-and-clear transaction that verifies the stored
+experiment/claim identity still matches; a delayed cleanup from an older experiment must
+not clear a newer claim. Failure after validation but before commit must leave neither an
+orphan claim nor a partially activated revision.
+
 No unattended progression, automatic threshold relaxation, inferred clinical clearance or
 automatic weekly-commitment increase is accepted. The current outcome architecture's
 no-automatic-selection rule remains intact. Keep report/proposal derivation outside engine
@@ -237,7 +266,7 @@ Reports describe observed association. Neither one-variable tracking nor an `on_
 result establishes that the plan or app caused improvement. Entry and end-of-block review
 can lead to hold, an explicitly authored next block or redirect; no automatic block rollover.
 
-### D-REPLAY — immutable evidence and confirmed change lineage
+### D-REPLAY — immutable evidence, exhaustive semantic hashing and confirmed change lineage
 
 Version user-scoped block/proposal persistence and enforce ownership, valid transitions
 and immutable activated content in Firestore rules. Retain block id/revision/hash, plan and
@@ -246,28 +275,70 @@ canonical completed-fact revisions and ids, response/tissue snapshots, observati
 protocol revisions, evaluation hash, evidence as-of time, action/reasons and before/after
 values. Confirmation records actor, timestamp, proposal id and resulting revision.
 
-Replay uses those immutable snapshots. Any missing or mismatching user/source/hash/unit/
-target/evaluation binding is unreplayable; do not substitute today's evidence or criteria.
-Corrections supersede reports/proposals visibly. Historical prescriptions, audits and
-completed work remain unchanged. Activation changes require policy-version review/bump,
-schema/validation, rule tests and architecture updates alongside the implementation.
+The block digest MUST be computed from a versioned canonical semantic projection, initially
+`TreatmentIntentReplayPayloadV1` (name illustrative at ADR level). The projection is the
+replay identity for authored block behavior and MUST contain every field capable of changing
+allocation, adjudication, progression or evaluation semantics, including at minimum:
+
+- replay-payload schema/version and source plan identity, source schema/revision/provenance;
+- stable block id/revision and effective relative/absolute bounds used by resolution;
+- each objective's stable id, typed sport/adaptation scope, coverage mapping, `intent`,
+  priority where authored, dose envelope/unit/floor semantics and knowledge lineage;
+- protected exact roles/session references and the complete typed substitution/fallback
+  policy, including any dose/role qualification criteria;
+- success criteria, outcome/evaluation references, practical tolerances and review timing;
+- entry prerequisites plus hold/reduce/redirect conditions;
+- the complete progression contract: target binding, variable/unit/current value, permitted
+  range/increment, observation window, exposure/follow-up requirements, cadence, continuation
+  and exit rules, reduction alternative and transition criteria; and
+- any future authored field whose value can change engine, review or evaluation behavior.
+
+The mapping is exhaustive by rule, not by the examples above. Adding a behavior-affecting
+field is incomplete until the replay projection, digest input and mismatch fixtures are
+updated. Fields proven to be display-only/derived may be excluded, but the exclusion must be
+explicit and tested so presentation edits do not accidentally become semantic identity.
+
+Canonicalization must be deterministic before hashing: materialize semantic defaults rather
+than depending on parser omission behavior; normalize supported units and null/optional
+representations; use stable object-key ordering; sort semantically unordered collections by
+stable identity; and preserve list order only where order itself changes behavior. Include
+the replay-payload version in the digest input. The implementation may reuse the repository's
+established deterministic serializer/hash utility; it must not depend on incidental
+JavaScript object insertion order. A replay format change that alters interpretation of an
+existing payload requires a new replay-payload version rather than silently reinterpreting V1.
+
+Replay compares the pinned canonical payload/hash and all external immutable bindings used
+by the review. Any missing or mismatching user/source/effective-bound/intent/protected-role/
+substitution/success-criterion/review-timing/prerequisite/progression/unit/target/evaluation
+binding is unreplayable; do not substitute today's evidence or criteria. Corrections
+supersede reports/proposals visibly. Historical prescriptions, audits and completed work
+remain unchanged. Activation changes require policy-version review/bump, schema/validation,
+rule tests and architecture updates alongside the implementation.
 
 ## Delivery and deterministic acceptance
 
 1. **H5a: intent authoring and validation.** Implement versioned block contracts and typed
    mappings; prove legacy behavior and safety/capacity precedence. Import v5 depends on
    inherited v3/v4 capabilities actually used; manual/report-only groundwork can start now.
+   Before v5 import acceptance, H4/ADR-0036 from PR #404 must be concretely present in the
+   branch history/contracts rather than reconstructed from discussion context.
 2. **H5b: evidence and report-only review.** Reuse canonical work, follow-up responses and
    outcome reports; implement hold/advance/reduce/redirect derivation with frozen inputs.
    Requires verified evidence linkage, not just the existence of a completed session.
-3. **H5c: confirmed bounded revisions.** Add review UI and atomic/idempotent confirmation,
-   forward-only revisions and replay. This depends on H5a/H5b acceptance, not on enabling
-   experimental personalization. Unattended progression remains deferred.
+3. **H5c: confirmed bounded revisions.** Add review UI, transactional singleton activation,
+   atomic/idempotent confirmation, forward-only revisions and replay. This depends on H5a/H5b
+   acceptance, not on enabling experimental personalization. Unattended progression remains
+   deferred.
 
 The acceptance matrix must prove:
 
 - develop/maintain is independent of priority; unknown intent preserves legacy behavior;
   old schemas reject new fields; v5 hash/revision/supersession semantics remain monotonic;
+- canonical replay hashing changes when each behavior-relevant authored field changes,
+  including source identity/revision, effective bounds, intent, protected roles, substitution
+  rules, success criteria, review timing, prerequisites and every progression-rule field;
+  deterministic reordering of maps/semantically unordered collections does not change the
+  digest, while behaviorally meaningful ordering does; display-only changes do not alter it;
 - invalid ranges/units/references/overlaps and unsupported dose mappings fail explicitly;
   protected roles cannot bypass safety, rest, taper or actual capacity;
 - fresh wearables or extra windows cannot raise weekly commitment; exact qualified event
@@ -277,13 +348,18 @@ The acceptance matrix must prove:
 - incomplete/adverse/missing-follow-up evidence blocks advance, despite favorable outcome
   metrics; canonical execution/provider duplicates count once and partial work is retained;
 - one eligible proposal changes one variable within bounds; maximum value holds/exits;
-  competing experiments, stale confirmation and repeated confirmation cannot double-advance;
+  two parallel confirmations for different experiments yield exactly one activation and one
+  deterministic singleton conflict; no query-then-create race can activate both;
+- repeated confirmation of the same proposal is idempotent; a stale source revision cannot
+  activate; stale compare-and-clear cleanup cannot release a newer experiment's claim; failed
+  transactions leave no orphan claim or partial authored revision;
 - protocol/series changes, absent reliability and missing baseline remain non-comparable or
   insufficient; tests consume budget; outcome and intent revisions preserve earlier criteria;
 - no report/proposal grants automatic selection authority; confirmed changes pass common
   gates; athlete evidence cannot weaken existing safety envelopes or standing restrictions;
-- replay rejects tampered identity/criteria/evidence, cross-user writes fail, and amendments
-  preserve history; H4 integration retains distinct intraday evidence where applicable.
+- replay fixtures reject tampering/mismatch for each canonical semantic field and all pinned
+  external bindings; cross-user writes fail, amendments preserve history, and H4 integration
+  retains distinct intraday evidence where applicable.
 
 Run focused tests, frontend checks/build, Firestore rules, architecture boundary tests,
 simulation/diff and policy drift checks when behavior lands. Add targeted execution/review
@@ -296,6 +372,7 @@ no runtime test run or policy bump.
 H5 design is accepted with explicit intent and controlled, confirmed progression. The
 system can express cycling development alongside strength maintenance without treating
 available time, past expertise or favorable readiness as permission to expand training.
-The cost is richer authored contracts, reviewed dose mappings and immutable evidence
-lineage. Automatic personalization and personal M00/M01 prescription remain separate;
-current athlete inputs are still required for the latter.
+The cost is richer authored contracts, reviewed dose mappings, a transactional active-
+experiment invariant and immutable semantic replay lineage. Automatic personalization and
+personal M00/M01 prescription remain separate; current athlete inputs are still required
+for the latter.
