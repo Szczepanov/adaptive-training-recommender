@@ -258,7 +258,7 @@ describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiri
         expect(context.constraints.impliedGuardrails).toContain('avoid_overhead_pressing');
     });
 
-    // Regression coverage for the Home.tsx forecast-leak bug: a today-only tissue-derived
+    // Regression coverage for the Home.tsx forecast-leak issue: a today-only tissue-derived
     // restriction (no standing InjuryConstraint at all) must restrict a decision built WITH
     // today's checkin, but must NOT restrict a decision built without one -- which is
     // exactly the distinction Home.tsx's `context` (today) vs `forecastContext`

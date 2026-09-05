@@ -529,6 +529,19 @@ def test_waso_absent_when_no_session_has_stage_summary() -> None:
     assert METRIC_SLEEP_STAGE_AWAKE_SECONDS not in m
 
 
+def test_waso_ignores_negative_or_boolean_duration() -> None:
+    p = _base_payload_with_sessions(
+        [
+            {"id": "111", "stageSummary": {"wasoDuration": -50}},
+            {"id": "222", "stageSummary": {"wasoDuration": True}},
+        ],
+        main_session_id="111",
+    )
+    b = map_trends_to_observation_batch(p, logical_date="2026-08-28", timezone="Europe/Warsaw")
+    m = metrics(b)
+    assert METRIC_SLEEP_STAGE_AWAKE_SECONDS not in m
+
+
 def test_successful_no_target_day_is_empty() -> None:
     b = map_trends_to_observation_batch(
         {"days": [{"day": "2026-08-27", "sleepDuration": 1}]},
