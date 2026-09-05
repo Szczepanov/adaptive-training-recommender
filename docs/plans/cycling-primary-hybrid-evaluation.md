@@ -52,9 +52,17 @@ binding weekend perturbation, event objectives and taper objective changes. Ever
 case runs through `runScenario`, using the real planner.
 
 The judge is responsible for qualitative hierarchy, sequencing and adequacy questions.
-It receives authored taper and training-settings facts in the targeted packets, not hidden
-optimizer scores. `deterministic-results.json` is a separate developer artifact; its
-modeled cost/stimulus and objective diagnostics are not used as an answer key.
+Only the seven opt-in H1 packets receive the additional authored-taper and training-settings
+facts needed to judge those contracts; the existing 30 control packets retain the reviewed
+active-suite judge-visible shape. Hidden optimizer scores remain excluded.
+`deterministic-results.json` is a separate developer artifact; its modeled cost/stimulus
+and objective diagnostics are not used as an answer key.
+
+Repeated H1 judge samples cyclically rotate case presentation order. The strict response
+schema is generated from that same per-sample order (including the ordered `prefixItems`
+used by the local/Ollama adapter), then validation normalizes results back to canonical
+case IDs before aggregation. The hybrid run manifest records the order strategy. This is a
+judge-reliability safeguard; it does not change deterministic planner output.
 
 This harness chains seven-day forecasts with synthetic completion. It is not a day-by-day
 prospective athlete trial, an AM/PM execution simulator, a nutrition model, or evidence
@@ -148,13 +156,17 @@ From `app/`:
 ```bash
 npm exec vitest run scripts/ai-judge/__tests__/hybridScenarios.test.mjs
 npm run persona:hybrid:build
+npm run check
 npm run build
 ```
 
-The full frontend check/build passed, including 3,393 tests at that point; subsequent
-fixture-only refinements passed all 27 tests across the hybrid and active-persona suites,
-and the final corpus was regenerated (37 cases / 11 families). Existing knowledge
-coverage warnings remain; they are not new physiological validation results.
+Use the latest PR-head CI run as the authoritative full validation rather than copying a
+test-count snapshot into this document. The focused hybrid regression suite, full frontend
+checks, deterministic corpus gates, Firestore rules, simulation bounds, bundle build and
+dependency audits should all remain green before H1 is considered merge-ready. The opt-in
+corpus should regenerate as **37 cases / 11 families**; the default active suite remains
+**30 cases / 9 families**. Existing knowledge coverage warnings, if any, are not new
+physiological validation results.
 
 For optional local judging, use the `--hybrid-expansion` runner flag documented in
 `app/scripts/ai-judge/README.md`. Review actual cases behind every complaint before
