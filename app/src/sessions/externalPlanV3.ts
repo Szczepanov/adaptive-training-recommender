@@ -72,8 +72,11 @@ function validateRestDirective(raw: any, index: number, weekCount: number, error
  * (or a directive and a fixed session) claiming the same relative `(week, day)`. Session
  * conflicts are checked here rather than in the shared session validator because only the
  * plan level can see both lists at once.
+ *
+ * Exported for `sessions/externalPlanV4.ts`'s validator to reuse -- v4 inherits v3's rest
+ * contract unchanged (ADR-0036 D-SCHEMA).
  */
-function validateRestDays(raw: any, sessions: readonly any[], weekCount: number, errors: ValidationError[]): void {
+export function validateRestDays(raw: any, sessions: readonly any[], weekCount: number, errors: ValidationError[]): void {
     if (raw.restDays === undefined) {
         errors.push({ field: 'restDays', message: 'restDays is required (may be an empty list) in external-plan@3' });
         return;
@@ -121,6 +124,16 @@ function validateRestDays(raw: any, sessions: readonly any[], weekCount: number,
     }
 }
 
+/** Strips the `restDays` key before the shared envelope sweep runs, since
+ * `validateExternalPlanEnvelope`'s `unknownKeys` check (shared with v1/v2) does not know
+ * about it and would otherwise reject a valid v3/v4 document. Exported for
+ * `sessions/externalPlanV4.ts` to reuse the same stripping rule. */
+export function stripRestDays(raw: Record<string, unknown>): Record<string, unknown> {
+    const { restDays: _restDays, ...envelopeOnly } = raw as { restDays?: unknown };
+    void _restDays;
+    return envelopeOnly;
+}
+
 /** Strict boundary for an imported v3 plan revision, mirroring `validateExternalTrainingPlan`
  * (v1) and `validateExternalTrainingPlanV2`. */
 export function validateExternalTrainingPlanV3(raw: any): EngineValidationResult<ExternalTrainingPlanV3> {
@@ -132,13 +145,10 @@ export function validateExternalTrainingPlanV3(raw: any): EngineValidationResult
         errors.push({ field: 'schema', message: `Schema must be "${EXTERNAL_PLAN_SCHEMA_V3}"` });
     }
     // v3's own plan-level allow-list adds 'restDays' on top of the shared envelope's keys;
-    // validateExternalPlanEnvelope's own unknownKeys sweep (shared with v1/v2) does not
-    // know about restDays, so it would reject a valid v3 document. Widen only for v3 by
-    // pre-checking restDays here and stripping it before the shared sweep runs on a shallow
-    // copy -- the shared function itself is untouched, so v1/v2 continue rejecting the field.
-    const { restDays: _restDays, ...envelopeOnly } = raw as { restDays?: unknown };
-    void _restDays;
-    validateExternalPlanEnvelope(envelopeOnly, errors, validateExternalSessionV2);
+    // widen only for v3 by pre-checking restDays here and stripping it before the shared
+    // sweep runs on a shallow copy -- the shared function itself is untouched, so v1/v2
+    // continue rejecting the field.
+    validateExternalPlanEnvelope(stripRestDays(raw), errors, validateExternalSessionV2);
     if (Array.isArray(raw.sessions)) {
         const weekCount = isPositiveInt(raw.weekCount, 1, EXTERNAL_PLAN_MAX_WEEKS) ? raw.weekCount : EXTERNAL_PLAN_MAX_WEEKS;
         validateRestDays(raw, raw.sessions, weekCount, errors);

@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 (implementation unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
-**Blocked by:** H4 schema/pure-ledger work and H5 intent groundwork can both start now. H4 runtime release still needs verification of same-day canonical performed facts; H5 runtime needs validated intent mappings and linked response evidence, and H5's cumulative `external-plan@5` import acceptance must be based on ADR-0036's landed v4 artifact, not reconstructed from discussion context. Personal M00/M01 prescription needs current athlete inputs.
+**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered (runtime wiring unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
+**Blocked by:** H4 runtime wiring (refactoring `schedule.ts`/`planner.ts`/`rules.ts` onto `dailyLedger.ts`, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) still needs verification of same-day canonical performed facts. H5 intent groundwork can start now; H5 runtime needs validated intent mappings and linked response evidence, and H5's cumulative `external-plan@5` import acceptance must be based on ADR-0036's landed v4 artifact, not reconstructed from discussion context. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -224,23 +224,36 @@ Useful synthetic software work can proceed without those personal answers.
 
 ## Work order H4 — Intraday windows and post-AM response
 
-**Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md); implementation unstarted.
-**Dependencies:** Runtime release requires ADR-0035 rest support and tested same-day
-canonical performed identity/revision/timing inputs. Schema and pure-ledger work can
-start before those integrations land.
+**Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
+Step 1 (D-SCHEMA + D-LEDGER) delivered; steps 2-6 (runtime wiring) unstarted.
+**Dependencies:** Runtime release requires ADR-0035 rest support (delivered) and tested
+same-day canonical performed identity/revision/timing inputs.
 **Deliverable:** Authored intraday placement and reassessed execution, followed separately
 by automatic multi-window packing after the initial acceptance bar passes.
 
 The accepted implementation sequence is:
 
-1. Version `external-plan@4` intraday placement and athlete schedule windows; keep v1/v2/v3
-   immutable. Validate intervals, explicit bundles/order/dependencies, optional priority,
-   relative dates and cross-version plan revisions. Version affected persistence readers
-   and rules without migrating historical prescriptions in place.
-2. Extract one daily ledger from existing schedule deductions and authored remaining-budget
-   handling. Resolve real windows and reserve minutes/current-policy cost once per
-   occurrence. Replace reservations with canonical completed facts, including today's AM;
-   never subtract fixed activities twice or count execution/provider evidence separately.
+1. **Delivered.** Version `external-plan@4` intraday placement and athlete schedule
+   windows; keep v1/v2/v3 immutable. `sessions/externalPlanV4.ts` adds the session-level
+   `intraday` object (window/bundleId/order/afterSessionId/minimumSeparationMinutes) on
+   top of v3's unchanged envelope/`restDays`, validating intervals, bundle
+   membership/order/dependency shape, and rejecting invalid references -- see the
+   evaluation plan's H4 section for the full delivered-contract list. Cross-version
+   revision ordering/supersession reuses the existing `ExternalPlanService` dispatch
+   (now including v4) unchanged. `sessions/externalPlanV4.test.ts` covers the ADR's
+   schema-level deterministic cases.
+2. **Ledger delivered as a pure module; refactor into the schedule/planner deduction
+   points is the next task.** `engine/dailyLedger.ts` implements one daily
+   ledger's remainder/reconciliation math (`computeDailyLedger`, `admitsCandidate`,
+   `reconcileEntry`), covered by `engine/dailyLedger.test.ts` including the ADR's
+   90-minute-ceiling/60-minute-AM worked example and the exhausted-systemic-cost case.
+   **Not yet done:** wiring this into `schedule.ts`'s `resolveAvailability`/
+   `calculateReservedCapacityProfile`, `planner.ts`'s `fixedActivityCostProfileForDate`/
+   `applyFixedActivityStimulusCredit`, and `rules.ts`'s `fixedActivityProjection`/
+   `unrepresentedFixedActivityProjection` -- today these four still each hand-write an
+   independent per-day cost/stimulus reduce; D-LEDGER's "refactor... rather than
+   subtracting again downstream" is not yet satisfied. Resolving real windows and
+   reserving minutes/cost against actual instants also needs D-TIME (below).
 3. Add atomic, confirmed bundle placement against all destination windows and ADR-0035
    rest. Preserve completed history and support independent optional-session dropping.
 4. At PM launch, capture current symptoms/response, same-day work and availability, rerun
@@ -257,6 +270,12 @@ Read ADR-0036 for the binding contract and full acceptance bar. This work does n
 universal recovery-hour threshold, automatically increase weekly dose, or authorize H5
 progression. Automatic packing must later reuse the same ledger/window boundaries;
 adding duplicate date slots to `packWeeklyDose` is not a valid implementation.
+
+`POLICY_VERSION` is unchanged by step 1: `externalPlanV4.ts` and `dailyLedger.ts` are not
+consumed by any decision path yet, and `simulate:diff`/policy-drift confirm no output
+change. The next PR should tackle step 2's refactor (wiring the ledger into the existing
+deduction points) before D-TIME/D-REASSESS/D-PLACEMENT, since every later step reads from
+that shared boundary.
 
 ## Work order H5 — Block intent and controlled progression
 
