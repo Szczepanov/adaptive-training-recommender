@@ -37,9 +37,11 @@ No production decision logic changed.
 
 The remaining H3 gap is explicit rest: neither external-plan schema can distinguish
 "protected rest" from "no authored instruction for this date."
-[ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (Proposed) lays out the options —
-leaning toward a day-level rest directive in a new external-plan schema revision, not a
-fake session modality — with the minimum semantics implementation would need. It is
+[ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (Proposed) recommends adding that
+authority only in `external-plan@3`, using relative plan-level `restDays` directives
+(`{ id, week, day }`) while keeping v1/v2 immutable. It also keeps readiness separate from
+plan intent: authored rest blocks ordinary generated work and resolves the default planning
+outcome to canonical Rest rather than fabricating a physiological `recover` verdict. It is
 awaiting the repository owner's decision; no code changes yet.
 
 Suggested next step: get a decision on ADR-0035, or move to H4/H5 design. Both routes
@@ -151,28 +153,33 @@ rest day. Both schemas intentionally define rest as omission, so the current res
 no fact that can distinguish protected rest from an unplanned date.
 
 **Status: recorded as [ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (Proposed),
-awaiting repository-owner decision.** It rules out reusing the existing travel-block
-mechanism (it only scales the evergreen dose target, it does not block a recommendation),
-leans toward a day-level rest directive in a new schema revision rather than a session
-`kind`/modality (rest has no useful duration, equipment, stimulus, execution dose or
-adherence occurrence, so forcing it through `ExternalPlanSession` would blur the
-source-neutral session boundary), and lists a third option (an `isRest` session paralleling
-`isEvent`) for comparison. It specifies, pending sign-off:
+awaiting repository-owner decision.** The implementation contract, if accepted, is:
 
-1. exact schema shape and version (keep v1/v2 readable and immutable);
-2. rest precedence over `any_day` placement and missed-session replacement;
-3. day evaluation semantics: explicit rest must not activate evergreen fallback, while a
-   genuinely unplanned date still does;
-4. persistence/audit/replay identity for the directive (`planId`, revision, content hash,
-   directive id/kind);
-5. import validation, Firestore rules and UI presentation;
-6. `POLICY_VERSION` handling, because this changes recommendation behavior.
+1. add protected rest only in `adaptive-training-recommender/external-plan@3`, inheriting
+   v2's `definition`-based session contract unchanged; v1/v2 validators remain immutable
+   and continue rejecting the new field;
+2. represent rest as relative plan-level `restDays` directives (`{ id, week, day }`) so
+   `startDate` remains the sole authored absolute date; reject duplicate/out-of-range or
+   fixed-session-conflicting directives;
+3. treat resolved rest dates as blocked targets for `any_day` placement and missed-session
+   replacement;
+4. resolve external-plan dates as `session` / `rest` / `unplanned` before fallback; only
+   `unplanned` activates `externalFallback: true`;
+5. keep `evaluateReadinessAndSafetyEnvelope` independent: authored rest suppresses ordinary
+   generated work and resolves the default planning outcome to canonical Rest without
+   rewriting a `train`/`modify` readiness verdict to physiological `recover`;
+6. permit only an explicit, auditable athlete override of the authored-rest planning gate;
+   requested work still passes normal safety, clinical, availability, equipment and
+   readiness constraints;
+7. persist/replay `planId`, plan revision, content hash, rest-directive id and resolved
+   plan-local date, with an authored-rest reason/source distinct from both physiological
+   `recover` and `externalFallback`;
+8. update import validation, Firestore/rules, UI and `POLICY_VERSION` coverage because the
+   accepted directive changes recommendation behavior.
 
-Do not begin implementation until the ADR is accepted.
-
-The evaluation plan records external product precedent for the distinction (Garmin Coach
-Rest Days; TrainingPeaks Rest Day vs. No Planned Workouts), but those products do not
-prescribe this repository's schema.
+Do not begin implementation until the ADR is accepted. External-product calendar behavior
+is not part of the architecture rationale; the decision follows from this repository's own
+authored-instruction-vs-absence semantics and versioned immutable import contract.
 
 For a personal M00/M01 artifact, first confirm representative current workload, current
 restrictions/symptoms and actual bicycle setup. The prior review's example week is an
