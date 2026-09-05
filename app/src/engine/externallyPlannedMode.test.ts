@@ -350,7 +350,6 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         });
 
         it('does not fabricate a physiological recover verdict -- mode reflects genuine readiness', async () => {
-            // Strong readiness: evaluateReadinessAndSafetyEnvelope alone would call this 'train'.
             const strong = readiness({ readiness: 9, sleepQuality: 9, fatigue: 1, soreness: 1, motivation: 9 });
             const recommendation = await evaluateWithRest(restContext(), strong);
 
@@ -361,22 +360,34 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         it('surfaces a red-flag clinical note even though the outcome is already Rest either way', async () => {
             const flagged = readiness({ painFlag: true });
             const recommendation = await evaluateWithRest(restContext(), flagged);
-            // painFlag alone need not trigger redFlagActive; this asserts the note is
-            // included whenever the envelope itself reports one, without over-asserting
-            // exactly which subjective inputs trigger it (that contract lives in rules.ts's
-            // envelope logic, not this ADR).
             if (recommendation.envelopes?.safety.redFlagActive) {
                 expect(recommendation.rationale).toContain(recommendation.envelopes.safety.clinicalReason ?? 'red-flag');
             }
         });
 
-        it('an explicit athlete override proceeds exactly as if no rest directive existed', async () => {
+        it('an explicit athlete override uses normal ranking and remains visible in provenance', async () => {
             const withoutRest = await evaluateWithRest(null);
             const overridden = await evaluateWithRest(restContext(), readiness(), true);
 
-            expect(overridden.decisionTrace?.externalRest).toBeUndefined();
+            expect(overridden.decisionTrace?.externalRest).toEqual({
+                planId: 'autumn-block', revision: 1, contentHash: 'hash-of-revision-1',
+                restDirectiveId: 'w1-tue-rest', date: DATE, overridden: true,
+            });
+            expect(overridden.rationale).toContain('explicitly overrode a protected rest day');
             expect(overridden.template.id).toBe(withoutRest.template.id);
             expect(overridden.mode).toBe(withoutRest.mode);
+        });
+
+        it('treats a same-day preferred modality in check-in as the production explicit override request', async () => {
+            const overridden = await evaluateWithRest(
+                restContext(), readiness({ preferredModalityToday: 'Cycling' }), false,
+            );
+
+            expect(overridden.decisionTrace?.externalRest).toMatchObject({
+                restDirectiveId: 'w1-tue-rest', date: DATE, overridden: true,
+            });
+            expect(overridden.decisionTrace?.candidateScores.length ?? 0).toBeGreaterThan(0);
+            expect(overridden.rationale).toContain('explicitly overrode a protected rest day');
         });
 
         it('a placed session takes precedence over a rest directive if both are somehow supplied', async () => {
