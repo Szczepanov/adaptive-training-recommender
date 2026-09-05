@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
 **Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 (implementation unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
-**Blocked by:** H4 schema/pure-ledger work and H5 intent groundwork can both start now. H4 runtime release still needs verification of same-day canonical performed facts; H5 runtime needs validated intent mappings and linked response evidence. Personal M00/M01 prescription needs current athlete inputs.
+**Blocked by:** H4 schema/pure-ledger work and H5 intent groundwork can both start now. H4 runtime release still needs verification of same-day canonical performed facts; H5 runtime needs validated intent mappings and linked response evidence, and H5's cumulative `external-plan@5` import acceptance must be based on ADR-0036's landed v4 artifact, not reconstructed from discussion context. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -44,6 +44,12 @@ H3-rest below): `external-plan@3` adds relative plan-level `restDays` directives
 plan intent -- authored rest blocks ordinary generated work and resolves the default
 planning outcome to canonical Rest rather than fabricating a physiological `recover`
 verdict.
+
+H4's authority/schema design is the accepted ADR-0036 proposal
+(`docs/adr/0036-intraday-training-windows-and-reassessment.md`). Read that artifact rather
+than reconstructing its v4 contract from discussion context. H5 may proceed with
+manual/report-only intent groundwork now, but cumulative `external-plan@5` import
+acceptance must be based on ADR-0036's actual v4 artifact.
 
 Suggested next step: start ADR-0036 (H4) schema/pure-ledger implementation work, or start
 ADR-0037 (H5) intent-contract work instead -- both designs are accepted and ready. Keep
@@ -256,8 +262,10 @@ adding duplicate date slots to `packWeeklyDose` is not a valid implementation.
 
 **Status:** Design accepted in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md); implementation unstarted.
 **Dependencies:** Validated intent mappings and canonical completed-work/response linkage.
-v5 import requires inherited ADR-0035/0036 capabilities used by an artifact; single-session
-manual intent/reporting groundwork can start independently of H4 runtime.
+`external-plan@5` import depends on the concrete inherited v3/v4 contracts; ADR-0036 is
+accepted and merged, so its v4 artifact is a real dependency to build against rather than
+a discussion-context reconstruction. Single-session manual intent/reporting groundwork can
+start independently of H4 runtime.
 **Deliverable:** H5a explicit intent, H5b report-only review, H5c confirmed bounded revisions.
 
 1. **H5a — Intent contracts.** Add versioned block objectives with independent intent and
@@ -265,21 +273,36 @@ manual intent/reporting groundwork can start independently of H4 runtime.
    criteria. Reuse `PlanDefinition`, `AdaptationDoseRequirement` and the effective-mode
    boundary. Introduce import `intentBlocks` only in v5; keep earlier schemas unchanged.
    Preserve profile commitment, rest/taper/safety precedence and forward-only revisions.
+   Define a versioned canonical replay payload that exhaustively covers every authored field
+   capable of changing allocation, adjudication, progression or evaluation behavior. Hash
+   that canonical projection, not an informal subset of block fields.
 2. **H5b — Evidence review.** Use canonical performed work, pinned prescription comparison,
    linked follow-up responses and existing protocol-aware outcome evaluations. Implement
    frozen, report-only `advance_proposal | hold | reduce_proposal | redirect` results.
-   Missing or adverse evidence blocks advancement. Require one target variable, reviewed
-   bounds/evidence criteria and at most one active progression experiment per athlete.
-   Do not reuse block-report percentage thresholds as progression clearance.
+   Missing or adverse evidence blocks advancement. Require one target variable and reviewed
+   bounds/evidence criteria. Pending proposals are not active experiments; only confirmed
+   activation acquires the athlete-wide singleton progression slot. Do not reuse block-report
+   percentage thresholds as progression clearance.
 3. **H5c — Confirmed revision.** Show concrete before/after dose and affected future work.
    Confirmation must revalidate source revisions, safety and capacity and atomically create
-   one new authored revision. Stale/repeated confirmation cannot apply an increment twice.
-   Outcome reports remain outside automatic engine selection; no unattended progression.
+   one new authored revision. Enforce the one-confirmed-active-experiment-per-athlete rule
+   with an athlete-scoped singleton claim/sentinel acquired in the same Firestore transaction
+   (or equivalent serializable compare-and-set) as activation; never query then create across
+   blocks. Stale/repeated confirmation cannot apply an increment twice. Release uses matching
+   compare-and-clear semantics so stale cleanup cannot erase a newer claim. Outcome reports
+   remain outside automatic engine selection; no unattended progression.
 4. **Verification.** Implement ADR-0037's complete deterministic matrix, immutable replay,
-   user isolation/rules and architecture boundary tests. Run focused tests, full frontend
-   checks/build, rules, simulations/diff and policy drift checks with behavior changes.
-   Preserve intraday evidence when H4 applies; do not collapse AM/PM decisions into a daily
-   reporting row. Keep active judge baselines unchanged unless separately evaluated.
+   user isolation/rules and architecture boundary tests. Replay fixtures must mutate each
+   semantic binding (including source identity/revision, effective bounds, intent, protected
+   roles, substitution rules, success criteria, review timing, prerequisites and progression
+   rules) and prove a digest/mismatch failure. Also prove canonical ordering stability and
+   display-only exclusion. Concurrency tests must run competing confirmations in parallel and
+   prove exactly one activation, idempotent same-proposal retries, stale-source rejection,
+   stale-release protection and no orphan claim/partial revision after transaction failure.
+   Run focused tests, full frontend checks/build, rules, simulations/diff and policy drift
+   checks with behavior changes. Preserve intraday evidence when H4 applies; do not collapse
+   AM/PM decisions into a daily reporting row. Keep active judge baselines unchanged unless
+   separately evaluated.
 
 A reduced maintenance prescription is a process target; physiological preservation needs
 suitable comparable outcome evidence. Do not fabricate strength/muscle metrics, convert
