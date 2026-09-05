@@ -3,6 +3,7 @@ import type { SessionReferenceBinding } from '../sessions/models';
 import { computeContentHash } from './externalPlanHash';
 import { resolveRestDate } from './externalPlacement';
 import { externalTemplateId, isExternalTemplateId } from './externalSessionProfiles';
+import { isExternalRestOverride } from './externalRestProvenance';
 import { getCanonicalRestTemplate } from './rules';
 import { isHistoricalPolicyVersion, POLICY_VERSION } from './policy';
 import { subjectiveDriftAuditReplayErrors } from './subjectiveDriftAudit';
@@ -308,12 +309,20 @@ function externalRestErrors(
         return errors;
     }
 
+    // An explicit athlete override keeps the authored rest directive as load-bearing input
+    // provenance, but selection itself is the ordinary ranked planner path. Reuse that path's
+    // replay checks rather than pretending the canonical Rest template still owned selection.
+    if (isExternalRestOverride(provenance)) {
+        errors.push(...authoredOccurrenceDecisionErrors(recommendation));
+        return errors;
+    }
+
     if (recommendation.templateId !== getCanonicalRestTemplate().id) {
         errors.push(`Persisted template ${recommendation.templateId} does not match the canonical Rest template expected for an authored-rest decision.`);
     }
 
-    // Authored rest bypasses ranking entirely (rules.ts's authoredRestRecommendation never
-    // calls rankCandidates), mirroring the ordinary external-session rejection above.
+    // Default authored rest bypasses ranking entirely (rules.ts's authoredRestRecommendation
+    // never calls rankCandidates), mirroring the ordinary external-session rejection above.
     if (recommendation.recommendationAudit!.candidateScores.length > 0) {
         errors.push('An authored-rest decision audited ranked candidates, which that decision path must not produce.');
     }
