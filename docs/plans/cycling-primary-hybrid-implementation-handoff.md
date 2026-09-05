@@ -28,16 +28,17 @@ The current decision policy version is
 `2026-09-outdoor-easy-cycling-anchor-authority-v1`. See the evaluation plan for the root
 cause, focused regression tests and required PR-head validation.
 
-H3 was investigated (see the work order below and the evaluation plan). The unplanned-date
-fallback, missed-session replacement, imported-event quality credit, and full/reduced
-immutable-session contracts are implemented. Existing evidence was sufficient for three of
-those; this PR adds `h3AuthoredPlanContracts.test.ts` because the prior event-credit test
-only proved aerobic credit and was too indirect for the specific quality-credit claim.
-No production decision logic changed.
+H3 was investigated and its executable contracts are delivered (see the work orders below
+and the evaluation plan). The unplanned-date fallback, missed-session replacement,
+imported-event quality credit, full/reduced immutable-session contracts, and explicit-rest
+authoring are implemented. Existing evidence was sufficient for the first three of those;
+the focused H3 contract coverage added `h3AuthoredPlanContracts.test.ts` because the prior
+event-credit test only proved aerobic credit and was too indirect for the specific
+quality-credit claim. H3-rest intentionally introduced the production decision behavior
+required by ADR-0035 rather than leaving explicit rest as an unresolved schema question.
 
-The remaining H3 gap was explicit rest: neither external-plan schema could distinguish
-"protected rest" from "no authored instruction for this date." [ADR-0035]
-(../adr/0035-explicit-rest-day-authoring.md) (Accepted) is now **delivered** (work order
+The former H3 explicit-rest gap is now closed. [ADR-0035]
+(../adr/0035-explicit-rest-day-authoring.md) (Accepted) is **delivered** (work order
 H3-rest below): `external-plan@3` adds relative plan-level `restDays` directives
 (`{ id, week, day }`) while keeping v1/v2 immutable, and keeps readiness separate from
 plan intent -- authored rest blocks ordinary generated work and resolves the default
@@ -112,25 +113,26 @@ tests, `npm run check`, `npm run build`, `npm run simulate:scenarios`,
 `npm run simulate:diff`, and policy drift validation. Do not regenerate a committed
 simulation baseline merely to hide an unexplained change.
 
-## Work order H3 — Authored block authority, rest and replacement (investigated)
+## Work order H3 — Authored block authority, rest and replacement (delivered)
 
-**Status:** Investigated and contract-tested. No production decision-logic change made.
-Explicit-rest authoring remains a schema/authority decision. Personal prescription still
-pending inputs.
+**Status:** Delivered and contract-tested. Explicit-rest authoring is delivered separately
+under H3-rest/ADR-0035 below. Personal prescription still pending inputs.
 **Dependencies:** Existing external-plan/session infrastructure.
 
-Read ADR-0019/0023 and the session-execution architecture. Route through
+Read ADR-0019/0023/0035 and the session-execution architecture. Route through
 `planningMode.ts`, `externalPlacement.ts`, `externalSession.ts`,
-`sessions/externalPlanV2.ts`, `authoredSessionGates.ts`, `sessionOccurrenceService.ts`
-and `Home.tsx`. Existing preferred double-day bundles and authored remaining-budget
-handling are delivered capabilities, not missing features.
+`sessions/externalPlanV2.ts`, `sessions/externalPlanV3.ts`, `authoredSessionGates.ts`,
+`sessionOccurrenceService.ts` and `Home.tsx`. Existing preferred double-day bundles,
+authored remaining-budget handling, and explicit protected-rest dates are delivered
+capabilities, not missing features.
 
 **Verified executable contracts:**
 
 - unplanned dates fall back to the catalog and are explicitly labelled as external-plan
   fallback (`externallyPlannedMode.test.ts`);
-- missed-session proposals respect occupied dates and per-session `ifMissed`, and only a
-  confirmed proposal mutates placement (`externalPlacement.test.ts`);
+- missed-session proposals respect occupied dates, authored protected-rest dates, and
+  per-session `ifMissed`; only a confirmed proposal mutates placement
+  (`externalPlacement.test.ts`);
 - imported hard cycling events are reconciled to `FixedActivity`, retain inferred
   external-authored stimulus identity, and can contribute enough projected stimulus to
   resolve a `threshold_quality` objective when projected commitments are included
@@ -139,7 +141,9 @@ handling are delivered capabilities, not missing features.
   currently applies fixed-activity credit before `rankCandidates`, but this focused test
   covers the credit/resolution layer rather than executing catalog ranking itself;
 - full/reduced dose and immutable revision/replay behavior remain covered by
-  `externalSession.test.ts`, `provenance.test.ts`, `replay.test.ts` and validation tests.
+  `externalSession.test.ts`, `provenance.test.ts`, `replay.test.ts` and validation tests;
+- `external-plan@3` distinguishes authored protected rest from a genuinely unplanned day;
+  v1/v2 remain unchanged and continue to reject `restDays`.
 
 Do not broaden the event test into a claim that every free-text "hard group ride" is
 interchangeable with quality. Equivalent replacement requires the ride to enter the typed
@@ -156,17 +160,25 @@ escape hatch), `ExternalRestProvenance` persistence/audit/replay
 (`models.ts`/`provenance.ts`/`replay.ts`'s fail-closed `externalRestErrors`), and matching
 `firestore.rules` coverage. `POLICY_VERSION` is `2026-09-authored-rest-day-v1`.
 
+The import authoring prompt now emits `external-plan@3`, requires `restDays` (an empty list
+is valid), spells out relative `{ id, week, day }` semantics and explicitly distinguishes
+protected rest from an omitted/unplanned day. This prevents the product's own published
+prompt from continuing to generate v2 documents that cannot author the new capability.
+
 **Deferred, not attempted:** multi-day forecast/critique-layer rest awareness (the
 `D-CRITIQUE` "review the imported week" surface in `planner.ts` is separate from this
-ADR's single-day resolver contract) and UI rendering of `restDays` in the import
+ADR's single-day resolver contract) and dedicated UI rendering of `restDays` in the import
 preview/diff views (`ExternalPlanImport.tsx`/`externalPlanDiff.ts` type-check against the
 widened `AnyExternalTrainingPlan` union but do not yet render rest-specific content).
 Neither changes recommendation behavior, so neither blocks this work order being complete.
 
-Validation: `npm run check` (3440 tests), `npm run build`, `npm run test:rules` (167
-Firestore rules tests), `npm run simulate:scenarios`/`simulate:diff` (identical to the
-pre-existing baseline diff — no committed scenario exercises the external-plan/rest path),
-`node scripts/check-policy-drift.mjs <starting-commit>` (passed).
+Validation: use the PR-head checks as the authoritative record. Required coverage includes
+`npm run check`, `npm run build`, `npm run test:rules`,
+`npm run simulate:scenarios`/`simulate:diff`, and policy-drift validation. Focused regression
+coverage now also includes malformed v3 rest directives, fully occupied weeks, external
+provenance mutual exclusion, and Firestore authored-rest storage invariants. Do not keep
+fixed test-count numbers in this handoff because focused regression additions legitimately
+change them.
 
 For a personal M00/M01 artifact, first confirm representative current workload, current
 restrictions/symptoms and actual bicycle setup. The prior review's example week is an
