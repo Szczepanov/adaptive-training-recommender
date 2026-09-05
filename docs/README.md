@@ -181,6 +181,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**Structured Strength and Garmin Activity Reconciliation Analysis**](./analysis/structured-strength-garmin-activity-reconciliation-analysis.md) — Architectural analysis for reconciling structured strength executions and Garmin activities into a canonical training occurrence.
 * [**2026-09-03 Persona AI Judge Safety & Modality Tuning Review**](./analysis/2026-09-03-persona-judge-safety-and-modality-tuning.md) — AI judge stability evaluation, candidate ranking modality deprioritization, and evergreen adverse recovery dose withholding.
 * [**2026-09-03 PR 388 auth and wearable-free review**](./analysis/2026-09-03-pr-388-auth-wearable-free-review.md) — Review of PR 388 covering authentication and provider-link boundaries, recommendation composition, and 7-day planning.
+* [**2026-09-04 judge:e2e:quick drift diagnosis**](./analysis/2026-09-04-judge-e2e-quick-drift-diagnosis.md) — Diagnosis of a reported regression in the local 4B AI plan judge after PR #387 / #388, confirming it as sampling noise rather than an engine behavior change.
+* [**2026-09-05 Local AI-judge throughput tuning**](./analysis/2026-09-05-local-judge-vram-tuning.md) — Local GPU VRAM headroom analysis and adjustments to sample counts, context windows, and concurrency for AI-judge tools.
 
 ---
 
