@@ -10,6 +10,7 @@ import type { ProgressResult } from '../observations/progress';
 import type { SessionOutcome } from '../responses/outcome';
 import type { CoverageCreditFact, PerformedExposureFact } from './performedTrainingFacts';
 import type {
+    BlockObjectiveDefinition,
     BlockProgressionContract,
     IntentBlock,
     TissueSeverity,
@@ -37,6 +38,7 @@ export interface ProgressionEvidenceAudit {
     windowStartDate?: string;
     windowEndDate?: string;
     candidateExposureCount: number;
+    roleRelevantExposureCount: number;
     exposuresObserved: number;
     excludedExposureCount: number;
     exposuresRequired: number;
@@ -45,6 +47,7 @@ export interface ProgressionEvidenceAudit {
     missingFollowUpCount: number;
     adverseResponseCount: number;
     cautionResponseCount: number;
+    unknownResponseCount: number;
     outcomeMetricEvaluated?: string;
     outcomeTrend?: string;
 }
@@ -62,18 +65,25 @@ export interface ProgressionReviewResult {
 export type ProgressionPrescriptionMatch = 'matched_current_target' | 'partial' | 'mismatch' | 'unknown';
 
 /**
- * One canonical occurrence with all evidence already linked to that occurrence. The caller
- * owns construction of this join from canonical stores; the evaluator verifies occurrence
- * ids/coverage and refuses to infer identity from dates or modality.
+ * One canonical occurrence with all evidence already joined to that occurrence by the caller.
+ * `coverageCredits` still carry the canonical occurrence id and are verified here. Prescription
+ * evidence pins the exact variable/value under review so a stale or different dose cannot be
+ * counted merely because it used the same modality or role.
  */
 export interface LinkedProgressionExposureEvidence {
     exposure: PerformedExposureFact;
     coverageCredits: readonly CoverageCreditFact[];
+    /** Fraction of the target dose delivered, required when an authored substitution has a
+     * `minDoseFraction` qualification. */
+    deliveredDoseFraction?: number;
     prescription: {
         status: ProgressionPrescriptionMatch;
-        definitionId?: string;
-        revision?: number;
+        sourceRevision: number;
+        sessionId?: string;
         stepId?: string;
+        variable: BlockProgressionContract['variable'];
+        unit: BlockProgressionContract['unit'];
+        value: number;
     };
     outcome?: SessionOutcome;
 }
@@ -123,6 +133,7 @@ function calendarDaysInclusive(startDate: string, endDate: string): number {
 function emptyAudit(contract?: BlockProgressionContract): ProgressionEvidenceAudit {
     return {
         candidateExposureCount: 0,
+        roleRelevantExposureCount: 0,
         exposuresObserved: 0,
         excludedExposureCount: 0,
         exposuresRequired: contract?.minCompletedExposures ?? 0,
@@ -131,6 +142,7 @@ function emptyAudit(contract?: BlockProgressionContract): ProgressionEvidenceAud
         missingFollowUpCount: 0,
         adverseResponseCount: 0,
         cautionResponseCount: 0,
+        unknownResponseCount: 0,
     };
 }
 
@@ -154,7 +166,7 @@ function result(
     };
 }
 
-function exactCoverageMatches(
+function hasExactCoverage(
     evidence: LinkedProgressionExposureEvidence,
     coverageKey: string,
 ): boolean {
@@ -165,15 +177,42 @@ function exactCoverageMatches(
     );
 }
 
+function coverageMatchesObjective(
+    evidence: LinkedProgressionExposureEvidence,
+    objective: BlockObjectiveDefinition,
+): boolean {
+    if (hasExactCoverage(evidence, objective.coverageKey)) return true;
+
+    for (const substitution of objective.allowedSubstitutions ?? []) {
+        if (substitution.targetCoverageKey !== objective.coverageKey) continue;
+        const allowedExactCoverage = substitution.allowedCoverageKeys.some(key =>
+            hasExactCoverage(evidence, key),
+        );
+        if (!allowedExactCoverage) continue;
+        if (substitution.minDoseFraction === undefined) return true;
+        if (evidence.deliveredDoseFraction !== undefined
+            && Number.isFinite(evidence.deliveredDoseFraction)
+            && evidence.deliveredDoseFraction >= substitution.minDoseFraction) {
+            return true;
+        }
+    }
+    return false;
+}
+
 function prescriptionMatchesTarget(
     evidence: LinkedProgressionExposureEvidence,
     contract: BlockProgressionContract,
 ): boolean {
-    if (evidence.prescription.status !== 'matched_current_target') return false;
+    const prescription = evidence.prescription;
+    if (prescription.status !== 'matched_current_target') return false;
+    if (!Number.isInteger(prescription.sourceRevision) || prescription.sourceRevision < 1) return false;
+    if (prescription.variable !== contract.variable) return false;
+    if (prescription.unit !== contract.unit) return false;
+    if (!Number.isFinite(prescription.value) || prescription.value !== contract.currentValue) return false;
     if (contract.targetBinding.sessionId !== undefined
-        && evidence.prescription.definitionId !== contract.targetBinding.sessionId) return false;
+        && prescription.sessionId !== contract.targetBinding.sessionId) return false;
     if (contract.targetBinding.stepId !== undefined
-        && evidence.prescription.stepId !== contract.targetBinding.stepId) return false;
+        && prescription.stepId !== contract.targetBinding.stepId) return false;
     return true;
 }
 
@@ -195,7 +234,7 @@ function redirectTrigger(contract: BlockProgressionContract, trigger: 'adverse_r
 
 function evaluatePrerequisites(
     input: ProgressionReviewInput,
-    targetObjective: IntentBlock['objectives'][number],
+    targetObjective: BlockObjectiveDefinition,
 ): string[] {
     const prerequisites = targetObjective.entryPrerequisites;
     if (!prerequisites) return [];
@@ -244,6 +283,10 @@ function outcomeSatisfiesTargetTrend(
     if (progress.status === 'meaningful_improvement' || progress.status === 'possible_improvement') {
         return { passes: true };
     }
+    // ADR-0037 explicitly says `unclear_within_noise` alone does not prove maintenance.
+    if (progress.status === 'unclear_within_noise') {
+        return { passes: false, reason: 'stable_target_unclear_within_noise' };
+    }
     if (acceptableDeclineTolerancePct === undefined || progress.percentChange === undefined) {
         return { passes: false, reason: 'stable_target_missing_comparable_decline_tolerance_evidence' };
     }
@@ -289,6 +332,9 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
     if (input.asOfDate < input.intentBlock.dateRange.startDate) {
         return result('hold', ['review_before_block_start'], input, initialAudit);
     }
+    if (input.asOfDate >= input.intentBlock.dateRange.endDate) {
+        return result('redirect', ['block_interval_ended_requires_review'], input, initialAudit);
+    }
     if (input.asOfDate < input.intentBlock.reviewSchedule.nextReviewDate) {
         return result(
             'hold',
@@ -326,9 +372,7 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
     const windowStartDate = rawWindowStart > input.intentBlock.dateRange.startDate
         ? rawWindowStart
         : input.intentBlock.dateRange.startDate;
-    const windowEndDate = input.asOfDate < input.intentBlock.dateRange.endDate
-        ? input.asOfDate
-        : input.intentBlock.dateRange.endDate;
+    const windowEndDate = input.asOfDate;
 
     const canonicalByOccurrence = new Map<string, LinkedProgressionExposureEvidence>();
     for (const evidence of input.linkedExposures) {
@@ -339,9 +383,11 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
     }
 
     const candidates = [...canonicalByOccurrence.values()];
-    const matchingExposures = candidates.filter(evidence =>
-        exactCoverageMatches(evidence, targetObjective.coverageKey)
-        && prescriptionMatchesTarget(evidence, contract),
+    const roleRelevantExposures = candidates.filter(evidence =>
+        coverageMatchesObjective(evidence, targetObjective),
+    );
+    const matchingExposures = roleRelevantExposures.filter(evidence =>
+        prescriptionMatchesTarget(evidence, contract),
     );
 
     const exposuresRequired = Math.max(
@@ -352,10 +398,18 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
     let completedWithFollowUp = 0;
     let adverseCount = 0;
     let cautionCount = 0;
+    let unknownCount = 0;
+
+    // Safety evidence from any role-relevant exposure in the observation window matters,
+    // including partial or mismatched dose attempts. Those attempts still do not count as
+    // completed current-target exposures below.
+    for (const evidence of roleRelevantExposures) {
+        if (evidence.outcome?.status === 'reactive') adverseCount++;
+        else if (evidence.outcome?.status === 'caution') cautionCount++;
+    }
     for (const evidence of matchingExposures) {
         if (evidence.outcome?.hasFollowUpData) completedWithFollowUp++;
-        if (evidence.outcome?.status === 'reactive') adverseCount++;
-        if (evidence.outcome?.status === 'caution') cautionCount++;
+        if (!evidence.outcome || evidence.outcome.status === 'unknown') unknownCount++;
     }
 
     const followUpCoveragePct = matchingExposures.length > 0
@@ -365,6 +419,7 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
         windowStartDate,
         windowEndDate,
         candidateExposureCount: candidates.length,
+        roleRelevantExposureCount: roleRelevantExposures.length,
         exposuresObserved: matchingExposures.length,
         excludedExposureCount: candidates.length - matchingExposures.length,
         exposuresRequired,
@@ -373,6 +428,7 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
         missingFollowUpCount: matchingExposures.length - completedWithFollowUp,
         adverseResponseCount: adverseCount,
         cautionResponseCount: cautionCount,
+        unknownResponseCount: unknownCount,
     };
 
     const evaluationRef = targetObjective.successCriteria?.evaluationRef;
@@ -441,6 +497,15 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
         return result(
             'hold',
             [`insufficient_followup_evidence: coverage ${followUpCoveragePct}% < required ${contract.requiredFollowUpCoveragePct}%`],
+            input,
+            evidenceAudit,
+        );
+    }
+
+    if (unknownCount > 0) {
+        return result(
+            'hold',
+            [`unknown_response_evidence_blocks_advancement: ${unknownCount} target exposure(s)`],
             input,
             evidenceAudit,
         );

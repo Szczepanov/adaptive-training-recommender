@@ -94,19 +94,28 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
         options: {
             coverageKey?: CoverageCreditFact['coverageKey'];
             prescriptionStatus?: LinkedProgressionExposureEvidence['prescription']['status'];
+            prescriptionValue?: number;
+            deliveredDoseFraction?: number;
         } = {},
     ): LinkedProgressionExposureEvidence {
         return {
             exposure,
             coverageCredits: coverage(exposure, options.coverageKey),
-            prescription: { status: options.prescriptionStatus ?? 'matched_current_target' },
+            ...(options.deliveredDoseFraction === undefined ? {} : { deliveredDoseFraction: options.deliveredDoseFraction }),
+            prescription: {
+                status: options.prescriptionStatus ?? 'matched_current_target',
+                sourceRevision: 1,
+                variable: 'duration_min',
+                unit: 'minutes',
+                value: options.prescriptionValue ?? 90,
+            },
             ...(outcome ? { outcome } : {}),
         };
     }
 
     const cleanLinked = exposures.map((exposure, index) => linked(exposure, outcomes[index]));
 
-    it('advances only when linked canonical role/prescription/follow-up/outcome evidence all pass', () => {
+    it('advances only when linked canonical role/current-dose/follow-up/outcome evidence all pass', () => {
         const review = evaluateProgressionReview({
             intentBlock: validBlock,
             asOfDate: '2026-09-14',
@@ -144,6 +153,16 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
         expect(review.reasons.some(reason => reason.includes('review_cadence_not_reached'))).toBe(true);
     });
 
+    it('redirects rather than proposing a new dose when the authored block interval has ended', () => {
+        const review = evaluateProgressionReview({
+            intentBlock: validBlock,
+            asOfDate: '2026-09-28',
+            linkedExposures: cleanLinked,
+        });
+        expect(review.action).toBe('redirect');
+        expect(review.reasons).toContain('block_interval_ended_requires_review');
+    });
+
     it('applies the observation-window lower bound instead of counting arbitrarily old work', () => {
         const old = { ...exposures[0], performedOccurrenceId: 'old', localDate: '2026-08-15' };
         const review = evaluateProgressionReview({
@@ -171,6 +190,59 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
         expect(review.action).toBe('hold');
     });
 
+    it('accepts an explicitly allowed exact substitution only when its dose qualification is proven', () => {
+        const block: IntentBlock = {
+            ...validBlock,
+            objectives: [{
+                ...validBlock.objectives[0],
+                allowedSubstitutions: [{
+                    targetCoverageKey: 'sustained_quality',
+                    allowedCoverageKeys: ['outdoor_event_specific'],
+                    minDoseFraction: 0.9,
+                }],
+            }],
+        };
+        const substitution = linked(exposures[0], outcomes[0], {
+            coverageKey: 'outdoor_event_specific',
+            deliveredDoseFraction: 0.9,
+        });
+        const review = evaluateProgressionReview({
+            intentBlock: block,
+            asOfDate: '2026-09-14',
+            linkedExposures: [substitution, cleanLinked[1], cleanLinked[2]],
+            boundProgressResults: boundImproving,
+        });
+        expect(review.evidenceAudit.roleRelevantExposureCount).toBe(3);
+        expect(review.evidenceAudit.exposuresObserved).toBe(3);
+        expect(review.action).toBe('advance_proposal');
+
+        const underDose = evaluateProgressionReview({
+            intentBlock: block,
+            asOfDate: '2026-09-14',
+            linkedExposures: [
+                linked(exposures[0], outcomes[0], { coverageKey: 'outdoor_event_specific', deliveredDoseFraction: 0.8 }),
+                cleanLinked[1],
+                cleanLinked[2],
+            ],
+            boundProgressResults: boundImproving,
+        });
+        expect(underDose.evidenceAudit.exposuresObserved).toBe(2);
+        expect(underDose.action).toBe('hold');
+    });
+
+    it('does not count a stale/different prescription value as current-target exposure', () => {
+        const stale = linked(exposures[0], outcomes[0], { prescriptionValue: 80 });
+        const review = evaluateProgressionReview({
+            intentBlock: validBlock,
+            asOfDate: '2026-09-14',
+            linkedExposures: [stale, cleanLinked[1], cleanLinked[2]],
+            boundProgressResults: boundImproving,
+        });
+        expect(review.evidenceAudit.roleRelevantExposureCount).toBe(3);
+        expect(review.evidenceAudit.exposuresObserved).toBe(2);
+        expect(review.action).toBe('hold');
+    });
+
     it('does not count prescription-mismatched or partial work as completed current-target exposure', () => {
         const partial = linked(exposures[0], outcomes[0], { prescriptionStatus: 'partial' });
         const review = evaluateProgressionReview({
@@ -181,6 +253,23 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
         });
         expect(review.evidenceAudit.exposuresObserved).toBe(2);
         expect(review.action).toBe('hold');
+    });
+
+    it('still applies adverse safety evidence from a partial target exposure', () => {
+        const partialReactive = linked(
+            exposures[0],
+            { ...outcomes[0], status: 'reactive' },
+            { prescriptionStatus: 'partial' },
+        );
+        const review = evaluateProgressionReview({
+            intentBlock: validBlock,
+            asOfDate: '2026-09-14',
+            linkedExposures: [partialReactive, ...cleanLinked],
+            boundProgressResults: boundImproving,
+        });
+        expect(review.evidenceAudit.exposuresObserved).toBe(3);
+        expect(review.evidenceAudit.adverseResponseCount).toBe(1);
+        expect(review.action).toBe('reduce_proposal');
     });
 
     it('deduplicates repeated canonical occurrence ids', () => {
@@ -195,7 +284,7 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
         expect(review.action).toBe('advance_proposal');
     });
 
-    it('uses only outcomes explicitly linked to qualifying occurrences', () => {
+    it('uses only outcomes bundled with role-relevant canonical occurrences', () => {
         const unrelatedReactive = linked(
             { ...exposures[0], performedOccurrenceId: 'unrelated', localDate: '2026-09-11' },
             { ...outcomes[0], status: 'reactive' },
@@ -224,6 +313,21 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
         expect(review.evidenceAudit.followUpCoveragePct).toBe(33);
         expect(review.action).toBe('hold');
         expect(review.reasons.some(reason => reason.includes('insufficient_followup_evidence'))).toBe(true);
+    });
+
+    it('holds on unknown outcome evidence even if the caller marks follow-up as present', () => {
+        const unknown = cleanLinked.map((evidence, index) => index === 0
+            ? { ...evidence, outcome: { ...evidence.outcome!, status: 'unknown' as const, hasFollowUpData: true } }
+            : evidence);
+        const review = evaluateProgressionReview({
+            intentBlock: validBlock,
+            asOfDate: '2026-09-14',
+            linkedExposures: unknown,
+            boundProgressResults: boundImproving,
+        });
+        expect(review.evidenceAudit.unknownResponseCount).toBe(1);
+        expect(review.action).toBe('hold');
+        expect(review.reasons[0]).toContain('unknown_response_evidence_blocks_advancement');
     });
 
     it('reduces on authored adverse_response reduction without a hidden adverse-count redirect threshold', () => {
@@ -294,7 +398,10 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
                 progressionContract: { ...validBlock.progressionContract!, currentValue: 120 },
             },
             asOfDate: '2026-09-14',
-            linkedExposures: cleanLinked,
+            linkedExposures: cleanLinked.map(evidence => ({
+                ...evidence,
+                prescription: { ...evidence.prescription, value: 120 },
+            })),
             boundProgressResults: boundImproving,
         });
         expect(review.action).toBe('hold');
@@ -329,6 +436,33 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
         });
         expect(review.action).toBe('hold');
         expect(review.reasons[0]).toContain('bound_outcome_not_improving');
+    });
+
+    it('does not treat unclear-within-noise as proof of maintenance', () => {
+        const maintenanceBlock: IntentBlock = {
+            ...validBlock,
+            objectives: [{
+                ...validBlock.objectives[0],
+                intent: 'maintain',
+                successCriteria: {
+                    evaluationRef: { id: 'eval_spec_01', revision: 1, metricId: 'cycling_ftp' },
+                    targetTrend: 'stable',
+                    acceptableDeclineTolerancePct: 3,
+                },
+            }],
+        };
+        const unclear: BoundProgressEvidence[] = [{
+            evaluationRef: { id: 'eval_spec_01', revision: 1, metricId: 'cycling_ftp' },
+            result: { ...improving, status: 'unclear_within_noise', percentChange: 0.2 },
+        }];
+        const review = evaluateProgressionReview({
+            intentBlock: maintenanceBlock,
+            asOfDate: '2026-09-14',
+            linkedExposures: cleanLinked,
+            boundProgressResults: unclear,
+        });
+        expect(review.action).toBe('hold');
+        expect(review.reasons[0]).toBe('stable_target_unclear_within_noise');
     });
 
     it('requires explicit prerequisite evidence when the objective authored prerequisites', () => {
