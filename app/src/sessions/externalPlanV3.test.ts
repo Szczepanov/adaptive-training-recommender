@@ -77,6 +77,14 @@ describe('external-plan@3 (ADR-0035)', () => {
         expect(result.errors.some(e => e.message.includes('unique'))).toBe(true);
     });
 
+    it('rejects a rest directive id longer than the Firestore boundary', () => {
+        const result = validateExternalTrainingPlanV3(planV3({
+            restDays: [{ id: 'r'.repeat(65), week: 1, day: 'friday' }],
+        }));
+        expect(result.isValid).toBe(false);
+        expect(result.errors).toContainEqual(expect.objectContaining({ field: 'restDays[0].id' }));
+    });
+
     it('rejects two rest directives claiming the same (week, day)', () => {
         const result = validateExternalTrainingPlanV3(planV3({
             restDays: [
