@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H1, H2 and H2b delivered; H3 is the next bounded work order
-**Blocked by:** H3 personal prescription needs current athlete inputs; H4/H5 implementation needs explicit architecture decisions recorded in the repository.
+**Status:** H1, H2 and H2b delivered; H3 investigated and contract-tested with no production defect found — explicit-rest authoring remains an open schema/authority decision; H4/H5 are next
+**Blocked by:** H3's rest-authoring question needs an explicit architecture decision. H4/H5 implementation needs explicit architecture decisions recorded in the repository. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -28,16 +28,21 @@ The current decision policy version is
 `2026-09-outdoor-easy-cycling-anchor-authority-v1`. See the evaluation plan for the root
 cause, focused regression tests and required PR-head validation.
 
-Suggested next task prompt:
+H3 was investigated (see the work order below and the evaluation plan). The unplanned-date
+fallback, missed-session replacement, imported-event quality credit, and full/reduced
+immutable-session contracts are implemented. Existing evidence was sufficient for three of
+those; this PR adds `h3AuthoredPlanContracts.test.ts` because the prior event-credit test
+only proved aerobic credit and was too indirect for the specific quality-credit claim.
+No production decision logic changed.
 
-> Implement H3 from docs/plans/cycling-primary-hybrid-implementation-handoff.md. Start with
-> synthetic authored-plan contract tests for a genuinely unplanned date, an explicitly
-> prescribed rest date, a missed quality session with later quality already scheduled,
-> and a hard group ride/race replacing rather than stacking with quality. Reuse the
-> existing external-plan/session authority and canonical occurrence boundaries. Fix only
-> demonstrated authority defects, keep personal M00/M01 prescription separate until
-> current workload/restriction inputs are confirmed, and run the normal deterministic,
-> replay/persistence and policy-drift validation for any decision-affecting change.
+The remaining H3 gap is explicit rest: neither external-plan schema can distinguish
+"protected rest" from "no authored instruction for this date." The recommended follow-up
+is a day-level rest directive in a new external-plan schema revision, not a fake session
+modality. That requires an accepted architecture decision before implementation.
+
+Suggested next step: record the explicit-rest schema/precedence decision described in the
+H3 work order, or move to H4/H5 design. Both routes should remain separate from personal
+M00/M01 prescription until current workload/restriction inputs are confirmed.
 
 ## Stable product intent
 
@@ -103,12 +108,12 @@ tests, `npm run check`, `npm run build`, `npm run simulate:scenarios`,
 `npm run simulate:diff`, and policy drift validation. Do not regenerate a committed
 simulation baseline merely to hide an unexplained change.
 
-## Work order H3 — Authored block authority, rest and replacement
+## Work order H3 — Authored block authority, rest and replacement (investigated)
 
-**Status:** Ready for synthetic contract investigation; personal prescription pending inputs
-**Dependencies:** Existing external-plan/session infrastructure. Do not couple a discovered
-rest defect to unrelated catalogue or progression work.
-**Deliverable:** Small contract-focused changes, split from any personal plan import.
+**Status:** Investigated and contract-tested. No production decision-logic change made.
+Explicit-rest authoring remains a schema/authority decision. Personal prescription still
+pending inputs.
+**Dependencies:** Existing external-plan/session infrastructure.
 
 Read ADR-0019/0023 and the session-execution architecture. Route through
 `planningMode.ts`, `externalPlacement.ts`, `externalSession.ts`,
@@ -116,21 +121,52 @@ Read ADR-0019/0023 and the session-execution architecture. Route through
 and `Home.tsx`. Existing preferred double-day bundles and authored remaining-budget
 handling are delivered capabilities, not missing features.
 
-First determine how explicit rest is currently represented. The known fallback is an
-external mode with **no placed session** resolving to evergreen; this does not prove
-that a correctly represented rest session is broken. Create separate fixtures for:
+**Verified executable contracts:**
 
-1. A genuinely unplanned date, with labeled fallback.
-2. An explicitly prescribed rest date.
-3. A missed quality session with a later quality session already planned.
-4. A race/hard group ride replacing quality rather than being added to it.
-5. Full and reduced session forms with correct actual minutes and immutable revisions.
+- unplanned dates fall back to the catalog and are explicitly labelled as external-plan
+  fallback (`externallyPlannedMode.test.ts`);
+- missed-session proposals respect occupied dates and per-session `ifMissed`, and only a
+  confirmed proposal mutates placement (`externalPlacement.test.ts`);
+- imported hard cycling events are reconciled to `FixedActivity`, retain inferred
+  external-authored stimulus identity, and can contribute enough projected stimulus to
+  resolve a `threshold_quality` objective when projected commitments are included
+  (`h3AuthoredPlanContracts.test.ts`; the older `externalEventFixedActivityCredit.test.ts`
+  still covers confidence discount and qualification refusal). The production evaluator
+  currently applies fixed-activity credit before `rankCandidates`, but this focused test
+  covers the credit/resolution layer rather than executing catalog ranking itself;
+- full/reduced dose and immutable revision/replay behavior remain covered by
+  `externalSession.test.ts`, `provenance.test.ts`, `replay.test.ts` and validation tests.
 
-Fix only demonstrated authority problems through the existing resolver. Acceptance:
-planned rest remains rest, unplanned dates retain their intended fallback, missed work
-does not create automatic catch-up debt, and the persisted audit can identify/replay the
-actual source and revision. Cover import validation and persistence rules if their schemas
-change. Test safety after replacement; calendar placement alone is insufficient.
+Do not broaden the event test into a claim that every free-text "hard group ride" is
+interchangeable with quality. Equivalent replacement requires the ride to enter the typed
+`FixedActivity` identity/stimulus path; otherwise qualified objective credit correctly
+fails closed.
+
+### Explicit-rest follow-up decision
+
+Neither `external-plan@1` nor `external-plan@2` can represent an explicitly prescribed
+rest day. Both schemas intentionally define rest as omission, so the current resolver has
+no fact that can distinguish protected rest from an unplanned date.
+
+The preferred follow-up is a **day-level rest directive in a new schema revision**, not a
+session `kind`/modality. Rest has no useful session duration, equipment, stimulus,
+execution dose or adherence occurrence, so forcing it through `ExternalPlanSession` would
+blur the source-neutral session boundary and create fake execution semantics.
+
+Record an ADR before coding. At minimum it must decide:
+
+1. exact schema shape and version (keep v1/v2 readable and immutable);
+2. rest precedence over `any_day` placement and missed-session replacement;
+3. day evaluation semantics: explicit rest must not activate evergreen fallback, while a
+   genuinely unplanned date still does;
+4. persistence/audit/replay identity for the directive (`planId`, revision, content hash,
+   directive id/kind);
+5. import validation, Firestore rules and UI presentation;
+6. `POLICY_VERSION` handling, because this changes recommendation behavior.
+
+The evaluation plan records external product precedent for the distinction (Garmin Coach
+Rest Days; TrainingPeaks Rest Day vs. No Planned Workouts), but those products do not
+prescribe this repository's schema.
 
 For a personal M00/M01 artifact, first confirm representative current workload, current
 restrictions/symptoms and actual bicycle setup. The prior review's example week is an
@@ -197,8 +233,8 @@ for distinct controlled comparisons, not a new persona for every constraint.
 Run deterministic checks before using local/provider judging. When judging is useful,
 use the documented targeted runner; inspect the actual case behind every complaint.
 The targeted artifacts are separate from active baseline promotion. No external API or
-local model is required to reproduce H2/H2b. Provider credentials or model setup should
-not block deterministic implementation.
+local model is required to reproduce H2/H2b/H3 contract tests. Provider credentials or
+model setup should not block deterministic implementation.
 
 At each work-order finish, update status, replace fixed problem statements with outcomes,
 record evidence and leave a precise next task. Keep each behavior change reviewable and
