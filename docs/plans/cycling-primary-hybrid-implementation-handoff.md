@@ -275,7 +275,13 @@ start independently of H4 runtime.
    Preserve profile commitment, rest/taper/safety precedence and forward-only revisions.
    Define a versioned canonical replay payload that exhaustively covers every authored field
    capable of changing allocation, adjudication, progression or evaluation behavior. Hash
-   that canonical projection, not an informal subset of block fields.
+   that canonical projection, not an informal subset of block fields. The payload must also
+   pin the `TrainingIntentProfile` revision/canonical snapshot it was evaluated against
+   (`priorities` and every `weeklyCommitment` field) -- these are read at evaluation time but
+   are not themselves part of the block/plan contract, so a later profile edit must not
+   silently change what an already-replayed decision is checked against. Add fixtures that
+   mutate `priorities` and each `weeklyCommitment` field independently and confirm replay
+   fails closed on each.
 2. **H5b — Evidence review.** Use canonical performed work, pinned prescription comparison,
    linked follow-up responses and existing protocol-aware outcome evaluations. Implement
    frozen, report-only `advance_proposal | hold | reduce_proposal | redirect` results.

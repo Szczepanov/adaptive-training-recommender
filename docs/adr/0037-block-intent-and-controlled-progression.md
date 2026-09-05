@@ -281,6 +281,11 @@ replay identity for authored block behavior and MUST contain every field capable
 allocation, adjudication, progression or evaluation semantics, including at minimum:
 
 - replay-payload schema/version and source plan identity, source schema/revision/provenance;
+- the `TrainingIntentProfile` revision or a canonical snapshot of it (`priorities` and every
+  `weeklyCommitment` field), pinned at evaluation time -- these are read into allocation and
+  capacity decisions but are not themselves part of the block/plan contract, so a profile
+  edit made after evaluation must not silently change what an already-replayed decision is
+  checked against;
 - stable block id/revision and effective relative/absolute bounds used by resolution;
 - each objective's stable id, typed sport/adaptation scope, coverage mapping, `intent`,
   priority where authored, dose envelope/unit/floor semantics and knowledge lineage;
@@ -308,10 +313,11 @@ JavaScript object insertion order. A replay format change that alters interpreta
 existing payload requires a new replay-payload version rather than silently reinterpreting V1.
 
 Replay compares the pinned canonical payload/hash and all external immutable bindings used
-by the review. Any missing or mismatching user/source/effective-bound/intent/protected-role/
-substitution/success-criterion/review-timing/prerequisite/progression/unit/target/evaluation
-binding is unreplayable; do not substitute today's evidence or criteria. Corrections
-supersede reports/proposals visibly. Historical prescriptions, audits and completed work
+by the review. Any missing or mismatching user/source/profile-revision/effective-bound/
+intent/protected-role/substitution/success-criterion/review-timing/prerequisite/progression/
+unit/target/evaluation binding is unreplayable; do not substitute today's evidence, today's
+profile, or today's criteria. Corrections supersede reports/proposals visibly. Historical
+prescriptions, audits and completed work
 remain unchanged. Activation changes require policy-version review/bump, schema/validation,
 rule tests and architecture updates alongside the implementation.
 
@@ -372,7 +378,7 @@ no runtime test run or policy bump.
 H5 design is accepted with explicit intent and controlled, confirmed progression. The
 system can express cycling development alongside strength maintenance without treating
 available time, past expertise or favorable readiness as permission to expand training.
-The cost is richer authored contracts, reviewed dose mappings, a transactional active-
-experiment invariant and immutable semantic replay lineage. Automatic personalization and
+The cost is richer authored contracts, reviewed dose mappings, a transactional
+active-experiment invariant and immutable semantic replay lineage. Automatic personalization and
 personal M00/M01 prescription remain separate; current athlete inputs are still required
 for the latter.
