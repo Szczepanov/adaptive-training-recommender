@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1, H2 and H2b delivered; H3-H5 remain planned
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; intraday/progression changes require the relevant authority/schema decisions.
+**Status:** In progress — H1, H2 and H2b delivered; H3 investigated and contract-tested, with explicit-rest authoring still requiring a schema/authority decision; H4-H5 remain planned
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; explicit-rest, intraday and progression changes require the relevant authority/schema decisions.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -61,8 +61,8 @@ and objective diagnostics are not used as an answer key.
 Repeated H1 judge samples cyclically rotate case presentation order. The strict response
 schema is generated from that same per-sample order (including the ordered `prefixItems`
 used by the local/Ollama adapter), then validation normalizes results back to canonical
-case IDs before aggregation. The hybrid run manifest records the order strategy. This is a
-judge-reliability safeguard; it does not change deterministic planner output.
+case IDs before aggregation. This is a judge-reliability safeguard; it does not change
+deterministic planner output.
 
 This harness chains seven-day forecasts with synthetic completion. It is not a day-by-day
 prospective athlete trial, an AM/PM execution simulator, a nutrition model, or evidence
@@ -164,70 +164,89 @@ longer loses its explicitly nominated race-specific anchors while other scenario
 remain either unchanged or explicitly explained. Do not regenerate the committed
 simulation baseline merely to hide an unexplained diff.
 
-## H3 — Executable block, deliberate rest and substitutions (investigated — no code defect found)
+## H3 — Executable block, deliberate rest and substitutions (investigated — no production defect found)
 
 **Dependencies:** Reviewed near-term block; ADR-0019/0023 and existing import/occurrence
 contracts. A user-specific load/impact prescription requires current-state confirmation.
 
 ### Investigation result
 
-Each of the five acceptance scenarios from the implementation handoff was traced against
-the actual `main` codebase (commit `a1685ec4`), not assumed from the original review's
-prose. Four of five are already correctly implemented and already covered by existing,
-passing tests:
+Each acceptance scenario from the implementation handoff was traced against the actual
+`main` codebase (commit `a1685ec4`) rather than inferred from the original review prose.
+The executable-session contracts are already implemented; this PR adds one focused
+regression test where the prior evidence was too indirect:
 
 1. **Genuinely unplanned date vs. externally-planned mode with a placed session.** Already
    distinct and labelled: `resolvePlanningContext` sets `externalFallback: true` only when
    the mode is selected but no session is placed for the date; the day-level evaluator
-   labels the resulting catalog pick as a fallback. Covered by four existing tests in
+   labels the resulting catalog pick as a fallback. Covered by existing tests in
    `externallyPlannedMode.test.ts` (`resolves external only when a session is actually
    placed today`, `falls back and flags it when the mode is selected but no session is
    placed`, `still ranks a catalog pick when no session is placed today, and labels that
    fallback`, plus the ignored-mode control).
-2. **A missed quality session with a later quality session already planned.**
-   `externalPlacement.ts`'s `proposeReplacement`/`resolvePlacement` already excludes dates
-   another session already occupies from the candidate set before proposing a move, is
-   proposal-only (never writes without confirmation), and honours each session's own
-   `ifMissed` (`drop` / `reschedule_within_week` / `carry_forward`) rather than inventing
-   catch-up debt. Covered by 27 existing tests in `externalPlacement.test.ts`, including
-   `does not propose a day another session already holds` directly on point.
-3. **A race/hard group ride replacing quality rather than being added to it.** An imported
-   `isEvent` session is reconciled onto the `FixedActivity` contract
-   (`externalEventAsFixedActivity`) with `expectedStimulus` derived from its demand
-   profile, then `applyFixedActivityStimulusCredit` credits that stimulus against the
-   week's unresolved objectives at `inferred` confidence before the day's own ranking runs
-   — so an already-met quality role does not get re-demanded. Covered by
-   `externalEventFixedActivityCredit.test.ts` (qualification semantics, confidence
-   discount, wrong-modality refusal) plus `externallyPlannedMode.test.ts`'s event-fatigue
-   tests.
+2. **A missed quality session with a later session already planned.**
+   `externalPlacement.ts`'s `proposeReplacement`/`resolvePlacement` excludes occupied dates
+   from replacement candidates, is proposal-only (never writes without confirmation), and
+   honours each session's own `ifMissed` (`drop` / `reschedule_within_week` /
+   `carry_forward`) rather than inventing catch-up debt. `externalPlacement.test.ts`
+   includes `does not propose a day another session already holds` directly on point.
+3. **An imported hard cycling event replacing a quality requirement rather than leaving it
+   unresolved for catalog ranking.** `externalEventAsFixedActivity` derives typed
+   `expectedStimulus` and an inferred-confidence external identity; then
+   `applyFixedActivityStimulusCredit` credits the commitment before the day's catalog
+   ranking. Existing `externalEventFixedActivityCredit.test.ts` covered aerobic credit and
+   qualification semantics, but that was not direct evidence for the H3 quality-replacement
+   claim. `h3AuthoredPlanContracts.test.ts` now exercises the real imported hard-cycling
+   event adapter and verifies that it satisfies a `threshold_quality` objective before
+   catalog ranking. This is deliberately narrower than claiming every free-text "hard group
+   ride" is equivalent: a non-event group ride must enter the typed `FixedActivity`
+   identity/stimulus path to earn the same objective credit.
 4. **Full and reduced session forms with correct minutes and immutable revisions.**
    Content-hash immutability (`contentHash` on `ExternalPlanContext`, verified against the
-   stored revision) and reduced-dose scaling are both exercised across
+   stored revision) and reduced-dose scaling are exercised across
    `externalSession.test.ts`, `provenance.test.ts`, `replay.test.ts` and
    `externalPlanValidation.test.ts`.
 
-No production code change was needed for these four — the "known fallback" the original
-review flagged as unproven was, on inspection, already correct.
+No production decision logic needed changing for these executable-session scenarios.
 
 ### Open product question: explicit rest cannot currently be authored at all
 
-The fifth scenario — "an explicitly prescribed rest date," distinct from an unplanned one
-— surfaced a real gap, but it is a **schema/product-design decision, not a resolver bug**.
-Both `external-plan@1` and `external-plan@2` state the same rule verbatim
-(`docs/external-plan-schema.md`): *"Rest days are not sessions... the engine treats an
-unplanned day as available — it does not need to be told to rest."* There is no `kind` or
-`modality` value in either schema version that represents a deliberate rest day; the only
-way to leave a day empty is to omit a session for it, which is by design indistinguishable
-from "the plan says nothing about this day." An athlete cannot currently express "the plan
-places a hard protected rest day here" through the import contract at all — so there is
-nothing in the resolver to fix, and building the representation would be a schema
-extension (a new session `kind`, or a day-level plan-envelope field) requiring an explicit
-product decision, not a bounded contract-focused change. Flagged for the repo owner rather
-than decided unilaterally here.
+The remaining scenario — an **explicitly prescribed rest date**, distinct from an
+unplanned one — is a real capability gap, not a resolver defect. Both `external-plan@1`
+and `external-plan@2` deliberately say "Rest days are not sessions"; omission is therefore
+indistinguishable from "the plan says nothing about this day," which activates the labelled
+catalog fallback.
 
-Acceptance otherwise met: session authority and revisions remain replayable; a missed
-workout does not silently stack with the next quality session. Personal M00/M01 import
-remains blocked on current-workload/restriction confirmation, unchanged from before.
+External product precedent supports treating those as different calendar states rather
+than synonyms. Garmin Coach explicitly schedules unchecked training days as **Rest Days**,
+while TrainingPeaks plans can show **Rest Day** separately from **No Planned Workouts**.
+Those precedents do not dictate this repository's schema, but they confirm the product
+requirement is coherent rather than an unusual edge case:
+
+- Garmin cycling-plan scheduling: https://support.garmin.com/en-IE/aviation/faq/9WEulyuZyf6aDpcxPH1PI9/
+- TrainingPeaks example distinguishing `REST DAY` from `No Planned Workouts`: https://www.trainingpeaks.com/training-plans/cycling/tp-497950/consistency-intensity-volume-for-fitness-cycling
+
+**Recommended follow-up architecture:** represent protected rest as a **day-level plan
+directive in a new external-plan schema revision**, not as a fake session modality.
+A rest directive has no training duration, equipment, stimulus, execution dose or
+adherence occurrence; forcing it through `ExternalPlanSession` would pollute the very
+source-neutral session contracts ADR-0019/0023 are trying to preserve. A bounded follow-up
+ADR should define at least these semantics before implementation:
+
+- an explicit rest directive blocks `any_day` placement and missed-session replacement onto
+  that date;
+- evaluating that date does **not** fall through to evergreen discretionary training;
+- unplanned dates retain the current labelled fallback;
+- the persisted audit/replay record identifies the plan/revision/content hash and the rest
+  directive that owned the date;
+- v1/v2 remain readable as-is; the new representation receives a new schema version rather
+  than silently broadening an immutable import contract;
+- because the directive changes recommendations, implementation evaluates/bump
+  `POLICY_VERSION` and updates persistence/rules/replay tests.
+
+This PR intentionally does not implement that schema extension: the representation and
+precedence rules need an accepted architecture decision first. Personal M00/M01 import
+also remains blocked on current-workload/restriction confirmation.
 
 ## H4 — Intraday capacity and post-AM reassessment
 
@@ -260,6 +279,7 @@ From `app/`:
 ```bash
 npm exec vitest run scripts/ai-judge/__tests__/hybridScenarios.test.mjs
 npm exec vitest run src/engine/coverageAnchorAuthority.test.ts
+npm exec vitest run src/engine/h3AuthoredPlanContracts.test.ts
 npm run persona:hybrid:build
 npm run check
 npm run build
@@ -281,6 +301,8 @@ promoting any new active cases. Existing baseline update/diff commands intention
 remain scoped to the unchanged active suite.
 
 H1 did not change engine behavior and therefore required no policy bump. H2/H2b are
-decision-affecting and are represented by the current policy version above. H3-H5 require
-the normal policy/schema/replay review when decision behavior changes. Do not enable
-experimental personalization simply to improve a judge score.
+decision-affecting and are represented by the current policy version above. H3's new test
+is non-decision-affecting and needs no bump; the explicit-rest follow-up will require the
+normal policy/schema/replay review when it changes decision behavior. H4-H5 likewise
+require the normal review when decision behavior changes. Do not enable experimental
+personalization simply to improve a judge score.
