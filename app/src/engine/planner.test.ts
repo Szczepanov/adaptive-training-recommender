@@ -1019,8 +1019,16 @@ describe('Phase 6.2b -- fixed activities as projected exposures', () => {
         const context = baseContext();
         context.preferences.preferredModalities = ['Strength'];
         const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
-        const todayRec = evaluateTraining(readiness, context, '2026-08-07');
-        const seed = prepareWeekAheadPlanSeed(readiness, [], '2026-08-07', []);
+        const event = cyclingEvent('2026-08-27');
+        const easyTemplate = ENRICHED_TEMPLATES_BY_ID.get('end_easy_01')!;
+        const todayRec = {
+            mode: 'train' as const,
+            recommendation: { template: easyTemplate, systemicCost: easyTemplate.systemicCost },
+            template: easyTemplate,
+            rationale: 'Easy aerobic day',
+            confidence: 'solid' as const,
+        };
+        const seed = prepareWeekAheadPlanSeed(readiness, [event], '2026-08-07', []);
         // tomorrowRec: null + days: 2 puts 2026-08-08 inside the loop itself (reconciled,
         // stimulus-credited, and ranked by this function), rather than being an
         // externally-supplied pick this function only applies bookkeeping for.
@@ -1031,8 +1039,8 @@ describe('Phase 6.2b -- fixed activities as projected exposures', () => {
             createdAt: '2026-08-01T00:00:00Z', updatedAt: '2026-08-01T00:00:00Z',
         };
 
-        const withoutActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, null, seed, { days: 2 });
-        const withActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, null, seed, { days: 2, fixedActivities: [fullStrengthActivity] });
+        const withoutActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, null, seed, { days: 2, events: [event] });
+        const withActivity = generateWeekAheadPlan(readiness, context, null, '2026-08-07', todayRec, null, seed, { days: 2, events: [event], fixedActivities: [fullStrengthActivity] });
 
         const dayWithout = withoutActivity.days.find(d => d.date === '2026-08-08')!;
         const dayWith = withActivity.days.find(d => d.date === '2026-08-08')!;
@@ -1047,6 +1055,7 @@ describe('Phase 6.2b -- fixed activities as projected exposures', () => {
         // already-earned strength credit instead of a redundant selected session.
         expect(dayWith.template).toBeDefined();
         expect(dayWithout.template).toBeDefined();
+        expect(dayWith.template.id).not.toBe(dayWithout.template.id);
     });
 
     it('a fixed activity without expectedCost/expectedStimulus reserves time but contributes zero fabricated fatigue or credit', () => {
