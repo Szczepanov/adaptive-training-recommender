@@ -148,6 +148,33 @@ export const TEMPLATES: SessionTemplate[] = [
         }
     },
     {
+        id: "end_easy_04",
+        category: "Easy Endurance",
+        modality: "Cycling",
+        durationMin: 30,
+        durationMax: 60,
+        title: "Outdoor Zone 2 Ride",
+        description: "Easy conversational-pace ride outdoors on the road bike. Same aerobic base-building intent as an indoor spin, weather and traffic permitting.",
+        requiredEquipment: ["outdoor_bike"],
+        environment: 'outdoor', safetyTags: [],
+        systemicCost: 0.3,
+        objectiveTransferable: true,
+        easierDose: {
+            label: "25 min Light Ride",
+            durationMin: 20,
+            durationMax: 30,
+            doseRatio: 0.6,
+            prescriptionSummary: "Light 25 min leg flush ride."
+        },
+        harderDose: {
+            label: "75 min Aerobic Base Ride",
+            durationMin: 60,
+            durationMax: 90,
+            doseRatio: 1.5,
+            prescriptionSummary: "Extended 75 min Zone 2 outdoor aerobic base ride."
+        }
+    },
+    {
         id: "end_easy_02",
         category: "Easy Endurance",
         modality: "Running",

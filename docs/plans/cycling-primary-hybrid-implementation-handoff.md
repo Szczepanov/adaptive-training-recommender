@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** Ready for H2; later stages have the dependencies below
-**Blocked by:** None for H2 reproduction and outdoor aerobic specificity. H3 personal prescription needs current athlete inputs; H4/H5 implementation needs explicit architecture decisions recorded in the repository.
+**Status:** H1, H2 and H2b delivered; H3 is the next bounded work order
+**Blocked by:** H3 personal prescription needs current athlete inputs; H4/H5 implementation needs explicit architecture decisions recorded in the repository.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -14,18 +14,30 @@ Code takes precedence over old audits and implemented plans.
 
 The evaluation fixtures and runner are already implemented. Do not rebuild them. The
 default persona suite is unchanged (9 families / 30 cases); opt-in hybrid evaluation
-adds seven cases (11 families / 37 cases including controls). No live recommendation
-policy has been changed for this effort. No AI-judge scores have been obtained or promoted.
+adds seven cases (11 families / 37 cases including controls).
 
-Suggested first task prompt:
+H2 is delivered: `end_easy_04` gives outdoor-bike-only athletes a real easy Cycling option
+without requiring a focus event. H2b is also delivered: the new candidate exposed a
+pre-existing anchor-date ordering bug in `coverageNeedTierForTemplate`, and the fix now
+keeps an explicitly nominated `event-specific` or `quality` role at coverage tier 0 even
+when an earlier exposure already satisfied that role's weekly minimum. On unclaimed dates,
+the ordinary coverage ordering is unchanged, so an already-met hard role does not force
+unnecessary repeats.
 
-> Implement H2 from docs/plans/cycling-primary-hybrid-implementation-handoff.md. First
-> reproduce the outdoor-only hybrid case through the current planner and trace why it
-> selects no cycling. Make the smallest complete catalog/coverage/eligibility change
-> that provides safe outdoor aerobic cycling without an event. Preserve equipment,
-> recovery and injury gates. Add positive and negative regression coverage, run the
-> required validation, update policy/replay metadata if behavior changes, and reconcile
-> the H2 status and findings. Do not start H3–H5 in the same change.
+The current decision policy version is
+`2026-09-outdoor-easy-cycling-anchor-authority-v1`. See the evaluation plan for the root
+cause, focused regression tests and required PR-head validation.
+
+Suggested next task prompt:
+
+> Implement H3 from docs/plans/cycling-primary-hybrid-implementation-handoff.md. Start with
+> synthetic authored-plan contract tests for a genuinely unplanned date, an explicitly
+> prescribed rest date, a missed quality session with later quality already scheduled,
+> and a hard group ride/race replacing rather than stacking with quality. Reuse the
+> existing external-plan/session authority and canonical occurrence boundaries. Fix only
+> demonstrated authority defects, keep personal M00/M01 prescription separate until
+> current workload/restriction inputs are confirmed, and run the normal deterministic,
+> replay/persistence and policy-drift validation for any decision-affecting change.
 
 ## Stable product intent
 
@@ -39,94 +51,63 @@ Suggested first task prompt:
 - Favorable wearable values never override active symptoms or standing restrictions.
 - More available hours do not prove greater tolerated workload. Extra quality sessions,
   dieting and impact progression are not automatic consequences of a new calendar block.
+- Easy aerobic volume is supporting work; it must not displace an explicitly authored key
+  cycling role merely because it is cheaper in fatigue cost.
 
 These are product requirements, not new numerical physiological thresholds. The public
 fixture uses anonymous synthetic inputs. Do not copy private medical histories, real
-measurements or the personal Downloads documents into source control.
+measurements or personal local documents into source control.
 
-## Work order H2 — Outdoor aerobic specificity
+## Work order H2 — Outdoor aerobic specificity (delivered)
 
-**Status:** Ready
-**Dependencies:** H1 is delivered; no personal measurements or external judge required.
-**Deliverable:** One focused behavior change with tests and a reviewed simulation diff.
+**Status:** Delivered.
 
-### H2.1 Reproduce before editing
+`end_easy_04` is a non-event-gated Easy Endurance Cycling template requiring
+`outdoor_bike` and reusing `cycling_zone2_standard_01`. Three deterministic hybrid tests
+cover the outdoor-only positive path, the indoor path and no-bike negative control.
 
-From `app/`:
+## Work order H2b — Nominated anchor-date authority (delivered)
 
-```bash
-npm exec vitest run scripts/ai-judge/__tests__/hybridScenarios.test.mjs scripts/ai-judge/__tests__/personaScenarios.test.mjs
-npm run persona:hybrid:build
-```
+**Status:** Delivered.
+**Deliverable:** Focused coverage-ordering correction plus regression tests.
 
-Inspect `artifacts/hybrid-persona-plan-judge/latest/corpus.json` for the case
-`persona_cycling_hybrid_outdoor_only` and compare it to
-`persona_cycling_hybrid_capacity_reference`. Inspect `deterministic-results.json`
-separately for developer diagnostics. If the current code no longer reproduces zero
-Cycling, explain the intervening behavior and replace the stale finding with current evidence.
+### What was actually wrong
 
-Trace the actual candidates and packing for the exact fixture through:
+The initially suspected utility/fatigue-coefficient problem was downstream of the decisive
+ordering step. Accepted candidates are sorted lexicographically by `coverageNeedTier`
+before benefit/utility. `coverageNeedTierForTemplate` gave the nominated anchor tier 0 only
+when its weekly minimum remained unmet. Once an earlier session fulfilled that minimum, a
+different unmet role such as `aerobic_volume` could outrank the explicitly nominated
+anchor before `ANCHOR_ROLE_BOOST`, `ANCHOR_TIMING_BENEFIT` or fatigue-cost comparison even
+participated.
 
-- `app/src/engine/templates.ts`, especially `end_easy_01` and outdoor cycling candidates;
-- `app/src/engine/eligibility.ts` and `periodization.ts` for hard/phase gating;
-- `app/src/engine/evergreenStrategy.ts`, `weeklyDosePacking.ts` and `coverage.ts`;
-- `app/src/workouts/catalog/cycling-base.ts`, workout adapters and `prescription.ts`.
+### Implemented contract
 
-Use the catalog routing in `docs/workout-library.md`; discover the current template-to-
-workout mapping instead of guessing its filename. Check both authored and effective
-duration, role qualification and actual equipment at each boundary.
+When the active plan contains the nominated coverage requirement and a legal candidate
+matches today's `outdoor_event_specific` or `sustained_quality` role, it receives tier 0
+regardless of whether that role's weekly minimum was met earlier. Hard feasibility,
+readiness, injury, time, equipment, intensity and spacing gates still run before this
+ordering.
 
-### H2.2 Implement the smallest coherent correction
+When there is no nominated anchor, the behavior is unchanged: an already-met race-specific
+or quality role does not force a repeat, and unmet supporting coverage can take precedence.
 
-Prefer an explicit outdoor aerobic identity through the existing catalog and coverage
-contracts if that is the smallest valid design. A shared bicycle capability is an
-alternative only if it preserves indoor/outdoor feasibility and does not silently weaken
-requirements. Do not remove `indoor_bike` from the indoor template, lift event gating from
-race-specific workouts, or increase generic Walking credit to hide the missing cycling.
+`coverageAnchorAuthority.test.ts` protects both `event-specific` and `quality` cases and
+includes the unclaimed-date control. Do not replace this role authority with shared
+magic-number tuning unless the underlying ordering contract is intentionally redesigned.
 
-Keep authored template identity stable when dose is reduced; materialize effective dose
-through existing prescription/adjustment boundaries. Equipment is a hard gate, while
-modality preference only ranks valid choices. Do not promote broad conditioning into
-exact race-specific coverage.
+### Completion validation
 
-### H2.3 Acceptance matrix
-
-| Input | Required result |
-|---|---|
-| Outdoor bicycle, no indoor bicycle, evergreen hybrid, normal recovery | Some useful outdoor aerobic Cycling is selected across the fixture horizon; no race is invented |
-| No bicycle access | No bicycle-dependent prescription; a feasible alternative or explicit shortfall |
-| Indoor-only bicycle access | Existing indoor cycling remains feasible; no outdoor-only requirement is bypassed |
-| Short window | Effective prescribed duration fits the actual date's cap |
-| Adverse recovery or local restrictions | Existing tightening remains effective; new outdoor workout cannot bypass it |
-| General-health athlete | Transferable aerobic alternatives remain available; no forced sport specialization |
-| Event-directed cycling | Existing event-specific role identity, dose and taper behavior remain intact |
-
-Assert actual selected prescriptions, not only that a template exists or that the engine
-does not crash. Do not demand a particular number of cycling sessions unless that number
-is backed by the active plan contract. Safety tests passing alone does not close H2.
-
-### H2.4 Verification and completion
-
-Run focused tests, `npm run build`, `npm run simulate:scenarios`, and
-`npm run simulate:diff` from `app/`. Inspect relevant scenario changes; do not regenerate
-the committed simulation baseline merely to make a failure disappear. Rebuild the hybrid
-corpus and compare every new case, including equipment/time negative controls.
-
-Capture the starting Git commit before editing. For a decision-affecting change, update
-`POLICY_VERSION` and historical-policy/replay handling according to the current repository
-contract, then run `node scripts/check-policy-drift.mjs <starting-commit>` from `app/`.
-Add replay coverage appropriate to the actual change. Firestore rule/emulator tests are
-required if persistence validation changes, not for a catalog-only fix.
-
-Mark H2 implemented only when outdoor selection is demonstrated, negative controls pass,
-and the simulation diff is explained. Update the evaluation plan's reproduced finding so
-it no longer reads as an open defect. Report changes, validation and remaining limitations.
+Use PR-head CI as the authoritative record. Run the focused coverage test, hybrid scenario
+tests, `npm run check`, `npm run build`, `npm run simulate:scenarios`,
+`npm run simulate:diff`, and policy drift validation. Do not regenerate a committed
+simulation baseline merely to hide an unexplained change.
 
 ## Work order H3 — Authored block authority, rest and replacement
 
 **Status:** Ready for synthetic contract investigation; personal prescription pending inputs
-**Dependencies:** Existing external-plan/session infrastructure; H2 is not required for
-read-only investigation. Do not couple a discovered rest defect to the outdoor catalog PR.
+**Dependencies:** Existing external-plan/session infrastructure. Do not couple a discovered
+rest defect to unrelated catalogue or progression work.
 **Deliverable:** Small contract-focused changes, split from any personal plan import.
 
 Read ADR-0019/0023 and the session-execution architecture. Route through
@@ -216,9 +197,9 @@ for distinct controlled comparisons, not a new persona for every constraint.
 Run deterministic checks before using local/provider judging. When judging is useful,
 use the documented targeted runner; inspect the actual case behind every complaint.
 The targeted artifacts are separate from active baseline promotion. No external API or
-local model is required to reproduce H2. Provider credentials or model setup should not
-block deterministic implementation.
+local model is required to reproduce H2/H2b. Provider credentials or model setup should
+not block deterministic implementation.
 
 At each work-order finish, update status, replace fixed problem statements with outcomes,
 record evidence and leave a precise next task. Keep each behavior change reviewable and
-avoid combining catalog repair, persistence redesign and experimental physiology in one PR.
+avoid combining catalogue repair, persistence redesign and experimental physiology in one PR.

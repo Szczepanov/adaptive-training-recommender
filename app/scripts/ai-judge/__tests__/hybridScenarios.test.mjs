@@ -125,6 +125,58 @@ describe('cycling hybrid targeted evaluation', () => {
     }
   });
 
+  it('H2: gives outdoor-only bicycle access a real easy aerobic Cycling option instead of substituting Walking', async () => {
+    const outdoor = await resultFor(find('outdoor_only'));
+    const cyclingTraces = outdoor.decisionTraces.filter((trace) => trace.selected.modality === 'Cycling');
+    expect(cyclingTraces.length).toBeGreaterThan(0);
+    expect(cyclingTraces.some((trace) => trace.selected.templateId === 'end_easy_04')).toBe(true);
+    for (const trace of cyclingTraces) {
+      const template = ENRICHED_TEMPLATES.find(({ id }) => id === trace.selected.templateId);
+      expect(template.requiredEquipment).toContain('outdoor_bike');
+      expect(template.requiredEquipment).not.toContain('indoor_bike');
+    }
+  });
+
+  it('H2: true indoor-only bicycle access keeps using the existing indoor Cycling path', async () => {
+    const base = find('capacity_reference');
+    const indoorOnlyScenario = {
+      ...base.scenario,
+      context: {
+        ...base.scenario.context,
+        constraints: { ...base.scenario.context.constraints, hasIndoorBike: true },
+        trainingSettings: {
+          ...base.scenario.context.trainingSettings,
+          equipment: { ...base.scenario.context.trainingSettings.equipment, indoor_bike: true, outdoor_bike: false },
+        },
+      },
+    };
+    const indoor = await runScenario(indoorOnlyScenario);
+    const cyclingTraces = indoor.decisionTraces.filter((trace) => trace.selected.modality === 'Cycling');
+    expect(cyclingTraces.length).toBeGreaterThan(0);
+    for (const trace of cyclingTraces) {
+      const template = ENRICHED_TEMPLATES.find(({ id }) => id === trace.selected.templateId);
+      expect(template.requiredEquipment).toContain('indoor_bike');
+      expect(template.requiredEquipment).not.toContain('outdoor_bike');
+    }
+  });
+
+  it('H2 negative control: no bicycle access at all still selects no bicycle-dependent session', async () => {
+    const base = find('outdoor_only');
+    const noBikeScenario = {
+      ...base.scenario,
+      context: {
+        ...base.scenario.context,
+        constraints: { ...base.scenario.context.constraints, hasIndoorBike: false },
+        trainingSettings: {
+          ...base.scenario.context.trainingSettings,
+          equipment: { ...base.scenario.context.trainingSettings.equipment, indoor_bike: false, outdoor_bike: false },
+        },
+      },
+    };
+    const result = await runScenario(noBikeScenario);
+    expect(result.decisionTraces.some((trace) => trace.selected.modality === 'Cycling')).toBe(false);
+  });
+
   it('preserves cycling-specific objectives in build and actually enters taper', async () => {
     const build = await resultFor(find('event_build'));
     expect(build.objectiveResolution.map(({ key }) => key)).toContain('race_specific_endurance');

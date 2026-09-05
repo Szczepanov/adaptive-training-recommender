@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1 deterministic evaluation delivered; recommendation-policy changes remain planned
-**Blocked by:** No blocker for H2 investigation. Personal M00/M01 prescription requires current workload/restriction confirmation; intraday/progression changes require the relevant authority/schema decisions.
+**Status:** In progress — H1, H2 and H2b delivered; H3-H5 remain planned
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; intraday/progression changes require the relevant authority/schema decisions.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -71,12 +71,10 @@ but not sufficient for a good program.
 
 ### Reproduced findings
 
-1. **Outdoor-only cycling gap.** The targeted outdoor-only case selected no Cycling
-   across 14 forecast days despite outdoor bicycle access and the cycling-first identity.
-   The reference selected Cycling. The output substituted Walking while resolving generic
-   aerobic objectives. `templates.ts` `end_easy_01` requires `indoor_bike`; inspected outdoor
-   cycling candidates require a focus event. This is a goal-specificity/catalog eligibility
-   gap reproduced in the planner, not an equipment-safety violation. H2 owns the fix.
+1. **Outdoor-only cycling gap — fixed in H2.** The targeted outdoor-only case selected no
+   Cycling across 14 forecast days despite outdoor bicycle access and the cycling-first
+   identity, substituting Walking while resolving generic aerobic objectives. `end_easy_04`
+   closes that catalogue/equipment gap without weakening indoor-bike or no-bike gates.
 2. **More time does not alone escalate this fixture.** Reference and extra-time cases
    produced the same session choices/duration ranges in the recorded run. This is bounded
    evidence for one input family, not proof of general monotonicity or adequate training dose.
@@ -93,22 +91,78 @@ but not sufficient for a good program.
    evidence of violating an injury gate. Judge its relevance to the cycling-first goal;
    separately retain the existing local-tissue case as the safety contract.
 
-No live recommendation policy was changed to make these results look better. No AI-judge
-score or baseline improvement is claimed; this delivery ran deterministic evaluation.
+## H2 — Outdoor aerobic specificity (delivered)
 
-## H2 — Outdoor aerobic specificity (next)
+**Dependencies:** H1 delivered; current recommendation architecture, workout-library
+contracts and ADR-0004/0017 were reviewed before implementation.
 
-**Dependencies:** H1 delivered; read current recommendation architecture, workout-library
-contracts and ADR-0004/0017 before implementation.
+`end_easy_04` (`app/src/engine/templates.ts`) is an Easy Endurance Cycling template
+requiring `outdoor_bike` instead of `indoor_bike`, not event-gated. It reuses the existing
+`cycling_zone2_standard_01` workout through `app/src/workouts/prescription.ts`: that workout
+was already environment-agnostic (`indoor_or_outdoor`, generic `bike` equipment), so the
+missing behavior was at the engine-template/equipment layer rather than the detailed
+workout catalogue.
 
-Trace candidate eligibility and packing with the outdoor-only case, then provide an
-honest, non-event-gated outdoor aerobic implementation through existing catalog/coverage
-boundaries. Do not remove the indoor equipment gate or treat an airbike as a bicycle.
+Three deterministic hybrid tests cover the outdoor-only positive path, the indoor path,
+and a no-bicycle-access negative control. Safe outdoor cycling is now reachable without a
+race; unavailable bicycle equipment is not fabricated; the general-health substitution
+path remains available.
 
-Acceptance: safe outdoor cycling is reachable without a race; unavailable indoor/cable
-equipment remains excluded; no bicycle access does not fabricate cycling; the general
-health substitution path remains usable. Validate authored dose, exact role identity,
-both selection paths, workout catalog, replay/policy drift and relevant scenarios.
+## H2b — Nominated anchor-date authority (delivered)
+
+Adding a legal cheap outdoor Z2 candidate exposed a pre-existing ordering bug in
+`triathlon_novice_eighth_A`: Race-Specific Endurance Cycling dropped from 3 sessions to 0
+and event-specific anchor misses rose from 1 to 4 across the four-week simulation.
+
+### Root cause
+
+The first hypothesis was that fatigue-cost penalty overwhelmed `ANCHOR_ROLE_BOOST` and
+`ANCHOR_TIMING_BENEFIT`. Source-level tracing showed the decisive issue occurred earlier in
+the lexicographic ranking path.
+
+`rankCandidates` sorts accepted candidates by `coverageNeedTier` before benefit/utility.
+`coverageNeedTierForTemplate` correctly recognized the nominated `event-specific` or
+`quality` role, but granted it tier 0 only while that role's **weekly minimum was still
+unmet**. If an earlier exposure had already satisfied the weekly minimum, the explicitly
+nominated anchor candidate lost date-level authority. A different still-unmet role such as
+`aerobic_volume` could then receive a better coverage tier and win before fatigue cost or
+anchor boosts were compared.
+
+That behavior contradicted the coverage contract itself: an overdue/different role should
+not steal an explicitly nominated hard anchor date. It also conflicts with the cycling
+programming intent behind this evaluation, where easy volume supports rather than replaces
+the small number of genuine key cycling days.
+
+### Correction
+
+`coverageNeedTierForTemplate` now treats a nominated anchor as a **date-level programming
+role**, not merely a mechanism for repairing an unmet weekly minimum. When the active plan
+contains the relevant requirement and a legal candidate exactly matches today's nominated
+`outdoor_event_specific` or `sustained_quality` coverage key, that candidate retains tier 0
+regardless of whether an earlier exposure already met the week's minimum.
+
+This does **not** force unnecessary repeats on unclaimed dates. With `anchorRole === null`,
+an already-met race-specific or quality role keeps its ordinary lower coverage tier and an
+unmet easy-aerobic minimum can still take precedence. Safety, equipment, time, intensity,
+fatigue/recovery and spacing constraints continue to run before coverage ordering.
+
+A focused `coverageAnchorAuthority.test.ts` regression covers both `event-specific` and
+`quality` anchors after their weekly minimum has already been met, and verifies the
+unclaimed-date control so the fix cannot silently become "always prefer hard work".
+
+`POLICY_VERSION` is now
+`2026-09-outdoor-easy-cycling-anchor-authority-v1` because both the new outdoor candidate
+and the corrected anchor ordering can change persisted recommendations. The prior
+`2026-09-outdoor-easy-cycling-v1` is retained as historical.
+
+### Validation expectation
+
+Use the latest PR-head CI run as the authoritative validation record. In addition to the
+focused unit and hybrid tests, run the full deterministic checks and scenario diff. The
+specific H2b acceptance requirement is that the outdoor-bike-only triathlon scenario no
+longer loses its explicitly nominated race-specific anchors while other scenario changes
+remain either unchanged or explicitly explained. Do not regenerate the committed
+simulation baseline merely to hide an unexplained diff.
 
 ## H3 — Executable block, deliberate rest and substitutions
 
@@ -155,24 +209,28 @@ From `app/`:
 
 ```bash
 npm exec vitest run scripts/ai-judge/__tests__/hybridScenarios.test.mjs
+npm exec vitest run src/engine/coverageAnchorAuthority.test.ts
 npm run persona:hybrid:build
 npm run check
 npm run build
+npm run simulate:scenarios
+npm run simulate:diff
+node scripts/check-policy-drift.mjs <starting-commit>
 ```
 
 Use the latest PR-head CI run as the authoritative full validation rather than copying a
-test-count snapshot into this document. The focused hybrid regression suite, full frontend
-checks, deterministic corpus gates, Firestore rules, simulation bounds, bundle build and
-dependency audits should all remain green before H1 is considered merge-ready. The opt-in
-corpus should regenerate as **37 cases / 11 families**; the default active suite remains
-**30 cases / 9 families**. Existing knowledge coverage warnings, if any, are not new
-physiological validation results.
+stale test-count snapshot into this document. The focused hybrid regression suite, full
+frontend checks, deterministic corpus gates, Firestore rules, simulation bounds, bundle
+build and dependency audits should remain green before merge. The opt-in corpus remains
+**37 cases / 11 families**; the default active suite remains **30 cases / 9 families**.
+Existing knowledge coverage warnings, if any, are not new physiological validation results.
 
 For optional local judging, use the `--hybrid-expansion` runner flag documented in
 `app/scripts/ai-judge/README.md`. Review actual cases behind every complaint before
 promoting any new active cases. Existing baseline update/diff commands intentionally
 remain scoped to the unchanged active suite.
 
-No engine behavior change means no `POLICY_VERSION` bump in H1. H2–H5 require the normal
-policy/schema/replay review when decision behavior changes. Do not enable experimental
-personalization simply to improve a judge score.
+H1 did not change engine behavior and therefore required no policy bump. H2/H2b are
+decision-affecting and are represented by the current policy version above. H3-H5 require
+the normal policy/schema/replay review when decision behavior changes. Do not enable
+experimental personalization simply to improve a judge score.

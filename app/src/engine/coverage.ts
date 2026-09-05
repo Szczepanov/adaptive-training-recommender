@@ -493,9 +493,14 @@ export function coverageNeedTierForTemplate(
         ? 'outdoor_event_specific'
         : anchorRole === 'quality' ? 'sustained_quality' : null;
 
+    // A nominated anchor is date-level programming authority, not merely a repair for an
+    // unmet weekly minimum. Once an admissible candidate matches today's authored role,
+    // keep it tier 0 even when an earlier exposure already satisfied that role's minimum;
+    // otherwise a different unmet role can steal the authored anchor date. Hard safety,
+    // recovery, time and equipment gates run before this ordering participates in ranking.
     if (anchorKey && keys.includes(anchorKey)) {
         const requirement = state.requirements.find(item => item.key === anchorKey);
-        if (requirement && isMinimumUnmet(requirement)) return 0;
+        if (requirement) return 0;
     }
 
     const repairPrerequisiteMissing = state.requirements.some(requirement =>
