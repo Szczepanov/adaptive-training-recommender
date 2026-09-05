@@ -243,6 +243,240 @@ def _extract_window_metrics(
     return metrics
 
 
+def _round(val: float | None) -> float | None:
+    return round(val, 1) if val is not None else None
+
+
+def _round_clock(val: float | None) -> float | None:
+    """Round a clock-time baseline while preserving the canonical [0, 1440) range."""
+    return round(val, 1) % 1440.0 if val is not None else None
+
+
+def _compute_primary_baselines(
+    w7: dict[str, list[float | int]],
+    w28: dict[str, list[float | int]],
+) -> dict[str, float | None]:
+    return {
+        "sleep_7d": calculate_average(w7["sleepScore"], 4),
+        "sleep_28d": calculate_average(w28["sleepScore"], 14),
+        "rhr_7d": calculate_average(w7["restingHr"], 4),
+        "rhr_28d": calculate_average(w28["restingHr"], 14),
+        "hrv_7d": calculate_average(w7["hrvOvernightAvg"], 4),
+        "hrv_28d": calculate_average(w28["hrvOvernightAvg"], 14),
+        "resp_7d": calculate_median(w7["respirationAvg"], 4),
+        "resp_28d": calculate_median(w28["respirationAvg"], 14),
+        "steps_7d": calculate_average(w7["totalSteps"], 4),
+        "steps_28d": calculate_average(w28["totalSteps"], 14),
+        "hrv_sd28": calculate_stdev(w28["hrvOvernightAvg"], 14),
+        "rhr_sd28": calculate_stdev(w28["restingHr"], 14),
+        "sleep_sd28": calculate_stdev(w28["sleepScore"], 14),
+        "steps_sd28": calculate_stdev(w28["totalSteps"], 14),
+        "resp_mad28": calculate_mad(w28["respirationAvg"], 14),
+    }
+
+
+def _compute_observation_baselines(
+    w7: dict[str, list[float | int]],
+    w28: dict[str, list[float | int]],
+) -> dict[str, float | None]:
+    return {
+        "sleep_7d_median": calculate_median(w7["sleepScore"], 4),
+        "sleep_28d_median": calculate_median(w28["sleepScore"], 14),
+        "sleep_mad28": calculate_mad(w28["sleepScore"], 14),
+        "rhr_7d_median": calculate_median(w7["restingHr"], 4),
+        "rhr_28d_median": calculate_median(w28["restingHr"], 14),
+        "rhr_mad28": calculate_mad(w28["restingHr"], 14),
+        "hrv_7d_median": calculate_median(w7["hrvOvernightAvg"], 4),
+        "hrv_28d_median": calculate_median(w28["hrvOvernightAvg"], 14),
+        "hrv_mad28": calculate_mad(w28["hrvOvernightAvg"], 14),
+        "steps_7d_median": calculate_median(w7["totalSteps"], 4),
+        "steps_28d_median": calculate_median(w28["totalSteps"], 14),
+        "steps_mad28": calculate_mad(w28["totalSteps"], 14),
+        "bb_wake_7d_median": calculate_median(w7["bodyBatteryWake"], 4),
+        "bb_wake_28d_median": calculate_median(w28["bodyBatteryWake"], 14),
+        "bb_wake_mad28": calculate_mad(w28["bodyBatteryWake"], 14),
+        "stress_avg_7d_median": calculate_median(w7["stressAvg"], 4),
+        "stress_avg_28d_median": calculate_median(w28["stressAvg"], 14),
+        "stress_avg_mad28": calculate_mad(w28["stressAvg"], 14),
+        "stress_max_7d_median": calculate_median(w7["stressMax"], 4),
+        "stress_max_28d_median": calculate_median(w28["stressMax"], 14),
+        "stress_max_mad28": calculate_mad(w28["stressMax"], 14),
+        "readiness_7d_median": calculate_median(w7["trainingReadiness"], 4),
+        "readiness_28d_median": calculate_median(w28["trainingReadiness"], 14),
+        "readiness_mad28": calculate_mad(w28["trainingReadiness"], 14),
+    }
+
+
+def _compute_sleep_duration_baselines(
+    w7: dict[str, list[float | int]],
+    w28: dict[str, list[float | int]],
+    raw_current: dict[str, Any],
+) -> dict[str, float | None]:
+    sleep_duration_7d_median = calculate_median(w7["sleepDurationSec"], 4)
+    sleep_duration_28d_median = calculate_median(w28["sleepDurationSec"], 14)
+    sleep_duration_mad28 = calculate_mad(w28["sleepDurationSec"], 14)
+    current_sleep_duration = raw_current.get("sleepDurationSec")
+    if current_sleep_duration is None:
+        sleep_duration_accumulated_2d = None
+        sleep_duration_accumulated_3d = None
+    else:
+        sleep_duration_through_current = [*w28["sleepDurationSec"], current_sleep_duration]
+        sleep_duration_accumulated_2d = calculate_accumulated_deficit(
+            sleep_duration_through_current, sleep_duration_28d_median, 2
+        )
+        sleep_duration_accumulated_3d = calculate_accumulated_deficit(
+            sleep_duration_through_current, sleep_duration_28d_median, 3
+        )
+    return {
+        "sleep_duration_7d_median": sleep_duration_7d_median,
+        "sleep_duration_28d_median": sleep_duration_28d_median,
+        "sleep_duration_mad28": sleep_duration_mad28,
+        "sleep_duration_accumulated_2d": sleep_duration_accumulated_2d,
+        "sleep_duration_accumulated_3d": sleep_duration_accumulated_3d,
+    }
+
+
+def _compute_circular_baselines(
+    w7: dict[str, list[float | int]],
+    w28: dict[str, list[float | int]],
+) -> dict[str, float | None]:
+    return {
+        "bedtime_7d_mean": calculate_circular_mean_minutes(w7["bedtimeMinutes"], 4),
+        "bedtime_28d_mean": calculate_circular_mean_minutes(w28["bedtimeMinutes"], 14),
+        "wake_time_7d_mean": calculate_circular_mean_minutes(w7["wakeTimeMinutes"], 4),
+        "wake_time_28d_mean": calculate_circular_mean_minutes(w28["wakeTimeMinutes"], 14),
+        "sleep_midpoint_7d_mean": calculate_circular_mean_minutes(w7["sleepMidpointMinutes"], 4),
+        "sleep_midpoint_28d_mean": calculate_circular_mean_minutes(w28["sleepMidpointMinutes"], 14),
+    }
+
+
+def _compute_derived_deltas(
+    raw_current: dict[str, Any],
+    timezone_name: str,
+    primary: dict[str, float | None],
+    obs: dict[str, float | None],
+    sleep_dur: dict[str, float | None],
+    circ: dict[str, float | None],
+) -> DerivedDeltas:
+    current_bedtime_minutes = minutes_of_day_local(
+        raw_current.get("sleepSessionStart"), timezone_name
+    )
+    current_wake_time_minutes = minutes_of_day_local(
+        raw_current.get("sleepSessionEnd"), timezone_name
+    )
+    current_midpoint_minutes = minutes_of_day_local(
+        sleep_midpoint_iso(
+            raw_current.get("sleepSessionStart"), raw_current.get("sleepSessionEnd")
+        ),
+        timezone_name,
+    )
+
+    current_stress = raw_current.get("stress") or {}
+    current_readiness = raw_current.get("trainingReadiness") or {}
+
+    return DerivedDeltas(
+        sleepScoreVs7d=_round(calculate_delta(raw_current.get("sleepScore"), primary["sleep_7d"])),
+        sleepScoreVs28d=_round(
+            calculate_delta(raw_current.get("sleepScore"), primary["sleep_28d"])
+        ),
+        restingHrVs7d=_round(calculate_delta(raw_current.get("restingHr"), primary["rhr_7d"])),
+        restingHrVs28d=_round(calculate_delta(raw_current.get("restingHr"), primary["rhr_28d"])),
+        hrvVs7d=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), primary["hrv_7d"])),
+        hrvVs28d=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), primary["hrv_28d"])),
+        respirationVs7d=_round(
+            calculate_delta(raw_current.get("respirationAvg"), primary["resp_7d"])
+        ),
+        respirationVs28d=_round(
+            calculate_delta(raw_current.get("respirationAvg"), primary["resp_28d"])
+        ),
+        stepsVs7d=_round(calculate_delta(raw_current.get("totalSteps"), primary["steps_7d"])),
+        stepsVs28d=_round(calculate_delta(raw_current.get("totalSteps"), primary["steps_28d"])),
+        # v4: median-baseline deltas
+        sleepScoreVs7dMedian=_round(
+            calculate_delta(raw_current.get("sleepScore"), obs["sleep_7d_median"])
+        ),
+        sleepScoreVs28dMedian=_round(
+            calculate_delta(raw_current.get("sleepScore"), obs["sleep_28d_median"])
+        ),
+        restingHrVs7dMedian=_round(
+            calculate_delta(raw_current.get("restingHr"), obs["rhr_7d_median"])
+        ),
+        restingHrVs28dMedian=_round(
+            calculate_delta(raw_current.get("restingHr"), obs["rhr_28d_median"])
+        ),
+        hrvVs7dMedian=_round(
+            calculate_delta(raw_current.get("hrvOvernightAvg"), obs["hrv_7d_median"])
+        ),
+        hrvVs28dMedian=_round(
+            calculate_delta(raw_current.get("hrvOvernightAvg"), obs["hrv_28d_median"])
+        ),
+        stepsVs7dMedian=_round(
+            calculate_delta(raw_current.get("totalSteps"), obs["steps_7d_median"])
+        ),
+        stepsVs28dMedian=_round(
+            calculate_delta(raw_current.get("totalSteps"), obs["steps_28d_median"])
+        ),
+        # v5: median-baseline deltas
+        bodyBatteryWakeVs7dMedian=_round(
+            calculate_delta(raw_current.get("bodyBatteryWake"), obs["bb_wake_7d_median"])
+        ),
+        bodyBatteryWakeVs28dMedian=_round(
+            calculate_delta(raw_current.get("bodyBatteryWake"), obs["bb_wake_28d_median"])
+        ),
+        stressAvgVs7dMedian=_round(
+            calculate_delta(current_stress.get("avg"), obs["stress_avg_7d_median"])
+        ),
+        stressAvgVs28dMedian=_round(
+            calculate_delta(current_stress.get("avg"), obs["stress_avg_28d_median"])
+        ),
+        stressMaxVs7dMedian=_round(
+            calculate_delta(current_stress.get("max"), obs["stress_max_7d_median"])
+        ),
+        stressMaxVs28dMedian=_round(
+            calculate_delta(current_stress.get("max"), obs["stress_max_28d_median"])
+        ),
+        trainingReadinessScoreVs7dMedian=_round(
+            calculate_delta(current_readiness.get("score"), obs["readiness_7d_median"])
+        ),
+        trainingReadinessScoreVs28dMedian=_round(
+            calculate_delta(current_readiness.get("score"), obs["readiness_28d_median"])
+        ),
+        # v6: sleep-duration & circular time-of-day deviations
+        sleepDurationVs7dMedian=_round(
+            calculate_delta(
+                raw_current.get("sleepDurationSec"), sleep_dur["sleep_duration_7d_median"]
+            )
+        ),
+        sleepDurationVs28dMedian=_round(
+            calculate_delta(
+                raw_current.get("sleepDurationSec"), sleep_dur["sleep_duration_28d_median"]
+            )
+        ),
+        bedtimeDeviationVs7dMinutes=_round(
+            calculate_circular_delta_minutes(current_bedtime_minutes, circ["bedtime_7d_mean"])
+        ),
+        bedtimeDeviationVs28dMinutes=_round(
+            calculate_circular_delta_minutes(current_bedtime_minutes, circ["bedtime_28d_mean"])
+        ),
+        wakeTimeDeviationVs7dMinutes=_round(
+            calculate_circular_delta_minutes(current_wake_time_minutes, circ["wake_time_7d_mean"])
+        ),
+        wakeTimeDeviationVs28dMinutes=_round(
+            calculate_circular_delta_minutes(current_wake_time_minutes, circ["wake_time_28d_mean"])
+        ),
+        sleepMidpointDeviationVs7dMinutes=_round(
+            calculate_circular_delta_minutes(
+                current_midpoint_minutes, circ["sleep_midpoint_7d_mean"]
+            )
+        ),
+        sleepMidpointDeviationVs28dMinutes=_round(
+            calculate_circular_delta_minutes(
+                current_midpoint_minutes, circ["sleep_midpoint_28d_mean"]
+            )
+        ),
+    )
+
+
 def compute_derived_metrics(
     raw_current: dict[str, Any],
     window_7d_raws: list[dict[str, Any]],
@@ -263,258 +497,68 @@ def compute_derived_metrics(
     w7 = _extract_window_metrics(window_7d_raws, timezone_name)
     w28 = _extract_window_metrics(window_28d_raws, timezone_name)
 
-    sleep_7d = calculate_average(w7["sleepScore"], 4)
-    sleep_28d = calculate_average(w28["sleepScore"], 14)
+    primary = _compute_primary_baselines(w7, w28)
+    obs = _compute_observation_baselines(w7, w28)
+    sleep_dur = _compute_sleep_duration_baselines(w7, w28, raw_current)
+    circ = _compute_circular_baselines(w7, w28)
 
-    rhr_7d = calculate_average(w7["restingHr"], 4)
-    rhr_28d = calculate_average(w28["restingHr"], 14)
-
-    hrv_7d = calculate_average(w7["hrvOvernightAvg"], 4)
-    hrv_28d = calculate_average(w28["hrvOvernightAvg"], 14)
-
-    # Respiration's v3 robust-baseline candidate uses median so a small number of elevated
-    # nights do not redefine the trailing center. Production scoring remains default-off
-    # pending replay/calibration; see ADR-0006 and ADR-0024.
-    resp_7d = calculate_median(w7["respirationAvg"], 4)
-    resp_28d = calculate_median(w28["respirationAvg"], 14)
-
-    steps_7d = calculate_average(w7["totalSteps"], 4)
-    steps_28d = calculate_average(w28["totalSteps"], 14)
-
-    # 28-day trailing stdev per metric -- this person's own night-to-night noise floor,
-    # consumed by the engine to normalize deltas instead of comparing against a single
-    # fixed absolute threshold for everyone (see DerivedMetrics.hrv28dStdev docstring).
-    hrv_sd28 = calculate_stdev(w28["hrvOvernightAvg"], 14)
-    rhr_sd28 = calculate_stdev(w28["restingHr"], 14)
-    sleep_sd28 = calculate_stdev(w28["sleepScore"], 14)
-    steps_sd28 = calculate_stdev(w28["totalSteps"], 14)
-    # Respiration's candidate robust spread is persisted for comparison. Scaled MAD is
-    # normal-consistent, not universally equivalent to stdev; see calculate_mad/ADR-0024.
-    resp_mad28 = calculate_mad(w28["respirationAvg"], 14)
-
-    # v4: candidate median/MAD summaries alongside the existing live estimators. These are
-    # observation-only. ADR-0024 explicitly rejects treating them as a presumed successor
-    # for every metric (notably HRV, steps and bounded sleep score).
-    sleep_7d_median = calculate_median(w7["sleepScore"], 4)
-    sleep_28d_median = calculate_median(w28["sleepScore"], 14)
-    rhr_7d_median = calculate_median(w7["restingHr"], 4)
-    rhr_28d_median = calculate_median(w28["restingHr"], 14)
-    hrv_7d_median = calculate_median(w7["hrvOvernightAvg"], 4)
-    hrv_28d_median = calculate_median(w28["hrvOvernightAvg"], 14)
-    steps_7d_median = calculate_median(w7["totalSteps"], 4)
-    steps_28d_median = calculate_median(w28["totalSteps"], 14)
-
-    sleep_mad28 = calculate_mad(w28["sleepScore"], 14)
-    rhr_mad28 = calculate_mad(w28["restingHr"], 14)
-    hrv_mad28 = calculate_mad(w28["hrvOvernightAvg"], 14)
-    steps_mad28 = calculate_mad(w28["totalSteps"], 14)
-
-    # v5: observation-only candidate baselines for provider composites/enrichment fields.
-    # These overlap upstream physiology (for example HRV/sleep/stress) and must not simply
-    # become additive strain terms; ADR-0024 requires correlation/double-counting analysis.
-    bb_wake_7d_median = calculate_median(w7["bodyBatteryWake"], 4)
-    bb_wake_28d_median = calculate_median(w28["bodyBatteryWake"], 14)
-    bb_wake_mad28 = calculate_mad(w28["bodyBatteryWake"], 14)
-
-    stress_avg_7d_median = calculate_median(w7["stressAvg"], 4)
-    stress_avg_28d_median = calculate_median(w28["stressAvg"], 14)
-    stress_avg_mad28 = calculate_mad(w28["stressAvg"], 14)
-
-    stress_max_7d_median = calculate_median(w7["stressMax"], 4)
-    stress_max_28d_median = calculate_median(w28["stressMax"], 14)
-    stress_max_mad28 = calculate_mad(w28["stressMax"], 14)
-
-    readiness_7d_median = calculate_median(w7["trainingReadiness"], 4)
-    readiness_28d_median = calculate_median(w28["trainingReadiness"], 14)
-    readiness_mad28 = calculate_mad(w28["trainingReadiness"], 14)
-
-    # v6: sleep-duration median/MAD baselines, plus a 2d/3d accumulated deficit against the
-    # historical 28d median. The baseline remains history-only, while the rolling deficit
-    # requires and appends the current night so today's snapshot never silently falls back
-    # to a stale D-1/D-2-only aggregate when current sleep duration is unavailable.
-    sleep_duration_7d_median = calculate_median(w7["sleepDurationSec"], 4)
-    sleep_duration_28d_median = calculate_median(w28["sleepDurationSec"], 14)
-    sleep_duration_mad28 = calculate_mad(w28["sleepDurationSec"], 14)
-    current_sleep_duration = raw_current.get("sleepDurationSec")
-    if current_sleep_duration is None:
-        sleep_duration_accumulated_2d = None
-        sleep_duration_accumulated_3d = None
-    else:
-        sleep_duration_through_current = [*w28["sleepDurationSec"], current_sleep_duration]
-        sleep_duration_accumulated_2d = calculate_accumulated_deficit(
-            sleep_duration_through_current, sleep_duration_28d_median, 2
-        )
-        sleep_duration_accumulated_3d = calculate_accumulated_deficit(
-            sleep_duration_through_current, sleep_duration_28d_median, 3
-        )
-
-    # v6: bedtime/wake-time/sleep-midpoint circular-mean baselines (minutes since local
-    # midnight) -- see calculate_circular_mean_minutes's docstring for why mean, not median.
-    bedtime_7d_mean = calculate_circular_mean_minutes(w7["bedtimeMinutes"], 4)
-    bedtime_28d_mean = calculate_circular_mean_minutes(w28["bedtimeMinutes"], 14)
-    wake_time_7d_mean = calculate_circular_mean_minutes(w7["wakeTimeMinutes"], 4)
-    wake_time_28d_mean = calculate_circular_mean_minutes(w28["wakeTimeMinutes"], 14)
-    sleep_midpoint_7d_mean = calculate_circular_mean_minutes(w7["sleepMidpointMinutes"], 4)
-    sleep_midpoint_28d_mean = calculate_circular_mean_minutes(w28["sleepMidpointMinutes"], 14)
-
-    current_bedtime_minutes = minutes_of_day_local(
-        raw_current.get("sleepSessionStart"), timezone_name
-    )
-    current_wake_time_minutes = minutes_of_day_local(
-        raw_current.get("sleepSessionEnd"), timezone_name
-    )
-    current_midpoint_minutes = minutes_of_day_local(
-        sleep_midpoint_iso(
-            raw_current.get("sleepSessionStart"), raw_current.get("sleepSessionEnd")
-        ),
-        timezone_name,
-    )
-
-    current_stress = raw_current.get("stress") or {}
-    current_readiness = raw_current.get("trainingReadiness") or {}
-
-    def _round(val: float | None) -> float | None:
-        return round(val, 1) if val is not None else None
-
-    def _round_clock(val: float | None) -> float | None:
-        """Round a clock-time baseline while preserving the canonical [0, 1440) range."""
-        return round(val, 1) % 1440.0 if val is not None else None
-
-    deltas = DerivedDeltas(
-        sleepScoreVs7d=_round(calculate_delta(raw_current.get("sleepScore"), sleep_7d)),
-        sleepScoreVs28d=_round(calculate_delta(raw_current.get("sleepScore"), sleep_28d)),
-        restingHrVs7d=_round(calculate_delta(raw_current.get("restingHr"), rhr_7d)),
-        restingHrVs28d=_round(calculate_delta(raw_current.get("restingHr"), rhr_28d)),
-        hrvVs7d=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), hrv_7d)),
-        hrvVs28d=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), hrv_28d)),
-        respirationVs7d=_round(calculate_delta(raw_current.get("respirationAvg"), resp_7d)),
-        respirationVs28d=_round(calculate_delta(raw_current.get("respirationAvg"), resp_28d)),
-        stepsVs7d=_round(calculate_delta(raw_current.get("totalSteps"), steps_7d)),
-        stepsVs28d=_round(calculate_delta(raw_current.get("totalSteps"), steps_28d)),
-        # v4: median-baseline deltas, observation-only -- see the median/MAD comment above.
-        sleepScoreVs7dMedian=_round(
-            calculate_delta(raw_current.get("sleepScore"), sleep_7d_median)
-        ),
-        sleepScoreVs28dMedian=_round(
-            calculate_delta(raw_current.get("sleepScore"), sleep_28d_median)
-        ),
-        restingHrVs7dMedian=_round(calculate_delta(raw_current.get("restingHr"), rhr_7d_median)),
-        restingHrVs28dMedian=_round(calculate_delta(raw_current.get("restingHr"), rhr_28d_median)),
-        hrvVs7dMedian=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), hrv_7d_median)),
-        hrvVs28dMedian=_round(calculate_delta(raw_current.get("hrvOvernightAvg"), hrv_28d_median)),
-        stepsVs7dMedian=_round(calculate_delta(raw_current.get("totalSteps"), steps_7d_median)),
-        stepsVs28dMedian=_round(calculate_delta(raw_current.get("totalSteps"), steps_28d_median)),
-        # v5: median-baseline deltas for body battery wake / stress / training readiness,
-        # observation-only -- see the v5 comment above.
-        bodyBatteryWakeVs7dMedian=_round(
-            calculate_delta(raw_current.get("bodyBatteryWake"), bb_wake_7d_median)
-        ),
-        bodyBatteryWakeVs28dMedian=_round(
-            calculate_delta(raw_current.get("bodyBatteryWake"), bb_wake_28d_median)
-        ),
-        stressAvgVs7dMedian=_round(
-            calculate_delta(current_stress.get("avg"), stress_avg_7d_median)
-        ),
-        stressAvgVs28dMedian=_round(
-            calculate_delta(current_stress.get("avg"), stress_avg_28d_median)
-        ),
-        stressMaxVs7dMedian=_round(
-            calculate_delta(current_stress.get("max"), stress_max_7d_median)
-        ),
-        stressMaxVs28dMedian=_round(
-            calculate_delta(current_stress.get("max"), stress_max_28d_median)
-        ),
-        trainingReadinessScoreVs7dMedian=_round(
-            calculate_delta(current_readiness.get("score"), readiness_7d_median)
-        ),
-        trainingReadinessScoreVs28dMedian=_round(
-            calculate_delta(current_readiness.get("score"), readiness_28d_median)
-        ),
-        # v6: sleep-duration median-baseline deltas and circular time-of-day deviations --
-        # see the v6 comment above. Circular deltas use calculate_circular_delta_minutes
-        # (shortest-arc, signed), not calculate_delta (which would give a huge, wrong value
-        # whenever the baseline and current straddle midnight).
-        sleepDurationVs7dMedian=_round(
-            calculate_delta(raw_current.get("sleepDurationSec"), sleep_duration_7d_median)
-        ),
-        sleepDurationVs28dMedian=_round(
-            calculate_delta(raw_current.get("sleepDurationSec"), sleep_duration_28d_median)
-        ),
-        bedtimeDeviationVs7dMinutes=_round(
-            calculate_circular_delta_minutes(current_bedtime_minutes, bedtime_7d_mean)
-        ),
-        bedtimeDeviationVs28dMinutes=_round(
-            calculate_circular_delta_minutes(current_bedtime_minutes, bedtime_28d_mean)
-        ),
-        wakeTimeDeviationVs7dMinutes=_round(
-            calculate_circular_delta_minutes(current_wake_time_minutes, wake_time_7d_mean)
-        ),
-        wakeTimeDeviationVs28dMinutes=_round(
-            calculate_circular_delta_minutes(current_wake_time_minutes, wake_time_28d_mean)
-        ),
-        sleepMidpointDeviationVs7dMinutes=_round(
-            calculate_circular_delta_minutes(current_midpoint_minutes, sleep_midpoint_7d_mean)
-        ),
-        sleepMidpointDeviationVs28dMinutes=_round(
-            calculate_circular_delta_minutes(current_midpoint_minutes, sleep_midpoint_28d_mean)
-        ),
-    )
+    deltas = _compute_derived_deltas(raw_current, timezone_name, primary, obs, sleep_dur, circ)
 
     return DerivedMetrics(
         baselineComputationVersion=BASELINE_COMPUTATION_VERSION,
-        sleepScore7dAvg=_round(sleep_7d),
-        sleepScore28dAvg=_round(sleep_28d),
-        restingHr7dAvg=_round(rhr_7d),
-        restingHr28dAvg=_round(rhr_28d),
-        hrv7dAvg=_round(hrv_7d),
-        hrv28dAvg=_round(hrv_28d),
-        respiration7dAvg=_round(resp_7d),
-        respiration28dAvg=_round(resp_28d),
-        hrv28dStdev=_round(hrv_sd28),
-        restingHr28dStdev=_round(rhr_sd28),
-        sleepScore28dStdev=_round(sleep_sd28),
-        respiration28dMad=_round(resp_mad28),
-        steps7dAvg=_round(steps_7d),
-        steps28dAvg=_round(steps_28d),
-        steps28dStdev=_round(steps_sd28),
+        sleepScore7dAvg=_round(primary["sleep_7d"]),
+        sleepScore28dAvg=_round(primary["sleep_28d"]),
+        restingHr7dAvg=_round(primary["rhr_7d"]),
+        restingHr28dAvg=_round(primary["rhr_28d"]),
+        hrv7dAvg=_round(primary["hrv_7d"]),
+        hrv28dAvg=_round(primary["hrv_28d"]),
+        respiration7dAvg=_round(primary["resp_7d"]),
+        respiration28dAvg=_round(primary["resp_28d"]),
+        hrv28dStdev=_round(primary["hrv_sd28"]),
+        restingHr28dStdev=_round(primary["rhr_sd28"]),
+        sleepScore28dStdev=_round(primary["sleep_sd28"]),
+        respiration28dMad=_round(primary["resp_mad28"]),
+        steps7dAvg=_round(primary["steps_7d"]),
+        steps28dAvg=_round(primary["steps_28d"]),
+        steps28dStdev=_round(primary["steps_sd28"]),
         # v4: observation-only median/MAD baselines -- see ADR-0024 for metric-specific candidates.
-        sleepScore7dMedian=_round(sleep_7d_median),
-        sleepScore28dMedian=_round(sleep_28d_median),
-        sleepScore28dMad=_round(sleep_mad28),
-        restingHr7dMedian=_round(rhr_7d_median),
-        restingHr28dMedian=_round(rhr_28d_median),
-        restingHr28dMad=_round(rhr_mad28),
-        hrv7dMedian=_round(hrv_7d_median),
-        hrv28dMedian=_round(hrv_28d_median),
-        hrv28dMad=_round(hrv_mad28),
-        steps7dMedian=_round(steps_7d_median),
-        steps28dMedian=_round(steps_28d_median),
-        steps28dMad=_round(steps_mad28),
+        sleepScore7dMedian=_round(obs["sleep_7d_median"]),
+        sleepScore28dMedian=_round(obs["sleep_28d_median"]),
+        sleepScore28dMad=_round(obs["sleep_mad28"]),
+        restingHr7dMedian=_round(obs["rhr_7d_median"]),
+        restingHr28dMedian=_round(obs["rhr_28d_median"]),
+        restingHr28dMad=_round(obs["rhr_mad28"]),
+        hrv7dMedian=_round(obs["hrv_7d_median"]),
+        hrv28dMedian=_round(obs["hrv_28d_median"]),
+        hrv28dMad=_round(obs["hrv_mad28"]),
+        steps7dMedian=_round(obs["steps_7d_median"]),
+        steps28dMedian=_round(obs["steps_28d_median"]),
+        steps28dMad=_round(obs["steps_mad28"]),
         # v5: observation-only median/MAD baselines -- keep composite signals non-additive.
-        bodyBatteryWake7dMedian=_round(bb_wake_7d_median),
-        bodyBatteryWake28dMedian=_round(bb_wake_28d_median),
-        bodyBatteryWake28dMad=_round(bb_wake_mad28),
-        stressAvg7dMedian=_round(stress_avg_7d_median),
-        stressAvg28dMedian=_round(stress_avg_28d_median),
-        stressAvg28dMad=_round(stress_avg_mad28),
-        stressMax7dMedian=_round(stress_max_7d_median),
-        stressMax28dMedian=_round(stress_max_28d_median),
-        stressMax28dMad=_round(stress_max_mad28),
-        trainingReadinessScore7dMedian=_round(readiness_7d_median),
-        trainingReadinessScore28dMedian=_round(readiness_28d_median),
-        trainingReadinessScore28dMad=_round(readiness_mad28),
+        bodyBatteryWake7dMedian=_round(obs["bb_wake_7d_median"]),
+        bodyBatteryWake28dMedian=_round(obs["bb_wake_28d_median"]),
+        bodyBatteryWake28dMad=_round(obs["bb_wake_mad28"]),
+        stressAvg7dMedian=_round(obs["stress_avg_7d_median"]),
+        stressAvg28dMedian=_round(obs["stress_avg_28d_median"]),
+        stressAvg28dMad=_round(obs["stress_avg_mad28"]),
+        stressMax7dMedian=_round(obs["stress_max_7d_median"]),
+        stressMax28dMedian=_round(obs["stress_max_28d_median"]),
+        stressMax28dMad=_round(obs["stress_max_mad28"]),
+        trainingReadinessScore7dMedian=_round(obs["readiness_7d_median"]),
+        trainingReadinessScore28dMedian=_round(obs["readiness_28d_median"]),
+        trainingReadinessScore28dMad=_round(obs["readiness_mad28"]),
         # v6: sleep-duration median/MAD, accumulated deficit, and circular time-of-day
         # baselines -- see the v6 comment above.
-        sleepDuration7dMedian=_round(sleep_duration_7d_median),
-        sleepDuration28dMedian=_round(sleep_duration_28d_median),
-        sleepDuration28dMad=_round(sleep_duration_mad28),
-        sleepDurationAccumulated2dDeficitSec=_round(sleep_duration_accumulated_2d),
-        sleepDurationAccumulated3dDeficitSec=_round(sleep_duration_accumulated_3d),
-        bedtime7dCircularMeanMinutes=_round_clock(bedtime_7d_mean),
-        bedtime28dCircularMeanMinutes=_round_clock(bedtime_28d_mean),
-        wakeTime7dCircularMeanMinutes=_round_clock(wake_time_7d_mean),
-        wakeTime28dCircularMeanMinutes=_round_clock(wake_time_28d_mean),
-        sleepMidpoint7dCircularMeanMinutes=_round_clock(sleep_midpoint_7d_mean),
-        sleepMidpoint28dCircularMeanMinutes=_round_clock(sleep_midpoint_28d_mean),
+        sleepDuration7dMedian=_round(sleep_dur["sleep_duration_7d_median"]),
+        sleepDuration28dMedian=_round(sleep_dur["sleep_duration_28d_median"]),
+        sleepDuration28dMad=_round(sleep_dur["sleep_duration_mad28"]),
+        sleepDurationAccumulated2dDeficitSec=_round(sleep_dur["sleep_duration_accumulated_2d"]),
+        sleepDurationAccumulated3dDeficitSec=_round(sleep_dur["sleep_duration_accumulated_3d"]),
+        bedtime7dCircularMeanMinutes=_round_clock(circ["bedtime_7d_mean"]),
+        bedtime28dCircularMeanMinutes=_round_clock(circ["bedtime_28d_mean"]),
+        wakeTime7dCircularMeanMinutes=_round_clock(circ["wake_time_7d_mean"]),
+        wakeTime28dCircularMeanMinutes=_round_clock(circ["wake_time_28d_mean"]),
+        sleepMidpoint7dCircularMeanMinutes=_round_clock(circ["sleep_midpoint_7d_mean"]),
+        sleepMidpoint28dCircularMeanMinutes=_round_clock(circ["sleep_midpoint_28d_mean"]),
         deltas=deltas,
     )
