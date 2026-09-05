@@ -63,7 +63,7 @@ export const REFERENCE_SUBJECTIVE_BASELINE_POLICY: SubjectiveBaselinePolicy = {
     // it a dependency it has no other reason to carry -- the same reasoning `externalSession.ts`
     // gives for duplicating `EXTERNAL_MODIFY_MAX_SYSTEMIC_COST` instead of importing it from
     // `rules.ts`. If the reference numbers drift apart from contextBrief.ts's, that is a
-    // real finding for 9.6 to report, not a bug -- D-SUBJEST leaves both free to move.
+    // real finding for 9.6 to report, not an issue -- D-SUBJEST leaves both free to move.
     minRecentRecordedDays: 4,
     minLongRecordedDays: 10,
     variabilityFloor: 1.0,
