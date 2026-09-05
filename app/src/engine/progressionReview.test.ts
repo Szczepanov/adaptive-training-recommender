@@ -95,6 +95,7 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
             coverageKey?: CoverageCreditFact['coverageKey'];
             prescriptionStatus?: LinkedProgressionExposureEvidence['prescription']['status'];
             prescriptionValue?: number;
+            sourcePlanRevision?: number;
             deliveredDoseFraction?: number;
         } = {},
     ): LinkedProgressionExposureEvidence {
@@ -104,7 +105,7 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
             ...(options.deliveredDoseFraction === undefined ? {} : { deliveredDoseFraction: options.deliveredDoseFraction }),
             prescription: {
                 status: options.prescriptionStatus ?? 'matched_current_target',
-                sourceRevision: 1,
+                sourcePlanRevision: options.sourcePlanRevision ?? 1,
                 variable: 'duration_min',
                 unit: 'minutes',
                 value: options.prescriptionValue ?? 90,
@@ -130,6 +131,7 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
             windowEndDate: '2026-09-14',
             exposuresObserved: 3,
             followUpCoveragePct: 100,
+            ambiguousOccurrenceCount: 0,
         });
     });
 
@@ -185,8 +187,8 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
             boundProgressResults: boundImproving,
         });
         expect(review.evidenceAudit.candidateExposureCount).toBe(3);
+        expect(review.evidenceAudit.roleRelevantExposureCount).toBe(2);
         expect(review.evidenceAudit.exposuresObserved).toBe(2);
-        expect(review.evidenceAudit.excludedExposureCount).toBe(1);
         expect(review.action).toBe('hold');
     });
 
@@ -226,20 +228,22 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
             ],
             boundProgressResults: boundImproving,
         });
+        expect(underDose.evidenceAudit.roleRelevantExposureCount).toBe(3);
         expect(underDose.evidenceAudit.exposuresObserved).toBe(2);
         expect(underDose.action).toBe('hold');
     });
 
-    it('does not count a stale/different prescription value as current-target exposure', () => {
-        const stale = linked(exposures[0], outcomes[0], { prescriptionValue: 80 });
+    it('does not count a stale value or stale source-plan revision as current-target exposure', () => {
+        const staleValue = linked(exposures[0], outcomes[0], { prescriptionValue: 80 });
+        const staleRevision = linked(exposures[1], outcomes[1], { sourcePlanRevision: 2 });
         const review = evaluateProgressionReview({
             intentBlock: validBlock,
             asOfDate: '2026-09-14',
-            linkedExposures: [stale, cleanLinked[1], cleanLinked[2]],
+            linkedExposures: [staleValue, staleRevision, cleanLinked[2]],
             boundProgressResults: boundImproving,
         });
         expect(review.evidenceAudit.roleRelevantExposureCount).toBe(3);
-        expect(review.evidenceAudit.exposuresObserved).toBe(2);
+        expect(review.evidenceAudit.exposuresObserved).toBe(1);
         expect(review.action).toBe('hold');
     });
 
@@ -255,10 +259,15 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
         expect(review.action).toBe('hold');
     });
 
-    it('still applies adverse safety evidence from a partial target exposure', () => {
+    it('still applies adverse safety evidence from an extra partial target attempt', () => {
+        const partialExposure: PerformedExposureFact = {
+            ...exposures[0],
+            performedOccurrenceId: 'occ_partial',
+            localDate: '2026-09-11',
+        };
         const partialReactive = linked(
-            exposures[0],
-            { ...outcomes[0], status: 'reactive' },
+            partialExposure,
+            { ...outcomes[0], sourceSession: { ...outcomes[0].sourceSession, id: 'partial-session', date: '2026-09-11' }, status: 'reactive' },
             { prescriptionStatus: 'partial' },
         );
         const review = evaluateProgressionReview({
@@ -267,12 +276,33 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
             linkedExposures: [partialReactive, ...cleanLinked],
             boundProgressResults: boundImproving,
         });
+        expect(review.evidenceAudit.roleRelevantExposureCount).toBe(4);
         expect(review.evidenceAudit.exposuresObserved).toBe(3);
         expect(review.evidenceAudit.adverseResponseCount).toBe(1);
         expect(review.action).toBe('reduce_proposal');
     });
 
-    it('deduplicates repeated canonical occurrence ids', () => {
+    it('requires follow-up evidence for partial/under-dose target attempts too', () => {
+        const partialExposure: PerformedExposureFact = {
+            ...exposures[0],
+            performedOccurrenceId: 'occ_partial_missing',
+            localDate: '2026-09-11',
+        };
+        const partialUnknown = linked(partialExposure, undefined, { prescriptionStatus: 'partial' });
+        const review = evaluateProgressionReview({
+            intentBlock: validBlock,
+            asOfDate: '2026-09-14',
+            linkedExposures: [partialUnknown, ...cleanLinked],
+            boundProgressResults: boundImproving,
+        });
+        expect(review.evidenceAudit.exposuresObserved).toBe(3);
+        expect(review.evidenceAudit.followUpCoveragePct).toBe(75);
+        expect(review.evidenceAudit.unknownResponseCount).toBe(1);
+        expect(review.action).toBe('hold');
+        expect(review.reasons[0]).toContain('unknown_response_evidence_blocks_advancement');
+    });
+
+    it('deduplicates identical repeated canonical occurrence evidence', () => {
         const review = evaluateProgressionReview({
             intentBlock: validBlock,
             asOfDate: '2026-09-14',
@@ -280,14 +310,35 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
             boundProgressResults: boundImproving,
         });
         expect(review.evidenceAudit.candidateExposureCount).toBe(3);
+        expect(review.evidenceAudit.ambiguousOccurrenceCount).toBe(0);
         expect(review.evidenceAudit.exposuresObserved).toBe(3);
         expect(review.action).toBe('advance_proposal');
     });
 
-    it('uses only outcomes bundled with role-relevant canonical occurrences', () => {
+    it('fails closed on conflicting duplicate evidence for the same canonical occurrence', () => {
+        const conflicting = linked(exposures[0], outcomes[0], { prescriptionValue: 80 });
+        const review = evaluateProgressionReview({
+            intentBlock: validBlock,
+            asOfDate: '2026-09-14',
+            linkedExposures: [cleanLinked[0], conflicting, cleanLinked[1], cleanLinked[2]],
+            boundProgressResults: boundImproving,
+        });
+        expect(review.evidenceAudit.candidateExposureCount).toBe(3);
+        expect(review.evidenceAudit.ambiguousOccurrenceCount).toBe(1);
+        expect(review.evidenceAudit.exposuresObserved).toBe(2);
+        expect(review.action).toBe('hold');
+        expect(review.reasons[0]).toContain('conflicting_duplicate_occurrence_evidence');
+    });
+
+    it('uses only outcomes bundled with target/allowed-role canonical occurrences', () => {
+        const unrelatedExposure: PerformedExposureFact = {
+            ...exposures[0],
+            performedOccurrenceId: 'unrelated',
+            localDate: '2026-09-11',
+        };
         const unrelatedReactive = linked(
-            { ...exposures[0], performedOccurrenceId: 'unrelated', localDate: '2026-09-11' },
-            { ...outcomes[0], status: 'reactive' },
+            unrelatedExposure,
+            { ...outcomes[0], sourceSession: { ...outcomes[0].sourceSession, id: 'unrelated-session', date: '2026-09-11' }, status: 'reactive' },
             { coverageKey: 'aerobic_volume' },
         );
         const review = evaluateProgressionReview({
@@ -300,7 +351,7 @@ describe('progressionReview evaluator (ADR-0037 D-CHANGE / D-AUTHORITY)', () => 
         expect(review.action).toBe('advance_proposal');
     });
 
-    it('holds when linked follow-up coverage is below the authored threshold', () => {
+    it('holds when role-relevant follow-up coverage is below the authored threshold', () => {
         const lowFollowUp = cleanLinked.map((evidence, index) => index === 0
             ? evidence
             : { ...evidence, outcome: { ...evidence.outcome!, hasFollowUpData: false, status: 'unknown' as const } });

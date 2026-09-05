@@ -41,6 +41,7 @@ export interface ProgressionEvidenceAudit {
     roleRelevantExposureCount: number;
     exposuresObserved: number;
     excludedExposureCount: number;
+    ambiguousOccurrenceCount: number;
     exposuresRequired: number;
     followUpCoveragePct: number;
     requiredFollowUpCoveragePct: number;
@@ -67,8 +68,8 @@ export type ProgressionPrescriptionMatch = 'matched_current_target' | 'partial' 
 /**
  * One canonical occurrence with all evidence already joined to that occurrence by the caller.
  * `coverageCredits` still carry the canonical occurrence id and are verified here. Prescription
- * evidence pins the exact variable/value under review so a stale or different dose cannot be
- * counted merely because it used the same modality or role.
+ * evidence pins the exact source-plan revision and variable/value under review so stale or
+ * different-dose work cannot count merely because it used the same modality or role.
  */
 export interface LinkedProgressionExposureEvidence {
     exposure: PerformedExposureFact;
@@ -78,7 +79,7 @@ export interface LinkedProgressionExposureEvidence {
     deliveredDoseFraction?: number;
     prescription: {
         status: ProgressionPrescriptionMatch;
-        sourceRevision: number;
+        sourcePlanRevision: number;
         sessionId?: string;
         stepId?: string;
         variable: BlockProgressionContract['variable'];
@@ -136,6 +137,7 @@ function emptyAudit(contract?: BlockProgressionContract): ProgressionEvidenceAud
         roleRelevantExposureCount: 0,
         exposuresObserved: 0,
         excludedExposureCount: 0,
+        ambiguousOccurrenceCount: 0,
         exposuresRequired: contract?.minCompletedExposures ?? 0,
         followUpCoveragePct: 0,
         requiredFollowUpCoveragePct: contract?.requiredFollowUpCoveragePct ?? 0,
@@ -177,7 +179,20 @@ function hasExactCoverage(
     );
 }
 
-function coverageMatchesObjective(
+/** Role relevance is intentionally broader than dose qualification: a partial/under-dose
+ * target or allowed-substitution attempt can still carry safety/follow-up evidence. */
+function coverageIsTargetOrAllowedRole(
+    evidence: LinkedProgressionExposureEvidence,
+    objective: BlockObjectiveDefinition,
+): boolean {
+    if (hasExactCoverage(evidence, objective.coverageKey)) return true;
+    return (objective.allowedSubstitutions ?? []).some(substitution =>
+        substitution.targetCoverageKey === objective.coverageKey
+        && substitution.allowedCoverageKeys.some(key => hasExactCoverage(evidence, key)),
+    );
+}
+
+function coverageQualifiesObjective(
     evidence: LinkedProgressionExposureEvidence,
     objective: BlockObjectiveDefinition,
 ): boolean {
@@ -202,10 +217,11 @@ function coverageMatchesObjective(
 function prescriptionMatchesTarget(
     evidence: LinkedProgressionExposureEvidence,
     contract: BlockProgressionContract,
+    expectedSourcePlanRevision: number,
 ): boolean {
     const prescription = evidence.prescription;
     if (prescription.status !== 'matched_current_target') return false;
-    if (!Number.isInteger(prescription.sourceRevision) || prescription.sourceRevision < 1) return false;
+    if (prescription.sourcePlanRevision !== expectedSourcePlanRevision) return false;
     if (prescription.variable !== contract.variable) return false;
     if (prescription.unit !== contract.unit) return false;
     if (!Number.isFinite(prescription.value) || prescription.value !== contract.currentValue) return false;
@@ -214,6 +230,37 @@ function prescriptionMatchesTarget(
     if (contract.targetBinding.stepId !== undefined
         && prescription.stepId !== contract.targetBinding.stepId) return false;
     return true;
+}
+
+/** Fingerprint only behavior-affecting fields consumed by this evaluator. Identical replayed
+ * duplicates dedupe; conflicting duplicates for one canonical occurrence fail closed. */
+function linkedEvidenceFingerprint(evidence: LinkedProgressionExposureEvidence): string {
+    const occurrenceId = evidence.exposure.performedOccurrenceId;
+    const coverage = evidence.coverageCredits
+        .filter(credit => credit.performedOccurrenceId === occurrenceId)
+        .map(credit => `${credit.coverageSetId}|${credit.coverageKey}|${credit.creditKind}|${credit.confidence}|${credit.reasonCode}`)
+        .sort();
+    return JSON.stringify({
+        localDate: evidence.exposure.localDate,
+        coverage,
+        deliveredDoseFraction: evidence.deliveredDoseFraction ?? null,
+        prescription: {
+            status: evidence.prescription.status,
+            sourcePlanRevision: evidence.prescription.sourcePlanRevision,
+            sessionId: evidence.prescription.sessionId ?? null,
+            stepId: evidence.prescription.stepId ?? null,
+            variable: evidence.prescription.variable,
+            unit: evidence.prescription.unit,
+            value: evidence.prescription.value,
+        },
+        outcome: evidence.outcome ? {
+            status: evidence.outcome.status,
+            hasFollowUpData: evidence.outcome.hasFollowUpData,
+            sourceKind: evidence.outcome.sourceSession.kind,
+            sourceId: evidence.outcome.sourceSession.id,
+            sourceDate: evidence.outcome.sourceSession.date,
+        } : null,
+    });
 }
 
 function boundProgressFor(
@@ -375,19 +422,33 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
     const windowEndDate = input.asOfDate;
 
     const canonicalByOccurrence = new Map<string, LinkedProgressionExposureEvidence>();
+    const ambiguousOccurrenceIds = new Set<string>();
     for (const evidence of input.linkedExposures) {
         const occurrenceId = evidence.exposure.performedOccurrenceId;
         if (!occurrenceId) continue;
         if (evidence.exposure.localDate < windowStartDate || evidence.exposure.localDate > windowEndDate) continue;
-        if (!canonicalByOccurrence.has(occurrenceId)) canonicalByOccurrence.set(occurrenceId, evidence);
+        if (ambiguousOccurrenceIds.has(occurrenceId)) continue;
+
+        const existing = canonicalByOccurrence.get(occurrenceId);
+        if (!existing) {
+            canonicalByOccurrence.set(occurrenceId, evidence);
+            continue;
+        }
+        if (linkedEvidenceFingerprint(existing) !== linkedEvidenceFingerprint(evidence)) {
+            canonicalByOccurrence.delete(occurrenceId);
+            ambiguousOccurrenceIds.add(occurrenceId);
+        }
     }
 
     const candidates = [...canonicalByOccurrence.values()];
     const roleRelevantExposures = candidates.filter(evidence =>
-        coverageMatchesObjective(evidence, targetObjective),
+        coverageIsTargetOrAllowedRole(evidence, targetObjective),
     );
-    const matchingExposures = roleRelevantExposures.filter(evidence =>
-        prescriptionMatchesTarget(evidence, contract),
+    const doseQualifiedExposures = roleRelevantExposures.filter(evidence =>
+        coverageQualifiesObjective(evidence, targetObjective),
+    );
+    const matchingExposures = doseQualifiedExposures.filter(evidence =>
+        prescriptionMatchesTarget(evidence, contract, input.intentBlock.sourcePlanRevision),
     );
 
     const exposuresRequired = Math.max(
@@ -395,37 +456,33 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
         targetObjective.successCriteria?.minCompletedExposures ?? 0,
     );
 
-    let completedWithFollowUp = 0;
+    let roleRelevantWithFollowUp = 0;
     let adverseCount = 0;
     let cautionCount = 0;
     let unknownCount = 0;
-
-    // Safety evidence from any role-relevant exposure in the observation window matters,
-    // including partial or mismatched dose attempts. Those attempts still do not count as
-    // completed current-target exposures below.
     for (const evidence of roleRelevantExposures) {
-        if (evidence.outcome?.status === 'reactive') adverseCount++;
-        else if (evidence.outcome?.status === 'caution') cautionCount++;
-    }
-    for (const evidence of matchingExposures) {
-        if (evidence.outcome?.hasFollowUpData) completedWithFollowUp++;
+        if (evidence.outcome?.hasFollowUpData) roleRelevantWithFollowUp++;
         if (!evidence.outcome || evidence.outcome.status === 'unknown') unknownCount++;
+        else if (evidence.outcome.status === 'reactive') adverseCount++;
+        else if (evidence.outcome.status === 'caution') cautionCount++;
     }
 
-    const followUpCoveragePct = matchingExposures.length > 0
-        ? Math.min(100, Math.round((completedWithFollowUp / matchingExposures.length) * 100))
+    const followUpCoveragePct = roleRelevantExposures.length > 0
+        ? Math.min(100, Math.round((roleRelevantWithFollowUp / roleRelevantExposures.length) * 100))
         : 0;
+    const uniqueCandidateCount = candidates.length + ambiguousOccurrenceIds.size;
     const evidenceAudit: ProgressionEvidenceAudit = {
         windowStartDate,
         windowEndDate,
-        candidateExposureCount: candidates.length,
+        candidateExposureCount: uniqueCandidateCount,
         roleRelevantExposureCount: roleRelevantExposures.length,
         exposuresObserved: matchingExposures.length,
-        excludedExposureCount: candidates.length - matchingExposures.length,
+        excludedExposureCount: uniqueCandidateCount - matchingExposures.length,
+        ambiguousOccurrenceCount: ambiguousOccurrenceIds.size,
         exposuresRequired,
         followUpCoveragePct,
         requiredFollowUpCoveragePct: contract.requiredFollowUpCoveragePct,
-        missingFollowUpCount: matchingExposures.length - completedWithFollowUp,
+        missingFollowUpCount: roleRelevantExposures.length - roleRelevantWithFollowUp,
         adverseResponseCount: adverseCount,
         cautionResponseCount: cautionCount,
         unknownResponseCount: unknownCount,
@@ -484,6 +541,15 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
         );
     }
 
+    if (ambiguousOccurrenceIds.size > 0) {
+        return result(
+            'hold',
+            [`conflicting_duplicate_occurrence_evidence: ${ambiguousOccurrenceIds.size} occurrence(s)`],
+            input,
+            evidenceAudit,
+        );
+    }
+
     if (matchingExposures.length < exposuresRequired) {
         return result(
             'hold',
@@ -505,7 +571,7 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
     if (unknownCount > 0) {
         return result(
             'hold',
-            [`unknown_response_evidence_blocks_advancement: ${unknownCount} target exposure(s)`],
+            [`unknown_response_evidence_blocks_advancement: ${unknownCount} role-relevant exposure(s)`],
             input,
             evidenceAudit,
         );
