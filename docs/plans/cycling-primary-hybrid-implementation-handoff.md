@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H2 delivered; ready for H2b (anchor-day scoring robustness) or H3; later stages have the dependencies below
-**Blocked by:** None for H2b investigation. H3 personal prescription needs current athlete inputs; H4/H5 implementation needs explicit architecture decisions recorded in the repository.
+**Status:** H1, H2 and H2b delivered; H3 is the next bounded work order
+**Blocked by:** H3 personal prescription needs current athlete inputs; H4/H5 implementation needs explicit architecture decisions recorded in the repository.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -16,24 +16,28 @@ The evaluation fixtures and runner are already implemented. Do not rebuild them.
 default persona suite is unchanged (9 families / 30 cases); opt-in hybrid evaluation
 adds seven cases (11 families / 37 cases including controls).
 
-H2 is delivered (see the evaluation plan's H2 section): `end_easy_04` gives outdoor-bike-only
-athletes a real easy Cycling option, `POLICY_VERSION` bumped to
-`2026-09-outdoor-easy-cycling-v1`. It surfaced a real anchor-day scoring regression in an
-existing simulation scenario (`triathlon_novice_eighth_A`), tracked as H2b below — a bounded
-mitigation was attempted in `optimizer.ts`'s `rankCandidates` and reverted because it did not
-fix the regression and widened the diff elsewhere. H2b is unstarted.
+H2 is delivered: `end_easy_04` gives outdoor-bike-only athletes a real easy Cycling option
+without requiring a focus event. H2b is also delivered: the new candidate exposed a
+pre-existing anchor-date ordering bug in `coverageNeedTierForTemplate`, and the fix now
+keeps an explicitly nominated `event-specific` or `quality` role at coverage tier 0 even
+when an earlier exposure already satisfied that role's weekly minimum. On unclaimed dates,
+the ordinary coverage ordering is unchanged, so an already-met hard role does not force
+unnecessary repeats.
+
+The current decision policy version is
+`2026-09-outdoor-easy-cycling-anchor-authority-v1`. See the evaluation plan for the root
+cause, focused regression tests and required PR-head validation.
 
 Suggested next task prompt:
 
-> Implement H2b from docs/plans/cycling-primary-hybrid-implementation-handoff.md. First
-> reproduce the exact utility comparison between the anchor-role race-specific candidate
-> and the competing easy-Cycling candidate on `triathlon_novice_eighth_A`'s nominated
-> event-specific anchor dates (benefit/cost/utility breakdown from `rankCandidates`), across
-> a full 4-week build so the fatigue-cost differential that grows over the block is visible.
-> Then make the smallest change to anchor-day utility scoring that lets the anchor
-> candidate reliably win when it is reachable, without materially changing the other 38
-> simulation scenarios. Add a targeted regression scenario/test, run the required
-> validation including a full `npm run simulate:diff`, and reconcile the H2b status.
+> Implement H3 from docs/plans/cycling-primary-hybrid-implementation-handoff.md. Start with
+> synthetic authored-plan contract tests for a genuinely unplanned date, an explicitly
+> prescribed rest date, a missed quality session with later quality already scheduled,
+> and a hard group ride/race replacing rather than stacking with quality. Reuse the
+> existing external-plan/session authority and canonical occurrence boundaries. Fix only
+> demonstrated authority defects, keep personal M00/M01 prescription separate until
+> current workload/restriction inputs are confirmed, and run the normal deterministic,
+> replay/persistence and policy-drift validation for any decision-affecting change.
 
 ## Stable product intent
 
@@ -47,88 +51,63 @@ Suggested next task prompt:
 - Favorable wearable values never override active symptoms or standing restrictions.
 - More available hours do not prove greater tolerated workload. Extra quality sessions,
   dieting and impact progression are not automatic consequences of a new calendar block.
+- Easy aerobic volume is supporting work; it must not displace an explicitly authored key
+  cycling role merely because it is cheaper in fatigue cost.
 
 These are product requirements, not new numerical physiological thresholds. The public
 fixture uses anonymous synthetic inputs. Do not copy private medical histories, real
-measurements or the personal Downloads documents into source control.
+measurements or personal local documents into source control.
 
 ## Work order H2 — Outdoor aerobic specificity (delivered)
 
-**Status:** Delivered. See the evaluation plan's H2 section for the change, the three
-regression tests added to `hybridScenarios.test.mjs`, and the full acceptance-matrix
-status. `POLICY_VERSION` is `2026-09-outdoor-easy-cycling-v1`.
+**Status:** Delivered.
 
-## Work order H2b — Anchor-day utility scoring robustness
+`end_easy_04` is a non-event-gated Easy Endurance Cycling template requiring
+`outdoor_bike` and reusing `cycling_zone2_standard_01`. Three deterministic hybrid tests
+cover the outdoor-only positive path, the indoor path and no-bike negative control.
 
-**Status:** Ready
-**Dependencies:** H2 delivered. No personal measurements or external judge required.
-**Deliverable:** One focused optimizer-ranking behavior change with tests and a fully
-explained `npm run simulate:diff` (zero unexplained change to any of the other 38
-simulation scenarios).
+## Work order H2b — Nominated anchor-date authority (delivered)
 
-### H2b.1 Reproduce before editing
+**Status:** Delivered.
+**Deliverable:** Focused coverage-ordering correction plus regression tests.
 
-From `app/`:
+### What was actually wrong
 
-```bash
-npm run simulate:scenarios
-npm run simulate:diff
-```
+The initially suspected utility/fatigue-coefficient problem was downstream of the decisive
+ordering step. Accepted candidates are sorted lexicographically by `coverageNeedTier`
+before benefit/utility. `coverageNeedTierForTemplate` gave the nominated anchor tier 0 only
+when its weekly minimum remained unmet. Once an earlier session fulfilled that minimum, a
+different unmet role such as `aerobic_volume` could outrank the explicitly nominated
+anchor before `ANCHOR_ROLE_BOOST`, `ANCHOR_TIMING_BENEFIT` or fatigue-cost comparison even
+participated.
 
-Confirm `triathlon_novice_eighth_A` still shows Race-Specific Endurance Cycling dropping
-to 0 sessions and event-specific anchor misses rising to 4 nominated weeks. If the current
-code no longer reproduces this, explain the intervening behavior and replace the stale
-finding with current evidence.
+### Implemented contract
 
-Build a minimal reproduction of the actual utility comparison `rankCandidates`
-(`app/src/engine/optimizer.ts`) makes on that scenario's nominated event-specific anchor
-dates, across enough of the 4-week build that the fatigue-cost differential (which grows
-as build weeks accumulate) is visible: the race-specific candidate (`candidateMatchesAnchorRole`
-match, `ANCHOR_ROLE_BOOST`/`ANCHOR_TIMING_BENEFIT` applied) versus the competing easy-Cycling
-candidate (`end_easy_04`, much lower `systemicCost`). Print or assert the actual
-benefit/cost/utility breakdown for both, not just the final selection, so the fix targets
-the real cause rather than a plausible-sounding one.
+When the active plan contains the nominated coverage requirement and a legal candidate
+matches today's `outdoor_event_specific` or `sustained_quality` role, it receives tier 0
+regardless of whether that role's weekly minimum was met earlier. Hard feasibility,
+readiness, injury, time, equipment, intensity and spacing gates still run before this
+ordering.
 
-One mitigation was tried and reverted in an earlier pass: suppressing the focus-event-match
-and `MULTISPORT_MODALITY_COVERAGE_BENEFIT` bonuses for a same-modality non-anchor candidate
-when an anchor-role match was reachable that day. It did not change
-`triathlon_novice_eighth_A`'s outcome and widened the diff to `triathlon_olympic_A` and
-`triathlon_advanced_half_iron_A` (previously clean). Do not re-attempt that exact change
-without first confirming, via the minimal reproduction above, which term actually decides
-the comparison.
+When there is no nominated anchor, the behavior is unchanged: an already-met race-specific
+or quality role does not force a repeat, and unmet supporting coverage can take precedence.
 
-### H2b.2 Implement the smallest coherent correction
+`coverageAnchorAuthority.test.ts` protects both `event-specific` and `quality` cases and
+includes the unclaimed-date control. Do not replace this role authority with shared
+magic-number tuning unless the underlying ordering contract is intentionally redesigned.
 
-Fix anchor-day utility scoring so the anchor-role candidate reliably wins when it is
-reachable that day, without changing the softer nomination behavior on non-anchor dates
-(the existing "adaptively fulfilled off-date" fallback is intentional and must survive).
-Do not tune shared benefit/cost constants (`ANCHOR_ROLE_BOOST`, `ANCHOR_TIMING_BENEFIT`,
-`MULTISPORT_MODALITY_COVERAGE_BENEFIT`, fatigue-cost-penalty weights) without first
-confirming via H2b.1 which one actually decides this case — a change here is shared by
-every event-based scenario.
+### Completion validation
 
-### H2b.3 Acceptance matrix
-
-| Input | Required result |
-|---|---|
-| Outdoor-bike-only triathlon build, nominated event-specific anchor date reachable | Race-specific Cycling session count returns to its pre-H2 level (or better); anchor misses do not exceed the pre-H2 baseline |
-| Same scenario, anchor date genuinely infeasible (fatigue/injury/time) | Existing "adaptively fulfilled off-date" fallback still applies; no regression to a hard failure |
-| Every other event-based simulation scenario | `npm run simulate:diff` shows no unexplained change (benign utility-diagnostic/streak shifts from H2's second Easy Endurance Cycling candidate are expected and already documented) |
-
-### H2b.4 Verification and completion
-
-Run focused tests, `npm run check`, `npm run simulate:scenarios`, and
-`npm run simulate:diff` from `app/`. Every one of the 39 scenarios must either match the
-committed baseline or have its change explained in the evaluation plan. Capture the
-starting Git commit before editing; bump `POLICY_VERSION` and run
-`node scripts/check-policy-drift.mjs <starting-commit>`. Mark H2b implemented only when the
-target regression is resolved and no other scenario has an unexplained change.
+Use PR-head CI as the authoritative record. Run the focused coverage test, hybrid scenario
+tests, `npm run check`, `npm run build`, `npm run simulate:scenarios`,
+`npm run simulate:diff`, and policy drift validation. Do not regenerate a committed
+simulation baseline merely to hide an unexplained change.
 
 ## Work order H3 — Authored block authority, rest and replacement
 
 **Status:** Ready for synthetic contract investigation; personal prescription pending inputs
-**Dependencies:** Existing external-plan/session infrastructure; H2 is not required for
-read-only investigation. Do not couple a discovered rest defect to the outdoor catalog PR.
+**Dependencies:** Existing external-plan/session infrastructure. Do not couple a discovered
+rest defect to unrelated catalogue or progression work.
 **Deliverable:** Small contract-focused changes, split from any personal plan import.
 
 Read ADR-0019/0023 and the session-execution architecture. Route through
@@ -218,9 +197,9 @@ for distinct controlled comparisons, not a new persona for every constraint.
 Run deterministic checks before using local/provider judging. When judging is useful,
 use the documented targeted runner; inspect the actual case behind every complaint.
 The targeted artifacts are separate from active baseline promotion. No external API or
-local model is required to reproduce H2. Provider credentials or model setup should not
-block deterministic implementation.
+local model is required to reproduce H2/H2b. Provider credentials or model setup should
+not block deterministic implementation.
 
 At each work-order finish, update status, replace fixed problem statements with outcomes,
 record evidence and leave a precise next task. Keep each behavior change reviewable and
-avoid combining catalog repair, persistence redesign and experimental physiology in one PR.
+avoid combining catalogue repair, persistence redesign and experimental physiology in one PR.
