@@ -56,18 +56,49 @@ export interface DailyLedgerResult {
      * does not free the other (D-LEDGER). */
     remainingSystemicCost: number;
     /** Occurrence ids where at least one dimension's actual is still unknown despite a
-     * terminal state, or whose state is itself `unresolved`. Same-day capacity must expose
-     * this rather than silently treating it as an empty training day. */
+     * terminal state, or whose state is itself `unresolved`. A normal future reservation
+     * or known in-progress occurrence still consumes capacity but is not ambiguous evidence. */
     unresolvedEntries: string[];
 }
 
 const TERMINAL_STATES: ReadonlySet<ReconciliationState> = new Set(['completed', 'partial', 'abandoned']);
+
+function assertFiniteNonNegative(value: number, label: string): void {
+    if (!Number.isFinite(value) || value < 0) {
+        throw new RangeError(`${label} must be a finite number >= 0`);
+    }
+}
+
+function assertRevision(value: number, label: string): void {
+    if (!Number.isInteger(value) || value < 0) {
+        throw new RangeError(`${label} must be a nonnegative integer`);
+    }
+}
+
+function assertValidCeilings(ceilings: LedgerCeilings): void {
+    assertFiniteNonNegative(ceilings.dailyMinuteCeiling, 'dailyMinuteCeiling');
+    assertFiniteNonNegative(ceilings.dailySystemicCostCeiling, 'dailySystemicCostCeiling');
+}
+
+function assertValidEntry(entry: LedgerEntry): void {
+    if (!entry.occurrenceId) throw new Error('occurrenceId must be non-empty');
+    assertRevision(entry.revision, `revision for ${entry.occurrenceId}`);
+    assertFiniteNonNegative(entry.reservedMinutes, `reservedMinutes for ${entry.occurrenceId}`);
+    assertFiniteNonNegative(entry.reservedSystemicCost, `reservedSystemicCost for ${entry.occurrenceId}`);
+    if (entry.actualMinutes !== undefined) {
+        assertFiniteNonNegative(entry.actualMinutes, `actualMinutes for ${entry.occurrenceId}`);
+    }
+    if (entry.actualSystemicCost !== undefined) {
+        assertFiniteNonNegative(entry.actualSystemicCost, `actualSystemicCost for ${entry.occurrenceId}`);
+    }
+}
 
 /** Keeps the entry with the highest `revision` per `occurrenceId` -- idempotent under
  * replayed, duplicate or reordered completion/provider evidence (D-LEDGER). */
 function dedupeByOccurrence(entries: readonly LedgerEntry[]): LedgerEntry[] {
     const latest = new Map<string, LedgerEntry>();
     for (const entry of entries) {
+        assertValidEntry(entry);
         const current = latest.get(entry.occurrenceId);
         if (!current || entry.revision > current.revision) latest.set(entry.occurrenceId, entry);
     }
@@ -80,6 +111,7 @@ function dedupeByOccurrence(entries: readonly LedgerEntry[]): LedgerEntry[] {
  * refunded merely because its terminal disposition is favorable, and it is never charged
  * twice across reservation and reconciled actual. */
 export function computeDailyLedger(ceilings: LedgerCeilings, entries: readonly LedgerEntry[]): DailyLedgerResult {
+    assertValidCeilings(ceilings);
     const deduped = dedupeByOccurrence(entries);
 
     let consumedMinutes = 0;
@@ -94,10 +126,11 @@ export function computeDailyLedger(ceilings: LedgerCeilings, entries: readonly L
         consumedMinutes += hasActualMinutes ? entry.actualMinutes! : entry.reservedMinutes;
         consumedSystemicCost += hasActualCost ? entry.actualSystemicCost! : entry.reservedSystemicCost;
 
-        // Missing an actual for either dimension keeps the outstanding reservation for
-        // that dimension (handled above) and flags the occurrence as unresolved -- delayed
-        // reconciliation must not silently create fictitious capacity.
-        if (entry.state === 'unresolved' || !hasActualMinutes || !hasActualCost) {
+        // Missing an actual matters to reconciliation only after a terminal disposition.
+        // Reserved and in-progress rows intentionally retain their reservation above, but
+        // they are known states rather than ambiguous evidence. An explicit `unresolved`
+        // state is always surfaced.
+        if (entry.state === 'unresolved' || (isTerminal && (!hasActualMinutes || !hasActualCost))) {
             unresolvedEntries.push(entry.occurrenceId);
         }
     }
@@ -120,6 +153,10 @@ export function reconcileEntry(
     actual: { minutes?: number; systemicCost?: number; state: ReconciliationState },
     evidenceRevision: number,
 ): LedgerEntry {
+    assertValidEntry(entry);
+    assertRevision(evidenceRevision, 'evidenceRevision');
+    if (actual.minutes !== undefined) assertFiniteNonNegative(actual.minutes, 'actual.minutes');
+    if (actual.systemicCost !== undefined) assertFiniteNonNegative(actual.systemicCost, 'actual.systemicCost');
     if (evidenceRevision <= entry.revision) return entry;
     return {
         ...entry,
@@ -148,7 +185,16 @@ export function admitsCandidate(
     candidateMinutes: number,
     candidateSystemicCost: number,
 ): CandidateAdmission {
+    assertFiniteNonNegative(ledger.remainingMinutes, 'ledger.remainingMinutes');
+    assertFiniteNonNegative(ledger.remainingSystemicCost, 'ledger.remainingSystemicCost');
+    assertFiniteNonNegative(candidateWindowMinutes, 'candidateWindowMinutes');
+    assertFiniteNonNegative(candidateMinutes, 'candidateMinutes');
+    assertFiniteNonNegative(candidateSystemicCost, 'candidateSystemicCost');
+
     const admittedMinutes = Math.max(0, Math.min(candidateWindowMinutes, ledger.remainingMinutes));
-    const admitted = admittedMinutes > 0 && candidateMinutes <= admittedMinutes && candidateSystemicCost <= ledger.remainingSystemicCost;
+    const admitted = candidateMinutes > 0
+        && admittedMinutes > 0
+        && candidateMinutes <= admittedMinutes
+        && candidateSystemicCost <= ledger.remainingSystemicCost;
     return { admittedMinutes, admitted };
 }
