@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4-H5 remain planned
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4/H5 need their own recorded authority/schema decisions before implementation.
+**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 (implementation not started); H5 remains planned
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 implementation depends on ADR-0035 support and verified same-day canonical performed facts but is otherwise unblocked (ADR-0036 accepted); H5 still needs its own recorded authority/schema decision.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -239,14 +239,21 @@ also remains blocked on current-workload/restriction confirmation.
 
 ## H4 — Intraday capacity and post-AM reassessment
 
-**Dependencies:** H3; scheduling authority/schema decision for elapsed separation and
-multiple windows. Existing external placement already supports preferred double/triple
-bundles, and authored additional sessions have remaining-budget handling.
+**Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md); implementation unstarted.
+**Dependencies:** ADR-0035 rest support and a verified same-day canonical performed-fact
+boundary for runtime release. Schema/pure-ledger work can start independently.
 
-Extend those boundaries rather than creating a new persona planner. Cover AM completion,
-PM optionality, updated symptoms, aggregate daily time/load, bundle moves, and one-time
-counting of canonical performed work. Add a separate execution family when the harness
-can represent these facts; do not claim current one-session forecasts validate doubles.
+Decision: explicit athlete-owned windows, plan-owned sequencing in `external-plan@4`,
+one shared daily minute/load ledger, and fresh post-AM reassessment before PM launch.
+AM/PM labels do not prove capacity or elapsed recovery. v1/v2/v3 retain their contracts;
+ADR-0035 is unchanged. Authored doubles ship first; automatic multi-window packing is a
+separate follow-up after execution/accounting acceptance, without increased weekly dose.
+
+The ADR records code evidence, alternatives, schema and authority contracts, optionality,
+atomic bundle moves, launch concurrency, DST, audit/replay and deterministic acceptance.
+Existing preferred bundles and authored remaining-budget handling are reused. Add a
+separate execution family when the harness exposes the required facts; the current
+one-session forecasts do not validate doubles.
 
 ## H5 — Explicit develop/maintain intent and progression
 

@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4/H5 are next
-**Blocked by:** H4/H5 both need a recorded design decision before implementation. Personal M00/M01 prescription needs current athlete inputs.
+**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036, implementation unstarted; H5 design remains next
+**Blocked by:** H4 schema/pure-ledger work can start now (ADR-0035 rest support it depends on is delivered); H4 runtime release still needs verified same-day canonical performed facts. H5 needs its own design. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -45,8 +45,9 @@ plan intent -- authored rest blocks ordinary generated work and resolves the def
 planning outcome to canonical Rest rather than fabricating a physiological `recover`
 verdict.
 
-Suggested next step: move to H4 or H5 design -- both need a recorded authority/schema
-decision before implementation, the same way ADR-0035 did. Keep that work separate from personal
+Suggested next step: start ADR-0036 (H4) schema/pure-ledger implementation work, or move to
+H5 design -- H5 still needs a recorded authority/schema decision the same way ADR-0035 and
+ADR-0036 already went through. Keep that work separate from personal
 M00/M01 prescription until current workload/restriction inputs are confirmed.
 
 ## Stable product intent
@@ -217,29 +218,39 @@ Useful synthetic software work can proceed without those personal answers.
 
 ## Work order H4 — Intraday windows and post-AM response
 
-**Status:** Ready for design; implementation depends on a recorded authority/schema decision
-**Dependencies:** H3 authority contracts and the canonical performed-occurrence boundary.
-**Deliverable:** One design decision, then separately scoped implementation/test changes.
+**Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md); implementation unstarted.
+**Dependencies:** Runtime release requires ADR-0035 rest support and tested same-day
+canonical performed identity/revision/timing inputs. Schema and pure-ledger work can
+start before those integrations land.
+**Deliverable:** Authored intraday placement and reassessed execution, followed separately
+by automatic multi-window packing after the initial acceptance bar passes.
 
-Inspect `trainingCapacity.ts`, `weeklyDosePacking.ts`, `schedule.ts`,
-`externalPlacement.ts`, `authoredSessionGates.ts`, and performed-training reconciliation.
-The automatic packing inspected in H1 consumes one slot per date; do not mistake a
-preferred AM/PM bundle's placement support for a complete intraday capacity model.
+The accepted implementation sequence is:
 
-Specify ownership for window start/end, order, optionality, elapsed separation, remaining
-minutes and cumulative load. Reuse the common eligibility/dose gates. Use Warsaw local
-dates for calendar ownership and timestamps for elapsed intervals; test a DST boundary
-when introducing elapsed-time behavior. Unknown start times cannot prove a separation.
+1. Version `external-plan@4` intraday placement and athlete schedule windows; keep v1/v2/v3
+   immutable. Validate intervals, explicit bundles/order/dependencies, optional priority,
+   relative dates and cross-version plan revisions. Version affected persistence readers
+   and rules without migrating historical prescriptions in place.
+2. Extract one daily ledger from existing schedule deductions and authored remaining-budget
+   handling. Resolve real windows and reserve minutes/current-policy cost once per
+   occurrence. Replace reservations with canonical completed facts, including today's AM;
+   never subtract fixed activities twice or count execution/provider evidence separately.
+3. Add atomic, confirmed bundle placement against all destination windows and ADR-0035
+   rest. Preserve completed history and support independent optional-session dropping.
+4. At PM launch, capture current symptoms/response, same-day work and availability, rerun
+   common gates, and atomically validate the input/ledger revision before reserving.
+   A morning PM approval is provisional; missing prerequisite evidence remains pending.
+5. Persist independent immutable intraday decisions and replay snapshots, show provisional,
+   pending, dropped and completed states, and implement the ADR's deterministic test matrix.
+   Include concurrent launch, partial work, delayed sync, DST and tampered audit cases.
+6. Run focused tests, full frontend checks/build, Firestore rules, simulations/diff and
+   policy drift validation. Bump `POLICY_VERSION` with behavior activation. Introduce an
+   execution scenario family only when it can represent the required inputs and outputs.
 
-Acceptance cases: completed AM cannot be duplicated; newly adverse PM symptoms can defer
-PM; optional PM can be dropped independently; moving a bundle remains feasible; two
-sessions cannot each independently consume the whole daily budget; provider and execution
-records of one occurrence count once. Add a dedicated execution harness/family only when
-it can expose these inputs and outputs honestly.
-
-Do not define a universal clinical recovery-hour threshold as a scheduling convenience.
-Persisted schema changes require backward-compatible read/validation handling and rules
-tests; missing window metadata must not become invented capacity.
+Read ADR-0036 for the binding contract and full acceptance bar. This work does not add a
+universal recovery-hour threshold, automatically increase weekly dose, or authorize H5
+progression. Automatic packing must later reuse the same ledger/window boundaries;
+adding duplicate date slots to `packWeeklyDose` is not a valid implementation.
 
 ## Work order H5 — Block intent and controlled progression
 
