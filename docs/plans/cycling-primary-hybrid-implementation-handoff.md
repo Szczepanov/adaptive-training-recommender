@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** Ready for H2; later stages have the dependencies below
-**Blocked by:** None for H2 reproduction and outdoor aerobic specificity. H3 personal prescription needs current athlete inputs; H4/H5 implementation needs explicit architecture decisions recorded in the repository.
+**Status:** H2 delivered; ready for H2b (anchor-day scoring robustness) or H3; later stages have the dependencies below
+**Blocked by:** None for H2b investigation. H3 personal prescription needs current athlete inputs; H4/H5 implementation needs explicit architecture decisions recorded in the repository.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -14,18 +14,26 @@ Code takes precedence over old audits and implemented plans.
 
 The evaluation fixtures and runner are already implemented. Do not rebuild them. The
 default persona suite is unchanged (9 families / 30 cases); opt-in hybrid evaluation
-adds seven cases (11 families / 37 cases including controls). No live recommendation
-policy has been changed for this effort. No AI-judge scores have been obtained or promoted.
+adds seven cases (11 families / 37 cases including controls).
 
-Suggested first task prompt:
+H2 is delivered (see the evaluation plan's H2 section): `end_easy_04` gives outdoor-bike-only
+athletes a real easy Cycling option, `POLICY_VERSION` bumped to
+`2026-09-outdoor-easy-cycling-v1`. It surfaced a real anchor-day scoring regression in an
+existing simulation scenario (`triathlon_novice_eighth_A`), tracked as H2b below — a bounded
+mitigation was attempted in `optimizer.ts`'s `rankCandidates` and reverted because it did not
+fix the regression and widened the diff elsewhere. H2b is unstarted.
 
-> Implement H2 from docs/plans/cycling-primary-hybrid-implementation-handoff.md. First
-> reproduce the outdoor-only hybrid case through the current planner and trace why it
-> selects no cycling. Make the smallest complete catalog/coverage/eligibility change
-> that provides safe outdoor aerobic cycling without an event. Preserve equipment,
-> recovery and injury gates. Add positive and negative regression coverage, run the
-> required validation, update policy/replay metadata if behavior changes, and reconcile
-> the H2 status and findings. Do not start H3–H5 in the same change.
+Suggested next task prompt:
+
+> Implement H2b from docs/plans/cycling-primary-hybrid-implementation-handoff.md. First
+> reproduce the exact utility comparison between the anchor-role race-specific candidate
+> and the competing easy-Cycling candidate on `triathlon_novice_eighth_A`'s nominated
+> event-specific anchor dates (benefit/cost/utility breakdown from `rankCandidates`), across
+> a full 4-week build so the fatigue-cost differential that grows over the block is visible.
+> Then make the smallest change to anchor-day utility scoring that lets the anchor
+> candidate reliably win when it is reachable, without materially changing the other 38
+> simulation scenarios. Add a targeted regression scenario/test, run the required
+> validation including a full `npm run simulate:diff`, and reconcile the H2b status.
 
 ## Stable product intent
 
@@ -44,83 +52,77 @@ These are product requirements, not new numerical physiological thresholds. The 
 fixture uses anonymous synthetic inputs. Do not copy private medical histories, real
 measurements or the personal Downloads documents into source control.
 
-## Work order H2 — Outdoor aerobic specificity
+## Work order H2 — Outdoor aerobic specificity (delivered)
+
+**Status:** Delivered. See the evaluation plan's H2 section for the change, the three
+regression tests added to `hybridScenarios.test.mjs`, and the full acceptance-matrix
+status. `POLICY_VERSION` is `2026-09-outdoor-easy-cycling-v1`.
+
+## Work order H2b — Anchor-day utility scoring robustness
 
 **Status:** Ready
-**Dependencies:** H1 is delivered; no personal measurements or external judge required.
-**Deliverable:** One focused behavior change with tests and a reviewed simulation diff.
+**Dependencies:** H2 delivered. No personal measurements or external judge required.
+**Deliverable:** One focused optimizer-ranking behavior change with tests and a fully
+explained `npm run simulate:diff` (zero unexplained change to any of the other 38
+simulation scenarios).
 
-### H2.1 Reproduce before editing
+### H2b.1 Reproduce before editing
 
 From `app/`:
 
 ```bash
-npm exec vitest run scripts/ai-judge/__tests__/hybridScenarios.test.mjs scripts/ai-judge/__tests__/personaScenarios.test.mjs
-npm run persona:hybrid:build
+npm run simulate:scenarios
+npm run simulate:diff
 ```
 
-Inspect `artifacts/hybrid-persona-plan-judge/latest/corpus.json` for the case
-`persona_cycling_hybrid_outdoor_only` and compare it to
-`persona_cycling_hybrid_capacity_reference`. Inspect `deterministic-results.json`
-separately for developer diagnostics. If the current code no longer reproduces zero
-Cycling, explain the intervening behavior and replace the stale finding with current evidence.
+Confirm `triathlon_novice_eighth_A` still shows Race-Specific Endurance Cycling dropping
+to 0 sessions and event-specific anchor misses rising to 4 nominated weeks. If the current
+code no longer reproduces this, explain the intervening behavior and replace the stale
+finding with current evidence.
 
-Trace the actual candidates and packing for the exact fixture through:
+Build a minimal reproduction of the actual utility comparison `rankCandidates`
+(`app/src/engine/optimizer.ts`) makes on that scenario's nominated event-specific anchor
+dates, across enough of the 4-week build that the fatigue-cost differential (which grows
+as build weeks accumulate) is visible: the race-specific candidate (`candidateMatchesAnchorRole`
+match, `ANCHOR_ROLE_BOOST`/`ANCHOR_TIMING_BENEFIT` applied) versus the competing easy-Cycling
+candidate (`end_easy_04`, much lower `systemicCost`). Print or assert the actual
+benefit/cost/utility breakdown for both, not just the final selection, so the fix targets
+the real cause rather than a plausible-sounding one.
 
-- `app/src/engine/templates.ts`, especially `end_easy_01` and outdoor cycling candidates;
-- `app/src/engine/eligibility.ts` and `periodization.ts` for hard/phase gating;
-- `app/src/engine/evergreenStrategy.ts`, `weeklyDosePacking.ts` and `coverage.ts`;
-- `app/src/workouts/catalog/cycling-base.ts`, workout adapters and `prescription.ts`.
+One mitigation was tried and reverted in an earlier pass: suppressing the focus-event-match
+and `MULTISPORT_MODALITY_COVERAGE_BENEFIT` bonuses for a same-modality non-anchor candidate
+when an anchor-role match was reachable that day. It did not change
+`triathlon_novice_eighth_A`'s outcome and widened the diff to `triathlon_olympic_A` and
+`triathlon_advanced_half_iron_A` (previously clean). Do not re-attempt that exact change
+without first confirming, via the minimal reproduction above, which term actually decides
+the comparison.
 
-Use the catalog routing in `docs/workout-library.md`; discover the current template-to-
-workout mapping instead of guessing its filename. Check both authored and effective
-duration, role qualification and actual equipment at each boundary.
+### H2b.2 Implement the smallest coherent correction
 
-### H2.2 Implement the smallest coherent correction
+Fix anchor-day utility scoring so the anchor-role candidate reliably wins when it is
+reachable that day, without changing the softer nomination behavior on non-anchor dates
+(the existing "adaptively fulfilled off-date" fallback is intentional and must survive).
+Do not tune shared benefit/cost constants (`ANCHOR_ROLE_BOOST`, `ANCHOR_TIMING_BENEFIT`,
+`MULTISPORT_MODALITY_COVERAGE_BENEFIT`, fatigue-cost-penalty weights) without first
+confirming via H2b.1 which one actually decides this case — a change here is shared by
+every event-based scenario.
 
-Prefer an explicit outdoor aerobic identity through the existing catalog and coverage
-contracts if that is the smallest valid design. A shared bicycle capability is an
-alternative only if it preserves indoor/outdoor feasibility and does not silently weaken
-requirements. Do not remove `indoor_bike` from the indoor template, lift event gating from
-race-specific workouts, or increase generic Walking credit to hide the missing cycling.
-
-Keep authored template identity stable when dose is reduced; materialize effective dose
-through existing prescription/adjustment boundaries. Equipment is a hard gate, while
-modality preference only ranks valid choices. Do not promote broad conditioning into
-exact race-specific coverage.
-
-### H2.3 Acceptance matrix
+### H2b.3 Acceptance matrix
 
 | Input | Required result |
 |---|---|
-| Outdoor bicycle, no indoor bicycle, evergreen hybrid, normal recovery | Some useful outdoor aerobic Cycling is selected across the fixture horizon; no race is invented |
-| No bicycle access | No bicycle-dependent prescription; a feasible alternative or explicit shortfall |
-| Indoor-only bicycle access | Existing indoor cycling remains feasible; no outdoor-only requirement is bypassed |
-| Short window | Effective prescribed duration fits the actual date's cap |
-| Adverse recovery or local restrictions | Existing tightening remains effective; new outdoor workout cannot bypass it |
-| General-health athlete | Transferable aerobic alternatives remain available; no forced sport specialization |
-| Event-directed cycling | Existing event-specific role identity, dose and taper behavior remain intact |
+| Outdoor-bike-only triathlon build, nominated event-specific anchor date reachable | Race-specific Cycling session count returns to its pre-H2 level (or better); anchor misses do not exceed the pre-H2 baseline |
+| Same scenario, anchor date genuinely infeasible (fatigue/injury/time) | Existing "adaptively fulfilled off-date" fallback still applies; no regression to a hard failure |
+| Every other event-based simulation scenario | `npm run simulate:diff` shows no unexplained change (benign utility-diagnostic/streak shifts from H2's second Easy Endurance Cycling candidate are expected and already documented) |
 
-Assert actual selected prescriptions, not only that a template exists or that the engine
-does not crash. Do not demand a particular number of cycling sessions unless that number
-is backed by the active plan contract. Safety tests passing alone does not close H2.
+### H2b.4 Verification and completion
 
-### H2.4 Verification and completion
-
-Run focused tests, `npm run build`, `npm run simulate:scenarios`, and
-`npm run simulate:diff` from `app/`. Inspect relevant scenario changes; do not regenerate
-the committed simulation baseline merely to make a failure disappear. Rebuild the hybrid
-corpus and compare every new case, including equipment/time negative controls.
-
-Capture the starting Git commit before editing. For a decision-affecting change, update
-`POLICY_VERSION` and historical-policy/replay handling according to the current repository
-contract, then run `node scripts/check-policy-drift.mjs <starting-commit>` from `app/`.
-Add replay coverage appropriate to the actual change. Firestore rule/emulator tests are
-required if persistence validation changes, not for a catalog-only fix.
-
-Mark H2 implemented only when outdoor selection is demonstrated, negative controls pass,
-and the simulation diff is explained. Update the evaluation plan's reproduced finding so
-it no longer reads as an open defect. Report changes, validation and remaining limitations.
+Run focused tests, `npm run check`, `npm run simulate:scenarios`, and
+`npm run simulate:diff` from `app/`. Every one of the 39 scenarios must either match the
+committed baseline or have its change explained in the evaluation plan. Capture the
+starting Git commit before editing; bump `POLICY_VERSION` and run
+`node scripts/check-policy-drift.mjs <starting-commit>`. Mark H2b implemented only when the
+target regression is resolved and no other scenario has an unexplained change.
 
 ## Work order H3 — Authored block authority, rest and replacement
 
