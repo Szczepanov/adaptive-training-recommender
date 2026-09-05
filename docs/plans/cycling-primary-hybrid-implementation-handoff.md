@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H1, H2 and H2b delivered; H3 investigated and contract-tested with no production defect found — explicit-rest authoring recorded as ADR-0035 (Proposed), awaiting repository-owner decision; H4/H5 are next
-**Blocked by:** ADR-0035 needs repository-owner sign-off before explicit-rest implementation. H4/H5 implementation needs explicit architecture decisions recorded in the repository. Personal M00/M01 prescription needs current athlete inputs.
+**Status:** H1, H2 and H2b delivered; H3 investigated and contract-tested with no production defect found — explicit-rest authoring accepted as ADR-0035, implementation not started; H4/H5 are next
+**Blocked by:** Nothing blocks starting ADR-0035 implementation or H4/H5 design; both need scoping/scheduling. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -37,16 +37,18 @@ No production decision logic changed.
 
 The remaining H3 gap is explicit rest: neither external-plan schema can distinguish
 "protected rest" from "no authored instruction for this date."
-[ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (Proposed) recommends adding that
-authority only in `external-plan@3`, using relative plan-level `restDays` directives
+[ADR-0035](../adr/0035-explicit-rest-day-authoring.md) is now **Accepted**: that authority
+is added only in `external-plan@3`, using relative plan-level `restDays` directives
 (`{ id, week, day }`) while keeping v1/v2 immutable. It also keeps readiness separate from
 plan intent: authored rest blocks ordinary generated work and resolves the default planning
-outcome to canonical Rest rather than fabricating a physiological `recover` verdict. It is
-awaiting the repository owner's decision; no code changes yet.
+outcome to canonical Rest rather than fabricating a physiological `recover` verdict.
+Implementation is unstarted — see the ADR's acceptance-bar test list and the work order
+below.
 
-Suggested next step: get a decision on ADR-0035, or move to H4/H5 design. Both routes
-should remain separate from personal M00/M01 prescription until current workload/
-restriction inputs are confirmed.
+Suggested next step: implement ADR-0035 (schema v3, validation, placement, resolver
+three-state day resolution, persistence/replay, `POLICY_VERSION` bump — see the work order
+below), or move to H4/H5 design instead. Both routes should remain separate from personal
+M00/M01 prescription until current workload/restriction inputs are confirmed.
 
 ## Stable product intent
 
@@ -146,14 +148,21 @@ interchangeable with quality. Equivalent replacement requires the ride to enter 
 `FixedActivity` identity/stimulus path; otherwise qualified objective credit correctly
 fails closed.
 
-### Explicit-rest follow-up decision
+## Work order H3-rest — Explicit rest-day authoring (accepted, unimplemented)
+
+**Status:** Ready to implement. [ADR-0035](../adr/0035-explicit-rest-day-authoring.md) is
+**Accepted**. No code exists yet for any of the eight contract items below.
+**Dependencies:** None blocking. Reuses existing external-plan validation, placement and
+planning-mode resolver infrastructure (ADR-0019/0023).
+**Deliverable:** `external-plan@3` schema support end-to-end: validation, placement,
+resolver three-state day resolution, readiness-separated Rest recommendation, athlete
+override, persistence/replay, `POLICY_VERSION` bump, and the test list the ADR specifies.
 
 Neither `external-plan@1` nor `external-plan@2` can represent an explicitly prescribed
 rest day. Both schemas intentionally define rest as omission, so the current resolver has
 no fact that can distinguish protected rest from an unplanned date.
 
-**Status: recorded as [ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (Proposed),
-awaiting repository-owner decision.** The implementation contract, if accepted, is:
+The accepted implementation contract is:
 
 1. add protected rest only in `adaptive-training-recommender/external-plan@3`, inheriting
    v2's `definition`-based session contract unchanged; v1/v2 validators remain immutable
@@ -177,9 +186,9 @@ awaiting repository-owner decision.** The implementation contract, if accepted, 
 8. update import validation, Firestore/rules, UI and `POLICY_VERSION` coverage because the
    accepted directive changes recommendation behavior.
 
-Do not begin implementation until the ADR is accepted. External-product calendar behavior
-is not part of the architecture rationale; the decision follows from this repository's own
-authored-instruction-vs-absence semantics and versioned immutable import contract.
+Read the ADR's own "Recommendation"/"Decision" section for the exact deterministic-test
+acceptance bar before marking this work order done — it is more detailed than the summary
+above.
 
 For a personal M00/M01 artifact, first confirm representative current workload, current
 restrictions/symptoms and actual bicycle setup. The prior review's example week is an

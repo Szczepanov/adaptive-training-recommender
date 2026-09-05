@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1, H2 and H2b delivered; H3 investigated and contract-tested, with explicit-rest authoring recorded as ADR-0035 (Proposed) awaiting decision; H4-H5 remain planned
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; ADR-0035 needs repository-owner sign-off before explicit-rest implementation; intraday and progression changes require their own authority/schema decisions.
+**Status:** In progress — H1, H2 and H2b delivered; H3 investigated and contract-tested, explicit-rest authoring accepted as ADR-0035 (implementation not started); H4-H5 remain planned
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; explicit-rest implementation is unblocked (ADR-0035 accepted) but unscheduled; intraday and progression changes require their own authority/schema decisions.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -225,7 +225,7 @@ absence semantics and immutable/versioned import contract; product observations,
 retained elsewhere, are non-normative research only.
 
 **Follow-up architecture decision:** [ADR-0035](../adr/0035-explicit-rest-day-authoring.md)
-(Proposed) recommends a single compatibility model: protected rest is added only in
+(Accepted) decides a single compatibility model: protected rest is added only in
 `adaptive-training-recommender/external-plan@3`, inheriting v2 session semantics unchanged,
 through relative plan-level `restDays` directives (`{ id, week, day }`). v1/v2 remain
 immutable and continue rejecting the new field. The ADR also separates plan intent from

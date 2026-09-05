@@ -1,9 +1,9 @@
 # ADR-0035: Explicit Rest-Day Authoring in External Plans
 
-* **Status:** Proposed
+* **Status:** Accepted
 * **Date:** 2026-09-05
 * **Deciders:** Repository owner
-* **Source analysis:** H3 investigation, [cycling-primary hybrid evaluation plan](../plans/cycling-primary-hybrid-evaluation.md); [PR #401](https://github.com/Szczepanov/adaptive-training-recommender/pull/401)
+* **Source analysis:** H3 investigation, [cycling-primary hybrid evaluation plan](../plans/cycling-primary-hybrid-evaluation.md); [PR #401](https://github.com/Szczepanov/adaptive-training-recommender/pull/401), [PR #402](https://github.com/Szczepanov/adaptive-training-recommender/pull/402)
 
 ## Context
 
@@ -198,12 +198,12 @@ occurrence. Forcing those non-concepts through session contracts makes downstrea
 execution and occurrence semantics less source-neutral and increases the chance that rest
 is accidentally counted as performed training.
 
-## Recommendation
+## Decision
 
-Adopt **Option B** if the repository owner accepts this ADR: add relative plan-level
-`restDays` only in `adaptive-training-recommender/external-plan@3`, inheriting v2 session
-semantics unchanged. Do not broaden v1/v2 validators and do not encode rest as a synthetic
-readiness `recover` verdict or as a fake training session.
+Adopt **Option B**: add relative plan-level `restDays` only in
+`adaptive-training-recommender/external-plan@3`, inheriting v2 session semantics unchanged.
+Do not broaden v1/v2 validators and do not encode rest as a synthetic readiness `recover`
+verdict or as a fake training session.
 
 Before implementation is complete, the following contracts need deterministic tests:
 
@@ -226,8 +226,8 @@ Before implementation is complete, the following contracts need deterministic te
   resolved plan-local date) does not match the loaded immutable plan;
 - `POLICY_VERSION` and persistence/rules coverage are updated with the behavior change.
 
-No production code changes are made by this ADR; repository-owner sign-off is required
-before implementation.
+No production code changes are made by this ADR. Implementation is unstarted; the list
+above is the acceptance bar for the follow-up work order.
 
 ## Consequences
 
