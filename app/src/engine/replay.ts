@@ -145,7 +145,9 @@ function authoredOccurrenceDecisionErrors(recommendation: DailyRecommendation): 
  * - an `isEvent` session is a FixedActivity-style commitment, so the engine still ranks
  *   any additional recommendation while retaining the event revision/hash as an input to
  *   that decision.
- * Replay verifies the relevant selection invariant for each shape.
+ * ADR-0035 adds authored-rest provenance, which is mutually exclusive with external-session
+ * provenance. Replay rejects a malformed audit that claims both authorities rather than
+ * silently choosing one branch.
  */
 export function replayRecommendationAudit(
     recommendation: DailyRecommendation,
@@ -179,7 +181,9 @@ export function replayRecommendationAudit(
     errors.push(...sessionBindingConsistencyErrors(recommendation));
     errors.push(...sessionBindingErrors(audit, sessionEvidence));
 
-    if (audit.externalPlan) {
+    if (audit.externalPlan && audit.externalRest) {
+        errors.push('Recommendation audit cannot contain both externalPlan and externalRest provenance for the same decision.');
+    } else if (audit.externalPlan) {
         errors.push(...externalDecisionErrors(recommendation, audit.externalPlan, externalRevision));
     } else if (audit.externalRest) {
         errors.push(...externalRestErrors(recommendation, audit.externalRest, externalRevision));
