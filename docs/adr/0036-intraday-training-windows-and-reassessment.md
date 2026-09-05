@@ -120,34 +120,64 @@ injury and readiness restrictions remain binding even after that minimum has ela
 ### D-LEDGER — every window shares one day's capacity
 
 Create one pure, as-of daily accounting boundary consumed by placement and adjudication.
-It owns the resolved total daily minute ceiling, completed work, in-progress reservations,
-future commitments, and accepted pending session reservations. Keep the current common
-cost/eligibility authorities; do not invent another fatigue-fusion formula.
+It owns the resolved total daily minute ceiling, the resolved daily systemic-cost/load
+ceiling supplied by the current capacity/adjudication authorities, completed work,
+in-progress reservations, future commitments, and accepted pending session reservations.
+Keep the current common cost/eligibility authorities; do not invent another fatigue-fusion
+formula or a second systemic-cost scale.
 
-For each candidate, usable minutes are the minimum of its remaining window and the
-remaining daily budget. The daily remainder is clamped at zero after subtracting unique
-completed minutes and outstanding reservations. Existing check-in `timeAvailable` keeps
-its current ceiling semantics; any new athlete input for *remaining* minutes must be
+For each candidate, derive both remainders from that same ledger. `remainingMinutes` is
+clamped at zero after subtracting unique completed minutes and outstanding minute
+reservations from the daily minute ceiling. `remainingSystemicCost` is likewise clamped
+at zero after subtracting unique completed canonical cost and outstanding cost
+reservations from the daily systemic-cost ceiling. Usable minutes are the minimum of the
+candidate's remaining window and `remainingMinutes`, but minute availability alone is
+not admission: accepted work must also fit within `remainingSystemicCost` under the
+existing cost estimation/adjudication rules. If either dimension is exhausted, later
+work is clipped, deferred or rejected through the common prescription gates rather than
+admitted from the other dimension alone. Existing check-in `timeAvailable` keeps its
+current ceiling semantics; any new athlete input for *remaining* minutes must be
 separately named and validated, never silently reinterpret that field.
 
 Fixed activities and authored/generated reservations enter the ledger once. Refactor
 the existing `resolveAvailability` deductions at this boundary rather than subtracting
-them again downstream. Matching completion replaces its reservation; it does not add
-another charge. Cost accounting similarly combines completed cost and outstanding
-reservations once per occurrence using current approved estimation authorities. Missing
-cost is uncertainty, not proof of zero work or spare capacity; retain an applicable
-planned reservation and withhold additional-session approval if no bounded estimate exists.
+them again downstream. A reservation carries both its planned minute debit and the
+bounded systemic-cost debit returned by current approved estimation authorities. A
+pending reservation that becomes in-progress keeps the same occurrence identity and is
+not charged again. Matching execution evidence reconciles that reservation; it never
+adds an independent second charge.
+
+Reconciliation is per occurrence and per accounting dimension. When canonical execution
+evidence reliably establishes actual performed minutes and/or systemic cost, replace the
+corresponding reserved debit with the known actual debit and release only the portion
+that is demonstrably unperformed. Partial and abandoned occurrences follow this same
+transition: their known performed contribution remains consumed while only proven
+unperformed reservation is released. If actual execution exceeds the reservation, record
+the actual debit and clamp the remaining daily capacity at zero; completed work is never
+retroactively erased to make a later window fit. Replayed, duplicate or reordered
+completion/provider evidence must be idempotent under canonical occurrence/execution
+identity and revision.
+
+If a dimension cannot yet be reconciled because telemetry is missing, late, ambiguous or
+has no bounded actual estimate, do not infer zero and do not refund it. Keep the
+applicable outstanding reservation for that dimension until canonical evidence resolves
+it; in-progress work therefore retains a conservative reservation. Missing cost is
+uncertainty, not proof of spare capacity, and additional-session approval is withheld if
+no bounded estimate exists. Later-window reassessment reads known actual consumption plus
+all unresolved reservations, so partial or abandoned work cannot disappear from same-day
+capacity while synchronization is incomplete.
 
 Canonical performed occurrence identity is the deduplication authority for execution
-and provider evidence. Do not build an H4-specific fuzzy matcher. Partial or abandoned
-work still consumes its known time/load; in-progress work retains a conservative
-reservation. Unresolved reconciliation or unavailable same-day facts must be exposed and
-cannot be treated as an empty training day. Safe intraday release is blocked until the
-canonical boundary supplies tested same-day identity, revision and timing evidence.
+and provider evidence. Do not build an H4-specific fuzzy matcher. Same-day work is
+accounted exactly once: readiness or symptom changes may alter the next recommendation,
+but they do not reset, duplicate or refund explicit ledger consumption. Unresolved
+reconciliation or unavailable same-day facts must be exposed and cannot be treated as an
+empty training day. Safe intraday release is blocked until the canonical boundary
+supplies tested same-day identity, revision and timing evidence.
 
-Dropping optional PM releases only its unperformed reservation. It does not undo AM
-credit or trigger automatic replacement work. Added windows do not raise weekly session
-commitment, required dose or tolerated-load assumptions.
+Dropping optional PM releases only its wholly unperformed reservation. It does not undo
+AM credit or trigger automatic replacement work. Added windows do not raise weekly
+session commitment, required dose or tolerated-load assumptions.
 
 ### D-REASSESS — PM is conditional until launch
 
@@ -165,18 +195,19 @@ does not automatically increase the authored dose. A completed AM occurrence can
 launched again; resuming an in-progress execution preserves its execution identity.
 
 Each accepted launch must atomically validate the current ledger/input revision and
-claim its reservation, preventing two tabs or concurrent requests from spending the
-same capacity. A stale decision must recompute. Changes to completion, symptoms,
-placement or availability invalidate a pending PM approval; historical decisions remain
-immutable and are linked by superseding decision identity.
+claim or transition its existing reservation, preventing two tabs or concurrent requests
+from spending the same minute or systemic-cost capacity. A stale decision must recompute.
+Changes to completion, symptoms, placement, availability or reconciliation invalidate a
+pending PM approval; historical decisions remain immutable and are linked by superseding
+decision identity.
 
 ### D-PLACEMENT — bundles and rest remain explicit
 
 Move unstarted bundle members as one confirmed proposal, preserving order and checking
-all destination windows, combined budget, fixed commitments, separation and rest. If
-the whole proposal cannot fit, explain the conflict and leave placement unchanged.
-An athlete may explicitly drop an optional member before re-evaluating the remainder;
-do not silently split the bundle to make a proposal fit.
+all destination windows, combined minute and systemic-cost budget, fixed commitments,
+separation and rest. If the whole proposal cannot fit, explain the conflict and leave
+placement unchanged. An athlete may explicitly drop an optional member before
+re-evaluating the remainder; do not silently split the bundle to make a proposal fit.
 
 Once a member starts, do not move its history. Any remaining-session move is a separate
 confirmed proposal respecting predecessor completion and existing `ifMissed` semantics.
@@ -196,9 +227,9 @@ implementation detail, but a daily document must not overwrite AM evidence with 
 Record decision id/as-of instant, policy version, plan id/revision/hash, occurrence and
 prescription identities, requested/resolved window and offsets, bundle/order/dependency,
 availability revision, completed-fact revision and source ids, response/check-in snapshot
-identity, daily ledger inputs/reservations, elapsed-separation evidence, result/reasons,
-and any override or superseded decision id. Retain immutable replay inputs, not only
-pointers to mutable latest records.
+identity, daily ledger ceilings/inputs/reservations/reconciled actuals, elapsed-separation
+evidence, result/reasons, and any override or superseded decision id. Retain immutable
+replay inputs, not only pointers to mutable latest records.
 
 Replay verifies all identity bindings and recomputes against those saved inputs.
 Missing inputs or any identity/hash/date/window mismatch is unreplayable, never repaired
@@ -220,14 +251,26 @@ The implementation must demonstrate deterministic cases for:
   overlaps, elapsed-window expiry and equipment/context intersections fail correctly;
 - a 90-minute daily ceiling with 60-minute AM completion leaves at most 30 minutes for
   PM even if both windows individually offer 90 minutes;
-- execution plus provider evidence for AM counts once, completion replaces reservations,
-  partial work counts, and delayed sync/reconciliation cannot create fictitious capacity;
-- completed AM cannot relaunch; concurrent PM launches cannot double-reserve; stale
-  approval recomputes; unknown actual end cannot satisfy a required separation;
+- a candidate with spare minutes but exhausted daily systemic-cost capacity is not
+  admitted; completed cost and outstanding cost reservations reduce the same clamped
+  load remainder and are never independently double-counted;
+- execution plus provider evidence for AM counts once and completion reconciles rather
+  than stacks on its reservation; partial completion retains known consumption and
+  releases only proven unperformed reservation; abandoned work follows the same rule;
+- missing/late/ambiguous actual duration or cost retains the unresolved reservation,
+  delayed reconciliation cannot create fictitious capacity, and repeated reconciliation
+  or provider evidence is idempotent;
+- an execution overrun replaces its reservation with actual consumption and clamps later
+  capacity at zero rather than erasing performed work;
+- completed AM cannot relaunch; concurrent PM launches cannot double-reserve minutes or
+  systemic cost; stale approval recomputes; unknown actual end cannot satisfy a required
+  separation;
 - new adverse symptoms defer/scale PM through common gates; missing post-AM confirmation
-  remains pending; favorable response cannot automatically expand dose;
+  remains pending; favorable response cannot automatically expand dose or reset ledger
+  consumption;
 - optional PM drops independently without replacement, while feasible bundle moves are
-  atomic and infeasible or started-bundle moves preserve completed history;
+  atomic across both capacity dimensions and infeasible or started-bundle moves preserve
+  completed history;
 - Warsaw spring-forward nonexistent boundaries and fall-back ambiguous boundaries,
   plus actual elapsed intervals across an offset change;
 - authored rest closes all windows, unplanned-date legacy fallback survives, event
