@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 (implementation not started); H5 remains planned
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 implementation depends on ADR-0035 support and verification of same-day canonical performed facts but is otherwise unblocked (ADR-0036 accepted); H5 still needs its own recorded authority/schema decision.
+**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 (implementation unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 implementation depends on ADR-0035 support and verification of same-day canonical performed facts; H5 runtime requires validated intent mappings and linked response evidence.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -257,16 +257,21 @@ one-session forecasts do not validate doubles.
 
 ## H5 — Explicit develop/maintain intent and progression
 
-**Dependencies:** H3 plus plan/observation/outcome authority design; reuse ADR-0017/0023/0033.
+**Status:** Design accepted in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md); implementation unstarted.
+**Dependencies:** Validated intent-to-dose/coverage mappings and canonical completion/response
+linkage for runtime review. v5 import inherits ADR-0035/0036 contracts; manual intent and
+report-only groundwork does not require H4 runtime release.
 
-Model block-level development versus maintenance and bounded progression choices. Track
-one main experimental change at a time. Current experience, recent tolerated exposure,
-available time and future ambition remain distinct. Missing response evidence does not
-justify automatic progression; favorable wearables do not clear standing restrictions.
+Decision: per-objective `develop | maintain` intent is separate from priority and profile
+commitment. Use existing plan, dose, coverage, response and outcome authorities. New import
+authority belongs in `external-plan@5`; earlier schemas remain unchanged. Maintenance is
+an intended outcome, not a default dose discount or an assertion of preserved performance.
 
-Acceptance: actual completed/tolerated work supports progression, tests consume training
-budget, regress/hold options exist, and any learned refinement preserves safety
-monotonicity. Outcome reports must distinguish observations from causal conclusions.
+Deliver H5a intent authoring, H5b report-only progression review, then H5c athlete-confirmed
+bounded revisions. One active progression experiment changes one variable within reviewed
+bounds. Missing/adverse follow-up blocks advancement; outcome reports retain no automatic
+selection authority. Hold, reduction and redirect are explicit alternatives. The ADR owns
+the complete compatibility, substitution, evidence, confirmation and replay acceptance bar.
 
 ## Reproduction and verification
 
