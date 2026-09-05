@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H1, H2 and H2b delivered; H3 investigated and contract-tested with no production defect found — explicit-rest authoring remains an open schema/authority decision; H4/H5 are next
-**Blocked by:** H3's rest-authoring question needs an explicit architecture decision. H4/H5 implementation needs explicit architecture decisions recorded in the repository. Personal M00/M01 prescription needs current athlete inputs.
+**Status:** H1, H2 and H2b delivered; H3 investigated and contract-tested with no production defect found — explicit-rest authoring recorded as ADR-0035 (Proposed), awaiting repository-owner decision; H4/H5 are next
+**Blocked by:** ADR-0035 needs repository-owner sign-off before explicit-rest implementation. H4/H5 implementation needs explicit architecture decisions recorded in the repository. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -36,13 +36,15 @@ only proved aerobic credit and was too indirect for the specific quality-credit 
 No production decision logic changed.
 
 The remaining H3 gap is explicit rest: neither external-plan schema can distinguish
-"protected rest" from "no authored instruction for this date." The recommended follow-up
-is a day-level rest directive in a new external-plan schema revision, not a fake session
-modality. That requires an accepted architecture decision before implementation.
+"protected rest" from "no authored instruction for this date."
+[ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (Proposed) lays out the options —
+leaning toward a day-level rest directive in a new external-plan schema revision, not a
+fake session modality — with the minimum semantics implementation would need. It is
+awaiting the repository owner's decision; no code changes yet.
 
-Suggested next step: record the explicit-rest schema/precedence decision described in the
-H3 work order, or move to H4/H5 design. Both routes should remain separate from personal
-M00/M01 prescription until current workload/restriction inputs are confirmed.
+Suggested next step: get a decision on ADR-0035, or move to H4/H5 design. Both routes
+should remain separate from personal M00/M01 prescription until current workload/
+restriction inputs are confirmed.
 
 ## Stable product intent
 
@@ -148,12 +150,14 @@ Neither `external-plan@1` nor `external-plan@2` can represent an explicitly pres
 rest day. Both schemas intentionally define rest as omission, so the current resolver has
 no fact that can distinguish protected rest from an unplanned date.
 
-The preferred follow-up is a **day-level rest directive in a new schema revision**, not a
-session `kind`/modality. Rest has no useful session duration, equipment, stimulus,
-execution dose or adherence occurrence, so forcing it through `ExternalPlanSession` would
-blur the source-neutral session boundary and create fake execution semantics.
-
-Record an ADR before coding. At minimum it must decide:
+**Status: recorded as [ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (Proposed),
+awaiting repository-owner decision.** It rules out reusing the existing travel-block
+mechanism (it only scales the evergreen dose target, it does not block a recommendation),
+leans toward a day-level rest directive in a new schema revision rather than a session
+`kind`/modality (rest has no useful duration, equipment, stimulus, execution dose or
+adherence occurrence, so forcing it through `ExternalPlanSession` would blur the
+source-neutral session boundary), and lists a third option (an `isRest` session paralleling
+`isEvent`) for comparison. It specifies, pending sign-off:
 
 1. exact schema shape and version (keep v1/v2 readable and immutable);
 2. rest precedence over `any_day` placement and missed-session replacement;
@@ -163,6 +167,8 @@ Record an ADR before coding. At minimum it must decide:
    directive id/kind);
 5. import validation, Firestore rules and UI presentation;
 6. `POLICY_VERSION` handling, because this changes recommendation behavior.
+
+Do not begin implementation until the ADR is accepted.
 
 The evaluation plan records external product precedent for the distinction (Garmin Coach
 Rest Days; TrainingPeaks Rest Day vs. No Planned Workouts), but those products do not

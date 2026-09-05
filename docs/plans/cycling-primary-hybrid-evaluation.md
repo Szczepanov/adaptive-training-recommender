@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1, H2 and H2b delivered; H3 investigated and contract-tested, with explicit-rest authoring still requiring a schema/authority decision; H4-H5 remain planned
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; explicit-rest, intraday and progression changes require the relevant authority/schema decisions.
+**Status:** In progress — H1, H2 and H2b delivered; H3 investigated and contract-tested, with explicit-rest authoring recorded as ADR-0035 (Proposed) awaiting decision; H4-H5 remain planned
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; ADR-0035 needs repository-owner sign-off before explicit-rest implementation; intraday and progression changes require their own authority/schema decisions.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -228,26 +228,16 @@ requirement is coherent rather than an unusual edge case:
 - Garmin cycling-plan scheduling: https://support.garmin.com/en-IE/aviation/faq/9WEulyuZyf6aDpcxPH1PI9/
 - TrainingPeaks example distinguishing `REST DAY` from `No Planned Workouts`: https://www.trainingpeaks.com/training-plans/cycling/tp-497950/consistency-intensity-volume-for-fitness-cycling
 
-**Recommended follow-up architecture:** represent protected rest as a **day-level plan
-directive in a new external-plan schema revision**, not as a fake session modality.
-A rest directive has no training duration, equipment, stimulus, execution dose or
-adherence occurrence; forcing it through `ExternalPlanSession` would pollute the very
-source-neutral session contracts ADR-0019/0023 are trying to preserve. A bounded follow-up
-ADR should define at least these semantics before implementation:
+**Follow-up architecture decision:** [ADR-0035](../adr/0035-explicit-rest-day-authoring.md)
+(Proposed) lays out three schema options — widening the existing travel-block mechanism
+(rejected: it only scales the evergreen dose target, it does not actually block a
+recommendation), a day-level `restDates` directive on the plan envelope, and an
+`isRest: true` session reconciled through the same machinery ADR-0019 D-EVENT already uses
+for `isEvent`. It leans toward the day-level directive and specifies the minimum
+precedence/persistence/replay/`POLICY_VERSION` semantics needed before implementation, but
+makes no implementation itself: it requires the repository owner's sign-off first.
 
-- an explicit rest directive blocks `any_day` placement and missed-session replacement onto
-  that date;
-- evaluating that date does **not** fall through to evergreen discretionary training;
-- unplanned dates retain the current labelled fallback;
-- the persisted audit/replay record identifies the plan/revision/content hash and the rest
-  directive that owned the date;
-- v1/v2 remain readable as-is; the new representation receives a new schema version rather
-  than silently broadening an immutable import contract;
-- because the directive changes recommendations, implementation evaluates/bump
-  `POLICY_VERSION` and updates persistence/rules/replay tests.
-
-This PR intentionally does not implement that schema extension: the representation and
-precedence rules need an accepted architecture decision first. Personal M00/M01 import
+This PR intentionally does not implement that schema extension. Personal M00/M01 import
 also remains blocked on current-workload/restriction confirmation.
 
 ## H4 — Intraday capacity and post-AM reassessment
