@@ -20,6 +20,22 @@ function validExternalPlanRevisionV3(restDays: unknown[] = [{ id: 'w1-fri-rest',
     };
 }
 
+function validExternalPlanRevisionV4(restDays: unknown[] = [{ id: 'w1-fri-rest', week: 1, day: 'friday' }]) {
+    return {
+        schema: 'adaptive-training-recommender/external-plan@4',
+        planId: 'autumn-block', revision: 1, title: '4-week block',
+        startDate: '2026-08-17', weekCount: 4,
+        sessions: [{
+            id: 'w1-a', title: 'Threshold', priority: 'key',
+            intraday: {
+                window: { startLocal: '07:00', endLocal: '08:30' },
+                bundleId: 'monday-double', order: 0,
+            },
+        }],
+        restDays,
+    };
+}
+
 function validRecommendation() {
     return {
         userId: ownerId,
@@ -61,7 +77,7 @@ function validRecommendation() {
     };
 }
 
-emulatorDescribe('Firestore rules — ADR-0035 authored rest', () => {
+emulatorDescribe('Firestore rules — ADR-0035/0036 external-plan storage', () => {
     beforeAll(async () => {
         testEnvironment = await initializeTestEnvironment({
             projectId: 'demo-adaptive-training-rest-rules',
@@ -82,7 +98,17 @@ emulatorDescribe('Firestore rules — ADR-0035 authored rest', () => {
         await expect(assertSucceeds(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV3()))).resolves.toBeUndefined();
     });
 
-    it('rejects malformed rest directive elements at the storage boundary', async () => {
+    it('accepts external-plan@4 revision bytes and keeps the inherited restDays requirement', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV4()))).resolves.toBeUndefined();
+
+        await testEnvironment.clearFirestore();
+        const withoutRestDays = { ...validExternalPlanRevisionV4() } as Record<string, unknown>;
+        delete withoutRestDays.restDays;
+        await assertFails(setDoc(doc(ownerDb, revisionPath), withoutRestDays));
+    });
+
+    it('rejects malformed rest directive elements at the storage boundary for v3 and v4', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         for (const restDays of [
             [null],
@@ -92,6 +118,7 @@ emulatorDescribe('Firestore rules — ADR-0035 authored rest', () => {
             [{ id: 'extra-field', week: 1, day: 'friday', reason: 'taper' }],
         ]) {
             await assertFails(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV3(restDays)));
+            await assertFails(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV4(restDays)));
         }
     });
 
