@@ -1,9 +1,9 @@
-﻿/**
+/**
  * ADR-0037: Block Intent and Controlled Progression (H5a).
  *
- * D-REPLAY: Canonical semantic replay projection and deterministic SHA-256 hashing.
- * Exhaustively projects every behavior-affecting field, pins a canonical snapshot of
- * the TrainingIntentProfile (priorities and weeklyCommitment), and excludes display-only fields.
+ * D-REPLAY: canonical semantic replay projection and deterministic SHA-256 hashing.
+ * Every behavior-affecting authored field in the Phase-1 contract is projected explicitly;
+ * proven presentation-only fields are deliberately excluded and regression-tested.
  */
 
 import type { TrainingIntentProfile, TrainingPriority } from './models';
@@ -53,7 +53,6 @@ export interface CanonicalReplayObjective {
         targetCoverageKey: string;
         allowedCoverageKeys: readonly string[];
         minDoseFraction?: number;
-        rationale?: string;
     }[];
     successCriteria?: {
         evaluationRef?: {
@@ -97,7 +96,10 @@ export interface CanonicalReplayProgressionContract {
     reviewCadenceDays: number;
     reductionAlternative?: {
         decrement: number;
-        trigger: 'adverse_response' | 'stagnation';
+        trigger: string;
+    };
+    redirectCriteria?: {
+        triggers: readonly string[];
     };
 }
 
@@ -121,27 +123,58 @@ export interface TreatmentIntentReplayPayloadV1 {
     };
 }
 
-/**
- * Sorts and canonicalizes substitutions by targetCoverageKey.
- */
+function canonicalizeStringSet(values?: readonly string[]): readonly string[] | undefined {
+    if (!values || values.length === 0) return undefined;
+    return [...values].sort();
+}
+
+/** Human-facing substitution rationale is intentionally excluded from semantic identity. */
 function canonicalizeSubstitutions(
     substitutions?: readonly BlockSubstitutionRule[],
 ): CanonicalReplayObjective['allowedSubstitutions'] {
     if (!substitutions || substitutions.length === 0) return undefined;
     return [...substitutions]
-        .sort((a, b) => a.targetCoverageKey.localeCompare(b.targetCoverageKey))
         .map(sub => ({
             targetCoverageKey: sub.targetCoverageKey,
             allowedCoverageKeys: [...sub.allowedCoverageKeys].sort(),
             minDoseFraction: sub.minDoseFraction,
-            rationale: sub.rationale,
-        }));
+        }))
+        .sort((a, b) => {
+            const targetOrder = a.targetCoverageKey.localeCompare(b.targetCoverageKey);
+            if (targetOrder !== 0) return targetOrder;
+            return a.allowedCoverageKeys.join('\u0000').localeCompare(b.allowedCoverageKeys.join('\u0000'));
+        });
 }
 
-/**
- * Transforms an objective into its canonical replay shape.
- */
+function canonicalizeSuccessCriteria(
+    objective: BlockObjectiveDefinition,
+): CanonicalReplayObjective['successCriteria'] {
+    const criteria = objective.successCriteria;
+    if (!criteria) return undefined;
+    const projected = {
+        evaluationRef: criteria.evaluationRef ? {
+            id: criteria.evaluationRef.id,
+            revision: criteria.evaluationRef.revision,
+            metricId: criteria.evaluationRef.metricId,
+        } : undefined,
+        minCompletedExposures: criteria.minCompletedExposures,
+        targetTrend: criteria.targetTrend,
+        acceptableDeclineTolerancePct: criteria.acceptableDeclineTolerancePct,
+    };
+    return Object.values(projected).every(value => value === undefined) ? undefined : projected;
+}
+
 function canonicalizeObjective(obj: BlockObjectiveDefinition): CanonicalReplayObjective {
+    const entryPrerequisites = obj.entryPrerequisites ? {
+        requiredPriorExposures: obj.entryPrerequisites.requiredPriorExposures,
+        minBaselineDays: obj.entryPrerequisites.minBaselineDays,
+        prohibitedTissueSeverities: canonicalizeStringSet(obj.entryPrerequisites.prohibitedTissueSeverities),
+    } : undefined;
+    const exitCriteria = obj.exitCriteria ? {
+        maxWeeksInBlock: obj.exitCriteria.maxWeeksInBlock,
+        stagnationReviewAfterWeeks: obj.exitCriteria.stagnationReviewAfterWeeks,
+    } : undefined;
+
     return {
         id: obj.id,
         sport: obj.sport,
@@ -156,36 +189,19 @@ function canonicalizeObjective(obj: BlockObjectiveDefinition): CanonicalReplayOb
             unit: obj.doseEnvelope.unit,
             floorSemantics: obj.doseEnvelope.floorSemantics,
         },
-        knowledgeLineage: obj.knowledgeLineage ? [...obj.knowledgeLineage].sort() : undefined,
-        protectedRoles: obj.protectedRoles ? [...obj.protectedRoles].sort() : undefined,
+        knowledgeLineage: canonicalizeStringSet(obj.knowledgeLineage),
+        protectedRoles: canonicalizeStringSet(obj.protectedRoles),
         allowedSubstitutions: canonicalizeSubstitutions(obj.allowedSubstitutions),
-        successCriteria: obj.successCriteria ? {
-            evaluationRef: obj.successCriteria.evaluationRef ? {
-                id: obj.successCriteria.evaluationRef.id,
-                revision: obj.successCriteria.evaluationRef.revision,
-                metricId: obj.successCriteria.evaluationRef.metricId,
-            } : undefined,
-            minCompletedExposures: obj.successCriteria.minCompletedExposures,
-            targetTrend: obj.successCriteria.targetTrend,
-            acceptableDeclineTolerancePct: obj.successCriteria.acceptableDeclineTolerancePct,
-        } : undefined,
-        entryPrerequisites: obj.entryPrerequisites ? {
-            requiredPriorExposures: obj.entryPrerequisites.requiredPriorExposures,
-            minBaselineDays: obj.entryPrerequisites.minBaselineDays,
-            prohibitedTissueSeverities: obj.entryPrerequisites.prohibitedTissueSeverities
-                ? [...obj.entryPrerequisites.prohibitedTissueSeverities].sort()
-                : undefined,
-        } : undefined,
-        exitCriteria: obj.exitCriteria ? {
-            maxWeeksInBlock: obj.exitCriteria.maxWeeksInBlock,
-            stagnationReviewAfterWeeks: obj.exitCriteria.stagnationReviewAfterWeeks,
-        } : undefined,
+        successCriteria: canonicalizeSuccessCriteria(obj),
+        entryPrerequisites: entryPrerequisites && Object.values(entryPrerequisites).some(value => value !== undefined)
+            ? entryPrerequisites
+            : undefined,
+        exitCriteria: exitCriteria && Object.values(exitCriteria).some(value => value !== undefined)
+            ? exitCriteria
+            : undefined,
     };
 }
 
-/**
- * Canonicalizes the progression contract.
- */
 function canonicalizeProgressionContract(
     contract?: BlockProgressionContract,
 ): CanonicalReplayProgressionContract | undefined {
@@ -204,7 +220,7 @@ function canonicalizeProgressionContract(
             max: contract.permittedRange.max,
         },
         increment: contract.increment,
-        knowledgeLineage: contract.knowledgeLineage ? [...contract.knowledgeLineage].sort() : undefined,
+        knowledgeLineage: canonicalizeStringSet(contract.knowledgeLineage),
         observationWindowDays: contract.observationWindowDays,
         minCompletedExposures: contract.minCompletedExposures,
         requiredFollowUpCoveragePct: contract.requiredFollowUpCoveragePct,
@@ -213,12 +229,17 @@ function canonicalizeProgressionContract(
             decrement: contract.reductionAlternative.decrement,
             trigger: contract.reductionAlternative.trigger,
         } : undefined,
+        redirectCriteria: contract.redirectCriteria ? {
+            triggers: canonicalizeStringSet(contract.redirectCriteria.triggers) ?? [],
+        } : undefined,
     };
 }
 
 /**
- * Builds the canonical replay projection. Pins TrainingIntentProfile priorities
- * and weeklyCommitment, canonicalizes all semantic fields, and omits display-only fields (title, notes).
+ * Builds the versioned semantic projection. `title`, `notes`, and substitution `rationale`
+ * are display-only and therefore excluded. Objective/set ordering is canonicalized where
+ * order has no behavior, while `TrainingIntentProfile.priorities` order is preserved because
+ * the persisted profile may use order as authored preference precedence.
  */
 export function buildTreatmentIntentReplayPayloadV1(
     block: IntentBlock,
@@ -265,10 +286,18 @@ export function buildTreatmentIntentReplayPayloadV1(
 }
 
 /**
- * Deterministically sorts all object keys recursively and omits undefined values.
+ * Deterministically sorts object keys recursively and omits undefined object members.
+ * Non-finite numbers are rejected rather than silently serialized as `null`, which would
+ * create an ambiguous cryptographic identity for invalid semantic inputs.
  */
 export function canonicalizeReplayJson(value: unknown): unknown {
+    if (typeof value === 'number' && !Number.isFinite(value)) {
+        throw new Error('Replay payload contains a non-finite number');
+    }
     if (Array.isArray(value)) {
+        if (value.some(item => item === undefined)) {
+            throw new Error('Replay payload arrays cannot contain undefined members');
+        }
         return value.map(canonicalizeReplayJson);
     }
     if (value !== null && typeof value === 'object') {
@@ -276,23 +305,17 @@ export function canonicalizeReplayJson(value: unknown): unknown {
         return Object.fromEntries(
             Object.keys(obj)
                 .sort()
-                .filter(k => obj[k] !== undefined)
+                .filter(key => obj[key] !== undefined)
                 .map(key => [key, canonicalizeReplayJson(obj[key])]),
         );
     }
     return value;
 }
 
-/**
- * Serializes the canonical replay payload to a deterministic JSON string.
- */
 export function canonicalizeTreatmentIntentJson(payload: TreatmentIntentReplayPayloadV1): string {
     return JSON.stringify(canonicalizeReplayJson(payload));
 }
 
-/**
- * Computes the SHA-256 hex digest of the canonical replay payload.
- */
 export async function hashTreatmentIntentReplayPayload(
     payload: TreatmentIntentReplayPayloadV1,
 ): Promise<string> {
@@ -300,13 +323,10 @@ export async function hashTreatmentIntentReplayPayload(
     const bytes = new TextEncoder().encode(canonicalJson);
     const digestBuffer = await crypto.subtle.digest('SHA-256', bytes);
     return Array.from(new Uint8Array(digestBuffer))
-        .map(b => b.toString(16).padStart(2, '0'))
+        .map(byte => byte.toString(16).padStart(2, '0'))
         .join('');
 }
 
-/**
- * Verifies that the digest of a replay payload matches an expected SHA-256 digest.
- */
 export async function verifyTreatmentIntentReplayDigest(
     payload: TreatmentIntentReplayPayloadV1,
     expectedDigest: string,
