@@ -16,13 +16,16 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
             {
                 id: 'obj_threshold_dev',
                 sport: 'cycling',
-                adaptationScope: 'aerobic_power',
+                adaptationScope: 'threshold_quality',
                 coverageKey: 'sustained_quality',
                 intent: 'develop',
                 priority: 'must_have',
                 doseEnvelope: { min: 60, target: 90, max: 120, unit: 'minutes', floorSemantics: 'hard_floor' },
                 knowledgeLineage: ['claim_threshold_interval_adaptation_v1'],
-                protectedRoles: ['sustained_quality'],
+                protectedRoles: [
+                    { kind: 'coverage_role', coverageKey: 'sustained_quality' },
+                    { kind: 'session', sessionId: 'session_threshold_anchor' },
+                ],
                 allowedSubstitutions: [{
                     targetCoverageKey: 'sustained_quality',
                     allowedCoverageKeys: ['outdoor_event_specific'],
@@ -44,11 +47,12 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
             {
                 id: 'obj_strength_maint',
                 sport: 'strength',
-                adaptationScope: 'muscle_retention',
+                adaptationScope: 'strength_maintenance',
                 coverageKey: 'primary_strength',
                 intent: 'maintain',
                 priority: 'should_have',
                 doseEnvelope: { min: 1, target: 2, max: 2, unit: 'sessions', floorSemantics: 'soft_floor' },
+                knowledgeLineage: ['claim_strength_maintenance_v1'],
                 successCriteria: {
                     evaluationRef: { id: 'eval_strength', revision: 1, metricId: 'strength_maintenance' },
                     targetTrend: 'stable',
@@ -64,6 +68,7 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
             currentValue: 90,
             permittedRange: { min: 60, max: 120 },
             increment: 10,
+            knowledgeLineage: ['policy_progression_duration_v1'],
             observationWindowDays: 14,
             minCompletedExposures: 3,
             requiredFollowUpCoveragePct: 66,
@@ -93,18 +98,56 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
         expect(codes).toContain('INVALID_NEXT_REVIEW_DATE');
     });
 
-    it('rejects empty/duplicate objective ids and unsupported objective vocabulary', () => {
+    it('rejects unsupported typed objective vocabulary and duplicate objective ids', () => {
         const invalid: IntentBlock = {
             ...validBlock,
             objectives: [
-                { ...validBlock.objectives[0], sport: 'rowing' as never },
+                { ...validBlock.objectives[0], sport: 'rowing' as never, adaptationScope: 'free_text_scope' as never },
                 { ...validBlock.objectives[0], coverageKey: 'anything' as never },
             ],
         };
         const codes = validateIntentBlock(invalid).issues.map(issue => issue.code);
         expect(codes).toContain('DUPLICATE_OBJECTIVE_ID');
         expect(codes).toContain('INVALID_OBJECTIVE_SPORT');
+        expect(codes).toContain('INVALID_ADAPTATION_SCOPE');
         expect(codes).toContain('INVALID_OBJECTIVE_COVERAGE_KEY');
+    });
+
+    it('rejects free-form/invalid protected references instead of treating labels as exact roles', () => {
+        const invalid: IntentBlock = {
+            ...validBlock,
+            objectives: [{
+                ...validBlock.objectives[0],
+                protectedRoles: [
+                    { kind: 'coverage_role', coverageKey: 'made_up_role' as never },
+                    { kind: 'session', sessionId: '' },
+                    { kind: 'session', sessionId: '' },
+                ],
+            }],
+        };
+        const codes = validateIntentBlock(invalid).issues.map(issue => issue.code);
+        expect(codes).toContain('INVALID_PROTECTED_COVERAGE_ROLE');
+        expect(codes).toContain('INVALID_PROTECTED_SESSION_ID');
+        expect(codes).toContain('DUPLICATE_PROTECTED_ROLE');
+    });
+
+    it('requires objective and progression knowledge lineage plus non-empty success criteria', () => {
+        const invalid: IntentBlock = {
+            ...validBlock,
+            objectives: [{
+                ...validBlock.objectives[0],
+                knowledgeLineage: [],
+                successCriteria: {},
+            }],
+            progressionContract: {
+                ...validBlock.progressionContract!,
+                targetBinding: { objectiveId: 'obj_threshold_dev' },
+                knowledgeLineage: [],
+            },
+        };
+        const codes = validateIntentBlock(invalid).issues.map(issue => issue.code);
+        expect(codes.filter(code => code === 'MISSING_KNOWLEDGE_LINEAGE').length).toBeGreaterThanOrEqual(2);
+        expect(codes).toContain('EMPTY_SUCCESS_CRITERIA');
     });
 
     it('rejects unsupported dose units and non-finite/inverted envelopes', () => {
@@ -132,11 +175,7 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
             ...validBlock,
             objectives: [{
                 ...validBlock.objectives[0],
-                allowedSubstitutions: [{
-                    targetCoverageKey: 'aerobic_volume',
-                    allowedCoverageKeys: [],
-                    minDoseFraction: 1.2,
-                }],
+                allowedSubstitutions: [{ targetCoverageKey: 'aerobic_volume', allowedCoverageKeys: [], minDoseFraction: 1.2 }],
                 entryPrerequisites: { requiredPriorExposures: 1.5 },
                 successCriteria: { targetTrend: 'improving' },
             }],
@@ -160,9 +199,7 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
                 },
             }],
         };
-        expect(validateIntentBlock(invalid).issues.some(issue =>
-            issue.code === 'MAINTENANCE_OUTCOME_REQUIRES_TOLERANCE',
-        )).toBe(true);
+        expect(validateIntentBlock(invalid).issues.some(issue => issue.code === 'MAINTENANCE_OUTCOME_REQUIRES_TOLERANCE')).toBe(true);
     });
 
     it('rejects dangling targets, arbitrary progression paths/units and non-finite current values', () => {
@@ -200,7 +237,17 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
         expect(codes).toContain('PROGRESSION_REVIEW_CADENCE_MISMATCH');
     });
 
-    it('rejects ambiguous adverse actions and reductions that need hidden range clamping', () => {
+    it('requires an authored reduction or redirect fallback and rejects ambiguous adverse actions', () => {
+        const missingFallback: IntentBlock = {
+            ...validBlock,
+            progressionContract: {
+                ...validBlock.progressionContract!,
+                reductionAlternative: undefined,
+                redirectCriteria: undefined,
+            },
+        };
+        expect(validateIntentBlock(missingFallback).issues.some(issue => issue.code === 'MISSING_PROGRESSION_FALLBACK')).toBe(true);
+
         const ambiguous: IntentBlock = {
             ...validBlock,
             progressionContract: {
@@ -208,11 +255,11 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
                 redirectCriteria: { triggers: ['adverse_response'] },
             },
         };
-        expect(validateIntentBlock(ambiguous).issues.some(issue =>
-            issue.code === 'AMBIGUOUS_ADVERSE_RESPONSE_ACTION',
-        )).toBe(true);
+        expect(validateIntentBlock(ambiguous).issues.some(issue => issue.code === 'AMBIGUOUS_ADVERSE_RESPONSE_ACTION')).toBe(true);
+    });
 
-        const overReduction: IntentBlock = {
+    it('rejects reductions that need hidden range clamping', () => {
+        const invalid: IntentBlock = {
             ...validBlock,
             progressionContract: {
                 ...validBlock.progressionContract!,
@@ -220,22 +267,15 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
                 reductionAlternative: { decrement: 10, trigger: 'adverse_response' },
             },
         };
-        expect(validateIntentBlock(overReduction).issues.some(issue =>
-            issue.code === 'REDUCTION_DECREMENT_EXCEEDS_RANGE',
-        )).toBe(true);
+        expect(validateIntentBlock(invalid).issues.some(issue => issue.code === 'REDUCTION_DECREMENT_EXCEEDS_RANGE')).toBe(true);
     });
 
     it('rejects progression ranges outside the authored objective envelope', () => {
         const invalid: IntentBlock = {
             ...validBlock,
-            progressionContract: {
-                ...validBlock.progressionContract!,
-                permittedRange: { min: 50, max: 130 },
-            },
+            progressionContract: { ...validBlock.progressionContract!, permittedRange: { min: 50, max: 130 } },
         };
-        expect(validateIntentBlock(invalid).issues.some(issue =>
-            issue.code === 'PROGRESSION_RANGE_EXCEEDS_OBJECTIVE_ENVELOPE',
-        )).toBe(true);
+        expect(validateIntentBlock(invalid).issues.some(issue => issue.code === 'PROGRESSION_RANGE_EXCEEDS_OBJECTIVE_ENVELOPE')).toBe(true);
     });
 
     it('rejects overlapping blocks only within the same source plan', () => {
@@ -243,20 +283,12 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
         const blockB: IntentBlock = { ...validBlock, id: 'block_b', dateRange: { startDate: '2026-09-10', endDate: '2026-09-25' }, reviewSchedule: { reviewCadenceDays: 7, nextReviewDate: '2026-09-17' }, progressionContract: undefined };
         const otherPlan: IntentBlock = { ...blockB, id: 'block_other', sourcePlanId: 'plan_other' };
 
-        expect(validatePlanIntentBlocks([blockA, blockB]).issues.some(issue =>
-            issue.code === 'OVERLAPPING_INTENT_BLOCKS',
-        )).toBe(true);
-        expect(validatePlanIntentBlocks([blockA, otherPlan]).issues.some(issue =>
-            issue.code === 'OVERLAPPING_INTENT_BLOCKS',
-        )).toBe(false);
+        expect(validatePlanIntentBlocks([blockA, blockB]).issues.some(issue => issue.code === 'OVERLAPPING_INTENT_BLOCKS')).toBe(true);
+        expect(validatePlanIntentBlocks([blockA, otherPlan]).issues.some(issue => issue.code === 'OVERLAPPING_INTENT_BLOCKS')).toBe(false);
     });
 
     it('does not throw during plan overlap validation when a block has a malformed date', () => {
-        const malformed = {
-            ...validBlock,
-            id: 'bad_date',
-            dateRange: { startDate: '', endDate: '' },
-        } as IntentBlock;
+        const malformed = { ...validBlock, id: 'bad_date', dateRange: { startDate: '', endDate: '' } } as IntentBlock;
         expect(() => validatePlanIntentBlocks([validBlock, malformed])).not.toThrow();
         expect(validatePlanIntentBlocks([validBlock, malformed]).valid).toBe(false);
     });

@@ -10,6 +10,7 @@ import type { TrainingIntentProfile, TrainingPriority } from './models';
 import type {
     BlockObjectiveDefinition,
     BlockProgressionContract,
+    BlockProtectedRole,
     BlockSubstitutionRule,
     IntentBlock,
 } from './blockIntent';
@@ -18,11 +19,7 @@ export const TREATMENT_INTENT_REPLAY_SCHEMA_VERSION = 'treatment_intent_replay_v
 
 export interface PinnedTrainingIntentProfileSnapshot {
     priorities: readonly TrainingPriority[];
-    weeklyCommitment: {
-        minSessions: number;
-        targetSessions: number;
-        maxSessions: number;
-    };
+    weeklyCommitment: { minSessions: number; targetSessions: number; maxSessions: number };
     schemaVersion?: number;
 }
 
@@ -47,19 +44,18 @@ export interface CanonicalReplayObjective {
         unit: string;
         floorSemantics: 'hard_floor' | 'soft_floor';
     };
-    knowledgeLineage?: readonly string[];
-    protectedRoles?: readonly string[];
+    knowledgeLineage: readonly string[];
+    protectedRoles?: readonly (
+        | { kind: 'coverage_role'; coverageKey: string }
+        | { kind: 'session'; sessionId: string }
+    )[];
     allowedSubstitutions?: readonly {
         targetCoverageKey: string;
         allowedCoverageKeys: readonly string[];
         minDoseFraction?: number;
     }[];
-    successCriteria?: {
-        evaluationRef?: {
-            id: string;
-            revision: number;
-            metricId: string;
-        };
+    successCriteria: {
+        evaluationRef?: { id: string; revision: number; metricId: string };
         minCompletedExposures?: number;
         targetTrend?: 'stable' | 'improving';
         acceptableDeclineTolerancePct?: number;
@@ -69,38 +65,23 @@ export interface CanonicalReplayObjective {
         minBaselineDays?: number;
         prohibitedTissueSeverities?: readonly string[];
     };
-    exitCriteria?: {
-        maxWeeksInBlock?: number;
-        stagnationReviewAfterWeeks?: number;
-    };
+    exitCriteria?: { maxWeeksInBlock?: number; stagnationReviewAfterWeeks?: number };
 }
 
 export interface CanonicalReplayProgressionContract {
-    targetBinding: {
-        objectiveId: string;
-        sessionId?: string;
-        stepId?: string;
-    };
+    targetBinding: { objectiveId: string; sessionId?: string; stepId?: string };
     variable: string;
     unit: string;
     currentValue: number;
-    permittedRange: {
-        min: number;
-        max: number;
-    };
+    permittedRange: { min: number; max: number };
     increment: number;
-    knowledgeLineage?: readonly string[];
+    knowledgeLineage: readonly string[];
     observationWindowDays: number;
     minCompletedExposures: number;
     requiredFollowUpCoveragePct: number;
     reviewCadenceDays: number;
-    reductionAlternative?: {
-        decrement: number;
-        trigger: string;
-    };
-    redirectCriteria?: {
-        triggers: readonly string[];
-    };
+    reductionAlternative?: { decrement: number; trigger: string };
+    redirectCriteria?: { triggers: readonly string[] };
 }
 
 export interface TreatmentIntentReplayPayloadV1 {
@@ -110,15 +91,9 @@ export interface TreatmentIntentReplayPayloadV1 {
     block: {
         id: string;
         revision: number;
-        dateRange: {
-            startDate: string;
-            endDate: string;
-        };
+        dateRange: { startDate: string; endDate: string };
         objectives: readonly CanonicalReplayObjective[];
-        reviewSchedule: {
-            reviewCadenceDays: number;
-            nextReviewDate: string;
-        };
+        reviewSchedule: { reviewCadenceDays: number; nextReviewDate: string };
         progressionContract?: CanonicalReplayProgressionContract;
     };
 }
@@ -128,10 +103,21 @@ function canonicalizeStringSet(values?: readonly string[]): readonly string[] | 
     return [...values].sort();
 }
 
+function canonicalizeProtectedRoles(roles?: readonly BlockProtectedRole[]): CanonicalReplayObjective['protectedRoles'] {
+    if (!roles || roles.length === 0) return undefined;
+    return [...roles]
+        .map(role => role.kind === 'coverage_role'
+            ? { kind: 'coverage_role' as const, coverageKey: role.coverageKey }
+            : { kind: 'session' as const, sessionId: role.sessionId })
+        .sort((a, b) => {
+            const aKey = a.kind === 'coverage_role' ? `${a.kind}:${a.coverageKey}` : `${a.kind}:${a.sessionId}`;
+            const bKey = b.kind === 'coverage_role' ? `${b.kind}:${b.coverageKey}` : `${b.kind}:${b.sessionId}`;
+            return aKey.localeCompare(bKey);
+        });
+}
+
 /** Human-facing substitution rationale is intentionally excluded from semantic identity. */
-function canonicalizeSubstitutions(
-    substitutions?: readonly BlockSubstitutionRule[],
-): CanonicalReplayObjective['allowedSubstitutions'] {
+function canonicalizeSubstitutions(substitutions?: readonly BlockSubstitutionRule[]): CanonicalReplayObjective['allowedSubstitutions'] {
     if (!substitutions || substitutions.length === 0) return undefined;
     return [...substitutions]
         .map(sub => ({
@@ -146,12 +132,9 @@ function canonicalizeSubstitutions(
         });
 }
 
-function canonicalizeSuccessCriteria(
-    objective: BlockObjectiveDefinition,
-): CanonicalReplayObjective['successCriteria'] {
+function canonicalizeSuccessCriteria(objective: BlockObjectiveDefinition): CanonicalReplayObjective['successCriteria'] {
     const criteria = objective.successCriteria;
-    if (!criteria) return undefined;
-    const projected = {
+    return {
         evaluationRef: criteria.evaluationRef ? {
             id: criteria.evaluationRef.id,
             revision: criteria.evaluationRef.revision,
@@ -161,7 +144,6 @@ function canonicalizeSuccessCriteria(
         targetTrend: criteria.targetTrend,
         acceptableDeclineTolerancePct: criteria.acceptableDeclineTolerancePct,
     };
-    return Object.values(projected).every(value => value === undefined) ? undefined : projected;
 }
 
 function canonicalizeObjective(obj: BlockObjectiveDefinition): CanonicalReplayObjective {
@@ -189,22 +171,16 @@ function canonicalizeObjective(obj: BlockObjectiveDefinition): CanonicalReplayOb
             unit: obj.doseEnvelope.unit,
             floorSemantics: obj.doseEnvelope.floorSemantics,
         },
-        knowledgeLineage: canonicalizeStringSet(obj.knowledgeLineage),
-        protectedRoles: canonicalizeStringSet(obj.protectedRoles),
+        knowledgeLineage: [...obj.knowledgeLineage].sort(),
+        protectedRoles: canonicalizeProtectedRoles(obj.protectedRoles),
         allowedSubstitutions: canonicalizeSubstitutions(obj.allowedSubstitutions),
         successCriteria: canonicalizeSuccessCriteria(obj),
-        entryPrerequisites: entryPrerequisites && Object.values(entryPrerequisites).some(value => value !== undefined)
-            ? entryPrerequisites
-            : undefined,
-        exitCriteria: exitCriteria && Object.values(exitCriteria).some(value => value !== undefined)
-            ? exitCriteria
-            : undefined,
+        entryPrerequisites: entryPrerequisites && Object.values(entryPrerequisites).some(value => value !== undefined) ? entryPrerequisites : undefined,
+        exitCriteria: exitCriteria && Object.values(exitCriteria).some(value => value !== undefined) ? exitCriteria : undefined,
     };
 }
 
-function canonicalizeProgressionContract(
-    contract?: BlockProgressionContract,
-): CanonicalReplayProgressionContract | undefined {
+function canonicalizeProgressionContract(contract?: BlockProgressionContract): CanonicalReplayProgressionContract | undefined {
     if (!contract) return undefined;
     return {
         targetBinding: {
@@ -215,12 +191,9 @@ function canonicalizeProgressionContract(
         variable: contract.variable,
         unit: contract.unit,
         currentValue: contract.currentValue,
-        permittedRange: {
-            min: contract.permittedRange.min,
-            max: contract.permittedRange.max,
-        },
+        permittedRange: { min: contract.permittedRange.min, max: contract.permittedRange.max },
         increment: contract.increment,
-        knowledgeLineage: canonicalizeStringSet(contract.knowledgeLineage),
+        knowledgeLineage: [...contract.knowledgeLineage].sort(),
         observationWindowDays: contract.observationWindowDays,
         minCompletedExposures: contract.minCompletedExposures,
         requiredFollowUpCoveragePct: contract.requiredFollowUpCoveragePct,
@@ -239,7 +212,7 @@ function canonicalizeProgressionContract(
  * Builds the versioned semantic projection. `title`, `notes`, and substitution `rationale`
  * are display-only and therefore excluded. Objective/set ordering is canonicalized where
  * order has no behavior, while `TrainingIntentProfile.priorities` order is preserved because
- * the persisted profile may use order as authored preference precedence.
+ * profile priority order may be authored preference precedence in allocation.
  */
 export function buildTreatmentIntentReplayPayloadV1(
     block: IntentBlock,
@@ -247,10 +220,7 @@ export function buildTreatmentIntentReplayPayloadV1(
     sourceSchemaVersion: string,
     sourceRef?: string,
 ): TreatmentIntentReplayPayloadV1 {
-    const sortedObjectives = [...block.objectives]
-        .sort((a, b) => a.id.localeCompare(b.id))
-        .map(canonicalizeObjective);
-
+    const sortedObjectives = [...block.objectives].sort((a, b) => a.id.localeCompare(b.id)).map(canonicalizeObjective);
     return {
         schemaVersion: TREATMENT_INTENT_REPLAY_SCHEMA_VERSION,
         sourcePlanIdentity: {
@@ -271,10 +241,7 @@ export function buildTreatmentIntentReplayPayloadV1(
         block: {
             id: block.id,
             revision: block.revision,
-            dateRange: {
-                startDate: block.dateRange.startDate,
-                endDate: block.dateRange.endDate,
-            },
+            dateRange: { startDate: block.dateRange.startDate, endDate: block.dateRange.endDate },
             objectives: sortedObjectives,
             reviewSchedule: {
                 reviewCadenceDays: block.reviewSchedule.reviewCadenceDays,
@@ -291,23 +258,14 @@ export function buildTreatmentIntentReplayPayloadV1(
  * create an ambiguous cryptographic identity for invalid semantic inputs.
  */
 export function canonicalizeReplayJson(value: unknown): unknown {
-    if (typeof value === 'number' && !Number.isFinite(value)) {
-        throw new Error('Replay payload contains a non-finite number');
-    }
+    if (typeof value === 'number' && !Number.isFinite(value)) throw new Error('Replay payload contains a non-finite number');
     if (Array.isArray(value)) {
-        if (value.some(item => item === undefined)) {
-            throw new Error('Replay payload arrays cannot contain undefined members');
-        }
+        if (value.some(item => item === undefined)) throw new Error('Replay payload arrays cannot contain undefined members');
         return value.map(canonicalizeReplayJson);
     }
     if (value !== null && typeof value === 'object') {
         const obj = value as Record<string, unknown>;
-        return Object.fromEntries(
-            Object.keys(obj)
-                .sort()
-                .filter(key => obj[key] !== undefined)
-                .map(key => [key, canonicalizeReplayJson(obj[key])]),
-        );
+        return Object.fromEntries(Object.keys(obj).sort().filter(key => obj[key] !== undefined).map(key => [key, canonicalizeReplayJson(obj[key])]));
     }
     return value;
 }
@@ -316,21 +274,13 @@ export function canonicalizeTreatmentIntentJson(payload: TreatmentIntentReplayPa
     return JSON.stringify(canonicalizeReplayJson(payload));
 }
 
-export async function hashTreatmentIntentReplayPayload(
-    payload: TreatmentIntentReplayPayloadV1,
-): Promise<string> {
+export async function hashTreatmentIntentReplayPayload(payload: TreatmentIntentReplayPayloadV1): Promise<string> {
     const canonicalJson = canonicalizeTreatmentIntentJson(payload);
     const bytes = new TextEncoder().encode(canonicalJson);
     const digestBuffer = await crypto.subtle.digest('SHA-256', bytes);
-    return Array.from(new Uint8Array(digestBuffer))
-        .map(byte => byte.toString(16).padStart(2, '0'))
-        .join('');
+    return Array.from(new Uint8Array(digestBuffer)).map(byte => byte.toString(16).padStart(2, '0')).join('');
 }
 
-export async function verifyTreatmentIntentReplayDigest(
-    payload: TreatmentIntentReplayPayloadV1,
-    expectedDigest: string,
-): Promise<boolean> {
-    const actualDigest = await hashTreatmentIntentReplayPayload(payload);
-    return actualDigest === expectedDigest;
+export async function verifyTreatmentIntentReplayDigest(payload: TreatmentIntentReplayPayloadV1, expectedDigest: string): Promise<boolean> {
+    return (await hashTreatmentIntentReplayPayload(payload)) === expectedDigest;
 }
