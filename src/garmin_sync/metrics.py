@@ -376,14 +376,14 @@ def _compute_derived_deltas(
     current_readiness = raw_current.get("trainingReadiness") or {}
 
     return DerivedDeltas(
-        sleepScoreVs7d=_round_val(calculate_delta(raw_current.get("sleepScore"), v1_v3["sleep_7d"])),
+        sleepScoreVs7d=_round_val(
+            calculate_delta(raw_current.get("sleepScore"), v1_v3["sleep_7d"])
+        ),
         sleepScoreVs28d=_round_val(
             calculate_delta(raw_current.get("sleepScore"), v1_v3["sleep_28d"])
         ),
         restingHrVs7d=_round_val(calculate_delta(raw_current.get("restingHr"), v1_v3["rhr_7d"])),
-        restingHrVs28d=_round_val(
-            calculate_delta(raw_current.get("restingHr"), v1_v3["rhr_28d"])
-        ),
+        restingHrVs28d=_round_val(calculate_delta(raw_current.get("restingHr"), v1_v3["rhr_28d"])),
         hrvVs7d=_round_val(calculate_delta(raw_current.get("hrvOvernightAvg"), v1_v3["hrv_7d"])),
         hrvVs28d=_round_val(calculate_delta(raw_current.get("hrvOvernightAvg"), v1_v3["hrv_28d"])),
         respirationVs7d=_round_val(
@@ -393,9 +393,7 @@ def _compute_derived_deltas(
             calculate_delta(raw_current.get("respirationAvg"), v1_v3["resp_28d"])
         ),
         stepsVs7d=_round_val(calculate_delta(raw_current.get("totalSteps"), v1_v3["steps_7d"])),
-        stepsVs28d=_round_val(
-            calculate_delta(raw_current.get("totalSteps"), v1_v3["steps_28d"])
-        ),
+        stepsVs28d=_round_val(calculate_delta(raw_current.get("totalSteps"), v1_v3["steps_28d"])),
         sleepScoreVs7dMedian=_round_val(
             calculate_delta(raw_current.get("sleepScore"), v4_v5["sleep_7d_median"])
         ),
@@ -451,14 +449,10 @@ def _compute_derived_deltas(
             calculate_delta(raw_current.get("sleepDurationSec"), v6["sleep_duration_28d_median"])
         ),
         bedtimeDeviationVs7dMinutes=_round_val(
-            calculate_circular_delta_minutes(
-                v6["current_bedtime_minutes"], v6["bedtime_7d_mean"]
-            )
+            calculate_circular_delta_minutes(v6["current_bedtime_minutes"], v6["bedtime_7d_mean"])
         ),
         bedtimeDeviationVs28dMinutes=_round_val(
-            calculate_circular_delta_minutes(
-                v6["current_bedtime_minutes"], v6["bedtime_28d_mean"]
-            )
+            calculate_circular_delta_minutes(v6["current_bedtime_minutes"], v6["bedtime_28d_mean"])
         ),
         wakeTimeDeviationVs7dMinutes=_round_val(
             calculate_circular_delta_minutes(
