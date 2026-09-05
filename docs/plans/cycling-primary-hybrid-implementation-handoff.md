@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036, implementation unstarted; H5 design remains next
-**Blocked by:** H4 schema/pure-ledger work can start now (ADR-0035 rest support it depends on is delivered); H4 runtime release still needs verification of same-day canonical performed facts. H5 needs its own design. Personal M00/M01 prescription needs current athlete inputs.
+**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 (implementation unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
+**Blocked by:** H4 schema/pure-ledger work and H5 intent groundwork can both start now. H4 runtime release still needs verification of same-day canonical performed facts; H5 runtime needs validated intent mappings and linked response evidence. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -45,9 +45,9 @@ plan intent -- authored rest blocks ordinary generated work and resolves the def
 planning outcome to canonical Rest rather than fabricating a physiological `recover`
 verdict.
 
-Suggested next step: start ADR-0036 (H4) schema/pure-ledger implementation work, or move to
-H5 design -- H5 still needs a recorded authority/schema decision the same way ADR-0035 and
-ADR-0036 already went through. Keep that work separate from personal
+Suggested next step: start ADR-0036 (H4) schema/pure-ledger implementation work, or start
+ADR-0037 (H5) intent-contract work instead -- both designs are accepted and ready. Keep
+that work separate from personal
 M00/M01 prescription until current workload/restriction inputs are confirmed.
 
 ## Stable product intent
@@ -254,28 +254,37 @@ adding duplicate date slots to `packWeeklyDose` is not a valid implementation.
 
 ## Work order H5 — Block intent and controlled progression
 
-**Status:** Ready for design; automatic personalization remains evidence-gated
-**Dependencies:** H3 plus existing observation/outcome and knowledge-lineage contracts.
-**Deliverable:** Explicit develop/maintain intent first; later bounded progression separately.
+**Status:** Design accepted in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md); implementation unstarted.
+**Dependencies:** Validated intent mappings and canonical completed-work/response linkage.
+v5 import requires inherited ADR-0035/0036 capabilities used by an artifact; single-session
+manual intent/reporting groundwork can start independently of H4 runtime.
+**Deliverable:** H5a explicit intent, H5b report-only review, H5c confirmed bounded revisions.
 
-Inspect `TrainingIntentProfile`, `planSchedule.ts`, `planningMode.ts`, `coverage.ts`,
-`observations/`, `outcomes/`, `athleteEvidence.ts` and `athleteEvidencePolicy.ts`.
-Do not create another planner, injury authority, testing registry or outcome store.
+1. **H5a — Intent contracts.** Add versioned block objectives with independent intent and
+   priority, typed dose bounds, protected exact roles/substitutions and prospective review
+   criteria. Reuse `PlanDefinition`, `AdaptationDoseRequirement` and the effective-mode
+   boundary. Introduce import `intentBlocks` only in v5; keep earlier schemas unchanged.
+   Preserve profile commitment, rest/taper/safety precedence and forward-only revisions.
+2. **H5b — Evidence review.** Use canonical performed work, pinned prescription comparison,
+   linked follow-up responses and existing protocol-aware outcome evaluations. Implement
+   frozen, report-only `advance_proposal | hold | reduce_proposal | redirect` results.
+   Missing or adverse evidence blocks advancement. Require one target variable, reviewed
+   bounds/evidence criteria and at most one active progression experiment per athlete.
+   Do not reuse block-report percentage thresholds as progression clearance.
+3. **H5c — Confirmed revision.** Show concrete before/after dose and affected future work.
+   Confirmation must revalidate source revisions, safety and capacity and atomically create
+   one new authored revision. Stale/repeated confirmation cannot apply an increment twice.
+   Outcome reports remain outside automatic engine selection; no unattended progression.
+4. **Verification.** Implement ADR-0037's complete deterministic matrix, immutable replay,
+   user isolation/rules and architecture boundary tests. Run focused tests, full frontend
+   checks/build, rules, simulations/diff and policy drift checks with behavior changes.
+   Preserve intraday evidence when H4 applies; do not collapse AM/PM decisions into a daily
+   reporting row. Keep active judge baselines unchanged unless separately evaluated.
 
-Define block-owned objectives, protected sessions, acceptable substitutions, dose bounds,
-chosen progression variable, entry/exit criteria and hold/reduce/redirect outcomes.
-Retain the existing distinction between adaptation credit and exact programming roles.
-Model historical expertise and recent tolerated exposure separately. Incomplete feedback
-is uncertainty, not successful tolerance. Tests are sessions and consume time/load budget.
-
-Acceptance cases: a fresh morning alone cannot increase the weekly commitment; an added
-hard event replaces quality; a completed but poorly tolerated session does not earn
-automatic progression; reduced strength dose can preserve a maintenance goal without
-claiming new strength gains; a repeated test with changed protocol is not silently
-comparable; personalized refinement never removes standing safety restrictions.
-
-Initial outcome reports are observational. No physiological-effect claim, automatic
-threshold relaxation, or judge-baseline promotion follows from a successful unit test.
+A reduced maintenance prescription is a process target; physiological preservation needs
+suitable comparable outcome evidence. Do not fabricate strength/muscle metrics, convert
+airbike results into bicycle performance, or enable experimental personalization to improve
+a judge score. Personal M00/M01 prescriptions still require current athlete inputs.
 
 ## Evaluation discipline and handoff completion
 
