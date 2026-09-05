@@ -5,7 +5,7 @@ pinned to --max-instances=1 for its in-memory MFA session continuity, a constrai
 OAuth-redirect flow doesn't need and shouldn't inherit. See
 docs/plans/2026-08-27-real-google-health-ingestion.md for why CASA/Restricted Scope
 verification being unresolved means every linked user will see Google's "unverified app"
-warning -- that's a known, accepted limitation of this phase, not a bug in this service.
+warning -- that's a known, accepted limitation of this phase, not a flaw in this service.
 """
 
 import logging
@@ -197,7 +197,7 @@ class GoogleHealthAccountLinkHandler(BaseJSONRequestHandler):
 
         try:
             if google_error:
-                # The user declined consent, or Google itself errored -- not a bug here.
+                # The user declined consent, or Google itself errored -- not an issue here.
                 logger.info("Google Health OAuth callback carried an error: %s", google_error)
                 self._app_redirect(success=False, reason="google_declined")
                 return
