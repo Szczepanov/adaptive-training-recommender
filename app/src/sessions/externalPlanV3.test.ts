@@ -46,6 +46,15 @@ describe('external-plan@3 (ADR-0035)', () => {
         expect(result.errors.some(e => e.field === 'restDays')).toBe(true);
     });
 
+    it('rejects malformed rest directives without throwing', () => {
+        for (const malformed of [null, 42, 'rest', []]) {
+            expect(() => validateExternalTrainingPlanV3(planV3({ restDays: [malformed] }))).not.toThrow();
+            const result = validateExternalTrainingPlanV3(planV3({ restDays: [malformed] }));
+            expect(result.isValid).toBe(false);
+            expect(result.errors.some(e => e.field === 'restDays[0]' && e.message.includes('object'))).toBe(true);
+        }
+    });
+
     it('isV3Plan narrows on the schema literal', () => {
         expect(isV3Plan({ schema: EXTERNAL_PLAN_SCHEMA_V3 })).toBe(true);
         expect(isV3Plan({ schema: EXTERNAL_PLAN_SCHEMA_V2 })).toBe(false);
@@ -122,7 +131,7 @@ describe('external-plan@3 (ADR-0035)', () => {
         expect(result.isValid).toBe(true);
     });
 
-    it('rejects at most EXTERNAL_PLAN_MAX_WEEKS rest directives', () => {
+    it('rejects more than EXTERNAL_PLAN_MAX_WEEKS rest directives', () => {
         const restDays = Array.from({ length: 27 }, (_, i) => ({ id: `r${i}`, week: 1, day: 'friday' as const }));
         const result = validateExternalTrainingPlanV3(planV3({ weekCount: 1, restDays }));
         expect(result.isValid).toBe(false);
