@@ -516,7 +516,7 @@ service cloud.firestore {
       return (('illnessSymptoms' in data)
           ? data.illnessSymptoms is bool
           : (('healthContext' in data) && (data.healthContext is map) && ('symptoms' in data.healthContext)))
-        && (!('healthContext' in data) || hasValidHealthContext(data.healthContext));
+        && (!('healthContext' in data) || hasValidHealthSymptoms(data.healthContext.symptoms) || hasValidHealthContext(data.healthContext));
     }
 
     match /daily_recovery_snapshot/{date} { allow read, write: if false; }
@@ -1858,7 +1858,7 @@ service cloud.firestore {
         && request.resource.data.currentRevision == 1
         && outcomeEvaluationRevisionAfterHead(userId, evaluationId, 1);
       allow update: if hasValidOutcomeEvaluationHead(userId, evaluationId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['headRevision', 'updatedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentRevision', 'updatedAt'])
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.currentRevision == resource.data.currentRevision + 1
         && outcomeEvaluationRevisionAfterHead(userId, evaluationId, request.resource.data.currentRevision);
