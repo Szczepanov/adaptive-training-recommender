@@ -155,9 +155,11 @@ export function reconcileEntry(
 ): LedgerEntry {
     assertValidEntry(entry);
     assertRevision(evidenceRevision, 'evidenceRevision');
+    // Stale/duplicate evidence is deliberately a no-op before inspecting its payload: its
+    // bytes cannot affect the authoritative row once an equal/newer revision is present.
+    if (evidenceRevision <= entry.revision) return entry;
     if (actual.minutes !== undefined) assertFiniteNonNegative(actual.minutes, 'actual.minutes');
     if (actual.systemicCost !== undefined) assertFiniteNonNegative(actual.systemicCost, 'actual.systemicCost');
-    if (evidenceRevision <= entry.revision) return entry;
     return {
         ...entry,
         revision: evidenceRevision,
@@ -170,9 +172,8 @@ export function reconcileEntry(
 export interface CandidateAdmission {
     /** The candidate's window duration clamped to the ledger's remaining minutes. */
     admittedMinutes: number;
-    /** True only when there are spare minutes *and* the candidate's systemic cost fits
-     * within the remaining cost ceiling -- minute availability alone is not admission
-     * (D-LEDGER). */
+    /** True only when both daily dimensions have headroom and the candidate fits within
+     * those remainders -- minute availability alone is not admission (D-LEDGER). */
     admitted: boolean;
 }
 
@@ -194,6 +195,7 @@ export function admitsCandidate(
     const admittedMinutes = Math.max(0, Math.min(candidateWindowMinutes, ledger.remainingMinutes));
     const admitted = candidateMinutes > 0
         && admittedMinutes > 0
+        && ledger.remainingSystemicCost > 0
         && candidateMinutes <= admittedMinutes
         && candidateSystemicCost <= ledger.remainingSystemicCost;
     return { admittedMinutes, admitted };
