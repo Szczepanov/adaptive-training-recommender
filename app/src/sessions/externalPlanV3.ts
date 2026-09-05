@@ -40,6 +40,7 @@ export interface ExternalTrainingPlanV3 {
     restDays: ExternalRestDirective[];
 }
 
+/** Type guard for the v3 schema literal. */
 export function isV3Plan(plan: { schema: string }): plan is ExternalTrainingPlanV3 {
     return plan.schema === EXTERNAL_PLAN_SCHEMA_V3;
 }
@@ -47,6 +48,7 @@ export function isV3Plan(plan: { schema: string }): plan is ExternalTrainingPlan
 const REST_DAY_KEYS = ['id', 'week', 'day'];
 const EXTERNAL_PLAN_V3_MAX_REST_DAYS = EXTERNAL_PLAN_MAX_WEEKS;
 
+/** Validates one untrusted v3 rest directive without assuming it is object-shaped. */
 function validateRestDirective(raw: any, index: number, weekCount: number, errors: ValidationError[]): void {
     const path = `restDays[${index}]`;
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -86,9 +88,14 @@ function validateRestDays(raw: any, sessions: readonly any[], weekCount: number,
     if (new Set(ids).size !== ids.length) errors.push({ field: 'restDays', message: 'Rest directive ids must be unique within the plan' });
 
     const restKeys = new Set<string>();
-    for (const directive of raw.restDays as { week?: unknown; day?: unknown }[]) {
-        if (isPositiveInt(directive.week, 1, weekCount) && typeof directive.day === 'string') {
-            restKeys.add(`${directive.week}:${directive.day}`);
+    for (const directive of raw.restDays as unknown[]) {
+        // `validateRestDirective` reports malformed elements, but validation must continue
+        // without dereferencing them so import returns its normal INVALID state instead of
+        // throwing on payloads such as `restDays: [null]`.
+        if (!directive || typeof directive !== 'object' || Array.isArray(directive)) continue;
+        const { week, day } = directive as { week?: unknown; day?: unknown };
+        if (isPositiveInt(week, 1, weekCount) && typeof day === 'string') {
+            restKeys.add(`${week}:${day}`);
         }
     }
     if (restKeys.size < raw.restDays.length) {
