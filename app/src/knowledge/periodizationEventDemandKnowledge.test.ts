@@ -119,7 +119,7 @@ describe('periodization and event-demand evidence pack (SKR3 W1)', () => {
         // Contributor tapers were de-duplicated onto the canonical taper policy (see
         // periodizationTaperAlignment.test.ts). The claim must describe that delegation, including
         // its real resolution order -- this pack's first draft asserted a duplicated 14/5-day
-        // contributor window table, written against pre-fix code. The legacy A/B defaults still
+        // contributor window table, written against earlier code. The legacy A/B defaults still
         // exist, but only as the canonical policy's own fallback.
         expect(multiEvent.statement).toContain('canonical taper-policy authority');
         expect(multiEvent.statement).toContain('athlete-authored start override first');
