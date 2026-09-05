@@ -69,6 +69,13 @@ describe('H3 authored-plan replacement contracts', () => {
         expect(credited.credits).toHaveLength(1);
         expect(credited.credits[0].objectiveKey).toBe('threshold_quality');
         expect(credited.credits[0].earnedCredit).toBeGreaterThanOrEqual(0.5);
-        expect(getUnresolvedObjectives(credited.microcycle)).toEqual([]);
+        expect(credited.microcycle.objectives[0]).toMatchObject({
+            completedCredit: 0,
+            completedExposures: 1,
+            projectedCredit: 0.5,
+        });
+        // Fixed activities are projected commitments, so the production ranking path asks
+        // unresolved-objective resolution to include projected credit (rules.ts does this).
+        expect(getUnresolvedObjectives(credited.microcycle, true)).toEqual([]);
     });
 });
