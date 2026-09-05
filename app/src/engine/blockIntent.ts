@@ -1,9 +1,9 @@
 /**
  * ADR-0037: Block Intent and Controlled Progression (H5a).
  *
- * Defines domain models and fail-closed validators for explicit per-objective intent
- * (`develop` | `maintain`), dose envelopes, protected roles/substitutions, prospective
- * review criteria, and one bounded progression experiment.
+ * Defines domain models and fail-closed validators for explicit per-objective intent,
+ * dose envelopes, protected roles/substitutions, prospective review criteria, and one
+ * bounded progression experiment.
  */
 
 import type { PlanCoverageKey } from '../workouts/event-plan';
@@ -11,74 +11,33 @@ import type { ObjectiveKey, ObjectivePriority } from './models';
 
 export type BlockIntent = 'develop' | 'maintain';
 export type BlockSport = 'cycling' | 'strength' | 'running' | 'swimming' | 'multisport' | 'cross_training';
-
-export type DoseUnit =
-    | 'minutes'
-    | 'sessions'
-    | 'repetitions'
-    | 'kilometers'
-    | 'tss'
-    | 'joules'
-    | 'rpe_load';
+export type DoseUnit = 'minutes' | 'sessions' | 'repetitions' | 'kilometers' | 'tss' | 'joules' | 'rpe_load';
+export type FloorSemantics = 'hard_floor' | 'soft_floor';
+export type TissueSeverity = 'monitor' | 'limit' | 'exclude';
 
 export const SUPPORTED_DOSE_UNITS: readonly DoseUnit[] = [
-    'minutes',
-    'sessions',
-    'repetitions',
-    'kilometers',
-    'tss',
-    'joules',
-    'rpe_load',
+    'minutes', 'sessions', 'repetitions', 'kilometers', 'tss', 'joules', 'rpe_load',
 ] as const;
 
 export const SUPPORTED_BLOCK_SPORTS: readonly BlockSport[] = [
-    'cycling',
-    'strength',
-    'running',
-    'swimming',
-    'multisport',
-    'cross_training',
+    'cycling', 'strength', 'running', 'swimming', 'multisport', 'cross_training',
 ] as const;
 
 export const SUPPORTED_ADAPTATION_SCOPES: readonly ObjectiveKey[] = [
-    'threshold_quality',
-    'surge_repeatability',
-    'zone2_aerobic',
-    'strength_maintenance',
-    'strength_development',
-    'race_specific_endurance',
-    'vo2_max',
+    'threshold_quality', 'surge_repeatability', 'zone2_aerobic', 'strength_maintenance',
+    'strength_development', 'race_specific_endurance', 'vo2_max',
 ] as const;
 
 export const SUPPORTED_OBJECTIVE_PRIORITIES: readonly ObjectivePriority[] = [
-    'must_have',
-    'should_have',
-    'nice_to_have',
+    'must_have', 'should_have', 'nice_to_have',
 ] as const;
 
 export const SUPPORTED_PLAN_COVERAGE_KEYS: readonly PlanCoverageKey[] = [
-    'aerobic_volume',
-    'recovery_spin',
-    'sustained_quality',
-    'short_surges',
-    'gap_closing',
-    'outdoor_event_specific',
-    'primary_strength',
-    'compact_strength',
-    'upper_body_trunk',
-    'field_maintenance',
-    'walk_run',
-    'recovery_or_rest',
-    'travel_aerobic',
-    'travel_strength',
-    'taper_sharpening',
-    'pre_race_openers',
-    'race_week_strength',
-    'race_day',
+    'aerobic_volume', 'recovery_spin', 'sustained_quality', 'short_surges', 'gap_closing',
+    'outdoor_event_specific', 'primary_strength', 'compact_strength', 'upper_body_trunk',
+    'field_maintenance', 'walk_run', 'recovery_or_rest', 'travel_aerobic', 'travel_strength',
+    'taper_sharpening', 'pre_race_openers', 'race_week_strength', 'race_day',
 ] as const;
-
-export type FloorSemantics = 'hard_floor' | 'soft_floor';
-export type TissueSeverity = 'monitor' | 'limit' | 'exclude';
 
 export interface DoseEnvelope {
     min: number;
@@ -101,11 +60,7 @@ export interface BlockSubstitutionRule {
 }
 
 export interface BlockSuccessCriteria {
-    evaluationRef?: {
-        id: string;
-        revision: number;
-        metricId: string;
-    };
+    evaluationRef?: { id: string; revision: number; metricId: string };
     minCompletedExposures?: number;
     targetTrend?: 'stable' | 'improving';
     acceptableDeclineTolerancePct?: number;
@@ -125,8 +80,7 @@ export interface BlockExitCriteria {
 export interface BlockObjectiveDefinition {
     id: string;
     sport: BlockSport;
-    /** Phase 1 reuses the repository's typed objective vocabulary rather than accepting a
-     * new free-text physiological namespace. */
+    /** Phase 1 reuses the repository's typed objective vocabulary. */
     adaptationScope: ObjectiveKey;
     coverageKey: PlanCoverageKey;
     intent: BlockIntent;
@@ -140,11 +94,7 @@ export interface BlockObjectiveDefinition {
     exitCriteria?: BlockExitCriteria;
 }
 
-/**
- * Phase-1 progression deliberately supports only a registered duration variable. Additional
- * prescription variables must be added here with an explicit unit mapping and tests rather
- * than accepted as arbitrary executable/free-text field paths (ADR-0037 D-CHANGE).
- */
+/** Phase 1 intentionally supports only one registered prescription variable. */
 export type ProgressionVariable = 'duration_min';
 export const PROGRESSION_VARIABLE_UNITS: Readonly<Record<ProgressionVariable, DoseUnit>> = {
     duration_min: 'minutes',
@@ -154,32 +104,20 @@ export type ProgressionReductionTrigger = 'adverse_response';
 export type ProgressionRedirectTrigger = 'adverse_response' | 'active_restriction';
 
 export interface BlockProgressionContract {
-    targetBinding: {
-        objectiveId: string;
-        sessionId?: string;
-        stepId?: string;
-    };
+    targetBinding: { objectiveId: string; sessionId?: string; stepId?: string };
     variable: ProgressionVariable;
     unit: DoseUnit;
     currentValue: number;
-    permittedRange: {
-        min: number;
-        max: number;
-    };
+    permittedRange: { min: number; max: number };
     increment: number;
     knowledgeLineage: readonly string[];
     observationWindowDays: number;
     minCompletedExposures: number;
     requiredFollowUpCoveragePct: number;
     reviewCadenceDays: number;
-    reductionAlternative?: {
-        decrement: number;
-        trigger: ProgressionReductionTrigger;
-    };
-    /** Explicit stop-and-review triggers. No hidden adverse-count threshold exists. */
-    redirectCriteria?: {
-        triggers: readonly ProgressionRedirectTrigger[];
-    };
+    reductionAlternative?: { decrement: number; trigger: ProgressionReductionTrigger };
+    /** Explicit stop-and-review triggers; no hidden adverse-count threshold exists. */
+    redirectCriteria?: { triggers: readonly ProgressionRedirectTrigger[] };
 }
 
 export interface IntentBlock {
@@ -187,17 +125,11 @@ export interface IntentBlock {
     revision: number;
     sourcePlanId: string;
     sourcePlanRevision: number;
-    dateRange: {
-        startDate: string;
-        endDate: string;
-    };
+    dateRange: { startDate: string; endDate: string };
     objectives: readonly BlockObjectiveDefinition[];
-    reviewSchedule: {
-        reviewCadenceDays: number;
-        nextReviewDate: string;
-    };
+    reviewSchedule: { reviewCadenceDays: number; nextReviewDate: string };
     progressionContract?: BlockProgressionContract;
-    /** Presentation / descriptive labels only; excluded from canonical replay digest. */
+    /** Presentation-only labels; excluded from canonical replay digest. */
     title?: string;
     notes?: string;
 }
@@ -238,7 +170,11 @@ function isNonNegativeInteger(value: unknown): value is number {
     return Number.isInteger(value) && (value as number) >= 0;
 }
 
-function validateStringSet(values: readonly string[] | undefined, path: string, required: boolean): ValidationIssue[] {
+function validateStringSet(
+    values: readonly string[] | undefined,
+    path: string,
+    required: boolean,
+): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     if (!values || values.length === 0) {
         if (required) {
@@ -250,6 +186,7 @@ function validateStringSet(values: readonly string[] | undefined, path: string, 
         }
         return issues;
     }
+
     const seen = new Set<string>();
     values.forEach((value, index) => {
         if (!isNonEmptyString(value)) {
@@ -282,23 +219,17 @@ function isSupportedCoverageKey(key: string): key is PlanCoverageKey {
 
 export function validateDoseEnvelope(envelope: DoseEnvelope, path: string): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
-
     if (!isSupportedDoseUnit(envelope.unit)) {
-        issues.push({
-            code: 'UNSUPPORTED_DOSE_UNIT',
-            message: `Unsupported dose unit: ${envelope.unit}`,
-            path: `${path}.unit`,
-        });
+        issues.push({ code: 'UNSUPPORTED_DOSE_UNIT', message: `Unsupported dose unit: ${envelope.unit}`, path: `${path}.unit` });
     }
-
     if (!Number.isFinite(envelope.min) || envelope.min < 0) {
-        issues.push({ code: 'INVALID_DOSE_MIN', message: `Dose min must be a finite non-negative number: ${envelope.min}`, path: `${path}.min` });
+        issues.push({ code: 'INVALID_DOSE_MIN', message: `Dose min must be finite and non-negative: ${envelope.min}`, path: `${path}.min` });
     }
     if (!Number.isFinite(envelope.target) || envelope.target < 0) {
-        issues.push({ code: 'INVALID_DOSE_TARGET', message: `Dose target must be a finite non-negative number: ${envelope.target}`, path: `${path}.target` });
+        issues.push({ code: 'INVALID_DOSE_TARGET', message: `Dose target must be finite and non-negative: ${envelope.target}`, path: `${path}.target` });
     }
     if (!Number.isFinite(envelope.max) || envelope.max < 0) {
-        issues.push({ code: 'INVALID_DOSE_MAX', message: `Dose max must be a finite non-negative number: ${envelope.max}`, path: `${path}.max` });
+        issues.push({ code: 'INVALID_DOSE_MAX', message: `Dose max must be finite and non-negative: ${envelope.max}`, path: `${path}.max` });
     }
     if (Number.isFinite(envelope.min) && Number.isFinite(envelope.target) && envelope.min > envelope.target) {
         issues.push({ code: 'INVERTED_DOSE_BOUNDS_MIN_TARGET', message: `Dose min (${envelope.min}) cannot exceed target (${envelope.target})`, path: `${path}.min` });
@@ -309,33 +240,53 @@ export function validateDoseEnvelope(envelope: DoseEnvelope, path: string): Vali
     if (envelope.floorSemantics !== 'hard_floor' && envelope.floorSemantics !== 'soft_floor') {
         issues.push({ code: 'INVALID_FLOOR_SEMANTICS', message: `Invalid floor semantics: ${envelope.floorSemantics}`, path: `${path}.floorSemantics` });
     }
-
     return issues;
 }
 
-function validateProtectedRoles(roles: readonly BlockProtectedRole[] | undefined, path: string): ValidationIssue[] {
+function validateProtectedRoles(
+    roles: readonly BlockProtectedRole[] | undefined,
+    path: string,
+): ValidationIssue[] {
     if (!roles) return [];
     const issues: ValidationIssue[] = [];
     const seen = new Set<string>();
+
     roles.forEach((role, index) => {
         const rolePath = `${path}[${index}]`;
-        let identity = '';
+        let identity: string;
         if (role.kind === 'coverage_role') {
             if (!isSupportedCoverageKey(role.coverageKey)) {
-                issues.push({ code: 'INVALID_PROTECTED_COVERAGE_ROLE', message: `Unsupported protected coverage role: ${role.coverageKey}`, path: `${rolePath}.coverageKey` });
+                issues.push({
+                    code: 'INVALID_PROTECTED_COVERAGE_ROLE',
+                    message: `Unsupported protected coverage role: ${role.coverageKey}`,
+                    path: `${rolePath}.coverageKey`,
+                });
             }
             identity = `coverage_role:${role.coverageKey}`;
         } else if (role.kind === 'session') {
             if (!isNonEmptyString(role.sessionId)) {
-                issues.push({ code: 'INVALID_PROTECTED_SESSION_ID', message: 'Protected session id must be non-empty', path: `${rolePath}.sessionId` });
+                issues.push({
+                    code: 'INVALID_PROTECTED_SESSION_ID',
+                    message: 'Protected session id must be non-empty',
+                    path: `${rolePath}.sessionId`,
+                });
             }
             identity = `session:${role.sessionId}`;
         } else {
-            issues.push({ code: 'INVALID_PROTECTED_ROLE_KIND', message: `Unsupported protected role kind: ${String((role as { kind?: unknown }).kind)}`, path: `${rolePath}.kind` });
+            issues.push({
+                code: 'INVALID_PROTECTED_ROLE_KIND',
+                message: `Unsupported protected role kind: ${String((role as { kind?: unknown }).kind)}`,
+                path: `${rolePath}.kind`,
+            });
             return;
         }
+
         if (seen.has(identity)) {
-            issues.push({ code: 'DUPLICATE_PROTECTED_ROLE', message: `Duplicate protected reference: ${identity}`, path: rolePath });
+            issues.push({
+                code: 'DUPLICATE_PROTECTED_ROLE',
+                message: `Duplicate protected reference: ${identity}`,
+                path: rolePath,
+            });
         }
         seen.add(identity);
     });
@@ -351,7 +302,7 @@ function validateSuccessCriteria(
     if (!criteria.evaluationRef && criteria.minCompletedExposures === undefined) {
         issues.push({
             code: 'EMPTY_SUCCESS_CRITERIA',
-            message: 'Success criteria must declare a process exposure threshold and/or a pinned evaluationRef',
+            message: 'Success criteria must declare a process exposure threshold and/or pinned evaluationRef',
             path,
         });
     }
@@ -377,21 +328,24 @@ function validateSuccessCriteria(
         || criteria.acceptableDeclineTolerancePct < 0
         || criteria.acceptableDeclineTolerancePct > 100
     )) {
-        issues.push({ code: 'INVALID_DECLINE_TOLERANCE', message: 'acceptableDeclineTolerancePct must be finite and between 0 and 100', path: `${path}.acceptableDeclineTolerancePct` });
+        issues.push({ code: 'INVALID_DECLINE_TOLERANCE', message: 'acceptableDeclineTolerancePct must be finite and in [0, 100]', path: `${path}.acceptableDeclineTolerancePct` });
     }
     if ((criteria.targetTrend !== undefined || criteria.acceptableDeclineTolerancePct !== undefined) && !criteria.evaluationRef) {
         issues.push({ code: 'OUTCOME_CRITERIA_REQUIRE_EVALUATION_REF', message: 'Outcome trend/tolerance criteria require a pinned evaluationRef', path });
     }
     if (intent === 'develop' && criteria.evaluationRef && criteria.targetTrend === undefined) {
-        issues.push({ code: 'DEVELOPMENT_OUTCOME_REQUIRES_TARGET_TREND', message: 'A measured development objective must declare its prospective targetTrend', path: `${path}.targetTrend` });
+        issues.push({ code: 'DEVELOPMENT_OUTCOME_REQUIRES_TARGET_TREND', message: 'Measured development requires a prospective targetTrend', path: `${path}.targetTrend` });
     }
     if (intent === 'maintain' && criteria.evaluationRef && criteria.acceptableDeclineTolerancePct === undefined) {
-        issues.push({ code: 'MAINTENANCE_OUTCOME_REQUIRES_TOLERANCE', message: 'A measured maintenance objective must declare an acceptable decline tolerance', path: `${path}.acceptableDeclineTolerancePct` });
+        issues.push({ code: 'MAINTENANCE_OUTCOME_REQUIRES_TOLERANCE', message: 'Measured maintenance requires an acceptable decline tolerance', path: `${path}.acceptableDeclineTolerancePct` });
     }
     return issues;
 }
 
-function validatePrerequisites(prerequisites: BlockPrerequisites | undefined, path: string): ValidationIssue[] {
+function validatePrerequisites(
+    prerequisites: BlockPrerequisites | undefined,
+    path: string,
+): ValidationIssue[] {
     if (!prerequisites) return [];
     const issues: ValidationIssue[] = [];
     if (prerequisites.requiredPriorExposures !== undefined && !isNonNegativeInteger(prerequisites.requiredPriorExposures)) {
@@ -414,7 +368,10 @@ function validatePrerequisites(prerequisites: BlockPrerequisites | undefined, pa
     return issues;
 }
 
-function validateExitCriteria(criteria: BlockExitCriteria | undefined, path: string): ValidationIssue[] {
+function validateExitCriteria(
+    criteria: BlockExitCriteria | undefined,
+    path: string,
+): ValidationIssue[] {
     if (!criteria) return [];
     const issues: ValidationIssue[] = [];
     if (criteria.maxWeeksInBlock !== undefined && !isPositiveInteger(criteria.maxWeeksInBlock)) {
@@ -431,10 +388,14 @@ function validateExitCriteria(criteria: BlockExitCriteria | undefined, path: str
     return issues;
 }
 
-function validateSubstitutions(objective: BlockObjectiveDefinition, path: string): ValidationIssue[] {
+function validateSubstitutions(
+    objective: BlockObjectiveDefinition,
+    path: string,
+): ValidationIssue[] {
     if (!objective.allowedSubstitutions) return [];
     const issues: ValidationIssue[] = [];
     const targets = new Set<PlanCoverageKey>();
+
     objective.allowedSubstitutions.forEach((rule, index) => {
         const rulePath = `${path}[${index}]`;
         if (!isSupportedCoverageKey(rule.targetCoverageKey)) {
@@ -448,6 +409,7 @@ function validateSubstitutions(objective: BlockObjectiveDefinition, path: string
             }
             targets.add(rule.targetCoverageKey);
         }
+
         if (!Array.isArray(rule.allowedCoverageKeys) || rule.allowedCoverageKeys.length === 0) {
             issues.push({ code: 'EMPTY_SUBSTITUTION_CANDIDATES', message: 'allowedCoverageKeys must contain at least one typed coverage key', path: `${rulePath}.allowedCoverageKeys` });
         } else {
@@ -461,6 +423,7 @@ function validateSubstitutions(objective: BlockObjectiveDefinition, path: string
                 allowed.add(key);
             });
         }
+
         if (rule.minDoseFraction !== undefined && (
             !Number.isFinite(rule.minDoseFraction)
             || rule.minDoseFraction <= 0
@@ -508,7 +471,7 @@ export function validateProgressionContract(
         issues.push({ code: 'INVALID_CURRENT_VALUE', message: `Current value must be finite and non-negative: ${contract.currentValue}`, path: `${path}.currentValue` });
     }
     if (!Number.isFinite(contract.increment) || contract.increment <= 0) {
-        issues.push({ code: 'INVALID_PROGRESSION_INCREMENT', message: `Progression increment must be a positive finite number: ${contract.increment}`, path: `${path}.increment` });
+        issues.push({ code: 'INVALID_PROGRESSION_INCREMENT', message: `Progression increment must be positive and finite: ${contract.increment}`, path: `${path}.increment` });
     }
 
     const range = contract.permittedRange;
@@ -518,8 +481,9 @@ export function validateProgressionContract(
         if (range.min >= range.max) {
             issues.push({ code: 'INVERTED_PERMITTED_RANGE', message: `Permitted range min (${range.min}) must be less than max (${range.max})`, path: `${path}.permittedRange` });
         }
-        if (Number.isFinite(contract.currentValue) && (contract.currentValue < range.min || contract.currentValue > range.max)) {
-            issues.push({ code: 'CURRENT_VALUE_OUT_OF_RANGE', message: `Current value (${contract.currentValue}) is outside permitted range [${range.min}, ${range.max}]`, path: `${path}.currentValue` });
+        if (Number.isFinite(contract.currentValue)
+            && (contract.currentValue < range.min || contract.currentValue > range.max)) {
+            issues.push({ code: 'CURRENT_VALUE_OUT_OF_RANGE', message: `Current value (${contract.currentValue}) is outside [${range.min}, ${range.max}]`, path: `${path}.currentValue` });
         }
         if (targetObjective && contract.unit === targetObjective.doseEnvelope.unit && (
             range.min < targetObjective.doseEnvelope.min || range.max > targetObjective.doseEnvelope.max
@@ -529,12 +493,14 @@ export function validateProgressionContract(
     }
 
     if (!isPositiveInteger(contract.observationWindowDays)) {
-        issues.push({ code: 'INVALID_OBSERVATION_WINDOW', message: `Observation window must be a positive integer days: ${contract.observationWindowDays}`, path: `${path}.observationWindowDays` });
+        issues.push({ code: 'INVALID_OBSERVATION_WINDOW', message: `Observation window must be positive integer days: ${contract.observationWindowDays}`, path: `${path}.observationWindowDays` });
     }
     if (!isPositiveInteger(contract.minCompletedExposures)) {
         issues.push({ code: 'INVALID_MIN_COMPLETED_EXPOSURES', message: `Min completed exposures must be a positive integer: ${contract.minCompletedExposures}`, path: `${path}.minCompletedExposures` });
     }
-    if (!Number.isFinite(contract.requiredFollowUpCoveragePct) || contract.requiredFollowUpCoveragePct <= 0 || contract.requiredFollowUpCoveragePct > 100) {
+    if (!Number.isFinite(contract.requiredFollowUpCoveragePct)
+        || contract.requiredFollowUpCoveragePct <= 0
+        || contract.requiredFollowUpCoveragePct > 100) {
         issues.push({ code: 'INVALID_FOLLOW_UP_COVERAGE_PCT', message: `Required follow-up coverage percent must be in (0, 100]: ${contract.requiredFollowUpCoveragePct}`, path: `${path}.requiredFollowUpCoveragePct` });
     }
     if (!isPositiveInteger(contract.reviewCadenceDays)) {
@@ -547,11 +513,14 @@ export function validateProgressionContract(
         if (contract.reductionAlternative.trigger !== 'adverse_response') {
             issues.push({ code: 'UNSUPPORTED_REDUCTION_TRIGGER', message: `Unsupported reduction trigger: ${contract.reductionAlternative.trigger}`, path: `${path}.reductionAlternative.trigger` });
         }
-        if (!Number.isFinite(contract.reductionAlternative.decrement) || contract.reductionAlternative.decrement <= 0) {
-            issues.push({ code: 'INVALID_REDUCTION_DECREMENT', message: `Reduction decrement must be a positive finite number: ${contract.reductionAlternative.decrement}`, path: `${path}.reductionAlternative.decrement` });
-        } else if (range && Number.isFinite(range.min) && Number.isFinite(contract.currentValue)
+        if (!Number.isFinite(contract.reductionAlternative.decrement)
+            || contract.reductionAlternative.decrement <= 0) {
+            issues.push({ code: 'INVALID_REDUCTION_DECREMENT', message: `Reduction decrement must be positive and finite: ${contract.reductionAlternative.decrement}`, path: `${path}.reductionAlternative.decrement` });
+        } else if (range
+            && Number.isFinite(range.min)
+            && Number.isFinite(contract.currentValue)
             && contract.currentValue - contract.reductionAlternative.decrement < range.min) {
-            issues.push({ code: 'REDUCTION_DECREMENT_EXCEEDS_RANGE', message: 'Reduction alternative must produce a value inside the permitted range without hidden clamping', path: `${path}.reductionAlternative.decrement` });
+            issues.push({ code: 'REDUCTION_DECREMENT_EXCEEDS_RANGE', message: 'Reduction alternative must remain inside the permitted range without hidden clamping', path: `${path}.reductionAlternative.decrement` });
         }
     }
 
@@ -571,26 +540,30 @@ export function validateProgressionContract(
         }
     }
 
-    if (!contract.reductionAlternative && (!contract.redirectCriteria || contract.redirectCriteria.triggers.length === 0)) {
+    if (!contract.reductionAlternative
+        && (!contract.redirectCriteria || contract.redirectCriteria.triggers.length === 0)) {
         issues.push({
             code: 'MISSING_PROGRESSION_FALLBACK',
-            message: 'An enabled progression contract requires a bounded reduction alternative or explicit redirect-to-review trigger',
+            message: 'Enabled progression requires a bounded reduction alternative or explicit redirect-to-review trigger',
             path,
         });
     }
 
     if (contract.reductionAlternative?.trigger === 'adverse_response'
         && contract.redirectCriteria?.triggers.includes('adverse_response')) {
-        issues.push({ code: 'AMBIGUOUS_ADVERSE_RESPONSE_ACTION', message: 'The same adverse_response trigger cannot request both reduction and redirect', path });
+        issues.push({
+            code: 'AMBIGUOUS_ADVERSE_RESPONSE_ACTION',
+            message: 'The same adverse_response trigger cannot request both reduction and redirect',
+            path,
+        });
     }
-
     return issues;
 }
 
 function validateObjective(objective: BlockObjectiveDefinition, path: string): ValidationIssue[] {
     const issues: ValidationIssue[] = [];
     if (!isNonEmptyString(objective.id)) {
-        issues.push({ code: 'MISSING_OBJECTIVE_ID', message: 'Objective ID must be a non-empty string', path: `${path}.id` });
+        issues.push({ code: 'MISSING_OBJECTIVE_ID', message: 'Objective ID must be non-empty', path: `${path}.id` });
     }
     if (!(SUPPORTED_BLOCK_SPORTS as readonly string[]).includes(objective.sport)) {
         issues.push({ code: 'INVALID_OBJECTIVE_SPORT', message: `Unsupported objective sport: ${objective.sport}`, path: `${path}.sport` });
@@ -602,7 +575,7 @@ function validateObjective(objective: BlockObjectiveDefinition, path: string): V
         issues.push({ code: 'INVALID_OBJECTIVE_COVERAGE_KEY', message: `Unsupported coverage key: ${objective.coverageKey}`, path: `${path}.coverageKey` });
     }
     if (objective.intent !== 'develop' && objective.intent !== 'maintain') {
-        issues.push({ code: 'INVALID_OBJECTIVE_INTENT', message: `Objective intent must be 'develop' or 'maintain', got: ${objective.intent}`, path: `${path}.intent` });
+        issues.push({ code: 'INVALID_OBJECTIVE_INTENT', message: `Objective intent must be develop or maintain, got: ${objective.intent}`, path: `${path}.intent` });
     }
     if (!(SUPPORTED_OBJECTIVE_PRIORITIES as readonly string[]).includes(objective.priority)) {
         issues.push({ code: 'INVALID_OBJECTIVE_PRIORITY', message: `Unsupported objective priority: ${objective.priority}`, path: `${path}.priority` });
@@ -630,13 +603,13 @@ export function validateIntentBlock(block: IntentBlock): IntentBlockValidationRe
     const rootPath = `intentBlock[${block.id || 'unknown'}]`;
 
     if (!isNonEmptyString(block.id)) {
-        issues.push({ code: 'MISSING_BLOCK_ID', message: 'Block ID must be a non-empty string', path: `${rootPath}.id` });
+        issues.push({ code: 'MISSING_BLOCK_ID', message: 'Block ID must be non-empty', path: `${rootPath}.id` });
     }
     if (!isPositiveInteger(block.revision)) {
         issues.push({ code: 'INVALID_BLOCK_REVISION', message: `Block revision must be a positive integer: ${block.revision}`, path: `${rootPath}.revision` });
     }
     if (!isNonEmptyString(block.sourcePlanId)) {
-        issues.push({ code: 'MISSING_SOURCE_PLAN_ID', message: 'sourcePlanId must be a non-empty string', path: `${rootPath}.sourcePlanId` });
+        issues.push({ code: 'MISSING_SOURCE_PLAN_ID', message: 'sourcePlanId must be non-empty', path: `${rootPath}.sourcePlanId` });
     }
     if (!isPositiveInteger(block.sourcePlanRevision)) {
         issues.push({ code: 'INVALID_SOURCE_PLAN_REVISION', message: `sourcePlanRevision must be a positive integer: ${block.sourcePlanRevision}`, path: `${rootPath}.sourcePlanRevision` });
@@ -651,10 +624,10 @@ export function validateIntentBlock(block: IntentBlock): IntentBlockValidationRe
     }
 
     if (!block.reviewSchedule || !isPositiveInteger(block.reviewSchedule.reviewCadenceDays)) {
-        issues.push({ code: 'INVALID_BLOCK_REVIEW_CADENCE', message: 'Block reviewSchedule.reviewCadenceDays must be a positive integer', path: `${rootPath}.reviewSchedule.reviewCadenceDays` });
+        issues.push({ code: 'INVALID_BLOCK_REVIEW_CADENCE', message: 'reviewSchedule.reviewCadenceDays must be positive', path: `${rootPath}.reviewSchedule.reviewCadenceDays` });
     }
     if (!block.reviewSchedule || !isValidLocalDateString(block.reviewSchedule.nextReviewDate)) {
-        issues.push({ code: 'INVALID_NEXT_REVIEW_DATE', message: 'Block reviewSchedule.nextReviewDate must be a valid YYYY-MM-DD date', path: `${rootPath}.reviewSchedule.nextReviewDate` });
+        issues.push({ code: 'INVALID_NEXT_REVIEW_DATE', message: 'nextReviewDate must be a valid YYYY-MM-DD date', path: `${rootPath}.reviewSchedule.nextReviewDate` });
     } else if (startValid && endValid && (
         block.reviewSchedule.nextReviewDate < block.dateRange.startDate
         || block.reviewSchedule.nextReviewDate > block.dateRange.endDate
@@ -685,10 +658,9 @@ export function validateIntentBlock(block: IntentBlock): IntentBlockValidationRe
             && isPositiveInteger(block.reviewSchedule.reviewCadenceDays)
             && isPositiveInteger(block.progressionContract.reviewCadenceDays)
             && block.reviewSchedule.reviewCadenceDays !== block.progressionContract.reviewCadenceDays) {
-            issues.push({ code: 'PROGRESSION_REVIEW_CADENCE_MISMATCH', message: 'Block review cadence and progression contract cadence must agree', path: `${rootPath}.progressionContract.reviewCadenceDays` });
+            issues.push({ code: 'PROGRESSION_REVIEW_CADENCE_MISMATCH', message: 'Block and progression review cadence must agree', path: `${rootPath}.progressionContract.reviewCadenceDays` });
         }
     }
-
     return { valid: issues.length === 0, issues };
 }
 
@@ -698,8 +670,7 @@ export function validatePlanIntentBlocks(blocks: readonly IntentBlock[]): Intent
     const validIntervalsByPlan = new Map<string, IntentBlock[]>();
 
     blocks.forEach((block, index) => {
-        const singleResult = validateIntentBlock(block);
-        issues.push(...singleResult.issues);
+        issues.push(...validateIntentBlock(block).issues);
 
         if (isNonEmptyString(block.sourcePlanId) && isNonEmptyString(block.id)) {
             const ids = blockIdsByPlan.get(block.sourcePlanId) ?? new Set<string>();
@@ -724,10 +695,13 @@ export function validatePlanIntentBlocks(blocks: readonly IntentBlock[]): Intent
         const sorted = [...planBlocks].sort((a, b) => a.dateRange.startDate.localeCompare(b.dateRange.startDate));
         for (let i = 0; i < sorted.length - 1; i++) {
             if (sorted[i].dateRange.endDate >= sorted[i + 1].dateRange.startDate) {
-                issues.push({ code: 'OVERLAPPING_INTENT_BLOCKS', message: `Intent blocks ${sorted[i].id} and ${sorted[i + 1].id} overlap in plan ${planId}: ${sorted[i].dateRange.endDate} >= ${sorted[i + 1].dateRange.startDate}`, path: `blocks[${sorted[i].id}]` });
+                issues.push({
+                    code: 'OVERLAPPING_INTENT_BLOCKS',
+                    message: `Intent blocks ${sorted[i].id} and ${sorted[i + 1].id} overlap in plan ${planId}: ${sorted[i].dateRange.endDate} >= ${sorted[i + 1].dateRange.startDate}`,
+                    path: `blocks[${sorted[i].id}]`,
+                });
             }
         }
     }
-
     return { valid: issues.length === 0, issues };
 }
