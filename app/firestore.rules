@@ -346,6 +346,8 @@ service cloud.firestore {
         && (!('plannedDose' in audit) || hasValidDose(audit.plannedDose))
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
+        && !(('externalPlan' in audit) && ('externalRest' in audit))
+        && (!('externalRest' in audit) || audit.candidateScores.size() == 0)
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
         && (!('primarySession' in audit) || hasValidSessionReferenceBinding(audit.primarySession))
         && (!('additionalSessions' in audit) || hasValidAdditionalSessions(audit.additionalSessions))
@@ -398,7 +400,9 @@ service cloud.firestore {
         && (!('primarySession' in request.resource.data) || hasValidSessionReferenceBinding(request.resource.data.primarySession))
         && (!('additionalSessions' in request.resource.data) || hasValidAdditionalSessions(request.resource.data.additionalSessions))
         && (request.resource.data.schemaVersion < 3
-          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit, request.resource.data.schemaVersion)));
+          || ('recommendationAudit' in request.resource.data
+            && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit, request.resource.data.schemaVersion)
+            && (!('externalRest' in request.resource.data.recommendationAudit) || request.resource.data.templateId == 'rest_01')));
     }
 
     function schemaRatchets() {
@@ -682,11 +686,51 @@ service cloud.firestore {
         && (!('supersededFrom' in data) || data.supersededFrom == null || isValidActivityDate(data.supersededFrom));
     }
 
+    function isValidExternalRestDirective(directive, weekCount) {
+      return directive is map
+        && directive.keys().hasOnly(['id', 'week', 'day'])
+        && directive.keys().hasAll(['id', 'week', 'day'])
+        && directive.id is string && directive.id.size() > 0 && directive.id.size() <= 64
+        && directive.week is int && directive.week >= 1 && directive.week <= weekCount
+        && directive.day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    }
+
+    function hasValidExternalRestDirectives(restDays, weekCount) {
+      return restDays is list && restDays.size() <= 26
+        && (restDays.size() < 1 || isValidExternalRestDirective(restDays[0], weekCount))
+        && (restDays.size() < 2 || isValidExternalRestDirective(restDays[1], weekCount))
+        && (restDays.size() < 3 || isValidExternalRestDirective(restDays[2], weekCount))
+        && (restDays.size() < 4 || isValidExternalRestDirective(restDays[3], weekCount))
+        && (restDays.size() < 5 || isValidExternalRestDirective(restDays[4], weekCount))
+        && (restDays.size() < 6 || isValidExternalRestDirective(restDays[5], weekCount))
+        && (restDays.size() < 7 || isValidExternalRestDirective(restDays[6], weekCount))
+        && (restDays.size() < 8 || isValidExternalRestDirective(restDays[7], weekCount))
+        && (restDays.size() < 9 || isValidExternalRestDirective(restDays[8], weekCount))
+        && (restDays.size() < 10 || isValidExternalRestDirective(restDays[9], weekCount))
+        && (restDays.size() < 11 || isValidExternalRestDirective(restDays[10], weekCount))
+        && (restDays.size() < 12 || isValidExternalRestDirective(restDays[11], weekCount))
+        && (restDays.size() < 13 || isValidExternalRestDirective(restDays[12], weekCount))
+        && (restDays.size() < 14 || isValidExternalRestDirective(restDays[13], weekCount))
+        && (restDays.size() < 15 || isValidExternalRestDirective(restDays[14], weekCount))
+        && (restDays.size() < 16 || isValidExternalRestDirective(restDays[15], weekCount))
+        && (restDays.size() < 17 || isValidExternalRestDirective(restDays[16], weekCount))
+        && (restDays.size() < 18 || isValidExternalRestDirective(restDays[17], weekCount))
+        && (restDays.size() < 19 || isValidExternalRestDirective(restDays[18], weekCount))
+        && (restDays.size() < 20 || isValidExternalRestDirective(restDays[19], weekCount))
+        && (restDays.size() < 21 || isValidExternalRestDirective(restDays[20], weekCount))
+        && (restDays.size() < 22 || isValidExternalRestDirective(restDays[21], weekCount))
+        && (restDays.size() < 23 || isValidExternalRestDirective(restDays[22], weekCount))
+        && (restDays.size() < 24 || isValidExternalRestDirective(restDays[23], weekCount))
+        && (restDays.size() < 25 || isValidExternalRestDirective(restDays[24], weekCount))
+        && (restDays.size() < 26 || isValidExternalRestDirective(restDays[25], weekCount));
+    }
+
     function hasValidExternalPlanRevision() {
       let data = request.resource.data;
-      // ADR-0035: restDays is v3-only. v1/v2 must keep rejecting it -- this is coarse
-      // defense-in-depth (existence/size/schema-gating), not the full per-directive
-      // shape/uniqueness contract, which the TS validator enforces before any write.
+      // ADR-0035: rules validate the bounded per-directive storage shape for v3. The
+      // TypeScript import validator remains authoritative for cross-entry invariants such
+      // as id/date uniqueness and fixed-session/rest conflicts, which require viewing the
+      // two authored lists together.
       return data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
         && data.schema in [
           'adaptive-training-recommender/external-plan@1',
@@ -697,13 +741,11 @@ service cloud.firestore {
               ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
                  && data.keys().hasAll(['restDays'])
               : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
-        && (!('restDays' in data) || (
-          data.schema == 'adaptive-training-recommender/external-plan@3'
-          && data.restDays is list && data.restDays.size() <= 26
-        ))
         && data.revision is int && data.revision >= 1
         && isValidActivityDate(data.startDate)
         && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+        && (data.schema != 'adaptive-training-recommender/external-plan@3'
+          || hasValidExternalRestDirectives(data.restDays, data.weekCount))
         && data.sessions is list && data.sessions.size() >= 1 && data.sessions.size() <= 120;
     }
 
@@ -1816,7 +1858,7 @@ service cloud.firestore {
         && request.resource.data.currentRevision == 1
         && outcomeEvaluationRevisionAfterHead(userId, evaluationId, 1);
       allow update: if hasValidOutcomeEvaluationHead(userId, evaluationId)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['currentRevision', 'updatedAt'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['headRevision', 'updatedAt'])
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.currentRevision == resource.data.currentRevision + 1
         && outcomeEvaluationRevisionAfterHead(userId, evaluationId, request.resource.data.currentRevision);
