@@ -25,7 +25,7 @@ the ordinary coverage ordering is unchanged, so an already-met hard role does no
 unnecessary repeats.
 
 The current decision policy version is
-`2026-09-outdoor-easy-cycling-anchor-authority-v1`. See the evaluation plan for the root
+`2026-09-authored-rest-day-v1`. See the evaluation plan for the root
 cause, focused regression tests and required PR-head validation.
 
 H3 was investigated and its executable contracts are delivered (see the work orders below
