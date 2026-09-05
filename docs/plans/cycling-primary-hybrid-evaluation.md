@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
 **Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 (implementation not started); H5 remains planned
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 implementation depends on ADR-0035 support and verified same-day canonical performed facts but is otherwise unblocked (ADR-0036 accepted); H5 still needs its own recorded authority/schema decision.
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 implementation depends on ADR-0035 support and verification of same-day canonical performed facts but is otherwise unblocked (ADR-0036 accepted); H5 still needs its own recorded authority/schema decision.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision

@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
 **Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036, implementation unstarted; H5 design remains next
-**Blocked by:** H4 schema/pure-ledger work can start now (ADR-0035 rest support it depends on is delivered); H4 runtime release still needs verified same-day canonical performed facts. H5 needs its own design. Personal M00/M01 prescription needs current athlete inputs.
+**Blocked by:** H4 schema/pure-ledger work can start now (ADR-0035 rest support it depends on is delivered); H4 runtime release still needs verification of same-day canonical performed facts. H5 needs its own design. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
