@@ -187,6 +187,24 @@ describe('resolvePlacement with an authored rest date (ADR-0035)', () => {
         expect(placed[0].date).not.toBe('2026-08-21');
     });
 
+    it('leaves movable work unplaced when every legal date is blocked instead of violating protected rest', () => {
+        const preferredA = session('preferred-a', {
+            placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+        });
+        const preferredB = session('preferred-b', {
+            placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+        });
+        const floating = session('floating', { placement: { week: 1, flexibility: 'any_day', ifMissed: 'reschedule_within_week' } });
+        const restDays: ExternalRestDirective[] = [{ id: 'w1-mon-rest', week: 1, day: 'monday' }];
+        const occupied = ['2026-08-18', '2026-08-19', '2026-08-20', '2026-08-21', '2026-08-22', '2026-08-23']
+            .map(fixedActivity);
+
+        const placed = resolvePlacement(planV3([preferredA, preferredB, floating], restDays, 1), null, { fixedActivities: occupied });
+
+        expect(placed).toEqual([]);
+        expect(placed.some(item => item.date === MONDAY)).toBe(false);
+    });
+
     it('does not block a fixed session -- a fixed/rest conflict is rejected at import, not resolved here', () => {
         const s = session('s1', { placement: { week: 1, preferredDay: 'friday', flexibility: 'fixed', ifMissed: 'drop' } });
         const restDays: ExternalRestDirective[] = [{ id: 'w1-fri-rest', week: 1, day: 'friday' }];
