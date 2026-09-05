@@ -137,8 +137,20 @@ describe('cycling hybrid targeted evaluation', () => {
     }
   });
 
-  it('H2: indoor-only bicycle access keeps using the existing indoor Cycling path', async () => {
-    const indoor = await resultFor(find('capacity_reference'));
+  it('H2: true indoor-only bicycle access keeps using the existing indoor Cycling path', async () => {
+    const base = find('capacity_reference');
+    const indoorOnlyScenario = {
+      ...base.scenario,
+      context: {
+        ...base.scenario.context,
+        constraints: { ...base.scenario.context.constraints, hasIndoorBike: true },
+        trainingSettings: {
+          ...base.scenario.context.trainingSettings,
+          equipment: { ...base.scenario.context.trainingSettings.equipment, indoor_bike: true, outdoor_bike: false },
+        },
+      },
+    };
+    const indoor = await runScenario(indoorOnlyScenario);
     const cyclingTraces = indoor.decisionTraces.filter((trace) => trace.selected.modality === 'Cycling');
     expect(cyclingTraces.length).toBeGreaterThan(0);
     for (const trace of cyclingTraces) {
