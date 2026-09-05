@@ -219,23 +219,20 @@ and `external-plan@2` deliberately say "Rest days are not sessions"; omission is
 indistinguishable from "the plan says nothing about this day," which activates the labelled
 catalog fallback.
 
-External product precedent supports treating those as different calendar states rather
-than synonyms. Garmin Coach explicitly schedules unchecked training days as **Rest Days**,
-while TrainingPeaks plans can show **Rest Day** separately from **No Planned Workouts**.
-Those precedents do not dictate this repository's schema, but they confirm the product
-requirement is coherent rather than an unusual edge case:
-
-- Garmin cycling-plan scheduling: https://support.garmin.com/en-IE/aviation/faq/9WEulyuZyf6aDpcxPH1PI9/
-- TrainingPeaks example distinguishing `REST DAY` from `No Planned Workouts`: https://www.trainingpeaks.com/training-plans/cycling/tp-497950/consistency-intensity-volume-for-fitness-cycling
+This evaluation no longer uses external-product behavior as architecture evidence. The
+rest-vs-unplanned requirement follows from the repository's own authored-instruction-vs-
+absence semantics and immutable/versioned import contract; product observations, if
+retained elsewhere, are non-normative research only.
 
 **Follow-up architecture decision:** [ADR-0035](../adr/0035-explicit-rest-day-authoring.md)
-(Proposed) lays out three schema options — widening the existing travel-block mechanism
-(rejected: it only scales the evergreen dose target, it does not actually block a
-recommendation), a day-level `restDates` directive on the plan envelope, and an
-`isRest: true` session reconciled through the same machinery ADR-0019 D-EVENT already uses
-for `isEvent`. It leans toward the day-level directive and specifies the minimum
-precedence/persistence/replay/`POLICY_VERSION` semantics needed before implementation, but
-makes no implementation itself: it requires the repository owner's sign-off first.
+(Proposed) recommends a single compatibility model: protected rest is added only in
+`adaptive-training-recommender/external-plan@3`, inheriting v2 session semantics unchanged,
+through relative plan-level `restDays` directives (`{ id, week, day }`). v1/v2 remain
+immutable and continue rejecting the new field. The ADR also separates plan intent from
+readiness: authored rest blocks ordinary fallback/ranking and resolves the default planning
+outcome to canonical Rest without fabricating a physiological `recover` verdict. Placement
+and missed-session replacement must treat rest dates as blocked, while an explicit athlete
+override remains auditable and still passes the normal safety/readiness/availability gates.
 
 This PR intentionally does not implement that schema extension. Personal M00/M01 import
 also remains blocked on current-workload/restriction confirmation.
