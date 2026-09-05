@@ -53,13 +53,17 @@ a delivery queue.
 
 The [cycling-primary hybrid evaluation plan](./cycling-primary-hybrid-evaluation.md) has
 delivered opt-in deterministic persona scenarios (H1), outdoor easy-cycling equipment
-specificity plus an anchor-date coverage-ordering fix (H2/H2b), and an H3 investigation
-that verified existing authored-block/replacement contracts. Explicit rest is accepted in
-[ADR-0035](../adr/0035-explicit-rest-day-authoring.md), and H4 intraday windows/reassessment
-is accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md); both
-implementations are unstarted. H4 runtime release needs rest support and verified same-day
-canonical performed facts. H5 still needs its own decision. The work does not replace the
-reviewed active persona-judge baseline. The
+specificity plus an anchor-date coverage-ordering fix (H2/H2b), an H3 investigation that
+verified existing authored-block/replacement contracts, and explicit rest-day authoring
+under [ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (H3-rest, delivered). H4
+intraday windows/reassessment is accepted in
+[ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md) and H5 block intent
+and controlled progression is accepted in
+[ADR-0037](../adr/0037-block-intent-and-controlled-progression.md); both implementations
+are unstarted. H4 runtime release needs verification of same-day canonical performed
+facts; H5 runtime needs validated intent mappings and linked response evidence. H5
+delivers intent authoring, report-only review, then confirmed bounded revisions. The work
+does not replace the reviewed active persona-judge baseline. The
 [implementation handoff](./cycling-primary-hybrid-implementation-handoff.md) provides
 sequenced work orders, dependency gates and acceptance requirements.
 
