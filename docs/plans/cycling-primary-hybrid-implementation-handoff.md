@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H1, H2 and H2b delivered; H3 investigated and contract-tested with no production defect found — explicit-rest authoring accepted as ADR-0035, implementation not started; H4/H5 are next
-**Blocked by:** Nothing blocks starting ADR-0035 implementation or H4/H5 design; both need scoping/scheduling. Personal M00/M01 prescription needs current athlete inputs.
+**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4/H5 are next
+**Blocked by:** H4/H5 both need a recorded design decision before implementation. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -35,19 +35,17 @@ those; this PR adds `h3AuthoredPlanContracts.test.ts` because the prior event-cr
 only proved aerobic credit and was too indirect for the specific quality-credit claim.
 No production decision logic changed.
 
-The remaining H3 gap is explicit rest: neither external-plan schema can distinguish
-"protected rest" from "no authored instruction for this date."
-[ADR-0035](../adr/0035-explicit-rest-day-authoring.md) is now **Accepted**: that authority
-is added only in `external-plan@3`, using relative plan-level `restDays` directives
-(`{ id, week, day }`) while keeping v1/v2 immutable. It also keeps readiness separate from
-plan intent: authored rest blocks ordinary generated work and resolves the default planning
-outcome to canonical Rest rather than fabricating a physiological `recover` verdict.
-Implementation is unstarted — see the ADR's acceptance-bar test list and the work order
-below.
+The remaining H3 gap was explicit rest: neither external-plan schema could distinguish
+"protected rest" from "no authored instruction for this date." [ADR-0035]
+(../adr/0035-explicit-rest-day-authoring.md) (Accepted) is now **delivered** (work order
+H3-rest below): `external-plan@3` adds relative plan-level `restDays` directives
+(`{ id, week, day }`) while keeping v1/v2 immutable, and keeps readiness separate from
+plan intent -- authored rest blocks ordinary generated work and resolves the default
+planning outcome to canonical Rest rather than fabricating a physiological `recover`
+verdict.
 
-Suggested next step: implement ADR-0035 (schema v3, validation, placement, resolver
-three-state day resolution, persistence/replay, `POLICY_VERSION` bump — see the work order
-below), or move to H4/H5 design instead. Both routes should remain separate from personal
+Suggested next step: move to H4 or H5 design -- both need a recorded authority/schema
+decision before implementation, the same way ADR-0035 did. Keep that work separate from personal
 M00/M01 prescription until current workload/restriction inputs are confirmed.
 
 ## Stable product intent
@@ -148,47 +146,27 @@ interchangeable with quality. Equivalent replacement requires the ride to enter 
 `FixedActivity` identity/stimulus path; otherwise qualified objective credit correctly
 fails closed.
 
-## Work order H3-rest — Explicit rest-day authoring (accepted, unimplemented)
+## Work order H3-rest — Explicit rest-day authoring (delivered)
 
-**Status:** Ready to implement. [ADR-0035](../adr/0035-explicit-rest-day-authoring.md) is
-**Accepted**. No code exists yet for any of the eight contract items below.
-**Dependencies:** None blocking. Reuses existing external-plan validation, placement and
-planning-mode resolver infrastructure (ADR-0019/0023).
-**Deliverable:** `external-plan@3` schema support end-to-end: validation, placement,
-resolver three-state day resolution, readiness-separated Rest recommendation, athlete
-override, persistence/replay, `POLICY_VERSION` bump, and the test list the ADR specifies.
+**Status:** Delivered. `external-plan@3` (`src/sessions/externalPlanV3.ts`) with relative
+`restDays` directives, occupancy blocking in `externalPlacement.ts`, a dedicated
+`authoredRestRecommendation` path in `rules.ts` (canonical Rest, `mode` left as the genuine
+readiness verdict rather than forced to `'recover'`, an `athleteOverridesAuthoredRest`
+escape hatch), `ExternalRestProvenance` persistence/audit/replay
+(`models.ts`/`provenance.ts`/`replay.ts`'s fail-closed `externalRestErrors`), and matching
+`firestore.rules` coverage. `POLICY_VERSION` is `2026-09-authored-rest-day-v1`.
 
-Neither `external-plan@1` nor `external-plan@2` can represent an explicitly prescribed
-rest day. Both schemas intentionally define rest as omission, so the current resolver has
-no fact that can distinguish protected rest from an unplanned date.
+**Deferred, not attempted:** multi-day forecast/critique-layer rest awareness (the
+`D-CRITIQUE` "review the imported week" surface in `planner.ts` is separate from this
+ADR's single-day resolver contract) and UI rendering of `restDays` in the import
+preview/diff views (`ExternalPlanImport.tsx`/`externalPlanDiff.ts` type-check against the
+widened `AnyExternalTrainingPlan` union but do not yet render rest-specific content).
+Neither changes recommendation behavior, so neither blocks this work order being complete.
 
-The accepted implementation contract is:
-
-1. add protected rest only in `adaptive-training-recommender/external-plan@3`, inheriting
-   v2's `definition`-based session contract unchanged; v1/v2 validators remain immutable
-   and continue rejecting the new field;
-2. represent rest as relative plan-level `restDays` directives (`{ id, week, day }`) so
-   `startDate` remains the sole authored absolute date; reject duplicate/out-of-range or
-   fixed-session-conflicting directives;
-3. treat resolved rest dates as blocked targets for `any_day` placement and missed-session
-   replacement;
-4. resolve external-plan dates as `session` / `rest` / `unplanned` before fallback; only
-   `unplanned` activates `externalFallback: true`;
-5. keep `evaluateReadinessAndSafetyEnvelope` independent: authored rest suppresses ordinary
-   generated work and resolves the default planning outcome to canonical Rest without
-   rewriting a `train`/`modify` readiness verdict to physiological `recover`;
-6. permit only an explicit, auditable athlete override of the authored-rest planning gate;
-   requested work still passes normal safety, clinical, availability, equipment and
-   readiness constraints;
-7. persist/replay `planId`, plan revision, content hash, rest-directive id and resolved
-   plan-local date, with an authored-rest reason/source distinct from both physiological
-   `recover` and `externalFallback`;
-8. update import validation, Firestore/rules, UI and `POLICY_VERSION` coverage because the
-   accepted directive changes recommendation behavior.
-
-Read the ADR's own "Recommendation"/"Decision" section for the exact deterministic-test
-acceptance bar before marking this work order done — it is more detailed than the summary
-above.
+Validation: `npm run check` (3440 tests), `npm run build`, `npm run test:rules` (167
+Firestore rules tests), `npm run simulate:scenarios`/`simulate:diff` (identical to the
+pre-existing baseline diff — no committed scenario exercises the external-plan/rest path),
+`node scripts/check-policy-drift.mjs <starting-commit>` (passed).
 
 For a personal M00/M01 artifact, first confirm representative current workload, current
 restrictions/symptoms and actual bicycle setup. The prior review's example week is an
