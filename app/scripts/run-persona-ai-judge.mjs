@@ -9,7 +9,8 @@ import { validateAndNormalizeJudgeRow } from './ai-judge/validation.mjs';
 import { callProvider } from './ai-judge/providers/index.mjs';
 import { aggregateFamilySamples, deriveSampleSeed } from './ai-judge/aggregate.mjs';
 
-const OUTPUT_DIR = resolve('artifacts/persona-plan-judge/latest');
+const HYBRID_EXPANSION = process.argv.includes('--hybrid-expansion');
+const OUTPUT_DIR = resolve(HYBRID_EXPANSION ? 'artifacts/hybrid-persona-plan-judge/latest' : 'artifacts/persona-plan-judge/latest');
 const BUILD_ONLY = process.argv.includes('--build-only');
 
 /** Return a detached JSON-safe copy of fixture data. */
@@ -31,6 +32,7 @@ function eventFacts(event) {
     date: event.date,
     priority: event.priority,
     category: event.category,
+    ...(HYBRID_EXPANSION ? { taper: clone(event.taper ?? null) } : {}),
   };
 }
 
@@ -69,6 +71,7 @@ function packetFromResult(definition, result, templatesById) {
       goals: clone(scenario.context.goals),
       event: eventFacts(scenario.event),
       constraints: clone(scenario.context.constraints),
+      ...(HYBRID_EXPANSION ? { trainingSettings: clone(scenario.context.trainingSettings) } : {}),
       preferences: clone(scenario.preferences ?? scenario.context.preferences),
       trainingIntentProfile: clone(scenario.trainingIntentProfile),
       initialHistory: clone(scenario.initialHistory ?? []),
@@ -111,7 +114,7 @@ Return exactly one JSON object matching the supplied strict schema.`;
 /** Build and persist the deterministic active-persona corpus without exposing planner diagnostics to the judge. */
 async function buildCorpus() {
   if (!existsSync(OUTPUT_DIR)) mkdirSync(OUTPUT_DIR, { recursive: true });
-  const definitions = buildPersonaFamilies();
+  const definitions = buildPersonaFamilies({ includeHybridExpansion: HYBRID_EXPANSION });
   const integrity = assertPersonaFixtureIntegrity(definitions);
 
   const server = await createServer({
@@ -127,11 +130,29 @@ async function buildCorpus() {
     const templatesModule = await server.ssrLoadModule('/src/engine/templates.ts');
     const templatesById = new Map(templatesModule.ENRICHED_TEMPLATES.map((template) => [template.id, template]));
     const families = [];
+    const deterministicResults = [];
 
     for (const family of definitions) {
       const cases = [];
       for (const definition of family.cases) {
         const result = await analyzeModule.runScenario(definition.scenario);
+        if (HYBRID_EXPANSION) deterministicResults.push({
+          caseId: definition.scenario.id,
+          constraintViolations: result.constraintViolations,
+          qualityWarnings: result.qualityWarnings,
+          modalityDistribution: result.modalityDistribution,
+          objectiveResolution: result.objectiveResolution,
+          // Separate from the blinded judge packet: deterministic evidence is not an answer key.
+          weeks: result.weekSummaries.map(({ weekIndex }) => {
+            const days = result.decisionTraces.filter((trace) => trace.weekIndex === weekIndex);
+            return {
+              weekIndex,
+              minimumMinutes: days.reduce((sum, trace) => sum + (trace.selected.durationMin ?? 0), 0),
+              maximumMinutes: days.reduce((sum, trace) => sum + (trace.selected.durationMax ?? 0), 0),
+              sessions: days.map((trace) => ({ date: trace.date, ...trace.selected })),
+            };
+          }),
+        });
         cases.push(packetFromResult(definition, result, templatesById));
       }
       families.push({
@@ -156,6 +177,7 @@ async function buildCorpus() {
     writeFileSync(resolve(OUTPUT_DIR, 'corpus.json'), `${JSON.stringify(corpus, null, 2)}\n`);
     writeFileSync(resolve(OUTPUT_DIR, 'families.jsonl'), `${families.map((family) => JSON.stringify(family)).join('\n')}\n`);
     writeFileSync(resolve(OUTPUT_DIR, 'judge-prompt.md'), `${PROMPT}\n`);
+    if (HYBRID_EXPANSION) writeFileSync(resolve(OUTPUT_DIR, 'deterministic-results.json'), `${JSON.stringify(deterministicResults, null, 2)}\n`);
     console.log(`Generated ${corpus.caseCount} persona cases across ${corpus.familyCount} families in ${OUTPUT_DIR}`);
     return corpus;
   } finally {
@@ -165,7 +187,7 @@ async function buildCorpus() {
 
 /** Invoke the configured judge for each active family, aggregate samples, and persist score artifacts. */
 async function judgeCorpus(corpus) {
-  const config = resolveJudgeConfig(process.argv.slice(2).filter((arg) => arg !== '--build-only'));
+  const config = resolveJudgeConfig(process.argv.slice(2).filter((arg) => !['--build-only', '--hybrid-expansion'].includes(arg)));
   const scoreRows = [];
   const stabilityRows = [];
 
