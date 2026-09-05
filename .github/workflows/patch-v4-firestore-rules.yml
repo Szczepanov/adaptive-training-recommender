@@ -24,62 +24,30 @@ jobs:
 
           path = Path('app/firestore.rules')
           text = path.read_text()
-          old = """    function hasValidExternalPlanRevision() {
-      let data = request.resource.data;
-      // ADR-0035: rules validate the bounded per-directive storage shape for v3. The
-      // TypeScript import validator remains authoritative for cross-entry invariants such
-      // as id/date uniqueness and fixed-session/rest conflicts, which require viewing the
-      // two authored lists together.
-      return data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
-        && data.schema in [
-          'adaptive-training-recommender/external-plan@1',
-          'adaptive-training-recommender/external-plan@2',
-          'adaptive-training-recommender/external-plan@3',
-        ]
-        && (data.schema == 'adaptive-training-recommender/external-plan@3'
-              ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
-                 && data.keys().hasAll(['restDays'])
-              : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
-        && data.revision is int && data.revision >= 1
-        && isValidActivityDate(data.startDate)
-        && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
-        && (data.schema != 'adaptive-training-recommender/external-plan@3'
-          || hasValidExternalRestDirectives(data.restDays, data.weekCount))
-        && data.sessions is list && data.sessions.size() >= 1 && data.sessions.size() <= 120;
-    }
-"""
-          new = """    function hasValidExternalPlanRevision() {
-      let data = request.resource.data;
-      // ADR-0035/0036: rules validate the bounded plan-level storage shape for v3/v4.
-      // The TypeScript import validator remains authoritative for session structure and
-      // cross-entry invariants (including v4 intraday bundle/window relationships), which
-      // require viewing the authored session/rest lists together.
-      let hasAuthoredRestContract = data.schema in [
-        'adaptive-training-recommender/external-plan@3',
-        'adaptive-training-recommender/external-plan@4',
-      ];
-      return data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
-        && data.schema in [
-          'adaptive-training-recommender/external-plan@1',
-          'adaptive-training-recommender/external-plan@2',
-          'adaptive-training-recommender/external-plan@3',
-          'adaptive-training-recommender/external-plan@4',
-        ]
-        && (hasAuthoredRestContract
-              ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
-                 && data.keys().hasAll(['restDays'])
-              : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
-        && data.revision is int && data.revision >= 1
-        && isValidActivityDate(data.startDate)
-        && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
-        && (!hasAuthoredRestContract || hasValidExternalRestDirectives(data.restDays, data.weekCount))
-        && data.sessions is list && data.sessions.size() >= 1 && data.sessions.size() <= 120;
-    }
-"""
-          count = text.count(old)
-          if count != 1:
-              raise SystemExit(f'expected exactly one external-plan rules block, found {count}')
-          path.write_text(text.replace(old, new))
+          replacements = [
+              (
+                  "// ADR-0035: rules validate the bounded per-directive storage shape for v3. The",
+                  "// ADR-0035/0036: rules validate the bounded plan-level storage shape for v3/v4. The",
+              ),
+              (
+                  "          'adaptive-training-recommender/external-plan@3',\n        ]",
+                  "          'adaptive-training-recommender/external-plan@3',\n          'adaptive-training-recommender/external-plan@4',\n        ]",
+              ),
+              (
+                  "        && (data.schema == 'adaptive-training-recommender/external-plan@3'",
+                  "        && (data.schema in ['adaptive-training-recommender/external-plan@3', 'adaptive-training-recommender/external-plan@4']",
+              ),
+              (
+                  "        && (data.schema != 'adaptive-training-recommender/external-plan@3'\n          || hasValidExternalRestDirectives(data.restDays, data.weekCount))",
+                  "        && (!(data.schema in ['adaptive-training-recommender/external-plan@3', 'adaptive-training-recommender/external-plan@4'])\n          || hasValidExternalRestDirectives(data.restDays, data.weekCount))",
+              ),
+          ]
+          for old, new in replacements:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'expected exactly one guarded rules fragment, found {count}: {old!r}')
+              text = text.replace(old, new)
+          path.write_text(text)
           PY
 
       - name: Remove one-shot workflow and commit patch
@@ -89,5 +57,6 @@ jobs:
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com
           git add app/firestore.rules .github/workflows/patch-v4-firestore-rules.yml
           git diff --cached --check
+          git diff --cached -- app/firestore.rules
           git commit -m "fix(rules): allow external-plan@4 revision persistence"
           git push origin HEAD:claude/cycling-primary-hybrid-eval-e166ea
