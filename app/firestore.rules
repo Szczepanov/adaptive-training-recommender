@@ -532,7 +532,7 @@ service cloud.firestore {
       return (('illnessSymptoms' in data)
           ? data.illnessSymptoms is bool
           : (('healthContext' in data) && (data.healthContext is map) && ('symptoms' in data.healthContext)))
-        && (!('healthContext' in data) || hasValidHealthSymptoms(data.healthContext.symptoms) || hasValidHealthContext(data.healthContext));
+        && (!('healthContext' in data) || hasValidHealthContext(data.healthContext));
     }
 
     match /daily_recovery_snapshot/{date} { allow read, write: if false; }

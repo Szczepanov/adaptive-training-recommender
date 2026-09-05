@@ -161,8 +161,13 @@ escape hatch), `ExternalRestProvenance` persistence/audit/replay
 `firestore.rules` coverage. `POLICY_VERSION` is `2026-09-authored-rest-day-v1`.
 
 **Explicit check-in override, fully audited.** `athleteOverridesAuthoredRest` never fires
-from readiness data -- only an explicit same-day request. When it does, evaluation proceeds
-exactly as if no rest directive existed (full normal ranking, every safety/clinical/
+from readiness data -- only an explicit same-day request. Production recognizes two
+routes to that explicit request: the boolean parameter itself, or a non-empty
+`readiness.subjective.preferredModalityToday` answer on that same day's check-in --
+typing a specific workout request is itself treated as asking to train instead of resting
+(`rules.ts`'s `athleteRequestedWorkoutOnRest`). Favorable readiness/wearable data alone
+never triggers either route. When either fires, evaluation proceeds exactly as if no rest
+directive existed (full normal ranking, every safety/clinical/
 availability/equipment/readiness gate applies), but the persisted `externalRest` provenance
 still names the directive that was present and adds an `overridden: true` marker
 (`externalRestProvenance.ts`'s `ExternalRestDecisionProvenance`). Replay branches on that
@@ -178,10 +183,12 @@ accepted as the literal `true`.
 import validation (`externalPlanV3.ts`), matching the bound `firestore.rules` already
 enforced on the persisted `externalRest.restDirectiveId` -- a directive that passed import
 could previously exceed the audit's own bound and fail to persist later. `restDays` itself
-is capped at 26 entries (one per supported week) at both the TS validator and the Firestore
-rules layer (`hasValidExternalRestDirectives`, which validates each of up to 26 directives'
-shape -- `id`/`week`/`day` presence, week range, weekday vocabulary, and no unrecognized
-field -- individually, since Firestore rules cannot loop).
+is capped at up to 26 directives across the plan (not one per week -- the TS validator
+allows multiple directives in the same week as long as their `(week, day)` pairs differ,
+and rejects duplicate pairs) at both the TS validator and the Firestore rules layer
+(`hasValidExternalRestDirectives`, which validates each of up to 26 directives' shape --
+`id`/`week`/`day` presence, week range, weekday vocabulary, and no unrecognized field --
+individually, since Firestore rules cannot loop).
 
 The import authoring prompt now emits `external-plan@3`, requires `restDays` (an empty list
 is valid), spells out relative `{ id, week, day }` semantics and explicitly distinguishes
