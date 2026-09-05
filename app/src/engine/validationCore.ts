@@ -1408,7 +1408,9 @@ const EXTERNAL_INTENSITIES: ExternalSessionIntensity[] = ['recovery', 'easy', 'm
 const EXTERNAL_PRIORITIES: ExternalSessionPriority[] = ['key', 'supporting', 'optional'];
 const EXTERNAL_FLEXIBILITY: ExternalPlacementFlexibility[] = ['fixed', 'preferred', 'any_day'];
 const EXTERNAL_IF_MISSED: ExternalIfMissed[] = ['drop', 'reschedule_within_week', 'carry_forward'];
-const EXTERNAL_WEEKDAYS: ExternalWeekday[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+/** Exported for `sessions/externalPlanV3.ts`'s `restDays` validator, which reuses the same
+ * weekday vocabulary as session placement (ADR-0035). */
+export const EXTERNAL_WEEKDAYS: ExternalWeekday[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const EXTERNAL_EQUIPMENT: EquipmentKey[] = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar', 'outdoor_bike', 'swim_access'];
 const EXTERNAL_ENVIRONMENTS: TrainingEnvironment[] = ['indoor', 'outdoor', 'either'];
 const EXTERNAL_OBJECTIVES: ObjectiveKey[] = [
@@ -1428,11 +1430,13 @@ const GATING_KEYS = ['modality', 'intensity', 'durationMin', 'durationMax', 'env
 const SCALING_KEYS = ['reducible', 'reducedSummary', 'reducedDurationMin', 'minimumUsefulDurationMin', 'fallback'];
 const STEP_KEYS = ['name', 'target', 'durationMin', 'durationSec', 'repeat', 'recoveryMin', 'recoverySec', 'sets', 'setRecoveryMin', 'setRecoverySec', 'notes'];
 
-function unknownKeys(raw: Record<string, unknown>, allowed: string[]): string[] {
+/** Exported for `sessions/externalPlanV3.ts`'s `restDays` validator (ADR-0035). */
+export function unknownKeys(raw: Record<string, unknown>, allowed: string[]): string[] {
     return Object.keys(raw).filter(key => !allowed.includes(key));
 }
 
-function isPositiveInt(value: unknown, min: number, max: number): boolean {
+/** Exported for `sessions/externalPlanV3.ts`'s `restDays` validator (ADR-0035). */
+export function isPositiveInt(value: unknown, min: number, max: number): boolean {
     return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
 }
 

@@ -1,15 +1,16 @@
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { DataState } from '../engine/dataState';
-import { resolvePlacement, type PlacedSession } from '../engine/externalPlacement';
+import { resolvePlacement, resolveRestDatesByDate, type PlacedSession } from '../engine/externalPlacement';
 import type {
     ExternalPlanHeader,
     ExternalPlanPlacement,
     FixedActivity,
 } from '../engine/models';
-import type { ExternalPlanContext } from '../engine/rules';
+import type { ExternalPlanContext, ExternalRestContext } from '../engine/rules';
 import { externalPlanService, type ExternalPlanService } from './externalPlanService';
-// M3.6: an active plan may be either schema version -- resolvePlacement and everything
-// downstream of it only reads envelope fields, identical on both.
+// M3.6: an active plan may be any supported schema version -- resolvePlacement and most
+// downstream session handling read envelope fields shared by every version. ADR-0035 adds
+// plan-level rest directives in v3, resolved separately below rather than faked as sessions.
 import type { AnyExternalTrainingPlan as ExternalTrainingPlan } from '../sessions/externalPlanV2';
 
 export interface ActiveExternalPlan {
@@ -79,6 +80,26 @@ export function externalPlanContextForDate(active: ActiveExternalPlan, date: str
         planId: active.plan.planId,
         revision: active.plan.revision,
         session: placed.session,
+        contentHash: active.header.contentHash,
+    };
+}
+
+/**
+ * ADR-0035: builds the authored-rest adjudication input for one day. A live placed session
+ * wins over the rest directive because the only supported way they can coexist is an
+ * already-confirmed overlay assignment onto a protected date; import rejects fixed-session
+ * / rest contradictions before storage. This keeps the production resolver's observable
+ * states singular: session, rest, or unplanned -- never both session and rest.
+ */
+export function externalRestContextForDate(active: ActiveExternalPlan, date: string): ExternalRestContext | null {
+    if (placedSessionForDate(active, date)) return null;
+    const directive = resolveRestDatesByDate(active.plan).get(date);
+    if (!directive) return null;
+    return {
+        planId: active.plan.planId,
+        revision: active.plan.revision,
+        directive,
+        date,
         contentHash: active.header.contentHash,
     };
 }

@@ -2,6 +2,7 @@ import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import type {
     ExternalPlacementAssignment,
     ExternalPlanPlacement,
+    ExternalRestDirective,
     ExternalWeekday,
     FixedActivity,
 } from './models';
@@ -33,8 +34,25 @@ export interface PlacementOccupancy {
     fixedActivities?: readonly FixedActivity[];
 }
 
+/** Returns the Monday-like start of a plan-relative week. */
 function weekStart(plan: ExternalTrainingPlan, week: number): string {
     return addDaysToLocalDateString(plan.startDate, (week - 1) * 7);
+}
+
+/**
+ * ADR-0035: resolves one v3 rest directive to its plan-local absolute date, the same
+ * relative-to-absolute arithmetic `impliedDate` uses for a session. Only `external-plan@3`
+ * carries `restDays`; v1/v2 plans have no directives to resolve.
+ */
+export function resolveRestDate(plan: ExternalTrainingPlan, directive: ExternalRestDirective): string {
+    return addDaysToLocalDateString(weekStart(plan, directive.week), WEEKDAY_OFFSET[directive.day]);
+}
+
+/** All of a v3 plan's rest directives resolved to dates, keyed by date. Empty for v1/v2
+ * (no `restDays` field at all) and for a v3 plan with no directives. */
+export function resolveRestDatesByDate(plan: ExternalTrainingPlan): Map<string, ExternalRestDirective> {
+    const restDays = (plan as { restDays?: readonly ExternalRestDirective[] }).restDays ?? [];
+    return new Map(restDays.map(directive => [resolveRestDate(plan, directive), directive]));
 }
 
 /** The date the plan itself implies, before any overlay. A session with no `preferredDay`
@@ -44,6 +62,7 @@ export function impliedDate(plan: ExternalTrainingPlan, session: ExternalPlanSes
     return addDaysToLocalDateString(weekStart(plan, session.placement.week), offset);
 }
 
+/** Materializes the seven plan-local dates for one relative week. */
 function weekDates(plan: ExternalTrainingPlan, week: number): string[] {
     const start = weekStart(plan, week);
     return Array.from({ length: 7 }, (_, offset) => addDaysToLocalDateString(start, offset));
@@ -60,11 +79,16 @@ function preferredBundleKey(session: ExternalPlanSession): string | null {
 }
 
 /**
- * Resolves every session to a date. The stored overlay wins. Movable sessions authored for
- * the same week + `preferredDay` are kept together as one intentional double/triple-day
- * bundle and, when their preferred date is occupied, move together within the week.
- * `fixed` sessions are placed first and never yield; `any_day` sessions then spread
+ * Resolves every legally placeable session to a date. The stored overlay wins. Movable
+ * sessions authored for the same week + `preferredDay` are kept together as one intentional
+ * double/triple-day bundle and, when their preferred date is occupied, move together within
+ * the week. `fixed` sessions are placed first and never yield; `any_day` sessions then spread
  * individually across the remaining open dates.
+ *
+ * If a movable session/bundle has **no** legal date left in its authored week, it remains
+ * unplaced and is omitted from this result rather than being forced back onto a blocked
+ * commitment or ADR-0035 protected-rest date. Callers already interpret absence as “not
+ * placed today”; fabricating an occupied date would violate the stronger calendar authority.
  */
 export function resolvePlacement(
     plan: ExternalTrainingPlan,
@@ -75,6 +99,11 @@ export function resolvePlacement(
     const fixedActivityDates = new Set(
         (occupancy.fixedActivities ?? []).filter(activity => !activity.isCompleted).map(activity => activity.date),
     );
+    // ADR-0035: an authored rest date is closed to `any_day` placement and to a preferred
+    // bundle's fallback spreading, the same way a booked fixed activity already is. Fixed
+    // sessions and rest directives cannot share a date (validated at import time), so this
+    // never contradicts the fixed-session block below.
+    const restDates = new Set(resolveRestDatesByDate(plan).keys());
     const occupiedByDate = new Map<string, Set<string>>();
     const placed: PlacedSession[] = [];
     const authoredOrder = new Map(plan.sessions.map((session, index) => [session.id, index]));
@@ -89,10 +118,20 @@ export function resolvePlacement(
         occupiedByDate.set(date, occupants);
     };
     const isBlocked = (date: string, allowedSessionIds: ReadonlySet<string> = new Set<string>()): boolean => {
-        if (fixedActivityDates.has(date)) return true;
+        if (fixedActivityDates.has(date) || restDates.has(date)) return true;
         const occupants = occupiedByDate.get(date);
         if (!occupants) return false;
         return [...occupants].some(sessionId => !allowedSessionIds.has(sessionId));
+    };
+    const firstFreeDate = (
+        week: number,
+        wanted: string,
+        allowedSessionIds: ReadonlySet<string> = new Set<string>(),
+    ): string | null => {
+        const dates = weekDates(plan, week);
+        return dates.find(candidate => candidate > wanted && !isBlocked(candidate, allowedSessionIds))
+            ?? dates.find(candidate => !isBlocked(candidate, allowedSessionIds))
+            ?? null;
     };
 
     // Explicit overlay assignments are absolute per-session decisions and therefore win
@@ -154,13 +193,13 @@ export function resolvePlacement(
                 .map(session => session.id),
         );
 
-        let date = wanted;
-        if (isBlocked(wanted, sameBundleOverlayAtWanted)) {
-            const week = weekDates(plan, bundle[0].placement.week);
-            const free = week.find(candidate => candidate > wanted && !isBlocked(candidate))
-                ?? week.find(candidate => !isBlocked(candidate));
-            if (free) date = free;
-        }
+        const date = isBlocked(wanted, sameBundleOverlayAtWanted)
+            ? firstFreeDate(bundle[0].placement.week, wanted, sameBundleOverlayAtWanted)
+            : wanted;
+        // The week can be genuinely full (fixed commitments + protected rest). In that
+        // state, “unplaced” is safer and more truthful than falling back to `wanted` and
+        // silently violating the very occupancy constraint we just evaluated.
+        if (!date) continue;
 
         for (const session of bundle) {
             placed.push({ session, date, status: 'planned', moved: date !== wanted });
@@ -180,13 +219,10 @@ export function resolvePlacement(
 
     for (const session of floatingSessions) {
         const wanted = impliedDate(plan, session);
-        let date = wanted;
-        if (isBlocked(wanted)) {
-            const week = weekDates(plan, session.placement.week);
-            const free = week.find(candidate => candidate > wanted && !isBlocked(candidate))
-                ?? week.find(candidate => !isBlocked(candidate));
-            if (free) date = free;
-        }
+        const date = isBlocked(wanted)
+            ? firstFreeDate(session.placement.week, wanted)
+            : wanted;
+        if (!date) continue;
         addOccupancy(date, session.id);
         placed.push({ session, date, status: 'planned', moved: date !== wanted });
     }
@@ -249,6 +285,10 @@ export function proposeReplacement(
         // Booked commitments block a proposal exactly as they block initial placement --
         // otherwise a replacement can be proposed onto a match day.
         ...(occupancy.fixedActivities ?? []).filter(activity => !activity.isCompleted).map(activity => activity.date),
+        // ADR-0035: an authored rest date blocks a missed-session replacement exactly as it
+        // blocks initial placement -- chasing a missed session should not silently undo a
+        // deliberate rest day.
+        ...resolveRestDatesByDate(plan).keys(),
     ]);
 
     // If a miss is noticed later, today is a valid candidate when still in the same week.

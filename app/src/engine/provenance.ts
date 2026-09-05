@@ -65,6 +65,7 @@ export function buildRecommendationAudit(
         candidateScores: trace.candidateScores,
         droppedContributorObjectives: trace.droppedContributorObjectives,
         ...(trace.externalPlan ? { externalPlan: trace.externalPlan } : {}),
+        ...(trace.externalRest ? { externalRest: trace.externalRest } : {}),
         ...(trace.authoredOccurrence ? { authoredOccurrence: trace.authoredOccurrence } : {}),
         ...(recommendation.primarySession ? { primarySession: recommendation.primarySession } : {}),
         ...(recommendation.additionalSessions && recommendation.additionalSessions.length > 0 ? { additionalSessions: recommendation.additionalSessions } : {}),

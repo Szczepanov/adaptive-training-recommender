@@ -39,6 +39,15 @@ function validExternalPlanRevision() {
     };
 }
 
+/** ADR-0035. */
+function validExternalPlanRevisionV3() {
+    return {
+        ...validExternalPlanRevision(),
+        schema: 'adaptive-training-recommender/external-plan@3',
+        restDays: [{ id: 'w1-fri-rest', week: 1, day: 'friday' }],
+    };
+}
+
 function validExternalPlacement() {
     return {
         userId: ownerId, planId: 'autumn-block', revision: 1,
@@ -717,7 +726,7 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, externalPlanPath), { ...validExternalPlanHeader(), weekCount: 27 }));
         await assertFails(setDoc(doc(ownerDb, externalRevisionPath), {
             ...validExternalPlanRevision(),
-            schema: 'adaptive-training-recommender/external-plan@3',
+            schema: 'adaptive-training-recommender/external-plan@4',
         }));
         await assertFails(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevision(), sessions: [] }));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/autumn-block/revisions/4`), {
@@ -730,6 +739,57 @@ emulatorDescribe('Firestore security rules', () => {
         }));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/autumn-block/placement/stale`), validExternalPlacement()));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/other-block/placement/current`), validExternalPlacement()));
+    });
+
+    it('accepts a well-formed external-plan@3 revision with restDays (ADR-0035)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, externalRevisionPath), validExternalPlanRevisionV3()));
+    });
+
+    it('accepts external-plan@3 with an empty restDays list', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevisionV3(), restDays: [] }));
+    });
+
+    it('rejects a v1/v2 revision carrying restDays -- the field is v3-only', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), {
+            ...validExternalPlanRevision(),
+            restDays: [{ id: 'w1-fri-rest', week: 1, day: 'friday' }],
+        }));
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), {
+            ...validExternalPlanRevision(),
+            schema: 'adaptive-training-recommender/external-plan@2',
+            restDays: [{ id: 'w1-fri-rest', week: 1, day: 'friday' }],
+        }));
+    });
+
+    it('rejects an external-plan@3 revision missing restDays entirely', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const { restDays: _restDays, ...withoutRestDays } = validExternalPlanRevisionV3();
+        void _restDays;
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), withoutRestDays));
+    });
+
+    it('rejects an oversized restDays list', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const restDays = Array.from({ length: 27 }, (_, i) => ({ id: `r${i}`, week: 1, day: 'friday' }));
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevisionV3(), restDays }));
+    });
+
+    it('rejects a decision audit whose externalRest provenance is malformed (ADR-0035)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const rec = validRecommendation();
+        rec.recommendationAudit.externalRest = { planId: 'autumn-block', revision: 1, contentHash: 'a'.repeat(64), restDirectiveId: 'w1-fri-rest' /* missing date */ };
+        await assertFails(setDoc(doc(ownerDb, recommendationPath), rec));
+    });
+
+    it('accepts a decision audit carrying valid externalRest provenance', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const rec = validRecommendation();
+        rec.templateId = 'rest_01';
+        rec.recommendationAudit.externalRest = { planId: 'autumn-block', revision: 1, contentHash: 'a'.repeat(64), restDirectiveId: 'w1-fri-rest', date: '2026-08-21' };
+        await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), rec));
     });
 
     it('rejects cross-user external plan access and forged ownership', async () => {

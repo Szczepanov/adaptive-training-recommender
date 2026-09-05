@@ -19,7 +19,10 @@ import type {
     WorkoutStimulusProfile,
     FatigueState,
     EngineObjectiveInput,
+    ExternalRestDirective,
+    ExternalRestProvenance,
 } from './models';
+import type { ExternalRestDecisionProvenance } from './externalRestProvenance';
 import { TEMPLATES, ENRICHED_TEMPLATES } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { buildOptimizationContext, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
@@ -551,6 +554,21 @@ export interface ExternalPlanContext {
     contentHash: string;
 }
 
+/** ADR-0035: identifies the authored rest directive resolved for the evaluation date.
+ * Resolved by the caller through `externalPlacement.ts`'s `resolveRestDatesByDate`, the
+ * same way `externalPlan` above is resolved through placement -- this function performs
+ * no placement/resolution itself. Mutually exclusive with `externalPlan` by construction:
+ * a date cannot carry both a placed session and a rest directive (validated at import). */
+export interface ExternalRestContext {
+    planId: string;
+    revision: number;
+    directive: ExternalRestDirective;
+    date: string;
+    /** SHA-256 of the stored revision this directive was read from, same role as
+     * `ExternalPlanContext.contentHash`. */
+    contentHash: string;
+}
+
 function eventCategoryMatchesSession(event: UserEvent, session: ExternalPlanSession): boolean {
     switch (session.gating.modality) {
         case 'cycling': return event.category === 'cycling_event' || event.category === 'triathlon';
@@ -625,6 +643,50 @@ function adjudicatedExternalRecommendation(
     };
 }
 
+/**
+ * ADR-0035: builds the recommendation for a date an authored rest directive closed to
+ * discretionary planning. Deliberately does **not** run eligibility/ranking -- there is
+ * nothing to rank against; the plan's own instruction is the decision.
+ *
+ * `mode` is set to the genuine `envelopeState.mode` (the readiness/safety envelope's own
+ * train/modify/recover classification), not forced to `'recover'`, even though the
+ * recommended template is Rest. The ADR is explicit that authored rest must not fabricate
+ * a physiological `recover` verdict: `previousMode` is threaded into tomorrow's evaluation
+ * (see the `evaluateNextDayPlanWithIntent` call site) and drives things like
+ * `postRecoverBufferApplied` -- reporting `'recover'` here when readiness was actually
+ * `'train'` would falsely trigger tomorrow's "ease back in after a mandated recovery day"
+ * behavior for an athlete whose own readiness never called for it.
+ */
+function authoredRestRecommendation(
+    externalRest: ExternalRestContext,
+    envelopeState: ReturnType<typeof evaluateReadinessAndSafetyEnvelope>,
+    intent: Awaited<ReturnType<typeof resolveTrainingIntent>>,
+): Recommendation {
+    const { planId, revision, contentHash, directive, date } = externalRest;
+    const clinicalNote = envelopeState.envelopes.safety.redFlagActive
+        ? ` ${envelopeState.envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'}`
+        : '';
+    return {
+        template: getCanonicalRestTemplate(),
+        plannedDose: intent.plannedDose,
+        rationale: `Your plan places a protected rest day here, regardless of today's readiness. `
+            + `No training is recommended today; choose a preferred modality in today's check-in if you explicitly want the normal planner to consider a session anyway.${clinicalNote}`,
+        mode: envelopeState.mode,
+        envelopes: envelopeState.envelopes,
+        telemetry: envelopeState.telemetry,
+        knowledgeRefs: mergeKnowledgeRefs(
+            envelopeState.knowledgeRefs,
+            trainingIntentKnowledgeRefs(intent),
+        ),
+        decisionTrace: {
+            policyVersion: POLICY_VERSION,
+            candidateScores: [],
+            droppedContributorObjectives: intent.droppedContributorObjectives,
+            externalRest: { planId, revision, contentHash, restDirectiveId: directive.id, date } satisfies ExternalRestProvenance,
+        },
+    };
+}
+
 export async function evaluateTrainingWithIntent(
     userId: string,
     readiness: DailyReadiness,
@@ -644,6 +706,15 @@ export async function evaluateTrainingWithIntent(
      *  entry point uses the default 'off', mirroring `fatigueFusionPolicy` above. */
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+    /** ADR-0035: the rest directive resolved for `date` by the caller (mirrors how
+     *  `externalPlan` above is resolved through placement), or null when none applies. */
+    externalRest: ExternalRestContext | null = null,
+    /** ADR-0035: an explicit, athlete-initiated request to train despite an authored rest
+     *  directive. Never inferred from favorable readiness. Production also treats a non-empty
+     *  same-day `preferredModalityToday` check-in answer as an explicit workout request.
+     *  Either route still passes every normal safety/clinical/availability/equipment/readiness
+     *  gate below and is retained in provenance as an explicit override. */
+    athleteOverridesAuthoredRest: boolean = false,
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode, subjectiveDriftPolicy, subjectiveDriftWeights);
     const { mode, envelopes, telemetry } = envelopeState;
@@ -654,6 +725,24 @@ export async function evaluateTrainingWithIntent(
         verdict: NonNullable<Recommendation['externalVerdict']>;
         provenance: { planId: string; revision: number; sessionId: string; contentHash: string };
     } | null = null;
+
+    const athleteRequestedWorkoutOnRest = athleteOverridesAuthoredRest
+        || Boolean(externalRest && readiness.subjective.preferredModalityToday?.trim());
+
+    if (externalRest && !externalPlan && !athleteRequestedWorkoutOnRest) {
+        return authoredRestRecommendation(externalRest, envelopeState, intent);
+    }
+
+    const overriddenExternalRest: ExternalRestDecisionProvenance | null = externalRest && !externalPlan && athleteRequestedWorkoutOnRest
+        ? {
+            planId: externalRest.planId,
+            revision: externalRest.revision,
+            contentHash: externalRest.contentHash,
+            restDirectiveId: externalRest.directive.id,
+            date: externalRest.date,
+            overridden: true,
+        }
+        : null;
 
     if (externalPlan && intent.planningContext.externalFallback) {
         if (!externalPlan.session.isEvent) {
@@ -770,6 +859,9 @@ export async function evaluateTrainingWithIntent(
     const externalFallbackPrefix = !externalPlan && intent.planningContext.externalFallback
         ? 'External plan fallback: no imported session is placed today, so the built-in planner is choosing this session. '
         : '';
+    const authoredRestOverridePrefix = overriddenExternalRest
+        ? 'You explicitly overrode a protected rest day; normal safety, availability, readiness, and ranking still apply. '
+        : '';
     const pick = rankingResult.accepted[0];
     // A 'modify' mode whose top-ranked candidate is already low-cost enough to survive
     // the modify ceiling unchanged (a bad subjective checkin on an already-easy day, most
@@ -789,8 +881,8 @@ export async function evaluateTrainingWithIntent(
         const safeRecovery = candidates.find(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
             ?? getCanonicalRestTemplate();
         const fallbackRationale = envelopes.safety.redFlagActive
-            ? `${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
-            : `${externalFallbackPrefix}${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`;
+            ? `${authoredRestOverridePrefix}${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
+            : `${authoredRestOverridePrefix}${externalFallbackPrefix}${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`;
         return {
             template: safeRecovery,
             rationale: fallbackRationale,
@@ -806,12 +898,15 @@ export async function evaluateTrainingWithIntent(
                 droppedContributorObjectives: intent.droppedContributorObjectives,
                 calibration,
                 ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
+                ...(overriddenExternalRest ? { externalRest: overriddenExternalRest } : {}),
             },
         };
     }
     const finalRationale = envelopes.safety.redFlagActive
-        ? `${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
-        : doseAdjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${doseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`;
+        ? `${authoredRestOverridePrefix}${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
+        : doseAdjustment
+            ? `${authoredRestOverridePrefix}${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${doseAdjustment.adjustment.rationale}`
+            : `${authoredRestOverridePrefix}${externalFallbackPrefix}${phaseContext} ${pick.rationale}`;
     return {
         template: pick.template,
         plannedDose: intent.plannedDose,
@@ -830,6 +925,7 @@ export async function evaluateTrainingWithIntent(
             droppedContributorObjectives: intent.droppedContributorObjectives,
             calibration,
             ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
+            ...(overriddenExternalRest ? { externalRest: overriddenExternalRest } : {}),
         },
     };
 }

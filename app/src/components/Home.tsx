@@ -33,6 +33,7 @@ function formatEventTiming(daysToEvent: number | null): string {
 import {
   activeExternalPlanService,
   externalPlanContextForDate,
+  externalRestContextForDate,
   type ActiveExternalPlan,
 } from '../services/activeExternalPlanService';
 import { checkinService } from '../services/checkinService';
@@ -414,11 +415,12 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           console.warn(`External plan could not be read (${activeExternalState.status}); today falls back to the ranked path.`);
         }
         const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date) : null;
+        const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;
 
         const baseRecommendation = await evaluateTrainingWithIntent(
           userId, { subjective, objective, subjectiveBaseline: input.subjectiveBaseline }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
-          'max', externalContext,
+          'max', externalContext, undefined, undefined, externalRestContext,
         );
         if (!isCurrent()) return;
         const recommendationWithPrescription = {
@@ -1005,7 +1007,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           <div className="gate-content">
             <div className="gate-text">
               <h3>Good morning</h3>
-              <p>Complete your morning check-in (~10 sec) to generate today&apos;s plan.</p>
+              <p>Complete your morning check-in (~10 sec) to generate today's plan.</p>
             </div>
             <button
               type="button"

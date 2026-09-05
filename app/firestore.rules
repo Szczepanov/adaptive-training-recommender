@@ -321,7 +321,7 @@ service cloud.firestore {
     function hasValidRecommendationAudit(userId, audit, version) {
       let hasLineage = 'knowledgeLineage' in audit;
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
         && (
           (version < 4 && !hasLineage)
           || (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage))
@@ -346,6 +346,14 @@ service cloud.firestore {
         && (!('plannedDose' in audit) || hasValidDose(audit.plannedDose))
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
+        && !(('externalPlan' in audit) && ('externalRest' in audit))
+        // ADR-0035: default authored rest bypasses ranking entirely, so candidateScores must
+        // be empty. An explicit athlete override (audit.externalRest.overridden == true)
+        // suspends only the protected-rest short circuit -- selection is the ordinary ranked
+        // planner path, so candidateScores is populated exactly like any other decision.
+        && (!('externalRest' in audit)
+          || (('overridden' in audit.externalRest) && audit.externalRest.overridden == true)
+          || audit.candidateScores.size() == 0)
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
         && (!('primarySession' in audit) || hasValidSessionReferenceBinding(audit.primarySession))
         && (!('additionalSessions' in audit) || hasValidAdditionalSessions(audit.additionalSessions))
@@ -357,6 +365,20 @@ service cloud.firestore {
           && audit.externalPlan.revision is int && audit.externalPlan.revision >= 1
           && audit.externalPlan.sessionId is string && audit.externalPlan.sessionId.size() <= 64
           && audit.externalPlan.contentHash is string && audit.externalPlan.contentHash.size() <= 128
+        ))
+        && (!('externalRest' in audit) || (
+          audit.externalRest is map
+          // 'overridden' is optional and, when present, must be the literal true -- the TS
+          // ExternalRestDecisionProvenance type never writes false; absence means the
+          // default (non-overridden) protected-rest path.
+          && audit.externalRest.keys().hasOnly(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date', 'overridden'])
+          && audit.externalRest.keys().hasAll(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date'])
+          && audit.externalRest.planId is string && audit.externalRest.planId.size() <= 64
+          && audit.externalRest.revision is int && audit.externalRest.revision >= 1
+          && audit.externalRest.contentHash is string && audit.externalRest.contentHash.size() <= 128
+          && audit.externalRest.restDirectiveId is string && audit.externalRest.restDirectiveId.size() <= 64
+          && audit.externalRest.date is string && isValidActivityDate(audit.externalRest.date)
+          && (!('overridden' in audit.externalRest) || audit.externalRest.overridden == true)
         ))
         && (!('authoredOccurrence' in audit) || (
           audit.authoredOccurrence is map
@@ -388,7 +410,15 @@ service cloud.firestore {
         && (!('primarySession' in request.resource.data) || hasValidSessionReferenceBinding(request.resource.data.primarySession))
         && (!('additionalSessions' in request.resource.data) || hasValidAdditionalSessions(request.resource.data.additionalSessions))
         && (request.resource.data.schemaVersion < 3
-          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit, request.resource.data.schemaVersion)));
+          || ('recommendationAudit' in request.resource.data
+            && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit, request.resource.data.schemaVersion)
+            // ADR-0035: the canonical-Rest binding applies only to the default (non-
+            // overridden) authored-rest path. An explicit athlete override runs the
+            // ordinary ranked planner and may legitimately persist any template.
+            && (!('externalRest' in request.resource.data.recommendationAudit)
+              || (('overridden' in request.resource.data.recommendationAudit.externalRest)
+                && request.resource.data.recommendationAudit.externalRest.overridden == true)
+              || request.resource.data.templateId == 'rest_01')));
     }
 
     function schemaRatchets() {
@@ -672,14 +702,66 @@ service cloud.firestore {
         && (!('supersededFrom' in data) || data.supersededFrom == null || isValidActivityDate(data.supersededFrom));
     }
 
+    function isValidExternalRestDirective(directive, weekCount) {
+      return directive is map
+        && directive.keys().hasOnly(['id', 'week', 'day'])
+        && directive.keys().hasAll(['id', 'week', 'day'])
+        && directive.id is string && directive.id.size() > 0 && directive.id.size() <= 64
+        && directive.week is int && directive.week >= 1 && directive.week <= weekCount
+        && directive.day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    }
+
+    function hasValidExternalRestDirectives(restDays, weekCount) {
+      return restDays is list && restDays.size() <= 26
+        && (restDays.size() < 1 || isValidExternalRestDirective(restDays[0], weekCount))
+        && (restDays.size() < 2 || isValidExternalRestDirective(restDays[1], weekCount))
+        && (restDays.size() < 3 || isValidExternalRestDirective(restDays[2], weekCount))
+        && (restDays.size() < 4 || isValidExternalRestDirective(restDays[3], weekCount))
+        && (restDays.size() < 5 || isValidExternalRestDirective(restDays[4], weekCount))
+        && (restDays.size() < 6 || isValidExternalRestDirective(restDays[5], weekCount))
+        && (restDays.size() < 7 || isValidExternalRestDirective(restDays[6], weekCount))
+        && (restDays.size() < 8 || isValidExternalRestDirective(restDays[7], weekCount))
+        && (restDays.size() < 9 || isValidExternalRestDirective(restDays[8], weekCount))
+        && (restDays.size() < 10 || isValidExternalRestDirective(restDays[9], weekCount))
+        && (restDays.size() < 11 || isValidExternalRestDirective(restDays[10], weekCount))
+        && (restDays.size() < 12 || isValidExternalRestDirective(restDays[11], weekCount))
+        && (restDays.size() < 13 || isValidExternalRestDirective(restDays[12], weekCount))
+        && (restDays.size() < 14 || isValidExternalRestDirective(restDays[13], weekCount))
+        && (restDays.size() < 15 || isValidExternalRestDirective(restDays[14], weekCount))
+        && (restDays.size() < 16 || isValidExternalRestDirective(restDays[15], weekCount))
+        && (restDays.size() < 17 || isValidExternalRestDirective(restDays[16], weekCount))
+        && (restDays.size() < 18 || isValidExternalRestDirective(restDays[17], weekCount))
+        && (restDays.size() < 19 || isValidExternalRestDirective(restDays[18], weekCount))
+        && (restDays.size() < 20 || isValidExternalRestDirective(restDays[19], weekCount))
+        && (restDays.size() < 21 || isValidExternalRestDirective(restDays[20], weekCount))
+        && (restDays.size() < 22 || isValidExternalRestDirective(restDays[21], weekCount))
+        && (restDays.size() < 23 || isValidExternalRestDirective(restDays[22], weekCount))
+        && (restDays.size() < 24 || isValidExternalRestDirective(restDays[23], weekCount))
+        && (restDays.size() < 25 || isValidExternalRestDirective(restDays[24], weekCount))
+        && (restDays.size() < 26 || isValidExternalRestDirective(restDays[25], weekCount));
+    }
+
     function hasValidExternalPlanRevision() {
       let data = request.resource.data;
-      return data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions'])
-        && data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
-        && data.schema in ['adaptive-training-recommender/external-plan@1', 'adaptive-training-recommender/external-plan@2']
+      // ADR-0035: rules validate the bounded per-directive storage shape for v3. The
+      // TypeScript import validator remains authoritative for cross-entry invariants such
+      // as id/date uniqueness and fixed-session/rest conflicts, which require viewing the
+      // two authored lists together.
+      return data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
+        && data.schema in [
+          'adaptive-training-recommender/external-plan@1',
+          'adaptive-training-recommender/external-plan@2',
+          'adaptive-training-recommender/external-plan@3',
+        ]
+        && (data.schema == 'adaptive-training-recommender/external-plan@3'
+              ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
+                 && data.keys().hasAll(['restDays'])
+              : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
         && data.revision is int && data.revision >= 1
         && isValidActivityDate(data.startDate)
         && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+        && (data.schema != 'adaptive-training-recommender/external-plan@3'
+          || hasValidExternalRestDirectives(data.restDays, data.weekCount))
         && data.sessions is list && data.sessions.size() >= 1 && data.sessions.size() <= 120;
     }
 
