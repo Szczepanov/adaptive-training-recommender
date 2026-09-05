@@ -109,6 +109,16 @@ If Option B is accepted:
   dates as blocked placement targets.
 - The immutable plan content hash includes the rest directives, so changing rest intent
   requires a new plan revision just like changing a session prescription.
+- `revision` remains **one monotonically increasing sequence per stable `planId` across all
+  supported schema literals**. Import compares the incoming revision with the highest
+  stored revision for that `planId`, not with a schema-version-local counter. For example,
+  stored v2 revision 7 may be superseded by v3 revision 8; after revision 8 is stored, any
+  v1/v2/v3 artifact at revision 8 or lower is stale and cannot supersede it. The schema tag
+  never resets the revision sequence.
+- v3 inherits the existing chosen-date-forward supersession rule: an accepted higher
+  revision applies from the confirmed supersession date forward (defaulting to today),
+  while already adjudicated daily recommendations and audits remain bound to the prior
+  plan revision/content hash. Introducing v3 must not rewrite history.
 
 #### Day-resolution semantics
 
@@ -166,8 +176,11 @@ closed to discretionary planning, at minimum:
 - an authored-rest reason/source label distinct from physiological `recover` and from
   `externalFallback`.
 
-Replay must verify the directive against the same plan bytes/revision rather than infer
-rest from the absence of a session.
+Replay may apply authored rest only when **every persisted source-identity field matches**
+the loaded immutable artifact and the directive re-resolved from it: `planId`, revision,
+content hash, rest directive `id`, and resolved plan-local date. Any mismatch fails closed
+as unreplayable; replay must not infer rest from session absence or substitute a different
+directive/date from the same plan.
 
 Because this capability changes the recommendation on a date that previously fell through
 to evergreen planning, implementation requires a `POLICY_VERSION` bump plus matching
@@ -197,6 +210,10 @@ Before implementation is complete, the following contracts need deterministic te
 - v1/v2 remain byte/validation-compatible and reject the new field;
 - v3 accepts valid relative rest directives and rejects duplicate/out-of-range/conflicting
   directives;
+- revision ordering is monotonic across schema versions for a stable `planId`: stored v2
+  revision 7 accepts v3 revision 8, while any later v1/v2/v3 import at revision 8 or lower
+  is rejected as stale; chosen-date-forward supersession leaves earlier adjudicated
+  recommendations/audits bound to their original revision;
 - rest dates are excluded from `any_day` and missed-session replacement targets;
 - an authored-rest date does not activate evergreen fallback;
 - an unplanned v1/v2/v3 date still activates the current labelled fallback;
@@ -204,7 +221,9 @@ Before implementation is complete, the following contracts need deterministic te
   canonical Rest;
 - an explicit athlete override remains safety/availability/readiness adjudicated and is
   auditable;
-- persistence/replay records the plan revision/content hash and directive identity;
+- persistence/replay records the plan/revision/content-hash/directive/date identity, and
+  replay fails closed if **any** of those persisted fields (including directive `id` or
+  resolved plan-local date) does not match the loaded immutable plan;
 - `POLICY_VERSION` and persistence/rules coverage are updated with the behavior change.
 
 No production code changes are made by this ADR; repository-owner sign-off is required
