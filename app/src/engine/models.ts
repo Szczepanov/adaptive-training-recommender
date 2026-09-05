@@ -440,6 +440,22 @@ export interface ExternalPlanSession {
     isEvent?: boolean;
 }
 
+/**
+ * ADR-0035: a plan-level directive closing one relative date to discretionary planning.
+ * Deliberately not a session -- no duration, equipment, stimulus, execution dose or
+ * adherence occurrence -- and deliberately relative (`week`/`day`, not an absolute date),
+ * preserving the "one absolute `startDate`; the app owns calendar arithmetic" contract
+ * `ExternalSessionPlacement` already follows. Introduced only in `external-plan@3`
+ * (`sessions/externalPlanV3.ts`); `external-plan@1`/`@2` do not carry this field.
+ */
+export interface ExternalRestDirective {
+    /** Unique within the plan. Durable source identity for audit/replay -- rest has no
+     * session occurrence to identify it by, so this is the only stable handle. */
+    id: string;
+    week: number;
+    day: ExternalWeekday;
+}
+
 /** The imported artifact. Never edited in place once stored (D-IMMUT). */
 export interface ExternalTrainingPlan {
     schema: typeof EXTERNAL_PLAN_SCHEMA;
@@ -842,6 +858,9 @@ export interface Recommendation {
         /** Present exactly when an imported session was adjudicated. Carried to the
          * persisted audit unchanged so replay can name the revision it must verify. */
         externalPlan?: ExternalDecisionProvenance;
+        /** Present exactly when an authored rest directive resolved this date (ADR-0035).
+         * Carried to the persisted audit unchanged, same as `externalPlan`. */
+        externalRest?: ExternalRestProvenance;
         /** An athlete-selected replacement was adjudicated instead of being selected by
          * catalog ranking. Its occurrence ID binds that authority to the primary session. */
         authoredOccurrence?: AuthoredOccurrenceProvenance;
@@ -1796,6 +1815,10 @@ export interface RecommendationAudit {
     droppedContributorObjectives: DroppedContributorObjective[];
     /** Present exactly when the decision adjudicated an imported session (ADR-0019). */
     externalPlan?: ExternalDecisionProvenance;
+    /** Present exactly when an authored rest directive closed this date to discretionary
+     * planning (ADR-0035). Mutually exclusive with `externalPlan`: a date cannot carry
+     * both a placed session and a rest directive (validated at import). */
+    externalRest?: ExternalRestProvenance;
     /** Present exactly when an active replacement occurrence owned the primary session. */
     authoredOccurrence?: AuthoredOccurrenceProvenance;
     /** Multidomain session bindings (M3.2 / ADR-0023 D-MSNAP). */
@@ -1828,6 +1851,22 @@ export interface ExternalDecisionProvenance {
     revision: number;
     sessionId: string;
     contentHash: string;
+}
+
+/**
+ * ADR-0035: identifies the authored rest directive that closed a date to discretionary
+ * planning, so a persisted decision can be replayed against the exact directive and
+ * resolved date it applied -- not just "some rest directive from this plan revision".
+ * Mirrors `ExternalDecisionProvenance`'s shape/purpose for the rest case.
+ */
+export interface ExternalRestProvenance {
+    planId: string;
+    revision: number;
+    contentHash: string;
+    restDirectiveId: string;
+    /** The plan-local date the directive resolved to. Replay recomputes this from the
+     * directive and the loaded plan's `startDate` and must match exactly. */
+    date: string;
 }
 
 // --- Type Utilities ---

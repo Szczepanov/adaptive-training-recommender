@@ -321,7 +321,7 @@ service cloud.firestore {
     function hasValidRecommendationAudit(userId, audit, version) {
       let hasLineage = 'knowledgeLineage' in audit;
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
         && (
           (version < 4 && !hasLineage)
           || (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage))
@@ -357,6 +357,16 @@ service cloud.firestore {
           && audit.externalPlan.revision is int && audit.externalPlan.revision >= 1
           && audit.externalPlan.sessionId is string && audit.externalPlan.sessionId.size() <= 64
           && audit.externalPlan.contentHash is string && audit.externalPlan.contentHash.size() <= 128
+        ))
+        && (!('externalRest' in audit) || (
+          audit.externalRest is map
+          && audit.externalRest.keys().hasOnly(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date'])
+          && audit.externalRest.keys().hasAll(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date'])
+          && audit.externalRest.planId is string && audit.externalRest.planId.size() <= 64
+          && audit.externalRest.revision is int && audit.externalRest.revision >= 1
+          && audit.externalRest.contentHash is string && audit.externalRest.contentHash.size() <= 128
+          && audit.externalRest.restDirectiveId is string && audit.externalRest.restDirectiveId.size() <= 64
+          && audit.externalRest.date is string && isValidActivityDate(audit.externalRest.date)
         ))
         && (!('authoredOccurrence' in audit) || (
           audit.authoredOccurrence is map
@@ -674,9 +684,23 @@ service cloud.firestore {
 
     function hasValidExternalPlanRevision() {
       let data = request.resource.data;
-      return data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions'])
-        && data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
-        && data.schema in ['adaptive-training-recommender/external-plan@1', 'adaptive-training-recommender/external-plan@2']
+      // ADR-0035: restDays is v3-only. v1/v2 must keep rejecting it -- this is coarse
+      // defense-in-depth (existence/size/schema-gating), not the full per-directive
+      // shape/uniqueness contract, which the TS validator enforces before any write.
+      return data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
+        && data.schema in [
+          'adaptive-training-recommender/external-plan@1',
+          'adaptive-training-recommender/external-plan@2',
+          'adaptive-training-recommender/external-plan@3',
+        ]
+        && (data.schema == 'adaptive-training-recommender/external-plan@3'
+              ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
+                 && data.keys().hasAll(['restDays'])
+              : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
+        && (!('restDays' in data) || (
+          data.schema == 'adaptive-training-recommender/external-plan@3'
+          && data.restDays is list && data.restDays.size() <= 26
+        ))
         && data.revision is int && data.revision >= 1
         && isValidActivityDate(data.startDate)
         && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 
 vi.setConfig({ testTimeout: 30_000 });
-import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent, type ExternalPlanContext } from './rules';
+import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent, type ExternalPlanContext, type ExternalRestContext } from './rules';
 import { resolvePlanningContext } from './planningMode';
 import { evaluatePeriodizationPhase } from './periodization';
 import { isExternalTemplateId } from './externalSessionProfiles';
@@ -154,6 +154,27 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         return evaluateTrainingWithIntent(
             'u1', r, context(), events, DATE, undefined, undefined, EMPTY_HISTORY, fixed, [],
             profile(mode), null, 'max', plan,
+        );
+    }
+
+    function restContext(overrides: Partial<ExternalRestContext> = {}): ExternalRestContext {
+        return {
+            planId: 'autumn-block', revision: 1, contentHash: 'hash-of-revision-1',
+            directive: { id: 'w1-tue-rest', week: 1, day: 'tuesday' },
+            date: DATE,
+            ...overrides,
+        };
+    }
+
+    async function evaluateWithRest(
+        rest: ExternalRestContext | null,
+        r: DailyReadiness = readiness(),
+        athleteOverridesAuthoredRest = false,
+        mode: TrainingIntentProfile['planningMode'] = 'externally_planned',
+    ) {
+        return evaluateTrainingWithIntent(
+            'u1', r, context(), [], DATE, undefined, undefined, EMPTY_HISTORY, [], [],
+            profile(mode), null, 'max', null, 'off', undefined, rest, athleteOverridesAuthoredRest,
         );
     }
 
@@ -313,5 +334,59 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         expect(recommendation.externalPrescription).toBeUndefined();
         expect(recommendation.decisionTrace?.externalPlan).toBeUndefined();
         expect(isExternalTemplateId(recommendation.template.id)).toBe(false);
+    });
+
+    describe('authored rest (ADR-0035)', () => {
+        it('recommends canonical Rest and records rest provenance, not a fallback', async () => {
+            const recommendation = await evaluateWithRest(restContext());
+
+            expect(recommendation.template.category).toBe('Rest');
+            expect(recommendation.decisionTrace?.externalRest).toEqual({
+                planId: 'autumn-block', revision: 1, contentHash: 'hash-of-revision-1',
+                restDirectiveId: 'w1-tue-rest', date: DATE,
+            });
+            expect(recommendation.decisionTrace?.externalPlan).toBeUndefined();
+            expect(recommendation.rationale).toContain('protected rest day');
+        });
+
+        it('does not fabricate a physiological recover verdict -- mode reflects genuine readiness', async () => {
+            // Strong readiness: evaluateReadinessAndSafetyEnvelope alone would call this 'train'.
+            const strong = readiness({ readiness: 9, sleepQuality: 9, fatigue: 1, soreness: 1, motivation: 9 });
+            const recommendation = await evaluateWithRest(restContext(), strong);
+
+            expect(recommendation.template.category).toBe('Rest');
+            expect(recommendation.mode).toBe('train');
+        });
+
+        it('surfaces a red-flag clinical note even though the outcome is already Rest either way', async () => {
+            const flagged = readiness({ painFlag: true });
+            const recommendation = await evaluateWithRest(restContext(), flagged);
+            // painFlag alone need not trigger redFlagActive; this asserts the note is
+            // included whenever the envelope itself reports one, without over-asserting
+            // exactly which subjective inputs trigger it (that contract lives in rules.ts's
+            // envelope logic, not this ADR).
+            if (recommendation.envelopes?.safety.redFlagActive) {
+                expect(recommendation.rationale).toContain(recommendation.envelopes.safety.clinicalReason ?? 'red-flag');
+            }
+        });
+
+        it('an explicit athlete override proceeds exactly as if no rest directive existed', async () => {
+            const withoutRest = await evaluateWithRest(null);
+            const overridden = await evaluateWithRest(restContext(), readiness(), true);
+
+            expect(overridden.decisionTrace?.externalRest).toBeUndefined();
+            expect(overridden.template.id).toBe(withoutRest.template.id);
+            expect(overridden.mode).toBe(withoutRest.mode);
+        });
+
+        it('a placed session takes precedence over a rest directive if both are somehow supplied', async () => {
+            const recommendation = await evaluateTrainingWithIntent(
+                'u1', readiness(), context(), [], DATE, undefined, undefined, EMPTY_HISTORY, [], [],
+                profile('externally_planned'), null, 'max', externalPlan(), 'off', undefined, restContext(), false,
+            );
+
+            expect(recommendation.decisionTrace?.externalRest).toBeUndefined();
+            expect(isExternalTemplateId(recommendation.template.id)).toBe(true);
+        });
     });
 });

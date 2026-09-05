@@ -1,7 +1,9 @@
-import type { DailyRecommendation, ExternalDecisionProvenance, ExternalTrainingPlan } from './models';
+import type { DailyRecommendation, ExternalDecisionProvenance, ExternalRestDirective, ExternalRestProvenance, ExternalTrainingPlan } from './models';
 import type { SessionReferenceBinding } from '../sessions/models';
 import { computeContentHash } from './externalPlanHash';
+import { resolveRestDate } from './externalPlacement';
 import { externalTemplateId, isExternalTemplateId } from './externalSessionProfiles';
+import { getCanonicalRestTemplate } from './rules';
 import { isHistoricalPolicyVersion, POLICY_VERSION } from './policy';
 import { subjectiveDriftAuditReplayErrors } from './subjectiveDriftAudit';
 import { identityDecisionProvenanceReplayErrors } from './identityProvenance';
@@ -179,6 +181,8 @@ export function replayRecommendationAudit(
 
     if (audit.externalPlan) {
         errors.push(...externalDecisionErrors(recommendation, audit.externalPlan, externalRevision));
+    } else if (audit.externalRest) {
+        errors.push(...externalRestErrors(recommendation, audit.externalRest, externalRevision));
     } else {
         if (externalRevision) {
             errors.push('A plan revision was supplied for a decision that did not come from an external plan.');
@@ -253,6 +257,61 @@ function externalDecisionErrors(
     const expectedTemplateId = externalTemplateId(provenance.planId, provenance.revision, provenance.sessionId);
     if (isExternalTemplateId(recommendation.templateId) && recommendation.templateId !== expectedTemplateId) {
         errors.push(`Persisted template ${recommendation.templateId} does not match the audited external session ${expectedTemplateId}.`);
+    }
+
+    return errors;
+}
+
+/**
+ * ADR-0035: mirrors `externalDecisionErrors` for an authored-rest decision. Replay fails
+ * closed if *any* of the persisted source-identity fields (`planId`, revision, content
+ * hash, rest directive id, or the resolved plan-local date) does not match the loaded
+ * immutable plan -- it must not infer rest from session absence or substitute a different
+ * directive/date from the same plan (see the ADR's persistence/audit/replay section).
+ */
+function externalRestErrors(
+    recommendation: DailyRecommendation,
+    provenance: ExternalRestProvenance,
+    externalRevision: ExternalRevisionEvidence | null,
+): string[] {
+    const errors: string[] = [];
+
+    if (!externalRevision) {
+        errors.push(`Authored-rest decision references plan ${provenance.planId} revision ${provenance.revision}, which was not supplied; it cannot be replayed without it.`);
+        return errors;
+    }
+
+    if (externalRevision.plan.planId !== provenance.planId || externalRevision.plan.revision !== provenance.revision) {
+        errors.push(`Supplied revision is ${externalRevision.plan.planId}@${externalRevision.plan.revision}, but the audit references ${provenance.planId}@${provenance.revision}.`);
+        return errors;
+    }
+
+    if (externalRevision.contentHash !== provenance.contentHash) {
+        errors.push(`Plan content hash mismatch: the audit recorded ${provenance.contentHash} but the supplied revision hashes to ${externalRevision.contentHash}. The stored revision has changed since this decision was made.`);
+        return errors;
+    }
+
+    const restDays = (externalRevision.plan as { restDays?: ExternalRestDirective[] }).restDays ?? [];
+    const directive = restDays.find(item => item.id === provenance.restDirectiveId);
+    if (!directive) {
+        errors.push(`Rest directive ${provenance.restDirectiveId} is not present in plan ${provenance.planId} revision ${provenance.revision}.`);
+        return errors;
+    }
+
+    const resolvedDate = resolveRestDate(externalRevision.plan, directive);
+    if (resolvedDate !== provenance.date) {
+        errors.push(`Rest directive ${provenance.restDirectiveId} resolves to ${resolvedDate} against the supplied plan, but the audit recorded ${provenance.date}. Replay fails closed rather than trusting the persisted date.`);
+        return errors;
+    }
+
+    if (recommendation.templateId !== getCanonicalRestTemplate().id) {
+        errors.push(`Persisted template ${recommendation.templateId} does not match the canonical Rest template expected for an authored-rest decision.`);
+    }
+
+    // Authored rest bypasses ranking entirely (rules.ts's authoredRestRecommendation never
+    // calls rankCandidates), mirroring the ordinary external-session rejection above.
+    if (recommendation.recommendationAudit!.candidateScores.length > 0) {
+        errors.push('An authored-rest decision audited ranked candidates, which that decision path must not produce.');
     }
 
     return errors;

@@ -12,6 +12,7 @@ import {
     type AnyExternalTrainingPlan as ExternalTrainingPlan,
     type AnyExternalPlanSession,
 } from '../sessions/externalPlanV2';
+import { validateExternalTrainingPlanV3, EXTERNAL_PLAN_SCHEMA_V3 } from '../sessions/externalPlanV3';
 import { SessionDefinitionPreview } from './session/SessionDefinitionPreview';
 import './ExternalPlanImport.css';
 
@@ -28,13 +29,15 @@ type Phase =
     | { kind: 'saved'; plan: ExternalTrainingPlan; untagged: AnyExternalPlanSession[] }
     | { kind: 'failed'; message: string };
 
-/** M3.6: dispatches to the v1 or v2 validator based on the pasted document's own `schema`
+/** Dispatches to the v1, v2 or v3 validator based on the pasted document's own `schema`
  * literal, mirroring `externalPlanService.ts`'s own dispatcher (kept separate rather than
  * imported from there since that one isn't exported, and a UI validate-before-save step
  * has no service dependency otherwise). */
 function validateAnyExternalTrainingPlan(raw: unknown) {
     const schema = (raw as { schema?: unknown } | null)?.schema;
-    return schema === EXTERNAL_PLAN_SCHEMA_V2 ? validateExternalTrainingPlanV2(raw) : validateExternalTrainingPlan(raw);
+    if (schema === EXTERNAL_PLAN_SCHEMA_V3) return validateExternalTrainingPlanV3(raw);
+    if (schema === EXTERNAL_PLAN_SCHEMA_V2) return validateExternalTrainingPlanV2(raw);
+    return validateExternalTrainingPlan(raw);
 }
 
 /** Objective keys the engine can credit, offered when a session declared none. */
