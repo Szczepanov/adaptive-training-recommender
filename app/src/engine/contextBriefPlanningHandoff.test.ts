@@ -301,7 +301,7 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('Steps are the completed D-1 total');
     });
 
-    it('includes physical work in recent recovery timeline flags', () => {
+    it('includes physical work in recent recovery timeline flags on D-1', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput({
             checkins: [
                 checkin(AS_OF, {
@@ -316,6 +316,44 @@ describe('enhanceContextBriefForPlanning', () => {
         }));
 
         expect(text).toContain('hard physical work');
+        // AS_OF is 2026-08-20, so D-1 is 2026-08-19
+        const timelineRow19 = text.split('\n').find(line => line.startsWith('| 2026-08-19 |'));
+        expect(timelineRow19).toContain('hard physical work');
+        const timelineRow20 = text.split('\n').find(line => line.startsWith('| 2026-08-20 |'));
+        expect(timelineRow20).not.toContain('hard physical work');
+    });
+
+    it('emits a wearable staleness caution in morning coach brief when snapshot is older than target date', () => {
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+            preset: 'daily',
+            asOfDate: '2026-08-20',
+            snapshots: [snapshot('2026-08-18')],
+        }));
+
+        expect(text).toContain('> Wearable caution: no snapshot for 2026-08-20; the newest wearable state is 2026-08-18. Do not treat it as current-day readiness.');
+    });
+
+    it('falls back to weekend max minutes when availability is unrecorded on a weekend', () => {
+        // 2026-08-22 is a Saturday
+        const weekendDate = '2026-08-22';
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+            preset: 'daily',
+            asOfDate: weekendDate,
+            checkins: [checkin(weekendDate, { availability: { timeAvailableMin: null, indoorOnly: false, preferredModalityToday: null } })],
+            trainingSettings: {
+                userId: 'u1',
+                defaults: { weekdayMaxMinutes: 45, weekendMaxMinutes: 120, environment: 'either' },
+                equipment: { indoor_bike: true, outdoor_bike: true, treadmill: false, free_weights: true, pullup_bar: false },
+                guardrails: { hardSessionCap: true, backToBackHardAllowed: false, minRecoveryHoursBetweenHard: true },
+                preferences: { preferActiveRecovery: false },
+                migration: { legacyReviewed: true, migratedAt: null },
+                schemaVersion: 3,
+                createdAt: '2026-08-01T00:00:00Z',
+                updatedAt: '2026-08-01T00:00:00Z',
+            } as unknown as TrainingSettings,
+        }));
+
+        expect(text).toContain('- Time & environment: 120 min available');
     });
 
     it('exports fixed commitments, imported sessions and their authored prescriptions', () => {
@@ -432,5 +470,163 @@ describe('enhanceContextBriefForPlanning', () => {
 
         expect(text).toContain('no check-in for 2026-08-20; latest available is 2026-08-19');
         expect(text).toContain('Do not assume subjective readiness, pain or availability are current');
+    });
+
+    describe('daily morning coach brief', () => {
+        it('renders the dedicated closed-loop morning briefing for daily chat', () => {
+            const yesterdayDate = '2026-08-19';
+            const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+                preset: 'daily',
+                checkins: [
+                    checkin(AS_OF, {
+                        readiness: 7,
+                        fatigue: 4,
+                        soreness: 5,
+                        physicalWork: {
+                            performed: true,
+                            duration: 'medium',
+                            intensity: 'hard',
+                            loadAreas: ['lower_back_spine', 'grip_forearms'],
+                            notes: 'heavy yard work and soil moving',
+                        },
+                        notes: 'feeling slightly tight in the lower back',
+                    }),
+                ],
+                activities: [{
+                    activityId: 'act-yesterday',
+                    date: yesterdayDate,
+                    type: 'road_biking',
+                    durationMin: 65,
+                    activityTrainingLoad: 85,
+                    trainingEffectAerobic: 2.9,
+                    trainingEffectAnaerobic: 0.2,
+                    averageHr: 135,
+                    intensityTag: 'moderate',
+                    normalizedPower: 195,
+                    intensityFactor: 0.75,
+                }],
+                recommendations: [
+                    {
+                        userId: 'u1',
+                        date: yesterdayDate,
+                        templateId: 'z2',
+                        templateTitle: 'Zone 2 Foundation',
+                        category: 'Easy Endurance',
+                        modality: 'Cycling',
+                        mode: 'train',
+                        rationale: 'aerobic maintenance',
+                        schemaVersion: 3,
+                        createdAt: `${yesterdayDate}T06:00:00Z`,
+                        updatedAt: `${yesterdayDate}T06:00:00Z`,
+                        adherence: {
+                            respondedAt: `${AS_OF}T05:40:00Z`,
+                            followed: true,
+                            actualModality: null,
+                            actualDurationMin: null,
+                            skipped: false,
+                            notes: 'Good steady rhythm on the road',
+                        },
+                    },
+                    {
+                        userId: 'u1',
+                        date: AS_OF,
+                        templateId: 'rec-today',
+                        templateTitle: 'Aerobic Maintenance Capped',
+                        category: 'Easy Endurance',
+                        modality: 'Cycling',
+                        mode: 'modify',
+                        rationale: 'Moderate readiness with lumbar strain; capping duration and avoiding heavy climbing',
+                        schemaVersion: 3,
+                        createdAt: `${AS_OF}T06:00:00Z`,
+                        updatedAt: `${AS_OF}T06:00:00Z`,
+                        adjustment: {
+                            direction: 'easier',
+                            tier: 1,
+                            originalTemplateId: 'rec-today-full',
+                            originalTemplateTitle: 'Aerobic Maintenance',
+                            adjustedDoseLabel: 'Reduced duration',
+                            athleteReason: 'soreness',
+                            rationale: 'Lumbar strain from physical work',
+                        },
+                        prescription: {
+                            id: 'p-today',
+                            userId: 'u1',
+                            date: AS_OF,
+                            workoutId: 'w1',
+                            workoutVersion: 1,
+                            variantId: 'reduced',
+                            targetDurationMin: 45,
+                            adjustedBlocks: [],
+                            displayBlocks: [{
+                                id: 'b1',
+                                name: 'Warm-up',
+                                role: 'warmup',
+                                steps: [{ id: 's1', name: 'Spin', dose: '10 min easy', targets: ['Zone 1 HR (<120 bpm)'], cues: ['High cadence 90+ rpm'] }],
+                            }, {
+                                id: 'b2',
+                                name: 'Main Set',
+                                role: 'main',
+                                steps: [{ id: 's2', name: 'Steady endurance', dose: '30 min', targets: ['65-72% FTP (145-160W)'], cues: ['Stay seated, no heavy torque'] }],
+                            }],
+                            rationale: ['Preserving aerobic volume while protecting lower back'],
+                            adjustmentReasons: ['Lower back soreness'],
+                            source: { recommendationEngineVersion: '3.0.0' },
+                            status: 'recommended',
+                        },
+                        adherence: {
+                            respondedAt: null,
+                            followed: null,
+                            actualModality: null,
+                            actualDurationMin: null,
+                            skipped: false,
+                            notes: null,
+                        },
+                    },
+                ],
+            }));
+
+            // Structure assertions
+            expect(text).toContain('# Morning Training & Readiness Brief');
+            expect(text).toContain('## 1. Today\'s Status & Check-in');
+            expect(text).toContain('## 2. Overnight Recovery (Wearable)');
+            expect(text).toContain('## 3. Yesterday\'s Closed-Loop Debrief (2026-08-19)');
+            expect(text).toContain('## 4. Today\'s App Recommendation & Engine Stance');
+            expect(text).toContain('## 5. Short-Term Horizon (Next 48–72h)');
+            expect(text).toContain('## 6. Morning Coach Instructions');
+
+            // Today's Status & Check-in
+            expect(text).toContain('Readiness 7 · Fatigue 4 · Soreness 5');
+            expect(text).toContain('Unlogged physical work (yesterday D-1): 1–3 hrs · hard effort · strain: lower back/spine, grip/forearms — "heavy yard work and soil moving"');
+            expect(text).toContain('feeling slightly tight in the lower back');
+
+            // Overnight recovery
+            expect(text).toContain('HRV (overnight avg): 70 ms');
+            expect(text).toContain('Recent 7-day recovery timeline');
+
+            // Yesterday's Closed-Loop Debrief
+            expect(text).toContain('Prescribed: Zone 2 Foundation (Cycling · train)');
+            expect(text).toContain('Recorded training: Road cycling · 65 min · Load 85 · Aerobic TE 2.9 · Avg HR 135 bpm · moderate');
+            expect(text).toContain('Power summary: normalized power 195 W · IF 0.75');
+            expect(text).toContain('Manual physical work: 1–3 hrs · hard effort · strain: lower back/spine, grip/forearms — "heavy yard work and soil moving"');
+            expect(text).toContain('Adherence: Followed as prescribed — "Good steady rhythm on the road"');
+
+            // Today's Recommendation & Engine Stance
+            expect(text).toContain('Mode: MODIFY');
+            expect(text).toContain('Recommended workout: Aerobic Maintenance Capped (Cycling · Easy Endurance)');
+            expect(text).toContain('Engine rationale: "Moderate readiness with lumbar strain; capping duration and avoiding heavy climbing"');
+            expect(text).toContain('Session adjustment: easier (tier 1) · Reduced duration · reason: soreness · "Lumbar strain from physical work"');
+            expect(text).toContain('Prescription steps:');
+            expect(text).toContain('Spin: 10 min easy · targets: Zone 1 HR (<120 bpm) · cues: High cadence 90+ rpm');
+            expect(text).toContain('Steady endurance: 30 min · targets: 65-72% FTP (145-160W) · cues: Stay seated, no heavy torque');
+
+            // Morning Coach Instructions
+            expect(text).toContain('Treat this brief as state/context for your ongoing morning conversation');
+            expect(text).toContain('Do NOT output a multi-day schedule table or redesign the training block');
+
+            // Omissions (ensuring no block-planning bloat in morning mode)
+            expect(text).not.toContain('### Preferred output schema');
+            expect(text).not.toContain('### Day YYYY-MM-DD: <Session Name>');
+            expect(text).not.toContain('Detailed activity telemetry');
+        });
     });
 });
