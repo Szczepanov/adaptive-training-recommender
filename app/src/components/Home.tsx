@@ -437,11 +437,17 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           },
           [],
         );
-        const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, {
-          scheduleWindows: todaysScheduleWindows,
-          fixedActivities: planWeekActivities,
-          ledger: bundleLedger,
-        }) : null;
+        // An unreadable fixed-activities read must not silently become "no fixed
+        // commitments today": bundle placement would then be free to bind a window a
+        // real (but unreadable) fixed activity actually occupies. Omit bundleContext
+        // entirely in that case, falling back to the exact pre-D-PLACEMENT priority-based
+        // primary selection. An unreadable schedule-windows read is safe to keep --
+        // `resolveIntradayBundlePlacement` already treats an empty list as the
+        // intentional legacy single-slot fallback (D-WINDOW), not a data-loss signal.
+        const bundleContext = planWeekActivitiesState.status === 'AVAILABLE'
+          ? { scheduleWindows: todaysScheduleWindows, fixedActivities: planWeekActivities, ledger: bundleLedger }
+          : undefined;
+        const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, bundleContext) : null;
         const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;
 
         const baseRecommendation = await evaluateTrainingWithIntent(

@@ -391,7 +391,7 @@ with `ScheduleWindow` -- `ScheduleOverlay` still has no clock-time concept, so i
 the *whole day's* ceiling that D-PLACEMENT's engine (below) treats as its ledger input,
 while `ScheduleWindow` is what supplies the day's individual clock-time slots.
 
-### D-PLACEMENT's bundle-placement engine (delivered, pure module -- not yet wired)
+### D-PLACEMENT's bundle-placement engine (delivered, pure module; placement-correctness wiring below)
 
 `engine/intradayBundlePlacement.ts` resolves one v4 intraday bundle's requested windows
 against real `ScheduleWindow` availability, checks the combined minute/systemic-cost

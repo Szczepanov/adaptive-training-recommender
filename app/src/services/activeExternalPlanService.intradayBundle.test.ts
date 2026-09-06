@@ -88,6 +88,65 @@ describe('resolveIntradayBundlePlacement', () => {
         expect(result?.bindings?.map(b => b.sessionId)).toEqual(['s-am', 's-pm']);
     });
 
+    it('does not merge two distinct bundle instances that land on the same date, and lets the first feasible one win', () => {
+        // An athlete's explicit per-session overlay can move any single session --
+        // including one bundle member independently of its siblings -- to an arbitrary
+        // date, so two unrelated bundle instances (different bundleId, same week) can end
+        // up with intraday-bearing sessions placed on the same date. This constructs that
+        // state directly (bypassing resolvePlacement, which would not itself produce this
+        // from one revision's authored data) to exercise the grouping boundary.
+        const groupA = [
+            intradaySession({ id: 'a1', intraday: { window: { startLocal: '06:00', endLocal: '07:00' }, bundleId: 'bundle-a', order: 0 } }),
+            intradaySession({ id: 'a2', intraday: { window: { startLocal: '17:00', endLocal: '18:00' }, bundleId: 'bundle-a', order: 1 } }),
+        ];
+        const groupB = [
+            intradaySession({ id: 'b1', intraday: { window: { startLocal: '20:00', endLocal: '21:00' }, bundleId: 'bundle-b', order: 0 } }),
+        ];
+        const active: ActiveExternalPlan = {
+            header: header(),
+            plan: planV4([...groupA, ...groupB]) as unknown as ActiveExternalPlan['plan'],
+            placement: null,
+            placed: [...groupA, ...groupB].map(session => ({
+                session: session as unknown as ActiveExternalPlan['placed'][number]['session'],
+                date: DATE, status: 'planned' as const, moved: false,
+            })),
+        };
+        const context = bundleContext({
+            scheduleWindows: [scheduleWindow({ id: 'am', startLocal: '06:00', endLocal: '07:00' }), scheduleWindow({ id: 'pm', startLocal: '17:00', endLocal: '18:00' })],
+        });
+
+        // 'bundle-a' < 'bundle-b' alphabetically and resolves feasibly against the real
+        // windows; it must win without group B's unfitting session ever being merged in.
+        const result = resolveIntradayBundlePlacement(active, DATE, context);
+        expect(result?.outcome).toBe('placed');
+        expect(result?.bindings?.map(b => b.sessionId)).toEqual(['a1', 'a2']);
+        expect(placedSessionForDate(active, DATE, context)?.session.id).toBe('a1');
+    });
+
+    it('lets a later-ordered feasible bundle instance win over an earlier infeasible one, deterministically', () => {
+        const infeasibleFirst = [
+            // 'bundle-a' sorts first but requests a window with no matching real availability.
+            intradaySession({ id: 'a1', intraday: { window: { startLocal: '20:00', endLocal: '21:00' }, bundleId: 'bundle-a', order: 0 } }),
+        ];
+        const feasibleSecond = [
+            intradaySession({ id: 'b1', intraday: { window: { startLocal: '06:00', endLocal: '07:00' }, bundleId: 'bundle-b', order: 0 } }),
+        ];
+        const active: ActiveExternalPlan = {
+            header: header(),
+            plan: planV4([...infeasibleFirst, ...feasibleSecond]) as unknown as ActiveExternalPlan['plan'],
+            placement: null,
+            placed: [...infeasibleFirst, ...feasibleSecond].map(session => ({
+                session: session as unknown as ActiveExternalPlan['placed'][number]['session'],
+                date: DATE, status: 'planned' as const, moved: false,
+            })),
+        };
+        const context = bundleContext({ scheduleWindows: [scheduleWindow({ id: 'am', startLocal: '06:00', endLocal: '07:00' })] });
+
+        const result = resolveIntradayBundlePlacement(active, DATE, context);
+        expect(result?.outcome).toBe('placed');
+        expect(result?.bindings?.map(b => b.sessionId)).toEqual(['b1']);
+    });
+
     it('reports infeasible when the date is authored rest', () => {
         // D-SCHEMA import validation would reject an intraday session sharing a date with
         // an authored rest directive, but resolveIntradayBundlePlacement itself must still

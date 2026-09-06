@@ -77,24 +77,8 @@ export interface IntradayBundlePlacementContext {
     ledger: DailyLedgerResult;
 }
 
-/**
- * D-PLACEMENT: resolves the real window/order/rest/budget placement for one date's v4
- * intraday bundle, or `null` when no session placed on that date carries `intraday`.
- * Trusts D-SCHEMA's already-validated invariant that every intraday-bearing session
- * placed on one authored date shares a single `bundleId` (`validateIntradayBundles`'s
- * per-`(week, day)` scoping) rather than re-deriving it.
- */
-export function resolveIntradayBundlePlacement(
-    active: ActiveExternalPlan,
-    date: string,
-    context: IntradayBundlePlacementContext,
-): BundlePlacementProposal | null {
-    const bundleSessions = placedSessionsForDate(active, date)
-        .filter((placed): placed is PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } } => hasIntraday(placed.session));
-    if (bundleSessions.length === 0) return null;
-
-    const bundleId = bundleSessions[0].session.intraday.bundleId;
-    const members: IntradayBundleMember[] = bundleSessions.map(placed => {
+function toMembers(bundleSessions: readonly (PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } })[]): IntradayBundleMember[] {
+    return bundleSessions.map(placed => {
         const { intraday, definition, priority, id } = placed.session;
         return {
             sessionId: id,
@@ -111,9 +95,51 @@ export function resolveIntradayBundlePlacement(
             started: false,
         };
     });
+}
+
+/**
+ * D-PLACEMENT: resolves the real window/order/rest/budget placement for one date's v4
+ * intraday bundle, or `null` when no session placed on that date carries `intraday`.
+ *
+ * `bundleId` is only unique within a plan week (D-SCHEMA scopes it per `(week, bundleId)`,
+ * not per resolved date), and an athlete's explicit per-session overlay can move any
+ * single session -- including one bundle member independently of its siblings -- to an
+ * arbitrary date. So two different bundle instances (different weeks, coincidentally
+ * reusing the same descriptive `bundleId`, or one bundle's stray member relocated onto
+ * another bundle's date) can both have intraday-bearing sessions placed on the same date.
+ * This groups by `(week, bundleId)` first rather than assuming every intraday-bearing
+ * session on the date belongs to one bundle. If more than one group resolves, the first
+ * to place feasibly wins (groups ordered deterministically by key); if none place, the
+ * first group's infeasible result is reported, so the outcome never depends on object/
+ * array iteration order.
+ */
+export function resolveIntradayBundlePlacement(
+    active: ActiveExternalPlan,
+    date: string,
+    context: IntradayBundlePlacementContext,
+): BundlePlacementProposal | null {
+    const bundleSessions = placedSessionsForDate(active, date)
+        .filter((placed): placed is PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } } => hasIntraday(placed.session));
+    if (bundleSessions.length === 0) return null;
+
+    const groups = new Map<string, (PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } })[]>();
+    for (const placed of bundleSessions) {
+        const key = `${placed.session.placement.week}:${placed.session.intraday.bundleId}`;
+        const group = groups.get(key) ?? [];
+        group.push(placed);
+        groups.set(key, group);
+    }
 
     const restDates = new Set(resolveRestDatesByDate(active.plan).keys());
-    return proposeBundlePlacement(bundleId, date, members, context.scheduleWindows, context.fixedActivities, restDates, context.ledger);
+    let firstResult: BundlePlacementProposal | null = null;
+    for (const key of [...groups.keys()].sort()) {
+        const groupSessions = groups.get(key)!;
+        const bundleId = groupSessions[0].session.intraday.bundleId;
+        const result = proposeBundlePlacement(bundleId, date, toMembers(groupSessions), context.scheduleWindows, context.fixedActivities, restDates, context.ledger);
+        firstResult ??= result;
+        if (result.outcome === 'placed') return result;
+    }
+    return firstResult;
 }
 
 /**
@@ -137,11 +163,15 @@ export function placedSessionForDate(
 
     if (bundleContext) {
         const bundlePlacement = resolveIntradayBundlePlacement(active, date, bundleContext);
-        if (bundlePlacement?.outcome === 'placed') {
-            const bundleSessions = sessions.filter((placed): placed is PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } } => hasIntraday(placed.session));
-            const earliest = [...bundleSessions].sort((left, right) => left.session.intraday.order - right.session.intraday.order)[0];
-            return earliest;
-        }
+        // `bindings` is already ordered by ascending `order` (proposeBundlePlacement maps
+        // over its sorted member list), so its first entry is the winning bundle's own
+        // earliest-order member -- derived from the one bundle instance that actually
+        // resolved, never re-derived by scanning every intraday-bearing session on the
+        // date (which could span more than one bundle instance; see
+        // `resolveIntradayBundlePlacement`'s doc comment).
+        const primaryId = bundlePlacement?.outcome === 'placed' ? bundlePlacement.bindings?.[0]?.sessionId : undefined;
+        const primary = primaryId ? sessions.find(placed => placed.session.id === primaryId) : undefined;
+        if (primary) return primary;
     }
 
     if (sessions.length === 1) return sessions[0];
