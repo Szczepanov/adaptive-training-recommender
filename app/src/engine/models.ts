@@ -282,6 +282,40 @@ export interface FixedActivity {
     updatedAt: string;
 }
 
+/**
+ * ADR-0036 D-WINDOW: the athlete's versioned schedule -- the sole owner of actual
+ * same-date training availability. A plan's `intraday` request (ADR-0036 D-SCHEMA,
+ * `sessions/externalPlanV4.ts`) is intersected against these at placement time; it can
+ * never create or broaden one. Windows are same-date, positive-duration and
+ * non-overlapping -- an overnight opening must be split into two windows at midnight
+ * (`scheduleWindows.ts` enforces this). Missing windows for a date is the supported
+ * legacy case: `resolveScheduleWindowsForDate` returns `[]`, and callers keep today's
+ * single-slot, untimed availability behavior -- absence never fabricates an AM/PM pair.
+ * First release supports at most one training occurrence per resolved window (D-WINDOW).
+ */
+export interface ScheduleWindow {
+    id: string;
+    userId: string;
+    date: string; // YYYY-MM-DD, Warsaw-local (ADR-0003)
+    startLocal: string; // HH:mm
+    endLocal: string; // HH:mm, strictly after startLocal (same day)
+    /** Display only -- AM/PM style labels are never implicit clock ranges or
+     *  physiological categories (D-WINDOW). */
+    label?: string;
+    /** Equipment actually available during this window. Absent = the athlete's standing
+     *  profile equipment applies unchanged, mirroring `FixedActivity.equipment`'s override
+     *  semantics rather than meaning "no equipment". */
+    equipment?: string[];
+    /** A true window-wide restriction (e.g. a hotel gym slot). Absent = no additional
+     *  restriction beyond the athlete's general context. */
+    environment?: TrainingEnvironment;
+    /** Monotonically increasing per window id; bumped on every update so a stale reader
+     *  (mid-placement) can detect it is looking at superseded availability. */
+    revision: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export type EventPriority = 'A' | 'B' | 'C';
 export type EventLifecycle = 'scheduled' | 'completed' | 'cancelled' | 'DNS' | 'DNF' | 'rescheduled';
 

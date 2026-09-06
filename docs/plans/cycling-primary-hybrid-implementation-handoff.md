@@ -228,18 +228,28 @@ Useful synthetic software work can proceed without those personal answers.
 ## Work order H4 — Intraday windows and post-AM response
 
 **Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
-Step 1 (D-SCHEMA + D-LEDGER) delivered; the same-day canonical performed-fact boundary
-is verified; steps 2-6 (runtime wiring) unstarted.
+By capability (not the numbered sequence below, which tracks a different granularity --
+see the note after the numbered list): D-SCHEMA, D-LEDGER (pure module) and D-TIME are
+delivered; the same-day canonical performed-fact boundary is verified; D-WINDOW's
+athlete-schedule model is delivered (unwired). Still unstarted: wiring the ledger's
+remainder/admission semantics into actual ranking/admission decisions, D-PLACEMENT's
+bundle-placement engine and its wiring, and D-REASSESS/D-AUDIT.
 **Dependencies:** ADR-0035 rest support (delivered). Same-day canonical performed
-identity/revision/timing inputs are now verified (see below) -- the remaining
-dependency is simply doing the runtime-wiring work itself.
+identity/revision/timing inputs are now verified (see below), D-TIME's instant resolution
+is delivered, and D-WINDOW's availability model is delivered -- the remaining dependency
+is simply doing the D-PLACEMENT runtime-wiring work itself.
 **Deliverable:** Authored intraday placement and reassessed execution, followed separately
 by automatic multi-window packing after the initial acceptance bar passes.
 
-The accepted implementation sequence is:
+The accepted implementation sequence below is numbered by planned PR, not by capability --
+step 1's schema landed first, D-WINDOW's athlete-schedule model (also part of step 1's
+scope) landed in a later, separate PR after step 2's ledger module, and D-TIME (not its
+own numbered step) landed between them. Read the **Status** line above for current
+capability delivery; do not infer from a step's number alone whether everything named in
+its description has actually shipped.
 
-1. **Delivered.** Version `external-plan@4` intraday placement and athlete schedule
-   windows; keep v1/v2/v3 immutable. `sessions/externalPlanV4.ts` adds the session-level
+1. **Schema delivered; athlete schedule windows delivered separately (see below).**
+   Version `external-plan@4` intraday placement; keep v1/v2/v3 immutable. `sessions/externalPlanV4.ts` adds the session-level
    `intraday` object (window/bundleId/order/afterSessionId/minimumSeparationMinutes) on
    top of v3's unchanged envelope/`restDays`, validating intervals, bundle
    membership/order/dependency shape, and rejecting invalid references -- see the
@@ -271,9 +281,42 @@ The accepted implementation sequence is:
    `computeDailyLedger`'s remainder or `admitsCandidate` when ranking/admitting a
    candidate -- D-LEDGER's remainder-based admission is not yet a decision input
    anywhere. Resolving real windows and reserving minutes/cost against actual instants
-   also needs D-TIME (below).
-3. Add atomic, confirmed bundle placement against all destination windows and ADR-0035
-   rest. Preserve completed history and support independent optional-session dropping.
+   also needs D-TIME (delivered, see below) and D-WINDOW (delivered, see below).
+
+   **D-TIME delivered.** `engine/localInstant.ts`'s `resolveLocalInstant`/
+   `elapsedMinutesBetweenInstants` resolve Warsaw-local wall-clock times to real instants
+   with explicit offsets, rejecting calendar-invalid dates and surfacing (never silently
+   resolving) spring-forward-gap and fall-back-fold local times. Verified against real
+   2026 DST transitions in three zones; two review rounds caught and fixed real bugs (a
+   calendar-invalid-date acceptance bug and a far-from-UTC offset-discovery bug). Pure,
+   timestamp-only, not wired into anything yet.
+
+   **D-WINDOW's athlete-schedule model delivered (unwired).** Investigated first, per the
+   ADR: PR #428's `ScheduleOverlay` is a date-range absence/trip model with a single daily
+   minutes number, not the same-date-multi-window model D-WINDOW requires -- confirmed by
+   reading its diff and `schedule.ts`'s `resolveAvailability` (no window/clock-time
+   concept exists anywhere in the codebase). `engine/models.ts`'s new `ScheduleWindow`
+   (stable id, Warsaw-local date, `startLocal`/`endLocal` HH:mm, optional label/equipment/
+   environment, a `revision` bumped on update) plus `engine/scheduleWindows.ts` (pure
+   per-document and cross-window-non-overlap validation, `resolveScheduleWindowsForDate`
+   returning `[]` for the legacy single-untimed-slot case) and
+   `services/scheduleWindowService.ts` (`users/{userId}/schedule_windows/{windowId}`,
+   rejecting an overlapping create/update client-side -- a best-effort, non-atomic check;
+   Firestore's client transactions cannot read an arbitrary query, so this cannot fully
+   close the race against concurrent writers, and full enforcement needs a trusted server
+   boundary, out of scope here) are the delivered contract. `firestore.rules` validates
+   per-document shape/ownership/revision-increase/`createdAt`-immutability (including
+   each `equipment` item's own type/length, not just the list's size), mirroring
+   `hasValidFixedActivity`. Recurring-template resolution to dated instances is
+   deliberately deferred to a future slice; only already-dated window instances are
+   modeled here, which is all D-PLACEMENT needs to consume.
+   Not wired into `resolveAvailability` or any decision path.
+3. Add atomic, confirmed bundle placement against all destination `ScheduleWindow`s and
+   ADR-0035 rest, using D-LEDGER's remainder/admission math and D-TIME's elapsed-instant
+   semantics for separation. Preserve completed history and support independent
+   optional-session dropping. Given the size of D-WINDOW + this bundle-placement engine +
+   wiring it into `evaluateTrainingWithIntent`, split this into separate PRs the same way
+   steps 1-2 above did rather than one large change.
 4. At PM launch, capture current symptoms/response, same-day work and availability, rerun
    common gates, and atomically validate the input/ledger revision before reserving.
    A morning PM approval is provisional; missing prerequisite evidence remains pending.
@@ -314,9 +357,13 @@ pinning test confirming `getPerformedTrainingFactsInRange`'s existing behavior a
 `trainingIntent.ts`'s call site are unchanged. Not called from any production/decision
 path yet -- `simulate:diff`/policy-drift confirm no output change.
 
-The next PR should tackle step 2's refactor (wiring the ledger into the existing
-deduction points) before D-TIME/D-REASSESS/D-PLACEMENT, since every later step reads from
-that shared boundary. It no longer needs a separate verification pass first.
+The next PRs should tackle, in order: (a) step 2's refactor (wiring the ledger into the
+existing deduction points), since every later step reads from that shared boundary, then
+(b) D-PLACEMENT's bundle-placement engine (a new module beside `externalPlacement.ts`
+consuming `ScheduleWindow`/`dailyLedger.ts`/`localInstant.ts`, still unwired), then (c)
+wiring both into `evaluateTrainingWithIntent` with a real `POLICY_VERSION` bump and full
+scenario/simulate-diff verification, then D-REASSESS/D-AUDIT. None of these need a
+separate verification pass first -- D-TIME, D-LEDGER and D-WINDOW are all delivered.
 
 ## Work order H5 — Block intent and controlled progression
 

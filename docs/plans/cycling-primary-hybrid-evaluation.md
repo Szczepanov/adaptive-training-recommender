@@ -1,7 +1,19 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered, the same-day canonical performed-fact boundary verified, and the fixed-activity cost-reduce duplication unified (ledger-based ranking/admission and D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT unstarted); H5 design accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted)
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4's remaining wiring (using the ledger's remainder/admission math as an actual ranking input, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) needs its own decision-affecting PR(s); H5c needs the athlete-scoped singleton progression-claim transaction design, and cumulative `external-plan@5` acceptance is unblocked now that H4's v4 contract has landed.
+**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design
+accepted as ADR-0036 with D-SCHEMA/D-LEDGER/D-TIME delivered, the same-day canonical
+performed-fact boundary verified, the fixed-activity cost-reduce duplication unified, and
+D-WINDOW's athlete-schedule model delivered (unwired) (ledger-based ranking/admission and
+D-PLACEMENT's bundle-placement engine plus its wiring, then D-REASSESS/D-AUDIT,
+unstarted); H5 design accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative
+`external-plan@5` unstarted)
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction
+confirmation; H4's remaining wiring (using the ledger's remainder/admission math as an
+actual ranking input, D-PLACEMENT's bundle-placement engine on top of D-WINDOW/D-TIME/
+D-LEDGER, then wiring both into `evaluateTrainingWithIntent` with a real `POLICY_VERSION`
+bump, then D-REASSESS/D-AUDIT) needs its own decision-affecting PR(s); H5c needs the
+athlete-scoped singleton progression-claim transaction design, and cumulative
+`external-plan@5` acceptance is unblocked now that H4's v4 contract has landed.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -240,9 +252,11 @@ also remains blocked on current-workload/restriction confirmation.
 ## H4 — Intraday capacity and post-AM reassessment
 
 **Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
-**D-SCHEMA and D-LEDGER delivered** (schema/pure-ledger slice); **same-day canonical
-performed-fact boundary verified**; runtime wiring (the `dailyLedger.ts` refactor, plus
-D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) unstarted.
+**D-SCHEMA, D-LEDGER and D-TIME delivered** (schema/pure-ledger/pure-instant slices);
+**same-day canonical performed-fact boundary verified**; **D-WINDOW's athlete-schedule
+model delivered** (persisted, unwired); runtime wiring (the `dailyLedger.ts` refactor,
+plus D-PLACEMENT's bundle-placement engine and its wiring, then D-REASSESS/D-AUDIT)
+unstarted.
 **Dependencies:** ADR-0035 rest support (delivered). The `external-plan@4`/`dailyLedger.ts`
 D-SCHEMA/D-LEDGER slice itself left `POLICY_VERSION` unchanged (neither module is
 consumed by any decision path); the later fixed-activity cost-reduce dedup slice below
@@ -288,6 +302,80 @@ this slice, including the worked example (a 90-minute daily ceiling with 60-minu
 completion leaves at most 30 minutes for PM even though both windows individually offer
 90 minutes) and the exhausted-systemic-cost-blocks-admission case. `simulate:diff` and
 policy-drift show no change from this slice, confirming it is inert until wired.
+
+### D-TIME (delivered)
+
+`engine/localInstant.ts` implements D-TIME as a pure, timestamp-only module:
+`resolveLocalInstant(dateStr, timeStr, timeZone = 'Europe/Warsaw')` resolves a local
+wall-clock date/time to a real instant with an explicit offset, rejecting calendar-invalid
+`dateStr` values and returning `'nonexistent'` for a spring-forward gap or `'ambiguous'`
+(both candidate instants) for a fall-back fold rather than silently choosing an offset;
+`elapsedMinutesBetweenInstants` computes elapsed minutes between two resolved instants.
+`localInstant.test.ts` verifies real 2026 DST transitions in three zones, including two
+review rounds that caught and fixed real bugs (a calendar-invalid-date acceptance bug and
+a DST-offset-discovery bug that only manifested for zones far from UTC -- see the module's
+own header comment for why the offset-sampling window is centered on a rough estimate
+rather than the naive instant). Not wired into anything yet; `simulate:diff`/policy-drift
+show no change from this slice.
+
+### D-WINDOW (delivered, model only)
+
+Investigated first, per the ADR's own instruction: is PR #428's `ScheduleOverlay`
+(`engine/models.ts`, `services/scheduleOverlayService.ts`) the "athlete's versioned
+schedule" D-WINDOW requires? No -- `ScheduleOverlay` is a date-*range* absence/trip model
+(a single `dailyAvailabilityMinutes` number plus dose-scaling multipliers feeding
+`applyPlanningOverlays`), with no clock-time start/end, no stable window id, and no
+support for more than one window per date. D-WINDOW needs exactly what that lacks: a
+stable window id, local start/end times, an optional label, and per-window
+equipment/environment restrictions, with **multiple same-date windows** as the whole
+point (AM/PM). No such model existed anywhere in the codebase before this slice, and
+`resolveAvailability` (`schedule.ts`) still models a single per-date minute budget with no
+window/clock-time concept -- confirmed by reading it, not assumed.
+
+`engine/models.ts`'s new `ScheduleWindow` interface is that model: `id`, `userId`, `date`
+(Warsaw-local `YYYY-MM-DD`), `startLocal`/`endLocal` (`HH:mm`), optional `label`/
+`equipment`/`environment`, and a `revision` bumped on every update. `engine/scheduleWindows.ts`
+is the pure validation/resolution module: `validateScheduleWindow` (per-document shape,
+same-day positive-duration `HH:mm` interval, rejecting cross-midnight spans -- an
+overnight opening must be split at midnight, matching `externalPlanV4.ts`'s `intraday`
+window rule), `validateScheduleWindowSet` (cross-window non-overlap *within* a date,
+correctly scoped so windows on different dates are never compared against each other),
+and `resolveScheduleWindowsForDate` (returns `[]` for a date with no windows -- the
+supported legacy case: callers must keep today's single untimed-slot behavior rather than
+treating an empty result as "no availability", per D-WINDOW: "missing metadata never
+creates an AM and PM pair"). `services/scheduleWindowService.ts` persists these at
+`users/{userId}/schedule_windows/{windowId}` (ADR-0002 user-owned path), rejecting a
+create/update that would overlap an existing same-date window client-side -- a
+best-effort, non-atomic check (read siblings, then write, no lock between): Firestore's
+client `Transaction.get()` only reads a known `DocumentReference`, not an arbitrary
+query, so a client-side transaction cannot close this race either, and two concurrent
+writes (or a direct SDK write bypassing this service) can still both pass and persist
+overlapping windows. `firestore.rules` intentionally validates only per-document shape
+and ownership -- the same split `hasValidExternalPlanRevision`'s comment already
+documents for cross-session plan invariants rules cannot see across sibling documents --
+plus requires `revision` to strictly increase on update, validates each `equipment` item's
+own type/length (not just the list's size -- `hasValidEquipmentList` was fixed in review
+to check this, since it previously let a non-string/oversized item pass rules and then
+fail client-side parsing as `INVALID`), and keeps `createdAt` immutable, mirroring
+`hasValidFixedActivity` (itself now covered by the same equipment-item fix). Closing the
+race for real needs a trusted server
+boundary (e.g. a Cloud Function serializing writes per user/date); out of scope for this
+bounded PR and flagged as a known limitation, not treated as solved.
+
+Recurring availability ("Recurring availability is resolved to dated instances by the
+app", D-WINDOW) is intentionally deferred: this slice only models and persists
+already-dated window instances. A future recurring-template resolver can add
+`ScheduleWindow` instances without changing this file's contract, since every downstream
+consumer (D-PLACEMENT included) only ever sees resolved, dated windows.
+
+Not wired into `resolveAvailability`, placement, or any decision path -- that intersection
+(a plan's `intraday` request against real resolved windows) is D-PLACEMENT's job, layered
+on top of this model. `scheduleWindows.test.ts`, `scheduleWindowService.test.ts`, and new
+`firestoreRules.emulator.test.ts` cases cover validation, overlap detection (including the
+regression the tests originally caught: cross-date windows were incorrectly flagged as
+overlapping before the cross-window check was scoped per-date), legacy-empty resolution,
+and the Firestore rules' shape/ownership/revision/immutability contract.
+`simulate:diff`/policy-drift show no change from this slice.
 
 ### Same-day canonical performed-fact boundary (verified)
 
@@ -343,9 +431,14 @@ The three different ad hoc dedup mechanisms across these sites (`seenOccurrences
 in `unrepresentedFixedActivityProjection`) are **not yet unified** onto the ledger's
 `occurrenceId`/`revision` model, and none of these call sites yet consult
 `computeDailyLedger`'s remainder or `admitsCandidate` when ranking or admitting a
-candidate. The actual next H4 task is using the ledger's remainder/admission semantics
-as a real ranking/admission input -- that is decision-affecting and needs its own PR,
-then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT.
+candidate. The actual next H4 tasks are (1) using the ledger's remainder/admission
+semantics as a real ranking/admission input, (2) D-PLACEMENT's bundle-placement engine
+(resolving a v4 `intraday` bundle's requested windows against real `ScheduleWindow`
+availability, checking combined minute/systemic-cost budget via `dailyLedger.ts`, and an
+atomic confirmed-proposal API analogous to `externalPlacement.ts`'s
+`proposeReplacement`/`applyConfirmedProposal`, but for bundles), and (3) wiring both into
+`evaluateTrainingWithIntent` with a real `POLICY_VERSION` bump -- each decision-affecting
+and scoped as its own PR, then D-REASSESS/D-AUDIT.
 
 ## H5 — Explicit develop/maintain intent and progression
 
@@ -408,6 +501,7 @@ is non-decision-affecting and needs no bump; the explicit-rest follow-up will re
 normal policy/schema/replay review when it changes decision behavior. H4's
 `fixed-activity-cost-dedup-v1` bump reflects the drift gate's mechanical requirement for
 any `planner.ts`/`rules.ts` touch, not an actual behavior change (verified via
-`simulate:diff`); H4's still-pending ledger-based ranking/admission wiring and H5's
-still-pending H5c will require the normal review when they actually change decision
+`simulate:diff`); H4's still-pending ledger-based ranking/admission wiring, D-PLACEMENT's
+bundle-placement engine and its wiring, and H5's still-pending H5c will require the normal
+review when they actually change decision
 behavior. Do not enable experimental personalization simply to improve a judge score.
