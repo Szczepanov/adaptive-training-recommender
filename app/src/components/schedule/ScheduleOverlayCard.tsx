@@ -42,16 +42,19 @@ export const ScheduleOverlayCard = memo(function ScheduleOverlayCard({
 }: ScheduleOverlayCardProps) {
     const [overlays, setOverlays] = useState<ScheduleOverlayWithId[]>([]);
     const [loading, setLoading] = useState(true);
+    const [loadError, setLoadError] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [selectedOverlay, setSelectedOverlay] = useState<ScheduleOverlayWithId | null>(null);
 
     const loadOverlays = useCallback(async () => {
         try {
             setLoading(true);
+            setLoadError(null);
             const list = await scheduleOverlayService.listOverlays(userId);
             setOverlays(list);
         } catch (err) {
             console.error('Failed to load schedule overlays:', err);
+            setLoadError('Schedule blocks could not be loaded. Retry before relying on this plan view.');
         } finally {
             setLoading(false);
         }
@@ -100,6 +103,18 @@ export const ScheduleOverlayCard = memo(function ScheduleOverlayCard({
 
             {loading ? (
                 <div className="overlay-loading">Loading schedule blocks...</div>
+            ) : loadError ? (
+                <div className="overlay-empty-state" role="alert">
+                    <span className="empty-icon">⚠️</span>
+                    <p>{loadError}</p>
+                    <button
+                        type="button"
+                        className="btn-add-overlay"
+                        onClick={() => void loadOverlays()}
+                    >
+                        Retry
+                    </button>
+                </div>
             ) : activeAndUpcoming.length === 0 ? (
                 <div className="overlay-empty-state">
                     <span className="empty-icon">🗓️</span>
@@ -164,7 +179,7 @@ export const ScheduleOverlayCard = memo(function ScheduleOverlayCard({
                 </div>
             )}
 
-            {past.length > 0 && (
+            {past.length > 0 && !loadError && (
                 <details className="past-overlays-accordion">
                     <summary className="past-summary">Past Schedule Blocks ({past.length})</summary>
                     <div className="past-list">
