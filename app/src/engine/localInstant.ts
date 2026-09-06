@@ -12,13 +12,16 @@
  * cases without one. A naive fixed-point ("guess an offset, apply it, re-read the offset
  * at the result") approach can silently converge onto just one of two valid answers
  * during a fall-back fold and never discover the other exists, so this instead samples
- * every offset the zone could plausibly be using in a window around the requested
- * wall-clock reading (a DST transition is always a single hour-aligned instant, so a
- * +-2h sample window is guaranteed to see both offsets around any transition), builds
- * the candidate instant for each distinct offset found, and keeps only the candidates
- * that actually reproduce the requested wall-clock reading when reformatted back into
- * that zone: zero surviving candidates means the local time never occurred (spring-
- * forward gap), one means an ordinary unambiguous instant, two means the fall-back fold.
+ * every offset the zone could plausibly be using in a window and keeps only the
+ * candidates that actually reproduce the requested wall-clock reading when reformatted
+ * back into that zone: zero surviving candidates means the local time never occurred
+ * (spring-forward gap), one means an ordinary unambiguous instant, two means the
+ * fall-back fold. The sample window is centered on a rough offset estimate (read once at
+ * the naive instant that treats the wall-clock reading as if it were already UTC), not on
+ * the naive instant itself -- for a zone far from UTC (e.g. America/New_York at -240/-300
+ * minutes, or a zone east of it at +780/+720) the true candidate instants can be several
+ * hours away from that naive instant, so a window centered there would miss the actual
+ * DST transition entirely and silently return only one of two valid answers.
  */
 
 export interface ResolvedLocalInstant {
@@ -89,17 +92,33 @@ export function resolveLocalInstant(dateStr: string, timeStr: string, timeZone: 
     const [year, month, day] = dateStr.split('-').map(Number);
     const [hour, minute] = timeStr.split(':').map(Number);
     const naiveUtcMs = Date.UTC(year, month - 1, day, hour, minute);
+    // Date.UTC normalizes an out-of-range calendar component (e.g. day 30 in February)
+    // into the following month instead of rejecting it -- reject explicitly here so
+    // invalid input fails closed rather than silently round-tripping through DST
+    // resolution as a false "nonexistent" result.
+    const normalized = new Date(naiveUtcMs);
+    if (normalized.getUTCFullYear() !== year || normalized.getUTCMonth() !== month - 1 || normalized.getUTCDate() !== day) {
+        throw new RangeError(`dateStr must be a valid calendar date, got "${dateStr}"`);
+    }
+
+    // A rough offset estimate, read once at the naive instant (treating the wall-clock
+    // reading as if it were already UTC) -- only used to locate roughly where the real
+    // candidate instant(s) are for this zone, since a zone's magnitude of offset from UTC
+    // (e.g. -300 for America/New_York, +780 for Pacific/Auckland's DST) can otherwise put
+    // the true candidates hours away from the naive instant.
+    const roughOffset = offsetMinutesAt(naiveUtcMs, timeZone);
+    const approxCandidateMs = naiveUtcMs - roughOffset * 60000;
 
     // A DST transition is always a single hour-aligned instant shifting the offset by a
     // fixed amount (1 hour for every zone this app targets). Sampling every hour across a
-    // +-2h window around the naive instant is guaranteed to observe every offset that
-    // could possibly apply to this wall-clock reading, without assuming which side of a
-    // transition the naive instant itself landed on -- a plain two-pass fixed-point
-    // iteration can converge onto just one of two valid answers during a fall-back fold
-    // and never discover the other one exists.
+    // +-2h window centered on the approximate candidate is guaranteed to observe every
+    // offset that could possibly apply to this wall-clock reading, without assuming which
+    // side of a transition the naive instant itself landed on -- a plain two-pass
+    // fixed-point iteration can converge onto just one of two valid answers during a
+    // fall-back fold and never discover the other one exists.
     const distinctOffsets = new Set<number>();
     for (let hourOffset = -2; hourOffset <= 2; hourOffset += 1) {
-        distinctOffsets.add(offsetMinutesAt(naiveUtcMs + hourOffset * 3600000, timeZone));
+        distinctOffsets.add(offsetMinutesAt(approxCandidateMs + hourOffset * 3600000, timeZone));
     }
 
     const matches: { instant: number; offsetMinutes: number }[] = [];
