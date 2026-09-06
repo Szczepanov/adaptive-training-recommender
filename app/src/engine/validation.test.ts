@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { isValidDate, validateRecommendation, validateAdherenceUpdate, validateGoal, validateFixedActivity, validateCheckin, validateAuthoredPlanBlock, validatePreferences } from './validation';
+import type { PhysicalWorkDuration, PhysicalWorkIntensity, PhysicalWorkLoadArea } from './models';
 
 describe('validatePreferences unavailable modalities', () => {
     const valid = {
@@ -529,6 +530,168 @@ describe('validateCheckin: tissueResponses (Phase 5.4)', () => {
         });
     });
 });
+
+describe('validateCheckin: physicalWork', () => {
+    const baseFields = {
+        userId: 'u1',
+        date: '2026-08-08',
+        readiness: 7,
+    };
+
+    it('accepts complete and valid physical work', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                intensity: 'hard',
+                loadAreas: ['grip_forearms', 'upper_body'],
+                notes: 'cutting trees and moving logs',
+            },
+        });
+        expect(result.isValid).toBe(true);
+        expect(result.data?.physicalWork).toEqual({
+            performed: true,
+            duration: 'medium',
+            intensity: 'hard',
+            loadAreas: ['grip_forearms', 'upper_body'],
+            notes: 'cutting trees and moving logs',
+        });
+    });
+
+    it('accepts minimal physicalWork when performed is false', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: { performed: false },
+        });
+        expect(result.isValid).toBe(true);
+        expect(result.data?.physicalWork).toEqual({ performed: false });
+    });
+
+    it('sanitizes notes trimming whitespace and omitting empty string', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'short',
+                intensity: 'moderate',
+                loadAreas: ['lower_back_spine'],
+                notes: '   ',
+            },
+        });
+        expect(result.isValid).toBe(true);
+        expect(result.data?.physicalWork?.notes).toBeUndefined();
+    });
+
+    it('rejects invalid duration', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'full_day' as unknown as PhysicalWorkDuration,
+                intensity: 'moderate',
+                loadAreas: ['legs_carrying'],
+            },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'physicalWork.duration')).toBe(true);
+    });
+
+    it('rejects invalid intensity', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                intensity: 'extreme' as unknown as PhysicalWorkIntensity,
+                loadAreas: ['legs_carrying'],
+            },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'physicalWork.intensity')).toBe(true);
+    });
+
+    it('rejects empty or invalid loadAreas', () => {
+        const emptyResult = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                intensity: 'moderate',
+                loadAreas: [],
+            },
+        });
+        expect(emptyResult.isValid).toBe(false);
+        expect(emptyResult.errors.some(e => e.field === 'physicalWork.loadAreas')).toBe(true);
+
+        const invalidResult = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                intensity: 'moderate',
+                loadAreas: ['invalid_area' as unknown as PhysicalWorkLoadArea],
+            },
+        });
+        expect(invalidResult.isValid).toBe(false);
+        expect(invalidResult.errors.some(e => e.field === 'physicalWork.loadAreas')).toBe(true);
+    });
+
+    it('rejects performed work missing duration', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                intensity: 'moderate',
+                loadAreas: ['legs_carrying'],
+            },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'physicalWork.duration' && e.message.includes('required'))).toBe(true);
+    });
+
+    it('rejects performed work missing intensity', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                loadAreas: ['legs_carrying'],
+            },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'physicalWork.intensity' && e.message.includes('required'))).toBe(true);
+    });
+
+    it('rejects performed work missing loadAreas', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                intensity: 'moderate',
+            },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'physicalWork.loadAreas' && e.message.includes('required'))).toBe(true);
+    });
+
+    it('rejects notes exceeding max length', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                intensity: 'moderate',
+                loadAreas: ['lower_back_spine'],
+                notes: 'a'.repeat(201),
+            },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'physicalWork.notes')).toBe(true);
+    });
+});
+
 
 describe('validateEventTiming', () => {
     it('accepts valid unconfirmed EventTiming', async () => {

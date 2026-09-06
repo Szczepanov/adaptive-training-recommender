@@ -50,6 +50,10 @@ import type {
     ExternalPlacementStatus,
     DecisionJournalEntry,
     ShadowVerdict,
+    PhysicalWorkCheckin,
+    PhysicalWorkDuration,
+    PhysicalWorkIntensity,
+    PhysicalWorkLoadArea,
 } from './models';
 import { EXTERNAL_PLAN_SCHEMA, SHADOW_VERDICTS } from './models';
 import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
@@ -165,6 +169,97 @@ function validateTissueResponses(raw: any, errors: ValidationError[]): Partial<R
     return result;
 }
 
+export const PHYSICAL_WORK_DURATIONS: readonly PhysicalWorkDuration[] = ['short', 'medium', 'extended'];
+export const PHYSICAL_WORK_INTENSITIES: readonly PhysicalWorkIntensity[] = ['moderate', 'hard', 'exhausting'];
+export const PHYSICAL_WORK_LOAD_AREAS: readonly PhysicalWorkLoadArea[] = [
+    'grip_forearms',
+    'upper_body',
+    'lower_back_spine',
+    'legs_carrying',
+];
+export const PHYSICAL_WORK_NOTES_MAX_CHARS = 200;
+
+/**
+ * Validates untyped physical work / manual labor payload from morning check-in.
+ * When performed is true, requires duration, intensity, and non-empty loadAreas.
+ */
+function validatePhysicalWork(raw: any, errors: ValidationError[]): PhysicalWorkCheckin | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push({ field: 'physicalWork', message: 'physicalWork must be an object' });
+        return undefined;
+    }
+    if (typeof raw.performed !== 'boolean') {
+        errors.push({ field: 'physicalWork.performed', message: 'performed must be a boolean', value: raw.performed });
+    }
+
+    if (raw.performed === true) {
+        if (raw.duration === undefined || raw.duration === null) {
+            errors.push({ field: 'physicalWork.duration', message: 'duration is required when performed is true' });
+        } else if (typeof raw.duration !== 'string' || !PHYSICAL_WORK_DURATIONS.includes(raw.duration as PhysicalWorkDuration)) {
+            errors.push({ field: 'physicalWork.duration', message: `duration must be one of: ${PHYSICAL_WORK_DURATIONS.join(', ')}`, value: raw.duration });
+        }
+
+        if (raw.intensity === undefined || raw.intensity === null) {
+            errors.push({ field: 'physicalWork.intensity', message: 'intensity is required when performed is true' });
+        } else if (typeof raw.intensity !== 'string' || !PHYSICAL_WORK_INTENSITIES.includes(raw.intensity as PhysicalWorkIntensity)) {
+            errors.push({ field: 'physicalWork.intensity', message: `intensity must be one of: ${PHYSICAL_WORK_INTENSITIES.join(', ')}`, value: raw.intensity });
+        }
+
+        if (raw.loadAreas === undefined || raw.loadAreas === null) {
+            errors.push({ field: 'physicalWork.loadAreas', message: 'loadAreas is required when performed is true' });
+        } else if (!Array.isArray(raw.loadAreas) || raw.loadAreas.length === 0) {
+            errors.push({ field: 'physicalWork.loadAreas', message: 'loadAreas must be a non-empty array', value: raw.loadAreas });
+        } else {
+            for (const area of raw.loadAreas) {
+                if (typeof area !== 'string' || !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea)) {
+                    errors.push({ field: 'physicalWork.loadAreas', message: `loadAreas contains unrecognized area: ${area}`, value: area });
+                }
+            }
+        }
+    } else {
+        if (raw.duration !== undefined && raw.duration !== null) {
+            if (typeof raw.duration !== 'string' || !PHYSICAL_WORK_DURATIONS.includes(raw.duration as PhysicalWorkDuration)) {
+                errors.push({ field: 'physicalWork.duration', message: `duration must be one of: ${PHYSICAL_WORK_DURATIONS.join(', ')}`, value: raw.duration });
+            }
+        }
+        if (raw.intensity !== undefined && raw.intensity !== null) {
+            if (typeof raw.intensity !== 'string' || !PHYSICAL_WORK_INTENSITIES.includes(raw.intensity as PhysicalWorkIntensity)) {
+                errors.push({ field: 'physicalWork.intensity', message: `intensity must be one of: ${PHYSICAL_WORK_INTENSITIES.join(', ')}`, value: raw.intensity });
+            }
+        }
+        if (raw.loadAreas !== undefined && raw.loadAreas !== null) {
+            if (!Array.isArray(raw.loadAreas) || raw.loadAreas.length === 0) {
+                errors.push({ field: 'physicalWork.loadAreas', message: 'loadAreas must be a non-empty array', value: raw.loadAreas });
+            } else {
+                for (const area of raw.loadAreas) {
+                    if (typeof area !== 'string' || !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea)) {
+                        errors.push({ field: 'physicalWork.loadAreas', message: `loadAreas contains unrecognized area: ${area}`, value: area });
+                    }
+                }
+            }
+        }
+    }
+
+    if (raw.notes !== undefined && raw.notes !== null) {
+        if (typeof raw.notes !== 'string' || raw.notes.length > PHYSICAL_WORK_NOTES_MAX_CHARS) {
+            errors.push({ field: 'physicalWork.notes', message: `notes must be a string up to ${PHYSICAL_WORK_NOTES_MAX_CHARS} characters`, value: raw.notes });
+        }
+    }
+
+    if (errors.some(e => e.field.startsWith('physicalWork'))) {
+        return undefined;
+    }
+
+    return {
+        performed: Boolean(raw.performed),
+        ...(raw.duration ? { duration: raw.duration as PhysicalWorkDuration } : {}),
+        ...(raw.intensity ? { intensity: raw.intensity as PhysicalWorkIntensity } : {}),
+        ...(Array.isArray(raw.loadAreas) && raw.loadAreas.length > 0 ? { loadAreas: Array.from(new Set(raw.loadAreas as PhysicalWorkLoadArea[])) } : {}),
+        ...(typeof raw.notes === 'string' && raw.notes.trim() ? { notes: raw.notes.trim() } : {}),
+    };
+}
+
 export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheckin> {
     const errors: ValidationError[] = [];
 
@@ -248,6 +343,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
 
     // Per-region tissue response (Phase 5.4)
     const tissueResponses = validateTissueResponses(raw.tissueResponses, errors);
+    const physicalWork = validatePhysicalWork(raw.physicalWork, errors);
 
     if (errors.length > 0) {
         return { isValid: false, errors };
@@ -268,6 +364,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         unusuallyLimitedTime: raw.unusuallyLimitedTime ?? false,
         alreadyTrainedToday: raw.alreadyTrainedToday ?? false,
         ...(tissueResponses && Object.keys(tissueResponses).length > 0 ? { tissueResponses } : {}),
+        ...(physicalWork ? { physicalWork } : {}),
         availability: {
             timeAvailableMin: normalizeEmptyToNull(raw.availability?.timeAvailableMin),
             preferredModalityToday: normalizeEmptyToNull(raw.availability?.preferredModalityToday),

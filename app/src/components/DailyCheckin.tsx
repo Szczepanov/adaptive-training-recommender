@@ -6,7 +6,7 @@ import { sessionResponseService } from '../services/sessionResponseService';
 import { preferencesService } from '../services/preferencesService';
 import { relevantFollowupRegions } from '../responses/followupSchedule';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
-import type { BodyRegion, DailySubjectiveCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
+import type { BodyRegion, DailySubjectiveCheckin, PhysicalWorkCheckin, RedFlagCategory, RegionTissueResponse, TissueResponseLevel } from '../engine/models';
 import type { HealthContextCheckin } from '../engine/healthAnomalyModels';
 import { BODY_REGIONS, TISSUE_LEVELS } from '../engine/models';
 import { isCompletedSubjectiveCheckin } from '../engine/checkinCompletion';
@@ -15,6 +15,7 @@ import { resolveDefaultTimeAvailable, type CheckinAvailabilityDefault } from '..
 import { getErrorMessage } from '../utils/errors';
 import type { Screen } from '../types/navigation';
 import { HealthContextSection } from './checkin/HealthContextSection';
+import { PhysicalWorkSection } from './checkin/PhysicalWorkSection';
 import { SubjectiveScaleRow } from './checkin/SubjectiveScaleRow';
 import './DailyCheckin.css';
 
@@ -333,6 +334,20 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       ...checkin,
       healthContext,
       ...(healthContext.symptoms ? { illnessSymptoms: healthContext.symptoms.present } : {}),
+    });
+  };
+
+  const handlePhysicalWorkChange = (physicalWork: PhysicalWorkCheckin | undefined) => {
+    if (!checkin) return;
+    if (!physicalWork) {
+      const next = { ...checkin };
+      delete next.physicalWork;
+      setCheckin(next);
+      return;
+    }
+    setCheckin({
+      ...checkin,
+      physicalWork,
     });
   };
 
@@ -713,6 +728,11 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
               })}
             </div>
           </div>
+
+          <PhysicalWorkSection
+            value={checkin.physicalWork}
+            onChange={handlePhysicalWorkChange}
+          />
 
           <HealthContextSection
             value={checkin.healthContext}

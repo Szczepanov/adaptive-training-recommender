@@ -177,18 +177,42 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
     // not by itself establish muscle breakdown or a biologically mandatory 48-hour recovery.
     const acuteTissueStrain = subjective.soreness >= 8 ? 0.88 : subSoreness;
 
+    // 5. Unlogged non-exercise physical activity / manual labor (D-1)
+    let physicalWorkStrain = 0;
+    const pw = subjective.physicalWork;
+    const pwAreas = new Set(pw?.loadAreas ?? []);
+    if (pw?.performed) {
+        const baseIntensity = pw.intensity === 'exhausting' ? 0.88 : pw.intensity === 'hard' ? 0.70 : 0.45;
+        const durationFactor = pw.duration === 'extended' ? 1.25 : pw.duration === 'short' ? 0.65 : 1.0;
+        physicalWorkStrain = Math.min(1, baseIntensity * durationFactor);
+    }
+    const hasSpecificAreas = pwAreas.size > 0;
+    const workSystemic = physicalWorkStrain * 0.60;
+    const workUpperBody = (!hasSpecificAreas || pwAreas.has('upper_body') || pwAreas.has('grip_forearms'))
+        ? physicalWorkStrain * 0.85
+        : 0;
+    const workLowerBody = (!hasSpecificAreas || pwAreas.has('legs_carrying'))
+        ? physicalWorkStrain * 0.85
+        : 0;
+    const workNeuromuscular = (!hasSpecificAreas || pwAreas.has('grip_forearms') || pwAreas.has('lower_back_spine'))
+        ? physicalWorkStrain * 0.75
+        : physicalWorkStrain * 0.40;
+    const workImpact = (pwAreas.has('legs_carrying') && pw?.intensity !== 'moderate')
+        ? physicalWorkStrain * 0.40
+        : 0;
+
     const baseSystemic = 0.3 * subFatigue + 0.25 * hrvDrop + 0.25 * sleepDeficit + 0.2 * bbDepletion;
-    const systemic = Math.min(1, Math.max(baseSystemic, acuteSubjectiveFatigueFloor, acuteSubjectiveStressFloor, acuteBiometricFloor));
+    const systemic = Math.min(1, Math.max(baseSystemic, acuteSubjectiveFatigueFloor, acuteSubjectiveStressFloor, acuteBiometricFloor, workSystemic));
 
     const baseCardiovascular = 0.5 * rhrElevated + 0.5 * hrvDrop;
     const cardiovascular = Math.min(1, Math.max(baseCardiovascular, acuteBiometricFloor));
 
-    const lowerBody = Math.min(1, acuteTissueStrain + ambulatoryTissueStrain);
-    const upperBody = acuteTissueStrain * 0.7; // default soreness split
-    const impactTissue = Math.min(1, acuteTissueStrain + ambulatoryTissueStrain);
+    const lowerBody = Math.min(1, Math.max(acuteTissueStrain + ambulatoryTissueStrain, workLowerBody));
+    const upperBody = Math.min(1, Math.max(acuteTissueStrain * 0.7, workUpperBody));
+    const impactTissue = Math.min(1, Math.max(acuteTissueStrain + ambulatoryTissueStrain, workImpact));
 
     const baseNeuromuscular = 0.5 * subFatigue + 0.5 * (1 - (subjective.motivation / 10));
-    const neuromuscular = Math.min(1, baseNeuromuscular);
+    const neuromuscular = Math.min(1, Math.max(baseNeuromuscular, workNeuromuscular));
 
     return {
         systemic,

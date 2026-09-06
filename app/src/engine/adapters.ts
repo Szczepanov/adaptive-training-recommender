@@ -15,6 +15,7 @@ import type {
     UserGoal,
     UserPreferences,
     TrainingSettings,
+    GuardrailKey,
 } from './models';
 import { injuryRegionMappingFamily, resolveInjuryPolicy } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
@@ -373,6 +374,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         redFlagFindings,
         painOrInjuryRegionFamilies: resolvePainOrInjuryRegionFamilies(checkin),
         alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
+        physicalWork: checkin.physicalWork,
         preferredModalityToday: checkin.availability?.preferredModalityToday ?? null,
     };
 }
@@ -414,6 +416,23 @@ export function mapContextFromGoalsAndTrainingSettings(
         ...(preferences?.unavailableModalities ?? []),
     ]));
 
+    const physicalWorkGuardrails: GuardrailKey[] = [];
+    if (todaysCheckin?.physicalWork?.performed) {
+        const areas = todaysCheckin.physicalWork.loadAreas ?? [];
+        const intensity = todaysCheckin.physicalWork.intensity;
+        if (areas.includes('lower_back_spine') && (intensity === 'hard' || intensity === 'exhausting')) {
+            physicalWorkGuardrails.push('avoid_heavy_spinal_loading');
+        }
+        if ((areas.includes('upper_body') || areas.includes('grip_forearms')) && intensity === 'exhausting') {
+            physicalWorkGuardrails.push('avoid_overhead_pressing');
+        }
+    }
+
+    const impliedGuardrails = Array.from(new Set([
+        ...injuryPolicy.restrictions.impliedGuardrails,
+        ...physicalWorkGuardrails,
+    ]));
+
     return {
         goals: {
             shortTerm: topGoalTitle('short-term'),
@@ -426,7 +445,7 @@ export function mapContextFromGoalsAndTrainingSettings(
             hasTreadmill: trainingSettings.equipment.treadmill,
             hasIndoorBike: trainingSettings.equipment.indoor_bike,
             restrictedModalities,
-            impliedGuardrails: injuryPolicy.restrictions.impliedGuardrails,
+            impliedGuardrails,
             restrictedCategories: injuryPolicy.restrictions.restrictedCategories,
             maxTimeMinutes: trainingSettings.defaults.weekdayMaxMinutes ?? trainingSettings.defaults.weekendMaxMinutes ?? DEFAULT_MAX_TIME_MINUTES,
         },
