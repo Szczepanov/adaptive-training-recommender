@@ -13,9 +13,9 @@ a merge to `main` must not silently turn that acknowledgement into an unattended
 
 A production run promotes one Git SHA in dependency order:
 
-1. **Full CI release gate** — Python 3.14 tests, lint/type checks, frontend tests and
-   Firestore rules emulator suite, simulations, production frontend build, dependency audits,
-   and Docker build.
+1. **Full CI release gate** — validated in parallel across five dedicated jobs: Python 3.14
+   tests, frontend hygiene & static gates, frontend unit tests and Firestore rules emulator
+   suite, engine simulations and AI judge corpus gates, and the Docker Compose full-stack smoke suite.
 2. **Garmin backend** — build and push the SHA-tagged image, deploy `garmin-account-link`, the
    three Cloud Run Jobs and their Scheduler jobs, then verify the account-link `/health`
    endpoint. The optional live `garmin-sync` execution remains opt-in because it calls Garmin.
@@ -23,9 +23,10 @@ A production run promotes one Git SHA in dependency order:
    index is usable. A `NEEDS_REPAIR` state or a 20-minute readiness timeout fails the release.
 4. **Firestore security rules** — run the existing drift/backup/emulator/deploy/hash-verification
    sequence. Unexpected drift fails closed by default.
-5. **Firebase Hosting** — build with production Firebase configuration, deploy the frontend,
-   verify the Hosting URL, then verify the `/api/garmin/**` Hosting rewrite reaches the Cloud
-   Run account-link service.
+5. **Firebase Hosting** — compile the production bundle (`npm run typecheck && npm run build:bundle`)
+   with production Firebase configuration, deploy the frontend, verify the Hosting URL, then
+   verify the `/api/garmin/**` Hosting rewrite reaches the Cloud Run account-link service. Unit
+   tests are never re-evaluated against live production credentials during deployment.
 
 Hosting is deliberately last. A new client therefore cannot be exposed before the server-side
 Garmin API, indexes and security rules it may depend on are live.
