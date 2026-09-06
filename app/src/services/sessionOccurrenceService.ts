@@ -6,6 +6,7 @@ import {
     query,
     where,
     getDocs,
+    runTransaction,
     type Firestore,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
@@ -133,6 +134,41 @@ export class SessionOccurrenceService {
     async getAdditionalOccurrencesForDate(userId: string, date: string): Promise<SessionOccurrence[]> {
         const occurrences = await this.getOccurrencesForDate(userId, date);
         return occurrences.filter(item => item.authority === 'additional_session' && ACTIVE_OCCURRENCE_STATES.has(item.state));
+    }
+
+    /**
+     * ADR-0036 (H4) D-REASSESS: atomically claim a scheduled occurrence for launch.
+     * Prevents duplicate/concurrent requests from launching the same occurrence twice
+     * or claiming an occurrence that has already transitioned to active/terminal.
+     */
+    async claimOccurrenceLaunch(
+        userId: string,
+        occurrenceId: string,
+        now = new Date().toISOString(),
+    ): Promise<SessionOccurrence> {
+        const ref = this.occurrenceRef(userId, occurrenceId);
+        let transitioned: SessionOccurrence | null = null;
+        await runTransaction(this.db, async transaction => {
+            const snap = await transaction.get(ref);
+            if (!snap.exists()) {
+                throw new Error(`Occurrence ${occurrenceId} not found.`);
+            }
+            const parsed = parseSessionOccurrenceDocument(snap.data(), ref.path);
+            if (parsed.status !== 'AVAILABLE') {
+                throw new Error(`Occurrence ${occurrenceId} could not be parsed (${parsed.status}).`);
+            }
+            const current = parsed.data;
+            if (current.state !== 'scheduled') {
+                throw new Error(`Occurrence ${occurrenceId} cannot be claimed; state is '${current.state}', expected 'scheduled'.`);
+            }
+            transitioned = {
+                ...current,
+                state: 'active',
+                updatedAt: now,
+            };
+            transaction.set(ref, transitioned);
+        });
+        return transitioned!;
     }
 }
 
