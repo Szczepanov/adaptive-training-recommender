@@ -18,9 +18,11 @@ export interface ScheduleOverlayPreset {
     intensityScale: number;
     expectedCost: WorkoutCostProfile;
     environment?: TrainingEnvironment;
-    equipment?: string[];
 }
 
+/** Presets intentionally omit `equipment`: omission means "do not change the athlete's
+ * standing equipment access". An explicit empty list would instead mean no equipment is
+ * available and would eliminate every equipment-requiring candidate for the date. */
 export const SCHEDULE_OVERLAY_PRESETS: readonly ScheduleOverlayPreset[] = [
     {
         id: 'active_skiing',
@@ -42,7 +44,6 @@ export const SCHEDULE_OVERLAY_PRESETS: readonly ScheduleOverlayPreset[] = [
             neuromuscular: 0.5,
         },
         environment: 'outdoor',
-        equipment: [],
     },
     {
         id: 'active_volleyball',
@@ -64,7 +65,6 @@ export const SCHEDULE_OVERLAY_PRESETS: readonly ScheduleOverlayPreset[] = [
             neuromuscular: 0.7,
         },
         environment: 'indoor',
-        equipment: [],
     },
     {
         id: 'active_hiking',
@@ -86,7 +86,6 @@ export const SCHEDULE_OVERLAY_PRESETS: readonly ScheduleOverlayPreset[] = [
             neuromuscular: 0.4,
         },
         environment: 'outdoor',
-        equipment: [],
     },
     {
         id: 'sedentary_holiday',
@@ -107,7 +106,6 @@ export const SCHEDULE_OVERLAY_PRESETS: readonly ScheduleOverlayPreset[] = [
             neuromuscular: 0.0,
         },
         environment: 'indoor',
-        equipment: [],
     },
     {
         id: 'sedentary_travel',
@@ -128,7 +126,6 @@ export const SCHEDULE_OVERLAY_PRESETS: readonly ScheduleOverlayPreset[] = [
             neuromuscular: 0.0,
         },
         environment: 'indoor',
-        equipment: [],
     },
     {
         id: 'high_step_city_break',
@@ -149,7 +146,6 @@ export const SCHEDULE_OVERLAY_PRESETS: readonly ScheduleOverlayPreset[] = [
             neuromuscular: 0.2,
         },
         environment: 'outdoor',
-        equipment: [],
     },
     {
         id: 'limited_busy_work',
@@ -169,6 +165,5 @@ export const SCHEDULE_OVERLAY_PRESETS: readonly ScheduleOverlayPreset[] = [
             impactTissue: 0.0,
             neuromuscular: 0.0,
         },
-        equipment: [],
     },
 ];
