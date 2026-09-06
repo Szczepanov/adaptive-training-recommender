@@ -216,6 +216,22 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         expect(stored?.createdAt).toBe('2026-09-06T10:00:00.000Z');
     });
 
+    it('preserves the earliest write when concurrent launches share a prescriptionHash with different timestamps', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const earliestTime = '2026-09-06T10:00:00.000Z';
+        const laterTime = '2026-09-06T10:05:00.000Z';
+
+        const [first, second] = await Promise.all([
+            prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, earliestTime),
+            prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, laterTime),
+        ]);
+
+        expect(first.binding.prescriptionHash).toBe(second.binding.prescriptionHash);
+        const stored = services.store.get(first.binding.prescriptionHash);
+        expect(stored).toBeDefined();
+        expect(stored?.createdAt).toBe(earliestTime);
+    });
+
     it('omits volatile createdAt from the prescription hash payload', async () => {
         const externalPlan = makeV4ExternalPlan();
         const first = await prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, '2026-01-01T00:00:00.000Z');

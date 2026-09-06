@@ -1,7 +1,7 @@
 import {
     doc,
     getDoc,
-    setDoc,
+    runTransaction,
     type Firestore,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
@@ -52,19 +52,21 @@ export class ExecutionPrescriptionService {
         }
 
         const ref = this.prescriptionRef(userId, prescription.prescriptionHash);
-        const existing = await getDoc(ref);
-        if (existing.exists()) {
-            const persisted = existing.data() as ExecutionPrescription;
-            const persistedHash = await hashExecutionPrescription(persisted);
-            if (persistedHash !== prescription.prescriptionHash) {
-                throw new Error(`Stored prescription ${prescription.prescriptionHash} does not match its content hash`);
+        await runTransaction(this.db, async transaction => {
+            const existing = await transaction.get(ref);
+            if (existing.exists()) {
+                const persisted = existing.data() as ExecutionPrescription;
+                const persistedHash = await hashExecutionPrescription(persisted);
+                if (persistedHash !== prescription.prescriptionHash) {
+                    throw new Error(`Stored prescription ${prescription.prescriptionHash} does not match its content hash`);
+                }
+                return;
             }
-            return;
-        }
 
-        await setDoc(ref, {
-            ...prescription,
-            userId,
+            transaction.set(ref, {
+                ...prescription,
+                userId,
+            });
         });
     }
 
