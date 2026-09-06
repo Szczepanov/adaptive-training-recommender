@@ -54,7 +54,9 @@ function scheduleOverlayIcon(overlay: ScheduleOverlay): string {
 }
 
 function scheduleOverlayLabel(overlay: ScheduleOverlay): string {
-  if (overlay.sport) return overlay.sport.replaceAll('_', ' ');
+  if (overlay.category === 'active_sport' && overlay.sport) {
+    return overlay.sport.replaceAll('_', ' ');
+  }
   switch (overlay.category) {
     case 'active_sport': return 'active sport';
     case 'sedentary_rest': return 'sedentary rest';
