@@ -205,6 +205,9 @@ export async function prepareExternalPlanSessionLaunch(
         createdAt: now,
     };
 
+    // Note: hashExecutionPrescription delegates to canonicalExecutionPrescriptionJson,
+    // which explicitly omits createdAt (ADR-0023 D-MSNAP) so that identical sessions produce
+    // identical content-addressed hashes regardless of invocation timestamp.
     const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
     await executionPrescriptionService.savePrescription(userId, {
         ...unsignedPrescription,

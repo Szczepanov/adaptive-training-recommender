@@ -17,7 +17,7 @@ import type { SessionReferenceBinding } from '../sessions/models';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from '../services/sessionAuthoringService';
-import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+import { isV4Plan, type ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { scheduleWindowService } from '../services/scheduleWindowService';
@@ -474,7 +474,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             console.warn('Failed to prepare the catalog session binding for today\'s recommendation:', err);
           }
         } else if (
-          (recommendationWithPrescription.externalVerdict?.decision === 'proceed' || recommendationWithPrescription.externalVerdict?.decision === 'scale') &&
+          activeExternal &&
+          isV4Plan(activeExternal.plan) &&
+          recommendationWithPrescription.externalVerdict?.decision === 'proceed' &&
           recommendationWithPrescription.template.id !== 'rest_01' &&
           externalContext &&
           'definition' in externalContext.session
@@ -488,7 +490,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                 contentHash: externalContext.contentHash,
                 session: externalContext.session as ExternalPlanSessionV4,
               },
-              recommendationWithPrescription.externalVerdict.scaledSummary,
             );
             if (!isCurrent()) return;
             primarySession = launch.binding;

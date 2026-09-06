@@ -207,38 +207,39 @@ piece (bundle launch, D-REASSESS) builds on.
    swapped to canonical Rest (`rest_01`). A `primarySession` binding must **NEVER** be created
    for a skipped or deferred session.
 
-   Gate the launch preparation strictly on:
-   ```typescript
-   const verdict = recommendationWithPrescription.externalVerdict?.decision;
-   const isActionable = verdict === 'proceed' || verdict === 'scale';
-   const notRest = recommendationWithPrescription.template.id !== 'rest_01';
-   if (isActionable && notRest && externalContext && 'definition' in externalContext.session) {
-       try {
-           const launch = await prepareExternalPlanSessionLaunch(
-               userId,
-               {
-                   planId: externalContext.planId,
-                   revision: externalContext.revision,
-                   contentHash: externalContext.contentHash,
-                   session: externalContext.session as ExternalPlanSessionV4,
-               },
-               recommendationWithPrescription.externalVerdict?.scaledSummary,
-           );
-           if (!isCurrent()) return;
-           primarySession = launch.binding;
-       } catch (err) {
-           console.warn('Failed to prepare the external-plan session binding for today\'s recommendation:', err);
-       }
-   }
-   ```
+    Gate the launch preparation strictly on:
+    ```typescript
+    const isV4 = activeExternal && isV4Plan(activeExternal.plan);
+    const isProceed = recommendationWithPrescription.externalVerdict?.decision === 'proceed';
+    const notRest = recommendationWithPrescription.template.id !== 'rest_01';
+    if (isV4 && isProceed && notRest && externalContext && 'definition' in externalContext.session) {
+        try {
+            const launch = await prepareExternalPlanSessionLaunch(
+                userId,
+                {
+                    planId: externalContext.planId,
+                    revision: externalContext.revision,
+                    contentHash: externalContext.contentHash,
+                    session: externalContext.session as ExternalPlanSessionV4,
+                },
+            );
+            if (!isCurrent()) return;
+            primarySession = launch.binding;
+        } catch (err) {
+            console.warn('Failed to prepare the external-plan session binding for today\'s recommendation:', err);
+        }
+    }
+    ```
 
 3. **Behavior on `scale` verdict:**
    For catalog sessions, `resolveWorkoutPrescription` produces `adjustedBlocks`. External-plan
    sessions currently lack a block-level auto-scaling transformer (only
-   `session.scaling.reducedSummary` and volume/intensity scalar bounds exist). In PR 1,
-   `session.definition` blocks remain the authored blocks, while `displayMetadata.summary`
-   captures `verdict.scaledSummary` (passed via `summaryOverride` above) so the athlete and
-   subsequent replays see the intended reduction. A full block-level scaling engine for external
+   `session.scaling.reducedSummary` and volume/intensity scalar bounds exist). Launching
+   unscaled blocks when a session was adjudicated as `scale` would run the full authored
+   workout without the advised reduction. Therefore, in PR 1, `primarySession` is **strictly
+   excluded** on `scale` verdicts (in addition to `skip` and `defer`), and is only bound when
+   the verdict is `proceed`. `ExternalVerdictBanner` continues to render the scaled summary and
+   prescribed reduction text for the athlete. A full block-level scaling engine for external
    definitions is deferred to a future PR.
 
 4. **Decide whether `externalPrescription`/`externalVerdict`/`decisionTrace.externalPlan`
@@ -317,7 +318,7 @@ piece (bundle launch, D-REASSESS) builds on.
 >   multi-occurrence bundle launches) -- separate follow-up PR.
 > - Surfacing a bundle's second member as a real `additionalSessions` entry -- needs the
 >   occurrence-tracking follow-up first.
-> - Full block-level scaling transformation for external definitions (uses `summaryOverride` in PR 1).
+> - Full block-level scaling transformation for external definitions (`scale` verdict is strictly excluded from `primarySession` launch until block scaling exists).
 >
 > ## Validation
 > (standard checklist: typecheck, lint, full vitest, build, rules emulator tests,
@@ -354,5 +355,6 @@ piece (bundle launch, D-REASSESS) builds on.
 - **UI launch affordance verified:** `MorningDecisionCard.tsx:286` already checks
   `(canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession))`.
   The "Start Workout" button appears automatically once `primarySession` is populated.
-- **Domain safety invariant:** Ensure `Home.tsx` checks `verdict === 'proceed' || verdict === 'scale'`
-  and `template.id !== 'rest_01'`. Never bind `primarySession` on `skip` or `defer`.
+- **Domain safety invariant:** Ensure `Home.tsx` checks `activeExternal && isV4Plan(activeExternal.plan)`,
+  `verdict === 'proceed'`, and `template.id !== 'rest_01'`. Never bind `primarySession` on
+  `skip`, `defer`, or `scale` (until block-scaling exists, preventing execution of unscaled blocks).

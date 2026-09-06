@@ -192,6 +192,13 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         expect(second.binding.prescriptionHash).toBe(first.binding.prescriptionHash);
     });
 
+    it('omits volatile createdAt from the prescription hash payload', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const first = await prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, '2026-01-01T00:00:00.000Z');
+        const second = await prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, '2026-12-31T23:59:59.999Z');
+        expect(second.binding.prescriptionHash).toBe(first.binding.prescriptionHash);
+    });
+
     it('defensively throws if definition fails validation', async () => {
         // An invalid definition with empty title
         const externalPlan = makeV4ExternalPlan({
