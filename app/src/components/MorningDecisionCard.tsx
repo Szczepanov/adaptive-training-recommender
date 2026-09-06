@@ -8,6 +8,7 @@ import { WorkoutExportMenu } from './WorkoutExportMenu';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
 import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
+import { contextBriefService } from '../services/contextBriefService';
 import './MorningDecisionCard.css';
 
 interface MorningDecisionCardProps {
@@ -62,6 +63,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     const [activeTab, setActiveTab] = useState<'none' | 'why' | 'alternatives' | 'workout'>('none');
     const [launching, setLaunching] = useState(false);
     const [launchError, setLaunchError] = useState<string | null>(null);
+    const [aiContextCopied, setAiContextCopied] = useState(false);
     const panelId = useId();
     const clinicalEscalationActive = recommendation?.envelopes?.safety.clinicalEscalationRequired === true;
     const clinicalReason = recommendation?.envelopes?.safety.clinicalReason
@@ -75,6 +77,18 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         setActiveTab(next);
         if (next !== 'none') {
             usabilityMetrics.recordActionSelected(userId, date, `expand_tab_${next}`);
+        }
+    };
+
+    const handleCopyAiContext = async () => {
+        try {
+            const result = await contextBriefService.build(userId, date, 2, 'daily');
+            await navigator.clipboard.writeText(result.text);
+            setAiContextCopied(true);
+            window.setTimeout(() => setAiContextCopied(false), 2000);
+            usabilityMetrics.recordActionSelected(userId, date, 'copy_ai_context_brief');
+        } catch (err) {
+            console.warn('Failed to copy AI context', err);
         }
     };
 
@@ -276,6 +290,16 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                             prescription={prescription}
                                         />
                                     )}
+
+                                    <button
+                                        type="button"
+                                        className="btn-copy-ai-context"
+                                        onClick={() => void handleCopyAiContext()}
+                                        title="Copy today's morning briefing for your external AI coach"
+                                        aria-label="Copy AI Context"
+                                    >
+                                        {aiContextCopied ? '✓ Copied Context' : '📤 Copy AI Context'}
+                                    </button>
                                 </>
                             )}
                         </div>

@@ -69,7 +69,48 @@ describe('MorningDecisionCard clinical escalation', () => {
         expect(html).not.toContain('Start Session');
         expect(html).not.toContain('View Workout Targets');
         expect(html).not.toContain('Export / Sync');
+        expect(html).not.toContain('Copy AI Context');
         expect(html).not.toContain('1-Tap Alternatives');
         expect(html).not.toContain('Workout Steps');
+    });
+
+    it('renders the 1-click Copy AI Context button when normal recommendation is active', () => {
+        const normalRec = {
+            mode: 'train',
+            template: {
+                title: 'Aerobic Foundation',
+                modality: 'Cycling',
+                category: 'Easy Endurance',
+                durationMin: 60,
+                durationMax: 75,
+            },
+            rationale: 'Readiness is solid.',
+            envelopes: {
+                safety: {
+                    clinicalEscalationRequired: false,
+                },
+            },
+        } as unknown as Recommendation;
+
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                userId="athlete"
+                date="2026-09-02"
+                recommendation={normalRec}
+                evidence={evidence}
+                prescription={prescription}
+                adjustmentDirection={null}
+                activeAlternativeId={null}
+                onStartSession={() => undefined}
+                onAdjustLoad={() => undefined}
+                onSelectTimeCrunch={() => undefined}
+                onSelectHomeAlternative={() => undefined}
+                onSelectMobilityAlternative={() => undefined}
+                onSelectActiveRecoveryWalk={() => undefined}
+                onResetAlternative={() => undefined}
+            />,
+        );
+
+        expect(html).toContain('Copy AI Context');
     });
 });
