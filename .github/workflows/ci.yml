@@ -18,8 +18,54 @@ permissions:
   contents: read
 
 jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code_changed: ${{ steps.detect.outputs.code_changed }}
+      docs_only: ${{ steps.detect.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Detect changed files
+        id: detect
+        shell: bash
+        run: |
+          python3 scripts/detect_ci_changes.py "${{ github.event.pull_request.base.sha || 'origin/main' }}"
+
+  docs-hygiene:
+    name: Documentation & Security Hygiene
+    if: needs.detect-changes.outputs.docs_only == 'true'
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.2"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run repository hygiene pre-commit checks
+        env:
+          # Verify trailing whitespace, yaml/json syntax, and gitleaks secrets detection on doc PRs
+          SKIP: uv-lock,ruff-check,ruff-format,mypy,eslint
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
   python-tests:
     name: Python Test Suite (${{ matrix.python-version }})
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -78,6 +124,8 @@ jobs:
 
   frontend-hygiene:
     name: Frontend Hygiene & Static Gates
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
     runs-on: ubuntu-latest
     env:
       # Build/test-only configuration. Production configuration remains deployment-owned.
@@ -146,6 +194,8 @@ jobs:
 
   frontend-tests:
     name: Frontend Unit Tests & Firestore Rules
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -187,6 +237,8 @@ jobs:
 
   engine-simulations:
     name: Engine Simulations & AI Gates
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -221,6 +273,8 @@ jobs:
 
   docker-build:
     name: Docker Build & Compose Smoke
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -276,3 +330,49 @@ jobs:
       - name: Clean up containers
         if: always()
         run: docker compose down -v
+
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs:
+      - detect-changes
+      - docs-hygiene
+      - python-tests
+      - frontend-hygiene
+      - frontend-tests
+      - engine-simulations
+      - docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify overall CI result
+        shell: bash
+        run: |
+          echo "Job results:"
+          echo "  detect-changes: ${{ needs.detect-changes.result }}"
+          echo "  docs-hygiene: ${{ needs.docs-hygiene.result }}"
+          echo "  python-tests: ${{ needs.python-tests.result }}"
+          echo "  frontend-hygiene: ${{ needs.frontend-hygiene.result }}"
+          echo "  frontend-tests: ${{ needs.frontend-tests.result }}"
+          echo "  engine-simulations: ${{ needs.engine-simulations.result }}"
+          echo "  docker-build: ${{ needs.docker-build.result }}"
+
+          for result in \
+            "${{ needs.detect-changes.result }}" \
+            "${{ needs.docs-hygiene.result }}" \
+            "${{ needs.python-tests.result }}" \
+            "${{ needs.frontend-hygiene.result }}" \
+            "${{ needs.frontend-tests.result }}" \
+            "${{ needs.engine-simulations.result }}" \
+            "${{ needs.docker-build.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "A required CI job did not succeed (status: $result)." >&2
+              exit 1
+            fi
+          done
+
+          if [ "${{ needs.detect-changes.result }}" != "success" ]; then
+            echo "detect-changes job did not succeed." >&2
+            exit 1
+          fi
+
+          echo "All required CI jobs completed successfully."
