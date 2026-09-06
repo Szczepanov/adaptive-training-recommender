@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered (runtime wiring unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
-**Blocked by:** H4 runtime wiring (refactoring `schedule.ts`/`planner.ts`/`rules.ts` onto `dailyLedger.ts`, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) still needs verification of same-day canonical performed facts. H5 intent groundwork can start now; H5 runtime needs validated intent mappings and linked response evidence, and H5's cumulative `external-plan@5` import acceptance must be based on ADR-0036's landed v4 artifact, not reconstructed from discussion context. Personal M00/M01 prescription needs current athlete inputs.
+**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered and the same-day canonical performed-fact boundary verified (runtime wiring unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
+**Blocked by:** H4 runtime wiring (refactoring `schedule.ts`/`planner.ts`/`rules.ts` onto `dailyLedger.ts`, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) is no longer blocked on verification -- it is ready to start as its own decision-affecting PR. H5 intent groundwork can start now; H5 runtime needs validated intent mappings and linked response evidence, and H5's cumulative `external-plan@5` import acceptance must be based on ADR-0036's landed v4 artifact, not reconstructed from discussion context. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -225,9 +225,11 @@ Useful synthetic software work can proceed without those personal answers.
 ## Work order H4 — Intraday windows and post-AM response
 
 **Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
-Step 1 (D-SCHEMA + D-LEDGER) delivered; steps 2-6 (runtime wiring) unstarted.
-**Dependencies:** Runtime release requires ADR-0035 rest support (delivered) and tested
-same-day canonical performed identity/revision/timing inputs.
+Step 1 (D-SCHEMA + D-LEDGER) delivered; the same-day canonical performed-fact boundary
+is verified; steps 2-6 (runtime wiring) unstarted.
+**Dependencies:** ADR-0035 rest support (delivered). Same-day canonical performed
+identity/revision/timing inputs are now verified (see below) -- the remaining
+dependency is simply doing the runtime-wiring work itself.
 **Deliverable:** Authored intraday placement and reassessed execution, followed separately
 by automatic multi-window packing after the initial acceptance bar passes.
 
@@ -250,10 +252,13 @@ The accepted implementation sequence is:
    **Not yet done:** wiring this into `schedule.ts`'s `resolveAvailability`/
    `calculateReservedCapacityProfile`, `planner.ts`'s `fixedActivityCostProfileForDate`/
    `applyFixedActivityStimulusCredit`, and `rules.ts`'s `fixedActivityProjection`/
-   `unrepresentedFixedActivityProjection` -- today these four still each hand-write an
-   independent per-day cost/stimulus reduce; D-LEDGER's "refactor... rather than
-   subtracting again downstream" is not yet satisfied. Resolving real windows and
-   reserving minutes/cost against actual instants also needs D-TIME (below).
+   `unrepresentedFixedActivityProjection`, plus `externalCritique.ts`'s own use of
+   `fixedActivityCostProfileForDate` -- today these five-plus call sites still each
+   hand-write an independent per-day cost/stimulus reduce, with three different ad hoc
+   dedup mechanisms (`seenOccurrences`, `appliedFixedCostOccurrences`/
+   `appliedProjectionOccurrences`, and a decision-trace delta); D-LEDGER's "refactor...
+   rather than subtracting again downstream" is not yet satisfied. Resolving real
+   windows and reserving minutes/cost against actual instants also needs D-TIME (below).
 3. Add atomic, confirmed bundle placement against all destination windows and ADR-0035
    rest. Preserve completed history and support independent optional-session dropping.
 4. At PM launch, capture current symptoms/response, same-day work and availability, rerun
@@ -273,9 +278,32 @@ adding duplicate date slots to `packWeeklyDose` is not a valid implementation.
 
 `POLICY_VERSION` is unchanged by step 1: `externalPlanV4.ts` and `dailyLedger.ts` are not
 consumed by any decision path yet, and `simulate:diff`/policy-drift confirm no output
-change. The next PR should tackle step 2's refactor (wiring the ledger into the existing
+change.
+
+**Same-day canonical performed-fact boundary: verified.** Investigation traced the full
+pipeline (`training-occurrence/repository.ts`, `reconciliationService.ts`,
+`engine/performedTrainingFacts.ts`) and found same-day identity/dedup already correct
+and already tested -- `reconciliationService.ts`'s candidate matching runs a `+-1
+local-day` window with no wall-clock/"is this today" special-casing, and existing tests
+already covered same-day auto-link and same-day ambiguity in both source orders (a new
+`'structured-first, Garmin arrives later'` case was added to close the one missing
+mirror direction). The real gap was purely the read-boundary convention:
+`getPerformedTrainingFactsInRange`'s only production caller (`trainingIntent.ts`)
+always passes today as the exclusive boundary, so today was structurally excluded from
+every canonical-facts read -- not a hydration defect, since the function itself has no
+date-relative assumption that data must be historical.
+`getPerformedTrainingFactsThroughToday` (`training-occurrence/performedTrainingFactsService.ts`)
+now makes "through today, inclusive" an explicit, correctly-named function rather than
+relying on callers to remember the pass-tomorrow-as-exclusive trick.
+`performedTrainingFactsService.sameDay.test.ts` proves same-day hydration (structured,
+Garmin, and both-sourced) with `startedAt`/`endedAt` intact for later D-TIME use, plus a
+pinning test confirming `getPerformedTrainingFactsInRange`'s existing behavior and
+`trainingIntent.ts`'s call site are unchanged. Not called from any production/decision
+path yet -- `simulate:diff`/policy-drift confirm no output change.
+
+The next PR should tackle step 2's refactor (wiring the ledger into the existing
 deduction points) before D-TIME/D-REASSESS/D-PLACEMENT, since every later step reads from
-that shared boundary.
+that shared boundary. It no longer needs a separate verification pass first.
 
 ## Work order H5 — Block intent and controlled progression
 
