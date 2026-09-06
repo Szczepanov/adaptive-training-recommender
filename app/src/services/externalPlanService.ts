@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, type DocumentData } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, writeBatch, type DocumentData } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type {
     ExternalPlanHeader,
@@ -101,10 +101,13 @@ export class ExternalPlanService {
                 updatedAt: now,
             };
 
-            // Revision first: a header pointing at a revision that failed to write would
-            // claim an import that cannot be read back or replayed.
-            await setDoc(this.revisionRef(userId, plan.planId, plan.revision), plan as unknown as DocumentData);
-            await setDoc(this.headerRef(userId, plan.planId), header as unknown as DocumentData);
+            // The revision and header are committed in a single atomic batch: both documents
+            // commit together or neither does, ensuring a failed commit leaves no orphan
+            // revision or header and retries can cleanly succeed.
+            const batch = writeBatch(getDb());
+            batch.set(this.revisionRef(userId, plan.planId, plan.revision), plan as unknown as DocumentData);
+            batch.set(this.headerRef(userId, plan.planId), header as unknown as DocumentData);
+            await batch.commit();
             return { status: 'AVAILABLE', data: { header, plan }, revision: header.contentHash };
         } catch (error: unknown) {
             console.error('[ExternalPlanService.import] Failed:', error);

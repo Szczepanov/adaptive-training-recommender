@@ -2,9 +2,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture01 from '../sessions/fixtures/01-full-body-maintenance.json';
 import { EXTERNAL_PLAN_SCHEMA_V4 } from '../sessions/externalPlanV4';
 
-const firestore = vi.hoisted(() => ({
-    collection: vi.fn(), doc: vi.fn(), getDoc: vi.fn(), getDocs: vi.fn(), setDoc: vi.fn(),
-}));
+const firestore = vi.hoisted(() => {
+    const batch = {
+        set: vi.fn(),
+        commit: vi.fn().mockResolvedValue(undefined),
+    };
+    return {
+        collection: vi.fn(), doc: vi.fn(), getDoc: vi.fn(), getDocs: vi.fn(), setDoc: vi.fn(),
+        writeBatch: vi.fn(() => batch),
+        batch,
+    };
+});
 
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
@@ -47,6 +55,7 @@ describe('ExternalPlanService external-plan@4 integration', () => {
         firestore.collection.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
         firestore.getDoc.mockResolvedValue({ exists: () => false });
         firestore.setDoc.mockResolvedValue(undefined);
+        firestore.batch.commit.mockResolvedValue(undefined);
     });
 
     it('dispatches v4 validation on import and persists the immutable v4 bytes', async () => {
@@ -60,7 +69,7 @@ describe('ExternalPlanService external-plan@4 integration', () => {
             id: 'am',
             intraday: { bundleId: 'monday-double', order: 0 },
         });
-        expect(firestore.setDoc.mock.calls[0][1]).toEqual(raw);
+        expect(firestore.batch.set.mock.calls[0][1]).toEqual(raw);
     });
 
     it('dispatches v4 validation when immutable revision bytes are read back', async () => {
@@ -88,6 +97,7 @@ describe('ExternalPlanService external-plan@4 integration', () => {
         const result = await new ExternalPlanService().import('u1', malformed);
 
         expect(result.status).toBe('INVALID');
+        expect(firestore.batch.set).not.toHaveBeenCalled();
         expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 

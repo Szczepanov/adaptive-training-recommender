@@ -1,9 +1,34 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXTERNAL_PLAN_SCHEMA } from '../engine/models';
 
-const firestore = vi.hoisted(() => ({
-    collection: vi.fn(), doc: vi.fn(), getDoc: vi.fn(), getDocs: vi.fn(), setDoc: vi.fn(),
-}));
+const firestore = vi.hoisted(() => {
+    const stagedWrites: Array<{ path: string; data: unknown }> = [];
+    const committedDocs = new Map<string, unknown>();
+    const batch = {
+        set: vi.fn((ref: { path: string }, data: unknown) => {
+            stagedWrites.push({ path: ref.path, data });
+        }),
+        commit: vi.fn(async () => {
+            for (const w of stagedWrites) {
+                committedDocs.set(w.path, w.data);
+            }
+            stagedWrites.length = 0;
+        }),
+    };
+    return {
+        collection: vi.fn(),
+        doc: vi.fn(),
+        getDoc: vi.fn(),
+        getDocs: vi.fn(),
+        setDoc: vi.fn((ref: { path: string }, data: unknown) => {
+            committedDocs.set(ref.path, data);
+        }),
+        writeBatch: vi.fn(() => batch),
+        batch,
+        stagedWrites,
+        committedDocs,
+    };
+});
 
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
@@ -27,19 +52,35 @@ function plan(overrides: Record<string, unknown> = {}) {
 
 /** Records which document path each write targeted, in order. */
 function writtenPaths(): string[] {
-    return firestore.setDoc.mock.calls.map(call => (call[0] as { path: string }).path);
+    const batchPaths = firestore.batch.set.mock.calls.map(call => (call[0] as { path: string }).path);
+    const setDocPaths = firestore.setDoc.mock.calls.map(call => (call[0] as { path: string }).path);
+    return [...batchPaths, ...setDocPaths];
 }
 
 describe('ExternalPlanService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        firestore.committedDocs.clear();
+        firestore.stagedWrites.length = 0;
         firestore.doc.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
         firestore.collection.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
         firestore.getDoc.mockResolvedValue({ exists: () => false });
-        firestore.setDoc.mockResolvedValue(undefined);
+        firestore.setDoc.mockImplementation((ref: { path: string }, data: unknown) => {
+            firestore.committedDocs.set(ref.path, data);
+            return Promise.resolve(undefined);
+        });
+        firestore.batch.set.mockImplementation((ref: { path: string }, data: unknown) => {
+            firestore.stagedWrites.push({ path: ref.path, data });
+        });
+        firestore.batch.commit.mockImplementation(async () => {
+            for (const w of firestore.stagedWrites) {
+                firestore.committedDocs.set(w.path, w.data);
+            }
+            firestore.stagedWrites.length = 0;
+        });
     });
 
-    it('stores the revision before the header, so a header never points at a missing revision', async () => {
+    it('writes the revision and header through a single batch so both commit together', async () => {
         const result = await new ExternalPlanService().import('u1', plan());
 
         expect(result.status).toBe('AVAILABLE');
@@ -47,12 +88,36 @@ describe('ExternalPlanService', () => {
             'users/u1/external_plans/autumn-block/revisions/1',
             'users/u1/external_plans/autumn-block',
         ]);
+        expect(firestore.writeBatch).toHaveBeenCalledTimes(1);
+        expect(firestore.batch.commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves neither document committed when the batch commit fails, and allows retry to succeed', async () => {
+        firestore.batch.commit.mockRejectedValueOnce(new Error('network error during batch commit'));
+
+        const service = new ExternalPlanService();
+        const failedResult = await service.import('u1', plan());
+
+        expect(failedResult).toMatchObject({
+            status: 'UNAVAILABLE',
+            retryable: true,
+        });
+        expect(firestore.committedDocs.has('users/u1/external_plans/autumn-block/revisions/1')).toBe(false);
+        expect(firestore.committedDocs.has('users/u1/external_plans/autumn-block')).toBe(false);
+        expect(firestore.committedDocs.size).toBe(0);
+
+        const retryResult = await service.import('u1', plan());
+        expect(retryResult.status).toBe('AVAILABLE');
+        expect(firestore.committedDocs.has('users/u1/external_plans/autumn-block/revisions/1')).toBe(true);
+        expect(firestore.committedDocs.has('users/u1/external_plans/autumn-block')).toBe(true);
+        expect(firestore.committedDocs.size).toBe(2);
     });
 
     it('writes nothing at all when the plan does not satisfy the contract', async () => {
         const result = await new ExternalPlanService().import('u1', plan({ startDate: '2026-08-18' }));
 
         expect(result.status).toBe('INVALID');
+        expect(firestore.batch.set).not.toHaveBeenCalled();
         expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 
@@ -71,6 +136,7 @@ describe('ExternalPlanService', () => {
         expect(same.status).toBe('INVALID');
         if (same.status !== 'INVALID') throw new Error('unreachable');
         expect(same.issues[0].code).toBe('revision-not-newer');
+        expect(firestore.batch.set).not.toHaveBeenCalled();
         expect(firestore.setDoc).not.toHaveBeenCalled();
 
         const newer = await new ExternalPlanService().import('u1', plan({ revision: 4 }));
