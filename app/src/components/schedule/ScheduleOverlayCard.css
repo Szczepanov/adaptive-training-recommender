@@ -153,6 +153,12 @@
     border: 1px solid rgba(99, 102, 241, 0.3);
 }
 
+.badge-limited {
+    background: rgba(14, 165, 233, 0.15);
+    color: #7dd3fc;
+    border: 1px solid rgba(14, 165, 233, 0.3);
+}
+
 .status-live-pill {
     background: #22c55e;
     color: #000;
@@ -228,8 +234,13 @@
 }
 
 .past-item {
+    width: 100%;
     display: flex;
     justify-content: space-between;
+    font: inherit;
+    text-align: left;
+    background: transparent;
+    border: 0;
     font-size: 0.78rem;
     color: var(--text-muted, #71717a);
     padding: 0.35rem 0.5rem;
@@ -237,7 +248,13 @@
     cursor: pointer;
 }
 
-.past-item:hover {
+.past-item:hover,
+.past-item:focus-visible {
     background: var(--bg-base, #09090b);
     color: var(--text-main, #f4f4f5);
+}
+
+.past-item:focus-visible {
+    outline: 2px solid var(--primary, #3b82f6);
+    outline-offset: 2px;
 }
