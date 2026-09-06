@@ -6,6 +6,7 @@ import type {
     WorkoutCostProfile,
 } from './models';
 import { resolveMaximumSessionMinutes } from './eligibility';
+import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 
 export interface ResolvedAvailability {
     date: string;
@@ -73,34 +74,16 @@ function resolveOwnedEquipment(
     return owned;
 }
 
-const ZERO_COST_PROFILE: WorkoutCostProfile = {
-    systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
-};
-
 /**
  * Sums reserved dimensional load from future (uncompleted) fixed activities, e.g. evening
  * football. Reserves capacity for the day without injecting pre-mature fatigue before
  * execution -- see planner.ts for where it is folded into same-day ranking and, at end of
- * day, into next-day external fatigue.
- *
- * D6-C: a missing `expectedCost` means "unknown/not modelled" and contributes zero. A
- * prior revision defaulted the whole activity to `systemic: 0.2` when `expectedCost` was
- * absent -- an invented heuristic this function must not reintroduce; the activity's time
- * is still reserved via `durationMin`/`availabilityOverride` regardless.
+ * day, into next-day external fatigue. The activity's time is still reserved via
+ * `durationMin`/`availabilityOverride` regardless of `expectedCost` (see
+ * `fixedActivityCostProfile.ts` for the D6-C "missing cost contributes zero" rule).
  */
 function calculateReservedCapacityProfile(futureActivities: FixedActivity[]): WorkoutCostProfile {
-    return futureActivities.reduce((sum, act) => {
-        const cost = act.expectedCost;
-        if (!cost) return sum;
-        return {
-            systemic: sum.systemic + (cost.systemic ?? 0),
-            cardiovascular: sum.cardiovascular + (cost.cardiovascular ?? 0),
-            lowerBody: sum.lowerBody + (cost.lowerBody ?? 0),
-            upperBody: sum.upperBody + (cost.upperBody ?? 0),
-            impactTissue: sum.impactTissue + (cost.impactTissue ?? 0),
-            neuromuscular: sum.neuromuscular + (cost.neuromuscular ?? 0),
-        };
-    }, ZERO_COST_PROFILE);
+    return sumFixedActivityCostProfiles(futureActivities);
 }
 
 /** Phase 6.2b / D6-B: an activity's own `environment`/`equipment` describe itself, not the

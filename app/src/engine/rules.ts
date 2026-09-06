@@ -44,6 +44,7 @@ import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, type FatigueFusionPolicy } from './fatigue';
 import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBaselineMetric } from './subjectiveBaseline';
 import { resolveAvailability } from './schedule';
+import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
@@ -1236,14 +1237,7 @@ function unrepresentedFixedActivityProjection(
     const represented = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
     if (trace.count <= represented.length) return null;
 
-    const representedCost = represented.reduce<WorkoutCostProfile>((sum, activity) => ({
-        systemic: sum.systemic + (activity.expectedCost?.systemic ?? 0),
-        cardiovascular: sum.cardiovascular + (activity.expectedCost?.cardiovascular ?? 0),
-        lowerBody: sum.lowerBody + (activity.expectedCost?.lowerBody ?? 0),
-        upperBody: sum.upperBody + (activity.expectedCost?.upperBody ?? 0),
-        impactTissue: sum.impactTissue + (activity.expectedCost?.impactTissue ?? 0),
-        neuromuscular: sum.neuromuscular + (activity.expectedCost?.neuromuscular ?? 0),
-    }), ZERO_COST);
+    const representedCost = sumFixedActivityCostProfiles(represented);
     const representedStimulus = represented.reduce<WorkoutStimulusProfile>((sum, activity) => ({
         aerobicEndurance: sum.aerobicEndurance + (activity.expectedStimulus?.aerobicEndurance ?? 0),
         thresholdPower: sum.thresholdPower + (activity.expectedStimulus?.thresholdPower ?? 0),
