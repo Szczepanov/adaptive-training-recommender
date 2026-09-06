@@ -23,6 +23,11 @@ export interface ResolvedAvailability {
      *  ranking path as same-day reserved capacity, then carried into subsequent projected
      *  dates only after that date is passed. */
     reservedCapacityCostProfile: WorkoutCostProfile;
+    /** Product of all active schedule-overlay volume/intensity multipliers. These are kept
+     *  on the resolved day authority so imported sessions can consume exactly the same
+     *  overlay caps as catalog planning without inventing a second date-range resolver. */
+    volumeScale: number;
+    intensityScale: number;
     /** Day-wide hard environment restriction. `null` is unrestricted. A resolved value of
      *  `either` is used only as a conservative conflict sentinel when simultaneous hard
      *  constraints disagree (for example one overlay says indoor and another outdoor):
@@ -190,6 +195,8 @@ export function resolveAvailability(
     const fixedCost = calculateReservedCapacityProfile(uncompletedFuture);
     const overlayCost = scheduleOverlayCostProfileForDate(scheduleOverlays, dateStr);
     const reservedCapacityCostProfile = addCostProfileClamped(fixedCost, overlayCost);
+    const volumeScale = activeOverlays.reduce((scale, overlay) => scale * overlay.volumeScale, 1);
+    const intensityScale = activeOverlays.reduce((scale, overlay) => scale * overlay.intensityScale, 1);
 
     const userEnvironment = (userContext as { environment?: TrainingEnvironment } | null | undefined)?.environment
         ?? (userContext?.constraints as { environment?: TrainingEnvironment } | null | undefined)?.environment
@@ -203,6 +210,8 @@ export function resolveAvailability(
         fixedActivities: daysFixed,
         reservedCapacityCost: reservedCapacityCostProfile.systemic,
         reservedCapacityCostProfile,
+        volumeScale,
+        intensityScale,
         environmentOverride,
     };
 }
