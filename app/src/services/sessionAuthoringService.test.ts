@@ -10,8 +10,9 @@ vi.mock('./executionPrescriptionService', () => ({ executionPrescriptionService:
 vi.mock('./sessionOccurrenceService', () => ({ sessionOccurrenceService: services.occurrence }));
 
 import { resolveWorkoutPrescription } from '../workouts/prescription';
-import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch } from './sessionAuthoringService';
+import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from './sessionAuthoringService';
 import type { SessionDefinition } from '../sessions/models';
+import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 
 function makeTestPrescription(templateId: string) {
     const rec = {
@@ -86,5 +87,117 @@ describe('prepareAuthoredOccurrenceLaunch (M3.3)', () => {
         expect(saved.sessionSource).toEqual(source);
         expect(saved.definitionHash).toBe(source.contentHash);
         expect(saved.blocks).toEqual(definition.blocks);
+    });
+});
+
+describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
+    function makeV4ExternalPlan(overrides?: Partial<SessionDefinition>): {
+        planId: string;
+        revision: number;
+        contentHash: string;
+        session: ExternalPlanSessionV4;
+    } {
+        const definition: SessionDefinition = {
+            schemaVersion: 1,
+            id: 'ext-session-1',
+            revision: 1,
+            title: 'VO2 Max Intervals',
+            summary: '5x3min intervals at 115% FTP',
+            intent: 'training',
+            dominantModality: 'cycling',
+            duration: { min: 60, max: 60 },
+            blocks: [{
+                id: 'main',
+                role: 'main',
+                executionMode: 'sequential',
+                steps: [
+                    { id: 'interval-1', kind: 'exercise', title: 'Work', exerciseRef: { kind: 'catalog', exerciseId: 'cycling-work' }, dose: { kind: 'duration', seconds: 180 } },
+                ],
+            }],
+            ...overrides,
+        };
+
+        return {
+            planId: 'plan-xyz',
+            revision: 2,
+            contentHash: 'c'.repeat(64),
+            session: {
+                id: 'session-101',
+                title: 'VO2 Max Intervals',
+                priority: 'key',
+                placement: { week: 1, preferredDay: 'tuesday', flexibility: 'fixed', ifMissed: 'drop' },
+                gating: {
+                    modality: 'cycling',
+                    intensity: 'hard',
+                    durationMin: 60,
+                    durationMax: 60,
+                    environment: 'indoor',
+                    equipment: ['indoor_bike'],
+                },
+                definition,
+            },
+        };
+    }
+
+    it('saves a write-once prescription and returns an external_plan binding with no occurrence', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const launch = await prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, '2026-09-06T12:00:00.000Z');
+
+        expect(launch.binding.sessionSource).toEqual({
+            kind: 'external_plan',
+            planId: 'plan-xyz',
+            revision: 2,
+            sessionId: 'session-101',
+            contentHash: 'c'.repeat(64),
+        });
+        expect(launch.binding.occurrenceId).toBeUndefined();
+        expect(launch.binding.prescriptionHash).toMatch(/^[0-9a-f]{64}$/);
+        expect(services.occurrence.saveOccurrence).not.toHaveBeenCalled();
+
+        const lastSave = services.prescription.savePrescription.mock.calls.at(-1);
+        expect(lastSave).toBeDefined();
+        const [savedUserId, savedPrescription] = lastSave!;
+        expect(savedUserId).toBe('u1');
+        expect(savedPrescription.prescriptionHash).toBe(launch.binding.prescriptionHash);
+        expect(savedPrescription.sessionSource).toEqual(launch.binding.sessionSource);
+        expect(savedPrescription.blocks).toEqual(externalPlan.session.definition.blocks);
+        expect(savedPrescription.displayMetadata).toEqual({
+            title: 'VO2 Max Intervals',
+            summary: '5x3min intervals at 115% FTP',
+            intent: 'training',
+            dominantModality: 'cycling',
+            duration: { min: 60, max: 60 },
+        });
+        expect(savedPrescription.createdAt).toBe('2026-09-06T12:00:00.000Z');
+    });
+
+    it('respects summaryOverride when provided (e.g. from scale verdict)', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const launch = await prepareExternalPlanSessionLaunch(
+            'u1',
+            externalPlan,
+            'Scaled: 3x3min intervals (volume reduced due to readiness)',
+        );
+
+        expect(launch.binding.prescriptionHash).toMatch(/^[0-9a-f]{64}$/);
+        const lastSave = services.prescription.savePrescription.mock.calls.at(-1);
+        const savedPrescription = lastSave![1];
+        expect(savedPrescription.displayMetadata?.summary).toBe('Scaled: 3x3min intervals (volume reduced due to readiness)');
+    });
+
+    it('is idempotent: preparing the same external plan session twice produces the same hash', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const first = await prepareExternalPlanSessionLaunch('u1', externalPlan);
+        const second = await prepareExternalPlanSessionLaunch('u1', externalPlan);
+        expect(second.binding.prescriptionHash).toBe(first.binding.prescriptionHash);
+    });
+
+    it('defensively throws if definition fails validation', async () => {
+        // An invalid definition with empty title
+        const externalPlan = makeV4ExternalPlan({
+            title: '',
+        });
+
+        await expect(prepareExternalPlanSessionLaunch('u1', externalPlan)).rejects.toThrow();
     });
 });
