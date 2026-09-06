@@ -119,13 +119,13 @@ function applyResolvedAvailability(
 /** Apply persisted schedule-overlay volume/intensity caps at the adjudicator boundary.
  * Catalog planning applies the same multipliers through `applyPlanningOverlays`; imported
  * sessions bypass that ranking path, but they still receive the resolved day authority.
- * Keeping the factors on `ResolvedAvailability` prevents a second date-range resolver and
- * makes overlapping overlays multiply in exactly the same way as the planner overlay pass. */
+ * Real resolved availability always supplies the factors; legacy/synthetic fixtures that
+ * predate schedule overlays use the neutral multiplier 1. */
 function applyResolvedDoseScales(plannedDose: PlannedDose, availability: ResolvedAvailability | null): PlannedDose {
     if (!availability) return plannedDose;
     return {
-        volume: plannedDose.volume * availability.volumeScale,
-        intensity: plannedDose.intensity * availability.intensityScale,
+        volume: plannedDose.volume * (availability.volumeScale ?? 1),
+        intensity: plannedDose.intensity * (availability.intensityScale ?? 1),
     };
 }
 
