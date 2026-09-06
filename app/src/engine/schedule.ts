@@ -23,11 +23,12 @@ export interface ResolvedAvailability {
      *  ranking path as same-day reserved capacity, then carried into subsequent projected
      *  dates only after that date is passed. */
     reservedCapacityCostProfile: WorkoutCostProfile;
-    /** Product of all active schedule-overlay volume/intensity multipliers. These are kept
-     *  on the resolved day authority so imported sessions can consume exactly the same
-     *  overlay caps as catalog planning without inventing a second date-range resolver. */
-    volumeScale: number;
-    intensityScale: number;
+    /** Product of all active schedule-overlay volume/intensity multipliers. Real
+     *  `resolveAvailability()` results always emit both fields. They remain optional on
+     *  the interface for legacy/synthetic resolved-availability fixtures created before
+     *  schedule overlays existed; consumers must treat absence as the neutral scale 1. */
+    volumeScale?: number;
+    intensityScale?: number;
     /** Day-wide hard environment restriction. `null` is unrestricted. A resolved value of
      *  `either` is used only as a conservative conflict sentinel when simultaneous hard
      *  constraints disagree (for example one overlay says indoor and another outdoor):
