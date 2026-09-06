@@ -301,7 +301,7 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('Steps are the completed D-1 total');
     });
 
-    it('includes physical work in recent recovery timeline flags', () => {
+    it('includes physical work in recent recovery timeline flags on D-1', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput({
             checkins: [
                 checkin(AS_OF, {
@@ -316,6 +316,44 @@ describe('enhanceContextBriefForPlanning', () => {
         }));
 
         expect(text).toContain('hard physical work');
+        // AS_OF is 2026-08-20, so D-1 is 2026-08-19
+        const timelineRow19 = text.split('\n').find(line => line.startsWith('| 2026-08-19 |'));
+        expect(timelineRow19).toContain('hard physical work');
+        const timelineRow20 = text.split('\n').find(line => line.startsWith('| 2026-08-20 |'));
+        expect(timelineRow20).not.toContain('hard physical work');
+    });
+
+    it('emits a wearable staleness caution in morning coach brief when snapshot is older than target date', () => {
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+            preset: 'daily',
+            asOfDate: '2026-08-20',
+            snapshots: [snapshot('2026-08-18')],
+        }));
+
+        expect(text).toContain('> Wearable caution: no snapshot for 2026-08-20; the newest wearable state is 2026-08-18. Do not treat it as current-day readiness.');
+    });
+
+    it('falls back to weekend max minutes when availability is unrecorded on a weekend', () => {
+        // 2026-08-22 is a Saturday
+        const weekendDate = '2026-08-22';
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+            preset: 'daily',
+            asOfDate: weekendDate,
+            checkins: [checkin(weekendDate, { availability: { timeAvailableMin: null, indoorOnly: false, preferredModalityToday: null } })],
+            trainingSettings: {
+                userId: 'u1',
+                defaults: { weekdayMaxMinutes: 45, weekendMaxMinutes: 120, environment: 'either' },
+                equipment: { indoor_bike: true, outdoor_bike: true, treadmill: false, free_weights: true, pullup_bar: false },
+                guardrails: { hardSessionCap: true, backToBackHardAllowed: false, minRecoveryHoursBetweenHard: true },
+                preferences: { preferActiveRecovery: false },
+                migration: { legacyReviewed: true, migratedAt: null },
+                schemaVersion: 3,
+                createdAt: '2026-08-01T00:00:00Z',
+                updatedAt: '2026-08-01T00:00:00Z',
+            } as unknown as TrainingSettings,
+        }));
+
+        expect(text).toContain('- Time & environment: 120 min available');
     });
 
     it('exports fixed commitments, imported sessions and their authored prescriptions', () => {

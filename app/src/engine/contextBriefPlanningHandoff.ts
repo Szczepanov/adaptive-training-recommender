@@ -178,6 +178,28 @@ function renderDataHandoff(input: ContextBriefPlanningHandoffInput): string {
     return lines.join('\n');
 }
 
+/**
+ * Formats unlogged manual physical work and non-exercise labor into a concise,
+ * human-readable summary string including duration, intensity, affected load areas, and notes.
+ */
+function formatPhysicalWork(pw: NonNullable<DailySubjectiveCheckin['physicalWork']>): string {
+    const durationLabels: Record<string, string> = { short: '< 1 hr', medium: '1–3 hrs', extended: '3+ hrs' };
+    const areaLabels: Record<string, string> = {
+        grip_forearms: 'grip/forearms',
+        upper_body: 'upper body',
+        lower_back_spine: 'lower back/spine',
+        legs_carrying: 'legs/carrying',
+    };
+    const parts: string[] = [];
+    if (pw.duration) parts.push(durationLabels[pw.duration] ?? pw.duration);
+    if (pw.intensity) parts.push(`${pw.intensity} effort`);
+    if (pw.loadAreas && pw.loadAreas.length > 0) {
+        parts.push(`strain: ${pw.loadAreas.map(a => areaLabels[a] ?? a).join(', ')}`);
+    }
+    const noteStr = pw.notes && pw.notes.trim().length > 0 ? ` — "${pw.notes.trim()}"` : '';
+    return `${parts.join(' · ')}${noteStr}`;
+}
+
 function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string {
     const firstDate = addDaysToLocalDateString(input.asOfDate, -(RECOVERY_TIMELINE_DAYS - 1));
     const snapshots = new Map(input.snapshots.filter(item => item.date >= firstDate && item.date <= input.asOfDate).map(item => [item.date, item]));
@@ -187,6 +209,14 @@ function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string
         const sameDay = activitiesByDate.get(activity.date) ?? [];
         sameDay.push(activity);
         activitiesByDate.set(activity.date, sameDay);
+    }
+    const physicalWorkByDate = new Map<string, string>();
+    for (const checkin of input.checkins) {
+        if (checkin.physicalWork?.performed) {
+            const dateOfWork = addDaysToLocalDateString(checkin.date, -1);
+            const intensity = checkin.physicalWork.intensity ? `${checkin.physicalWork.intensity} ` : '';
+            physicalWorkByDate.set(dateOfWork, `${intensity}physical work`);
+        }
     }
 
     if (snapshots.size === 0 && checkins.size === 0) return '';
@@ -215,9 +245,9 @@ function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string
         if (checkin?.painOrInjury) flags.push('pain/injury');
         if (checkin?.illnessSymptoms) flags.push('illness');
         if (checkin?.unusuallyLimitedTime) flags.push('limited time');
-        if (checkin?.physicalWork?.performed) {
-            const intensity = checkin.physicalWork.intensity ? `${checkin.physicalWork.intensity} ` : '';
-            flags.push(`${intensity}physical work`);
+        const pw = physicalWorkByDate.get(date);
+        if (pw) {
+            flags.push(pw);
         }
 
         lines.push(`| ${date} | ${textNumber(snapshot?.raw.sleepScore)} | ${textNumber(snapshot?.raw.hrvOvernightAvg)} | ${textNumber(snapshot?.raw.restingHr)} | ${textNumber(snapshot?.raw.respirationAvg)} | ${textNumber(snapshot?.raw.bodyBatteryWake)} | ${textNumber(snapshot?.raw.stress?.avg)} | ${textNumber(snapshot?.raw.totalSteps)} | ${textNumber(checkin?.readiness)} | ${textNumber(checkin?.fatigue)} | ${textNumber(checkin?.soreness)} | ${flags.join(', ') || '—'} |`);
@@ -419,7 +449,6 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
     const activeSnapshot = todaySnapshot ?? latestSnapshot;
 
     const todayCheckin = input.checkins.find(c => c.date === targetDate);
-    const yesterdayCheckin = input.checkins.find(c => c.date === yesterdayDate);
     const yesterdayActivities = input.activities.filter(a => a.date === yesterdayDate);
     const todayRecommendation = [...input.recommendations]
         .filter(r => r.date === targetDate)
@@ -451,8 +480,13 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
             + `Mental stress ${textNumber(todayCheckin.mentalStress)}`,
         );
 
+        const dayOfWeek = new Date(`${targetDate}T00:00:00Z`).getUTCDay();
+        const isWeekendDay = dayOfWeek === 0 || dayOfWeek === 6;
+        const defaultMinutes = isWeekendDay
+            ? settings?.defaults.weekendMaxMinutes
+            : settings?.defaults.weekdayMaxMinutes;
         const timeAvail = todayCheckin.availability?.timeAvailableMin
-            ?? (settings?.defaults.weekdayMaxMinutes ?? '—');
+            ?? (defaultMinutes ?? '—');
         const env = todayCheckin.availability?.indoorOnly
             ? 'indoor only'
             : (settings?.defaults.environment ?? 'either');
@@ -483,22 +517,7 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         }
 
         if (todayCheckin.physicalWork?.performed) {
-            const pw = todayCheckin.physicalWork;
-            const durationLabels: Record<string, string> = { short: '< 1 hr', medium: '1–3 hrs', extended: '3+ hrs' };
-            const areaLabels: Record<string, string> = {
-                grip_forearms: 'grip/forearms',
-                upper_body: 'upper body',
-                lower_back_spine: 'lower back/spine',
-                legs_carrying: 'legs/carrying',
-            };
-            const parts: string[] = [];
-            if (pw.duration) parts.push(durationLabels[pw.duration] ?? pw.duration);
-            if (pw.intensity) parts.push(`${pw.intensity} effort`);
-            if (pw.loadAreas && pw.loadAreas.length > 0) {
-                parts.push(`strain: ${pw.loadAreas.map(a => areaLabels[a] ?? a).join(', ')}`);
-            }
-            const noteStr = pw.notes && pw.notes.trim().length > 0 ? ` — "${pw.notes.trim()}"` : '';
-            lines.push(`- Unlogged physical work (yesterday D-1): ${parts.join(' · ')}${noteStr}`);
+            lines.push(`- Unlogged physical work (yesterday D-1): ${formatPhysicalWork(todayCheckin.physicalWork)}`);
         } else {
             lines.push('- Unlogged physical work (yesterday D-1): none reported');
         }
@@ -516,6 +535,9 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         const raw = activeSnapshot.raw;
         const der = activeSnapshot.derived;
         lines.push(`Most recent reading — ${activeSnapshot.date} (Garmin synced at ${activeSnapshot.source.garminSyncedAt}):`);
+        if (activeSnapshot.date < targetDate) {
+            lines.push(`> Wearable caution: no snapshot for ${targetDate}; the newest wearable state is ${activeSnapshot.date}. Do not treat it as current-day readiness.`);
+        }
         lines.push(`- HRV (overnight avg): ${textNumber(raw.hrvOvernightAvg)} ms (7d avg ${round(der.hrv7dAvg)}, 28d avg ${round(der.hrv28dAvg)}) — ${signed(der.deltas.hrvVs7d)} vs 7d, ${signed(der.deltas.hrvVs28d)} vs 28d`);
         lines.push(`- Resting HR: ${textNumber(raw.restingHr)} bpm (7d avg ${round(der.restingHr7dAvg)}, 28d avg ${round(der.restingHr28dAvg)}) — ${signed(der.deltas.restingHrVs7d)} vs 7d, ${signed(der.deltas.restingHrVs28d)} vs 28d`);
         lines.push(`- Sleep score: ${textNumber(raw.sleepScore)} pts (7d avg ${round(der.sleepScore7dAvg)}, 28d avg ${round(der.sleepScore28dAvg)}) — ${signed(der.deltas.sleepScoreVs7d)} vs 7d, ${signed(der.deltas.sleepScoreVs28d)} vs 28d`);
@@ -566,25 +588,8 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         lines.push('- Recorded training: No recorded sessions in this window.');
     }
 
-    const pwSource = todayCheckin?.physicalWork?.performed
-        ? todayCheckin.physicalWork
-        : (yesterdayCheckin?.physicalWork?.performed ? yesterdayCheckin.physicalWork : null);
-    if (pwSource) {
-        const durationLabels: Record<string, string> = { short: '< 1 hr', medium: '1–3 hrs', extended: '3+ hrs' };
-        const areaLabels: Record<string, string> = {
-            grip_forearms: 'grip/forearms',
-            upper_body: 'upper body',
-            lower_back_spine: 'lower back/spine',
-            legs_carrying: 'legs/carrying',
-        };
-        const parts: string[] = [];
-        if (pwSource.duration) parts.push(durationLabels[pwSource.duration] ?? pwSource.duration);
-        if (pwSource.intensity) parts.push(`${pwSource.intensity} effort`);
-        if (pwSource.loadAreas && pwSource.loadAreas.length > 0) {
-            parts.push(`strain: ${pwSource.loadAreas.map(a => areaLabels[a] ?? a).join(', ')}`);
-        }
-        const noteStr = pwSource.notes && pwSource.notes.trim().length > 0 ? ` — "${pwSource.notes.trim()}"` : '';
-        lines.push(`- Manual physical work: ${parts.join(' · ')}${noteStr}`);
+    if (todayCheckin?.physicalWork?.performed) {
+        lines.push(`- Manual physical work: ${formatPhysicalWork(todayCheckin.physicalWork)}`);
     } else {
         lines.push('- Manual physical work: none reported');
     }
