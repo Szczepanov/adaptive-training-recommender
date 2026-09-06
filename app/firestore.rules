@@ -672,6 +672,38 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    // ADR-0036 D-WINDOW: the athlete's versioned schedule, the sole owner of actual
+    // same-date availability. Rules validate the per-document shape only -- the
+    // cross-window non-overlap invariant needs every sibling window for a date at once
+    // and is enforced by `scheduleWindowService.ts`/`scheduleWindows.ts`, the same split
+    // `hasValidExternalPlanRevision` above uses for cross-entry invariants rules cannot see.
+    function hasValidScheduleWindow(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && isValidActivityDate(data.date)
+        && data.keys().hasOnly(['userId', 'date', 'startLocal', 'endLocal', 'label', 'equipment', 'environment', 'revision', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'date', 'startLocal', 'endLocal', 'revision', 'createdAt', 'updatedAt'])
+        && data.startLocal is string && data.startLocal.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && data.endLocal is string && data.endLocal.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && data.endLocal > data.startLocal
+        && data.revision is int && data.revision >= 1
+        && data.createdAt is string
+        && data.updatedAt is string
+        && (!('label' in data) || (data.label is string && data.label.size() > 0 && data.label.size() <= 100))
+        && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
+        && (!('environment' in data) || data.environment in ['indoor', 'outdoor', 'either']);
+    }
+
+    match /users/{userId}/schedule_windows/{windowId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidScheduleWindow(userId);
+      allow update: if hasValidScheduleWindow(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.revision > resource.data.revision;
+      allow delete: if isOwner(userId);
+    }
+
     function hasValidPlanBlock(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)

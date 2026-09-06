@@ -11,6 +11,7 @@ const ownerId = 'athlete-a';
 const otherUserId = 'athlete-b';
 const recommendationPath = `users/${ownerId}/daily_recommendations/2026-08-07`;
 const fixedActivityPath = `users/${ownerId}/fixed_activities/activity-1`;
+const scheduleWindowPath = `users/${ownerId}/schedule_windows/window-1`;
 const planBlockPath = `users/${ownerId}/plan_blocks/trip-august`;
 const trainingIntentProfilePath = `users/${ownerId}/training_intent/profile`;
 const preferencesPath = `users/${ownerId}/preferences/profile`;
@@ -636,6 +637,94 @@ emulatorDescribe('Firestore security rules', () => {
     it('rejects a fixed activity with a malformed date', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '08/12/2026' }));
+    });
+
+    // ADR-0036 D-WINDOW: the athlete's versioned schedule.
+    function validScheduleWindow() {
+        return {
+            userId: ownerId,
+            date: '2026-09-10',
+            startLocal: '06:00',
+            endLocal: '07:00',
+            revision: 1,
+            createdAt: '2026-09-01T00:00:00Z',
+            updatedAt: '2026-09-01T00:00:00Z',
+        };
+    }
+
+    it('allows an owner to create a valid schedule window', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, scheduleWindowPath), validScheduleWindow()))).resolves.toBeUndefined();
+    });
+
+    it('allows an owner update that bumps revision and preserves createdAt', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, scheduleWindowPath), {
+            ...validScheduleWindow(),
+            endLocal: '07:30',
+            revision: 2,
+            updatedAt: '2026-09-02T00:00:00Z',
+        }))).resolves.toBeUndefined();
+    });
+
+    it('rejects an update that does not bump revision', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), endLocal: '07:30' }));
+    });
+
+    it('rejects an update that changes createdAt', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), revision: 2, createdAt: '2026-09-05T00:00:00Z' }));
+    });
+
+    it('rejects a schedule window where endLocal is not strictly after startLocal', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), startLocal: '07:00', endLocal: '07:00' }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), startLocal: '22:00', endLocal: '02:00' }));
+    });
+
+    it('rejects a malformed startLocal/endLocal', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), startLocal: '6:00' }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), endLocal: '24:00' }));
+    });
+
+    it('rejects a schedule window with an unknown environment', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), environment: 'space' }));
+    });
+
+    it('rejects a schedule window with an oversized label', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), label: 'x'.repeat(101) }));
+    });
+
+    it('rejects unauthenticated schedule window access', async () => {
+        const anonDb = testEnvironment.unauthenticatedContext().firestore();
+        await assertFails(setDoc(doc(anonDb, scheduleWindowPath), validScheduleWindow()));
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
+        });
+        await assertFails(getDoc(doc(anonDb, scheduleWindowPath)));
+    });
+
+    it('rejects cross-user schedule window reads and writes', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, scheduleWindowPath)));
+        await assertFails(setDoc(doc(otherDb, scheduleWindowPath), validScheduleWindow()));
+        await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/schedule_windows/window-2`), { ...validScheduleWindow(), userId: ownerId }));
     });
 
     it('rejects a fixed activity with a YYYY-MM-DD-shaped but calendar-impossible date', async () => {
