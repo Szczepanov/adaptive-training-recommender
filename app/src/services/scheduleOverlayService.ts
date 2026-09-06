@@ -72,21 +72,20 @@ export class ScheduleOverlayService {
         }
     }
 
+    /** Lists overlays for the management UI. Unlike the engine-facing DataState read,
+     * failures are deliberately propagated so the card can distinguish "read failed"
+     * from a genuine empty collection and offer a retry instead of silently hiding data. */
     async listOverlays(userId: string): Promise<ScheduleOverlayWithId[]> {
-        try {
-            const ref = collection(getDb(), 'users', userId, this.collectionPath);
-            const snapshot = await getDocs(ref);
-            const overlays: ScheduleOverlayWithId[] = [];
-            for (const item of snapshot.docs) {
-                const parsed = validateScheduleOverlay({ ...item.data(), id: item.id });
-                if (parsed.isValid && parsed.data && parsed.data.userId === userId) {
-                    overlays.push({ ...parsed.data, id: item.id });
-                }
+        const ref = collection(getDb(), 'users', userId, this.collectionPath);
+        const snapshot = await getDocs(ref);
+        const overlays: ScheduleOverlayWithId[] = [];
+        for (const item of snapshot.docs) {
+            const parsed = validateScheduleOverlay({ ...item.data(), id: item.id });
+            if (parsed.isValid && parsed.data && parsed.data.userId === userId) {
+                overlays.push({ ...parsed.data, id: item.id });
             }
-            return overlays.sort((a, b) => a.startDate.localeCompare(b.startDate));
-        } catch {
-            return [];
         }
+        return overlays.sort((a, b) => a.startDate.localeCompare(b.startDate));
     }
 
     async create(
