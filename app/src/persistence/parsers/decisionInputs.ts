@@ -158,6 +158,9 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
         ...(healthContext ? { healthContext } : {}),
         ...(physicalWork ? { physicalWork } : {}),
     };
+    if (!physicalWork) {
+        delete (normalized as { physicalWork?: unknown }).physicalWork;
+    }
     return {
         status: 'AVAILABLE',
         data: normalized,

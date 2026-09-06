@@ -16,7 +16,7 @@ import { performedTrainingOccurrenceRepository as repository } from './repositor
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { activityService } from '../services/activityService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
-import { getPreviousLocalDateString } from '../utils/localDate';
+import { addDaysToLocalDateString, getPreviousLocalDateString } from '../utils/localDate';
 import {
     deriveFactsFromOccurrence,
     categoryForWorkoutId,
@@ -176,4 +176,28 @@ export async function getPerformedTrainingFactsInRange(
         exposures,
         coverageCredits,
     };
+}
+
+/**
+ * ADR-0036 (H4) D-LEDGER/D-REASSESS need today's own already-completed work, not just
+ * history strictly before today. `getPerformedTrainingFactsInRange`'s `[from, to)`
+ * convention structurally excludes `toDateExclusive` itself, so passing today's date as
+ * that boundary -- as every current caller does -- always excludes today (see
+ * `trainingIntent.ts`'s always-pass-`date` call). This wrapper makes "through today,
+ * inclusive" an explicit, correctly-named request instead of relying on callers to
+ * remember to pass tomorrow's date as the exclusive boundary.
+ *
+ * `getPerformedTrainingFactsInRange` itself is unchanged and untouched by this addition:
+ * its hydration logic has no date-relative assumption that data must be historical (see
+ * the H4 same-day verification tests), so this is a pure convenience wrapper, not a new
+ * code path. Not called from any production decision path yet -- adding a same-day read
+ * is a prerequisite for H4 runtime wiring, not itself a decision-affecting change.
+ */
+export function getPerformedTrainingFactsThroughToday(
+    userId: string,
+    fromDateInclusive: string,
+    todayInclusive: string,
+    options: GetPerformedTrainingFactsOptions = {},
+): Promise<PerformedTrainingFactsSnapshot> {
+    return getPerformedTrainingFactsInRange(userId, fromDateInclusive, addDaysToLocalDateString(todayInclusive, 1), options);
 }
