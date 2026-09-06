@@ -264,7 +264,7 @@ one-session forecasts do not validate doubles.
 `restDays` unchanged) plus a session-level optional `intraday` object (`window`,
 `bundleId`, `order`, `afterSessionId`, `minimumSeparationMinutes`), following the ADR's
 D-SCHEMA sketch. Validation is structural/reference-only -- HH:mm format and positive
-same-day duration, bundle membership agreement (week/preferredDay/flexibility), unique
+same-day duration, bundle membership agreement (`week`/`preferredDay`/`flexibility`), unique
 order, no overlapping requested windows, no dangling/forward/cyclic `afterSessionId`, no
 required session depending on an optional predecessor, and no intraday session date
 conflicting with an authored rest directive. It does not resolve requested windows
