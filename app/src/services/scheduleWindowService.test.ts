@@ -53,6 +53,27 @@ describe('ScheduleWindowService persistence shape', () => {
         expect(payload.startLocal).toBe('06:00');
     });
 
+    it('keeps ownership, revision, and timestamps service-owned even if runtime input carries extra fields', async () => {
+        const service = new ScheduleWindowService();
+        const injectedInput = {
+            ...validInput,
+            userId: 'other-user',
+            revision: 99,
+            createdAt: '2000-01-01T00:00:00.000Z',
+            updatedAt: '2000-01-01T00:00:00.000Z',
+        } as unknown as typeof validInput;
+
+        const result = await service.createWindow('u1', injectedInput);
+        const payload = firestore.addDoc.mock.calls[0][1] as Record<string, unknown>;
+
+        expect(result.userId).toBe('u1');
+        expect(result.revision).toBe(1);
+        expect(payload.userId).toBe('u1');
+        expect(payload.revision).toBe(1);
+        expect(payload.createdAt).not.toBe('2000-01-01T00:00:00.000Z');
+        expect(payload.updatedAt).not.toBe('2000-01-01T00:00:00.000Z');
+    });
+
     it('rejects a cross-midnight window (startLocal after endLocal)', async () => {
         const service = new ScheduleWindowService();
         await expect(service.createWindow('u1', { ...validInput, startLocal: '22:00', endLocal: '02:00' }))
@@ -85,6 +106,27 @@ describe('ScheduleWindowService persistence shape', () => {
         expect(firestore.addDoc).toHaveBeenCalled();
     });
 
+    it('fails closed when persisted same-date data is invalid instead of treating it as an empty date', async () => {
+        firestore.getDocs.mockResolvedValue({
+            docs: [docSnapshot('invalid', {
+                userId: 'u1', date: '2026-09-10', startLocal: 'not-a-time', endLocal: '07:30',
+                revision: 1, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
+            })],
+        });
+        const service = new ScheduleWindowService();
+
+        await expect(service.createWindow('u1', validInput)).rejects.toThrow(/persisted data is invalid/);
+        expect(firestore.addDoc).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when same-date windows are unavailable instead of treating the read as empty', async () => {
+        firestore.getDocs.mockRejectedValueOnce(new Error('offline'));
+        const service = new ScheduleWindowService();
+
+        await expect(service.createWindow('u1', validInput)).rejects.toThrow(/data is unavailable/);
+        expect(firestore.addDoc).not.toHaveBeenCalled();
+    });
+
     it('updateWindow bumps revision and preserves createdAt', async () => {
         firestore.getDoc.mockResolvedValue(docSnapshot('window-1', {
             userId: 'u1', date: '2026-09-10', startLocal: '06:00', endLocal: '07:00',
@@ -97,6 +139,23 @@ describe('ScheduleWindowService persistence shape', () => {
         expect(result.endLocal).toBe('07:30');
         const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
         expect(payload.createdAt).toBe('2026-09-01T00:00:00.000Z');
+    });
+
+    it('does not update when the destination date contains invalid persisted schedule data', async () => {
+        firestore.getDoc.mockResolvedValue(docSnapshot('window-1', {
+            userId: 'u1', date: '2026-09-09', startLocal: '06:00', endLocal: '07:00',
+            revision: 1, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
+        }));
+        firestore.getDocs.mockResolvedValue({
+            docs: [docSnapshot('invalid', {
+                userId: 'u1', date: '2026-09-10', startLocal: '06:30', endLocal: 'bad',
+                revision: 1, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
+            })],
+        });
+        const service = new ScheduleWindowService();
+
+        await expect(service.updateWindow('u1', 'window-1', { date: '2026-09-10' })).rejects.toThrow(/persisted data is invalid/);
+        expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 
     it('deleteWindow calls deleteDoc on the resolved document reference', async () => {
