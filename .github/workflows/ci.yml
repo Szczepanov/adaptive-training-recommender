@@ -76,8 +76,8 @@ jobs:
       - name: Python dependency audit
         run: uvx pip-audit
 
-  frontend-build:
-    name: Frontend Build & Firestore Rules
+  frontend-hygiene:
+    name: Frontend Hygiene & Static Gates
     runs-on: ubuntu-latest
     env:
       # Build/test-only configuration. Production configuration remains deployment-owned.
@@ -100,14 +100,19 @@ jobs:
           cache: "npm"
           cache-dependency-path: app/package-lock.json
 
-      - name: Set up Java for Firestore Emulator
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
-
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Node dependency audit
+        shell: bash
+        run: |
+          # Audit high/critical vulnerabilities immediately after install while the tree is pristine.
+          # Include a single retry with backoff in case the npm registry security endpoint times out.
+          npm audit --audit-level=high || {
+            echo "npm audit returned an error or registry timeout; retrying once..." >&2
+            sleep 5
+            npm audit --audit-level=high
+          }
 
       - name: Type check frontend
         run: npm run typecheck
@@ -136,6 +141,34 @@ jobs:
           fi
           node scripts/check-policy-drift.mjs "${BASE_SHA}"
 
+      - name: Build frontend bundle
+        run: npm run build:bundle
+
+  frontend-tests:
+    name: Frontend Unit Tests & Firestore Rules
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Set up Java for Firestore Emulator
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Node dependencies
+        run: npm ci
+
       - name: Run frontend test suite with coverage
         run: npm run test:coverage
 
@@ -149,6 +182,25 @@ jobs:
 
       - name: Run Firestore security-rule emulator suite
         run: npm run test:rules
+
+  engine-simulations:
+    name: Engine Simulations & AI Gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci
 
       - name: Run simulation scenarios & aggregate bounds gate
         run: |
@@ -165,17 +217,14 @@ jobs:
         run: npm run simulate:diff
         continue-on-error: true
 
-      - name: Build frontend bundle
-        run: npm run build:bundle
-
-      - name: Node dependency audit
-        run: npm audit --audit-level=high
-
   docker-build:
     name: Docker Build & Compose Smoke
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
       - name: Build root Garmin sync Docker image
         run: docker build -t adaptive-training-garmin-sync .
