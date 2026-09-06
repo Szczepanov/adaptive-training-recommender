@@ -13,6 +13,14 @@ function storedScheduleOverlayPayload(overlay: ScheduleOverlay): DocumentData {
     return payload;
 }
 
+/** Firestore requires whole minutes for this field. Reject fractional values before
+ * attempting a write so client validation and persistence cannot disagree. */
+function assertWholeMinuteAvailability(value: number): void {
+    if (!Number.isInteger(value)) {
+        throw new Error('Validation failed: dailyAvailabilityMinutes must be a whole number of minutes');
+    }
+}
+
 /** User-scoped persistence for ScheduleOverlays (planned absences, active sport trips,
  * sedentary holidays, high-step walking tours).
  */
@@ -85,6 +93,7 @@ export class ScheduleOverlayService {
         userId: string,
         input: Omit<ScheduleOverlay, 'id' | 'userId' | 'createdAt' | 'updatedAt'>,
     ): Promise<ScheduleOverlayWithId> {
+        assertWholeMinuteAvailability(input.dailyAvailabilityMinutes);
         const parsed = validateScheduleOverlay({ ...input, userId });
         if (!parsed.isValid || !parsed.data) {
             throw new Error(`Validation failed: ${parsed.errors.map(error => error.message).join('; ')}`);
@@ -101,14 +110,16 @@ export class ScheduleOverlayService {
         id: string,
         input: Omit<ScheduleOverlay, 'id' | 'userId' | 'createdAt' | 'updatedAt'> & { createdAt: string },
     ): Promise<ScheduleOverlayWithId> {
+        assertWholeMinuteAvailability(input.dailyAvailabilityMinutes);
         const parsed = validateScheduleOverlay({ ...input, id, userId });
         if (!parsed.isValid || !parsed.data) {
             throw new Error(`Validation failed: ${parsed.errors.map(error => error.message).join('; ')}`);
         }
+        // Full replacement is deliberate: optional fields the athlete clears (sport,
+        // equipment, environment, notes) must be removed instead of surviving via merge.
         await setDoc(
             doc(getDb(), 'users', userId, this.collectionPath, id),
             storedScheduleOverlayPayload(parsed.data),
-            { merge: true },
         );
         return { ...parsed.data, id };
     }
