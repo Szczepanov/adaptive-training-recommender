@@ -152,13 +152,14 @@ export async function prepareAuthoredOccurrenceLaunch(
 /**
  * Freezes the execution-prescription snapshot for a v4 external-plan session (ADR-0036
  * H4). Mirrors prepareCatalogSessionLaunch's shape: no session_occurrences record --
- * an external-plan session's identity is already (planId, revision, sessionId, date),
- * the same reasoning a catalog recommendation's (workoutId, catalogVersion) needs no
- * separate occurrence doc either.
+ * the immutable authored source is already identified by
+ * (planId, revision, sessionId, contentHash), while the recommendation/execution carries
+ * the date separately. Target-event sessions are deliberately rejected: rules.ts treats
+ * them as fixed-activity/advisory inputs rather than executable primary recommendations.
  *
- * Idempotent and safe to call every time an external-plan recommendation is composed:
- * `executionPrescriptionService.savePrescription` no-ops when the same content-addressed
- * hash is already stored.
+ * Idempotent and safe to call every time an executable external-plan recommendation is
+ * composed: `executionPrescriptionService.savePrescription` no-ops when the same
+ * content-addressed hash is already stored.
  */
 export async function prepareExternalPlanSessionLaunch(
     userId: string,
@@ -171,6 +172,10 @@ export async function prepareExternalPlanSessionLaunch(
     summaryOverride?: string,
     now = new Date().toISOString(),
 ): Promise<PreparedSessionLaunch> {
+    if (externalPlan.session.isEvent) {
+        throw new Error('External-plan target events are advisory fixed-activity inputs and cannot be launched as primary sessions.');
+    }
+
     const definition = externalPlan.session.definition;
     // Defense in depth: already validated at import time (validateExternalSessionV2,
     // reused unchanged by v4), but every other launch path re-validates too.
