@@ -25,8 +25,11 @@ the ordinary coverage ordering is unchanged, so an already-met hard role does no
 unnecessary repeats.
 
 The current decision policy version is
-`2026-09-authored-rest-day-v1`. See the evaluation plan for the root
-cause, focused regression tests and required PR-head validation.
+`2026-09-fixed-activity-cost-dedup-v1` (bumped mechanically by the fixed-activity
+cost-reduce dedup slice, not by an actual decision-behavior change -- see `app/src/engine/policy.ts`
+for the authoritative current value, since this line will otherwise go stale again).
+See the evaluation plan for the root cause, focused regression tests and required
+PR-head validation.
 
 H3 was investigated and its executable contracts are delivered (see the work orders below
 and the evaluation plan). The unplanned-date fallback, missed-session replacement,

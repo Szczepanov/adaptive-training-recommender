@@ -243,8 +243,11 @@ also remains blocked on current-workload/restriction confirmation.
 **D-SCHEMA and D-LEDGER delivered** (schema/pure-ledger slice); **same-day canonical
 performed-fact boundary verified**; runtime wiring (the `dailyLedger.ts` refactor, plus
 D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) unstarted.
-**Dependencies:** ADR-0035 rest support (delivered). `POLICY_VERSION` is unchanged by
-this work -- no decision behavior is activated yet.
+**Dependencies:** ADR-0035 rest support (delivered). The `external-plan@4`/`dailyLedger.ts`
+D-SCHEMA/D-LEDGER slice itself left `POLICY_VERSION` unchanged (neither module is
+consumed by any decision path); the later fixed-activity cost-reduce dedup slice below
+did bump it, mechanically, per the drift gate's requirement -- not because decision
+behavior actually changed. No H4 slice has activated new decision behavior yet.
 
 Decision: explicit athlete-owned windows, plan-owned sequencing in `external-plan@4`,
 one shared daily minute/load ledger, and fresh post-AM reassessment before PM launch.
