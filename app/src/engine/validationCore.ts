@@ -34,6 +34,9 @@ import type {
     RegionTissueResponse,
     TissueResponseLevel,
     AuthoredPlanBlock,
+    ScheduleOverlay,
+    ScheduleOverlayCategory,
+    ScheduleOverlaySport,
     TrainingIntentProfile,
     PlanningMode,
     TrainingPriority,
@@ -1452,6 +1455,102 @@ export function validateAuthoredPlanBlock(raw: any): ValidationResult<AuthoredPl
         volumeScale: raw.volumeScale, intensityScale: raw.intensityScale, ...(raw.eventId ? { eventId: raw.eventId } : {}),
         createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now, updatedAt: now,
     } };
+}
+
+const SCHEDULE_OVERLAY_CATEGORIES: ScheduleOverlayCategory[] = [
+    'active_sport', 'sedentary_rest', 'high_step_walking', 'limited_availability',
+];
+const SCHEDULE_OVERLAY_SPORTS: ScheduleOverlaySport[] = [
+    'skiing', 'volleyball', 'hiking', 'court_sport', 'field_sport', 'general',
+];
+
+export function validateScheduleOverlay(raw: any): ValidationResult<ScheduleOverlay> {
+    const errors: ValidationError[] = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { isValid: false, errors: [{ field: 'scheduleOverlay', message: 'Overlay must be an object' }] };
+    }
+    if (!raw.userId || typeof raw.userId !== 'string') {
+        errors.push({ field: 'userId', message: 'User ID is required' });
+    }
+    if (!raw.title || typeof raw.title !== 'string' || raw.title.trim().length === 0 || raw.title.length > 200) {
+        errors.push({ field: 'title', message: 'Title must be a non-empty string up to 200 characters' });
+    }
+    if (!SCHEDULE_OVERLAY_CATEGORIES.includes(raw.category)) {
+        errors.push({ field: 'category', message: `Invalid category: ${raw.category}` });
+    }
+    if (raw.sport !== undefined && raw.sport !== null && !SCHEDULE_OVERLAY_SPORTS.includes(raw.sport)) {
+        errors.push({ field: 'sport', message: `Invalid sport: ${raw.sport}` });
+    }
+    if (!isValidDate(raw.startDate) || !isValidDate(raw.endDate) || raw.startDate > raw.endDate) {
+        errors.push({ field: 'dates', message: 'Overlay dates must be valid and start date must not be after end date' });
+    }
+    if (typeof raw.dailyAvailabilityMinutes !== 'number' || !Number.isFinite(raw.dailyAvailabilityMinutes) || raw.dailyAvailabilityMinutes < 0 || raw.dailyAvailabilityMinutes > 1440) {
+        errors.push({ field: 'dailyAvailabilityMinutes', message: 'Daily availability minutes must be in [0, 1440]' });
+    }
+    if (typeof raw.volumeScale !== 'number' || !Number.isFinite(raw.volumeScale) || raw.volumeScale < 0 || raw.volumeScale > 1) {
+        errors.push({ field: 'volumeScale', message: 'Volume scale must be between 0 and 1' });
+    }
+    if (typeof raw.intensityScale !== 'number' || !Number.isFinite(raw.intensityScale) || raw.intensityScale < 0 || raw.intensityScale > 1) {
+        errors.push({ field: 'intensityScale', message: 'Intensity scale must be between 0 and 1' });
+    }
+
+    const expectedCost = raw.expectedCost;
+    if (!expectedCost || typeof expectedCost !== 'object' || Array.isArray(expectedCost)) {
+        errors.push({ field: 'expectedCost', message: 'expectedCost must be a WorkoutCostProfile object' });
+    } else {
+        const costAxes = ['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular'] as const;
+        for (const axis of costAxes) {
+            const val = expectedCost[axis];
+            if (val !== undefined && (typeof val !== 'number' || !Number.isFinite(val) || val < 0 || val > 1)) {
+                errors.push({ field: `expectedCost.${axis}`, message: `${axis} cost must be in [0, 1]` });
+            }
+        }
+    }
+
+    if (raw.equipment !== undefined && raw.equipment !== null) {
+        if (!Array.isArray(raw.equipment) || raw.equipment.some((item: unknown) => typeof item !== 'string' || item.length > 50)) {
+            errors.push({ field: 'equipment', message: 'Equipment must be an array of strings' });
+        }
+    }
+
+    if (raw.environment !== undefined && raw.environment !== null && !['indoor', 'outdoor', 'either'].includes(raw.environment)) {
+        errors.push({ field: 'environment', message: 'Environment must be indoor, outdoor, or either' });
+    }
+
+    if (errors.length > 0) return { isValid: false, errors };
+
+    const now = new Date().toISOString();
+    const cleanCost: WorkoutCostProfile = {
+        systemic: expectedCost.systemic ?? 0,
+        cardiovascular: expectedCost.cardiovascular ?? 0,
+        lowerBody: expectedCost.lowerBody ?? 0,
+        upperBody: expectedCost.upperBody ?? 0,
+        impactTissue: expectedCost.impactTissue ?? 0,
+        neuromuscular: expectedCost.neuromuscular ?? 0,
+    };
+
+    return {
+        isValid: true,
+        errors: [],
+        data: {
+            id: typeof raw.id === 'string' ? raw.id : '',
+            userId: raw.userId,
+            title: raw.title.trim(),
+            category: raw.category,
+            ...(raw.sport ? { sport: raw.sport } : {}),
+            startDate: raw.startDate,
+            endDate: raw.endDate,
+            dailyAvailabilityMinutes: raw.dailyAvailabilityMinutes,
+            volumeScale: raw.volumeScale,
+            intensityScale: raw.intensityScale,
+            expectedCost: cleanCost,
+            ...(Array.isArray(raw.equipment) ? { equipment: raw.equipment } : {}),
+            ...(raw.environment ? { environment: raw.environment } : {}),
+            ...(typeof raw.notes === 'string' && raw.notes.trim().length > 0 ? { notes: raw.notes.trim() } : {}),
+            createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
+            updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now,
+        },
+    };
 }
 
 const TRAINING_INTENT_PROFILE_KEYS = [

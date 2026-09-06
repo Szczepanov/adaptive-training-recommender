@@ -420,7 +420,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         const baseRecommendation = await evaluateTrainingWithIntent(
           userId, { subjective, objective, subjectiveBaseline: input.subjectiveBaseline }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
-          'max', externalContext, undefined, undefined, externalRestContext,
+          'max', externalContext, undefined, undefined, externalRestContext, false, input.scheduleOverlays,
         );
         if (!isCurrent()) return;
         const recommendationWithPrescription = {
@@ -453,7 +453,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             input.date,
             yesterdayRec?.mode,
           );
-          const availability = resolveAvailability(input.date, subjective, todayAndTomorrowFixedActivities, context);
+          const availability = resolveAvailability(
+            input.date,
+            subjective,
+            todayAndTomorrowFixedActivities,
+            context,
+            input.scheduleOverlays,
+          );
           let acceptedSameDaySystemicCost = baseRecommendation.template.systemicCost;
           let acceptedSameDayMinutes = baseRecommendation.template.durationMin;
 
@@ -587,6 +593,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
+          'max', undefined, undefined, input.scheduleOverlays,
         );
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
@@ -920,7 +927,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       decisionInput.date,
       activeRec,
       tomorrowRec,
-      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks },
+      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks, scheduleOverlays: decisionInput.scheduleOverlays },
       undefined,
       historySnapshot,
       decisionInput.trainingIntentProfile,
@@ -1128,6 +1135,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               selectedTier={selectedNextDayTier}
               onSelectTier={setSelectedNextDayTier}
               trainingIntentProfile={decisionInput?.trainingIntentProfile}
+              scheduleOverlays={decisionInput?.scheduleOverlays}
               planningMode={resolvedPlanningMode}
             />
           </div>

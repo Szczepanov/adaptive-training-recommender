@@ -116,6 +116,19 @@ function applyResolvedAvailability(
     }
 }
 
+/** Apply persisted schedule-overlay volume/intensity caps at the adjudicator boundary.
+ * Catalog planning applies the same multipliers through `applyPlanningOverlays`; imported
+ * sessions bypass that ranking path, but they still receive the resolved day authority.
+ * Real resolved availability always supplies the factors; legacy/synthetic fixtures that
+ * predate schedule overlays use the neutral multiplier 1. */
+function applyResolvedDoseScales(plannedDose: PlannedDose, availability: ResolvedAvailability | null): PlannedDose {
+    if (!availability) return plannedDose;
+    return {
+        volume: plannedDose.volume * (availability.volumeScale ?? 1),
+        intensity: plannedDose.intensity * (availability.intensityScale ?? 1),
+    };
+}
+
 /**
  * Decides what to do with one imported session on one day.
  *
@@ -232,16 +245,33 @@ export function adjudicateExternalSession(
         };
     }
 
-    const executionDose = resolveExecutionDose(plannedDose, envelopes.plan, null);
-    // resolveExecutionDose fails closed on an out-of-contract planned dose rather than
-    // normalising it, because persisted audits require finite volume in 0..1. Honour that:
-    // without a valid dose there is nothing safe to prescribe, and deferring would only
-    // reproduce the same broken input tomorrow.
-    if (!executionDose) {
+    // Validate the author's stored dose before applying any reducing overlay. Otherwise a
+    // broken value (for example intensity 1.5) could be multiplied into the supported range
+    // and falsely become executable. A Hard-tier envelope performs contract validation
+    // without reducing any already-valid authored volume; the real readiness cap is applied
+    // only after the overlay multipliers below.
+    const authoredDose = resolveExecutionDose(
+        plannedDose,
+        { ...envelopes.plan, maxAllowableTier: 'Hard' },
+        null,
+    );
+    if (!authoredDose) {
         return {
             decision: 'skip',
             gateFailures,
             rationale: 'This session could not be dosed: the plan\'s volume/intensity for today is outside the supported contract. Nothing is prescribed rather than guessing a dose.',
+        };
+    }
+
+    const effectivePlannedDose = applyResolvedDoseScales(authoredDose, resolvedAvailability);
+    const executionDose = resolveExecutionDose(effectivePlannedDose, envelopes.plan, null);
+    // Re-resolve after overlays so malformed resolved constraints also fail closed and the
+    // final execution dose still receives the independent readiness/clinical tier ceiling.
+    if (!executionDose) {
+        return {
+            decision: 'skip',
+            gateFailures,
+            rationale: 'This session could not be dosed after applying today\'s schedule constraints. Nothing is prescribed rather than guessing a dose.',
         };
     }
     // A zeroed ceiling (Rest tier) leaves no session to do. Reached independently of the

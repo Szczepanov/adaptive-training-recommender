@@ -43,6 +43,7 @@ import {
   resolveWearablePlanningMode,
   type WearablePlanningMode,
 } from '../utils/wearablePlanningGate';
+import { ScheduleOverlayCard } from './schedule/ScheduleOverlayCard';
 import './PlanView.css';
 
 interface PlanViewProps {
@@ -270,6 +271,11 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             input.preferences,
             'max',
             null,
+            undefined,
+            undefined,
+            null,
+            false,
+            input.scheduleOverlays,
           );
           setClinicalEscalationRequired(baseRec.envelopes?.safety.clinicalEscalationRequired === true);
 
@@ -286,6 +292,10 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             blocks,
             input.trainingIntentProfile,
             input.preferences,
+            'max',
+            undefined,
+            undefined,
+            input.scheduleOverlays,
           );
           setNextDayPlan(tomorrowPlan);
 
@@ -303,7 +313,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             today,
             baseRec,
             tomorrowRec,
-            { days: 7, fixedActivities: acts, authoredPlanBlocks: blocks },
+            { days: 7, fixedActivities: acts, authoredPlanBlocks: blocks, scheduleOverlays: input.scheduleOverlays },
             undefined,
             preparedSnapshot,
             input.trainingIntentProfile,
@@ -568,11 +578,13 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
               selectedTier={selectedNextDayTier}
               onSelectTier={setSelectedNextDayTier}
               trainingIntentProfile={decisionInput?.trainingIntentProfile}
+              scheduleOverlays={decisionInput?.scheduleOverlays}
               planningMode={resolvedPlanningMode}
             />
           )}
         </div>
       )}
+      <ScheduleOverlayCard userId={userId} onChanged={loadPlanData} />
     </div>
   );
 };

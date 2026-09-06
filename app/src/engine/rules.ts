@@ -21,6 +21,7 @@ import type {
     EngineObjectiveInput,
     ExternalRestDirective,
     ExternalRestProvenance,
+    ScheduleOverlay,
 } from './models';
 import type { ExternalRestDecisionProvenance } from './externalRestProvenance';
 import { TEMPLATES, ENRICHED_TEMPLATES } from './templates';
@@ -43,14 +44,14 @@ import { applyFixedActivityStimulusCredit } from './planner';
 import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, type FatigueFusionPolicy } from './fatigue';
 import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBaselineMetric } from './subjectiveBaseline';
-import { resolveAvailability } from './schedule';
-import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
+import { resolveAvailability, scheduleOverlayCostProfileForDate } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
 import { mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
+import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -624,9 +625,20 @@ function adjudicatedExternalRecommendation(
     intent: Awaited<ReturnType<typeof resolveTrainingIntent>>,
     date: string,
     fixedActivities: FixedActivity[],
+    scheduleOverlays: readonly ScheduleOverlay[] = [],
 ): Recommendation {
     const { session, planId, revision, contentHash } = externalPlan;
-    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
+    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context, scheduleOverlays);
+    // Keep the adjudicator responsible for validating the raw authored dose before it can
+    // be reduced by an overlay. The recommendation surface still records the same adjusted
+    // planned dose that catalog planning would expose for this date.
+    const adjustedPlannedDose = applyPlanningOverlays(
+        intent.plannedDose,
+        date,
+        [],
+        undefined,
+        scheduleOverlays,
+    );
     const verdict = adjudicateExternalSession(session, readiness, context, envelopeState, intent.plannedDose, date, availability);
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale';
 
@@ -634,7 +646,7 @@ function adjudicatedExternalRecommendation(
 
     return {
         template: actionable ? toSyntheticTemplate(session, planId, revision) : restTemplate,
-        plannedDose: intent.plannedDose,
+        plannedDose: adjustedPlannedDose,
         ...(verdict.executionDose ? { executionDose: verdict.executionDose } : {}),
         rationale: verdict.rationale,
         mode: actionable ? envelopeState.mode : 'recover',
@@ -727,6 +739,7 @@ export async function evaluateTrainingWithIntent(
      *  Either route still passes every normal safety/clinical/availability/equipment/readiness
      *  gate below and is retained in provenance as an explicit override. */
     athleteOverridesAuthoredRest: boolean = false,
+    scheduleOverlays: readonly ScheduleOverlay[] = [],
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode, subjectiveDriftPolicy, subjectiveDriftWeights);
     const { mode, envelopes, telemetry } = envelopeState;
@@ -758,10 +771,10 @@ export async function evaluateTrainingWithIntent(
 
     if (externalPlan && intent.planningContext.externalFallback) {
         if (!externalPlan.session.isEvent) {
-            return adjudicatedExternalRecommendation(externalPlan, readiness, context, envelopeState, intent, date, fixedActivities);
+            return adjudicatedExternalRecommendation(externalPlan, readiness, context, envelopeState, intent, date, fixedActivities, scheduleOverlays);
         }
 
-        const eventAvailability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
+        const eventAvailability = resolveAvailability(date, readiness.subjective, fixedActivities, context, scheduleOverlays);
         let eventVerdict = adjudicateExternalSession(
             externalPlan.session, readiness, context, envelopeState, intent.plannedDose, date, eventAvailability,
         );
@@ -793,7 +806,7 @@ export async function evaluateTrainingWithIntent(
     const isAdverseRecovery = isSevereAdverseRecoveryReadiness(readiness, mode);
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
-        preferences, context, date, fixedActivities, 7, isAdverseRecovery,
+        preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,
     );
     if (evergreen) {
         const unresolvedObjectives = getUnresolvedObjectives(evergreen.microcycle);
@@ -806,6 +819,7 @@ export async function evaluateTrainingWithIntent(
                 date,
                 authoredPlanBlocks,
                 evergreen.planDefinition,
+                scheduleOverlays,
             ),
         };
     }
@@ -826,7 +840,7 @@ export async function evaluateTrainingWithIntent(
         evergreen?.knowledgeRefs,
     );
 
-    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
+    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context, scheduleOverlays);
     const maxCost = PLAN_TIER_SYSTEMIC_COST_CEILING[envelopes.plan.maxAllowableTier];
     const candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
         .filter(template => !envelopes.safety.restrictedModalities.includes(template.modality))
@@ -1286,12 +1300,36 @@ function unrepresentedFixedActivityProjection(
     };
 }
 
+/** Carries the non-training load reserved by schedule overlays on a completed forecast
+ * date into the next date's history. Same-day availability already reserves this cost, so
+ * the projection is added only after that date has passed and never to the current-day
+ * availability ledger itself. */
+function scheduleOverlayProjection(
+    date: string,
+    scheduleOverlays: readonly ScheduleOverlay[],
+): CompletedExposure | null {
+    const costProfile = scheduleOverlayCostProfileForDate(scheduleOverlays, date);
+    if (!Object.values(costProfile).some(value => value > 0)) return null;
+    return {
+        occurrenceKey: `schedule-overlays:${date}`,
+        date,
+        costProfile,
+        trainingRecordLike: {
+            type: 'Scheduled non-training load',
+            duration_min: 0,
+            training_effect: 0,
+            intensity_tag: '',
+        },
+    };
+}
+
 async function projectedProviderForTomorrow(
     userId: string,
     tomorrowDate: string,
     todayDate: string,
     todayRec: Recommendation,
     fixedActivities: FixedActivity[],
+    scheduleOverlays: readonly ScheduleOverlay[],
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<TrainingHistoryProvider> {
@@ -1304,6 +1342,7 @@ async function projectedProviderForTomorrow(
         prior = await baseProvider.reconstruct(userId, tomorrowDate, 7);
     }
     const unrepresentedFixed = unrepresentedFixedActivityProjection(todayDate, todayRec, fixedActivities);
+    const overlayProjection = scheduleOverlayProjection(todayDate, scheduleOverlays);
     const projected = [
         ...prior.filter(exposure => exposure.date >= windowStart && exposure.date < tomorrowDate),
         recommendationProjection(todayDate, todayRec),
@@ -1312,6 +1351,7 @@ async function projectedProviderForTomorrow(
             return exposure ? [exposure] : [];
         }),
         ...(unrepresentedFixed ? [unrepresentedFixed] : []),
+        ...(overlayProjection ? [overlayProjection] : []),
     ].sort((a, b) => a.date.localeCompare(b.date));
 
     return {
@@ -1339,17 +1379,25 @@ export async function evaluateNextDayPlanWithIntent(
     /** Phase 9.6: only the simulation comparison harness overrides this. */
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+    scheduleOverlays: readonly ScheduleOverlay[] = [],
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const projectedProvider = await projectedProviderForTomorrow(
-        userId, scenarios.date, todayDate, todayRec, fixedActivities, historyProvider, preparedHistorySnapshot,
+        userId,
+        scenarios.date,
+        todayDate,
+        todayRec,
+        fixedActivities,
+        scheduleOverlays,
+        historyProvider,
+        preparedHistorySnapshot,
     );
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
         await evaluateTrainingWithIntent(
             userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null,
             fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences, fatigueFusionPolicy, null,
-            subjectiveDriftPolicy, subjectiveDriftWeights,
+            subjectiveDriftPolicy, subjectiveDriftWeights, null, false, scheduleOverlays,
         ),
     );
     const [green, yellow, red] = await Promise.all([

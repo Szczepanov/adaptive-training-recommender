@@ -1,6 +1,6 @@
 import { useState, memo } from 'react';
 import type { WeekAheadDay, WeekAheadPlan } from '../engine/planner';
-import type { NextDayPotentialPlan, PlanningMode, TrainingIntentProfile } from '../engine/models';
+import type { NextDayPotentialPlan, PlanningMode, ScheduleOverlay, TrainingIntentProfile } from '../engine/models';
 import './WeekAheadStrip.css';
 
 interface WeekAheadStripProps {
@@ -9,6 +9,7 @@ interface WeekAheadStripProps {
   selectedTier?: 'green' | 'yellow' | 'red';
   onSelectTier?: (tier: 'green' | 'yellow' | 'red') => void;
   trainingIntentProfile?: TrainingIntentProfile | null;
+  scheduleOverlays?: readonly ScheduleOverlay[];
   /** The **effective** mode from `planningMode.ts` `resolvePlanningContext` (ADR-0017
    * D-MODE) — not `trainingIntentProfile.planningMode`, which records stated intent. An
    * event_directed profile whose events have all passed is planned as evergreen, and
@@ -38,6 +39,32 @@ const SHORT_MODALITY_LABEL: Record<string, string> = {
   None: 'Rest',
 };
 
+function scheduleOverlayIcon(overlay: ScheduleOverlay): string {
+  if (overlay.category === 'sedentary_rest') return '🎄';
+  if (overlay.category === 'high_step_walking') return '🚶';
+  if (overlay.category === 'limited_availability') return '⏱️';
+  switch (overlay.sport) {
+    case 'skiing': return '⛷️';
+    case 'volleyball': return '🏐';
+    case 'hiking': return '🥾';
+    case 'court_sport': return '🎾';
+    case 'field_sport': return '⚽';
+    default: return '🏃';
+  }
+}
+
+function scheduleOverlayLabel(overlay: ScheduleOverlay): string {
+  if (overlay.category === 'active_sport' && overlay.sport) {
+    return overlay.sport.replaceAll('_', ' ');
+  }
+  switch (overlay.category) {
+    case 'active_sport': return 'active sport';
+    case 'sedentary_rest': return 'sedentary rest';
+    case 'high_step_walking': return 'high-step walking';
+    case 'limited_availability': return 'limited time';
+  }
+}
+
 /** `day.template` stays the authored catalog session so coverage/history bookkeeping keys
  * off a stable identity; when the engine auto-applies an easier dose (fatigue-driven
  * modify, or to respect a hard time cap the template's own range didn't fit -- see
@@ -65,13 +92,22 @@ function weekdayLabel(dateStr: string): string {
 // Wrapped WeekAheadStrip in React.memo to prevent unnecessary re-renders when the parent dashboard
 // state updates (e.g., toggling workout details).
 // Expected Impact: Prevents recalculation and re-rendering of the 7-day strip layout and logic.
-export const WeekAheadStrip = memo(function WeekAheadStrip({ plan, nextDayPlan, selectedTier = 'green', onSelectTier, trainingIntentProfile, planningMode }: WeekAheadStripProps) {
+export const WeekAheadStrip = memo(function WeekAheadStrip({
+  plan,
+  nextDayPlan,
+  selectedTier = 'green',
+  onSelectTier,
+  trainingIntentProfile,
+  scheduleOverlays,
+  planningMode,
+}: WeekAheadStripProps) {
   const [selectedIndex, setSelectedIndex] = useState(0);
 
   if (!plan || plan.days.length === 0) return null;
 
   const safeIndex = Math.min(selectedIndex, plan.days.length - 1);
   const selected = plan.days[safeIndex];
+  const selectedOverlay = scheduleOverlays?.find(o => o.startDate <= selected.date && selected.date <= o.endDate);
   const openObjective = plan.microcycleObjectives.find(objective =>
     (objective.completedCredit ?? objective.completedExposures) < (objective.requiredCredit ?? objective.targetExposures),
   );
@@ -140,20 +176,33 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({ plan, nextDayPlan, 
       </div>
 
       <div className="week-ahead-strip">
-        {plan.days.map((day, index) => (
-          <button
-            key={day.date}
-            type="button"
-            className={`week-ahead-tile confidence-${day.confidence} ${index === safeIndex ? 'selected' : ''}`}
-            onClick={() => setSelectedIndex(index)}
-          >
-            <span className="tile-weekday">{index === 0 ? 'Tomorrow' : weekdayLabel(day.date)}</span>
-            <span className="tile-icon">{MODALITY_ICON[day.template.modality] ?? '❔'}</span>
-            <span className="tile-category">{SHORT_MODALITY_LABEL[day.template.modality] ?? day.template.modality}</span>
-            <span className="tile-duration">{effectiveDuration(day).min}-{effectiveDuration(day).max} m</span>
-            <span className={`tile-mode-dot mode-${day.mode}`} title={day.mode === 'recover' ? 'Recovery' : 'Train'} />
-          </button>
-        ))}
+        {plan.days.map((day, index) => {
+          const dayOverlay = scheduleOverlays?.find(o => o.startDate <= day.date && day.date <= o.endDate);
+          return (
+            <button
+              key={day.date}
+              type="button"
+              className={`week-ahead-tile confidence-${day.confidence} ${index === safeIndex ? 'selected' : ''}`}
+              onClick={() => setSelectedIndex(index)}
+            >
+              <span className="tile-weekday">{index === 0 ? 'Tomorrow' : weekdayLabel(day.date)}</span>
+              {dayOverlay ? (
+                <span className="tile-overlay-icon" title={`${dayOverlay.title} (${dayOverlay.category})`}>
+                  {scheduleOverlayIcon(dayOverlay)}
+                </span>
+              ) : (
+                <span className="tile-icon">{MODALITY_ICON[day.template.modality] ?? '❔'}</span>
+              )}
+              <span className="tile-category">
+                {dayOverlay
+                  ? scheduleOverlayLabel(dayOverlay)
+                  : (SHORT_MODALITY_LABEL[day.template.modality] ?? day.template.modality)}
+              </span>
+              <span className="tile-duration">{effectiveDuration(day).min}-{effectiveDuration(day).max} m</span>
+              <span className={`tile-mode-dot mode-${day.mode}`} title={day.mode === 'recover' ? 'Recovery' : 'Train'} />
+            </button>
+          );
+        })}
       </div>
 
       {evergreenWeekPurpose && (
@@ -170,6 +219,21 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({ plan, nextDayPlan, 
             {CONFIDENCE_LABEL[selected.confidence]}
           </span>
         </div>
+
+        {selectedOverlay && (
+          <div className="detail-overlay-callout">
+            <span className="detail-overlay-badge">
+              {scheduleOverlayIcon(selectedOverlay)} Schedule block:
+            </span>
+            <span className="detail-overlay-title">{selectedOverlay.title}</span>
+            <span className="detail-overlay-hint">
+              {selectedOverlay.dailyAvailabilityMinutes === 0
+                ? 'Availability 0 min — anchors diverted'
+                : `${selectedOverlay.dailyAvailabilityMinutes} min available`}
+            </span>
+          </div>
+        )}
+
         <p className="detail-meta">
           {selected.template.category} · {effectiveDuration(selected).min}-{effectiveDuration(selected).max} min · {selected.phaseName} phase
         </p>
