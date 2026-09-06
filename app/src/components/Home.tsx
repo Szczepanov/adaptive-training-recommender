@@ -453,7 +453,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             input.date,
             yesterdayRec?.mode,
           );
-          const availability = resolveAvailability(input.date, subjective, todayAndTomorrowFixedActivities, context);
+          const availability = resolveAvailability(
+            input.date,
+            subjective,
+            todayAndTomorrowFixedActivities,
+            context,
+            input.scheduleOverlays,
+          );
           let acceptedSameDaySystemicCost = baseRecommendation.template.systemicCost;
           let acceptedSameDayMinutes = baseRecommendation.template.durationMin;
 
