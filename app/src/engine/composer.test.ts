@@ -9,6 +9,7 @@ const services = vi.hoisted(() => ({
     settings: { getTrainingSettingsState: vi.fn() },
     preferences: { getPreferencesState: vi.fn() },
     intentProfile: { getProfileState: vi.fn() },
+    overlays: { getOverlaysInRangeState: vi.fn() },
 }));
 vi.mock('../services/recoverySnapshotService', () => ({ recoverySnapshotService: services.recovery }));
 vi.mock('../services/checkinService', () => ({ checkinService: services.checkin }));
@@ -16,6 +17,7 @@ vi.mock('../services/goalService', () => ({ goalService: services.goals }));
 vi.mock('../services/trainingSettingsService', () => ({ trainingSettingsService: services.settings }));
 vi.mock('../services/preferencesService', () => ({ preferencesService: services.preferences }));
 vi.mock('../services/trainingIntentProfileService', () => ({ trainingIntentProfileService: services.intentProfile }));
+vi.mock('../services/scheduleOverlayService', () => ({ scheduleOverlayService: services.overlays }));
 
 import { DecisionComposer } from './composer';
 
@@ -54,6 +56,7 @@ describe('DecisionComposer training intent profile source', () => {
         services.goals.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.settings.getTrainingSettingsState.mockResolvedValue({ status: 'AVAILABLE', data: settings, revision: null });
         services.preferences.getPreferencesState.mockResolvedValue({ status: 'MISSING' });
+        services.overlays.getOverlaysInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
     });
 
     it('preserves a missing profile as a supported compatibility input', async () => {
@@ -86,6 +89,7 @@ describe('DecisionComposer Phase 9.4 subjective baseline boundary', () => {
         services.settings.getTrainingSettingsState.mockResolvedValue({ status: 'AVAILABLE', data: settings, revision: null });
         services.preferences.getPreferencesState.mockResolvedValue({ status: 'MISSING' });
         services.intentProfile.getProfileState.mockResolvedValue({ status: 'MISSING' });
+        services.overlays.getOverlaysInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
     });
 
     it('performs exactly one bounded history read ending at the decision date exclusively and computes a mature baseline', async () => {
@@ -137,5 +141,64 @@ describe('DecisionComposer Phase 9.4 subjective baseline boundary', () => {
         });
         const input = await new DecisionComposer().composeDailyDecisionInput('u1', date);
         expect(input.subjectiveBaseline).toBeNull();
+    });
+});
+
+describe('DecisionComposer schedule overlays source', () => {
+    beforeEach(() => {
+        vi.clearAllMocks();
+        services.recovery.getRecoverySnapshotState.mockResolvedValue({ status: 'MISSING' });
+        services.checkin.getCheckinState.mockResolvedValue({ status: 'MISSING' });
+        services.checkin.getCheckinsInRangeState.mockResolvedValue({ status: 'MISSING' });
+        services.goals.getActiveGoalsState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
+        services.settings.getTrainingSettingsState.mockResolvedValue({ status: 'AVAILABLE', data: settings, revision: null });
+        services.preferences.getPreferencesState.mockResolvedValue({ status: 'MISSING' });
+        services.intentProfile.getProfileState.mockResolvedValue({ status: 'MISSING' });
+    });
+
+    it('carries available schedule overlays and summarized source state into composed input', async () => {
+        const overlay = {
+            id: 'ov-1',
+            userId: 'u1',
+            category: 'active_sport' as const,
+            sport: 'skiing' as const,
+            startDate: '2026-08-10',
+            endDate: '2026-08-12',
+            expectedCost: 'high' as const,
+            dailyAvailabilityMinutes: 0,
+            allowAlternativeWorkouts: false,
+            createdAt: '2026-08-01T00:00:00Z',
+            updatedAt: '2026-08-01T00:00:00Z',
+        };
+        services.overlays.getOverlaysInRangeState.mockResolvedValue({
+            status: 'AVAILABLE',
+            data: [overlay],
+            revision: 'ov-r1',
+        });
+
+        const input = await new DecisionComposer().composeDailyDecisionInput('u1', '2026-08-10');
+        expect(input.scheduleOverlays).toEqual([overlay]);
+        expect(input.sourceStates?.scheduleOverlays).toEqual({ status: 'AVAILABLE', revision: 'ov-r1' });
+    });
+
+    it('throws when schedule overlays are unavailable', async () => {
+        services.overlays.getOverlaysInRangeState.mockResolvedValue({
+            status: 'UNAVAILABLE',
+            operation: 'read schedule overlays',
+            retryable: true,
+        });
+
+        await expect(new DecisionComposer().composeDailyDecisionInput('u1', '2026-08-10'))
+            .rejects.toThrow('Schedule overlays are temporarily unavailable. Please retry.');
+    });
+
+    it('throws when schedule overlays are invalid', async () => {
+        services.overlays.getOverlaysInRangeState.mockResolvedValue({
+            status: 'INVALID',
+            issues: [{ code: 'schema-validation-failed', documentPath: 'users/u1/schedule_overlays/bad' }],
+        });
+
+        await expect(new DecisionComposer().composeDailyDecisionInput('u1', '2026-08-10'))
+            .rejects.toThrow('Schedule overlays are invalid. Please review or remove the affected schedule block.');
     });
 });
