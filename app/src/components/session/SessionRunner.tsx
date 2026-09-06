@@ -401,6 +401,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         }
     };
 
+    // ⚡ Bolt: Memoize filtered active/archived templates to prevent O(N) operations on every timer tick
+    const activeSavedDefinitions = useMemo(() => savedDefinitions.filter(header => header.status === 'active'), [savedDefinitions]);
+    const archivedSavedDefinitions = useMemo(() => savedDefinitions.filter(header => header.status === 'archived'), [savedDefinitions]);
+
     const setSavedDefinitionArchived = async (header: SessionDefinitionHeader, archived: boolean) => {
         setUpdatingSavedDefinitionId(header.definitionId);
         setSavedDefinitionsError(null);
@@ -647,10 +651,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     </div>}
                 </header>
                 {savedDefinitionsError && <p className="session-runner-error" role="alert">{savedDefinitionsError}</p>}
-                {savedDefinitions.some(header => header.status === 'active') && <section className="saved-session-library" aria-labelledby="saved-session-library-title">
+                {activeSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="saved-session-library-title">
                     <h3 id="saved-session-library-title">Your custom templates</h3>
                     <div className="fixture-grid">
-                        {savedDefinitions.filter(header => header.status === 'active').map(header => <div key={header.definitionId} className="fixture-card">
+                        {activeSavedDefinitions.map(header => <div key={header.definitionId} className="fixture-card">
                             <div className="fixture-info">
                                 <span className="fixture-intent-badge">custom · rev {header.latestRevision}</span>
                                 <h3 className="fixture-title">{header.title}</h3>
@@ -681,12 +685,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         </div>)}
                     </div>
                 </section>}
-                {savedDefinitions.some(header => header.status === 'archived') && <section className="saved-session-library" aria-labelledby="archived-session-library-title">
+                {archivedSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="archived-session-library-title">
                     <button type="button" className="preview-back-button" onClick={() => setShowArchivedDefinitions(current => !current)}>
-                        {showArchivedDefinitions ? 'Hide archived templates' : `Show archived templates (${savedDefinitions.filter(header => header.status === 'archived').length})`}
+                        {showArchivedDefinitions ? 'Hide archived templates' : `Show archived templates (${archivedSavedDefinitions.length})`}
                     </button>
                     {showArchivedDefinitions && <div className="fixture-grid">
-                        {savedDefinitions.filter(header => header.status === 'archived').map(header => <div key={header.definitionId} className="fixture-card">
+                        {archivedSavedDefinitions.map(header => <div key={header.definitionId} className="fixture-card">
                             <div className="fixture-info">
                                 <span className="fixture-intent-badge">archived · rev {header.latestRevision}</span>
                                 <h3 className="fixture-title">{header.title}</h3>

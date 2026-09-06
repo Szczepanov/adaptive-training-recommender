@@ -21,3 +21,7 @@
 ## 2026-08-26 - Prevent Redundant Array Filtering on Render
 **Learning:** In components with frequent state changes (like form inputs updating `notes`), inline array operations like `.filter()` that rely on static props (like `steps`) will re-execute on every keystroke, causing unnecessary O(N) operations.
 **Action:** Always wrap derived data calculations that iterate over arrays using `useMemo` when the input array is stable and the component is subject to frequent re-renders from other state changes.
+
+## 2026-08-27 - Avoid useMemo for trivial arrays
+**Learning:** Wrapping trivial arrays (e.g., 2-3 elements) in `useMemo` to prevent an inline `.filter()` on render is an anti-pattern. The overhead of the React hook (memory allocation, dependency checking) is heavier than the sub-millisecond cost of filtering a tiny array.
+**Action:** Only apply `useMemo` optimizations to arrays that are meaningfully large or computations that are actually expensive. For UI components, prioritize lists like `savedDefinitions` or `EXERCISES` rather than small arrays like `fidelityIssues`.
