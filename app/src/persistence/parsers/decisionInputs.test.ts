@@ -117,4 +117,17 @@ describe('decision-input parsers', () => {
         expect(parseSubjectiveCheckin(missingLoadAreas, 'path', 'u1', '2026-08-07'))
             .toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-physical-work', field: 'physicalWork.loadAreas' }] });
     });
+
+    it('omits physicalWork when raw physicalWork is null or undefined', () => {
+        const withNullPhysicalWork = {
+            ...checkin,
+            physicalWork: null,
+        };
+        const parsed = parseSubjectiveCheckin(withNullPhysicalWork, 'path', 'u1', '2026-08-07');
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status === 'AVAILABLE') {
+            expect(parsed.data.physicalWork).toBeUndefined();
+            expect('physicalWork' in parsed.data).toBe(false);
+        }
+    });
 });
