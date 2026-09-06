@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered and the same-day canonical performed-fact boundary verified (runtime wiring unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 runtime wiring (the `dailyLedger.ts` refactor across `schedule.ts`/`planner.ts`/`rules.ts`, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) is a decision-affecting change needing its own PR, no longer blocked on verification; H5 runtime requires validated intent mappings and linked response evidence, and cumulative `external-plan@5` acceptance additionally requires the landed H4 contract (ADR-0036).
+**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered, the same-day canonical performed-fact boundary verified, and the fixed-activity cost-reduce duplication unified (ledger-based ranking/admission and D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT unstarted); H5 design accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted)
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4's remaining wiring (using the ledger's remainder/admission math as an actual ranking input, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) needs its own decision-affecting PR(s); H5c needs the athlete-scoped singleton progression-claim transaction design, and cumulative `external-plan@5` acceptance is unblocked now that H4's v4 contract has landed.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -320,34 +320,56 @@ contract and its only current caller (`trainingIntent.ts`) are unchanged.
 pinning test confirming current production behavior (today excluded) is untouched.
 `simulate:diff`/policy-drift show no change.
 
-The actual next H4 task is now the `dailyLedger.ts` wiring refactor: `schedule.ts`'s
-`resolveAvailability`/`calculateReservedCapacityProfile`, `planner.ts`'s
-`fixedActivityCostProfileForDate`/`applyFixedActivityStimulusCredit`/
-`applyFixedActivityCost`, `rules.ts`'s `fixedActivityProjection`/
-`unrepresentedFixedActivityProjection`, and `externalCritique.ts`'s use of
-`fixedActivityCostProfileForDate` currently duplicate the same six-dimension cost/
-stimulus reduce across five-plus call sites with three different ad hoc dedup
-mechanisms (`seenOccurrences`, `appliedFixedCostOccurrences`/
-`appliedProjectionOccurrences`, and a decision-trace delta). That refactor is
-decision-affecting and needs its own PR, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT.
+### Fixed-activity cost-reduce duplication unified (delivered)
+
+`schedule.ts`'s `calculateReservedCapacityProfile`, `planner.ts`'s
+`fixedActivityCostProfileForDate` (also used by `externalCritique.ts`), and `rules.ts`'s
+`unrepresentedFixedActivityProjection` each hand-wrote the same six-dimension
+`WorkoutCostProfile` reduce over `FixedActivity.expectedCost`. `engine/fixedActivityCostProfile.ts`'s
+`sumFixedActivityCostProfiles` now supplies that reduce once; every call site keeps its
+own existing date/completion filtering, so behavior is unchanged. Verified
+byte-identical via `simulate:diff` (same pre-existing, unrelated drift as before) and
+the full test suite. `POLICY_VERSION` was bumped to
+`2026-09-fixed-activity-cost-dedup-v1` regardless, because the drift gate can only
+mechanically prove comment-only equivalence and this refactor restructures the call
+sites' syntax -- not because decision output actually changed.
+
+The three different ad hoc dedup mechanisms across these sites (`seenOccurrences` in
+`applyFixedActivityStimulusCredit`, `appliedFixedCostOccurrences`/
+`appliedProjectionOccurrences` in `generateWeekAheadPlan`, and the decision-trace delta
+in `unrepresentedFixedActivityProjection`) are **not yet unified** onto the ledger's
+`occurrenceId`/`revision` model, and none of these call sites yet consult
+`computeDailyLedger`'s remainder or `admitsCandidate` when ranking or admitting a
+candidate. The actual next H4 task is using the ledger's remainder/admission semantics
+as a real ranking/admission input -- that is decision-affecting and needs its own PR,
+then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT.
 
 ## H5 — Explicit develop/maintain intent and progression
 
-**Status:** Design accepted in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md); implementation unstarted.
-**Dependencies:** Validated intent-to-dose/coverage mappings and canonical completion/response
-linkage for runtime review. `external-plan@5` acceptance depends on the landed H4 contract
-(ADR-0036); manual intent and report-only groundwork does not require H4 runtime release.
+**Status:** Design accepted in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md).
+**H5a (intent contracts + canonical replay) and H5b (report-only progression review)
+delivered** in `engine/blockIntent.ts`/`blockIntentReplay.ts`/`progressionReview.ts`,
+per the implementation handoff's H5 work order. H5c (athlete-confirmed bounded
+revisions) and cumulative `external-plan@5` are unstarted.
+**Dependencies:** H5c needs the athlete-scoped singleton progression-claim transaction
+design. `external-plan@5` acceptance depends on the landed H4 v4 contract, which has
+landed.
 
 Decision: per-objective `develop | maintain` intent is separate from priority and profile
 commitment. Use existing plan, dose, coverage, response and outcome authorities. New import
 authority belongs in `external-plan@5`; earlier schemas remain unchanged. Maintenance is
 an intended outcome, not a default dose discount or an assertion of preserved performance.
 
-Deliver H5a intent authoring, H5b report-only progression review, then H5c athlete-confirmed
-bounded revisions. One active progression experiment changes one variable within reviewed
-bounds. Missing/adverse follow-up blocks advancement; outcome reports retain no automatic
-selection authority. Hold, reduction and redirect are explicit alternatives. The ADR owns
-the complete compatibility, substitution, evidence, confirmation and replay acceptance bar.
+H5a's delivered `engine/blockIntent.ts` is not wired into `external-plan@5` import yet
+(the ADR's own note: "manual intent and report-only groundwork does not require H4
+runtime release" applied only to the manual-authoring path H5a/H5b actually deliver).
+H5b's `engine/progressionReview.ts` is report-only and not consulted by daily
+recommendation selection; `POLICY_VERSION` is unchanged by either. H5c (athlete-confirmed
+bounded revisions) is the remaining work: one active progression experiment changes one
+variable within reviewed bounds, missing/adverse follow-up blocks advancement, outcome
+reports retain no automatic selection authority, and hold/reduction/redirect remain
+explicit alternatives. The ADR owns the complete compatibility, substitution, evidence,
+confirmation and replay acceptance bar.
 
 ## Reproduction and verification
 
@@ -380,6 +402,9 @@ remain scoped to the unchanged active suite.
 H1 did not change engine behavior and therefore required no policy bump. H2/H2b are
 decision-affecting and are represented by the current policy version above. H3's new test
 is non-decision-affecting and needs no bump; the explicit-rest follow-up will require the
-normal policy/schema/replay review when it changes decision behavior. H4-H5 likewise
-require the normal review when decision behavior changes. Do not enable experimental
-personalization simply to improve a judge score.
+normal policy/schema/replay review when it changes decision behavior. H4's
+`fixed-activity-cost-dedup-v1` bump reflects the drift gate's mechanical requirement for
+any `planner.ts`/`rules.ts` touch, not an actual behavior change (verified via
+`simulate:diff`); H4's still-pending ledger-based ranking/admission wiring and H5's
+still-pending H5c will require the normal review when they actually change decision
+behavior. Do not enable experimental personalization simply to improve a judge score.
