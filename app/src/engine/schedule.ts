@@ -1,4 +1,5 @@
 import type {
+    EquipmentKey,
     FixedActivity,
     ScheduleOverlay,
     SubjectiveInput,
@@ -37,9 +38,10 @@ export interface ResolvedAvailability {
     environmentOverride: TrainingEnvironment | null;
 }
 
-/** Equipment keys sourced strictly from the athlete's own constraints -- no day-of-week
- *  or "preferred location" fabrication. Equipment must be a hard fact the athlete set in
- *  Training Settings, not a fiction tied to the calendar. */
+/** Equipment keys sourced strictly from the athlete's own declared capabilities -- no
+ * day-of-week or "preferred location" fabrication. `TrainingSettings.equipment` is the
+ * canonical source whenever the modern settings model is present, matching
+ * `eligibility.ts`; legacy constraints are only a compatibility fallback. */
 const EQUIPMENT_CONSTRAINT_MAP: Record<string, keyof Pick<UserContext['constraints'], 'hasFreeWeights' | 'hasCableMachine' | 'hasTreadmill' | 'hasIndoorBike'>> = {
     free_weights: 'hasFreeWeights',
     cable_machine: 'hasCableMachine',
@@ -47,29 +49,32 @@ const EQUIPMENT_CONSTRAINT_MAP: Record<string, keyof Pick<UserContext['constrain
     indoor_bike: 'hasIndoorBike',
 };
 
+const TRAINING_SETTINGS_EQUIPMENT_KEYS: readonly EquipmentKey[] = [
+    'free_weights',
+    'cable_machine',
+    'treadmill',
+    'indoor_bike',
+    'pullup_bar',
+    'outdoor_bike',
+    'swim_access',
+];
+
 /** Only used when no UserContext at all is supplied (e.g. a bare/legacy call site) and
  *  there's no real check-in either -- matches the previous unconfigured-schedule default. */
 const NO_CONTEXT_FALLBACK_MINUTES = 60;
-
-/** Additive sport-access keys exist only on `TrainingSettings.equipment` -- there is no
- *  legacy `UserContext.constraints` boolean for them. */
-const ADDITIVE_SPORT_ACCESS_KEYS = ['outdoor_bike', 'swim_access'] as const;
 
 function resolveOwnedEquipment(
     constraints: UserContext['constraints'] | null | undefined,
     trainingSettings: UserContext['trainingSettings'] | null | undefined
 ): string[] {
-    const owned = constraints
+    if (trainingSettings?.equipment) {
+        return TRAINING_SETTINGS_EQUIPMENT_KEYS.filter(key => trainingSettings.equipment[key] === true);
+    }
+    return constraints
         ? Object.entries(EQUIPMENT_CONSTRAINT_MAP)
             .filter(([, flag]) => constraints[flag])
             .map(([equipment]) => equipment)
         : [];
-    if (trainingSettings?.equipment) {
-        for (const key of ADDITIVE_SPORT_ACCESS_KEYS) {
-            if (trainingSettings.equipment[key]) owned.push(key);
-        }
-    }
-    return owned;
 }
 
 const ZERO_COST_PROFILE: WorkoutCostProfile = {

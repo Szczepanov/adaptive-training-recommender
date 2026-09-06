@@ -156,7 +156,9 @@ describe('schedule overlay next-day projection', () => {
         const baselineImpact = baseline.branches.green.recommendation.decisionTrace?.calibration?.fatigue.rawExternalLoad.impactTissue ?? 0;
         const projectedImpact = projected.branches.green.recommendation.decisionTrace?.calibration?.fatigue.rawExternalLoad.impactTissue ?? 0;
 
-        expect(projectedImpact).toBeGreaterThan(baselineImpact);
+        // A 1.0 authored impact-tissue load must appear once: "greater than" would also
+        // pass if the same overlay were accidentally applied twice.
+        expect(projectedImpact - baselineImpact).toBeCloseTo(1);
         // The overlay ends today, so tomorrow's increase can only come from the projected
         // history exposure, not from tomorrow's same-day availability reservation.
         expect(overlay.endDate).toBe(TODAY);

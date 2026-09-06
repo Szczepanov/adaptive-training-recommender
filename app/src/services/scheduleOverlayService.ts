@@ -72,18 +72,19 @@ export class ScheduleOverlayService {
         }
     }
 
-    /** Lists overlays for the management UI. Unlike the engine-facing DataState read,
-     * failures are deliberately propagated so the card can distinguish "read failed"
-     * from a genuine empty collection and offer a retry instead of silently hiding data. */
+    /** Lists overlays for the management UI. Read failures and invalid stored documents
+     * are deliberately propagated so the card cannot turn corrupt/unreadable constraints
+     * into a misleading "no schedule blocks" state. */
     async listOverlays(userId: string): Promise<ScheduleOverlayWithId[]> {
         const ref = collection(getDb(), 'users', userId, this.collectionPath);
         const snapshot = await getDocs(ref);
         const overlays: ScheduleOverlayWithId[] = [];
         for (const item of snapshot.docs) {
             const parsed = validateScheduleOverlay({ ...item.data(), id: item.id });
-            if (parsed.isValid && parsed.data && parsed.data.userId === userId) {
-                overlays.push({ ...parsed.data, id: item.id });
+            if (!parsed.isValid || !parsed.data || parsed.data.userId !== userId) {
+                throw new Error(`Stored schedule block ${item.id} is invalid and cannot be displayed safely.`);
             }
+            overlays.push({ ...parsed.data, id: item.id });
         }
         return overlays.sort((a, b) => a.startDate.localeCompare(b.startDate));
     }

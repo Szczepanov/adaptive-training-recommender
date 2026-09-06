@@ -81,12 +81,29 @@ Firestore.
    gap as consecutive. The supplied tomorrow preview remains selected by its separate
    intent-aware scenario evaluation; the planner does not re-rank it.
 
+7. **Persisted schedule overlays are planning constraints, not completed training.**
+   User-authored blocks live at `users/{userId}/schedule_overlays` and are loaded for the
+   current decision plus the rolling seven-day horizon. Composition fails closed when that
+   source is unavailable or invalid: silently planning as if a trip/absence does not exist
+   would violate athlete-authored availability. On an active date, `resolveAvailability`
+   applies the most restrictive time cap, intersects reachable equipment, resolves hard
+   environment restrictions, reserves the overlay's authored six-dimensional
+   `expectedCost`, and exposes its volume/intensity multipliers to catalog and imported
+   session dosing. The reserved non-training cost is carried into subsequent forecast
+   fatigue only after the covered date has passed, exactly once; it is never represented as
+   completed training or objective credit. Multiple active overlays combine
+   conservatively (minimum time/equipment intersection, multiplicative dose scales, and
+   clamped additive cost).
+
 ---
 
 ## Code References
 
 * [`app/src/engine/planner.ts`](../../app/src/engine/planner.ts) — `generateWeekAheadPlan` and supporting fatigue/objective chaining.
+* [`app/src/engine/schedule.ts`](../../app/src/engine/schedule.ts) — fixed-activity and schedule-overlay availability, equipment/environment constraints, dose scales, and reserved non-training cost.
+* [`app/src/services/scheduleOverlayService.ts`](../../app/src/services/scheduleOverlayService.ts) — user-scoped persistence and fail-closed range reads for schedule overlays.
 * [`app/src/engine/planner.test.ts`](../../app/src/engine/planner.test.ts) — confidence-tier, safety-gate, and determinism tests.
+* [`app/src/engine/scheduleOverlayForecast.test.ts`](../../app/src/engine/scheduleOverlayForecast.test.ts) — exact-once next-day fatigue carry-forward regression coverage.
 * [`app/src/components/WeekAheadStrip.tsx`](../../app/src/components/WeekAheadStrip.tsx) — dashboard UI, recomputed (never cached) on each `Home` render.
 * [`app/src/utils/localDate.ts`](../../app/src/utils/localDate.ts) — `addDaysToLocalDateString`, the Warsaw-local calendar arithmetic the planner walks forward on.
 
@@ -104,6 +121,9 @@ Firestore.
 * Forecast selection can favour an A-event's modality in Build/Specificity while still
   letting existing readiness, injury, availability, and recovery gates determine what is
   eligible.
+* Planned trips, sport blocks, holidays, walking-heavy breaks, and time-constrained days
+  can reshape both same-day feasibility and later forecast fatigue without pretending the
+  planned non-training load has already happened.
 
 ### Negative
 * Days 2+ are read as "session type", not exact duration/intensity -- the UI must keep
@@ -112,5 +132,8 @@ Firestore.
   can be optimistic on days that already contain an unrecorded commitment.~~ Closed by
   Phase 5.3: `FixedActivity` now persists at `users/{userId}/fixed_activities` and feeds
   the projection.
+* Schedule-overlay `expectedCost` remains an athlete/preset-authored forecast of
+  non-training load. It should influence planning conservatively but must not be confused
+  with measured completed-training evidence.
 * The sequence policy is intentionally limited to Strength; it does not prescribe a
   universal consecutive-day rule for endurance work.
