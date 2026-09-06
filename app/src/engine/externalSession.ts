@@ -116,6 +116,19 @@ function applyResolvedAvailability(
     }
 }
 
+/** Apply persisted schedule-overlay volume/intensity caps at the adjudicator boundary.
+ * Catalog planning applies the same multipliers through `applyPlanningOverlays`; imported
+ * sessions bypass that ranking path, but they still receive the resolved day authority.
+ * Keeping the factors on `ResolvedAvailability` prevents a second date-range resolver and
+ * makes overlapping overlays multiply in exactly the same way as the planner overlay pass. */
+function applyResolvedDoseScales(plannedDose: PlannedDose, availability: ResolvedAvailability | null): PlannedDose {
+    if (!availability) return plannedDose;
+    return {
+        volume: plannedDose.volume * availability.volumeScale,
+        intensity: plannedDose.intensity * availability.intensityScale,
+    };
+}
+
 /**
  * Decides what to do with one imported session on one day.
  *
@@ -232,7 +245,8 @@ export function adjudicateExternalSession(
         };
     }
 
-    const executionDose = resolveExecutionDose(plannedDose, envelopes.plan, null);
+    const effectivePlannedDose = applyResolvedDoseScales(plannedDose, resolvedAvailability);
+    const executionDose = resolveExecutionDose(effectivePlannedDose, envelopes.plan, null);
     // resolveExecutionDose fails closed on an out-of-contract planned dose rather than
     // normalising it, because persisted audits require finite volume in 0..1. Honour that:
     // without a valid dose there is nothing safe to prescribe, and deferring would only
