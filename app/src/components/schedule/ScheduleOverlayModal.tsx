@@ -28,7 +28,7 @@ const CATEGORY_OPTIONS: Array<{ value: ScheduleOverlayCategory; label: string; i
     { value: 'active_sport', label: 'Active Sport', icon: '⛷️' },
     { value: 'sedentary_rest', label: 'Sedentary Rest', icon: '🎄' },
     { value: 'high_step_walking', label: 'High-Step Walking', icon: '🚶' },
-    { value: 'limited_availability', label: 'Limited Time', icon: '💼' },
+    { value: 'limited_availability', label: 'Limited Time', icon: '⏱️' },
 ];
 
 const SPORT_OPTIONS: Array<{ value: ScheduleOverlaySport; label: string }> = [
@@ -97,6 +97,7 @@ export const ScheduleOverlayModal = memo(function ScheduleOverlayModal({
 
     if (!isOpen) return null;
 
+    /** Copy one reviewed preset into editable form state without adding hidden constraints. */
     function applyPreset(preset: ScheduleOverlayPreset) {
         setTitle(preset.title);
         setCategory(preset.category);
@@ -129,13 +130,15 @@ export const ScheduleOverlayModal = memo(function ScheduleOverlayModal({
                 startDate,
                 endDate,
                 category,
-                ...(sport ? { sport } : {}),
+                // `sport` only has meaning for an active-sport overlay. Omitting it for
+                // every other category also guarantees a category change clears stale data
+                // when the service performs its authoritative full-document replacement.
+                ...(category === 'active_sport' && sport ? { sport } : {}),
                 dailyAvailabilityMinutes,
                 volumeScale,
                 intensityScale,
                 expectedCost,
                 ...(environmentOverride ? { environment: environmentOverride } : {}),
-                equipment: [],
             };
 
             if (existingOverlay) {
@@ -176,9 +179,9 @@ export const ScheduleOverlayModal = memo(function ScheduleOverlayModal({
             <div className="schedule-overlay-modal-card" onClick={e => e.stopPropagation()}>
                 <div className="modal-header">
                     <div>
-                        <h3>{existingOverlay ? 'Edit Time Off / Sport Block' : 'Plan Time Off / Sport Block'}</h3>
+                        <h3>{existingOverlay ? 'Edit Schedule Block' : 'Plan Time Off / Sport Block'}</h3>
                         <p className="modal-subtitle">
-                            Informs periodization, weekly anchors, and recovery demand about your planned absences.
+                            Informs periodization, weekly anchors, availability, and recovery demand about planned schedule constraints or extra activity.
                         </p>
                     </div>
                     <button type="button" className="btn-close-modal" onClick={onClose} aria-label="Close">
@@ -245,7 +248,7 @@ export const ScheduleOverlayModal = memo(function ScheduleOverlayModal({
                     </div>
 
                     <div className="form-group">
-                        <label className="section-label">Absence Category</label>
+                        <label className="section-label">Schedule Category</label>
                         <div className="category-toggle-group">
                             {CATEGORY_OPTIONS.map(opt => (
                                 <button
@@ -307,6 +310,7 @@ export const ScheduleOverlayModal = memo(function ScheduleOverlayModal({
                                         type="number"
                                         min="0"
                                         max="1440"
+                                        step="1"
                                         className="text-input"
                                         value={dailyAvailabilityMinutes}
                                         onChange={e => setDailyAvailabilityMinutes(Math.max(0, parseInt(e.target.value, 10) || 0))}
@@ -435,7 +439,7 @@ export const ScheduleOverlayModal = memo(function ScheduleOverlayModal({
                                 className="btn-primary"
                                 disabled={saving}
                             >
-                                {saving ? 'Saving...' : existingOverlay ? 'Save Changes' : 'Add Time Off'}
+                                {saving ? 'Saving...' : existingOverlay ? 'Save Changes' : 'Add Schedule Block'}
                             </button>
                         </div>
                     </div>
