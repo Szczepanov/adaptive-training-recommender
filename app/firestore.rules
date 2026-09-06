@@ -1577,6 +1577,50 @@ service cloud.firestore {
       }
     }
 
+    function hasValidIntradayDecision(userId, decisionId) {
+      let data = request.resource.data;
+      let requiredKeys = [
+        'id', 'userId', 'date', 'asOf', 'policyVersion', 'schemaVersion',
+        'status', 'supersededDecisionId', 'occurrenceId', 'sessionId',
+        'windowId', 'bundleId', 'orderInBundle', 'reassessmentInputRevision',
+        'bundlePlacement', 'ledgerSnapshot', 'verdict'
+      ];
+      return hasOwnedUserId(userId)
+        && data.keys().hasAll(requiredKeys)
+        && data.keys().hasOnly(requiredKeys)
+        && data.id == decisionId
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 128
+        && data.date is string && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && data.asOf is string && data.asOf.size() > 0 && data.asOf.size() <= 64
+        && data.policyVersion is string && data.policyVersion.size() > 0 && data.policyVersion.size() <= 128
+        && data.schemaVersion == 1
+        && data.status in ['provisional', 'confirmed', 'superseded', 'dropped']
+        && (data.supersededDecisionId == null || (data.supersededDecisionId is string && data.supersededDecisionId.size() > 0 && data.supersededDecisionId.size() <= 128))
+        && data.occurrenceId is string && data.occurrenceId.size() > 0 && data.occurrenceId.size() <= 128
+        && data.sessionId is string && data.sessionId.size() > 0 && data.sessionId.size() <= 128
+        && data.windowId is string && data.windowId.size() > 0 && data.windowId.size() <= 128
+        && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
+        && data.orderInBundle is int && data.orderInBundle >= 0
+        && data.reassessmentInputRevision is map
+        && data.reassessmentInputRevision.keys().hasAll(['availabilityRevision', 'completedFactsRevision', 'checkinRevision', 'ledgerRevision', 'placementRevision'])
+        && data.bundlePlacement is map
+        && data.bundlePlacement.bundleId is string
+        && data.bundlePlacement.outcome in ['placed', 'infeasible']
+        && data.ledgerSnapshot is map
+        && data.ledgerSnapshot.keys().hasAll(['ceilings', 'entries'])
+        && data.ledgerSnapshot.ceilings is map
+        && data.ledgerSnapshot.entries is list
+        && data.verdict is map
+        && data.verdict.decision in ['proceed', 'scale', 'defer', 'skip', 'pending']
+        && data.verdict.reasons is list;
+    }
+
+    match /users/{userId}/intraday_decisions/{decisionId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidIntradayDecision(userId, decisionId);
+      allow update, delete: if false;
+    }
+
     function hasKnownOutcomeMetric(metricId) {
       return metricId in [
         'cycling_tt_20m_mean_power_w',

@@ -1,0 +1,49 @@
+{
+  "id": "dec-intraday-test",
+  "userId": "athlete-1",
+  "date": "2026-09-06",
+  "asOf": "2026-09-06T07:30:00.000Z",
+  "policyVersion": "2026-09-h4-intraday-bundle-placement-v1",
+  "schemaVersion": 1,
+  "status": "provisional",
+  "supersededDecisionId": null,
+  "occurrenceId": "occ-am-1",
+  "sessionId": "sess-am-1",
+  "windowId": "win-am-1",
+  "bundleId": "bundle-sunday-1",
+  "orderInBundle": 0,
+  "reassessmentInputRevision": {
+    "availabilityRevision": "avail-rev-1",
+    "completedFactsRevision": "facts-rev-1",
+    "checkinRevision": "checkin-rev-1",
+    "ledgerRevision": "ledger-rev-1",
+    "placementRevision": "placement-rev-1"
+  },
+  "bundlePlacement": {
+    "bundleId": "bundle-sunday-1",
+    "outcome": "placed",
+    "bindings": [
+      {
+        "sessionId": "sess-am-1",
+        "windowId": "win-am-1",
+        "boundStartLocal": "08:00",
+        "boundEndLocal": "09:00",
+        "startInstant": "2026-09-06T06:00:00.000Z",
+        "endInstant": "2026-09-06T07:00:00.000Z"
+      }
+    ]
+  },
+  "ledgerSnapshot": {
+    "ceilings": {
+      "dailyMinuteCeiling": 90,
+      "dailySystemicCostCeiling": 0.8
+    },
+    "entries": []
+  },
+  "verdict": {
+    "decision": "proceed",
+    "reasons": [
+      "Capacity verified"
+    ]
+  }
+}
