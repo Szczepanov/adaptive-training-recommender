@@ -7,7 +7,7 @@ import { getErrorCode } from '../utils/errors';
 
 type ScheduleWindowWithId = ScheduleWindow & { id: string };
 type NewScheduleWindowInput = Omit<ScheduleWindow, 'id' | 'userId' | 'revision' | 'createdAt' | 'updatedAt'>;
-type ScheduleWindowUpdates = Partial<Omit<ScheduleWindow, 'id' | 'userId' | 'createdAt'>>;
+type ScheduleWindowUpdates = Partial<Omit<ScheduleWindow, 'id' | 'userId' | 'revision' | 'createdAt' | 'updatedAt'>>;
 
 /** Builds a document payload containing only stored fields -- `id` is the document key,
  *  not a stored field, mirroring `fixedActivityService.ts`'s `storedActivityPayload`. */
@@ -17,6 +17,7 @@ function storedWindowPayload(window: ScheduleWindow): DocumentData {
     return payload;
 }
 
+/** Parses one untrusted Firestore document through the canonical D-WINDOW validator. */
 function parseWindow(raw: DocumentData): ScheduleWindow | null {
     const validation = validateScheduleWindow(raw);
     return validation.isValid && validation.data ? validation.data : null;
@@ -46,6 +47,8 @@ function parseWindow(raw: DocumentData): ScheduleWindow | null {
 export class ScheduleWindowService {
     private readonly collectionPath = 'schedule_windows';
 
+    /** Reads and validates all persisted windows for one date without collapsing data
+     * corruption or transport/auth failures into the valid legacy "no windows" case. */
     async getWindowsForDateState(userId: string, date: string): Promise<DataState<ScheduleWindowWithId[]>> {
         try {
             const collRef = collection(getDb(), 'users', userId, this.collectionPath);
@@ -78,11 +81,19 @@ export class ScheduleWindowService {
         }
     }
 
+    /** Returns the valid same-date set, including `[]` only when the read itself succeeded
+     * and the date genuinely has no windows. Invalid/unavailable state fails closed so a
+     * write caller can never mistake corrupted or unreadable siblings for an empty date. */
     async getWindowsForDate(userId: string, date: string): Promise<ScheduleWindowWithId[]> {
         const state = await this.getWindowsForDateState(userId, date);
-        return state.status === 'AVAILABLE' ? state.data : [];
+        if (state.status === 'AVAILABLE') return state.data;
+        if (state.status === 'INVALID') {
+            throw new Error(`Cannot read schedule windows for ${date}: persisted data is invalid`);
+        }
+        throw new Error(`Cannot read schedule windows for ${date}: data is unavailable`);
     }
 
+    /** Lists individually valid windows owned by the user, sorted by local date/time. */
     async listAll(userId: string): Promise<ScheduleWindowWithId[]> {
         const collRef = collection(getDb(), 'users', userId, this.collectionPath);
         const q = query(collRef, where('userId', '==', userId));
@@ -95,6 +106,7 @@ export class ScheduleWindowService {
             .sort((a, b) => a.date.localeCompare(b.date) || a.startLocal.localeCompare(b.startLocal));
     }
 
+    /** Reads one window by stable document id, returning null for absent/invalid data. */
     async getWindow(userId: string, windowId: string): Promise<ScheduleWindowWithId | null> {
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, windowId);
         const docSnap = await getDoc(docRef);
@@ -106,10 +118,13 @@ export class ScheduleWindowService {
 
     /** Creates a window, rejecting it up front if it would overlap an existing same-date
      * window -- best-effort only, see the class-level doc comment on the race this does
-     * not close. */
+     * not close. Invalid/unavailable sibling state fails closed rather than being treated
+     * as an empty date. */
     async createWindow(userId: string, input: NewScheduleWindowInput): Promise<ScheduleWindow> {
         const now = new Date().toISOString();
-        const rawData: DocumentData = { userId, revision: 1, createdAt: now, updatedAt: now, ...input };
+        // Service-owned fields come last deliberately: runtime callers cannot override
+        // ownership/revision/timestamps by smuggling extra properties through a typed input.
+        const rawData: DocumentData = { ...input, userId, revision: 1, createdAt: now, updatedAt: now };
         const validation = validateScheduleWindow(rawData);
         if (!validation.isValid || !validation.data) {
             const errorMessages = validation.errors.map(e => `${e.field}: ${e.message}`).join('; ');
@@ -125,6 +140,8 @@ export class ScheduleWindowService {
         return { ...validation.data, id: docRef.id };
     }
 
+    /** Updates one window with a monotonic service-owned revision while checking the
+     * resulting same-date set for overlap. Invalid/unavailable sibling state fails closed. */
     async updateWindow(userId: string, windowId: string, updates: ScheduleWindowUpdates): Promise<ScheduleWindow> {
         const existing = await this.getWindow(userId, windowId);
         if (!existing) throw new Error('Schedule window not found');
@@ -149,6 +166,7 @@ export class ScheduleWindowService {
         return validation.data;
     }
 
+    /** Deletes a single owner-scoped schedule window by stable document id. */
     async deleteWindow(userId: string, windowId: string): Promise<void> {
         const docRef = doc(getDb(), 'users', userId, this.collectionPath, windowId);
         await deleteDoc(docRef);
