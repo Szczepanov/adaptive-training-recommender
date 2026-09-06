@@ -355,8 +355,19 @@ service cloud.firestore {
           || (('overridden' in audit.externalRest) && audit.externalRest.overridden == true)
           || audit.candidateScores.size() == 0)
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
-        && (!('primarySession' in audit) || hasValidSessionReferenceBinding(audit.primarySession))
-        && (!('additionalSessions' in audit) || hasValidAdditionalSessions(audit.additionalSessions))
+        // `provenance.ts`'s buildRecommendationAudit sets audit.primarySession/
+        // additionalSessions to the exact same value as the sibling top-level
+        // request.resource.data.primarySession/additionalSessions field (never an
+        // independently-derived copy) -- hasValidRecommendation already runs the full
+        // hasValidSessionReferenceBinding/hasValidAdditionalSessions structural
+        // validation on those top-level fields. Re-running that same (non-trivial: up to
+        // 4 additional-session bindings, each checking several source-kind shapes)
+        // validation a second time here on an identical value was pure duplicate rule-
+        // evaluation cost; a single equality check against the already-validated
+        // top-level field is enough and meaningfully reduces this audit's total
+        // evaluation cost (see the per-request rule-evaluation ceiling note below).
+        && (!('primarySession' in audit) || audit.primarySession == request.resource.data.primarySession)
+        && (!('additionalSessions' in audit) || audit.additionalSessions == request.resource.data.additionalSessions)
         // ADR-0036 (H4) D-PLACEMENT: a v4 intraday bundle's resolved window trace was
         // intended to persist here for display, but this whole audit is already right at
         // Firestore's per-request rule-evaluation ceiling -- adding even a minimal
@@ -364,7 +375,14 @@ service cloud.firestore {
         // suite, not a guess) pushed a create/update over "the maximum of 1000
         // expressions to evaluate". That display field is deliberately not persisted;
         // `activeExternalPlanService.ts`'s bundle-aware primary-session selection (the
-        // actual decision-affecting behavior) does not depend on it.
+        // actual decision-affecting behavior) does not depend on it. The
+        // primarySession/additionalSessions dedup above (issue #435) is a real, verified
+        // reduction in this audit's evaluation cost, but re-tested with the emulator
+        // suite and confirmed **still not enough headroom** for even the same minimal
+        // intradayBundle check -- the ceiling error recurred identically. Whoever revisits
+        // this next needs a bigger reduction than that one dedup (see issue #435's
+        // remaining candidates: knowledge-lineage unrolled-array cost, identity-provenance
+        // `get()` lookups, or moving this field outside `recommendationAudit` entirely).
         && (!('externalPlan' in audit) || (
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
