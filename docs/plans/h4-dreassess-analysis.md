@@ -159,6 +159,7 @@ actionable bundle members.
        checkinRevision: string;        // check-in updatedAt / hash
        ledgerRevision: number;         // daily ledger entries sequence / hash
        placementRevision: string;      // bundle placement hash
+       postPredecessorConfirmationRevision?: string; // revision/hash of predecessor SessionResponse / tissueResponses
    }
    ```
    Generated when the provisional PM recommendation is composed, passed to the launch action,
@@ -168,7 +169,7 @@ actionable bundle members.
    - **Predecessor completion:** Verifies predecessor occurrence is `completed`. If not,
      returns `pending`.
    - **Elapsed separation:** If `minimumSeparationMinutes` is defined, computes
-     `elapsedMinutesBetweenInstants(evaluationInstant, predecessorCompletedAt)` via `localInstant.ts`.
+     `elapsedMinutesBetweenInstants(prospectiveStartInstant, predecessorActualEndInstant)` via `localInstant.ts`.
      If timestamps are missing or elapsed interval is insufficient, returns `pending` (unresolved timing prerequisite).
    - **Post-predecessor confirmation:** Queries `SessionResponse` (`window: 'immediate'`)
      and `DailySubjectiveCheckin.tissueResponses` for the predecessor. If absent, returns
@@ -182,9 +183,9 @@ actionable bundle members.
 3. **Atomic launch claim transaction:**
    Inside `runTransaction`:
    - Reads the date-level reservation/recommendation document and the target `session_occurrence`.
+   - Reads current reservation and capacity state, re-verifies the complete `ReassessmentInputRevision`, and rejects when it differs from the assumed revision.
    - Verifies target occurrence is currently `scheduled` (rejects if already `active` or `completed`).
-   - Verifies date ledger revision matches the assumed revision (rejects with "stale, recompute" if mismatched).
-   - Transitions occurrence to `active`, registers the active reservation in the date ledger,
+   - Transitions occurrence to `active`, registers the active reservation and capacity consumption in the date ledger,
      and commits atomically.
 
 4. **Persistence & D-AUDIT boundary:**
