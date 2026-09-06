@@ -23,6 +23,10 @@ export interface PinnedTrainingIntentProfileSnapshot {
     schemaVersion?: number;
 }
 
+function compareCodeUnits(a: string, b: string): number {
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+
 export interface SourcePlanIdentity {
     planId: string;
     schemaVersion: string;
@@ -100,7 +104,7 @@ export interface TreatmentIntentReplayPayloadV1 {
 
 function canonicalizeStringSet(values?: readonly string[]): readonly string[] | undefined {
     if (!values || values.length === 0) return undefined;
-    return [...values].sort();
+    return [...values].sort(compareCodeUnits);
 }
 
 function canonicalizeProtectedRoles(roles?: readonly BlockProtectedRole[]): CanonicalReplayObjective['protectedRoles'] {
@@ -112,7 +116,7 @@ function canonicalizeProtectedRoles(roles?: readonly BlockProtectedRole[]): Cano
         .sort((a, b) => {
             const aKey = a.kind === 'coverage_role' ? `${a.kind}:${a.coverageKey}` : `${a.kind}:${a.sessionId}`;
             const bKey = b.kind === 'coverage_role' ? `${b.kind}:${b.coverageKey}` : `${b.kind}:${b.sessionId}`;
-            return aKey.localeCompare(bKey);
+            return compareCodeUnits(aKey, bKey);
         });
 }
 
@@ -122,13 +126,13 @@ function canonicalizeSubstitutions(substitutions?: readonly BlockSubstitutionRul
     return [...substitutions]
         .map(sub => ({
             targetCoverageKey: sub.targetCoverageKey,
-            allowedCoverageKeys: [...sub.allowedCoverageKeys].sort(),
+            allowedCoverageKeys: [...sub.allowedCoverageKeys].sort(compareCodeUnits),
             minDoseFraction: sub.minDoseFraction,
         }))
         .sort((a, b) => {
-            const targetOrder = a.targetCoverageKey.localeCompare(b.targetCoverageKey);
+            const targetOrder = compareCodeUnits(a.targetCoverageKey, b.targetCoverageKey);
             if (targetOrder !== 0) return targetOrder;
-            return a.allowedCoverageKeys.join('\u0000').localeCompare(b.allowedCoverageKeys.join('\u0000'));
+            return compareCodeUnits(a.allowedCoverageKeys.join('\u0000'), b.allowedCoverageKeys.join('\u0000'));
         });
 }
 
@@ -171,7 +175,7 @@ function canonicalizeObjective(obj: BlockObjectiveDefinition): CanonicalReplayOb
             unit: obj.doseEnvelope.unit,
             floorSemantics: obj.doseEnvelope.floorSemantics,
         },
-        knowledgeLineage: [...obj.knowledgeLineage].sort(),
+        knowledgeLineage: [...obj.knowledgeLineage].sort(compareCodeUnits),
         protectedRoles: canonicalizeProtectedRoles(obj.protectedRoles),
         allowedSubstitutions: canonicalizeSubstitutions(obj.allowedSubstitutions),
         successCriteria: canonicalizeSuccessCriteria(obj),
@@ -193,7 +197,7 @@ function canonicalizeProgressionContract(contract?: BlockProgressionContract): C
         currentValue: contract.currentValue,
         permittedRange: { min: contract.permittedRange.min, max: contract.permittedRange.max },
         increment: contract.increment,
-        knowledgeLineage: [...contract.knowledgeLineage].sort(),
+        knowledgeLineage: [...contract.knowledgeLineage].sort(compareCodeUnits),
         observationWindowDays: contract.observationWindowDays,
         minCompletedExposures: contract.minCompletedExposures,
         requiredFollowUpCoveragePct: contract.requiredFollowUpCoveragePct,
@@ -220,7 +224,7 @@ export function buildTreatmentIntentReplayPayloadV1(
     sourceSchemaVersion: string,
     sourceRef?: string,
 ): TreatmentIntentReplayPayloadV1 {
-    const sortedObjectives = [...block.objectives].sort((a, b) => a.id.localeCompare(b.id)).map(canonicalizeObjective);
+    const sortedObjectives = [...block.objectives].sort((a, b) => compareCodeUnits(a.id, b.id)).map(canonicalizeObjective);
     return {
         schemaVersion: TREATMENT_INTENT_REPLAY_SCHEMA_VERSION,
         sourcePlanIdentity: {
@@ -265,7 +269,7 @@ export function canonicalizeReplayJson(value: unknown): unknown {
     }
     if (value !== null && typeof value === 'object') {
         const obj = value as Record<string, unknown>;
-        return Object.fromEntries(Object.keys(obj).sort().filter(key => obj[key] !== undefined).map(key => [key, canonicalizeReplayJson(obj[key])]));
+        return Object.fromEntries(Object.keys(obj).sort(compareCodeUnits).filter(key => obj[key] !== undefined).map(key => [key, canonicalizeReplayJson(obj[key])]));
     }
     return value;
 }

@@ -256,6 +256,20 @@ describe('blockIntent validation (ADR-0037 D-INTENT)', () => {
             },
         };
         expect(validateIntentBlock(ambiguous).issues.some(issue => issue.code === 'AMBIGUOUS_ADVERSE_RESPONSE_ACTION')).toBe(true);
+
+        const withoutTriggers = {
+            ...validBlock,
+            progressionContract: {
+                ...validBlock.progressionContract!,
+                reductionAlternative: undefined,
+                redirectCriteria: {} as never,
+            },
+        };
+        const withoutTriggersValidation = validateIntentBlock(withoutTriggers);
+        expect(withoutTriggersValidation.valid).toBe(false);
+        const codes = withoutTriggersValidation.issues.map(issue => issue.code);
+        expect(codes).toContain('EMPTY_REDIRECT_TRIGGERS');
+        expect(codes).toContain('MISSING_PROGRESSION_FALLBACK');
     });
 
     it('rejects reductions that need hidden range clamping', () => {

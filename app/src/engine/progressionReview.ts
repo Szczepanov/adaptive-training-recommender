@@ -16,6 +16,7 @@ import type {
     TissueSeverity,
 } from './blockIntent';
 import { isValidLocalDateString, validateIntentBlock } from './blockIntent';
+import { addDaysToLocalDateString } from '../utils/localDate';
 
 export type ProgressionReviewAction = 'advance_proposal' | 'hold' | 'reduce_proposal' | 'redirect';
 
@@ -115,12 +116,6 @@ export interface ProgressionReviewInput {
         hasAdverseTissue: boolean;
         prohibitedRegions?: readonly string[];
     };
-}
-
-function addCalendarDays(date: string, days: number): string {
-    const [year, month, day] = date.split('-').map(Number);
-    const instant = new Date(Date.UTC(year, month - 1, day + days));
-    return `${instant.getUTCFullYear()}-${String(instant.getUTCMonth() + 1).padStart(2, '0')}-${String(instant.getUTCDate()).padStart(2, '0')}`;
 }
 
 function calendarDaysInclusive(startDate: string, endDate: string): number {
@@ -415,7 +410,7 @@ export function evaluateProgressionReview(input: ProgressionReviewInput): Progre
         return result('hold', ['active_restriction_blocks_advancement'], input, audit);
     }
 
-    const rawWindowStart = addCalendarDays(input.asOfDate, -(contract.observationWindowDays - 1));
+    const rawWindowStart = addDaysToLocalDateString(input.asOfDate, -(contract.observationWindowDays - 1));
     const windowStartDate = rawWindowStart > input.intentBlock.dateRange.startDate
         ? rawWindowStart
         : input.intentBlock.dateRange.startDate;

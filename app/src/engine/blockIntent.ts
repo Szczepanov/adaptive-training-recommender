@@ -524,12 +524,16 @@ export function validateProgressionContract(
         }
     }
 
+    const redirectTriggers = Array.isArray(contract.redirectCriteria?.triggers)
+        ? contract.redirectCriteria.triggers
+        : undefined;
+
     if (contract.redirectCriteria) {
-        if (!Array.isArray(contract.redirectCriteria.triggers) || contract.redirectCriteria.triggers.length === 0) {
+        if (!redirectTriggers || redirectTriggers.length === 0) {
             issues.push({ code: 'EMPTY_REDIRECT_TRIGGERS', message: 'redirectCriteria.triggers must not be empty', path: `${path}.redirectCriteria.triggers` });
         } else {
             const seen = new Set<ProgressionRedirectTrigger>();
-            contract.redirectCriteria.triggers.forEach((trigger, index) => {
+            redirectTriggers.forEach((trigger, index) => {
                 if (trigger !== 'adverse_response' && trigger !== 'active_restriction') {
                     issues.push({ code: 'UNSUPPORTED_REDIRECT_TRIGGER', message: `Unsupported redirect trigger: ${trigger}`, path: `${path}.redirectCriteria.triggers[${index}]` });
                 } else if (seen.has(trigger)) {
@@ -541,7 +545,7 @@ export function validateProgressionContract(
     }
 
     if (!contract.reductionAlternative
-        && (!contract.redirectCriteria || contract.redirectCriteria.triggers.length === 0)) {
+        && (!contract.redirectCriteria || !redirectTriggers || redirectTriggers.length === 0)) {
         issues.push({
             code: 'MISSING_PROGRESSION_FALLBACK',
             message: 'Enabled progression requires a bounded reduction alternative or explicit redirect-to-review trigger',
@@ -550,7 +554,7 @@ export function validateProgressionContract(
     }
 
     if (contract.reductionAlternative?.trigger === 'adverse_response'
-        && contract.redirectCriteria?.triggers.includes('adverse_response')) {
+        && redirectTriggers?.includes('adverse_response')) {
         issues.push({
             code: 'AMBIGUOUS_ADVERSE_RESPONSE_ACTION',
             message: 'The same adverse_response trigger cannot request both reduction and redirect',
