@@ -30,6 +30,7 @@ export interface PlannedObjectiveCredit {
     earnedCredit: number;
 }
 import { resolveAvailability } from './schedule';
+import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 import { isTemplatePhaseEligible, evaluatePeriodizationPhase, resolveMultiEventObjectives, type DroppedContributorObjective, type PeriodizationResult } from './periodization';
 import { eligibleTemplates } from './eligibility';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
@@ -965,18 +966,7 @@ export function applyFixedActivityStimulusCredit(
 
 export function fixedActivityCostProfileForDate(fixedActivities: FixedActivity[], date: string): WorkoutCostProfile {
     const dayActivities = fixedActivities.filter(a => a.date === date && !a.isCompleted);
-    return dayActivities.reduce((sum, activity) => {
-        const cost = activity.expectedCost;
-        if (!cost) return sum;
-        return {
-            systemic: sum.systemic + (cost.systemic ?? 0),
-            cardiovascular: sum.cardiovascular + (cost.cardiovascular ?? 0),
-            lowerBody: sum.lowerBody + (cost.lowerBody ?? 0),
-            upperBody: sum.upperBody + (cost.upperBody ?? 0),
-            impactTissue: sum.impactTissue + (cost.impactTissue ?? 0),
-            neuromuscular: sum.neuromuscular + (cost.neuromuscular ?? 0),
-        };
-    }, ZERO_COST);
+    return sumFixedActivityCostProfiles(dayActivities);
 }
 
 function accumulateNewDrops(
