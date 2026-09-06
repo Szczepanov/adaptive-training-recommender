@@ -357,6 +357,14 @@ service cloud.firestore {
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
         && (!('primarySession' in audit) || hasValidSessionReferenceBinding(audit.primarySession))
         && (!('additionalSessions' in audit) || hasValidAdditionalSessions(audit.additionalSessions))
+        // ADR-0036 (H4) D-PLACEMENT: a v4 intraday bundle's resolved window trace was
+        // intended to persist here for display, but this whole audit is already right at
+        // Firestore's per-request rule-evaluation ceiling -- adding even a minimal
+        // 3-expression check for one more optional field (verified with the emulator
+        // suite, not a guess) pushed a create/update over "the maximum of 1000
+        // expressions to evaluate". That display field is deliberately not persisted;
+        // `activeExternalPlanService.ts`'s bundle-aware primary-session selection (the
+        // actual decision-affecting behavior) does not depend on it.
         && (!('externalPlan' in audit) || (
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])

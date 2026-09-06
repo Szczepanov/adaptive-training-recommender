@@ -19,6 +19,8 @@ import { recommendationService } from '../services/recommendationService';
 import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { fixedActivityService } from '../services/fixedActivityService';
+import { scheduleWindowService } from '../services/scheduleWindowService';
+import { computeDailyLedger } from '../engine/dailyLedger';
 import { planBlockService } from '../services/planBlockService';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
@@ -414,7 +416,32 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         if (activeExternalState.status === 'INVALID' || activeExternalState.status === 'UNAVAILABLE') {
           console.warn(`External plan could not be read (${activeExternalState.status}); today falls back to the ranked path.`);
         }
-        const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date) : null;
+
+        // ADR-0036 (H4) D-PLACEMENT: only relevant when the active plan is v4 with an
+        // intraday bundle placed today; resolveIntradayBundlePlacement returns null
+        // otherwise and externalPlanContextForDate falls back to its exact pre-D-PLACEMENT
+        // behavior. Ledger ceilings are derived from today's already-resolved availability
+        // (no persisted occurrence-level ledger entries are wired in yet -- that broader
+        // ledger-based ranking/admission unification is a separate, later H4 task).
+        const scheduleWindowsState = await scheduleWindowService.getWindowsForDateState(userId, input.date);
+        if (!isCurrent()) return;
+        if (scheduleWindowsState.status === 'INVALID' || scheduleWindowsState.status === 'UNAVAILABLE') {
+          console.warn(`Schedule windows for today could not be read (${scheduleWindowsState.status}); intraday bundle placement falls back to the legacy single-slot case.`);
+        }
+        const todaysScheduleWindows = scheduleWindowsState.status === 'AVAILABLE' ? scheduleWindowsState.data : [];
+        const earlyAvailability = resolveAvailability(input.date, subjective, planWeekActivities, context, input.scheduleOverlays);
+        const bundleLedger = computeDailyLedger(
+          {
+            dailyMinuteCeiling: earlyAvailability.maxTimeMinutes,
+            dailySystemicCostCeiling: Math.max(0, 1 - earlyAvailability.reservedCapacityCost),
+          },
+          [],
+        );
+        const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, {
+          scheduleWindows: todaysScheduleWindows,
+          fixedActivities: planWeekActivities,
+          ledger: bundleLedger,
+        }) : null;
         const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;
 
         const baseRecommendation = await evaluateTrainingWithIntent(

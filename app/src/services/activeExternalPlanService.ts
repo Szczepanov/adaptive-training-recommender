@@ -5,13 +5,18 @@ import type {
     ExternalPlanHeader,
     ExternalPlanPlacement,
     FixedActivity,
+    ScheduleWindow,
 } from '../engine/models';
 import type { ExternalPlanContext, ExternalRestContext } from '../engine/rules';
+import { estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
+import type { DailyLedgerResult } from '../engine/dailyLedger';
+import { proposeBundlePlacement, type BundlePlacementProposal, type IntradayBundleMember } from '../engine/intradayBundlePlacement';
 import { externalPlanService, type ExternalPlanService } from './externalPlanService';
 // M3.6: an active plan may be any supported schema version -- resolvePlacement and most
 // downstream session handling read envelope fields shared by every version. ADR-0035 adds
 // plan-level rest directives in v3, resolved separately below rather than faked as sessions.
-import type { AnyExternalTrainingPlan as ExternalTrainingPlan } from '../sessions/externalPlanV2';
+import type { AnyExternalTrainingPlan as ExternalTrainingPlan, AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
+import type { ExternalIntradayPlacement, ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 
 export interface ActiveExternalPlan {
     header: ExternalPlanHeader;
@@ -39,21 +44,6 @@ export function placedSessionsForDate(active: ActiveExternalPlan, date: string):
 }
 
 /**
- * Primary session for today's singular external adjudication path. On an intentional
- * double/triple day choose the plan author's strongest priority, then session id for a
- * deterministic tie-break rather than depending on array/input order.
- */
-export function placedSessionForDate(active: ActiveExternalPlan, date: string): PlacedSession | null {
-    const sessions = placedSessionsForDate(active, date);
-    if (sessions.length === 0) return null;
-    if (sessions.length === 1) return sessions[0];
-    return [...sessions].sort((left, right) =>
-        PRIORITY_RANK[right.session.priority] - PRIORITY_RANK[left.session.priority]
-        || left.session.id.localeCompare(right.session.id),
-    )[0];
-}
-
-/**
  * Read-only plural projection of every placed session on a date. This is useful to callers
  * that need to inspect/render the full authored day. The live recommendation engine still
  * accepts one `ExternalPlanContext`; callers must not interpret this helper as evidence
@@ -68,13 +58,120 @@ export function externalPlanContextsForDate(active: ActiveExternalPlan, date: st
     }));
 }
 
+function hasIntraday(session: ExternalPlanSession): session is ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } {
+    return 'intraday' in session && session.intraday !== undefined;
+}
+
+/**
+ * ADR-0036 (H4) D-PLACEMENT: inputs a bundle-aware caller must already have to hand --
+ * the athlete's real same-date availability windows, the fixed activities that could
+ * occupy part of the date, and the day's already-resolved shared minute/systemic-cost
+ * ledger. This module never estimates dose/duration/cost itself; it reuses the same
+ * `estimateAuthoredSessionSystemicCost`/`SessionDefinition.duration` authorities the
+ * manually-authored additional-session path already uses (ADR: "keep the current common
+ * cost/eligibility authorities").
+ */
+export interface IntradayBundlePlacementContext {
+    scheduleWindows: readonly ScheduleWindow[];
+    fixedActivities: readonly FixedActivity[];
+    ledger: DailyLedgerResult;
+}
+
+/**
+ * D-PLACEMENT: resolves the real window/order/rest/budget placement for one date's v4
+ * intraday bundle, or `null` when no session placed on that date carries `intraday`.
+ * Trusts D-SCHEMA's already-validated invariant that every intraday-bearing session
+ * placed on one authored date shares a single `bundleId` (`validateIntradayBundles`'s
+ * per-`(week, day)` scoping) rather than re-deriving it.
+ */
+export function resolveIntradayBundlePlacement(
+    active: ActiveExternalPlan,
+    date: string,
+    context: IntradayBundlePlacementContext,
+): BundlePlacementProposal | null {
+    const bundleSessions = placedSessionsForDate(active, date)
+        .filter((placed): placed is PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } } => hasIntraday(placed.session));
+    if (bundleSessions.length === 0) return null;
+
+    const bundleId = bundleSessions[0].session.intraday.bundleId;
+    const members: IntradayBundleMember[] = bundleSessions.map(placed => {
+        const { intraday, definition, priority, id } = placed.session;
+        return {
+            sessionId: id,
+            order: intraday.order,
+            priority,
+            requestedWindow: intraday.window,
+            afterSessionId: intraday.afterSessionId,
+            minimumSeparationMinutes: intraday.minimumSeparationMinutes,
+            estimatedMinutes: definition.duration?.max ?? definition.duration?.min ?? 45,
+            estimatedSystemicCost: estimateAuthoredSessionSystemicCost(definition),
+            // Placement-correctness resolution only: execution status is not wired in
+            // here. Every member is evaluated as not-yet-started; reconciling against
+            // actual launch/completion is D-REASSESS, not this PR.
+            started: false,
+        };
+    });
+
+    const restDates = new Set(resolveRestDatesByDate(active.plan).keys());
+    return proposeBundlePlacement(bundleId, date, members, context.scheduleWindows, context.fixedActivities, restDates, context.ledger);
+}
+
+/**
+ * Primary session for today's singular external adjudication path. On an intentional
+ * double/triple day choose the plan author's strongest priority, then session id for a
+ * deterministic tie-break rather than depending on array/input order.
+ *
+ * When `bundleContext` is supplied and this date's sessions include a v4 intraday bundle
+ * that resolves feasibly (D-PLACEMENT), the bundle's own earliest-`order` member is the
+ * authored day's primary intent -- real window/rest/budget feasibility is now proven,
+ * not just priority-guessed. An infeasible or absent bundle falls back to the exact
+ * priority-rank tie-break this function already used before D-PLACEMENT existed.
+ */
+export function placedSessionForDate(
+    active: ActiveExternalPlan,
+    date: string,
+    bundleContext?: IntradayBundlePlacementContext,
+): PlacedSession | null {
+    const sessions = placedSessionsForDate(active, date);
+    if (sessions.length === 0) return null;
+
+    if (bundleContext) {
+        const bundlePlacement = resolveIntradayBundlePlacement(active, date, bundleContext);
+        if (bundlePlacement?.outcome === 'placed') {
+            const bundleSessions = sessions.filter((placed): placed is PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } } => hasIntraday(placed.session));
+            const earliest = [...bundleSessions].sort((left, right) => left.session.intraday.order - right.session.intraday.order)[0];
+            return earliest;
+        }
+    }
+
+    if (sessions.length === 1) return sessions[0];
+    return [...sessions].sort((left, right) =>
+        PRIORITY_RANK[right.session.priority] - PRIORITY_RANK[left.session.priority]
+        || left.session.id.localeCompare(right.session.id),
+    )[0];
+}
+
 /**
  * Builds the primary adjudication input for one day, or null when nothing is placed. The
  * `contentHash` comes from the stored header rather than being recomputed here, so the
  * decision audit records the hash the import actually agreed to (ADR-0019 D-IMMUT).
+ *
+ * `bundleContext`, when supplied, activates D-PLACEMENT: the primary session is chosen
+ * bundle-order-aware rather than purely by priority (see `placedSessionForDate`).
+ * Launching this session still goes through the single-session path unchanged; a second
+ * bundle member is not independently launchable yet (no execution-binding pipeline
+ * exists for external plans at all, primary included -- building one is a separate
+ * future project). The resolved bundle placement is not persisted for display here --
+ * `hasValidRecommendationAudit`'s `externalPlan` shape is already at Firestore's
+ * per-request rule-evaluation ceiling and has no room left for it (verified with the
+ * emulator suite); see the comment there.
  */
-export function externalPlanContextForDate(active: ActiveExternalPlan, date: string): ExternalPlanContext | null {
-    const placed = placedSessionForDate(active, date);
+export function externalPlanContextForDate(
+    active: ActiveExternalPlan,
+    date: string,
+    bundleContext?: IntradayBundlePlacementContext,
+): ExternalPlanContext | null {
+    const placed = placedSessionForDate(active, date, bundleContext);
     if (!placed) return null;
     return {
         planId: active.plan.planId,
