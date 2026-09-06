@@ -1,7 +1,7 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered and the same-day canonical performed-fact boundary verified (runtime wiring unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
-**Blocked by:** H4 runtime wiring (refactoring `schedule.ts`/`planner.ts`/`rules.ts` onto `dailyLedger.ts`, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) is no longer blocked on verification -- it is ready to start as its own decision-affecting PR. H5 intent groundwork can start now; H5 runtime needs validated intent mappings and linked response evidence, and H5's cumulative `external-plan@5` import acceptance must be based on ADR-0036's landed v4 artifact, not reconstructed from discussion context. Personal M00/M01 prescription needs current athlete inputs.
+**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered, the same-day canonical performed-fact boundary verified, and the fixed-activity cost-reduce duplication unified (D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT and ledger-based admission unstarted); H5 design accepted as ADR-0037 with H5a (intent contracts, canonical replay) and H5b (report-only progression review) delivered (H5c confirmed revisions and cumulative `external-plan@5` unstarted)
+**Blocked by:** H4's remaining runtime wiring (using `computeDailyLedger`/`admitsCandidate` as an actual ranking/admission input, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) needs its own decision-affecting PR(s); nothing left blocks starting it. H5c (confirmed bounded revisions, with the athlete-scoped singleton progression claim) and cumulative `external-plan@5` with `intentBlocks` are both ready to start now that H4's v4 artifact has landed. Personal M00/M01 prescription needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -25,8 +25,11 @@ the ordinary coverage ordering is unchanged, so an already-met hard role does no
 unnecessary repeats.
 
 The current decision policy version is
-`2026-09-authored-rest-day-v1`. See the evaluation plan for the root
-cause, focused regression tests and required PR-head validation.
+`2026-09-fixed-activity-cost-dedup-v1` (bumped mechanically by the fixed-activity
+cost-reduce dedup slice, not by an actual decision-behavior change -- see `app/src/engine/policy.ts`
+for the authoritative current value, since this line will otherwise go stale again).
+See the evaluation plan for the root cause, focused regression tests and required
+PR-head validation.
 
 H3 was investigated and its executable contracts are delivered (see the work orders below
 and the evaluation plan). The unplanned-date fallback, missed-session replacement,
@@ -244,21 +247,31 @@ The accepted implementation sequence is:
    revision ordering/supersession reuses the existing `ExternalPlanService` dispatch
    (now including v4) unchanged. `sessions/externalPlanV4.test.ts` covers the ADR's
    schema-level deterministic cases.
-2. **Ledger delivered as a pure module; refactor into the schedule/planner deduction
-   points is the next task.** `engine/dailyLedger.ts` implements one daily
+2. **Ledger delivered as a pure module. The duplicated six-dimension cost reduce is
+   now unified; using the ledger's remainder/admission semantics for actual ranking
+   decisions is still the next task.** `engine/dailyLedger.ts` implements one daily
    ledger's remainder/reconciliation math (`computeDailyLedger`, `admitsCandidate`,
    `reconcileEntry`), covered by `engine/dailyLedger.test.ts` including the ADR's
    90-minute-ceiling/60-minute-AM worked example and the exhausted-systemic-cost case.
-   **Not yet done:** wiring this into `schedule.ts`'s `resolveAvailability`/
-   `calculateReservedCapacityProfile`, `planner.ts`'s `fixedActivityCostProfileForDate`/
-   `applyFixedActivityStimulusCredit`, and `rules.ts`'s `fixedActivityProjection`/
-   `unrepresentedFixedActivityProjection`, plus `externalCritique.ts`'s own use of
-   `fixedActivityCostProfileForDate` -- today these five-plus call sites still each
-   hand-write an independent per-day cost/stimulus reduce, with three different ad hoc
-   dedup mechanisms (`seenOccurrences`, `appliedFixedCostOccurrences`/
-   `appliedProjectionOccurrences`, and a decision-trace delta); D-LEDGER's "refactor...
-   rather than subtracting again downstream" is not yet satisfied. Resolving real
-   windows and reserving minutes/cost against actual instants also needs D-TIME (below).
+   `engine/fixedActivityCostProfile.ts`'s `sumFixedActivityCostProfiles` now replaces the
+   three near-identical inline reduces in `schedule.ts`'s
+   `calculateReservedCapacityProfile`, `planner.ts`'s `fixedActivityCostProfileForDate`
+   (also used by `externalCritique.ts`), and `rules.ts`'s
+   `unrepresentedFixedActivityProjection` -- a pure duplication-removal refactor, each
+   call site's own date/completion filtering left untouched, verified byte-identical via
+   `simulate:diff` (no new drift) and the full test suite (`POLICY_VERSION` bumped
+   because the gate can only mechanically prove comment-only equivalence, not semantic
+   equivalence across a restructured call site -- not because output actually changed).
+   **Not yet done:** the three still-separate ad hoc dedup mechanisms
+   (`seenOccurrences` in `applyFixedActivityStimulusCredit`,
+   `appliedFixedCostOccurrences`/`appliedProjectionOccurrences` in
+   `generateWeekAheadPlan`, and the decision-trace delta in
+   `unrepresentedFixedActivityProjection`) are not yet unified onto the ledger's
+   `occurrenceId`/`revision` model, and none of these call sites yet consult
+   `computeDailyLedger`'s remainder or `admitsCandidate` when ranking/admitting a
+   candidate -- D-LEDGER's remainder-based admission is not yet a decision input
+   anywhere. Resolving real windows and reserving minutes/cost against actual instants
+   also needs D-TIME (below).
 3. Add atomic, confirmed bundle placement against all destination windows and ADR-0035
    rest. Preserve completed history and support independent optional-session dropping.
 4. At PM launch, capture current symptoms/response, same-day work and availability, rerun
@@ -307,36 +320,44 @@ that shared boundary. It no longer needs a separate verification pass first.
 
 ## Work order H5 — Block intent and controlled progression
 
-**Status:** Design accepted in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md); implementation unstarted.
-**Dependencies:** Validated intent mappings and canonical completed-work/response linkage.
-`external-plan@5` import depends on the concrete inherited v3/v4 contracts; ADR-0036 is
-accepted and merged, so its v4 artifact is a real dependency to build against rather than
-a discussion-context reconstruction. Single-session manual intent/reporting groundwork can
-start independently of H4 runtime.
+**Status:** Design accepted in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md).
+**H5a and H5b delivered** (`engine/blockIntent.ts`, `engine/blockIntentReplay.ts`,
+`engine/progressionReview.ts`); H5c and cumulative `external-plan@5` unstarted.
+**Dependencies:** H5c needs the athlete-scoped singleton progression-claim transaction
+design. `external-plan@5` import depends on the concrete inherited v3/v4 contracts;
+ADR-0036's v4 artifact has landed, so it is a real dependency to build against rather
+than a discussion-context reconstruction.
 **Deliverable:** H5a explicit intent, H5b report-only review, H5c confirmed bounded revisions.
 
-1. **H5a — Intent contracts.** Add versioned block objectives with independent intent and
-   priority, typed dose bounds, protected exact roles/substitutions and prospective review
-   criteria. Reuse `PlanDefinition`, `AdaptationDoseRequirement` and the effective-mode
-   boundary. Introduce import `intentBlocks` only in v5; keep earlier schemas unchanged.
-   Preserve profile commitment, rest/taper/safety precedence and forward-only revisions.
-   Define a versioned canonical replay payload that exhaustively covers every authored field
-   capable of changing allocation, adjudication, progression or evaluation behavior. Hash
-   that canonical projection, not an informal subset of block fields. The payload must also
-   pin the `TrainingIntentProfile` revision/canonical snapshot it was evaluated against
-   (`priorities` and every `weeklyCommitment` field) -- these are read at evaluation time but
-   are not themselves part of the block/plan contract, so a later profile edit must not
-   silently change what an already-replayed decision is checked against. Add fixtures that
-   mutate `priorities` and each `weeklyCommitment` field independently and confirm replay
-   fails closed on each.
-2. **H5b — Evidence review.** Use canonical performed work, pinned prescription comparison,
-   linked follow-up responses and existing protocol-aware outcome evaluations. Implement
-   frozen, report-only `advance_proposal | hold | reduce_proposal | redirect` results.
-   Missing or adverse evidence blocks advancement. Require one target variable and reviewed
-   bounds/evidence criteria. Pending proposals are not active experiments; only confirmed
-   activation acquires the athlete-wide singleton progression slot. Do not reuse block-report
-   percentage thresholds as progression clearance.
-3. **H5c — Confirmed revision.** Show concrete before/after dose and affected future work.
+1. **H5a — Intent contracts (delivered).** `engine/blockIntent.ts` provides explicit
+   per-objective `develop | maintain` intent and typed objective priority, typed dose
+   envelopes and coverage-role vocabulary, protected roles, bounded substitution rules,
+   prospective success criteria, entry prerequisites and exit criteria, a Phase-1
+   progression-variable registry (`duration_min -> minutes`), and fail-closed validation
+   (source-plan identity/revision, calendar dates, review timing, finite bounds,
+   unit/envelope compatibility, substitution qualification, prerequisites, duplicate
+   IDs, per-plan block overlap). `engine/blockIntentReplay.ts` builds the
+   `treatment_intent_replay_v1` canonical SHA-256-hashed projection, pinning source plan
+   identity/revision/provenance, the evaluated `TrainingIntentProfile` snapshot, block
+   interval/review timing, and every H5a/progression-rule field; presentation-only
+   fields are excluded and non-finite numbers are rejected rather than silently
+   collapsing to JSON `null`. `blockIntent.test.ts`/`blockIntentReplay.test.ts` cover
+   the deterministic/replay-mutation matrix, including fixtures that mutate `priorities`
+   and each `weeklyCommitment` field independently and confirm replay fails closed.
+   Read the actual delivered code and its ADR references rather than re-deriving the
+   contract from this summary alone.
+2. **H5b — Evidence review (delivered).** `engine/progressionReview.ts` derives only
+   `advance_proposal | hold | reduce_proposal | redirect`, report-only, and fails closed
+   on evidence identity: authored observation-window lower bound, dedup by canonical
+   `performedOccurrenceId`, exact target-role coverage or a proven exact substitution,
+   a pinned current-prescription match (same variable/unit/value/source revision),
+   follow-up counted only from joined target evidence, adverse/caution safety evidence
+   still applied from partial/mismatched attempts, missing follow-up blocks advancement,
+   full frozen evaluation-reference matching, authored trend/prerequisites/max-duration/
+   end-of-block redirect enforcement, and no implicit "N bad responses" redirect
+   threshold. `progressionReview.test.ts` covers this. Not wired into daily
+   recommendation selection; `POLICY_VERSION` unchanged.
+3. **H5c — Confirmed revision (design notes; unstarted).** Show concrete before/after dose and affected future work.
    Confirmation must revalidate source revisions, safety and capacity and atomically create
    one new authored revision. Enforce the one-confirmed-active-experiment-per-athlete rule
    with an athlete-scoped singleton claim/sentinel acquired in the same Firestore transaction
