@@ -213,6 +213,10 @@ function renderRecoveryTimeline(input: ContextBriefPlanningHandoffInput): string
         if (checkin?.painOrInjury) flags.push('pain/injury');
         if (checkin?.illnessSymptoms) flags.push('illness');
         if (checkin?.unusuallyLimitedTime) flags.push('limited time');
+        if (checkin?.physicalWork?.performed) {
+            const intensity = checkin.physicalWork.intensity ? `${checkin.physicalWork.intensity} ` : '';
+            flags.push(`${intensity}physical work`);
+        }
 
         lines.push(`| ${date} | ${textNumber(snapshot?.raw.sleepScore)} | ${textNumber(snapshot?.raw.hrvOvernightAvg)} | ${textNumber(snapshot?.raw.restingHr)} | ${textNumber(snapshot?.raw.respirationAvg)} | ${textNumber(snapshot?.raw.bodyBatteryWake)} | ${textNumber(snapshot?.raw.stress?.avg)} | ${textNumber(snapshot?.raw.totalSteps)} | ${textNumber(checkin?.readiness)} | ${textNumber(checkin?.fatigue)} | ${textNumber(checkin?.soreness)} | ${flags.join(', ') || '—'} |`);
     }

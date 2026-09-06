@@ -550,4 +550,72 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
             expect(fromUndefined).toEqual(createSubjectiveOnlyObjectiveInput());
         });
     });
+
+    describe('mapCheckinToSubjectiveInput: physicalWork', () => {
+        it('forwards physicalWork from DailySubjectiveCheckin to SubjectiveInput', () => {
+            const checkin = testCheckin({
+                physicalWork: {
+                    performed: true,
+                    duration: 'extended',
+                    intensity: 'hard',
+                    loadAreas: ['grip_forearms', 'lower_back_spine'],
+                    notes: 'firewood split and stack',
+                },
+            });
+            const subjective = mapCheckinToSubjectiveInput(checkin);
+            expect(subjective.physicalWork).toEqual({
+                performed: true,
+                duration: 'extended',
+                intensity: 'hard',
+                loadAreas: ['grip_forearms', 'lower_back_spine'],
+                notes: 'firewood split and stack',
+            });
+        });
+    });
+
+    describe('mapContextFromGoalsAndTrainingSettings: physicalWork implied guardrails', () => {
+        const baseSettings = testTrainingSettings();
+
+        it('injects avoid_heavy_spinal_loading when hard/exhausting lower back work is reported', () => {
+            const checkin = testCheckin({
+                physicalWork: {
+                    performed: true,
+                    duration: 'medium',
+                    intensity: 'hard',
+                    loadAreas: ['lower_back_spine'],
+                },
+            });
+            const context = mapContextFromGoalsAndTrainingSettings([], baseSettings, null, '2026-08-08', checkin);
+            expect(context.constraints.impliedGuardrails).toContain('avoid_heavy_spinal_loading');
+            expect(context.constraints.impliedGuardrails).not.toContain('avoid_overhead_pressing');
+        });
+
+        it('injects avoid_overhead_pressing when exhausting upper body or grip work is reported', () => {
+            const checkin = testCheckin({
+                physicalWork: {
+                    performed: true,
+                    duration: 'extended',
+                    intensity: 'exhausting',
+                    loadAreas: ['grip_forearms', 'upper_body'],
+                },
+            });
+            const context = mapContextFromGoalsAndTrainingSettings([], baseSettings, null, '2026-08-08', checkin);
+            expect(context.constraints.impliedGuardrails).toContain('avoid_overhead_pressing');
+            expect(context.constraints.impliedGuardrails).not.toContain('avoid_heavy_spinal_loading');
+        });
+
+        it('does not inject guardrails when physical work intensity is moderate', () => {
+            const checkin = testCheckin({
+                physicalWork: {
+                    performed: true,
+                    duration: 'short',
+                    intensity: 'moderate',
+                    loadAreas: ['lower_back_spine', 'upper_body'],
+                },
+            });
+            const context = mapContextFromGoalsAndTrainingSettings([], baseSettings, null, '2026-08-08', checkin);
+            expect(context.constraints.impliedGuardrails).not.toContain('avoid_heavy_spinal_loading');
+            expect(context.constraints.impliedGuardrails).not.toContain('avoid_overhead_pressing');
+        });
+    });
 });

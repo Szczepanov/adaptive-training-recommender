@@ -108,7 +108,7 @@ function snapshot(date = AS_OF): DailyRecoverySnapshot {
     };
 }
 
-function checkin(date = AS_OF): DailySubjectiveCheckin {
+function checkin(date = AS_OF, overrides: Partial<DailySubjectiveCheckin> = {}): DailySubjectiveCheckin {
     return {
         userId: 'u1',
         date,
@@ -129,6 +129,7 @@ function checkin(date = AS_OF): DailySubjectiveCheckin {
         schemaVersion: 1,
         createdAt: `${date}T05:40:00Z`,
         updatedAt: `${date}T05:40:00Z`,
+        ...overrides,
     };
 }
 
@@ -298,6 +299,23 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('| 2026-08-20 | 88 | 70 | 44 | 13 | 82 | 22 | 9000 | 8 | 2 | 3 |');
         expect(text).toContain('| 2026-08-14 | — | — | — | — | — | — | — | — | — | — |');
         expect(text).toContain('Steps are the completed D-1 total');
+    });
+
+    it('includes physical work in recent recovery timeline flags', () => {
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+            checkins: [
+                checkin(AS_OF, {
+                    physicalWork: {
+                        performed: true,
+                        duration: 'medium',
+                        intensity: 'hard',
+                        loadAreas: ['upper_body'],
+                    },
+                }),
+            ],
+        }));
+
+        expect(text).toContain('hard physical work');
     });
 
     it('exports fixed commitments, imported sessions and their authored prescriptions', () => {
