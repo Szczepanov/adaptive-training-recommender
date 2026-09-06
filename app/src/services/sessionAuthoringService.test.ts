@@ -190,18 +190,18 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         expect(savedPrescription.createdAt).toBe('2026-09-06T12:00:00.000Z');
     });
 
-    it('respects summaryOverride when provided (e.g. from scale verdict)', async () => {
+    it('applies a summary override before hashing and persistence', async () => {
         const externalPlan = makeV4ExternalPlan();
         const launch = await prepareExternalPlanSessionLaunch(
             'u1',
             externalPlan,
-            'Scaled: 3x3min intervals (volume reduced due to readiness)',
+            'Alternative execution summary',
         );
 
         expect(launch.binding.prescriptionHash).toMatch(/^[0-9a-f]{64}$/);
         const lastSave = services.prescription.savePrescription.mock.calls.at(-1);
         const savedPrescription = lastSave![1];
-        expect(savedPrescription.displayMetadata?.summary).toBe('Scaled: 3x3min intervals (volume reduced due to readiness)');
+        expect(savedPrescription.displayMetadata?.summary).toBe('Alternative execution summary');
     });
 
     it('is idempotent: preparing the same external plan session twice produces the same hash and preserves write-once persistence', async () => {
@@ -221,6 +221,15 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         const first = await prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, '2026-01-01T00:00:00.000Z');
         const second = await prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, '2026-12-31T23:59:59.999Z');
         expect(second.binding.prescriptionHash).toBe(first.binding.prescriptionHash);
+    });
+
+    it('rejects target-event sessions because they are advisory fixed-activity inputs', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        externalPlan.session.isEvent = true;
+
+        await expect(prepareExternalPlanSessionLaunch('u1', externalPlan)).rejects.toThrow(/target events are advisory/i);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+        expect(services.occurrence.saveOccurrence).not.toHaveBeenCalled();
     });
 
     it('defensively throws if definition fails validation', async () => {
