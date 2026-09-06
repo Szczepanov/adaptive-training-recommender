@@ -363,6 +363,31 @@ export interface AuthoredPlanBlock {
     updatedAt: string;
 }
 
+export type ScheduleOverlayCategory = 'active_sport' | 'sedentary_rest' | 'high_step_walking' | 'limited_availability';
+
+export type ScheduleOverlaySport = 'skiing' | 'volleyball' | 'hiking' | 'court_sport' | 'field_sport' | 'general';
+
+/** A user-authored schedule overlay representing planned absences, active sport trips,
+ * sedentary holidays, or high-step walking breaks across arbitrary calendar dates. */
+export interface ScheduleOverlay {
+    id: string;
+    userId: string;
+    title: string;
+    category: ScheduleOverlayCategory;
+    sport?: ScheduleOverlaySport;
+    startDate: string; // YYYY-MM-DD
+    endDate: string;   // YYYY-MM-DD
+    dailyAvailabilityMinutes: number; // in [0, 1440]
+    volumeScale: number; // in [0, 1]
+    intensityScale: number; // in [0, 1]
+    expectedCost: WorkoutCostProfile; // 6D dimensional fatigue
+    equipment?: string[];
+    environment?: TrainingEnvironment;
+    notes?: string;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export type PlanningMode = 'evergreen' | 'event_directed' | 'externally_planned';
 
 // --- Externally-authored plans (ADR-0019, Phase 8) ---
@@ -1481,6 +1506,8 @@ export interface DailyDecisionInput {
     preferences: UserPreferences | null;
     /** Absent is a supported legacy-compatible input; mode resolution supplies defaults. */
     trainingIntentProfile: TrainingIntentProfile | null;
+    /** User-authored schedule overlays governing availability and dose around this date. */
+    scheduleOverlays?: readonly ScheduleOverlay[];
     /** Statuses keep unavailable/corrupt data distinct from a genuinely absent record. */
     sourceStates?: {
         recoverySnapshot: DataStateSummary;

@@ -1,4 +1,4 @@
-import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, TrainingIntentProfile, TrainingSettings, UserGoal, UserPreferences } from './models';
+import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, ScheduleOverlay, TrainingIntentProfile, TrainingSettings, UserGoal, UserPreferences } from './models';
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import { summarizeDataState } from './dataState';
 import { isSupportedTrainingSettingsSchemaVersion } from './trainingSettingsSchema';
@@ -10,6 +10,7 @@ import { trainingSettingsService } from '../services/trainingSettingsService';
 import { preferencesService } from '../services/preferencesService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
+import { scheduleOverlayService } from '../services/scheduleOverlayService';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 
 /** Composition-only extension. Subjective history is intentionally not part of the
@@ -47,6 +48,7 @@ export class DecisionComposer {
                 preferencesService.getPreferencesState(userId),
                 trainingIntentProfileService.getProfileState(userId),
                 checkinService.getCheckinsInRangeState(userId, subjectiveHistoryStart, targetDate),
+                scheduleOverlayService.getOverlaysInRangeState(userId, targetDate, addDaysToLocalDateString(targetDate, 7)),
             ] as const);
 
             const unavailable = <T>(operation: string): DataState<T> => ({ status: 'UNAVAILABLE', operation, retryable: true });
@@ -87,6 +89,10 @@ export class DecisionComposer {
                     ? [...subjectiveHistoryRawState.issues]
                     : [];
             const subjectiveHistoryState = summarizeDataState(subjectiveHistoryRawState);
+            const overlaysState: DataState<ScheduleOverlay[]> = results[7].status === 'fulfilled'
+                ? results[7].value
+                : unavailable<ScheduleOverlay[]>('read schedule overlays');
+            const scheduleOverlays = overlaysState.status === 'AVAILABLE' ? overlaysState.data : [];
 
             const sourceStates = {
                 recoverySnapshot: recoveryState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: recoveryState.revision } : recoveryState,
@@ -103,7 +109,7 @@ export class DecisionComposer {
 
             results.forEach((result, index) => {
                 if (result.status === 'rejected') {
-                    const serviceNames = ['recoverySnapshot', 'checkinService', 'goalService', 'trainingSettingsService', 'preferencesService', 'trainingIntentProfileService', 'subjectiveHistory'];
+                    const serviceNames = ['recoverySnapshot', 'checkinService', 'goalService', 'trainingSettingsService', 'preferencesService', 'trainingIntentProfileService', 'subjectiveHistory', 'scheduleOverlayService'];
                     console.warn(`${serviceNames[index]} failed:`, result.reason);
                     if (result.reason instanceof Error && result.reason.message.includes('Missing or insufficient permissions')) {
                         console.warn(`Permission denied for ${serviceNames[index]}. This may be due to missing Firebase security rules.`);
@@ -132,6 +138,7 @@ export class DecisionComposer {
                 trainingSettings,
                 preferences,
                 trainingIntentProfile,
+                scheduleOverlays,
                 sourceStates,
                 dataQuality,
             };

@@ -7,6 +7,7 @@ import type {
     FixedActivity,
     MicrocycleState,
     Recommendation,
+    ScheduleOverlay,
     SessionAdjustment,
     SessionHistoryEntry,
     SessionRole,
@@ -157,6 +158,7 @@ export interface WeekAheadOptions {
     events?: UserEvent[];
     fixedActivities?: FixedActivity[];
     authoredPlanBlocks?: readonly AuthoredPlanBlock[];
+    scheduleOverlays?: readonly ScheduleOverlay[];
     planDefinition?: PlanDefinition | null;
     /** Simulation-only fatigue comparison. Live callers use the default `max`. */
     fatigueFusionPolicy?: FatigueFusionPolicy;
@@ -370,7 +372,8 @@ export function resolveWeeklyAnchors(
     fixedActivities: FixedActivity[],
     context: UserContext,
     tomorrowCategory?: SessionTemplate['category'],
-    tomorrowModality?: SessionTemplate['modality']
+    tomorrowModality?: SessionTemplate['modality'],
+    scheduleOverlays: readonly ScheduleOverlay[] = [],
 ): WeeklyAnchors {
     const raceSpecificTemplates = ENRICHED_TEMPLATES.filter(t => t.category === 'Race-Specific Endurance' && !t.phaseEligibility?.requiresTaper);
     const qualityTemplates = ENRICHED_TEMPLATES.filter(t => t.modality === 'Cycling' && (t.category === 'Moderate Endurance' || t.category === 'Hard Endurance'));
@@ -396,7 +399,7 @@ export function resolveWeeklyAnchors(
         const date = addDaysToLocalDateString(todayDate, offset);
         const periodization = evaluatePeriodizationPhase(events, date, todayDate);
         if (!periodization.focusEvent) continue;
-        const availability = resolveAvailability(date, null, fixedActivities, context);
+        const availability = resolveAvailability(date, null, fixedActivities, context, scheduleOverlays);
         dayInfo.push({ date, offset, maxTimeMinutes: availability.maxTimeMinutes, periodization });
     }
 
@@ -446,6 +449,7 @@ export interface ProjectedDatePlanningContext {
     events: UserEvent[];
     fixedActivities: FixedActivity[];
     authoredPlanBlocks: readonly AuthoredPlanBlock[];
+    scheduleOverlays?: readonly ScheduleOverlay[];
     anchors: WeeklyAnchors;
     internalStrain: DimensionalFatigue;
     internalStrainAsOf: string;
@@ -489,7 +493,7 @@ export function evaluateProjectedDate(
     shared: ProjectedDatePlanningContext,
 ): ProjectedDateEvaluation {
     const periodization = evaluatePeriodizationPhase(shared.events, date, shared.todayDate);
-    const availability = resolveAvailability(date, null, shared.fixedActivities, shared.context);
+    const availability = resolveAvailability(date, null, shared.fixedActivities, shared.context, shared.scheduleOverlays ?? []);
 
     const rankingFatigue = applyCompletedSessionLoad(
         projectFatigueForRankingDate(state.externalFatigue, shared.internalStrain, shared.internalStrainAsOf, date, shared.fatigueFusionPolicy ?? 'max'),
@@ -536,7 +540,7 @@ export function evaluateProjectedDate(
                 unresolved,
                 planDefinition,
                 date,
-            ), date, shared.authoredPlanBlocks, planDefinition),
+            ), date, shared.authoredPlanBlocks, planDefinition, shared.scheduleOverlays ?? []),
         },
         shared.context,
         shared.preferences,
@@ -1017,6 +1021,7 @@ export function generateWeekAheadPlan(
         return unsetDateFixedActivities.length > 0 ? [...dated, ...unsetDateFixedActivities] : dated;
     };
     const authoredPlanBlocks = options.authoredPlanBlocks ?? [];
+    const scheduleOverlays = options.scheduleOverlays ?? [];
     const suppliedPlanDefinition = options.planDefinition ?? null;
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
     const effectivePreferences = preferences ?? { ...NEUTRAL_PREFERENCES, preferredRecoveryStyle: resolveRecoveryStyle(context) };
@@ -1029,7 +1034,7 @@ export function generateWeekAheadPlan(
 
     const resultDays: WeekAheadDay[] = [];
     const objectiveCredits: PlannedObjectiveCredit[] = [];
-    const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality);
+    const anchors = resolveWeeklyAnchors(todayDate, totalDays, events, fixedActivities, context, tomorrowRec?.template.category, tomorrowRec?.template.modality, scheduleOverlays);
 
     const beganAfterHardRaceSpecificExposure = todayRec.mode === 'recover' && (seed.trailingHistory ?? []).some(entry =>
         entry.date === addDaysToLocalDateString(todayDate, -1)
@@ -1169,6 +1174,7 @@ export function generateWeekAheadPlan(
         events,
         fixedActivities,
         authoredPlanBlocks,
+        scheduleOverlays,
         anchors,
         internalStrain,
         internalStrainAsOf,
@@ -1575,7 +1581,7 @@ export async function generateWeekAheadPlanWithIntent(
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
-        isAdverseRecovery,
+        isAdverseRecovery, options.scheduleOverlays ?? [],
     );
     return generateWeekAheadPlan(
         todayReadiness,

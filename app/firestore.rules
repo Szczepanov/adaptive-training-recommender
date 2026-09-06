@@ -813,6 +813,36 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    function hasValidScheduleOverlay(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'title', 'category', 'sport', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'equipment', 'environment', 'notes', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'title', 'category', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'createdAt', 'updatedAt'])
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.category in ['active_sport', 'sedentary_rest', 'high_step_walking', 'limited_availability']
+        && (!('sport' in data) || data.sport in ['skiing', 'volleyball', 'hiking', 'court_sport', 'field_sport', 'general'])
+        && isValidActivityDate(data.startDate)
+        && isValidActivityDate(data.endDate)
+        && data.startDate <= data.endDate
+        && data.dailyAvailabilityMinutes is int && data.dailyAvailabilityMinutes >= 0 && data.dailyAvailabilityMinutes <= 1440
+        && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
+        && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
+        && hasValidExpectedCost(data.expectedCost)
+        && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
+        && (!('environment' in data) || data.environment in ['indoor', 'outdoor', 'either'])
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/schedule_overlays/{overlayId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidScheduleOverlay(userId);
+      allow update: if hasValidScheduleOverlay(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
     function hasValidTrainingIntentProfile(userId) {
       let data = request.resource.data;
       let commitment = data.weeklyCommitment;

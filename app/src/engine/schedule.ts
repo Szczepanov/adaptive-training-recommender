@@ -1,5 +1,6 @@
 import type {
     FixedActivity,
+    ScheduleOverlay,
     SubjectiveInput,
     TrainingEnvironment,
     UserContext,
@@ -100,7 +101,7 @@ function calculateReservedCapacityProfile(futureActivities: FixedActivity[]): Wo
             impactTissue: sum.impactTissue + (cost.impactTissue ?? 0),
             neuromuscular: sum.neuromuscular + (cost.neuromuscular ?? 0),
         };
-    }, ZERO_COST_PROFILE);
+    }, { ...ZERO_COST_PROFILE });
 }
 
 /** Phase 6.2b / D6-B: an activity's own `environment`/`equipment` describe itself, not the
@@ -147,7 +148,8 @@ export function resolveAvailability(
     dateStr: string,
     checkin: SubjectiveInput | null,
     fixedActivities: FixedActivity[] = [],
-    userContext?: UserContext | null
+    userContext?: UserContext | null,
+    scheduleOverlays: readonly ScheduleOverlay[] = [],
 ): ResolvedAvailability {
     // 1 & 2. Resolve Base Time Available -- a real check-in still wins over the profile
     // default, but is now capped by it (matching eligibility.ts's resolveMaximumSessionMinutes,
@@ -164,45 +166,56 @@ export function resolveAvailability(
         ? resolveMaximumSessionMinutes(userContext, checkinMinutes, dateStr)
         : (Number.isFinite(checkinMinutes) ? checkinMinutes : NO_CONTEXT_FALLBACK_MINUTES);
 
-    // 3. Process Fixed Activities on Target Date
-    // Deliberately not filtered by `fixed: true/false` -- a movable placeholder still
-    // occupies real time on the date it is currently scheduled for, so it must reduce
-    // availability exactly like an immovable commitment does. `fixed` (movable vs
-    // immovable) is captured on the model but not yet consumed here: it becomes
-    // load-bearing once sequence search (Phase 5.1/5.2) can reason about shifting a
-    // movable placeholder to a different day, at which point *that* code -- not this
-    // availability calculation -- is what should treat movable and immovable differently.
+    // 3. Process Fixed Activities & Schedule Overlays on Target Date
     const daysFixed = fixedActivities.filter(a => a.date === dateStr);
-    // An availabilityOverride caps the whole day's budget outright (e.g. a travel day
-    // where the normal weekday/weekend profile default no longer applies) *before* any
-    // individual activity's own duration is deducted below. Several overrides on the same
-    // day take the most restrictive (min) -- optimistic combination would understate how
-    // constrained the day actually is.
-    const overrides = daysFixed
+    const activeOverlays = scheduleOverlays.filter(o => o.startDate <= dateStr && dateStr <= o.endDate);
+
+    const fixedOverrides = daysFixed
         .map(a => a.availabilityOverride)
         .filter((value): value is number => typeof value === 'number');
-    const overriddenBaseTime = overrides.length > 0 ? Math.min(baseTime, ...overrides) : baseTime;
+    const overlayOverrides = activeOverlays
+        .map(o => o.dailyAvailabilityMinutes)
+        .filter((value): value is number => typeof value === 'number');
+    const allOverrides = [...fixedOverrides, ...overlayOverrides];
+
+    const overriddenBaseTime = allOverrides.length > 0 ? Math.min(baseTime, ...allOverrides) : baseTime;
     const fixedDurationSum = daysFixed.reduce((sum, a) => sum + a.durationMin, 0);
     const remainingTimeMin = Math.max(0, overriddenBaseTime - fixedDurationSum);
 
     // 4. Resolve Available Equipment -- an explicit availabilityContextOverride (D6-B)
     // intersects the athlete's standing equipment with what is actually reachable that
     // day (e.g. a hotel gym's limited rack); absent any override, standing equipment is
-    // unrestricted, same as before.
+    // unrestricted, same as before. Overlays also intersect equipment if specified.
     const dayContext = resolveDayContextOverride(daysFixed);
     const ownedEquipment = resolveOwnedEquipment(userContext?.constraints, userContext?.trainingSettings);
-    const equipmentSet = new Set<string>(
-        dayContext.equipment ? ownedEquipment.filter(item => dayContext.equipment!.includes(item)) : ownedEquipment
-    );
+    let effectiveEquipment = dayContext.equipment ? ownedEquipment.filter(item => dayContext.equipment!.includes(item)) : ownedEquipment;
 
-    // 5. Calculate Reserved Capacity (Future uncompleted fixed activities)
+    for (const overlay of activeOverlays) {
+        if (overlay.equipment) {
+            effectiveEquipment = effectiveEquipment.filter(item => overlay.equipment!.includes(item));
+        }
+    }
+    const equipmentSet = new Set<string>(effectiveEquipment);
+
+    // 5. Calculate Reserved Capacity (Future uncompleted fixed activities + active overlays)
     const uncompletedFuture = daysFixed.filter(a => !a.isCompleted);
-    const reservedCapacityCostProfile = calculateReservedCapacityProfile(uncompletedFuture);
+    const reservedCapacityCostProfile = { ...calculateReservedCapacityProfile(uncompletedFuture) };
+
+    for (const overlay of activeOverlays) {
+        reservedCapacityCostProfile.systemic = Math.min(1, reservedCapacityCostProfile.systemic + (overlay.expectedCost.systemic ?? 0));
+        reservedCapacityCostProfile.cardiovascular = Math.min(1, reservedCapacityCostProfile.cardiovascular + (overlay.expectedCost.cardiovascular ?? 0));
+        reservedCapacityCostProfile.lowerBody = Math.min(1, reservedCapacityCostProfile.lowerBody + (overlay.expectedCost.lowerBody ?? 0));
+        reservedCapacityCostProfile.upperBody = Math.min(1, reservedCapacityCostProfile.upperBody + (overlay.expectedCost.upperBody ?? 0));
+        reservedCapacityCostProfile.impactTissue = Math.min(1, reservedCapacityCostProfile.impactTissue + (overlay.expectedCost.impactTissue ?? 0));
+        reservedCapacityCostProfile.neuromuscular = Math.min(1, reservedCapacityCostProfile.neuromuscular + (overlay.expectedCost.neuromuscular ?? 0));
+    }
 
     const userEnvironment = (userContext as { environment?: TrainingEnvironment } | null | undefined)?.environment
         ?? (userContext?.constraints as { environment?: TrainingEnvironment } | null | undefined)?.environment
         ?? null;
     const normalizedUserEnvironment = userEnvironment === 'either' ? null : userEnvironment;
+
+    const overlayEnvironment = activeOverlays.find(o => o.environment && o.environment !== 'either')?.environment ?? null;
 
     return {
         date: dateStr,
@@ -211,6 +224,6 @@ export function resolveAvailability(
         fixedActivities: daysFixed,
         reservedCapacityCost: reservedCapacityCostProfile.systemic,
         reservedCapacityCostProfile,
-        environmentOverride: dayContext.environment ?? normalizedUserEnvironment,
+        environmentOverride: overlayEnvironment ?? dayContext.environment ?? normalizedUserEnvironment,
     };
 }
