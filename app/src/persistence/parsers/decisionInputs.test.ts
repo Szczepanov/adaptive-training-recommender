@@ -83,5 +83,38 @@ describe('decision-input parsers', () => {
         };
         expect(parseSubjectiveCheckin(malformedPhysicalWork, 'path', 'u1', '2026-08-07'))
             .toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-physical-work' }] });
+
+        const missingDuration = {
+            ...checkin,
+            physicalWork: {
+                performed: true,
+                intensity: 'hard',
+                loadAreas: ['grip_forearms'],
+            },
+        };
+        expect(parseSubjectiveCheckin(missingDuration, 'path', 'u1', '2026-08-07'))
+            .toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-physical-work', field: 'physicalWork.duration' }] });
+
+        const missingIntensity = {
+            ...checkin,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                loadAreas: ['grip_forearms'],
+            },
+        };
+        expect(parseSubjectiveCheckin(missingIntensity, 'path', 'u1', '2026-08-07'))
+            .toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-physical-work', field: 'physicalWork.intensity' }] });
+
+        const missingLoadAreas = {
+            ...checkin,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                intensity: 'hard',
+            },
+        };
+        expect(parseSubjectiveCheckin(missingLoadAreas, 'path', 'u1', '2026-08-07'))
+            .toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-physical-work', field: 'physicalWork.loadAreas' }] });
     });
 });

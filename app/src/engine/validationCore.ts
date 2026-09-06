@@ -179,6 +179,10 @@ export const PHYSICAL_WORK_LOAD_AREAS: readonly PhysicalWorkLoadArea[] = [
 ];
 export const PHYSICAL_WORK_NOTES_MAX_CHARS = 200;
 
+/**
+ * Validates untyped physical work / manual labor payload from morning check-in.
+ * When performed is true, requires duration, intensity, and non-empty loadAreas.
+ */
 function validatePhysicalWork(raw: any, errors: ValidationError[]): PhysicalWorkCheckin | undefined {
     if (raw === undefined || raw === null) return undefined;
     if (typeof raw !== 'object' || Array.isArray(raw)) {
@@ -188,18 +192,23 @@ function validatePhysicalWork(raw: any, errors: ValidationError[]): PhysicalWork
     if (typeof raw.performed !== 'boolean') {
         errors.push({ field: 'physicalWork.performed', message: 'performed must be a boolean', value: raw.performed });
     }
-    if (raw.duration !== undefined && raw.duration !== null) {
-        if (typeof raw.duration !== 'string' || !PHYSICAL_WORK_DURATIONS.includes(raw.duration as PhysicalWorkDuration)) {
+
+    if (raw.performed === true) {
+        if (raw.duration === undefined || raw.duration === null) {
+            errors.push({ field: 'physicalWork.duration', message: 'duration is required when performed is true' });
+        } else if (typeof raw.duration !== 'string' || !PHYSICAL_WORK_DURATIONS.includes(raw.duration as PhysicalWorkDuration)) {
             errors.push({ field: 'physicalWork.duration', message: `duration must be one of: ${PHYSICAL_WORK_DURATIONS.join(', ')}`, value: raw.duration });
         }
-    }
-    if (raw.intensity !== undefined && raw.intensity !== null) {
-        if (typeof raw.intensity !== 'string' || !PHYSICAL_WORK_INTENSITIES.includes(raw.intensity as PhysicalWorkIntensity)) {
+
+        if (raw.intensity === undefined || raw.intensity === null) {
+            errors.push({ field: 'physicalWork.intensity', message: 'intensity is required when performed is true' });
+        } else if (typeof raw.intensity !== 'string' || !PHYSICAL_WORK_INTENSITIES.includes(raw.intensity as PhysicalWorkIntensity)) {
             errors.push({ field: 'physicalWork.intensity', message: `intensity must be one of: ${PHYSICAL_WORK_INTENSITIES.join(', ')}`, value: raw.intensity });
         }
-    }
-    if (raw.loadAreas !== undefined && raw.loadAreas !== null) {
-        if (!Array.isArray(raw.loadAreas) || raw.loadAreas.length === 0) {
+
+        if (raw.loadAreas === undefined || raw.loadAreas === null) {
+            errors.push({ field: 'physicalWork.loadAreas', message: 'loadAreas is required when performed is true' });
+        } else if (!Array.isArray(raw.loadAreas) || raw.loadAreas.length === 0) {
             errors.push({ field: 'physicalWork.loadAreas', message: 'loadAreas must be a non-empty array', value: raw.loadAreas });
         } else {
             for (const area of raw.loadAreas) {
@@ -208,7 +217,30 @@ function validatePhysicalWork(raw: any, errors: ValidationError[]): PhysicalWork
                 }
             }
         }
+    } else {
+        if (raw.duration !== undefined && raw.duration !== null) {
+            if (typeof raw.duration !== 'string' || !PHYSICAL_WORK_DURATIONS.includes(raw.duration as PhysicalWorkDuration)) {
+                errors.push({ field: 'physicalWork.duration', message: `duration must be one of: ${PHYSICAL_WORK_DURATIONS.join(', ')}`, value: raw.duration });
+            }
+        }
+        if (raw.intensity !== undefined && raw.intensity !== null) {
+            if (typeof raw.intensity !== 'string' || !PHYSICAL_WORK_INTENSITIES.includes(raw.intensity as PhysicalWorkIntensity)) {
+                errors.push({ field: 'physicalWork.intensity', message: `intensity must be one of: ${PHYSICAL_WORK_INTENSITIES.join(', ')}`, value: raw.intensity });
+            }
+        }
+        if (raw.loadAreas !== undefined && raw.loadAreas !== null) {
+            if (!Array.isArray(raw.loadAreas) || raw.loadAreas.length === 0) {
+                errors.push({ field: 'physicalWork.loadAreas', message: 'loadAreas must be a non-empty array', value: raw.loadAreas });
+            } else {
+                for (const area of raw.loadAreas) {
+                    if (typeof area !== 'string' || !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea)) {
+                        errors.push({ field: 'physicalWork.loadAreas', message: `loadAreas contains unrecognized area: ${area}`, value: area });
+                    }
+                }
+            }
+        }
     }
+
     if (raw.notes !== undefined && raw.notes !== null) {
         if (typeof raw.notes !== 'string' || raw.notes.length > PHYSICAL_WORK_NOTES_MAX_CHARS) {
             errors.push({ field: 'physicalWork.notes', message: `notes must be a string up to ${PHYSICAL_WORK_NOTES_MAX_CHARS} characters`, value: raw.notes });

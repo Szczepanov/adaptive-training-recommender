@@ -29,6 +29,10 @@ const LOAD_AREA_OPTIONS: Array<{ value: PhysicalWorkLoadArea; label: string }> =
   { value: 'legs_carrying', label: 'Legs & Carrying' },
 ];
 
+/**
+ * Morning check-in card for reporting unlogged physical work and manual labor.
+ * Prevents deselecting the final load area to ensure valid non-empty loadAreas.
+ */
 export function PhysicalWorkSection({ value, onChange }: PhysicalWorkSectionProps) {
   const isPerformed = Boolean(value?.performed);
 
@@ -59,10 +63,12 @@ export function PhysicalWorkSection({ value, onChange }: PhysicalWorkSectionProp
 
   const handleToggleLoadArea = (area: PhysicalWorkLoadArea) => {
     const current = value?.loadAreas ?? [];
-    const next = current.includes(area)
-      ? current.filter(a => a !== area)
-      : [...current, area];
-    updateField({ loadAreas: next });
+    if (current.includes(area)) {
+      if (current.length <= 1) return;
+      updateField({ loadAreas: current.filter(a => a !== area) });
+    } else {
+      updateField({ loadAreas: [...current, area] });
+    }
   };
 
   return (

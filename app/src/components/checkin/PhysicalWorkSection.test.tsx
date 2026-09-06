@@ -47,4 +47,20 @@ describe('PhysicalWorkSection', () => {
     expect(html).toContain('aria-pressed="true">Lower Back &amp; Spine</button>');
     expect(html).toContain('aria-pressed="false">Legs &amp; Carrying</button>');
   });
+
+  it('renders single selected load area with aria-pressed', () => {
+    const value: PhysicalWorkCheckin = {
+      performed: true,
+      duration: 'short',
+      intensity: 'moderate',
+      loadAreas: ['lower_back_spine'],
+    };
+
+    const html = renderToStaticMarkup(
+      <PhysicalWorkSection value={value} onChange={vi.fn()} />,
+    );
+
+    expect(html).toContain('aria-pressed="true">Lower Back &amp; Spine</button>');
+    expect(html).toContain('aria-pressed="false">Grip &amp; Forearms</button>');
+  });
 });

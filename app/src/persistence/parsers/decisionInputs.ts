@@ -109,17 +109,35 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
             return issue(documentPath, 'invalid-physical-work', 'physicalWork');
         }
         const pw = raw.physicalWork;
-        if (pw.duration !== undefined && pw.duration !== null
-            && (typeof pw.duration !== 'string' || !PHYSICAL_WORK_DURATIONS.includes(pw.duration as PhysicalWorkDuration))) {
-            return issue(documentPath, 'invalid-physical-work', 'physicalWork.duration');
-        }
-        if (pw.intensity !== undefined && pw.intensity !== null
-            && (typeof pw.intensity !== 'string' || !PHYSICAL_WORK_INTENSITIES.includes(pw.intensity as PhysicalWorkIntensity))) {
-            return issue(documentPath, 'invalid-physical-work', 'physicalWork.intensity');
-        }
-        if (pw.loadAreas !== undefined && pw.loadAreas !== null) {
-            if (!Array.isArray(pw.loadAreas) || pw.loadAreas.length === 0 || pw.loadAreas.some(area => typeof area !== 'string' || !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea))) {
+        if (pw.performed) {
+            if (pw.duration === undefined || pw.duration === null
+                || typeof pw.duration !== 'string'
+                || !PHYSICAL_WORK_DURATIONS.includes(pw.duration as PhysicalWorkDuration)) {
+                return issue(documentPath, 'invalid-physical-work', 'physicalWork.duration');
+            }
+            if (pw.intensity === undefined || pw.intensity === null
+                || typeof pw.intensity !== 'string'
+                || !PHYSICAL_WORK_INTENSITIES.includes(pw.intensity as PhysicalWorkIntensity)) {
+                return issue(documentPath, 'invalid-physical-work', 'physicalWork.intensity');
+            }
+            if (pw.loadAreas === undefined || pw.loadAreas === null
+                || !Array.isArray(pw.loadAreas) || pw.loadAreas.length === 0
+                || pw.loadAreas.some(area => typeof area !== 'string' || !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea))) {
                 return issue(documentPath, 'invalid-physical-work', 'physicalWork.loadAreas');
+            }
+        } else {
+            if (pw.duration !== undefined && pw.duration !== null
+                && (typeof pw.duration !== 'string' || !PHYSICAL_WORK_DURATIONS.includes(pw.duration as PhysicalWorkDuration))) {
+                return issue(documentPath, 'invalid-physical-work', 'physicalWork.duration');
+            }
+            if (pw.intensity !== undefined && pw.intensity !== null
+                && (typeof pw.intensity !== 'string' || !PHYSICAL_WORK_INTENSITIES.includes(pw.intensity as PhysicalWorkIntensity))) {
+                return issue(documentPath, 'invalid-physical-work', 'physicalWork.intensity');
+            }
+            if (pw.loadAreas !== undefined && pw.loadAreas !== null) {
+                if (!Array.isArray(pw.loadAreas) || pw.loadAreas.length === 0 || pw.loadAreas.some(area => typeof area !== 'string' || !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea))) {
+                    return issue(documentPath, 'invalid-physical-work', 'physicalWork.loadAreas');
+                }
             }
         }
         if (pw.notes !== undefined && pw.notes !== null && (typeof pw.notes !== 'string' || pw.notes.length > PHYSICAL_WORK_NOTES_MAX_CHARS)) {

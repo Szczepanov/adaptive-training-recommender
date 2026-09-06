@@ -307,7 +307,9 @@ describe('enhanceContextBriefForPlanning', () => {
                 checkin(AS_OF, {
                     physicalWork: {
                         performed: true,
+                        duration: 'medium',
                         intensity: 'hard',
+                        loadAreas: ['upper_body'],
                     },
                 }),
             ],

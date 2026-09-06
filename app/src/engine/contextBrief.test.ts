@@ -401,6 +401,7 @@ describe('buildContextBrief', () => {
                         performed: true,
                         duration: 'short',
                         intensity: 'moderate',
+                        loadAreas: ['grip_forearms'],
                     },
                 }),
                 checkin('2026-08-15', {

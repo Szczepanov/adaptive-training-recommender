@@ -637,6 +637,45 @@ describe('validateCheckin: physicalWork', () => {
         expect(invalidResult.errors.some(e => e.field === 'physicalWork.loadAreas')).toBe(true);
     });
 
+    it('rejects performed work missing duration', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                intensity: 'moderate',
+                loadAreas: ['legs_carrying'],
+            },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'physicalWork.duration' && e.message.includes('required'))).toBe(true);
+    });
+
+    it('rejects performed work missing intensity', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                loadAreas: ['legs_carrying'],
+            },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'physicalWork.intensity' && e.message.includes('required'))).toBe(true);
+    });
+
+    it('rejects performed work missing loadAreas', () => {
+        const result = validateCheckin({
+            ...baseFields,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                intensity: 'moderate',
+            },
+        });
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'physicalWork.loadAreas' && e.message.includes('required'))).toBe(true);
+    });
+
     it('rejects notes exceeding max length', () => {
         const result = validateCheckin({
             ...baseFields,
