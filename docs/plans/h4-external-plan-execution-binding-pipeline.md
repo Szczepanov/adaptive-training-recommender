@@ -14,7 +14,7 @@ bundle's second member (the original H4 ask), and not even for today's single pr
 external-plan session. External-plan sessions (`external-plan@1..4`) have never been
 wired into the newer multidomain execution pipeline:
 
-```
+```text
 SessionReferenceBinding -> sessionOccurrenceService -> executionPrescriptionService -> SessionRunner
 ```
 
@@ -172,6 +172,13 @@ piece (bundle launch, D-REASSESS) builds on.
            sessionSource,
            definitionHash,
            blocks: definition.blocks,
+           displayMetadata: {
+               title: definition.title,
+               ...(definition.summary !== undefined ? { summary: definition.summary } : {}),
+               intent: definition.intent,
+               ...(definition.dominantModality !== undefined ? { dominantModality: definition.dominantModality } : {}),
+               ...(definition.duration !== undefined ? { duration: definition.duration } : {}),
+           },
            createdAt: new Date().toISOString(),
        };
        const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
