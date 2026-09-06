@@ -39,6 +39,30 @@ const SHORT_MODALITY_LABEL: Record<string, string> = {
   None: 'Rest',
 };
 
+function scheduleOverlayIcon(overlay: ScheduleOverlay): string {
+  if (overlay.category === 'sedentary_rest') return '🎄';
+  if (overlay.category === 'high_step_walking') return '🚶';
+  if (overlay.category === 'limited_availability') return '⏱️';
+  switch (overlay.sport) {
+    case 'skiing': return '⛷️';
+    case 'volleyball': return '🏐';
+    case 'hiking': return '🥾';
+    case 'court_sport': return '🎾';
+    case 'field_sport': return '⚽';
+    default: return '🏃';
+  }
+}
+
+function scheduleOverlayLabel(overlay: ScheduleOverlay): string {
+  if (overlay.sport) return overlay.sport.replaceAll('_', ' ');
+  switch (overlay.category) {
+    case 'active_sport': return 'active sport';
+    case 'sedentary_rest': return 'sedentary rest';
+    case 'high_step_walking': return 'high-step walking';
+    case 'limited_availability': return 'limited time';
+  }
+}
+
 /** `day.template` stays the authored catalog session so coverage/history bookkeeping keys
  * off a stable identity; when the engine auto-applies an easier dose (fatigue-driven
  * modify, or to respect a hard time cap the template's own range didn't fit -- see
@@ -162,14 +186,14 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
               <span className="tile-weekday">{index === 0 ? 'Tomorrow' : weekdayLabel(day.date)}</span>
               {dayOverlay ? (
                 <span className="tile-overlay-icon" title={`${dayOverlay.title} (${dayOverlay.category})`}>
-                  {dayOverlay.category === 'active_sport' ? '⛷️' : dayOverlay.category === 'sedentary_rest' ? '🎄' : '🚶'}
+                  {scheduleOverlayIcon(dayOverlay)}
                 </span>
               ) : (
                 <span className="tile-icon">{MODALITY_ICON[day.template.modality] ?? '❔'}</span>
               )}
               <span className="tile-category">
                 {dayOverlay
-                  ? (dayOverlay.sport ?? dayOverlay.category.replace('_', ' '))
+                  ? scheduleOverlayLabel(dayOverlay)
                   : (SHORT_MODALITY_LABEL[day.template.modality] ?? day.template.modality)}
               </span>
               <span className="tile-duration">{effectiveDuration(day).min}-{effectiveDuration(day).max} m</span>
@@ -197,7 +221,7 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
         {selectedOverlay && (
           <div className="detail-overlay-callout">
             <span className="detail-overlay-badge">
-              {selectedOverlay.category === 'active_sport' ? '⛷️' : selectedOverlay.category === 'sedentary_rest' ? '🎄' : '🚶'} Planned Absence:
+              {scheduleOverlayIcon(selectedOverlay)} Schedule block:
             </span>
             <span className="detail-overlay-title">{selectedOverlay.title}</span>
             <span className="detail-overlay-hint">
