@@ -86,13 +86,13 @@ function mean(values: readonly (number | null | undefined)[]): number | null {
     return present.reduce((sum, value) => sum + value, 0) / present.length;
 }
 
-function round(value: number | null, places = 1): string {
-    if (value === null) return '—';
+export function round(value: number | null | undefined, places = 1): string {
+    if (value === null || value === undefined || !Number.isFinite(value)) return '—';
     const factor = 10 ** places;
     return String(Math.round(value * factor) / factor);
 }
 
-function signed(value: number | null | undefined, places = 1): string {
+export function signed(value: number | null | undefined, places = 1): string {
     if (typeof value !== 'number' || !Number.isFinite(value)) return '—';
     const rounded = Math.round(value * 10 ** places) / 10 ** places;
     return rounded > 0 ? `+${rounded}` : String(rounded);
@@ -321,7 +321,7 @@ const ACTIVITY_TYPE_LABELS: Record<string, string> = {
     mobility: 'Mobility',
 };
 
-function formatActivityType(typeKey: string): string {
+export function formatActivityType(typeKey: string): string {
     if (ACTIVITY_TYPE_LABELS[typeKey]) return ACTIVITY_TYPE_LABELS[typeKey];
     return typeKey.replace(/_/g, ' ');
 }
