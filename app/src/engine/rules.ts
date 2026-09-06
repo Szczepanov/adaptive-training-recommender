@@ -44,13 +44,14 @@ import { applyFixedActivityStimulusCredit } from './planner';
 import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, type FatigueFusionPolicy } from './fatigue';
 import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBaselineMetric } from './subjectiveBaseline';
-import { resolveAvailability } from './schedule';
+import { resolveAvailability, scheduleOverlayCostProfileForDate } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
 import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
 import { mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
+import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -628,6 +629,16 @@ function adjudicatedExternalRecommendation(
 ): Recommendation {
     const { session, planId, revision, contentHash } = externalPlan;
     const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context, scheduleOverlays);
+    // Keep the adjudicator responsible for validating the raw authored dose before it can
+    // be reduced by an overlay. The recommendation surface still records the same adjusted
+    // planned dose that catalog planning would expose for this date.
+    const adjustedPlannedDose = applyPlanningOverlays(
+        intent.plannedDose,
+        date,
+        [],
+        undefined,
+        scheduleOverlays,
+    );
     const verdict = adjudicateExternalSession(session, readiness, context, envelopeState, intent.plannedDose, date, availability);
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale';
 
@@ -635,7 +646,7 @@ function adjudicatedExternalRecommendation(
 
     return {
         template: actionable ? toSyntheticTemplate(session, planId, revision) : restTemplate,
-        plannedDose: intent.plannedDose,
+        plannedDose: adjustedPlannedDose,
         ...(verdict.executionDose ? { executionDose: verdict.executionDose } : {}),
         rationale: verdict.rationale,
         mode: actionable ? envelopeState.mode : 'recover',
@@ -1251,14 +1262,7 @@ function unrepresentedFixedActivityProjection(
     const represented = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
     if (trace.count <= represented.length) return null;
 
-    const representedCost = represented.reduce<WorkoutCostProfile>((sum, activity) => ({
-        systemic: sum.systemic + (activity.expectedCost?.systemic ?? 0),
-        cardiovascular: sum.cardiovascular + (activity.expectedCost?.cardiovascular ?? 0),
-        lowerBody: sum.lowerBody + (activity.expectedCost?.lowerBody ?? 0),
-        upperBody: sum.upperBody + (activity.expectedCost?.upperBody ?? 0),
-        impactTissue: sum.impactTissue + (activity.expectedCost?.impactTissue ?? 0),
-        neuromuscular: sum.neuromuscular + (activity.expectedCost?.neuromuscular ?? 0),
-    }), ZERO_COST);
+    const representedCost = sumFixedActivityCostProfiles(represented);
     const representedStimulus = represented.reduce<WorkoutStimulusProfile>((sum, activity) => ({
         aerobicEndurance: sum.aerobicEndurance + (activity.expectedStimulus?.aerobicEndurance ?? 0),
         thresholdPower: sum.thresholdPower + (activity.expectedStimulus?.thresholdPower ?? 0),
@@ -1296,12 +1300,36 @@ function unrepresentedFixedActivityProjection(
     };
 }
 
+/** Carries the non-training load reserved by schedule overlays on a completed forecast
+ * date into the next date's history. Same-day availability already reserves this cost, so
+ * the projection is added only after that date has passed and never to the current-day
+ * availability ledger itself. */
+function scheduleOverlayProjection(
+    date: string,
+    scheduleOverlays: readonly ScheduleOverlay[],
+): CompletedExposure | null {
+    const costProfile = scheduleOverlayCostProfileForDate(scheduleOverlays, date);
+    if (!Object.values(costProfile).some(value => value > 0)) return null;
+    return {
+        occurrenceKey: `schedule-overlays:${date}`,
+        date,
+        costProfile,
+        trainingRecordLike: {
+            type: 'Scheduled non-training load',
+            duration_min: 0,
+            training_effect: 0,
+            intensity_tag: '',
+        },
+    };
+}
+
 async function projectedProviderForTomorrow(
     userId: string,
     tomorrowDate: string,
     todayDate: string,
     todayRec: Recommendation,
     fixedActivities: FixedActivity[],
+    scheduleOverlays: readonly ScheduleOverlay[],
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<TrainingHistoryProvider> {
@@ -1314,6 +1342,7 @@ async function projectedProviderForTomorrow(
         prior = await baseProvider.reconstruct(userId, tomorrowDate, 7);
     }
     const unrepresentedFixed = unrepresentedFixedActivityProjection(todayDate, todayRec, fixedActivities);
+    const overlayProjection = scheduleOverlayProjection(todayDate, scheduleOverlays);
     const projected = [
         ...prior.filter(exposure => exposure.date >= windowStart && exposure.date < tomorrowDate),
         recommendationProjection(todayDate, todayRec),
@@ -1322,6 +1351,7 @@ async function projectedProviderForTomorrow(
             return exposure ? [exposure] : [];
         }),
         ...(unrepresentedFixed ? [unrepresentedFixed] : []),
+        ...(overlayProjection ? [overlayProjection] : []),
     ].sort((a, b) => a.date.localeCompare(b.date));
 
     return {
@@ -1353,7 +1383,14 @@ export async function evaluateNextDayPlanWithIntent(
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const projectedProvider = await projectedProviderForTomorrow(
-        userId, scenarios.date, todayDate, todayRec, fixedActivities, historyProvider, preparedHistorySnapshot,
+        userId,
+        scenarios.date,
+        todayDate,
+        todayRec,
+        fixedActivities,
+        scheduleOverlays,
+        historyProvider,
+        preparedHistorySnapshot,
     );
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
