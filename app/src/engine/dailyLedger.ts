@@ -69,6 +69,12 @@ function assertFiniteNonNegative(value: number, label: string): void {
     }
 }
 
+function assertSystemicCost(value: number, label: string): void {
+    if (!Number.isFinite(value) || value < 0 || value > 1) {
+        throw new RangeError(`${label} must be a finite number in [0, 1]`);
+    }
+}
+
 function assertRevision(value: number, label: string): void {
     if (!Number.isInteger(value) || value < 0) {
         throw new RangeError(`${label} must be a nonnegative integer`);
@@ -77,30 +83,48 @@ function assertRevision(value: number, label: string): void {
 
 function assertValidCeilings(ceilings: LedgerCeilings): void {
     assertFiniteNonNegative(ceilings.dailyMinuteCeiling, 'dailyMinuteCeiling');
-    assertFiniteNonNegative(ceilings.dailySystemicCostCeiling, 'dailySystemicCostCeiling');
+    assertSystemicCost(ceilings.dailySystemicCostCeiling, 'dailySystemicCostCeiling');
 }
 
 function assertValidEntry(entry: LedgerEntry): void {
     if (!entry.occurrenceId) throw new Error('occurrenceId must be non-empty');
     assertRevision(entry.revision, `revision for ${entry.occurrenceId}`);
     assertFiniteNonNegative(entry.reservedMinutes, `reservedMinutes for ${entry.occurrenceId}`);
-    assertFiniteNonNegative(entry.reservedSystemicCost, `reservedSystemicCost for ${entry.occurrenceId}`);
+    assertSystemicCost(entry.reservedSystemicCost, `reservedSystemicCost for ${entry.occurrenceId}`);
     if (entry.actualMinutes !== undefined) {
         assertFiniteNonNegative(entry.actualMinutes, `actualMinutes for ${entry.occurrenceId}`);
     }
     if (entry.actualSystemicCost !== undefined) {
-        assertFiniteNonNegative(entry.actualSystemicCost, `actualSystemicCost for ${entry.occurrenceId}`);
+        assertSystemicCost(entry.actualSystemicCost, `actualSystemicCost for ${entry.occurrenceId}`);
     }
 }
 
+function areEntriesEqual(a: LedgerEntry, b: LedgerEntry): boolean {
+    return a.occurrenceId === b.occurrenceId
+        && a.revision === b.revision
+        && a.state === b.state
+        && a.reservedMinutes === b.reservedMinutes
+        && a.reservedSystemicCost === b.reservedSystemicCost
+        && a.actualMinutes === b.actualMinutes
+        && a.actualSystemicCost === b.actualSystemicCost;
+}
+
 /** Keeps the entry with the highest `revision` per `occurrenceId` -- idempotent under
- * replayed, duplicate or reordered completion/provider evidence (D-LEDGER). */
+ * replayed, duplicate or reordered completion/provider evidence (D-LEDGER).
+ * Identical duplicate rows sharing an occurrenceId and revision are accepted, but
+ * conflicting facts at the same revision cause a fail-closed rejection regardless of order. */
 function dedupeByOccurrence(entries: readonly LedgerEntry[]): LedgerEntry[] {
     const latest = new Map<string, LedgerEntry>();
     for (const entry of entries) {
         assertValidEntry(entry);
         const current = latest.get(entry.occurrenceId);
-        if (!current || entry.revision > current.revision) latest.set(entry.occurrenceId, entry);
+        if (!current) {
+            latest.set(entry.occurrenceId, entry);
+        } else if (entry.revision > current.revision) {
+            latest.set(entry.occurrenceId, entry);
+        } else if (entry.revision === current.revision && !areEntriesEqual(entry, current)) {
+            throw new Error(`Conflicting ledger entries for occurrence '${entry.occurrenceId}' at revision ${entry.revision}`);
+        }
     }
     return [...latest.values()];
 }
@@ -159,7 +183,7 @@ export function reconcileEntry(
     // bytes cannot affect the authoritative row once an equal/newer revision is present.
     if (evidenceRevision <= entry.revision) return entry;
     if (actual.minutes !== undefined) assertFiniteNonNegative(actual.minutes, 'actual.minutes');
-    if (actual.systemicCost !== undefined) assertFiniteNonNegative(actual.systemicCost, 'actual.systemicCost');
+    if (actual.systemicCost !== undefined) assertSystemicCost(actual.systemicCost, 'actual.systemicCost');
     return {
         ...entry,
         revision: evidenceRevision,
@@ -168,6 +192,12 @@ export function reconcileEntry(
         actualSystemicCost: actual.systemicCost ?? entry.actualSystemicCost,
     };
 }
+
+/** Floating-point tolerance for systemic-cost comparisons on the bounded 0..1 scale.
+ * Binary floating-point subtraction (e.g. 0.6 - 0.2 = 0.39999999999999997) can leave
+ * a remainder infinitesimally below a mathematically exact candidate cost. A 1e-6 tolerance
+ * prevents spurious rejection of exact fits while keeping the capacity boundary rigid. */
+export const SYSTEMIC_COST_TOLERANCE = 1e-6;
 
 export interface CandidateAdmission {
     /** The candidate's window duration clamped to the ledger's remaining minutes. */
@@ -190,13 +220,13 @@ export function admitsCandidate(
     assertFiniteNonNegative(ledger.remainingSystemicCost, 'ledger.remainingSystemicCost');
     assertFiniteNonNegative(candidateWindowMinutes, 'candidateWindowMinutes');
     assertFiniteNonNegative(candidateMinutes, 'candidateMinutes');
-    assertFiniteNonNegative(candidateSystemicCost, 'candidateSystemicCost');
+    assertSystemicCost(candidateSystemicCost, 'candidateSystemicCost');
 
     const admittedMinutes = Math.max(0, Math.min(candidateWindowMinutes, ledger.remainingMinutes));
     const admitted = candidateMinutes > 0
         && admittedMinutes > 0
         && ledger.remainingSystemicCost > 0
         && candidateMinutes <= admittedMinutes
-        && candidateSystemicCost <= ledger.remainingSystemicCost;
+        && candidateSystemicCost <= ledger.remainingSystemicCost + SYSTEMIC_COST_TOLERANCE;
     return { admittedMinutes, admitted };
 }

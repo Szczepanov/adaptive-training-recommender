@@ -70,4 +70,35 @@ describe('daily ledger regression coverage', () => {
         expect(reconcileEntry(current, { minutes: -999, systemicCost: Number.NaN, state: 'abandoned' }, 2)).toBe(current);
         expect(reconcileEntry(current, { minutes: -999, systemicCost: Number.NaN, state: 'abandoned' }, 1)).toBe(current);
     });
+
+    it('enforces the 0..1 systemic-cost scale across ceilings, reservations, actuals, and candidates', () => {
+        expect(() => computeDailyLedger({ dailyMinuteCeiling: 90, dailySystemicCostCeiling: 1.5 }, [])).toThrow(/dailySystemicCostCeiling/);
+        expect(() => computeDailyLedger(CEILINGS, [entry({ occurrenceId: 'out-of-range-res', reservedSystemicCost: 1.1 })])).toThrow(/reservedSystemicCost/);
+        expect(() => computeDailyLedger(CEILINGS, [entry({ occurrenceId: 'out-of-range-act', actualSystemicCost: 2.0, state: 'completed' })])).toThrow(/actualSystemicCost/);
+
+        const reserved = entry({ occurrenceId: 'am' });
+        expect(() => reconcileEntry(reserved, { systemicCost: 1.05, state: 'completed' }, 2)).toThrow(/actual.systemicCost/);
+
+        const ledger = computeDailyLedger(CEILINGS, []);
+        expect(() => admitsCandidate(ledger, 60, 30, 1.2)).toThrow(/candidateSystemicCost/);
+    });
+
+    it('accepts exact duplicate rows at the same revision but fails closed on conflicting equal-revision evidence', () => {
+        const row1 = entry({ occurrenceId: 'am', revision: 1, state: 'reserved', reservedMinutes: 30, reservedSystemicCost: 0.2 });
+        const exactDup = entry({ occurrenceId: 'am', revision: 1, state: 'reserved', reservedMinutes: 30, reservedSystemicCost: 0.2 });
+        const conflictState = entry({ occurrenceId: 'am', revision: 1, state: 'completed', reservedMinutes: 30, reservedSystemicCost: 0.2, actualMinutes: 30, actualSystemicCost: 0.2 });
+        const conflictCost = entry({ occurrenceId: 'am', revision: 1, state: 'reserved', reservedMinutes: 30, reservedSystemicCost: 0.4 });
+
+        // Exact duplicates are accepted regardless of order
+        const ledgerDup1 = computeDailyLedger(CEILINGS, [row1, exactDup]);
+        const ledgerDup2 = computeDailyLedger(CEILINGS, [exactDup, row1]);
+        expect(ledgerDup1).toEqual(ledgerDup2);
+        expect(ledgerDup1.remainingMinutes).toBe(60);
+
+        // Conflicting facts at equal revision fail closed regardless of order
+        expect(() => computeDailyLedger(CEILINGS, [row1, conflictState])).toThrow(/Conflicting ledger entries for occurrence 'am' at revision 1/);
+        expect(() => computeDailyLedger(CEILINGS, [conflictState, row1])).toThrow(/Conflicting ledger entries for occurrence 'am' at revision 1/);
+        expect(() => computeDailyLedger(CEILINGS, [row1, conflictCost])).toThrow(/Conflicting ledger entries for occurrence 'am' at revision 1/);
+        expect(() => computeDailyLedger(CEILINGS, [conflictCost, row1])).toThrow(/Conflicting ledger entries for occurrence 'am' at revision 1/);
+    });
 });

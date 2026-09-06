@@ -34,6 +34,20 @@ describe('computeDailyLedger (ADR-0036 D-LEDGER)', () => {
         expect(admission.admitted).toBe(false);
     });
 
+    it('admits a candidate that mathematically matches remaining systemic-cost capacity despite binary subtraction rounding (e.g. 0.6 - 0.2 admitting 0.4)', () => {
+        const am = entry({ occurrenceId: 'am-1', state: 'completed', reservedMinutes: 30, actualMinutes: 30, reservedSystemicCost: 0.2, actualSystemicCost: 0.2 });
+        const ledger = computeDailyLedger(CEILINGS, [am]);
+        // In IEEE 754 floating-point, 0.6 - 0.2 === 0.39999999999999997 (< 0.4).
+        // Systemic-cost tolerance allows the mathematically exact 0.4 candidate to be admitted.
+        const exactFitAdmission = admitsCandidate(ledger, 60, 30, 0.4);
+        expect(exactFitAdmission.admitted).toBe(true);
+        expect(exactFitAdmission.admittedMinutes).toBe(60);
+
+        // A candidate that genuinely exceeds capacity beyond the tolerance is rejected.
+        const exceedingAdmission = admitsCandidate(ledger, 60, 30, 0.41);
+        expect(exceedingAdmission.admitted).toBe(false);
+    });
+
     it('counts completed actuals and outstanding reservations against the same clamped remainder without double-counting', () => {
         const completed = entry({ occurrenceId: 'am-1', state: 'completed', reservedMinutes: 40, actualMinutes: 40, reservedSystemicCost: 0.2, actualSystemicCost: 0.2 });
         const pending = entry({ occurrenceId: 'pm-1', state: 'reserved', reservedMinutes: 30, reservedSystemicCost: 0.2 });

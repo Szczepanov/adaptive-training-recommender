@@ -1,9 +1,55 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { EXTERNAL_PLAN_SCHEMA } from '../engine/models';
 
-const firestore = vi.hoisted(() => ({
-    collection: vi.fn(), doc: vi.fn(), getDoc: vi.fn(), getDocs: vi.fn(), setDoc: vi.fn(),
-}));
+const firestore = vi.hoisted(() => {
+    const committedDocs = new Map<string, unknown>();
+    // Every `writeBatch()` call must return a genuinely independent batch, exactly like
+    // real Firestore -- a shared singleton batch would let one call's staged writes (or
+    // a failed commit's leftovers) leak into a later, unrelated batch, which is precisely
+    // what a "the retry batch contains only its own writes" assertion needs to catch.
+    const batches: Array<{
+        set: ReturnType<typeof vi.fn>;
+        commit: ReturnType<typeof vi.fn>;
+        stagedWrites: Array<{ path: string; data: unknown }>;
+    }> = [];
+    let pendingCommitError: Error | null = null;
+
+    function createBatch() {
+        const stagedWrites: Array<{ path: string; data: unknown }> = [];
+        const commitError = pendingCommitError;
+        pendingCommitError = null;
+        const batch = {
+            set: vi.fn((ref: { path: string }, data: unknown) => {
+                stagedWrites.push({ path: ref.path, data });
+            }),
+            commit: vi.fn(async () => {
+                if (commitError) throw commitError;
+                for (const w of stagedWrites) committedDocs.set(w.path, w.data);
+            }),
+            stagedWrites,
+        };
+        batches.push(batch);
+        return batch;
+    }
+
+    return {
+        collection: vi.fn(),
+        doc: vi.fn(),
+        getDoc: vi.fn(),
+        getDocs: vi.fn(),
+        setDoc: vi.fn((ref: { path: string }, data: unknown) => {
+            committedDocs.set(ref.path, data);
+        }),
+        writeBatch: vi.fn(() => createBatch()),
+        batches,
+        /** Makes only the very next `writeBatch()`-created batch's `commit()` reject --
+         * later batches (e.g. a retry's) are unaffected. */
+        failNextBatchCommit(error: Error) {
+            pendingCommitError = error;
+        },
+        committedDocs,
+    };
+});
 
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
@@ -25,21 +71,29 @@ function plan(overrides: Record<string, unknown> = {}) {
     };
 }
 
-/** Records which document path each write targeted, in order. */
+/** Records which document path each write targeted, in order, across every batch
+ * created plus any direct `setDoc` calls. */
 function writtenPaths(): string[] {
-    return firestore.setDoc.mock.calls.map(call => (call[0] as { path: string }).path);
+    const batchPaths = firestore.batches.flatMap(batch => batch.set.mock.calls.map(call => (call[0] as { path: string }).path));
+    const setDocPaths = firestore.setDoc.mock.calls.map(call => (call[0] as { path: string }).path);
+    return [...batchPaths, ...setDocPaths];
 }
 
 describe('ExternalPlanService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        firestore.committedDocs.clear();
+        firestore.batches.length = 0;
         firestore.doc.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
         firestore.collection.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
         firestore.getDoc.mockResolvedValue({ exists: () => false });
-        firestore.setDoc.mockResolvedValue(undefined);
+        firestore.setDoc.mockImplementation((ref: { path: string }, data: unknown) => {
+            firestore.committedDocs.set(ref.path, data);
+            return Promise.resolve(undefined);
+        });
     });
 
-    it('stores the revision before the header, so a header never points at a missing revision', async () => {
+    it('writes the revision and header through a single batch so both commit together', async () => {
         const result = await new ExternalPlanService().import('u1', plan());
 
         expect(result.status).toBe('AVAILABLE');
@@ -47,12 +101,47 @@ describe('ExternalPlanService', () => {
             'users/u1/external_plans/autumn-block/revisions/1',
             'users/u1/external_plans/autumn-block',
         ]);
+        expect(firestore.writeBatch).toHaveBeenCalledTimes(1);
+        expect(firestore.batches).toHaveLength(1);
+        expect(firestore.batches[0].commit).toHaveBeenCalledTimes(1);
+    });
+
+    it('leaves neither document committed when the batch commit fails, and allows retry to succeed with its own independent batch', async () => {
+        firestore.failNextBatchCommit(new Error('network error during batch commit'));
+
+        const service = new ExternalPlanService();
+        const failedResult = await service.import('u1', plan());
+
+        expect(failedResult).toMatchObject({
+            status: 'UNAVAILABLE',
+            retryable: true,
+        });
+        expect(firestore.committedDocs.size).toBe(0);
+        expect(firestore.batches).toHaveLength(1);
+        expect(firestore.batches[0].set).toHaveBeenCalledTimes(2);
+
+        const retryResult = await service.import('u1', plan());
+        expect(retryResult.status).toBe('AVAILABLE');
+
+        // The retry used a second, independent batch -- not the failed first batch's
+        // leftover staged writes -- and that second batch contains exactly its own two
+        // writes, not four (its two plus the failed attempt's stale two).
+        expect(firestore.batches).toHaveLength(2);
+        expect(firestore.batches[1].set).toHaveBeenCalledTimes(2);
+        expect(firestore.batches[1].stagedWrites.map(w => w.path)).toEqual([
+            'users/u1/external_plans/autumn-block/revisions/1',
+            'users/u1/external_plans/autumn-block',
+        ]);
+        expect(firestore.committedDocs.has('users/u1/external_plans/autumn-block/revisions/1')).toBe(true);
+        expect(firestore.committedDocs.has('users/u1/external_plans/autumn-block')).toBe(true);
+        expect(firestore.committedDocs.size).toBe(2);
     });
 
     it('writes nothing at all when the plan does not satisfy the contract', async () => {
         const result = await new ExternalPlanService().import('u1', plan({ startDate: '2026-08-18' }));
 
         expect(result.status).toBe('INVALID');
+        expect(firestore.writeBatch).not.toHaveBeenCalled();
         expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 
@@ -71,6 +160,7 @@ describe('ExternalPlanService', () => {
         expect(same.status).toBe('INVALID');
         if (same.status !== 'INVALID') throw new Error('unreachable');
         expect(same.issues[0].code).toBe('revision-not-newer');
+        expect(firestore.writeBatch).not.toHaveBeenCalled();
         expect(firestore.setDoc).not.toHaveBeenCalled();
 
         const newer = await new ExternalPlanService().import('u1', plan({ revision: 4 }));
