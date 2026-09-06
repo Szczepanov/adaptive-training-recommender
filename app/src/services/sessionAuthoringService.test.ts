@@ -1,10 +1,23 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Recommendation } from '../engine/models';
+import type { ExecutionPrescription } from '../sessions/models';
 
-const services = vi.hoisted(() => ({
-    prescription: { savePrescription: vi.fn().mockResolvedValue(undefined) },
-    occurrence: { saveOccurrence: vi.fn().mockResolvedValue(undefined) },
-}));
+const services = vi.hoisted(() => {
+    const store = new Map<string, ExecutionPrescription>();
+    return {
+        store,
+        prescription: {
+            savePrescription: vi.fn(async (_userId: string, prescription: ExecutionPrescription) => {
+                if (store.has(prescription.prescriptionHash)) {
+                    // write-once semantics matching ExecutionPrescriptionService.savePrescription
+                    return;
+                }
+                store.set(prescription.prescriptionHash, prescription);
+            }),
+        },
+        occurrence: { saveOccurrence: vi.fn().mockResolvedValue(undefined) },
+    };
+});
 
 vi.mock('./executionPrescriptionService', () => ({ executionPrescriptionService: services.prescription }));
 vi.mock('./sessionOccurrenceService', () => ({ sessionOccurrenceService: services.occurrence }));
@@ -13,6 +26,12 @@ import { resolveWorkoutPrescription } from '../workouts/prescription';
 import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from './sessionAuthoringService';
 import type { SessionDefinition } from '../sessions/models';
 import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+
+beforeEach(() => {
+    services.store.clear();
+    services.prescription.savePrescription.mockClear();
+    services.occurrence.saveOccurrence.mockClear();
+});
 
 function makeTestPrescription(templateId: string) {
     const rec = {
@@ -185,11 +204,16 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         expect(savedPrescription.displayMetadata?.summary).toBe('Scaled: 3x3min intervals (volume reduced due to readiness)');
     });
 
-    it('is idempotent: preparing the same external plan session twice produces the same hash', async () => {
+    it('is idempotent: preparing the same external plan session twice produces the same hash and preserves write-once persistence', async () => {
         const externalPlan = makeV4ExternalPlan();
-        const first = await prepareExternalPlanSessionLaunch('u1', externalPlan);
-        const second = await prepareExternalPlanSessionLaunch('u1', externalPlan);
+        const first = await prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, '2026-09-06T10:00:00.000Z');
+        const second = await prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, '2026-09-06T11:00:00.000Z');
         expect(second.binding.prescriptionHash).toBe(first.binding.prescriptionHash);
+
+        const stored = services.store.get(first.binding.prescriptionHash);
+        expect(stored).toBeDefined();
+        // Verifies write-once persistence: the second invocation did not overwrite the original record
+        expect(stored?.createdAt).toBe('2026-09-06T10:00:00.000Z');
     });
 
     it('omits volatile createdAt from the prescription hash payload', async () => {
