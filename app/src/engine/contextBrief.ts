@@ -513,6 +513,26 @@ function renderSubjective(
         lines.push(`- Flags / availability: ${latestFlags.join(' · ')}`);
     }
 
+    if (latest.physicalWork?.performed) {
+        const pw = latest.physicalWork;
+        const durationLabels: Record<string, string> = { short: '< 1 hr', medium: '1–3 hrs', extended: '3+ hrs' };
+        const areaLabels: Record<string, string> = {
+            grip_forearms: 'grip/forearms',
+            upper_body: 'upper body',
+            lower_back_spine: 'lower back/spine',
+            legs_carrying: 'legs/carrying',
+        };
+        const parts: string[] = [];
+        if (pw.duration) parts.push(durationLabels[pw.duration] ?? pw.duration);
+        if (pw.intensity) parts.push(`${pw.intensity} effort`);
+        if (pw.loadAreas && pw.loadAreas.length > 0) {
+            parts.push(`strain: ${pw.loadAreas.map(a => areaLabels[a] ?? a).join(', ')}`);
+        }
+        const summary = parts.length > 0 ? parts.join(' · ') : 'reported';
+        const noteStr = pw.notes && pw.notes.trim().length > 0 ? ` — "${pw.notes.trim()}"` : '';
+        lines.push(`- Unlogged physical work (D-1): ${summary}${noteStr}`);
+    }
+
     if (latest.tissueResponses) {
         const trEntries = Object.entries(latest.tissueResponses).filter(([, tr]) => tr != null);
         if (trEntries.length > 0) {
@@ -538,10 +558,12 @@ function renderSubjective(
     const illnessDays = checkins.filter(c => c.illnessSymptoms).map(c => c.date);
     const limitedDays = checkins.filter(c => c.unusuallyLimitedTime).map(c => c.date);
     const alreadyTrainedDays = checkins.filter(c => c.alreadyTrainedToday).map(c => c.date);
+    const physicalWorkDays = checkins.filter(c => c.physicalWork?.performed).map(c => c.date);
     lines.push(`- Pain or injury flagged: ${painDays.length > 0 ? `${painDays.length} day(s) — ${painDays.join(', ')}` : 'none'}`);
     lines.push(`- Illness symptoms flagged: ${illnessDays.length > 0 ? `${illnessDays.length} day(s) — ${illnessDays.join(', ')}` : 'none'}`);
     if (limitedDays.length > 0) lines.push(`- Unusually limited time: ${limitedDays.length} day(s) — ${limitedDays.join(', ')}`);
     if (alreadyTrainedDays.length > 0) lines.push(`- Already trained today: ${alreadyTrainedDays.length} day(s) — ${alreadyTrainedDays.join(', ')}`);
+    if (physicalWorkDays.length > 0) lines.push(`- Unlogged physical work: ${physicalWorkDays.length} day(s) — ${physicalWorkDays.join(', ')}`);
 
     const notes = checkins.filter(c => c.notes && c.notes.trim().length > 0);
     if (notes.length > 0) {

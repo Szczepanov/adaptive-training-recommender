@@ -393,6 +393,31 @@ describe('buildContextBrief', () => {
         expect(text).toContain('Already trained today: 1 day(s) — 2026-08-12');
     });
 
+    it('renders unlogged physical work on the latest check-in and in window flags', () => {
+        const text = buildContextBrief(input({
+            checkins: [
+                checkin('2026-08-14', {
+                    physicalWork: {
+                        performed: true,
+                        duration: 'short',
+                        intensity: 'moderate',
+                    },
+                }),
+                checkin('2026-08-15', {
+                    physicalWork: {
+                        performed: true,
+                        duration: 'medium',
+                        intensity: 'hard',
+                        loadAreas: ['grip_forearms', 'upper_body', 'lower_back_spine'],
+                        notes: 'cutting trees',
+                    },
+                }),
+            ],
+        }));
+        expect(text).toContain('- Unlogged physical work (D-1): 1–3 hrs · hard effort · strain: grip/forearms, upper body, lower back/spine — "cutting trees"');
+        expect(text).toContain('- Unlogged physical work: 2 day(s) — 2026-08-14, 2026-08-15');
+    });
+
     it('separates skipped sessions from sessions replaced by something else', () => {
         const text = buildContextBrief(input({
             recommendations: [
