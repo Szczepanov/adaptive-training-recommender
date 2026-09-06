@@ -133,7 +133,10 @@ function resolvePlacementWindows(date: string, scheduleWindows: readonly Schedul
     return [{ windowId: LEGACY_SINGLE_SLOT_WINDOW_ID, startLocal: '00:00', endLocal: '23:59' }];
 }
 
-/** The date's fixed-activity-occupied intervals. An activity with a known `startTime`
+/** The date's fixed-activity-occupied intervals. Only immovable commitments
+ * (`fixed: true`) block placement -- a movable placeholder is exactly the thing the
+ * athlete could reschedule around, so treating it the same as a booked commitment would
+ * reject a placement that is not actually blocked. An activity with a known `startTime`
  * only blocks windows it actually overlaps; one without a resolvable clock time is
  * conservative and blocks the whole date, matching legacy single-slot placement's
  * existing whole-date fixed-activity precedent (`externalPlacement.ts`'s
@@ -142,7 +145,7 @@ function fixedOccupiedIntervals(
     date: string,
     fixedActivities: readonly FixedActivity[],
 ): readonly { startLocal: string; endLocal: string }[] | 'whole-date' {
-    const activities = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
+    const activities = fixedActivities.filter(activity => activity.date === date && activity.fixed && !activity.isCompleted);
     if (activities.length === 0) return [];
     const HHMM_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
     const intervals: { startLocal: string; endLocal: string }[] = [];
@@ -193,6 +196,124 @@ function resolveBoundInstants(date: string, startLocal: string, endLocal: string
     return { startInstant: start.instant, endInstant: end.instant };
 }
 
+function debitLedger(current: DailyLedgerResult, minutes: number, systemicCost: number): DailyLedgerResult {
+    return {
+        ...current,
+        remainingMinutes: Math.max(0, current.remainingMinutes - minutes),
+        remainingSystemicCost: Math.max(0, current.remainingSystemicCost - systemicCost),
+    };
+}
+
+interface AssignmentState {
+    pool: readonly PlacementWindow[];
+    ledger: DailyLedgerResult;
+    bindings: ReadonlyMap<string, ResolvedWindowBinding>;
+}
+
+type AssignmentResult = { bindings: ReadonlyMap<string, ResolvedWindowBinding> } | { reason: string };
+
+/** Recursively assigns members `sortedMembers[index..]`, backtracking over candidate
+ * windows for each unstarted member so an earlier member's greedy choice never rules
+ * out a complete assignment that exists via a different choice (a real bug caught in
+ * review: picking the single best-overlap candidate for an earlier member could consume
+ * the only window a later member can use, even when swapping the earlier member onto
+ * its next-best candidate would let both fit). Bundles and a date's window count are
+ * both small in practice (first release scope), so this stays cheap in the realistic
+ * case despite worst-case exponential branching. */
+function assignFrom(date: string, sortedMembers: readonly IntradayBundleMember[], index: number, state: AssignmentState): AssignmentResult {
+    if (index >= sortedMembers.length) return { bindings: state.bindings };
+    const member = sortedMembers[index];
+
+    if (member.started && member.existingBinding) {
+        const binding = member.existingBinding;
+        const nextPool = state.pool.filter(window => !scheduleWindowsOverlap(window, { startLocal: binding.boundStartLocal, endLocal: binding.boundEndLocal }));
+        const nextBindings = new Map(state.bindings);
+        nextBindings.set(member.sessionId, binding);
+        const nextLedger = debitLedger(state.ledger, member.estimatedMinutes, member.estimatedSystemicCost);
+        return assignFrom(date, sortedMembers, index + 1, { pool: nextPool, ledger: nextLedger, bindings: nextBindings });
+    }
+
+    const candidates = state.pool
+        .map(window => ({ window, intersection: intersectWindow(member.requestedWindow, window) }))
+        .filter((candidate): candidate is { window: PlacementWindow; intersection: { startLocal: string; endLocal: string } } =>
+            candidate.intersection !== null,
+        )
+        .filter(candidate => {
+            const durationMinutes = minutesFromHHmm(candidate.intersection.endLocal) - minutesFromHHmm(candidate.intersection.startLocal);
+            return durationMinutes >= member.estimatedMinutes;
+        })
+        .sort((a, b) => {
+            const overlapDiff = overlapMinutes(member.requestedWindow, b.window) - overlapMinutes(member.requestedWindow, a.window);
+            return overlapDiff !== 0 ? overlapDiff : minutesFromHHmm(a.window.startLocal) - minutesFromHHmm(b.window.startLocal);
+        });
+
+    if (candidates.length === 0) {
+        return {
+            reason: `Session '${member.sessionId}' requests ${member.requestedWindow.startLocal}-${member.requestedWindow.endLocal} on `
+                + `${date}, but no available window fits its duration after fixed commitments and other bundle members.`,
+        };
+    }
+
+    let lastReason = `Session '${member.sessionId}' has no window assignment that also lets the remaining bundle members fit.`;
+
+    for (const candidate of candidates) {
+        const resolvedInstants = resolveBoundInstants(date, candidate.intersection.startLocal, candidate.intersection.endLocal);
+        if (!resolvedInstants) {
+            lastReason = `Session '${member.sessionId}''s bound window on ${date} falls on a nonexistent or ambiguous local time and requires explicit resolution.`;
+            continue;
+        }
+
+        const admission = admitsCandidate(
+            state.ledger,
+            minutesFromHHmm(candidate.intersection.endLocal) - minutesFromHHmm(candidate.intersection.startLocal),
+            member.estimatedMinutes,
+            member.estimatedSystemicCost,
+        );
+        if (!admission.admitted) {
+            lastReason = `Session '${member.sessionId}' cannot be admitted: the day's remaining minute or systemic-cost capacity is exhausted.`;
+            continue;
+        }
+
+        if (member.afterSessionId) {
+            const predecessorBinding = state.bindings.get(member.afterSessionId);
+            if (!predecessorBinding) {
+                return { reason: `Session '${member.sessionId}''s predecessor '${member.afterSessionId}' has no resolved binding yet.` };
+            }
+            const requiredSeparation = member.minimumSeparationMinutes ?? 0;
+            // elapsedMinutesBetweenInstants(startInstant, endInstant) computes
+            // startInstant - endInstant (D-TIME: "start minus the predecessor's actual
+            // end instant"), so the dependent's start is the first argument.
+            const gapMinutes = elapsedMinutesBetweenInstants(resolvedInstants.startInstant, predecessorBinding.endInstant);
+            if (gapMinutes < requiredSeparation) {
+                lastReason = `Session '${member.sessionId}' starts only ${gapMinutes} minute(s) after predecessor '${member.afterSessionId}' `
+                    + `ends, short of the required ${requiredSeparation}.`;
+                continue;
+            }
+        }
+
+        const nextBindings = new Map(state.bindings);
+        nextBindings.set(member.sessionId, {
+            sessionId: member.sessionId,
+            windowId: candidate.window.windowId,
+            boundStartLocal: candidate.intersection.startLocal,
+            boundEndLocal: candidate.intersection.endLocal,
+            startInstant: resolvedInstants.startInstant,
+            endInstant: resolvedInstants.endInstant,
+        });
+        const nextPool = state.pool.filter(window => window.windowId !== candidate.window.windowId);
+        const nextLedger = debitLedger(state.ledger, member.estimatedMinutes, member.estimatedSystemicCost);
+
+        const result = assignFrom(date, sortedMembers, index + 1, { pool: nextPool, ledger: nextLedger, bindings: nextBindings });
+        if ('bindings' in result) return result;
+        // This candidate placed `member` but left no valid assignment for the rest of
+        // the bundle -- backtrack and try the next candidate rather than reporting
+        // infeasible from a single greedy choice.
+        lastReason = result.reason;
+    }
+
+    return { reason: lastReason };
+}
+
 /**
  * Proposes placement for one intraday bundle on one date. Returns a single atomic
  * result: either every member (started members preserved, unstarted members newly
@@ -201,9 +322,13 @@ function resolveBoundInstants(date: string, startLocal: string, endLocal: string
  *
  * `members` need not be pre-sorted. `restDates` are ADR-0035 dates closed to every
  * window by default (D-PLACEMENT: "availability does not override rest"). `ledger` is
- * the date's already-computed `dailyLedger.ts` remainder *before* this bundle's own
- * candidates are considered; admission is evaluated sequentially in `order` so an
- * earlier member's consumption reduces what a later member can draw from the same day.
+ * the date's already-computed `dailyLedger.ts` remainder *before any* of this bundle's
+ * own members -- started or not -- are considered; this function debits every member of
+ * the bundle sequentially in `order` itself, so a caller must not have already
+ * subtracted a started member's own consumption from `ledger` (that would double-charge
+ * it). Candidate window assignment backtracks: an earlier member's best-overlap choice
+ * that would leave no valid assignment for a later member is retried with that earlier
+ * member's next-best candidate before the whole proposal is reported infeasible.
  */
 export function proposeBundlePlacement(
     bundleId: string,
@@ -228,95 +353,15 @@ export function proposeBundlePlacement(
 
     const sorted = [...members].sort((a, b) => a.order - b.order);
     const occupied = fixedOccupiedIntervals(date, fixedActivities);
-    let pool = resolvePlacementWindows(date, scheduleWindows).filter(window => !windowBlockedByFixed(window, occupied));
+    const pool = resolvePlacementWindows(date, scheduleWindows).filter(window => !windowBlockedByFixed(window, occupied));
 
-    const bindings = new Map<string, ResolvedWindowBinding>();
-    let runningLedger = ledger;
-
-    for (const member of sorted) {
-        if (member.started && member.existingBinding) {
-            bindings.set(member.sessionId, member.existingBinding);
-            pool = pool.filter(window => window.windowId !== member.existingBinding!.windowId);
-            continue;
-        }
-
-        const candidates = pool
-            .map(window => ({ window, intersection: intersectWindow(member.requestedWindow, window) }))
-            .filter((candidate): candidate is { window: PlacementWindow; intersection: { startLocal: string; endLocal: string } } =>
-                candidate.intersection !== null,
-            )
-            .filter(candidate => {
-                const durationMinutes = minutesFromHHmm(candidate.intersection.endLocal) - minutesFromHHmm(candidate.intersection.startLocal);
-                return durationMinutes >= member.estimatedMinutes;
-            })
-            .sort((a, b) => {
-                const overlapDiff = overlapMinutes(member.requestedWindow, b.window) - overlapMinutes(member.requestedWindow, a.window);
-                return overlapDiff !== 0 ? overlapDiff : minutesFromHHmm(a.window.startLocal) - minutesFromHHmm(b.window.startLocal);
-            });
-
-        if (candidates.length === 0) {
-            return infeasible(
-                bundleId,
-                `Session '${member.sessionId}' requests ${member.requestedWindow.startLocal}-${member.requestedWindow.endLocal} on ${date}, `
-                + 'but no available window fits its duration after fixed commitments and other bundle members.',
-            );
-        }
-
-        const chosen = candidates[0];
-        const resolvedInstants = resolveBoundInstants(date, chosen.intersection.startLocal, chosen.intersection.endLocal);
-        if (!resolvedInstants) {
-            return infeasible(bundleId, `Session '${member.sessionId}''s bound window on ${date} falls on a nonexistent or ambiguous local time and requires explicit resolution.`);
-        }
-
-        const admission = admitsCandidate(
-            runningLedger,
-            minutesFromHHmm(chosen.intersection.endLocal) - minutesFromHHmm(chosen.intersection.startLocal),
-            member.estimatedMinutes,
-            member.estimatedSystemicCost,
-        );
-        if (!admission.admitted) {
-            return infeasible(bundleId, `Session '${member.sessionId}' cannot be admitted: the day's remaining minute or systemic-cost capacity is exhausted.`);
-        }
-
-        if (member.afterSessionId) {
-            const predecessorBinding = bindings.get(member.afterSessionId);
-            if (!predecessorBinding) {
-                return infeasible(bundleId, `Session '${member.sessionId}''s predecessor '${member.afterSessionId}' has no resolved binding yet.`);
-            }
-            const requiredSeparation = member.minimumSeparationMinutes ?? 0;
-            // elapsedMinutesBetweenInstants(startInstant, endInstant) computes
-            // startInstant - endInstant (D-TIME: "start minus the predecessor's actual
-            // end instant"), so the dependent's start is the first argument.
-            const gapMinutes = elapsedMinutesBetweenInstants(resolvedInstants.startInstant, predecessorBinding.endInstant);
-            if (gapMinutes < requiredSeparation) {
-                return infeasible(
-                    bundleId,
-                    `Session '${member.sessionId}' starts only ${gapMinutes} minute(s) after predecessor '${member.afterSessionId}' `
-                    + `ends, short of the required ${requiredSeparation}.`,
-                );
-            }
-        }
-
-        bindings.set(member.sessionId, {
-            sessionId: member.sessionId,
-            windowId: chosen.window.windowId,
-            boundStartLocal: chosen.intersection.startLocal,
-            boundEndLocal: chosen.intersection.endLocal,
-            startInstant: resolvedInstants.startInstant,
-            endInstant: resolvedInstants.endInstant,
-        });
-        pool = pool.filter(window => window.windowId !== chosen.window.windowId);
-        runningLedger = {
-            ...runningLedger,
-            remainingMinutes: Math.max(0, runningLedger.remainingMinutes - member.estimatedMinutes),
-            remainingSystemicCost: Math.max(0, runningLedger.remainingSystemicCost - member.estimatedSystemicCost),
-        };
-    }
+    const result = assignFrom(date, sorted, 0, { pool, ledger, bindings: new Map() });
+    if ('reason' in result) return infeasible(bundleId, result.reason);
 
     return {
         bundleId,
         outcome: 'placed',
-        bindings: sorted.map(member => bindings.get(member.sessionId)!),
+        bindings: sorted.map(member => result.bindings.get(member.sessionId)!),
     };
 }
 

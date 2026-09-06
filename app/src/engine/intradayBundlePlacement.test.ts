@@ -211,6 +211,78 @@ describe('proposeBundlePlacement', () => {
         const result = proposeBundlePlacement('b1', gapDate, members, [spanningWindow], [], new Set(), ledger());
         expect(result.outcome).toBe('infeasible');
     });
+
+    it('does not let a movable (non-fixed) activity block placement', () => {
+        const am = window({ id: 'am', startLocal: '06:00', endLocal: '07:00' });
+        const movable: FixedActivity[] = [{
+            id: 'f1', userId: 'u1', title: 'Movable placeholder', date: DATE, startTime: '06:00', durationMin: 60,
+            fixed: false, environment: 'outdoor', equipment: [], isCompleted: false,
+            createdAt: '', updatedAt: '',
+        }];
+        const result = proposeBundlePlacement('b1', DATE, [member()], [am], movable, new Set(), ledger());
+        expect(result.outcome).toBe('placed');
+    });
+
+    it('excludes a started member\'s occupied interval even when the current schedule now uses a different window id for it', () => {
+        // The window the member actually started in was 'old-am'; the athlete's schedule
+        // has since been edited so the current ScheduleWindow set only has 'new-am'
+        // covering the same 06:00-07:00 interval under a different id.
+        const newAm = window({ id: 'new-am', startLocal: '06:00', endLocal: '07:00' });
+        const pm = window({ id: 'pm', startLocal: '17:00', endLocal: '18:00' });
+        const existingBinding = {
+            sessionId: 's1', windowId: 'old-am', boundStartLocal: '06:00', boundEndLocal: '07:00',
+            startInstant: '2026-09-10T04:00:00.000Z', endInstant: '2026-09-10T05:00:00.000Z',
+        };
+        const members = [
+            member({ sessionId: 's1', order: 0, started: true, existingBinding }),
+            member({ sessionId: 's2', order: 1, requestedWindow: { startLocal: '06:00', endLocal: '07:00' } }),
+        ];
+        // 's2' requests the same interval as the started member's occupied interval,
+        // which must stay excluded by interval even though its window id changed.
+        const result = proposeBundlePlacement('b1', DATE, members, [newAm, pm], [], new Set(), ledger());
+        expect(result.outcome).toBe('infeasible');
+
+        const members2 = [
+            member({ sessionId: 's1', order: 0, started: true, existingBinding }),
+            member({ sessionId: 's2', order: 1, requestedWindow: { startLocal: '17:00', endLocal: '18:00' } }),
+        ];
+        const placed = proposeBundlePlacement('b1', DATE, members2, [newAm, pm], [], new Set(), ledger());
+        expect(placed.outcome).toBe('placed');
+        expect(placed.bindings?.find(b => b.sessionId === 's2')?.windowId).toBe('pm');
+    });
+
+    it('debits a started member\'s own consumption from the ledger before admitting later members', () => {
+        const am = window({ id: 'am', startLocal: '06:00', endLocal: '07:30' });
+        const pm = window({ id: 'pm', startLocal: '17:00', endLocal: '18:30' });
+        const existingBinding = {
+            sessionId: 's1', windowId: 'am', boundStartLocal: '06:00', boundEndLocal: '07:00',
+            startInstant: '2026-09-10T04:00:00.000Z', endInstant: '2026-09-10T05:00:00.000Z',
+        };
+        const members = [
+            member({ sessionId: 's1', order: 0, started: true, existingBinding, estimatedMinutes: 60 }),
+            member({ sessionId: 's2', order: 1, requestedWindow: { startLocal: '17:00', endLocal: '18:30' }, estimatedMinutes: 40 }),
+        ];
+        // 90-minute daily ceiling: the started 60-minute member must be charged first,
+        // leaving only 30 for the second member's 40-minute request.
+        const result = proposeBundlePlacement('b1', DATE, members, [am, pm], [], new Set(), ledger({ remainingMinutes: 90 }));
+        expect(result.outcome).toBe('infeasible');
+    });
+
+    it('backtracks an earlier member off its best-overlap window when that is the only way the whole bundle fits', () => {
+        // s1 (order 0) requests 06:00-08:00 and fits either 'a' (06:00-07:00, its best
+        // overlap) or 'b' (07:00-08:00). s2 (order 1) can only use 'a'. A greedy choice
+        // of 'a' for s1 would strand s2; the correct assignment swaps s1 onto 'b'.
+        const a = window({ id: 'a', startLocal: '06:00', endLocal: '07:00' });
+        const b = window({ id: 'b', startLocal: '07:00', endLocal: '08:00' });
+        const members = [
+            member({ sessionId: 's1', order: 0, requestedWindow: { startLocal: '06:00', endLocal: '08:00' }, estimatedMinutes: 30 }),
+            member({ sessionId: 's2', order: 1, requestedWindow: { startLocal: '06:00', endLocal: '07:00' }, estimatedMinutes: 30 }),
+        ];
+        const result = proposeBundlePlacement('b1', DATE, members, [a, b], [], new Set(), ledger());
+        expect(result.outcome).toBe('placed');
+        expect(result.bindings?.find(binding => binding.sessionId === 's1')?.windowId).toBe('b');
+        expect(result.bindings?.find(binding => binding.sessionId === 's2')?.windowId).toBe('a');
+    });
 });
 
 describe('dropOptionalBundleMember', () => {
