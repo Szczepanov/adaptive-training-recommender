@@ -199,8 +199,11 @@ actionable bundle members.
 1. **#434 PR 1 (delivered, PR #440):** Prescription launch binding for external-plan primary.
 2. **#434 PR 2 (occurrence tracking):** `SessionOccurrence` support for `external_plan`
    (`scheduled → active → completed` lifecycle).
-3. **#434 PR 3 (bundle second-member launch):** Adjudicating placed non-primary bundle members
-   and attaching them to `additionalSessions` in `Home.tsx`.
+3. **#434 PR 3 (bundle second-member launch & post-workout confirmation capture):**
+   - Adjudicating placed non-primary bundle members and attaching them to `additionalSessions` in `Home.tsx`.
+   - Wiring `SessionResponse` and `tissueResponses` prompt into the external-plan post-workout modal
+     upon AM session completion so athletes can submit post-predecessor confirmation immediately and
+     unblock downstream D-REASSESS evaluation without remaining stuck in `pending`.
 4. **D-REASSESS (issue #436):**
    - Pure `reassessDependentBundleMember` (handling `alreadyTrainedOverride` bypass, `SessionResponse`
      confirmation, elapsed separation, and `admitsCandidate`).
@@ -213,8 +216,6 @@ actionable bundle members.
 
 - Exact document path for date-level ledger locking: whether to lock on `users/{userId}/daily_recommendations/{date}`
   or a dedicated `users/{userId}/daily_ledgers/{date}` document during the claim transaction.
-- Wiring `SessionResponse` into the immediate post-workout modal for external-plan sessions
-  so athletes can submit post-predecessor confirmation immediately upon completing the AM session.
 - Firestore rules budget: ensure new date-level reservation updates do not exceed expression
   limits on the recommendation document, or use a dedicated collection with independent rules.
 
