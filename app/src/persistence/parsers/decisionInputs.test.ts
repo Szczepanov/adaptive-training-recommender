@@ -50,4 +50,38 @@ describe('decision-input parsers', () => {
         expect(parseSubjectiveCheckin(missingSafety, 'path', 'u1', '2026-08-07'))
             .toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-safety-flag' }] });
     });
+
+    it('parses valid physicalWork and rejects malformed physicalWork', () => {
+        const withPhysicalWork = {
+            ...checkin,
+            physicalWork: {
+                performed: true,
+                duration: 'medium',
+                intensity: 'hard',
+                loadAreas: ['grip_forearms', 'lower_back_spine'],
+                notes: 'wood chopping',
+            },
+        };
+        const parsed = parseSubjectiveCheckin(withPhysicalWork, 'users/u1/daily_subjective_checkins/2026-08-07', 'u1', '2026-08-07');
+        expect(parsed.status).toBe('AVAILABLE');
+        if (parsed.status === 'AVAILABLE') {
+            expect(parsed.data.physicalWork).toEqual({
+                performed: true,
+                duration: 'medium',
+                intensity: 'hard',
+                loadAreas: ['grip_forearms', 'lower_back_spine'],
+                notes: 'wood chopping',
+            });
+        }
+
+        const malformedPhysicalWork = {
+            ...checkin,
+            physicalWork: {
+                performed: true,
+                duration: 'invalid_duration',
+            },
+        };
+        expect(parseSubjectiveCheckin(malformedPhysicalWork, 'path', 'u1', '2026-08-07'))
+            .toMatchObject({ status: 'INVALID', issues: [{ code: 'invalid-physical-work' }] });
+    });
 });

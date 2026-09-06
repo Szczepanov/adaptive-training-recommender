@@ -13,6 +13,22 @@ export type SubjectiveDimensionKey =
     | 'stress'
     | 'motivation';
 
+export type PhysicalWorkDuration = 'short' | 'medium' | 'extended'; // <1h, 1-3h, 3h+
+export type PhysicalWorkIntensity = 'moderate' | 'hard' | 'exhausting';
+export type PhysicalWorkLoadArea =
+    | 'grip_forearms'
+    | 'upper_body'
+    | 'lower_back_spine'
+    | 'legs_carrying';
+
+export interface PhysicalWorkCheckin {
+    performed: boolean;
+    duration?: PhysicalWorkDuration;
+    intensity?: PhysicalWorkIntensity;
+    loadAreas?: PhysicalWorkLoadArea[];
+    notes?: string | null;
+}
+
 // --- Engine Input Models ---
 export interface SubjectiveInput {
     readiness: number; // 1-10
@@ -38,6 +54,8 @@ export interface SubjectiveInput {
      */
     painOrInjuryRegionFamilies?: InjuryRegionMappingFamily[];
     alreadyTrainedToday: boolean; // User-reported: a session was already completed today
+    /** Unlogged non-exercise physical activity / manual labor completed on the preceding day (D-1). */
+    physicalWork?: PhysicalWorkCheckin;
     /** Today's explicit modality ask from the check-in (e.g. 'Running', 'Strength',
      *  'Mobility'), or null for no preference. Compared case-insensitively against
      *  SessionTemplate.modality -- see rules.ts applyModalityPreference. A value with no
@@ -1182,6 +1200,8 @@ export interface DailySubjectiveCheckin {
      *  BodyRegion; see injuryPolicy.ts resolveEffectiveInjuryConstraints for how this
      *  combines with the athlete's standing InjuryConstraint[]. */
     tissueResponses?: Partial<Record<BodyRegion, RegionTissueResponse>>;
+    /** Optional unlogged non-exercise physical activity / heavy manual labor completed yesterday (D-1). */
+    physicalWork?: PhysicalWorkCheckin;
     // Availability block
     availability: {
         timeAvailableMin: number | null;
