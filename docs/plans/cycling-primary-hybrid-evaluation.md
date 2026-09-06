@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 (implementation unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 implementation depends on ADR-0035 support and verification of same-day canonical performed facts; H5 runtime requires validated intent mappings and linked response evidence, and cumulative `external-plan@5` acceptance additionally requires the landed H4 contract (ADR-0036).
+**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered (runtime wiring unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 runtime wiring (D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) depends on verification of same-day canonical performed facts; H5 runtime requires validated intent mappings and linked response evidence, and cumulative `external-plan@5` acceptance additionally requires the landed H4 contract (ADR-0036).
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -239,9 +239,12 @@ also remains blocked on current-workload/restriction confirmation.
 
 ## H4 — Intraday capacity and post-AM reassessment
 
-**Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md); implementation unstarted.
-**Dependencies:** ADR-0035 rest support and a verified same-day canonical performed-fact
-boundary for runtime release. Schema/pure-ledger work can start independently.
+**Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
+**D-SCHEMA and D-LEDGER delivered** (schema/pure-ledger slice); runtime wiring
+(D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) unstarted.
+**Dependencies:** ADR-0035 rest support (delivered) and a verified same-day canonical
+performed-fact boundary for runtime release. `POLICY_VERSION` is unchanged by this
+slice -- no decision behavior is activated yet.
 
 Decision: explicit athlete-owned windows, plan-owned sequencing in `external-plan@4`,
 one shared daily minute/load ledger, and fresh post-AM reassessment before PM launch.
@@ -254,6 +257,34 @@ atomic bundle moves, launch concurrency, DST, audit/replay and deterministic acc
 Existing preferred bundles and authored remaining-budget handling are reused. Add a
 separate execution family when the harness exposes the required facts; the current
 one-session forecasts do not validate doubles.
+
+### D-SCHEMA + D-LEDGER (delivered)
+
+`sessions/externalPlanV4.ts` adds `external-plan@4`: the same envelope as v3 (inheriting
+`restDays` unchanged) plus a session-level optional `intraday` object (`window`,
+`bundleId`, `order`, `afterSessionId`, `minimumSeparationMinutes`), following the ADR's
+D-SCHEMA sketch. Validation is structural/reference-only -- HH:mm format and positive
+same-day duration, bundle membership agreement (`week`/`preferredDay`/`flexibility`), unique
+order, no overlapping requested windows, no dangling/forward/cyclic `afterSessionId`, no
+required session depending on an optional predecessor, and no intraday session date
+conflicting with an authored rest directive. It does not resolve requested windows
+against real availability (D-TIME) and is not wired into placement or any decision.
+
+`engine/dailyLedger.ts` implements D-LEDGER's remainder/reconciliation math as a pure,
+timestamp-agnostic module: `computeDailyLedger` (dedupes by occurrence identity/highest
+revision, clamps each of minute/systemic-cost remainders at zero independently, reports
+unresolved entries), `admitsCandidate` (spare minutes never substitute for exhausted cost
+capacity or vice versa) and `reconcileEntry` (idempotent under stale/duplicate/replayed
+evidence, never erases a reservation on overrun). It is not yet wired into
+`schedule.ts`'s `resolveAvailability`/`calculateReservedCapacityProfile` or the other
+fixed-activity cost/stimulus reduces in `planner.ts`/`rules.ts` -- that refactor is the
+next H4 step once the same-day canonical-fact boundary is verified.
+
+`externalPlanV4.test.ts` and `dailyLedger.test.ts` cover the ADR's deterministic list for
+this slice, including the worked example (a 90-minute daily ceiling with 60-minute AM
+completion leaves at most 30 minutes for PM even though both windows individually offer
+90 minutes) and the exhausted-systemic-cost-blocks-admission case. `simulate:diff` and
+policy-drift show no change from this slice, confirming it is inert until wired.
 
 ## H5 — Explicit develop/maintain intent and progression
 

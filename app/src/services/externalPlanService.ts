@@ -1,4 +1,4 @@
-import { collection, doc, getDoc, getDocs, setDoc, type DocumentData } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, setDoc, writeBatch, type DocumentData } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type {
     ExternalPlanHeader,
@@ -11,18 +11,20 @@ import { computeContentHash } from '../engine/externalPlanHash';
 import { getErrorCode, getErrorMessage } from '../utils/errors';
 import { validateExternalTrainingPlanV2, EXTERNAL_PLAN_SCHEMA_V2, type ExternalTrainingPlanV2 } from '../sessions/externalPlanV2';
 import { validateExternalTrainingPlanV3, EXTERNAL_PLAN_SCHEMA_V3, type ExternalTrainingPlanV3 } from '../sessions/externalPlanV3';
+import { validateExternalTrainingPlanV4, EXTERNAL_PLAN_SCHEMA_V4, type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
 
 /** Re-exported so existing callers keep one import site. The implementation lives in
  * `engine/externalPlanHash.ts` because `replay.ts` verifies against it and must not pull
  * a Firestore-bound module into the audit path. */
 export { computeContentHash } from '../engine/externalPlanHash';
 
-/** Dispatches to the v1, v2 or v3 validator based on the raw document's own `schema`
+/** Dispatches to the v1, v2, v3 or v4 validator based on the raw document's own `schema`
  * literal, mirroring the "back-inferred/branched on a discriminant" precedent
  * `DailyRecommendation.schemaVersion` already uses. v1 stays the default so a malformed
  * `schema` value fails against v1's stricter literal check rather than silently passing. */
 function validateAnyExternalTrainingPlan(raw: unknown) {
     const schema = (raw as { schema?: unknown } | null)?.schema;
+    if (schema === EXTERNAL_PLAN_SCHEMA_V4) return validateExternalTrainingPlanV4(raw);
     if (schema === EXTERNAL_PLAN_SCHEMA_V3) return validateExternalTrainingPlanV3(raw);
     if (schema === EXTERNAL_PLAN_SCHEMA_V2) return validateExternalTrainingPlanV2(raw);
     return validateExternalTrainingPlan(raw);
@@ -30,7 +32,7 @@ function validateAnyExternalTrainingPlan(raw: unknown) {
 
 export interface ImportResult {
     header: ExternalPlanHeader;
-    plan: ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3;
+    plan: ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4;
 }
 
 /** User-scoped persistence for externally-authored plans. A stored revision is immutable:
@@ -99,10 +101,13 @@ export class ExternalPlanService {
                 updatedAt: now,
             };
 
-            // Revision first: a header pointing at a revision that failed to write would
-            // claim an import that cannot be read back or replayed.
-            await setDoc(this.revisionRef(userId, plan.planId, plan.revision), plan as unknown as DocumentData);
-            await setDoc(this.headerRef(userId, plan.planId), header as unknown as DocumentData);
+            // The revision and header are committed in a single atomic batch: both documents
+            // commit together or neither does, ensuring a failed commit leaves no orphan
+            // revision or header and retries can cleanly succeed.
+            const batch = writeBatch(getDb());
+            batch.set(this.revisionRef(userId, plan.planId, plan.revision), plan as unknown as DocumentData);
+            batch.set(this.headerRef(userId, plan.planId), header as unknown as DocumentData);
+            await batch.commit();
             return { status: 'AVAILABLE', data: { header, plan }, revision: header.contentHash };
         } catch (error: unknown) {
             console.error('[ExternalPlanService.import] Failed:', error);
@@ -140,7 +145,7 @@ export class ExternalPlanService {
 
     /** Re-validates on read. A revision that no longer satisfies the contract -- because
      * the contract moved, or the document was tampered with -- is `INVALID`, never coerced. */
-    async getRevisionState(userId: string, planId: string, revision: number): Promise<DataState<ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3>> {
+    async getRevisionState(userId: string, planId: string, revision: number): Promise<DataState<ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4>> {
         const documentPath = `users/${userId}/external_plans/${planId}/revisions/${revision}`;
         try {
             const snapshot = await getDoc(this.revisionRef(userId, planId, revision));
