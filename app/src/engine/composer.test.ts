@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { addDaysToLocalDateString } from '../utils/localDate';
-import type { DailySubjectiveCheckin } from './models';
+import type { DailySubjectiveCheckin, ScheduleOverlay } from './models';
 
 const services = vi.hoisted(() => ({
     recovery: { getRecoverySnapshotState: vi.fn() },
@@ -157,16 +157,25 @@ describe('DecisionComposer schedule overlays source', () => {
     });
 
     it('carries available schedule overlays and summarized source state into composed input', async () => {
-        const overlay = {
+        const overlay: ScheduleOverlay = {
             id: 'ov-1',
             userId: 'u1',
-            category: 'active_sport' as const,
-            sport: 'skiing' as const,
+            title: 'Ski trip',
+            category: 'active_sport',
+            sport: 'skiing',
             startDate: '2026-08-10',
             endDate: '2026-08-12',
-            expectedCost: 'high' as const,
+            expectedCost: {
+                systemic: 0.8,
+                cardiovascular: 0.8,
+                lowerBody: 0.6,
+                upperBody: 0.0,
+                impactTissue: 0.4,
+                neuromuscular: 0.5,
+            },
             dailyAvailabilityMinutes: 0,
-            allowAlternativeWorkouts: false,
+            volumeScale: 0.5,
+            intensityScale: 0.5,
             createdAt: '2026-08-01T00:00:00Z',
             updatedAt: '2026-08-01T00:00:00Z',
         };
