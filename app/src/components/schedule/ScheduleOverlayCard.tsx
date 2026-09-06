@@ -12,12 +12,26 @@ interface ScheduleOverlayCardProps {
     onChanged?: () => void;
 }
 
+function activeSportIcon(sport?: string): string {
+    switch (sport) {
+        case 'skiing': return '⛷️';
+        case 'volleyball': return '🏐';
+        case 'hiking': return '🥾';
+        case 'court_sport': return '🎾';
+        case 'field_sport': return '⚽';
+        default: return '🏃';
+    }
+}
+
 function categoryBadge(category: ScheduleOverlayWithId['category'], sport?: string) {
     if (category === 'active_sport') {
-        return { icon: '⛷️', label: sport ? `Active (${sport})` : 'Active Sport', className: 'badge-active' };
+        return { icon: activeSportIcon(sport), label: sport ? `Active (${sport.replaceAll('_', ' ')})` : 'Active Sport', className: 'badge-active' };
     }
     if (category === 'sedentary_rest') {
         return { icon: '🎄', label: 'Sedentary Rest', className: 'badge-rest' };
+    }
+    if (category === 'limited_availability') {
+        return { icon: '⏱️', label: 'Limited Time', className: 'badge-limited' };
     }
     return { icon: '🚶', label: 'High-Step Walking', className: 'badge-walking' };
 }
@@ -63,7 +77,6 @@ export const ScheduleOverlayCard = memo(function ScheduleOverlayCard({
     };
 
     const today = getLocalDateString();
-    // Filter out past overlays that ended before today, but show them in collapsible or just show active & future
     const activeAndUpcoming = overlays.filter(o => o.endDate >= today);
     const past = overlays.filter(o => o.endDate < today);
 
@@ -73,7 +86,7 @@ export const ScheduleOverlayCard = memo(function ScheduleOverlayCard({
                 <div>
                     <h3 className="card-title">Planned Absences & Sport Blocks</h3>
                     <p className="card-description">
-                        Inform the adaptive planner about upcoming trips, holidays, and active sport blocks (skiing, volleyball, city walks) weeks or months ahead.
+                        Inform the adaptive planner about upcoming trips, holidays, active sport blocks, or time-constrained days weeks or months ahead.
                     </p>
                 </div>
                 <button
@@ -81,7 +94,7 @@ export const ScheduleOverlayCard = memo(function ScheduleOverlayCard({
                     className="btn-add-overlay"
                     onClick={handleOpenCreate}
                 >
-                    + Plan Absence
+                    + Plan Schedule Block
                 </button>
             </div>
 
@@ -90,9 +103,9 @@ export const ScheduleOverlayCard = memo(function ScheduleOverlayCard({
             ) : activeAndUpcoming.length === 0 ? (
                 <div className="overlay-empty-state">
                     <span className="empty-icon">🗓️</span>
-                    <p>No upcoming planned absences.</p>
+                    <p>No upcoming schedule blocks.</p>
                     <span className="empty-hint">
-                        Add trips or rest days (like Christmas or skiing) so macro cycles and weekly anchors avoid them.
+                        Add trips, rest days, sport blocks, or time-crunch periods so weekly anchors and training dose adapt around them.
                     </span>
                 </div>
             ) : (
@@ -153,13 +166,18 @@ export const ScheduleOverlayCard = memo(function ScheduleOverlayCard({
 
             {past.length > 0 && (
                 <details className="past-overlays-accordion">
-                    <summary className="past-summary">Past Absences ({past.length})</summary>
+                    <summary className="past-summary">Past Schedule Blocks ({past.length})</summary>
                     <div className="past-list">
                         {past.map(item => (
-                            <div key={item.id} className="past-item" onClick={() => handleOpenEdit(item)}>
+                            <button
+                                key={item.id}
+                                type="button"
+                                className="past-item"
+                                onClick={() => handleOpenEdit(item)}
+                            >
                                 <span>{item.title}</span>
                                 <span className="past-dates">{item.startDate} to {item.endDate}</span>
-                            </div>
+                            </button>
                         ))}
                     </div>
                 </details>
