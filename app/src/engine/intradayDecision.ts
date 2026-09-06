@@ -9,7 +9,7 @@
  * supersession chains are maintained via `supersededDecisionId`.
  */
 
-import type { BundlePlacementProposal } from './intradayBundlePlacement';
+import type { BundlePlacementProposal, ResolvedWindowBinding } from './intradayBundlePlacement';
 import type { LedgerCeilings, LedgerEntry } from './dailyLedger';
 import type { ExternalRevisionEvidence } from './replay';
 import { POLICY_VERSION } from './policy';
@@ -144,11 +144,46 @@ export function validateIntradayDecisionRecord(raw: unknown): IntradayDecisionRe
         throw new TypeError('bundlePlacement must be a non-null object');
     }
     const bp = data.bundlePlacement as Record<string, unknown>;
-    assertString(bp.bundleId, 'bundlePlacement.bundleId', 1, 128);
+    const placementBundleId = assertString(bp.bundleId, 'bundlePlacement.bundleId', 1, 128);
     if (bp.outcome !== 'placed' && bp.outcome !== 'infeasible') {
         throw new TypeError('bundlePlacement.outcome must be "placed" or "infeasible"');
     }
-    const bundlePlacement = data.bundlePlacement as BundlePlacementProposal;
+
+    let bundlePlacement: BundlePlacementProposal;
+    if (bp.outcome === 'placed') {
+        if (!Array.isArray(bp.bindings)) {
+            throw new TypeError('bundlePlacement.bindings must be an array when outcome is "placed"');
+        }
+        if (bp.bindings.length === 0) {
+            throw new TypeError('bundlePlacement.bindings must contain at least one binding when outcome is "placed"');
+        }
+        const validatedBindings: ResolvedWindowBinding[] = bp.bindings.map((b, idx) => {
+            if (!b || typeof b !== 'object') {
+                throw new TypeError(`bundlePlacement.bindings[${idx}] must be a non-null object`);
+            }
+            const item = b as Record<string, unknown>;
+            return {
+                sessionId: assertString(item.sessionId, `bundlePlacement.bindings[${idx}].sessionId`, 1, 128),
+                windowId: assertString(item.windowId, `bundlePlacement.bindings[${idx}].windowId`, 1, 128),
+                boundStartLocal: assertString(item.boundStartLocal, `bundlePlacement.bindings[${idx}].boundStartLocal`, 1, 64),
+                boundEndLocal: assertString(item.boundEndLocal, `bundlePlacement.bindings[${idx}].boundEndLocal`, 1, 64),
+                startInstant: assertString(item.startInstant, `bundlePlacement.bindings[${idx}].startInstant`, 1, 64),
+                endInstant: assertString(item.endInstant, `bundlePlacement.bindings[${idx}].endInstant`, 1, 64),
+            };
+        });
+        bundlePlacement = {
+            bundleId: placementBundleId,
+            outcome: 'placed',
+            bindings: validatedBindings,
+        };
+    } else {
+        const reason = assertString(bp.reason, 'bundlePlacement.reason', 1, 512);
+        bundlePlacement = {
+            bundleId: placementBundleId,
+            outcome: 'infeasible',
+            reason,
+        };
+    }
 
     if (!data.ledgerSnapshot || typeof data.ledgerSnapshot !== 'object') {
         throw new TypeError('ledgerSnapshot must be a non-null object');
@@ -237,10 +272,10 @@ export function intradayDecisionReplayErrors(
             errors.push(`Bundle identity mismatch: record references ${record.bundleId} but bundlePlacement recorded ${bp.bundleId}`);
         }
         if (bp.outcome === 'placed') {
-            if (!bp.bindings || bp.bindings.length === 0) {
+            if (!Array.isArray(bp.bindings) || bp.bindings.length === 0) {
                 errors.push('Bundle placement marked placed but contains no window bindings');
             } else {
-                const targetBinding = bp.bindings.find(b => b.sessionId === record.sessionId);
+                const targetBinding = bp.bindings.find(b => b && typeof b === 'object' && b.sessionId === record.sessionId);
                 if (!targetBinding) {
                     errors.push(`Bundle placement does not bind target session ${record.sessionId}`);
                 } else if (targetBinding.windowId !== record.windowId) {
@@ -248,7 +283,7 @@ export function intradayDecisionReplayErrors(
                 }
             }
         } else if (bp.outcome === 'infeasible') {
-            if (!bp.reason) {
+            if (typeof bp.reason !== 'string' || bp.reason.trim().length === 0) {
                 errors.push('Bundle placement marked infeasible but contains no failure reason');
             }
         } else {

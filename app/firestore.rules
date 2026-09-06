@@ -1604,8 +1604,12 @@ service cloud.firestore {
         && data.reassessmentInputRevision is map
         && data.reassessmentInputRevision.keys().hasAll(['availabilityRevision', 'completedFactsRevision', 'checkinRevision', 'ledgerRevision', 'placementRevision'])
         && data.bundlePlacement is map
-        && data.bundlePlacement.bundleId is string
+        && data.bundlePlacement.bundleId is string && data.bundlePlacement.bundleId.size() > 0 && data.bundlePlacement.bundleId.size() <= 128
         && data.bundlePlacement.outcome in ['placed', 'infeasible']
+        && (
+          (data.bundlePlacement.outcome == 'placed' && data.bundlePlacement.bindings is list && data.bundlePlacement.bindings.size() > 0)
+          || (data.bundlePlacement.outcome == 'infeasible' && data.bundlePlacement.reason is string && data.bundlePlacement.reason.size() > 0 && data.bundlePlacement.reason.size() <= 512)
+        )
         && data.ledgerSnapshot is map
         && data.ledgerSnapshot.keys().hasAll(['ceilings', 'entries'])
         && data.ledgerSnapshot.ceilings is map

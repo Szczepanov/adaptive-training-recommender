@@ -117,6 +117,39 @@ describe('intradayDecision validation and replay', () => {
             ...sampleRecord(),
             verdict: { decision: 'unknown' as unknown as IntradayDecisionVerdictOutcome, reasons: [] },
         })).toThrow(TypeError);
+        expect(() => validateIntradayDecisionRecord({
+            ...sampleRecord(),
+            bundlePlacement: { bundleId: 'b1', outcome: 'placed', bindings: [] },
+        })).toThrow(TypeError);
+        expect(() => validateIntradayDecisionRecord({
+            ...sampleRecord(),
+            bundlePlacement: { bundleId: 'b1', outcome: 'placed', bindings: 'not-an-array' as unknown as [] },
+        })).toThrow(TypeError);
+        expect(() => validateIntradayDecisionRecord({
+            ...sampleRecord(),
+            bundlePlacement: { bundleId: 'b1', outcome: 'placed', bindings: [{ sessionId: 's1' }] as unknown as [] },
+        })).toThrow(TypeError);
+        expect(() => validateIntradayDecisionRecord({
+            ...sampleRecord(),
+            bundlePlacement: { bundleId: 'b1', outcome: 'infeasible' },
+        })).toThrow(TypeError);
+        expect(() => validateIntradayDecisionRecord({
+            ...sampleRecord(),
+            bundlePlacement: { bundleId: 'b1', outcome: 'infeasible', reason: '' },
+        })).toThrow(TypeError);
+    });
+
+    it('validates an infeasible proposal with a non-empty reason', () => {
+        const record = sampleRecord({
+            bundlePlacement: {
+                bundleId: 'bundle-sunday',
+                outcome: 'infeasible',
+                reason: 'No available schedule window satisfies the session duration',
+            },
+        });
+        const validated = validateIntradayDecisionRecord(record);
+        expect(validated.bundlePlacement.outcome).toBe('infeasible');
+        expect(validated.bundlePlacement.reason).toBe('No available schedule window satisfies the session duration');
     });
 
     it('replays a clean record against matching external plan revision with 0 errors', () => {
@@ -144,6 +177,17 @@ describe('intradayDecision validation and replay', () => {
         const errors = intradayDecisionReplayErrors(record);
         expect(errors.some(e => e.includes('Bundle identity mismatch'))).toBe(true);
         expect(errors.some(e => e.includes('contains no window bindings'))).toBe(true);
+
+        // Defensively handles non-array truthy bindings without throwing TypeError
+        const malformedRecord = sampleRecord({
+            bundlePlacement: {
+                bundleId: 'bundle-sunday',
+                outcome: 'placed',
+                bindings: 'invalid' as unknown as [],
+            },
+        });
+        const malformedErrors = intradayDecisionReplayErrors(malformedRecord);
+        expect(malformedErrors.some(e => e.includes('contains no window bindings'))).toBe(true);
     });
 
     it('detects external plan mismatch when session order or bundle disagrees', () => {

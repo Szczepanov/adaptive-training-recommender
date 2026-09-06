@@ -42,7 +42,16 @@ function validRecord() {
         bundlePlacement: {
             bundleId: 'bundle-sunday-1',
             outcome: 'placed',
-            bindings: [],
+            bindings: [
+                {
+                    sessionId: 'sess-am-1',
+                    windowId: 'win-am-1',
+                    boundStartLocal: '08:00',
+                    boundEndLocal: '09:00',
+                    startInstant: '2026-09-06T06:00:00.000Z',
+                    endInstant: '2026-09-06T07:00:00.000Z',
+                },
+            ],
         },
         ledgerSnapshot: {
             ceilings: {
@@ -109,5 +118,30 @@ emulatorDescribe('Intraday decision security rules (ADR-0036 D-AUDIT)', () => {
         await assertFails(setDoc(doc(db, docPath), { ...validRecord(), schemaVersion: 2 }));
         await assertFails(setDoc(doc(db, docPath), { ...validRecord(), orderInBundle: -1 }));
         await assertFails(setDoc(doc(db, docPath), { ...validRecord(), unexpectedKey: true }));
+        await assertFails(setDoc(doc(db, docPath), {
+            ...validRecord(),
+            bundlePlacement: { bundleId: 'bundle-sunday-1', outcome: 'placed', bindings: [] },
+        }));
+        await assertFails(setDoc(doc(db, docPath), {
+            ...validRecord(),
+            bundlePlacement: { bundleId: 'bundle-sunday-1', outcome: 'infeasible' },
+        }));
+        await assertFails(setDoc(doc(db, docPath), {
+            ...validRecord(),
+            bundlePlacement: { bundleId: 'bundle-sunday-1', outcome: 'infeasible', reason: '' },
+        }));
+    });
+
+    it('accepts valid infeasible proposals with a non-empty reason', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const infeasibleRecord = {
+            ...validRecord(),
+            bundlePlacement: {
+                bundleId: 'bundle-sunday-1',
+                outcome: 'infeasible',
+                reason: 'No available schedule window',
+            },
+        };
+        await assertSucceeds(setDoc(doc(db, docPath), infeasibleRecord));
     });
 });

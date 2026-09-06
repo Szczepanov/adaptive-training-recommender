@@ -53,7 +53,16 @@ function sampleRecord(id = 'dec-1', overrides: Partial<IntradayDecisionRecord> =
         bundlePlacement: {
             bundleId: 'bundle-1',
             outcome: 'placed',
-            bindings: [],
+            bindings: [
+                {
+                    sessionId: 'sess-1',
+                    windowId: 'win-1',
+                    boundStartLocal: '08:00',
+                    boundEndLocal: '09:00',
+                    startInstant: '2026-09-06T06:00:00.000Z',
+                    endInstant: '2026-09-06T07:00:00.000Z',
+                },
+            ],
         },
         ledgerSnapshot: {
             ceilings: { dailyMinuteCeiling: 60, dailySystemicCostCeiling: 0.5 },
@@ -132,5 +141,39 @@ describe('intradayDecisionService', () => {
         });
         const activeOccurrence = await getActiveIntradayDecisionForOccurrence('u1', '2026-09-06', 'occ-1');
         expect(activeOccurrence?.id).toBe('dec-2');
+    });
+
+    it('rejects saving a record with supersededDecisionId referencing a different occurrenceId', async () => {
+        const priorRecord = sampleRecord('dec-1', { occurrenceId: 'occ-am' });
+        const invalidSuperseding = sampleRecord('dec-2', {
+            occurrenceId: 'occ-pm',
+            supersededDecisionId: 'dec-1',
+        });
+
+        mockGetDoc.mockResolvedValueOnce({
+            exists: () => true,
+            data: () => priorRecord,
+        });
+
+        await expect(saveIntradayDecision(invalidSuperseding)).rejects.toThrow(
+            /cannot supersede decision dec-1 for occurrence occ-am/
+        );
+        expect(mockSetDoc).not.toHaveBeenCalled();
+    });
+
+    it('does not suppress active decisions from other occurrences when a record contains a mismatched cross-occurrence supersededDecisionId', async () => {
+        const occ1Decision = sampleRecord('dec-occ1', { occurrenceId: 'occ-1', status: 'provisional' });
+        const occ2Decision = sampleRecord('dec-occ2', {
+            occurrenceId: 'occ-2',
+            status: 'confirmed',
+            supersededDecisionId: 'dec-occ1',
+        });
+
+        mockGetDocs.mockResolvedValueOnce({
+            docs: [{ data: () => occ1Decision }, { data: () => occ2Decision }],
+        });
+
+        const active = await getActiveIntradayDecisionsForDate('u1', '2026-09-06');
+        expect(active.map(r => r.id).sort()).toEqual(['dec-occ1', 'dec-occ2']);
     });
 });

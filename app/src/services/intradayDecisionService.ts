@@ -27,6 +27,14 @@ export function getIntradayDecisionsCollectionPath(userId: string): string {
  */
 export async function saveIntradayDecision(record: IntradayDecisionRecord): Promise<void> {
     const validated = validateIntradayDecisionRecord(record);
+    if (validated.supersededDecisionId) {
+        const prior = await getIntradayDecision(validated.userId, validated.supersededDecisionId);
+        if (prior && prior.occurrenceId !== validated.occurrenceId) {
+            throw new Error(
+                `Invalid supersession: decision ${validated.id} for occurrence ${validated.occurrenceId} cannot supersede decision ${validated.supersededDecisionId} for occurrence ${prior.occurrenceId}`
+            );
+        }
+    }
     const db = getDb();
     const docRef = doc(db, getIntradayDecisionDocPath(validated.userId, validated.id));
     await setDoc(docRef, validated);
@@ -62,16 +70,21 @@ export async function listIntradayDecisionsForDate(userId: string, date: string)
 
 /**
  * Resolves the active (non-superseded) decision records for a given date.
- * Filters out records whose ID is referenced as `supersededDecisionId` by any other record.
+ * Filters out records whose ID is referenced as `supersededDecisionId` by any other record
+ * belonging to the same occurrence.
  */
 export async function getActiveIntradayDecisionsForDate(userId: string, date: string): Promise<IntradayDecisionRecord[]> {
     const allRecords = await listIntradayDecisionsForDate(userId, date);
     if (allRecords.length === 0) return [];
 
+    const recordById = new Map<string, IntradayDecisionRecord>(allRecords.map(r => [r.id, r]));
     const supersededIds = new Set<string>();
     for (const r of allRecords) {
         if (r.supersededDecisionId) {
-            supersededIds.add(r.supersededDecisionId);
+            const target = recordById.get(r.supersededDecisionId);
+            if (target && target.occurrenceId === r.occurrenceId) {
+                supersededIds.add(r.supersededDecisionId);
+            }
         }
     }
 
