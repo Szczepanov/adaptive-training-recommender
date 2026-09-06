@@ -44,7 +44,7 @@ occurrenceId: launch.binding.occurrenceId, prescriptionHash: launch.binding.pres
 })`, confirmed at `SessionRunner.tsx:331,353,447`). There is no code path that starts a
 session without going through this `PreparedSessionLaunch` shape.
 
-### Why v4 (not v1-v3) is the actually-tractable target
+### Why v4 is the targeted scope for PR 1
 
 - `ExternalPlanSessionV4.definition: SessionDefinition` (`sessions/externalPlanV4.ts:62`)
   is the **exact same structured type** `SessionRunner` already consumes for manual/catalog
@@ -57,12 +57,14 @@ session without going through this `PreparedSessionLaunch` shape.
   re-run defensively. This removes what looked like a risk (re-validating untrusted-shaped
   imported JSON at launch time) — it's already been checked once, and defense-in-depth
   re-validation at launch is cheap and consistent with the existing manual/catalog paths.
-- v1/v2/v3 sessions instead carry `prescription: { summary: string }` — free text, not a
-  `SessionDefinition`. Making *those* launchable through `SessionRunner` would require a
-  much larger authoring/parsing project (turning free text into structured blocks) that
-  has nothing to do with H4 or D-PLACEMENT, since intraday bundles are a v4-only capability
-  (`intraday` is declared only on `ExternalPlanSessionV4`). **Scope this pipeline to v4
-  only; leave v1-v3's existing text-display path completely untouched.**
+- Note on older schemas: `external-plan@1` carries only free-text `prescription: { summary: string }`.
+  `external-plan@2` (M3.6) and `external-plan@3` (ADR-0035) introduced and retained structured
+  `definition: SessionDefinition` (and `sessionDefinitionResolver.ts:245-247` already resolves
+  v2, v3, and v4 identically via `isV2Session`). However, intraday bundles are a v4-only capability
+  (`intraday` is declared only on `ExternalPlanSessionV4`). **Scoping this initial pipeline to
+  v4 keeps PR 1 strictly bounded to proving out the execution binding alongside H4 D-PLACEMENT
+  bundle resolution**, without risking regressions on legacy plans. Broader enablement across v2/v3
+  can follow trivially once v4 is validated.
 
 ### What's missing, concretely
 
@@ -147,44 +149,46 @@ piece (bundle launch, D-REASSESS) builds on.
     * separate occurrence doc either. v1-v3 sessions (prescription: {summary}, no
     * SessionDefinition) are out of scope -- this only accepts a v4 ExternalPlanContext.
     */
-   export async function prepareExternalPlanSessionLaunch(
-       userId: string,
-       externalPlan: { planId: string; revision: number; contentHash: string; session: ExternalPlanSessionV4 },
-   ): Promise<PreparedSessionLaunch> {
-       const definition = externalPlan.session.definition;
-       // Defense in depth: already validated at import time (validateExternalSessionV2,
-       // reused unchanged by v4), but every other launch path re-validates too.
-       const validation = validateSessionDefinition(definition);
-       if (!validation.ok) {
-           throw new Error(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));
-       }
-       const definitionHash = await hashSessionDefinition(definition);
-       const sessionSource: Extract<SessionReferenceBinding['sessionSource'], { kind: 'external_plan' }> = {
-           kind: 'external_plan',
-           planId: externalPlan.planId,
-           revision: externalPlan.revision,
-           sessionId: externalPlan.session.id,
-           contentHash: externalPlan.contentHash,
-       };
-       const unsignedPrescription: ExecutionPrescription = {
-           schemaVersion: 1,
-           prescriptionHash: '',
-           sessionSource,
-           definitionHash,
-           blocks: definition.blocks,
-           displayMetadata: {
-               title: definition.title,
-               ...(definition.summary !== undefined ? { summary: definition.summary } : {}),
-               intent: definition.intent,
-               ...(definition.dominantModality !== undefined ? { dominantModality: definition.dominantModality } : {}),
-               ...(definition.duration !== undefined ? { duration: definition.duration } : {}),
-           },
-           createdAt: new Date().toISOString(),
-       };
-       const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
-       await executionPrescriptionService.savePrescription(userId, { ...unsignedPrescription, prescriptionHash });
-       return { definition, binding: { sessionSource, prescriptionHash } };
-   }
+    export async function prepareExternalPlanSessionLaunch(
+        userId: string,
+        externalPlan: { planId: string; revision: number; contentHash: string; session: ExternalPlanSessionV4 },
+        summaryOverride?: string,
+    ): Promise<PreparedSessionLaunch> {
+        const definition = externalPlan.session.definition;
+        // Defense in depth: already validated at import time (validateExternalSessionV2,
+        // reused unchanged by v4), but every other launch path re-validates too.
+        const validation = validateSessionDefinition(definition);
+        if (!validation.ok) {
+            throw new Error(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));
+        }
+        const definitionHash = await hashSessionDefinition(definition);
+        const sessionSource: Extract<SessionReferenceBinding['sessionSource'], { kind: 'external_plan' }> = {
+            kind: 'external_plan',
+            planId: externalPlan.planId,
+            revision: externalPlan.revision,
+            sessionId: externalPlan.session.id,
+            contentHash: externalPlan.contentHash,
+        };
+        const effectiveSummary = summaryOverride ?? definition.summary;
+        const unsignedPrescription: ExecutionPrescription = {
+            schemaVersion: 1,
+            prescriptionHash: '',
+            sessionSource,
+            definitionHash,
+            blocks: definition.blocks,
+            displayMetadata: {
+                title: definition.title,
+                ...(effectiveSummary !== undefined ? { summary: effectiveSummary } : {}),
+                intent: definition.intent,
+                ...(definition.dominantModality !== undefined ? { dominantModality: definition.dominantModality } : {}),
+                ...(definition.duration !== undefined ? { duration: definition.duration } : {}),
+            },
+            createdAt: new Date().toISOString(),
+        };
+        const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
+        await executionPrescriptionService.savePrescription(userId, { ...unsignedPrescription, prescriptionHash });
+        return { definition, binding: { sessionSource, prescriptionHash } };
+    }
    ```
    Exact field names/types need re-verification against current `sessionAuthoringService.ts`
    at implementation time (this doc was written against the tree as of PR #432 merging;
@@ -193,16 +197,51 @@ piece (bundle launch, D-REASSESS) builds on.
 2. **`app/src/components/Home.tsx`** — after `evaluateTrainingWithIntent` returns and
    `recommendationWithPrescription`/`primarySession` are being assembled (the existing
    `if (recommendationWithPrescription.prescription) { ... prepareCatalogSessionLaunch ... }`
-   block, roughly lines 433-471 as of this writing): add an `else if` branch for when the
-   recommendation came from `adjudicatedExternalRecommendation` instead (check for
-   `recommendationWithPrescription.externalPrescription` being present, or thread a typed
-   discriminant through if that's cleaner) and the plan session is v4
-   (`isV4Plan`/`hasIntraday`-style narrowing, or simpler: check `'definition' in session`
-   since only v4's session carries it in a way distinguishable from v1-v3's
-   `prescription`-shaped session — verify exact narrowing at implementation time). Call
-   `prepareExternalPlanSessionLaunch` and set `primarySession = launch.binding`.
+   block): add an `else if` branch for when the recommendation came from
+   `adjudicatedExternalRecommendation`.
 
-3. **Decide whether `externalPrescription`/`externalVerdict`/`decisionTrace.externalPlan`
+   **CRITICAL DOMAIN SAFETY GATE:**
+   In `rules.ts:659`, `externalPrescription` is *unconditionally* populated whenever an
+   external plan session is present, even if the engine ruled `skip` (clinical red flag or
+   safety-restricted modality) or `defer` (recovery mode), or if the recommended template was
+   swapped to canonical Rest (`rest_01`). A `primarySession` binding must **NEVER** be created
+   for a skipped or deferred session.
+
+   Gate the launch preparation strictly on:
+   ```typescript
+   const verdict = recommendationWithPrescription.externalVerdict?.decision;
+   const isActionable = verdict === 'proceed' || verdict === 'scale';
+   const notRest = recommendationWithPrescription.template.id !== 'rest_01';
+   if (isActionable && notRest && externalContext && 'definition' in externalContext.session) {
+       try {
+           const launch = await prepareExternalPlanSessionLaunch(
+               userId,
+               {
+                   planId: externalContext.planId,
+                   revision: externalContext.revision,
+                   contentHash: externalContext.contentHash,
+                   session: externalContext.session as ExternalPlanSessionV4,
+               },
+               recommendationWithPrescription.externalVerdict?.scaledSummary,
+           );
+           if (!isCurrent()) return;
+           primarySession = launch.binding;
+       } catch (err) {
+           console.warn('Failed to prepare the external-plan session binding for today\'s recommendation:', err);
+       }
+   }
+   ```
+
+3. **Behavior on `scale` verdict:**
+   For catalog sessions, `resolveWorkoutPrescription` produces `adjustedBlocks`. External-plan
+   sessions currently lack a block-level auto-scaling transformer (only
+   `session.scaling.reducedSummary` and volume/intensity scalar bounds exist). In PR 1,
+   `session.definition` blocks remain the authored blocks, while `displayMetadata.summary`
+   captures `verdict.scaledSummary` (passed via `summaryOverride` above) so the athlete and
+   subsequent replays see the intended reduction. A full block-level scaling engine for external
+   definitions is deferred to a future PR.
+
+4. **Decide whether `externalPrescription`/`externalVerdict`/`decisionTrace.externalPlan`
    stay populated alongside the new `primarySession`, or whether `primarySession` replaces
    them once populated.** Recommendation: **keep both** for this PR. `externalPrescription`
    is still what today's UI (`ExternalVerdictBanner`, `ExternalPlanWeek`) renders for
@@ -211,14 +250,14 @@ piece (bundle launch, D-REASSESS) builds on.
    that didn't exist before. Removing the old fields would be a separate, larger UI
    migration and is not needed to unblock D-PLACEMENT/D-REASSESS.
 
-4. **UI: something needs to let the athlete actually launch it.** Check whatever renders
-   `primarySession` today for catalog sessions (likely in `Home.tsx` or a session-card
-   component) and confirm a v4 external-plan `primarySession` renders the same "Start"
-   affordance. This may already work for free if the rendering logic only branches on
-   `primarySession` being present, not on its `sessionSource.kind` — verify at
-   implementation time rather than assuming.
+5. **UI: launch affordance already verified.**
+   Inspection of `MorningDecisionCard.tsx:286` confirms it already checks
+   `(canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession))`.
+   Once `primarySession` is populated, the "Start Workout" hero button renders automatically
+   without UI rewrites. Note: load adjustments (`easier`/`harder`) in `MorningDecisionCard.tsx`
+   rely on catalog prescriptions and are naturally inactive for external sessions.
 
-5. **Tests:**
+6. **Tests:**
    - `sessionAuthoringService.test.ts` (or a new sibling file): unit tests for
      `prepareExternalPlanSessionLaunch` — valid v4 session produces a correct binding and
      saved prescription; an invalid `definition` (if one could ever reach this function
@@ -231,17 +270,18 @@ piece (bundle launch, D-REASSESS) builds on.
    - `SessionRunner.tsx`'s existing tests should not need changes if `PreparedSessionLaunch`'s
      shape is respected exactly — verify by running its existing suite after wiring this in.
 
-6. **No `POLICY_VERSION` bump needed for the launch mechanism itself** (this doesn't change
+7. **No `POLICY_VERSION` bump needed for the launch mechanism itself** (this doesn't change
    *which* session is recommended, only how an already-recommended v4 session can be
-   started) — but re-verify this claim once the exact `Home.tsx` diff is known; if it
-   turns out to change `primarySession`'s presence/absence in ways that affect persisted
-   `daily_recommendations` documents' validated shape, check `firestore.rules`'
-   `hasValidSessionReferenceBinding` accepts `kind: 'external_plan'` (it currently
-   validates generically against `SessionSourceRef`'s discriminated union shape --
-   confirm `kind: 'external_plan'`'s specific field set is already covered there, or add
-   it; this is a much smaller rules change than the `hasValidRecommendationAudit` ceiling
-   problem documented in issue #435 / PR #432, since `hasValidSessionReferenceBinding` is
-   a separate, smaller function).
+   started) — but re-verify this claim once the exact `Home.tsx` diff is known.
+   - **Firestore rules status:** `firestore.rules:1218-1222` (`hasValidSessionSource`) and
+     `1234-1241` (`hasValidSessionReferenceBinding`) already accept `kind: 'external_plan'` with
+     `['kind', 'planId', 'revision', 'sessionId', 'contentHash']` and optional `occurrenceId`.
+     No rules change is needed to support the binding.
+   - **Expression budget risk:** `hasValidRecommendationAudit` (`firestore.rules:321-376`) is near
+     Firestore's ~1,000 expression limit. When an external-plan recommendation populates both
+     `externalPlan` (lines 368-376) and `primarySession` (line 358), both branches will evaluate
+     simultaneously. Running `npm run test:rules` during PR 1 implementation is required to verify
+     that the evaluation budget remains within limits.
 
 ### Suggested PR description (paste and adapt)
 
@@ -252,31 +292,34 @@ piece (bundle launch, D-REASSESS) builds on.
 > not even for today's single primary external-plan session, which has never been
 > launchable through `SessionRunner`.
 >
-> Scoped to v4 only (mirroring the `catalog` no-occurrence-record precedent): v4 sessions
-> already carry a real `SessionDefinition` (unlike v1-v3's free-text `prescription`), and
-> that `definition` is already validated by `validateSessionDefinition` at import time.
-> No `OccurrenceAuthority`/`SessionOccurrence` schema change in this PR -- an
+> Scoped to v4 for H4 intraday bundle continuity (mirroring the `catalog` no-occurrence-record precedent):
+> while v2/v3 plans also carry structured `SessionDefinition`, v4 is the specific target
+> for H4 intraday bundles. `definition` is already validated by `validateSessionDefinition`
+> at import time. No `OccurrenceAuthority`/`SessionOccurrence` schema change in this PR -- an
 > external-plan session's identity is already `(planId, revision, sessionId, date)`,
 > needing no separate occurrence doc, the same reasoning a catalog recommendation
 > already relies on.
 >
 > ## What's delivered
 > - `sessionAuthoringService.ts`: new `prepareExternalPlanSessionLaunch`, mirroring
->   `prepareCatalogSessionLaunch`'s shape.
+>   `prepareCatalogSessionLaunch`'s shape, snapshotting `displayMetadata` and supporting
+>   `summaryOverride` for scaled sessions.
 > - `Home.tsx`: wires it into the existing external-plan recommendation branch,
->   populating `primarySession` for a v4 session (kept alongside the existing
->   `externalPrescription`/`externalVerdict`/`decisionTrace.externalPlan` fields, which
->   still drive today's plan-week display -- not removed).
-> - v1-v3 sessions' existing text-display-only path is completely untouched.
+>   populating `primarySession` for actionable v4 sessions (`verdict.decision in ['proceed', 'scale']`
+>   and `template.id !== 'rest_01'`).
+> - Crucial domain safety gate: skipped or deferred external sessions (e.g. clinical red flags,
+>   recovery mode) never receive a `primarySession` binding.
+> - Existing `externalPrescription`/`externalVerdict`/`decisionTrace.externalPlan` fields are
+>   preserved alongside `primarySession` to keep today's plan-week display intact.
 >
 > ## Not in scope here
 > - Occurrence tracking (needed for D-REASSESS's predecessor-completion check and
 >   multi-occurrence bundle launches) -- separate follow-up PR.
 > - Surfacing a bundle's second member as a real `additionalSessions` entry -- needs the
 >   occurrence-tracking follow-up first.
-> - Any change to v1-v3 external-plan sessions.
+> - Full block-level scaling transformation for external definitions (uses `summaryOverride` in PR 1).
 >
-> ## Verification
+> ## Validation
 > (standard checklist: typecheck, lint, full vitest, build, rules emulator tests,
 > simulate:scenarios/diff, check-policy-drift.mjs)
 
@@ -300,18 +343,16 @@ piece (bundle launch, D-REASSESS) builds on.
    session starts" requires that later session to be a real, launchable thing with
    trackable state.
 
-## Open questions / risks for the implementing agent to resolve
+## Verified facts & risks for the implementing agent
 
-- Confirm the exact current shape of `Home.tsx`'s recommendation-assembly block --
-  line numbers above are approximate and will have shifted.
-- Confirm `hasValidSessionReferenceBinding` (`firestore.rules`) already accepts
-  `kind: 'external_plan'`'s field set, or add it (small, isolated change --
-  not the same tightly-budgeted function as `hasValidRecommendationAudit`,
-  see issue #435).
-- Decide the exact v1-v3-vs-v4 narrowing check used in `Home.tsx` to gate this new
-  branch (suggested: reuse whatever type guard already exists for `isV4Plan`/session
-  narrowing elsewhere, e.g. `activeExternalPlanService.ts`'s `hasIntraday`-style pattern,
-  rather than inventing a new one).
-- Verify whether any UI component needs an explicit code change to render a "Start"
-  affordance for a `primarySession` whose `sessionSource.kind` is `'external_plan'`, or
-  whether existing rendering logic is already source-kind-agnostic.
+- **Firestore rules support verified:** `firestore.rules:1218-1222` already accepts
+  `kind: 'external_plan'` with `['kind', 'planId', 'revision', 'sessionId', 'contentHash']`.
+  No rules change is needed.
+- **Rules budget risk:** When `primarySession` is present on an external plan recommendation,
+  `hasValidRecommendationAudit` evaluates both `externalPlan` and `primarySession`.
+  Run `npm run test:rules` to ensure the 1,000 expression limit is not exceeded.
+- **UI launch affordance verified:** `MorningDecisionCard.tsx:286` already checks
+  `(canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession))`.
+  The "Start Workout" button appears automatically once `primarySession` is populated.
+- **Domain safety invariant:** Ensure `Home.tsx` checks `verdict === 'proceed' || verdict === 'scale'`
+  and `template.id !== 'rest_01'`. Never bind `primarySession` on `skip` or `defer`.
