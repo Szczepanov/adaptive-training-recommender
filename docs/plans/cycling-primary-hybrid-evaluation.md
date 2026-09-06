@@ -1,20 +1,22 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
 **Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design
-accepted as ADR-0036 with D-SCHEMA/D-LEDGER/D-TIME/D-WINDOW delivered and
-D-PLACEMENT's bundle-placement engine delivered as a pure module (unwired) -- the
-same-day canonical performed-fact boundary is verified and the fixed-activity
-cost-reduce duplication is unified -- (ledger-based ranking/admission and wiring
-D-PLACEMENT's engine into `evaluateTrainingWithIntent`, then D-REASSESS/D-AUDIT,
-unstarted); H5 design accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative
-`external-plan@5` unstarted)
+accepted as ADR-0036 with D-SCHEMA/D-LEDGER/D-TIME/D-WINDOW delivered, D-PLACEMENT's
+bundle-placement engine delivered as a pure module, and that engine's placement-
+correctness wired into `activeExternalPlanService.ts`'s primary-session selection for v4
+intraday bundles (real `POLICY_VERSION` bump) -- the same-day canonical performed-fact
+boundary is verified and the fixed-activity cost-reduce duplication is unified -- (broader
+ledger-based ranking/admission unification, a bundle's resolved placement surfaced for
+display/persistence, and D-REASSESS/D-AUDIT, unstarted); H5 design accepted as ADR-0037
+with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted)
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
-confirmation; H4's remaining wiring (using the ledger's remainder/admission math as an
-actual ranking input, then wiring D-PLACEMENT's bundle-placement engine into
-`evaluateTrainingWithIntent` with a real `POLICY_VERSION` bump, then D-REASSESS/D-AUDIT)
-needs its own decision-affecting PR(s); H5c needs the athlete-scoped singleton
-progression-claim transaction design, and cumulative `external-plan@5` acceptance is
-unblocked now that H4's v4 contract has landed.
+confirmation; H4's remaining work (unifying `planner.ts`'s three ad hoc dedup mechanisms
+onto the ledger's remainder/admission semantics as a real ranking input; persisting a
+bundle's resolved placement for display, currently blocked on `firestore.rules`' audit
+shape already sitting at Firestore's per-request rule-evaluation ceiling -- see the H4
+section below; then D-REASSESS/D-AUDIT) needs its own decision-affecting PR(s); H5c needs
+the athlete-scoped singleton progression-claim transaction design, and cumulative
+`external-plan@5` acceptance is unblocked now that H4's v4 contract has landed.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -255,14 +257,18 @@ also remains blocked on current-workload/restriction confirmation.
 **Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
 **D-SCHEMA, D-LEDGER, D-TIME and D-WINDOW delivered**; **same-day canonical
 performed-fact boundary verified**; **D-PLACEMENT's bundle-placement engine delivered**
-as a pure module (unwired); runtime wiring (the `dailyLedger.ts` refactor into
-`resolveAvailability`'s existing deductions, plus wiring D-PLACEMENT's engine into
-`evaluateTrainingWithIntent`, then D-REASSESS/D-AUDIT) unstarted.
+as a pure module, and its **placement-correctness wired** into
+`activeExternalPlanService.ts`'s primary-session selection for v4 intraday bundles (real
+`POLICY_VERSION` bump -- see the "D-PLACEMENT wiring" subsection below for exactly what
+this does and does not activate). Still unstarted: the `dailyLedger.ts` refactor into
+`resolveAvailability`'s existing deductions and `planner.ts`'s three ad hoc dedup
+mechanisms, persisting a bundle's resolved placement for display, and D-REASSESS/D-AUDIT.
 **Dependencies:** ADR-0035 rest support (delivered). The `external-plan@4`/`dailyLedger.ts`
 D-SCHEMA/D-LEDGER slice itself left `POLICY_VERSION` unchanged (neither module is
-consumed by any decision path); the later fixed-activity cost-reduce dedup slice below
-did bump it, mechanically, per the drift gate's requirement -- not because decision
-behavior actually changed. No H4 slice has activated new decision behavior yet.
+consumed by any decision path); the fixed-activity cost-reduce dedup slice bumped it
+mechanically, per the drift gate's requirement, not because decision behavior actually
+changed. The D-PLACEMENT wiring slice below is the first H4 slice to activate real new
+decision behavior.
 
 Decision: explicit athlete-owned windows, plan-owned sequencing in `external-plan@4`,
 one shared daily minute/load ledger, and fresh post-AM reassessment before PM launch.
@@ -385,7 +391,7 @@ with `ScheduleWindow` -- `ScheduleOverlay` still has no clock-time concept, so i
 the *whole day's* ceiling that D-PLACEMENT's engine (below) treats as its ledger input,
 while `ScheduleWindow` is what supplies the day's individual clock-time slots.
 
-### D-PLACEMENT's bundle-placement engine (delivered, pure module -- not yet wired)
+### D-PLACEMENT's bundle-placement engine (delivered, pure module; placement-correctness wiring below)
 
 `engine/intradayBundlePlacement.ts` resolves one v4 intraday bundle's requested windows
 against real `ScheduleWindow` availability, checks the combined minute/systemic-cost
@@ -435,8 +441,64 @@ with spare minutes still available, separation success/failure (a real argument-
 in the D-TIME `elapsedMinutesBetweenInstants` call -- `start - end`, not `end - start` --
 was caught by this test before merge), started-member preservation, and a nonexistent
 Warsaw spring-forward boundary correctly reported as unresolved rather than silently
-choosing an offset. Not wired into `evaluateTrainingWithIntent` or any decision path;
-`POLICY_VERSION` unchanged; `simulate:diff`/policy-drift confirm no output change.
+choosing an offset. Not wired into `evaluateTrainingWithIntent` or any decision path at
+the time this engine landed; `POLICY_VERSION` unchanged; `simulate:diff`/policy-drift
+confirmed no output change. Its placement-correctness wiring is delivered separately,
+immediately below.
+
+### D-PLACEMENT wiring: placement-correctness only (delivered)
+
+Scope decided explicitly with the repo owner after investigation surfaced that "wire the
+bundle engine into `evaluateTrainingWithIntent`" split into two very differently-sized
+tasks. First: even v1-v3 "double days" already collapse to one visible session --
+`activeExternalPlanService.ts`'s `placedSessionForDate` picks the single highest-priority
+session when several are placed on one date, and its sibling `externalPlanContextsForDate`
+already documented "callers must not interpret this helper as evidence that secondary
+same-day sessions have been independently adjudicated or made executable." Second, and
+more fundamental: `SessionSourceRef`'s `kind: 'external_plan'` variant is declared in
+`sessions/models.ts` but was never actually constructed anywhere -- external plans have
+never been wired into the `SessionReferenceBinding` -> `sessionOccurrenceService` ->
+`executionPrescriptionService` -> launch pipeline `additionalSessions` depends on, not even
+for today's single primary external session. Making a bundle's second member independently
+*launchable* therefore means building that whole pipeline from scratch first, as its own
+multi-PR foundational project -- explicitly out of scope here.
+
+What *is* delivered: `activeExternalPlanService.ts`'s `resolveIntradayBundlePlacement`
+detects a v4 intraday bundle placed on a date, builds `IntradayBundleMember[]` from the
+plan's sessions (`estimatedMinutes`/`estimatedSystemicCost` reused from
+`authoredSessionGates.ts`'s `estimateAuthoredSessionSystemicCost`/`SessionDefinition.duration`,
+the same authorities the manually-authored additional-session path already uses), and
+calls `proposeBundlePlacement`. `placedSessionForDate` and `externalPlanContextForDate`
+each gained an optional `bundleContext` parameter (`{ scheduleWindows, fixedActivities,
+ledger }`, defaulting to omitted = the exact pre-D-PLACEMENT behavior unchanged): when
+supplied and the bundle resolves feasibly, the bundle's earliest-`order` member becomes
+the day's primary session -- real window/rest/budget feasibility now decides, not a
+priority guess -- falling back to the original priority-rank tie-break when the bundle is
+absent or infeasible. `Home.tsx` supplies `bundleContext` by fetching the date's
+`ScheduleWindow`s and deriving `ledger` from `resolveAvailability`'s already-resolved
+minute/cost ceiling via `computeDailyLedger` with no persisted occurrence-level entries
+(that broader ledger-based ranking/admission unification, `planner.ts`'s three ad hoc
+dedup mechanisms, remains separate and unstarted). Launching the selected session still
+goes through the exact unchanged single-session path.
+
+Surfacing the bundle's *resolved binding data* for display (a decisionTrace field on
+`ExternalPlanContext`/`ExternalDecisionProvenance`) was attempted and reverted: even a
+minimal 3-expression structural check for one new optional field pushed
+`hasValidRecommendationAudit`'s `externalPlan` validation over Firestore's per-request
+rule-evaluation ceiling ("the maximum of 1000 expressions to evaluate"), a real failure
+the emulator suite caught, not a hypothetical. That audit shape has no headroom left
+without a separate effort to reduce its existing evaluation cost elsewhere first, so the
+resolved bundle placement is computed and acted on but not persisted this PR.
+
+`activeExternalPlanService.intradayBundle.test.ts` covers `resolveIntradayBundlePlacement`
+(null for no intraday session, a feasible two-member resolution, an infeasible rest-date
+case) and the bundle-aware primary-session tie-break (order beats priority when feasible,
+falls back to priority when infeasible). This genuinely changes decision behavior for any
+v4 plan authoring an intraday bundle, so `POLICY_VERSION` bumped for real this time --
+`check-policy-drift.mjs` only warns (does not fail) that the changed files aren't in its
+tracked engine-file glob, since the change lives in `services/`/`components/` rather than
+`engine/`; `simulate:diff` shows no new drift because no scenario in the corpus authors a
+v4 intraday plan yet.
 
 ### Same-day canonical performed-fact boundary (verified)
 
@@ -492,11 +554,13 @@ The three different ad hoc dedup mechanisms across these sites (`seenOccurrences
 in `unrepresentedFixedActivityProjection`) are **not yet unified** onto the ledger's
 `occurrenceId`/`revision` model, and none of these call sites yet consult
 `computeDailyLedger`'s remainder or `admitsCandidate` when ranking or admitting a
-candidate. The actual next H4 tasks are (1) using the ledger's remainder/admission
-semantics as a real ranking/admission input, and (2) wiring D-PLACEMENT's now-delivered
-bundle-placement engine (`engine/intradayBundlePlacement.ts`, see above) into
-`evaluateTrainingWithIntent` with a real `POLICY_VERSION` bump -- each decision-affecting
-and scoped as its own PR, then D-REASSESS/D-AUDIT.
+candidate. D-PLACEMENT's own placement-correctness wiring is delivered (see the
+"D-PLACEMENT wiring" subsection above). The remaining H4 tasks are (1) using the ledger's
+remainder/admission semantics as a real ranking/admission input across these three sites,
+(2) building the external-plan `SessionReferenceBinding` execution-binding pipeline (a
+separate multi-PR foundational project) before a bundle's second member can be
+independently launchable, and (3) D-REASSESS/D-AUDIT -- each decision-affecting and
+scoped as its own PR.
 
 ## H5 — Explicit develop/maintain intent and progression
 
@@ -557,10 +621,12 @@ H1 did not change engine behavior and therefore required no policy bump. H2/H2b 
 decision-affecting and are represented by the current policy version above. H3's new test
 is non-decision-affecting and needs no bump; the explicit-rest follow-up will require the
 normal policy/schema/replay review when it changes decision behavior. H4's
-`fixed-activity-cost-dedup-v1` bump reflects the drift gate's mechanical requirement for
+`fixed-activity-cost-dedup-v1` bump reflected the drift gate's mechanical requirement for
 any `planner.ts`/`rules.ts` touch, not an actual behavior change (verified via
-`simulate:diff`); H4's still-pending ledger-based ranking/admission wiring, wiring
-D-PLACEMENT's now-delivered bundle-placement engine into `evaluateTrainingWithIntent`,
-and H5's still-pending H5c will require the normal review when they actually change
-decision behavior. Do not enable experimental personalization simply to improve a judge
+`simulate:diff`); `h4-intraday-bundle-placement-v1` is H4's first bump for a real behavior
+change (D-PLACEMENT's bundle-aware primary-session selection). H4's still-pending
+ledger-based ranking/admission wiring across `planner.ts`'s three dedup mechanisms, the
+external-plan execution-binding pipeline, and H5's still-pending H5c will require the
+normal review when they actually change decision behavior. Do not enable experimental
+personalization simply to improve a judge
 score.

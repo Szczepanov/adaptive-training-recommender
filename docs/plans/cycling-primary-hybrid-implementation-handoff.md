@@ -232,13 +232,18 @@ By capability (not the numbered sequence below, which tracks a different granula
 see the note after the numbered list): D-SCHEMA, D-LEDGER (pure module), D-TIME and
 D-WINDOW are delivered; the same-day canonical performed-fact boundary is verified;
 D-PLACEMENT's bundle-placement engine (`engine/intradayBundlePlacement.ts`) is delivered
-as a pure module, unwired. Still unstarted: wiring the ledger's remainder/admission
-semantics into actual ranking/admission decisions, wiring D-PLACEMENT's engine into
-`evaluateTrainingWithIntent`, and D-REASSESS/D-AUDIT.
+and its placement-correctness is wired into `activeExternalPlanService.ts`'s
+primary-session selection (real `POLICY_VERSION` bump). Still unstarted: unifying
+`planner.ts`'s three ad hoc dedup mechanisms onto the ledger's remainder/admission
+semantics as a real ranking/admission input; building the external-plan
+`SessionReferenceBinding` execution-binding pipeline (discovered missing even for today's
+single primary session -- a separate multi-PR foundational project, required before a
+bundle's second member can be independently launchable or its placement persisted for
+display); and D-REASSESS/D-AUDIT.
 **Dependencies:** ADR-0035 rest support (delivered). Same-day canonical performed
 identity/revision/timing inputs are now verified (see below), D-TIME's instant resolution
-is delivered, and D-WINDOW's availability model is delivered -- the remaining dependency
-is simply doing the D-PLACEMENT runtime-wiring work itself.
+is delivered, D-WINDOW's availability model is delivered, and D-PLACEMENT's engine and its
+placement-correctness wiring are delivered.
 **Deliverable:** Authored intraday placement and reassessed execution, followed separately
 by automatic multi-window packing after the initial acceptance bar passes.
 
@@ -312,8 +317,8 @@ its description has actually shipped.
    deliberately deferred to a future slice; only already-dated window instances are
    modeled here, which is all D-PLACEMENT needs to consume.
    Not wired into `resolveAvailability` or any decision path.
-3. **Delivered as a pure module; wiring into `evaluateTrainingWithIntent` still
-   unstarted.** `engine/intradayBundlePlacement.ts` adds atomic, confirmed bundle
+3. **Delivered as a pure module; placement-correctness wired (see below).**
+   `engine/intradayBundlePlacement.ts` adds atomic, confirmed bundle
    placement against all destination `ScheduleWindow`s and ADR-0035 rest, using
    D-LEDGER's remainder/admission math (sequentially per member, so an earlier member's
    consumption reduces what a later one can draw from the same day) and D-TIME's
@@ -330,8 +335,46 @@ its description has actually shipped.
    `intradayBundlePlacement.test.ts` covers the ADR's D-PLACEMENT-relevant deterministic
    cases, including a real argument-order bug in the `elapsedMinutesBetweenInstants` call
    (`start - end`, not `end - start`) that its own separation tests caught before merge.
-   Not wired into `evaluateTrainingWithIntent`; `POLICY_VERSION` unchanged;
-   `simulate:diff`/policy-drift confirm no output change.
+   When it landed, this engine was not wired into `evaluateTrainingWithIntent`;
+   `POLICY_VERSION` was unchanged and `simulate:diff`/policy-drift confirmed no output
+   change. Its placement-correctness wiring landed separately (see below).
+
+   **Placement-correctness wiring: delivered.** Scoped explicitly with the repo owner
+   after investigation split "wire the bundle engine into `evaluateTrainingWithIntent`"
+   into two very differently-sized tasks: even v1-v3 "double days" already collapse to
+   one visible session today (`placedSessionForDate`'s existing priority tie-break, and
+   `externalPlanContextsForDate`'s own doc comment warning against treating plural
+   placement as evidence of independent adjudication), and -- more fundamentally --
+   `SessionSourceRef`'s `kind: 'external_plan'` variant is declared but was never actually
+   constructed anywhere; external plans have never been wired into the
+   `SessionReferenceBinding` execution-binding pipeline `additionalSessions` depends on,
+   not even for today's single primary session. Building that pipeline is therefore its
+   own separate multi-PR foundational project, out of scope here.
+
+   What's delivered instead: `activeExternalPlanService.ts`'s new
+   `resolveIntradayBundlePlacement` builds `IntradayBundleMember[]` from a date's placed
+   v4 sessions (reusing `authoredSessionGates.ts`'s `estimateAuthoredSessionSystemicCost`/
+   `SessionDefinition.duration` for cost/duration, the same authorities the manual
+   additional-session path already uses) and calls `proposeBundlePlacement`.
+   `placedSessionForDate`/`externalPlanContextForDate` each gained an optional
+   `bundleContext` parameter (omitted = exact prior behavior unchanged): when supplied and
+   the bundle resolves feasibly, the earliest-`order` member becomes primary instead of a
+   priority guess. `Home.tsx` supplies `bundleContext` from `scheduleWindowService` and a
+   `computeDailyLedger`-derived ceiling (no persisted occurrence-level entries yet -- the
+   broader ledger unification above remains separate). Launching still goes through the
+   unchanged single-session path. Surfacing the bundle's resolved binding for display was
+   attempted and reverted: even a minimal 3-expression check for one new optional
+   `decisionTrace` field pushed `hasValidRecommendationAudit`'s `externalPlan` validation
+   over Firestore's per-request rule-evaluation ceiling (verified with the emulator suite,
+   a real failure, not a hypothetical) -- that audit shape has no headroom left without a
+   separate effort to reduce its existing cost first.
+   `activeExternalPlanService.intradayBundle.test.ts` covers the new resolution function
+   and the bundle-aware primary-session tie-break. `POLICY_VERSION` bumped for real
+   (`2026-09-h4-intraday-bundle-placement-v1`) since this genuinely changes which session
+   is recommended for a v4 intraday-bundle date; `check-policy-drift.mjs` only warns
+   (non-blocking) since the changed files live in `services/`/`components/`, outside its
+   tracked `engine/` glob; `simulate:diff` shows no new drift since no scenario in the
+   corpus authors a v4 intraday plan yet.
 4. At PM launch, capture current symptoms/response, same-day work and availability, rerun
    common gates, and atomically validate the input/ledger revision before reserving.
    A morning PM approval is provisional; missing prerequisite evidence remains pending.
@@ -372,13 +415,15 @@ pinning test confirming `getPerformedTrainingFactsInRange`'s existing behavior a
 `trainingIntent.ts`'s call site are unchanged. Not called from any production/decision
 path yet -- `simulate:diff`/policy-drift confirm no output change.
 
-The next PRs should tackle, in order: (a) step 2's refactor (wiring the ledger into the
-existing deduction points), since every later step reads from that shared boundary, then
-(b) wiring D-PLACEMENT's now-delivered bundle-placement engine
-(`engine/intradayBundlePlacement.ts`) into `evaluateTrainingWithIntent` with a real
-`POLICY_VERSION` bump and full scenario/simulate-diff verification, then D-REASSESS/
-D-AUDIT. None of these need a separate verification pass first -- D-TIME, D-LEDGER,
-D-WINDOW and D-PLACEMENT's engine are all delivered.
+D-PLACEMENT's own placement-correctness wiring is delivered (see above). The next PRs
+should tackle: (a) step 2's refactor (wiring the ledger into `resolveAvailability`'s
+existing deduction points, then unifying `planner.ts`'s three ad hoc dedup mechanisms onto
+it as a real ranking/admission input), (b) the external-plan `SessionReferenceBinding`
+execution-binding pipeline (its own multi-PR foundational project -- needed before a
+bundle's second member can be independently launched, or its placement persisted for
+display once `firestore.rules`' audit shape has room), then (c) D-REASSESS/D-AUDIT. None
+of these need a separate verification pass first -- D-TIME, D-LEDGER, D-WINDOW and
+D-PLACEMENT (engine and wiring) are all delivered.
 
 ## Work order H5 — Block intent and controlled progression
 
