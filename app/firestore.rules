@@ -625,8 +625,37 @@ service cloud.firestore {
         && hasValidAxisValue(m, 'neuromuscular');
     }
 
+    function isValidEquipmentItem(item) {
+      return item is string && item.size() <= 50;
+    }
+
+    // Each item must be a string of at most 50 characters, matching
+    // validationCore.ts's MAX_EQUIPMENT_ITEM_LENGTH -- otherwise an owner could persist
+    // e.g. equipment: [42] past rules and have the client-side parser (validateFixedActivity/
+    // validateScheduleWindow) reject the whole document as INVALID on read.
     function hasValidEquipmentList(list) {
-      return list is list && list.size() <= 20;
+      let sz = list.size();
+      return list is list && sz <= 20
+        && (sz <= 0 || isValidEquipmentItem(list[0]))
+        && (sz <= 1 || isValidEquipmentItem(list[1]))
+        && (sz <= 2 || isValidEquipmentItem(list[2]))
+        && (sz <= 3 || isValidEquipmentItem(list[3]))
+        && (sz <= 4 || isValidEquipmentItem(list[4]))
+        && (sz <= 5 || isValidEquipmentItem(list[5]))
+        && (sz <= 6 || isValidEquipmentItem(list[6]))
+        && (sz <= 7 || isValidEquipmentItem(list[7]))
+        && (sz <= 8 || isValidEquipmentItem(list[8]))
+        && (sz <= 9 || isValidEquipmentItem(list[9]))
+        && (sz <= 10 || isValidEquipmentItem(list[10]))
+        && (sz <= 11 || isValidEquipmentItem(list[11]))
+        && (sz <= 12 || isValidEquipmentItem(list[12]))
+        && (sz <= 13 || isValidEquipmentItem(list[13]))
+        && (sz <= 14 || isValidEquipmentItem(list[14]))
+        && (sz <= 15 || isValidEquipmentItem(list[15]))
+        && (sz <= 16 || isValidEquipmentItem(list[16]))
+        && (sz <= 17 || isValidEquipmentItem(list[17]))
+        && (sz <= 18 || isValidEquipmentItem(list[18]))
+        && (sz <= 19 || isValidEquipmentItem(list[19]));
     }
 
     function hasValidAvailabilityContextOverride(m) {

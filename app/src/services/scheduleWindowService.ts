@@ -29,6 +29,19 @@ function parseWindow(raw: DocumentData): ScheduleWindow | null {
  * Every write is validated client-side against the same base shape firestore.rules
  * enforces server-side, plus the cross-window non-overlap invariant firestore.rules
  * cannot check across sibling documents.
+ *
+ * `createWindow`/`updateWindow`'s overlap check is best-effort, not atomic: it reads
+ * existing same-date siblings, then writes, with no lock in between. Firestore's client
+ * `Transaction.get()` only reads a known `DocumentReference`, not an arbitrary query, so
+ * a client-side transaction cannot close this window either -- two concurrent writes
+ * (two tabs, or a direct SDK write bypassing this service entirely) can still both pass
+ * and persist overlapping windows. `firestore.rules` intentionally validates only
+ * per-document shape/ownership for the same reason `hasValidExternalPlanRevision`'s
+ * comment already documents for cross-entry plan invariants: rules cannot see sibling
+ * documents at write time. Closing this race for real needs a trusted server boundary
+ * (e.g. a Cloud Function serializing writes per user/date), which is out of scope for
+ * this bounded PR; `resolveScheduleWindowsForDate`'s callers should not assume the
+ * result is guaranteed overlap-free under concurrent writers.
  */
 export class ScheduleWindowService {
     private readonly collectionPath = 'schedule_windows';
@@ -92,7 +105,8 @@ export class ScheduleWindowService {
     }
 
     /** Creates a window, rejecting it up front if it would overlap an existing same-date
-     * window -- the cross-document invariant firestore.rules cannot itself enforce. */
+     * window -- best-effort only, see the class-level doc comment on the race this does
+     * not close. */
     async createWindow(userId: string, input: NewScheduleWindowInput): Promise<ScheduleWindow> {
         const now = new Date().toISOString();
         const rawData: DocumentData = { userId, revision: 1, createdAt: now, updatedAt: now, ...input };

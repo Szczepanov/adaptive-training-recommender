@@ -345,12 +345,22 @@ supported legacy case: callers must keep today's single untimed-slot behavior ra
 treating an empty result as "no availability", per D-WINDOW: "missing metadata never
 creates an AM and PM pair"). `services/scheduleWindowService.ts` persists these at
 `users/{userId}/schedule_windows/{windowId}` (ADR-0002 user-owned path), rejecting a
-create/update that would overlap an existing same-date window client-side -- the one
-cross-document invariant `firestore.rules` cannot itself check across sibling documents,
-the same split `hasValidExternalPlanRevision`'s comment already documents for
-cross-session plan invariants. `firestore.rules` validates the per-document shape and
-ownership, requires `revision` to strictly increase on update, and keeps `createdAt`
-immutable, mirroring `hasValidFixedActivity`.
+create/update that would overlap an existing same-date window client-side -- a
+best-effort, non-atomic check (read siblings, then write, no lock between): Firestore's
+client `Transaction.get()` only reads a known `DocumentReference`, not an arbitrary
+query, so a client-side transaction cannot close this race either, and two concurrent
+writes (or a direct SDK write bypassing this service) can still both pass and persist
+overlapping windows. `firestore.rules` intentionally validates only per-document shape
+and ownership -- the same split `hasValidExternalPlanRevision`'s comment already
+documents for cross-session plan invariants rules cannot see across sibling documents --
+plus requires `revision` to strictly increase on update, validates each `equipment` item's
+own type/length (not just the list's size -- `hasValidEquipmentList` was fixed in review
+to check this, since it previously let a non-string/oversized item pass rules and then
+fail client-side parsing as `INVALID`), and keeps `createdAt` immutable, mirroring
+`hasValidFixedActivity` (itself now covered by the same equipment-item fix). Closing the
+race for real needs a trusted server
+boundary (e.g. a Cloud Function serializing writes per user/date); out of scope for this
+bounded PR and flagged as a known limitation, not treated as solved.
 
 Recurring availability ("Recurring availability is resolved to dated instances by the
 app", D-WINDOW) is intentionally deferred: this slice only models and persists

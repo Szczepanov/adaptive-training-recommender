@@ -228,9 +228,12 @@ Useful synthetic software work can proceed without those personal answers.
 ## Work order H4 — Intraday windows and post-AM response
 
 **Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
-Step 1 (D-SCHEMA + D-LEDGER + D-TIME) delivered; the same-day canonical performed-fact
-boundary is verified; D-WINDOW's athlete-schedule model is delivered (unwired); steps 3-6
-(D-PLACEMENT's bundle-placement engine and its wiring, then D-REASSESS/D-AUDIT) unstarted.
+By capability (not the numbered sequence below, which tracks a different granularity --
+see the note after the numbered list): D-SCHEMA, D-LEDGER (pure module) and D-TIME are
+delivered; the same-day canonical performed-fact boundary is verified; D-WINDOW's
+athlete-schedule model is delivered (unwired). Still unstarted: wiring the ledger's
+remainder/admission semantics into actual ranking/admission decisions, D-PLACEMENT's
+bundle-placement engine and its wiring, and D-REASSESS/D-AUDIT.
 **Dependencies:** ADR-0035 rest support (delivered). Same-day canonical performed
 identity/revision/timing inputs are now verified (see below), D-TIME's instant resolution
 is delivered, and D-WINDOW's availability model is delivered -- the remaining dependency
@@ -238,10 +241,15 @@ is simply doing the D-PLACEMENT runtime-wiring work itself.
 **Deliverable:** Authored intraday placement and reassessed execution, followed separately
 by automatic multi-window packing after the initial acceptance bar passes.
 
-The accepted implementation sequence is:
+The accepted implementation sequence below is numbered by planned PR, not by capability --
+step 1's schema landed first, D-WINDOW's athlete-schedule model (also part of step 1's
+scope) landed in a later, separate PR after step 2's ledger module, and D-TIME (not its
+own numbered step) landed between them. Read the **Status** line above for current
+capability delivery; do not infer from a step's number alone whether everything named in
+its description has actually shipped.
 
-1. **Delivered.** Version `external-plan@4` intraday placement and athlete schedule
-   windows; keep v1/v2/v3 immutable. `sessions/externalPlanV4.ts` adds the session-level
+1. **Schema delivered; athlete schedule windows delivered separately (see below).**
+   Version `external-plan@4` intraday placement; keep v1/v2/v3 immutable. `sessions/externalPlanV4.ts` adds the session-level
    `intraday` object (window/bundleId/order/afterSessionId/minimumSeparationMinutes) on
    top of v3's unchanged envelope/`restDays`, validating intervals, bundle
    membership/order/dependency shape, and rejecting invalid references -- see the
@@ -293,11 +301,15 @@ The accepted implementation sequence is:
    per-document and cross-window-non-overlap validation, `resolveScheduleWindowsForDate`
    returning `[]` for the legacy single-untimed-slot case) and
    `services/scheduleWindowService.ts` (`users/{userId}/schedule_windows/{windowId}`,
-   rejecting an overlapping create/update client-side) are the delivered contract.
-   `firestore.rules` validates per-document shape/ownership/revision-increase/
-   `createdAt`-immutability, mirroring `hasValidFixedActivity`. Recurring-template
-   resolution to dated instances is deliberately deferred to a future slice; only already-
-   dated window instances are modeled here, which is all D-PLACEMENT needs to consume.
+   rejecting an overlapping create/update client-side -- a best-effort, non-atomic check;
+   Firestore's client transactions cannot read an arbitrary query, so this cannot fully
+   close the race against concurrent writers, and full enforcement needs a trusted server
+   boundary, out of scope here) are the delivered contract. `firestore.rules` validates
+   per-document shape/ownership/revision-increase/`createdAt`-immutability (including
+   each `equipment` item's own type/length, not just the list's size), mirroring
+   `hasValidFixedActivity`. Recurring-template resolution to dated instances is
+   deliberately deferred to a future slice; only already-dated window instances are
+   modeled here, which is all D-PLACEMENT needs to consume.
    Not wired into `resolveAvailability` or any decision path.
 3. Add atomic, confirmed bundle placement against all destination `ScheduleWindow`s and
    ADR-0035 rest, using D-LEDGER's remainder/admission math and D-TIME's elapsed-instant

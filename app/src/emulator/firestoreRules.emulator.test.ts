@@ -610,6 +610,12 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), equipment: Array.from({ length: 21 }, (_, i) => `item-${i}`) }));
     });
 
+    it('rejects a fixed activity with a non-string or oversized equipment item', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), equipment: [42] }));
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), equipment: ['x'.repeat(51)] }));
+    });
+
     it('allows a fixed activity with a valid availabilityContextOverride (Phase 6.2b / D6-B)', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, fixedActivityPath), {
@@ -706,6 +712,12 @@ emulatorDescribe('Firestore security rules', () => {
     it('rejects a schedule window with an oversized label', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), label: 'x'.repeat(101) }));
+    });
+
+    it('rejects a schedule window with a non-string or oversized equipment item', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), equipment: [42] }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), equipment: ['x'.repeat(51)] }));
     });
 
     it('rejects unauthenticated schedule window access', async () => {
