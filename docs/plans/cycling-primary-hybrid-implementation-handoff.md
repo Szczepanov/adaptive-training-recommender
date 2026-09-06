@@ -229,11 +229,12 @@ Useful synthetic software work can proceed without those personal answers.
 
 **Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
 By capability (not the numbered sequence below, which tracks a different granularity --
-see the note after the numbered list): D-SCHEMA, D-LEDGER (pure module) and D-TIME are
-delivered; the same-day canonical performed-fact boundary is verified; D-WINDOW's
-athlete-schedule model is delivered (unwired). Still unstarted: wiring the ledger's
-remainder/admission semantics into actual ranking/admission decisions, D-PLACEMENT's
-bundle-placement engine and its wiring, and D-REASSESS/D-AUDIT.
+see the note after the numbered list): D-SCHEMA, D-LEDGER (pure module), D-TIME and
+D-WINDOW are delivered; the same-day canonical performed-fact boundary is verified;
+D-PLACEMENT's bundle-placement engine (`engine/intradayBundlePlacement.ts`) is delivered
+as a pure module, unwired. Still unstarted: wiring the ledger's remainder/admission
+semantics into actual ranking/admission decisions, wiring D-PLACEMENT's engine into
+`evaluateTrainingWithIntent`, and D-REASSESS/D-AUDIT.
 **Dependencies:** ADR-0035 rest support (delivered). Same-day canonical performed
 identity/revision/timing inputs are now verified (see below), D-TIME's instant resolution
 is delivered, and D-WINDOW's availability model is delivered -- the remaining dependency
@@ -311,12 +312,26 @@ its description has actually shipped.
    deliberately deferred to a future slice; only already-dated window instances are
    modeled here, which is all D-PLACEMENT needs to consume.
    Not wired into `resolveAvailability` or any decision path.
-3. Add atomic, confirmed bundle placement against all destination `ScheduleWindow`s and
-   ADR-0035 rest, using D-LEDGER's remainder/admission math and D-TIME's elapsed-instant
-   semantics for separation. Preserve completed history and support independent
-   optional-session dropping. Given the size of D-WINDOW + this bundle-placement engine +
-   wiring it into `evaluateTrainingWithIntent`, split this into separate PRs the same way
-   steps 1-2 above did rather than one large change.
+3. **Delivered as a pure module; wiring into `evaluateTrainingWithIntent` still
+   unstarted.** `engine/intradayBundlePlacement.ts` adds atomic, confirmed bundle
+   placement against all destination `ScheduleWindow`s and ADR-0035 rest, using
+   D-LEDGER's remainder/admission math (sequentially per member, so an earlier member's
+   consumption reduces what a later one can draw from the same day) and D-TIME's
+   elapsed-instant semantics for a dependent's *scheduled* separation from its
+   predecessor (not an actual performed timestamp -- that recomputation is D-REASSESS,
+   not this step). `proposeBundlePlacement` never returns a partial placement; a date
+   with no persisted `ScheduleWindow`s falls back to one synthetic whole-day slot, and
+   since at most one occurrence binds to any one slot, a bundle needing two or more
+   windows there is correctly infeasible rather than fabricating an AM/PM pair.
+   `dropOptionalBundleMember` is the athlete's explicit, non-automatic drop action and
+   preserves the "no required session depends on an optional predecessor" invariant;
+   `confirmBundlePlacement` is the sole confirmation boundary and writes nothing (no
+   persisted bundle-binding store exists yet -- that is wiring/D-AUDIT's job).
+   `intradayBundlePlacement.test.ts` covers the ADR's D-PLACEMENT-relevant deterministic
+   cases, including a real argument-order bug in the `elapsedMinutesBetweenInstants` call
+   (`start - end`, not `end - start`) that its own separation tests caught before merge.
+   Not wired into `evaluateTrainingWithIntent`; `POLICY_VERSION` unchanged;
+   `simulate:diff`/policy-drift confirm no output change.
 4. At PM launch, capture current symptoms/response, same-day work and availability, rerun
    common gates, and atomically validate the input/ledger revision before reserving.
    A morning PM approval is provisional; missing prerequisite evidence remains pending.
@@ -359,11 +374,11 @@ path yet -- `simulate:diff`/policy-drift confirm no output change.
 
 The next PRs should tackle, in order: (a) step 2's refactor (wiring the ledger into the
 existing deduction points), since every later step reads from that shared boundary, then
-(b) D-PLACEMENT's bundle-placement engine (a new module beside `externalPlacement.ts`
-consuming `ScheduleWindow`/`dailyLedger.ts`/`localInstant.ts`, still unwired), then (c)
-wiring both into `evaluateTrainingWithIntent` with a real `POLICY_VERSION` bump and full
-scenario/simulate-diff verification, then D-REASSESS/D-AUDIT. None of these need a
-separate verification pass first -- D-TIME, D-LEDGER and D-WINDOW are all delivered.
+(b) wiring D-PLACEMENT's now-delivered bundle-placement engine
+(`engine/intradayBundlePlacement.ts`) into `evaluateTrainingWithIntent` with a real
+`POLICY_VERSION` bump and full scenario/simulate-diff verification, then D-REASSESS/
+D-AUDIT. None of these need a separate verification pass first -- D-TIME, D-LEDGER,
+D-WINDOW and D-PLACEMENT's engine are all delivered.
 
 ## Work order H5 — Block intent and controlled progression
 
