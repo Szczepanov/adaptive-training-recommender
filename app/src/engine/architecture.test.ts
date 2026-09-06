@@ -105,14 +105,29 @@ describe('Architecture & Phased Engine Integration', () => {
             expect(availability.maxTimeMinutes).toBe(20);
         });
 
-        it('grants equipment strictly from the athlete\'s own constraints -- never fabricates a "gym day" bundle', () => {
-            const noKit = testContext({ hasFreeWeights: false, hasIndoorBike: false, hasCableMachine: false, hasTreadmill: false });
+        it('uses TrainingSettings equipment as the modern authority and only falls back to legacy constraints when settings are absent', () => {
+            const noKitSettings = testTrainingSettings({
+                equipment: { free_weights: false, cable_machine: false, treadmill: false, indoor_bike: false, pullup_bar: false },
+            });
+            const noKit = testContext(
+                { hasFreeWeights: true, hasIndoorBike: true, hasCableMachine: true, hasTreadmill: true },
+                noKitSettings,
+            );
             for (const date of ['2026-08-09', '2026-08-10', '2026-08-11', '2026-08-12', '2026-08-13']) {
                 expect(resolveAvailability(date, null, [], noKit).availableEquipment).toEqual([]);
             }
-            const withBike = testContext({ hasIndoorBike: true });
-            expect(resolveAvailability('2026-08-10', null, [], withBike).availableEquipment).toContain('indoor_bike');
-            expect(resolveAvailability('2026-08-11', null, [], withBike).availableEquipment).toContain('indoor_bike');
+
+            const modernWithBike = testContext(
+                { hasIndoorBike: false },
+                testTrainingSettings({
+                    equipment: { free_weights: false, cable_machine: false, treadmill: false, indoor_bike: true, pullup_bar: false },
+                }),
+            );
+            expect(resolveAvailability('2026-08-10', null, [], modernWithBike).availableEquipment).toEqual(['indoor_bike']);
+
+            const legacyWithBike = testContext({ hasFreeWeights: false, hasIndoorBike: true, hasCableMachine: false, hasTreadmill: false });
+            legacyWithBike.trainingSettings = undefined;
+            expect(resolveAvailability('2026-08-10', null, [], legacyWithBike).availableEquipment).toEqual(['indoor_bike']);
         });
 
         it('D6-C: a fixed activity missing expectedCost reserves zero load, never an invented default', () => {

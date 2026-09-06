@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { DECAY_HALF_LIVES_HOURS } from './fatigue';
 import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from './rules';
 import type { DailyReadiness, ScheduleOverlay, UserContext } from './models';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -155,10 +156,12 @@ describe('schedule overlay next-day projection', () => {
 
         const baselineImpact = baseline.branches.green.recommendation.decisionTrace?.calibration?.fatigue.rawExternalLoad.impactTissue ?? 0;
         const projectedImpact = projected.branches.green.recommendation.decisionTrace?.calibration?.fatigue.rawExternalLoad.impactTissue ?? 0;
+        const expectedSingleContribution = Math.pow(0.5, 24 / DECAY_HALF_LIVES_HOURS.impactTissue);
 
-        // A 1.0 authored impact-tissue load must appear once: "greater than" would also
-        // pass if the same overlay were accidentally applied twice.
-        expect(projectedImpact - baselineImpact).toBeCloseTo(1);
+        // A 1.0 authored impact-tissue load is replayed once, then decayed for 24 hours
+        // before tomorrow's fatigue is observed. An omission would produce zero delta;
+        // duplicate replay would produce a larger delta after the same decay.
+        expect(projectedImpact - baselineImpact).toBeCloseTo(expectedSingleContribution);
         // The overlay ends today, so tomorrow's increase can only come from the projected
         // history exposure, not from tomorrow's same-day availability reservation.
         expect(overlay.endDate).toBe(TODAY);
