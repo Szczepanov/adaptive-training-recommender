@@ -1,7 +1,7 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
-**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered (runtime wiring unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
-**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 runtime wiring (D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) depends on verification of same-day canonical performed facts; H5 runtime requires validated intent mappings and linked response evidence, and cumulative `external-plan@5` acceptance additionally requires the landed H4 contract (ADR-0036).
+**Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered and the same-day canonical performed-fact boundary verified (runtime wiring unstarted); H5 design accepted as ADR-0037 (implementation unstarted)
+**Blocked by:** Personal M00/M01 prescription requires current workload/restriction confirmation; H4 runtime wiring (the `dailyLedger.ts` refactor across `schedule.ts`/`planner.ts`/`rules.ts`, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) is a decision-affecting change needing its own PR, no longer blocked on verification; H5 runtime requires validated intent mappings and linked response evidence, and cumulative `external-plan@5` acceptance additionally requires the landed H4 contract (ADR-0036).
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -240,11 +240,11 @@ also remains blocked on current-workload/restriction confirmation.
 ## H4 — Intraday capacity and post-AM reassessment
 
 **Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
-**D-SCHEMA and D-LEDGER delivered** (schema/pure-ledger slice); runtime wiring
-(D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) unstarted.
-**Dependencies:** ADR-0035 rest support (delivered) and a verified same-day canonical
-performed-fact boundary for runtime release. `POLICY_VERSION` is unchanged by this
-slice -- no decision behavior is activated yet.
+**D-SCHEMA and D-LEDGER delivered** (schema/pure-ledger slice); **same-day canonical
+performed-fact boundary verified**; runtime wiring (the `dailyLedger.ts` refactor, plus
+D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) unstarted.
+**Dependencies:** ADR-0035 rest support (delivered). `POLICY_VERSION` is unchanged by
+this work -- no decision behavior is activated yet.
 
 Decision: explicit athlete-owned windows, plan-owned sequencing in `external-plan@4`,
 one shared daily minute/load ledger, and fresh post-AM reassessment before PM launch.
@@ -285,6 +285,51 @@ this slice, including the worked example (a 90-minute daily ceiling with 60-minu
 completion leaves at most 30 minutes for PM even though both windows individually offer
 90 minutes) and the exhausted-systemic-cost-blocks-admission case. `simulate:diff` and
 policy-drift show no change from this slice, confirming it is inert until wired.
+
+### Same-day canonical performed-fact boundary (verified)
+
+`getPerformedTrainingFactsInRange`'s only caller (`trainingIntent.ts`) always passes
+today's own date as the exclusive `toDateExclusive` boundary, so today is currently
+excluded from every canonical-facts read the recommendation engine performs -- this was
+the literal blocker named above. Investigation traced the full pipeline
+(`training-occurrence/repository.ts`, `reconciliationService.ts`,
+`engine/performedTrainingFacts.ts`) and found same-day identity/dedup already correct
+and already tested: `reconciliationService.ts`'s candidate matching runs a `+-1
+local-day` window with no wall-clock/"is this today" special-casing, and existing
+`reconciliationService.test.ts` fixtures already exercise same-day auto-link and
+same-day ambiguity (`'Garmin-first, structured arrives later'`, `'same-day two strength
+sessions ... stays ambiguous'`, `'modality mismatch ... same-day, close-timing
+candidate'`). This work added the missing mirror-direction case,
+`'structured-first, Garmin arrives later ... attaches to the existing structured-only
+occurrence'`, so same-day dedup is now proven both ways.
+
+The one real gap was narrower than the blocker's original phrasing suggested: it was
+purely the read-boundary convention, not a defect in hydration. `getPerformedTrainingFactsInRange`
+itself has no date-relative assumption that data must be historical; passing tomorrow's
+date as the exclusive boundary already correctly includes and hydrates today's
+occurrence (structured-execution and Garmin-activity sourced alike, with
+`startedAt`/`endedAt` intact for later D-TIME elapsed-separation use) -- this had simply
+never been exercised by any test or caller. `getPerformedTrainingFactsThroughToday`
+(`training-occurrence/performedTrainingFactsService.ts`) makes that an explicit,
+correctly-named function instead of relying on callers to remember the
+pass-tomorrow-as-exclusive trick. It is not called from any production/decision path
+yet -- exactly like `externalPlanV4.ts`/`dailyLedger.ts` above, this is additive and
+non-decision-affecting; `getPerformedTrainingFactsInRange`'s existing `[from, to)`
+contract and its only current caller (`trainingIntent.ts`) are unchanged.
+`performedTrainingFactsService.sameDay.test.ts` covers the new function directly plus a
+pinning test confirming current production behavior (today excluded) is untouched.
+`simulate:diff`/policy-drift show no change.
+
+The actual next H4 task is now the `dailyLedger.ts` wiring refactor: `schedule.ts`'s
+`resolveAvailability`/`calculateReservedCapacityProfile`, `planner.ts`'s
+`fixedActivityCostProfileForDate`/`applyFixedActivityStimulusCredit`/
+`applyFixedActivityCost`, `rules.ts`'s `fixedActivityProjection`/
+`unrepresentedFixedActivityProjection`, and `externalCritique.ts`'s use of
+`fixedActivityCostProfileForDate` currently duplicate the same six-dimension cost/
+stimulus reduce across five-plus call sites with three different ad hoc dedup
+mechanisms (`seenOccurrences`, `appliedFixedCostOccurrences`/
+`appliedProjectionOccurrences`, and a decision-trace delta). That refactor is
+decision-affecting and needs its own PR, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT.
 
 ## H5 — Explicit develop/maintain intent and progression
 

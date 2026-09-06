@@ -61,6 +61,15 @@ const structuredFacts = {
     modality: 'strength',
 };
 
+const garminFacts = {
+    sourceRef: { kind: 'provider_activity' as const, provider: 'garmin', activityId: 'act-2' },
+    localDate: '2026-08-26',
+    startedAt: '2026-08-26T06:53:00.000Z',
+    endedAt: '2026-08-26T07:33:00.000Z',
+    durationMin: 40,
+    modality: 'strength',
+};
+
 beforeEach(() => {
     vi.clearAllMocks();
     resetShadowReconciliationCounters();
@@ -90,6 +99,24 @@ describe('reconcileSourceFacts', () => {
         expect(result.outcome).toBe('attached_auto_link');
         expect(repo.createOrGetForSource).not.toHaveBeenCalled();
         expect(repo.attachSource).toHaveBeenCalledWith('user-1', garminOnly.performedOccurrenceId, structuredFacts, expect.objectContaining({ state: 'matched' }));
+        expect(getShadowReconciliationCounters()['training_occurrence.matched']).toBe(1);
+    });
+
+    // ADR-0036 (H4) same-day verification: the mirror of the case above. Same-day
+    // dedup must not be direction-sensitive -- a structured completion logged first,
+    // with a Garmin sync for the same physical workout arriving later the same day,
+    // must converge onto one occurrence exactly as reliably as the reverse order.
+    it('structured-first, Garmin arrives later and clears auto-link -> attaches to the existing structured-only occurrence', async () => {
+        const structuredOnly = occurrence({ sourceRefs: [structuredFacts.sourceRef] });
+        vi.mocked(repo.getBySourceKey).mockResolvedValue(null);
+        vi.mocked(repo.queryActiveInDateWindow).mockResolvedValue([structuredOnly]);
+        vi.mocked(repo.attachSource).mockResolvedValue({ ...structuredOnly, sourceRefs: [...structuredOnly.sourceRefs, garminFacts.sourceRef], reconciliation: { state: 'matched' } });
+
+        const result = await reconcileSourceFacts('user-1', garminFacts);
+
+        expect(result.outcome).toBe('attached_auto_link');
+        expect(repo.createOrGetForSource).not.toHaveBeenCalled();
+        expect(repo.attachSource).toHaveBeenCalledWith('user-1', structuredOnly.performedOccurrenceId, garminFacts, expect.objectContaining({ state: 'matched' }));
         expect(getShadowReconciliationCounters()['training_occurrence.matched']).toBe(1);
     });
 
