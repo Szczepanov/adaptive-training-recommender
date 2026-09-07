@@ -800,6 +800,8 @@ describe('adjudicateIntradayBundleMembers', () => {
             planId: 'p-v4', revision: 1, sessionId: 'pm-strength', contentHash: 'hash-bundle-v4',
         });
         expect(store.get(`users/${USER_ID}/session_occurrences/${targetOccId}`)).toBeUndefined();
+        const agg = store.get(`users/${USER_ID}/daily_ledgers/${DATE}`) as DailyLedgerAggregate | undefined;
+        expect(agg?.reservations?.[targetOccId]).toBeUndefined();
     });
 
     it('admits session at boundary of additional sessions cap (3 existing bindings -> 4th allowed)', async () => {
@@ -894,5 +896,78 @@ describe('adjudicateIntradayBundleMembers', () => {
         expect(second.bindings[0].sessionSource).toEqual(first.bindings[0].sessionSource);
         const secondAgg = store.get(`users/${USER_ID}/daily_ledgers/${DATE}`) as DailyLedgerAggregate;
         expect(Object.keys(secondAgg.reservations).length).toBe(Object.keys(firstAgg.reservations).length);
+    });
+
+    it('re-reads aggregate atomically with decision and uses current ledger revision when an intervening reservation advances aggregate', async () => {
+        const active = createPlan();
+        const bundlePlacement = createBundlePlacement();
+
+        const amOccId = 'occ-am-1';
+        const amOcc: ExternalPlanSessionOccurrence = {
+            userId: USER_ID,
+            occurrenceId: amOccId,
+            date: DATE,
+            authority: 'external_plan',
+            externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
+            state: 'completed',
+            placementOrder: 0,
+            createdAt: '2026-09-07T05:00:00.000Z',
+            updatedAt: '2026-09-07T06:00:00.000Z',
+        };
+        const amExec = createMockExecution(amOccId);
+        const amResp = createMockSessionResponse(amOccId);
+
+        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc]);
+        vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
+        vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(amResp);
+
+        const params: AdjudicateIntradayBundleMembersParams = {
+            userId: USER_ID,
+            date: DATE,
+            activePlan: active,
+            bundlePlacement,
+            subjective: mockSubjective,
+            objective: mockObjective,
+            userContext: mockUserContext,
+            availability: mockAvailability,
+            ceilings,
+            evaluationInstant: '2026-09-07T12:00:00.000Z',
+        };
+
+        // Run once to create first occurrence, reservation, and decision
+        const first = await adjudicateIntradayBundleMembers(params);
+        expect(first.statuses[0].status).toBe('proceed');
+        const firstAgg = store.get(`users/${USER_ID}/daily_ledgers/${DATE}`) as DailyLedgerAggregate;
+        // seedIfAbsent (rev 1) + applyReservation (rev 2)
+        expect(firstAgg.revision).toBe(2);
+
+        // Simulate an intervening reservation advancing the aggregate in Firestore to revision 3
+        const advancedAgg: DailyLedgerAggregate = {
+            ...firstAgg,
+            revision: 3,
+            reservations: {
+                ...firstAgg.reservations,
+                'intervening-occ': {
+                    minutes: 30,
+                    systemicCost: 0.2,
+                    state: 'reserved',
+                    postReservationLedgerRevision: '3',
+                },
+            },
+        };
+        store.set(`users/${USER_ID}/daily_ledgers/${DATE}`, advancedAgg);
+
+        // Run adjudication again: atomic read detects fresh aggregate revision 3,
+        // so postReservationLedgerRevision "2" does not match revision 3, and the decision
+        // is evaluated against current ledger revision "3".
+        const second = await adjudicateIntradayBundleMembers(params);
+        expect(second.statuses[0].status).toBe('proceed');
+        const secondAgg = store.get(`users/${USER_ID}/daily_ledgers/${DATE}`) as DailyLedgerAggregate;
+        const targetOccId = second.statuses[0].occurrenceId!;
+        const decisionId = secondAgg.reservations[targetOccId].decisionId!;
+        const secondDecisionDoc = store.get(
+            `users/${USER_ID}/intraday_decisions/${decisionId}`,
+        ) as IntradayDecisionRecord;
+        expect(secondDecisionDoc.reassessmentInputRevision.ledgerRevision).toBe('3');
     });
 });

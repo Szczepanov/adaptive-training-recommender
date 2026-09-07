@@ -9,7 +9,6 @@
 
 import {
     doc,
-    getDoc,
     runTransaction,
     type Firestore,
 } from 'firebase/firestore';
@@ -311,15 +310,27 @@ export async function adjudicateIntradayBundleMembers(
         // Derive pre-reservation ledgerRevision
         let preReservationLedgerRevision = String(aggregate?.revision ?? 0);
         if (targetScheduledOccurrence && aggregate?.reservations[targetScheduledOccurrence.occurrenceId]?.decisionId) {
-            // Target already held a reservation from this load or earlier
+            // Target already held a reservation from this load or earlier:
+            // Read aggregate and decision atomically in one transaction so stale aggregate revision
+            // can never falsely match postReservationLedgerRevision if another reservation advanced the aggregate.
             const existingDecisionId = aggregate.reservations[targetScheduledOccurrence.occurrenceId].decisionId!;
             const existingDecDoc = doc(db, getIntradayDecisionDocPath(userId, existingDecisionId));
-            const existingDecSnap = await getDoc(existingDecDoc);
-            if (existingDecSnap.exists()) {
-                const decData = existingDecSnap.data() as IntradayDecisionRecord;
-                if (decData.postReservationLedgerRevision && String(aggregate.revision) === decData.postReservationLedgerRevision) {
-                    preReservationLedgerRevision = decData.reassessmentInputRevision.ledgerRevision;
-                }
+            const aggRef = aggregateService.ref(userId, date);
+
+            const { freshAgg, decData } = await runTransaction(db, async transaction => {
+                const aggSnap = await transaction.get(aggRef);
+                const decSnap = await transaction.get(existingDecDoc);
+                return {
+                    freshAgg: aggSnap.exists() ? (aggSnap.data() as DailyLedgerAggregate) : null,
+                    decData: decSnap.exists() ? (decSnap.data() as IntradayDecisionRecord) : null,
+                };
+            });
+
+            if (freshAgg) {
+                aggregate = freshAgg;
+            }
+            if (decData && decData.postReservationLedgerRevision && String(aggregate?.revision) === decData.postReservationLedgerRevision) {
+                preReservationLedgerRevision = decData.reassessmentInputRevision.ledgerRevision;
             }
         }
 
