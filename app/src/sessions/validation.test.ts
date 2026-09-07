@@ -93,15 +93,80 @@ describe('Session Validation (M2.1 / ADR-0023)', () => {
             expect(result.ok).toBe(false);
         });
 
-        it('rejects impossible calendar dates and incomplete definition references', () => {
+        it('accepts valid external_plan occurrence with externalPlanRef and authority', () => {
+            const valid = {
+                userId: 'user-1',
+                occurrenceId: 'occ-ext-1',
+                date: '2026-08-18',
+                authority: 'external_plan',
+                externalPlanRef: {
+                    planId: 'plan-1',
+                    revision: 1,
+                    sessionId: 'session-1',
+                    contentHash: 'a'.repeat(64),
+                },
+                state: 'scheduled',
+                createdAt: '2026-08-18T10:00:00Z',
+                updatedAt: '2026-08-18T10:00:00Z',
+            };
+            const result = validateSessionOccurrence(valid);
+            expect(result.ok).toBe(true);
+        });
+
+        it('accepts occurrence with skipped state', () => {
+            const valid = {
+                userId: 'user-1',
+                occurrenceId: 'occ-ext-1',
+                date: '2026-08-18',
+                authority: 'external_plan',
+                externalPlanRef: {
+                    planId: 'plan-1',
+                    revision: 1,
+                    sessionId: 'session-1',
+                    contentHash: 'a'.repeat(64),
+                },
+                state: 'skipped',
+                createdAt: '2026-08-18T10:00:00Z',
+                updatedAt: '2026-08-18T10:00:00Z',
+            };
+            const result = validateSessionOccurrence(valid);
+            expect(result.ok).toBe(true);
+        });
+
+        it('rejects occurrence when neither or both definitionRef and externalPlanRef are provided', () => {
+            const neither = {
+                userId: 'user-1',
+                occurrenceId: 'occ-1',
+                date: '2026-08-18',
+                authority: 'schedule',
+                state: 'scheduled',
+                createdAt: '2026-08-18T10:00:00Z',
+                updatedAt: '2026-08-18T10:00:00Z',
+            };
+            expect(validateSessionOccurrence(neither).ok).toBe(false);
+
+            const both = {
+                ...neither,
+                definitionRef: { definitionId: 'def-1', revision: 1, contentHash: 'a'.repeat(64) },
+                externalPlanRef: { planId: 'plan-1', revision: 1, sessionId: 's-1', contentHash: 'b'.repeat(64) },
+            };
+            expect(validateSessionOccurrence(both).ok).toBe(false);
+        });
+
+        it('rejects invalid externalPlanRef fields', () => {
             const result = validateSessionOccurrence({
-                userId: 'user-1', occurrenceId: 'occ-1', date: '2026-02-30',
-                authority: 'unplanned_log', state: 'scheduled',
-                definitionRef: { definitionId: 'def-1', revision: 0, contentHash: '' },
+                userId: 'user-1',
+                occurrenceId: 'occ-1',
+                date: '2026-08-18',
+                authority: 'external_plan',
+                state: 'scheduled',
+                externalPlanRef: { planId: '', revision: 0, sessionId: '', contentHash: '' },
+                createdAt: '2026-08-18T10:00:00Z',
+                updatedAt: '2026-08-18T10:00:00Z',
             });
             expect(result.ok).toBe(false);
             if (result.ok) throw new Error('Expected invalid occurrence');
-            expect(result.issues.map(issue => issue.path)).toEqual(expect.arrayContaining(['date', 'definitionRef']));
+            expect(result.issues.map(issue => issue.path)).toContain('externalPlanRef');
         });
     });
 

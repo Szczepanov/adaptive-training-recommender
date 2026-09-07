@@ -157,7 +157,8 @@ export function reassessDependentBundleMember(
         if (
             predecessor.state === 'superseded' ||
             predecessor.state === 'abandoned' ||
-            predecessor.state === 'missed'
+            predecessor.state === 'missed' ||
+            predecessor.state === 'skipped'
         ) {
             return {
                 decision: 'reject',

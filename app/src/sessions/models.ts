@@ -216,7 +216,8 @@ export type OccurrenceAuthority =
     | 'unplanned_log'
     | 'schedule'
     | 'replace_recommendation'
-    | 'additional_session';
+    | 'additional_session'
+    | 'external_plan';
 
 export type OccurrenceState =
     | 'scheduled'
@@ -224,22 +225,51 @@ export type OccurrenceState =
     | 'superseded'
     | 'completed'
     | 'abandoned'
-    | 'missed';
+    | 'missed'
+    | 'skipped';
 
-export interface SessionOccurrence {
+export interface ManualOccurrenceRef {
+    definitionId: string;
+    revision: number;
+    contentHash: string;
+}
+
+export interface ExternalPlanOccurrenceRef {
+    planId: string;
+    revision: number;
+    sessionId: string;
+    contentHash: string;
+}
+
+export interface BaseSessionOccurrence {
     userId: string;
     occurrenceId: string;
     date: string;
     authority: OccurrenceAuthority;
-    definitionRef: {
-        definitionId: string;
-        revision: number;
-        contentHash: string;
-    };
     state: OccurrenceState;
     placementOrder?: number;
     createdAt: string;
     updatedAt: string;
+}
+
+export interface ManualSessionOccurrence extends BaseSessionOccurrence {
+    definitionRef: ManualOccurrenceRef;
+    externalPlanRef?: never;
+}
+
+export interface ExternalPlanSessionOccurrence extends BaseSessionOccurrence {
+    externalPlanRef: ExternalPlanOccurrenceRef;
+    definitionRef?: never;
+}
+
+export type SessionOccurrence = ManualSessionOccurrence | ExternalPlanSessionOccurrence;
+
+export function isManualOccurrence(occurrence: SessionOccurrence): occurrence is ManualSessionOccurrence {
+    return 'definitionRef' in occurrence && occurrence.definitionRef !== undefined;
+}
+
+export function isExternalPlanOccurrence(occurrence: SessionOccurrence): occurrence is ExternalPlanSessionOccurrence {
+    return 'externalPlanRef' in occurrence && occurrence.externalPlanRef !== undefined;
 }
 
 /**

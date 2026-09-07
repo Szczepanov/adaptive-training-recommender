@@ -246,12 +246,12 @@ exists, `scale` remains display/advice only and cannot launch.
 
 ## Follow-up roadmap
 
-1. **PR 1 — implemented here:** prescription-only v4 primary-session launch binding, no
+1. **PR 1 — implemented in PR #440:** prescription-only v4 primary-session launch binding, no
    occurrence record.
-2. **PR 2 — occurrence tracking:** introduce a source-appropriate external-plan occurrence
-   identity/lifecycle without overloading manual `definitionRef` semantics. Evaluate whether
-   this is best represented by an `externalPlanRef` branch/union rather than forcing
-   `planId`/`sessionId` into manual-definition fields.
+2. **PR 2 — implemented here:** introduce source-appropriate `SessionOccurrence` tracking for
+   `external_plan` (`scheduled → active → completed / skipped / abandoned`), adding an
+   `externalPlanRef` union branch on `SessionOccurrence`, `'external_plan'` authority, and
+   `'skipped'` state, allowing atomic claiming via `claimOccurrenceLaunch`.
 3. **PR 3 — bundle member execution:** use resolved intraday placement to adjudicate and
    surface non-primary v4 members as independently launchable `additionalSessions` entries.
 4. **PR 4 — D-REASSESS:** before a dependent/later member starts, reconcile real predecessor

@@ -438,17 +438,39 @@ export function validateSessionOccurrence(raw: unknown): ValidationResult<Sessio
     if (!isValidWarsawCalendarDate(raw.date)) {
         issues.push({ path: 'date', message: 'date must be Warsaw YYYY-MM-DD string' });
     }
-    if (!['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session'].includes(String(raw.authority))) {
+    if (!['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session', 'external_plan'].includes(String(raw.authority))) {
         issues.push({ path: 'authority', message: `Invalid authority: ${String(raw.authority)}` });
     }
-    if (!['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed'].includes(String(raw.state))) {
+    if (!['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed', 'skipped'].includes(String(raw.state))) {
         issues.push({ path: 'state', message: `Invalid state: ${String(raw.state)}` });
     }
-    if (!isObject(raw.definitionRef)
-        || typeof raw.definitionRef.definitionId !== 'string' || raw.definitionRef.definitionId.length === 0
-        || typeof raw.definitionRef.revision !== 'number' || !Number.isInteger(raw.definitionRef.revision) || raw.definitionRef.revision < 1
-        || typeof raw.definitionRef.contentHash !== 'string' || raw.definitionRef.contentHash.length === 0) {
-        issues.push({ path: 'definitionRef', message: 'Invalid definitionRef' });
+
+    const hasDefinitionRef = isObject(raw.definitionRef);
+    const hasExternalPlanRef = isObject(raw.externalPlanRef);
+
+    if (!hasDefinitionRef && !hasExternalPlanRef) {
+        issues.push({ path: 'ref', message: 'Session occurrence must have either definitionRef or externalPlanRef' });
+    } else if (hasDefinitionRef && hasExternalPlanRef) {
+        issues.push({ path: 'ref', message: 'Session occurrence cannot have both definitionRef and externalPlanRef' });
+    } else if (hasDefinitionRef) {
+        const def = raw.definitionRef as Record<string, unknown>;
+        if (
+            typeof def.definitionId !== 'string' || def.definitionId.length === 0
+            || typeof def.revision !== 'number' || !Number.isInteger(def.revision) || def.revision < 1
+            || typeof def.contentHash !== 'string' || def.contentHash.length === 0
+        ) {
+            issues.push({ path: 'definitionRef', message: 'Invalid definitionRef' });
+        }
+    } else if (hasExternalPlanRef) {
+        const ext = raw.externalPlanRef as Record<string, unknown>;
+        if (
+            typeof ext.planId !== 'string' || ext.planId.length === 0
+            || typeof ext.revision !== 'number' || !Number.isInteger(ext.revision) || ext.revision < 1
+            || typeof ext.sessionId !== 'string' || ext.sessionId.length === 0
+            || typeof ext.contentHash !== 'string' || ext.contentHash.length === 0
+        ) {
+            issues.push({ path: 'externalPlanRef', message: 'Invalid externalPlanRef' });
+        }
     }
 
     if (issues.length > 0) return { ok: false, issues };

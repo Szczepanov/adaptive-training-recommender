@@ -1333,6 +1333,24 @@ emulatorDescribe('Firestore security rules', () => {
         };
     }
 
+    function validExternalPlanSessionOccurrence() {
+        return {
+            userId: ownerId,
+            occurrenceId: 'occ-ext-1',
+            date: '2026-08-18',
+            authority: 'external_plan',
+            state: 'scheduled',
+            externalPlanRef: {
+                planId: 'plan-1',
+                revision: 1,
+                sessionId: 'session-1',
+                contentHash: 'hash-abc-123',
+            },
+            createdAt: '2026-08-18T10:00:00Z',
+            updatedAt: '2026-08-18T10:00:00Z',
+        };
+    }
+
     function validSessionExecution() {
         return {
             userId: ownerId,
@@ -1518,12 +1536,67 @@ emulatorDescribe('Firestore security rules', () => {
             authority: 'additional_session',
         }))).resolves.toBeUndefined();
 
+        // external_plan succeeds in Issue #434 PR 2
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionOccPath}-ext`), validExternalPlanSessionOccurrence()))).resolves.toBeUndefined();
+
         // unknown authority is rejected
         await assertFails(setDoc(doc(ownerDb, `${sessionOccPath}-unknown`), {
             ...validSessionOccurrence(),
             occurrenceId: 'occ-unplanned-1-unknown',
             authority: 'bogus_authority',
         }));
+    });
+
+    it('allows external-plan occurrence lifecycle (scheduled -> active -> completed / skipped) and enforces mutual exclusivity of refs', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const occPath = `users/${ownerId}/session_occurrences/occ-ext-lifecycle`;
+        const baseOcc = {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-lifecycle',
+        };
+
+        // 1. Create scheduled external-plan occurrence
+        await expect(assertSucceeds(setDoc(doc(ownerDb, occPath), baseOcc))).resolves.toBeUndefined();
+
+        // 2. Transition to active
+        await expect(assertSucceeds(setDoc(doc(ownerDb, occPath), {
+            ...baseOcc,
+            state: 'active',
+            updatedAt: '2026-08-18T10:05:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 3. Transition to completed
+        await expect(assertSucceeds(setDoc(doc(ownerDb, occPath), {
+            ...baseOcc,
+            state: 'completed',
+            updatedAt: '2026-08-18T11:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 4. Create another occurrence with skipped state
+        const skippedPath = `users/${ownerId}/session_occurrences/occ-ext-skipped`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, skippedPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-skipped',
+            state: 'skipped',
+        }))).resolves.toBeUndefined();
+
+        // 5. Rejects an occurrence with both definitionRef and externalPlanRef
+        const bothPath = `users/${ownerId}/session_occurrences/occ-ext-both`;
+        await assertFails(setDoc(doc(ownerDb, bothPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-both',
+            definitionRef: {
+                definitionId: 'def-full-body',
+                revision: 1,
+                contentHash: 'hash-abc-123',
+            },
+        }));
+
+        // 6. Rejects an occurrence with neither ref
+        const neitherPath = `users/${ownerId}/session_occurrences/occ-ext-neither`;
+        const noRef = { ...validExternalPlanSessionOccurrence(), occurrenceId: 'occ-ext-neither' };
+        delete (noRef as { externalPlanRef?: unknown }).externalPlanRef;
+        await assertFails(setDoc(doc(ownerDb, neitherPath), noRef));
     });
 
     it('allows recommendations with primarySession and additionalSessions bindings', async () => {

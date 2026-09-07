@@ -15,7 +15,19 @@ const services = vi.hoisted(() => {
                 store.set(prescription.prescriptionHash, prescription);
             }),
         },
-        occurrence: { saveOccurrence: vi.fn().mockResolvedValue(undefined) },
+        occurrence: {
+            saveOccurrence: vi.fn().mockResolvedValue(undefined),
+            getOrCreateExternalPlanOccurrence: vi.fn().mockImplementation(async (userId, date, ref) => ({
+                userId,
+                occurrenceId: 'occ-ext-created',
+                date,
+                authority: 'external_plan',
+                externalPlanRef: ref,
+                state: 'scheduled',
+                createdAt: '2026-09-06T12:00:00.000Z',
+                updatedAt: '2026-09-06T12:00:00.000Z',
+            })),
+        },
     };
 });
 
@@ -31,6 +43,7 @@ beforeEach(() => {
     services.store.clear();
     services.prescription.savePrescription.mockClear();
     services.occurrence.saveOccurrence.mockClear();
+    services.occurrence.getOrCreateExternalPlanOccurrence.mockClear();
 });
 
 function makeTestPrescription(templateId: string) {
@@ -188,6 +201,29 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
             duration: { min: 60, max: 60 },
         });
         expect(savedPrescription.createdAt).toBe('2026-09-06T12:00:00.000Z');
+    });
+
+    it('creates and binds an external-plan occurrence when date is provided in options', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const launch = await prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            date: '2026-09-06',
+            now: '2026-09-06T12:00:00.000Z',
+        });
+
+        expect(launch.binding.sessionSource.kind).toBe('external_plan');
+        expect(launch.binding.occurrenceId).toBe('occ-ext-created');
+        expect(services.occurrence.getOrCreateExternalPlanOccurrence).toHaveBeenCalledWith(
+            'u1',
+            '2026-09-06',
+            {
+                planId: 'plan-xyz',
+                revision: 2,
+                sessionId: 'session-101',
+                contentHash: 'c'.repeat(64),
+            },
+            undefined,
+            '2026-09-06T12:00:00.000Z',
+        );
     });
 
     it('applies a summary override before hashing and persistence', async () => {

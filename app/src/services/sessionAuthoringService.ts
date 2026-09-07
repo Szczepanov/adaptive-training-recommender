@@ -149,12 +149,19 @@ export async function prepareAuthoredOccurrenceLaunch(
     };
 }
 
+export interface PrepareExternalPlanSessionLaunchOptions {
+    summaryOverride?: string;
+    now?: string;
+    date?: string;
+    occurrenceId?: string;
+    placementOrder?: number;
+}
+
 /**
  * Freezes the execution-prescription snapshot for a v4 external-plan session (ADR-0036
- * H4). Mirrors prepareCatalogSessionLaunch's shape: no session_occurrences record --
- * the immutable authored source is already identified by
- * (planId, revision, sessionId, contentHash), while the recommendation/execution carries
- * the date separately. Target-event sessions are deliberately rejected: rules.ts treats
+ * H4). If a date is supplied (or an occurrenceId), an external-plan occurrence is
+ * created/resolved idempotently through sessionOccurrenceService and attached to the
+ * launch binding. Target-event sessions are deliberately rejected: rules.ts treats
  * them as fixed-activity/advisory inputs rather than executable primary recommendations.
  *
  * Idempotent and safe to call every time an executable external-plan recommendation is
@@ -169,12 +176,22 @@ export async function prepareExternalPlanSessionLaunch(
         contentHash: string;
         session: ExternalPlanSessionV4;
     },
-    summaryOverride?: string,
-    now = new Date().toISOString(),
+    summaryOverrideOrOptions?: string | PrepareExternalPlanSessionLaunchOptions,
+    nowFallback = new Date().toISOString(),
 ): Promise<PreparedSessionLaunch> {
     if (externalPlan.session.isEvent) {
         throw new Error('External-plan target events are advisory fixed-activity inputs and cannot be launched as primary sessions.');
     }
+
+    const options: PrepareExternalPlanSessionLaunchOptions =
+        typeof summaryOverrideOrOptions === 'object' && summaryOverrideOrOptions !== null
+            ? summaryOverrideOrOptions
+            : {
+                summaryOverride: summaryOverrideOrOptions,
+                now: nowFallback,
+            };
+
+    const now = options.now ?? nowFallback;
 
     const definition = externalPlan.session.definition;
     // Defense in depth: already validated at import time (validateExternalSessionV2,
@@ -193,7 +210,7 @@ export async function prepareExternalPlanSessionLaunch(
         contentHash: externalPlan.contentHash,
     };
 
-    const effectiveSummary = summaryOverride ?? definition.summary;
+    const effectiveSummary = options.summaryOverride ?? definition.summary;
     const unsignedPrescription: ExecutionPrescription = {
         schemaVersion: 1,
         prescriptionHash: '',
@@ -219,10 +236,28 @@ export async function prepareExternalPlanSessionLaunch(
         prescriptionHash,
     });
 
+    let effectiveOccurrenceId = options.occurrenceId;
+    if (!effectiveOccurrenceId && options.date) {
+        const occurrence = await sessionOccurrenceService.getOrCreateExternalPlanOccurrence(
+            userId,
+            options.date,
+            {
+                planId: externalPlan.planId,
+                revision: externalPlan.revision,
+                sessionId: externalPlan.session.id,
+                contentHash: externalPlan.contentHash,
+            },
+            options.placementOrder,
+            now,
+        );
+        effectiveOccurrenceId = occurrence.occurrenceId;
+    }
+
     return {
         definition,
         binding: {
             sessionSource,
+            ...(effectiveOccurrenceId ? { occurrenceId: effectiveOccurrenceId } : {}),
             prescriptionHash,
         },
     };

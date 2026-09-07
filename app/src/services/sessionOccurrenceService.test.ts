@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { SessionOccurrence } from '../sessions/models';
+import type { ExternalPlanSessionOccurrence, ManualOccurrenceRef, SessionOccurrence } from '../sessions/models';
 
 const firestore = vi.hoisted(() => ({
     doc: vi.fn(),
@@ -17,7 +17,7 @@ vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
 import { SessionOccurrenceService } from './sessionOccurrenceService';
 
-const definitionRef: SessionOccurrence['definitionRef'] = {
+const definitionRef: ManualOccurrenceRef = {
     definitionId: 'def-1', revision: 1, contentHash: 'a'.repeat(64),
 };
 
@@ -27,7 +27,7 @@ function occurrenceDoc(overrides: Partial<SessionOccurrence>): SessionOccurrence
         authority: 'schedule', definitionRef, state: 'scheduled',
         createdAt: '2026-08-18T00:00:00Z', updatedAt: '2026-08-18T00:00:00Z',
         ...overrides,
-    };
+    } as SessionOccurrence;
 }
 
 describe('SessionOccurrenceService authority methods (M3.3)', () => {
@@ -273,7 +273,7 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             });
 
             expect(result.date).toBe('2026-08-18');
-            expect(result.definitionRef.definitionId).toBe('def-1');
+            expect(result.definitionRef?.definitionId).toBe('def-1');
             expect(mockTx.set).toHaveBeenCalledWith(
                 expect.anything(),
                 expect.objectContaining({
@@ -282,6 +282,188 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
                     state: 'active',
                 }),
             );
+        });
+
+        it('successfully claims an external-plan occurrence and defensively copies externalPlanRef', async () => {
+            const extPlanRef = { planId: 'p-1', revision: 1, sessionId: 's-1', contentHash: 'c'.repeat(64) };
+            const extScheduled = {
+                userId: 'u1',
+                occurrenceId: 'occ-ext-1',
+                date: '2026-08-18',
+                authority: 'external_plan' as const,
+                externalPlanRef: extPlanRef,
+                state: 'scheduled' as const,
+                createdAt: '2026-08-18T00:00:00Z',
+                updatedAt: '2026-08-18T00:00:00Z',
+            };
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => extScheduled,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const onBeforeClaim = vi.fn().mockImplementation((_tx, occ: unknown) => {
+                const o = occ as { externalPlanRef?: { planId: string } };
+                if (o.externalPlanRef) o.externalPlanRef.planId = 'tampered';
+            });
+
+            const service = new SessionOccurrenceService();
+            const result = await service.claimOccurrenceLaunch('u1', 'occ-ext-1', {
+                now: '2026-08-18T10:00:00Z',
+                onBeforeClaim,
+            });
+
+            expect(result.state).toBe('active');
+            expect((result as ExternalPlanSessionOccurrence).externalPlanRef.planId).toBe('p-1');
+            expect('definitionRef' in result).toBe(false);
+            expect(mockTx.set).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({
+                    state: 'active',
+                    externalPlanRef: expect.objectContaining({ planId: 'p-1' }),
+                }),
+            );
+        });
+    });
+
+    describe('External-plan occurrence management (Issue #434 PR 2)', () => {
+        const extPlanRef = { planId: 'p-1', revision: 1, sessionId: 's-1', contentHash: 'c'.repeat(64) };
+
+        it('scheduleExternalPlanOccurrence persists with external_plan authority and scheduled state', async () => {
+            const service = new SessionOccurrenceService();
+            const result = await service.scheduleExternalPlanOccurrence('u1', '2026-08-18', extPlanRef, 1);
+
+            expect(result.authority).toBe('external_plan');
+            expect(result.state).toBe('scheduled');
+            expect(result.externalPlanRef).toEqual(extPlanRef);
+            expect(result.placementOrder).toBe(1);
+            expect(firestore.setDoc).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({
+                    authority: 'external_plan',
+                    state: 'scheduled',
+                    externalPlanRef: extPlanRef,
+                }),
+            );
+        });
+
+        it('getOrCreateExternalPlanOccurrence returns existing occurrence if one already exists for (planId, sessionId)', async () => {
+            const existing = {
+                userId: 'u1',
+                occurrenceId: 'occ-ext-existing',
+                date: '2026-08-18',
+                authority: 'external_plan' as const,
+                externalPlanRef: extPlanRef,
+                state: 'active' as const,
+                createdAt: '2026-08-18T00:00:00Z',
+                updatedAt: '2026-08-18T00:00:00Z',
+            };
+            firestore.getDocs.mockResolvedValue({
+                docs: [{ data: () => existing, ref: { path: 'x' } }],
+            });
+
+            const service = new SessionOccurrenceService();
+            const result = await service.getOrCreateExternalPlanOccurrence('u1', '2026-08-18', extPlanRef);
+
+            expect(result.occurrenceId).toBe('occ-ext-existing');
+            expect(result.state).toBe('active');
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
+        it('getOrCreateExternalPlanOccurrence creates a new occurrence if none exists', async () => {
+            firestore.getDocs.mockResolvedValue({ docs: [] });
+
+            const service = new SessionOccurrenceService();
+            const result = await service.getOrCreateExternalPlanOccurrence('u1', '2026-08-18', extPlanRef);
+
+            expect(result.authority).toBe('external_plan');
+            expect(result.state).toBe('scheduled');
+            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+        });
+    });
+
+    describe('transitionOccurrenceState (lifecycle)', () => {
+        it('transitions active occurrence to completed', async () => {
+            const active = occurrenceDoc({ occurrenceId: 'occ-1', state: 'active' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => active,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const service = new SessionOccurrenceService();
+            const result = await service.transitionOccurrenceState('u1', 'occ-1', 'completed', '2026-08-18T11:00:00Z');
+
+            expect(result.state).toBe('completed');
+            expect(result.updatedAt).toBe('2026-08-18T11:00:00Z');
+            expect(mockTx.set).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({ state: 'completed', updatedAt: '2026-08-18T11:00:00Z' }),
+            );
+        });
+
+        it('transitions scheduled occurrence to skipped', async () => {
+            const scheduled = occurrenceDoc({ occurrenceId: 'occ-1', state: 'scheduled' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => scheduled,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const service = new SessionOccurrenceService();
+            const result = await service.transitionOccurrenceState('u1', 'occ-1', 'skipped');
+
+            expect(result.state).toBe('skipped');
+            expect(mockTx.set).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({ state: 'skipped' }),
+            );
+        });
+
+        it('no-ops when occurrence is already in the target state', async () => {
+            const active = occurrenceDoc({ occurrenceId: 'occ-1', state: 'active' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => active,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const service = new SessionOccurrenceService();
+            const result = await service.transitionOccurrenceState('u1', 'occ-1', 'active');
+
+            expect(result.state).toBe('active');
+            expect(mockTx.set).not.toHaveBeenCalled();
+        });
+
+        it('throws when transitioning from a terminal state', async () => {
+            const completed = occurrenceDoc({ occurrenceId: 'occ-1', state: 'completed' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => completed,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const service = new SessionOccurrenceService();
+            await expect(
+                service.transitionOccurrenceState('u1', 'occ-1', 'active'),
+            ).rejects.toThrow("Cannot transition occurrence occ-1 from terminal state 'completed' to 'active'.");
+
+            expect(mockTx.set).not.toHaveBeenCalled();
         });
     });
 });
