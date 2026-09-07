@@ -330,9 +330,8 @@ describe('reassessDependentBundleMember (ADR-0036 D-REASSESS)', () => {
         expect(result.executionDose?.volume).toBeCloseTo(0.7);
         // Repetition sets scaled down by 0.7 (4 sets * 0.7 = 3 sets)
         const scaledSets = result.scaledDefinition?.blocks[0].steps[0].dose;
-        if (scaledSets?.kind === 'repetition') {
-            expect(scaledSets.sets).toBe(3);
-        }
+        expect(scaledSets?.kind).toBe('repetition');
+        expect(scaledSets).toMatchObject({ sets: 3 });
     });
 
     it('scales PM session when predecessor reported moderate tissue irritability (limit severity)', () => {
@@ -364,7 +363,58 @@ describe('reassessDependentBundleMember (ADR-0036 D-REASSESS)', () => {
         expect(result.decision).toBe('scale');
         expect(result.predecessorConfirmed).toBe(true);
         expect(result.reason).toContain('muscle ache');
+        expect(result.scaledDefinition).toBeDefined();
         expect(result.executionDose?.volume).toBeCloseTo(0.7);
+    });
+
+    it('rejects PM session when predecessor reached terminal state (superseded, abandoned, missed)', () => {
+        for (const terminalState of ['superseded', 'abandoned', 'missed'] as const) {
+            const result = reassessDependentBundleMember({
+                target,
+                predecessor: {
+                    ...healthyPredecessor,
+                    state: terminalState,
+                },
+                evaluationInstant: '2026-09-06T15:00:00.000Z',
+                readiness: createMockReadiness(),
+                context: createMockContext(),
+                date: '2026-09-06',
+                availability: createMockAvailability(),
+                candidateWindowMinutes: 60,
+                dailyLedger: validLedger,
+                acceptedSameDaySystemicCost: 0.2,
+                inputRevision: mockInputRevision,
+            });
+
+            expect(result.decision).toBe('reject');
+            expect(result.reason).toContain(`reached terminal state '${terminalState}'`);
+            expect(result.predecessorConfirmed).toBe(false);
+        }
+    });
+
+    it('enforces causality check even when minimumSeparationMinutes is undefined', () => {
+        const targetWithoutSeparation: DependentBundleMemberTarget = {
+            ...target,
+            minimumSeparationMinutes: undefined,
+        };
+
+        const result = reassessDependentBundleMember({
+            target: targetWithoutSeparation,
+            predecessor: healthyPredecessor, // completedAt is 2026-09-06T10:00:00.000Z
+            evaluationInstant: '2026-09-06T09:00:00.000Z', // 1 hour before completion!
+            readiness: createMockReadiness(),
+            context: createMockContext(),
+            date: '2026-09-06',
+            availability: createMockAvailability(),
+            candidateWindowMinutes: 60,
+            dailyLedger: validLedger,
+            acceptedSameDaySystemicCost: 0.2,
+            inputRevision: mockInputRevision,
+        });
+
+        expect(result.decision).toBe('pending');
+        expect(result.reason).toContain('predates predecessor completion');
+        expect(result.timingPrerequisiteMet).toBe(false);
     });
 
     it('proceeds despite alreadyTrainedToday being true on morning inputs (bypassing alreadyTrainedOverride)', () => {

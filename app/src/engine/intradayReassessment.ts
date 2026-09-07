@@ -144,10 +144,34 @@ export function reassessDependentBundleMember(
 
     // ── 1. Predecessor completion gate ─────────────────────────────────────────
     if (target.afterSessionId) {
-        if (!predecessor || predecessor.sessionId !== target.afterSessionId || predecessor.state !== 'completed') {
+        if (!predecessor || predecessor.sessionId !== target.afterSessionId) {
             return {
                 decision: 'pending',
                 reason: `Predecessor session '${target.afterSessionId}' has not completed (state: ${predecessor?.state ?? 'unstarted'}).`,
+                inputRevision,
+                timingPrerequisiteMet: false,
+                predecessorConfirmed: false,
+            };
+        }
+
+        if (
+            predecessor.state === 'superseded' ||
+            predecessor.state === 'abandoned' ||
+            predecessor.state === 'missed'
+        ) {
+            return {
+                decision: 'reject',
+                reason: `Predecessor session '${target.afterSessionId}' reached terminal state '${predecessor.state}'; dependent session cannot proceed.`,
+                inputRevision,
+                timingPrerequisiteMet: false,
+                predecessorConfirmed: false,
+            };
+        }
+
+        if (predecessor.state !== 'completed') {
+            return {
+                decision: 'pending',
+                reason: `Predecessor session '${target.afterSessionId}' has not completed (state: ${predecessor.state}).`,
                 inputRevision,
                 timingPrerequisiteMet: false,
                 predecessorConfirmed: false,
@@ -165,18 +189,18 @@ export function reassessDependentBundleMember(
         }
 
         // ── 2. Timing separation gate (D-TIME) ──────────────────────────────────
-        if (target.minimumSeparationMinutes !== undefined && target.minimumSeparationMinutes > 0) {
-            const elapsed = elapsedMinutesBetweenInstants(evaluationInstant, predecessor.completedAt);
-            if (elapsed < 0) {
-                return {
-                    decision: 'pending',
-                    reason: `Evaluation instant (${evaluationInstant}) predates predecessor completion (${predecessor.completedAt}).`,
-                    inputRevision,
-                    timingPrerequisiteMet: false,
-                    predecessorConfirmed: false,
-                };
-            }
+        const elapsed = elapsedMinutesBetweenInstants(evaluationInstant, predecessor.completedAt);
+        if (elapsed < 0) {
+            return {
+                decision: 'pending',
+                reason: `Evaluation instant (${evaluationInstant}) predates predecessor completion (${predecessor.completedAt}).`,
+                inputRevision,
+                timingPrerequisiteMet: false,
+                predecessorConfirmed: false,
+            };
+        }
 
+        if (target.minimumSeparationMinutes !== undefined && target.minimumSeparationMinutes > 0) {
             if (elapsed < target.minimumSeparationMinutes) {
                 return {
                     decision: 'pending',
