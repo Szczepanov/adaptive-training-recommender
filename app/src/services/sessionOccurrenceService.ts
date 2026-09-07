@@ -133,11 +133,11 @@ export class SessionOccurrenceService {
         this.db = db;
     }
 
-    private occurrenceRef(userId: string, occurrenceId: string) {
+    occurrenceRef(userId: string, occurrenceId: string) {
         return doc(this.db, 'users', userId, 'session_occurrences', occurrenceId);
     }
 
-    private windowReservationRef(userId: string, date: string, windowId: string) {
+    windowReservationRef(userId: string, date: string, windowId: string) {
         return doc(this.db, 'users', userId, 'session_occurrence_windows', windowReservationId(date, windowId));
     }
 
@@ -287,11 +287,13 @@ export class SessionOccurrenceService {
         options: {
             placementOrder?: number;
             windowBinding?: OccurrenceWindowBinding;
+            generation?: number;
             now?: string;
         } = {},
     ): Promise<SessionOccurrence> {
         const now = options.now ?? new Date().toISOString();
-        const deterministicId = await deterministicExternalPlanOccurrenceId(date, externalPlanRef);
+        const generation = options.generation ?? 0;
+        const deterministicId = await deterministicExternalPlanOccurrenceId(date, externalPlanRef, generation);
         const ref = this.occurrenceRef(userId, deterministicId);
         const windowReservationRef = options.windowBinding
             ? this.windowReservationRef(userId, date, options.windowBinding.windowId)
@@ -326,7 +328,14 @@ export class SessionOccurrenceService {
 
             if (reservationSnap?.exists()) {
                 const owner = reservationSnap.data()?.occurrenceId as string | undefined;
-                if (owner !== priorRevision?.occurrenceId) {
+                const isOwnedByPrior = owner === priorRevision?.occurrenceId
+                    || (generation > 0 && sameDayOccurrences.some(
+                        occ => isExternalPlanOccurrence(occ)
+                            && occ.externalPlanRef.planId === externalPlanRef.planId
+                            && occ.externalPlanRef.sessionId === externalPlanRef.sessionId
+                            && occ.occurrenceId === owner,
+                    ));
+                if (!isOwnedByPrior) {
                     throw new Error(
                         `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
                     );
