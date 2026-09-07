@@ -73,26 +73,29 @@ export function isValidOccurrenceTransition(from: OccurrenceState, to: Occurrenc
  * to any occurrence identity that already exists in production. `generation` is not
  * incremented here; the caller reads the current value from
  * `dailyLedgerAggregateService.currentGeneration` (already bumped by the `reject` that
- * necessitated the recovery) and passes it in.
+ * necessitated the recovery) and passes it in. Explicit malformed or unsupported values
+ * fail closed: silently mapping them back to generation 0 could reuse a terminal occurrence
+ * identity and defeat the recovery discriminator itself.
  */
 export async function deterministicExternalPlanOccurrenceId(
     date: string,
     ref: ExternalPlanOccurrenceRef,
     generation = 0,
 ): Promise<string> {
-    const validGen = typeof generation === 'number'
-        && Number.isInteger(generation)
-        && generation > 0
-        && generation <= MAX_RECOVERY_GENERATION
-        ? generation
-        : 0;
+    if (typeof generation !== 'number' || !Number.isSafeInteger(generation)) {
+        throw new TypeError('Recovery generation must be a safe integer.');
+    }
+    if (generation < 0 || generation > MAX_RECOVERY_GENERATION) {
+        throw new RangeError(`Recovery generation must be between 0 and ${MAX_RECOVERY_GENERATION}.`);
+    }
+
     const raw = JSON.stringify([
         date,
         ref.planId,
         ref.sessionId,
         ref.revision,
         ref.contentHash,
-        ...(validGen > 0 ? [validGen] : []),
+        ...(generation > 0 ? [generation] : []),
     ]);
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
     const hash = Array.from(new Uint8Array(digest))
