@@ -169,10 +169,10 @@ parameter order on `queueOccurrenceTransition`. What remains:
 
 | File | Change |
 |---|---|
-| `app/src/sessions/models.ts` | *(#445)* discriminated `SessionOccurrence` union + `ExternalPlanOccurrenceRef`. PR 3 adds nothing here unless open question 5 puts a window binding on the occurrence. |
-| `app/src/sessions/validation.ts` | *(#445)* mutual-exclusivity + `externalPlanRef` validation. PR 3 extends only if a window binding is added. |
-| `app/firestore.rules` | *(#445)* `externalPlanRef` branch and `hasValidOccurrenceUpdate`. PR 3 adds the date-level reservation/lock document rules (step 11). |
-| `app/src/services/sessionOccurrenceService.ts` | *(#445)* `getOrCreateExternalPlanOccurrence`, `transitionOccurrenceState`. PR 3 hardens id determinism and adds `getExternalPlanOccurrencesForDate` + `releaseOccurrenceClaim`. |
+| `app/src/sessions/models.ts` | *(#445)* discriminated `SessionOccurrence` union + `ExternalPlanOccurrenceRef`. PR 3 adds a `windowBinding` (Phase 1, step 4a) unless the `(date, windowId)` reservation-document alternative is chosen. |
+| `app/src/sessions/validation.ts` | *(#445)* mutual-exclusivity + `externalPlanRef` validation. PR 3 extends it for the window binding. |
+| `app/firestore.rules` | *(#445)* `externalPlanRef` branch and `hasValidOccurrenceUpdate`. PR 3 adds the window binding's immutability and the date-level reservation/lock document rules (steps 4a, 11). |
+| `app/src/services/sessionOccurrenceService.ts` | *(#445)* `getOrCreateExternalPlanOccurrence`, `transitionOccurrenceState`. PR 3 adds atomic re-import supersession (step 4b), `getExternalPlanOccurrencesForDate`, and `releaseOccurrenceClaim`. |
 | `app/src/services/activeExternalPlanService.ts` | `toMembers` accepts real execution state (`started`, `existingBinding`) instead of hardcoding `false`. |
 | `app/src/components/Home.tsx` | Build ledger entries from today's occurrences/executions; adjudicate non-primary bundle members through `reassessDependentBundleMember`; emit `additionalSessions` + per-member status. |
 | `app/src/components/session/AdditionalSessionsCard.tsx` *(new)* | Renders launchable/pending/blocked additional sessions. |
@@ -217,11 +217,46 @@ parameter order on `queueOccurrenceTransition`. What remains:
 
 4. **Add the bundle-member query**
    - Action: `getExternalPlanOccurrencesForDate(userId, date)` returning external-plan
-     occurrences in `placementOrder` then `occurrenceId` order. Note that
-     `getAdditionalOccurrencesForDate` filters `authority === 'additional_session'` and will
-     correctly *not* return these — bundle members must not flow through the manual
-     additional-session adjudication path (see the `alreadyTrainedOverride` trap).
+     occurrences in `placementOrder` then `occurrenceId` order, **excluding `superseded`
+     and `skipped`** (see steps 4b and 8). Note that `getAdditionalOccurrencesForDate`
+     filters `authority === 'additional_session'` and will correctly *not* return these —
+     bundle members must not flow through the manual additional-session adjudication path
+     (see the `alreadyTrainedOverride` trap).
    - Dependencies: step 1. Risk: Low.
+
+4a. **Give the occurrence a window identity — required before Phase 4**
+   - Action: add `windowBinding { windowId, bundleId, order, boundStartLocal, boundEndLocal,
+     startInstant, endInstant }` to `ExternalPlanSessionOccurrence` (model, validator, rules,
+     immutable on update exactly like `externalPlanRef`), **or** introduce a per-date/window
+     reservation document whose id *is* `(date, windowId)`, making a duplicate create
+     transactionally impossible.
+   - Why: D-WINDOW allows at most one occurrence per resolved window. Persisting the window
+     only on `IntradayDecisionRecord` cannot enforce that — the decision store is an
+     append-only audit log, so two concurrent creates (or two plan revisions resolving onto
+     the same window) each append their own record and neither observes the other.
+     Uniqueness needs either a document whose identity is the window, or a field the claim
+     transaction can read and conflict on.
+   - Closes open question 5 as a requirement; only the choice between the two mechanisms
+     stays open.
+   - Dependencies: step 1. Risk: Medium — a second rules/validation change on top of #445's,
+     so re-run the expression-budget test.
+
+4b. **Make re-import supersession atomic — required before Phase 2**
+   - Action: when a new `externalPlanRef` revision produces a new occurrence for a
+     `(date, planId, sessionId)` that already has one, transition the prior occurrence
+     `scheduled → superseded` in the **same transaction** that creates the successor
+     (`scheduled → superseded` is permitted by the merged transition table). Exclude
+     `superseded` from `getExternalPlanOccurrencesForDate` and from Phase-2 ledger
+     reconstruction.
+   - Why: #445's deterministic id hashes the full ref, so a re-import creates a *second*
+     document while the first stays `scheduled`. Phase 2 counts every `scheduled`
+     occurrence, so re-importing a plan would double-reserve the same work in both
+     dimensions. Non-atomic supersession leaves the same window double-counted between the
+     two writes.
+   - Note the asymmetry: an occurrence that already reached `active`/`completed` must
+     **not** be superseded — its consumption is real and stays in the ledger (D-LEDGER:
+     completed work is never retroactively erased to make later work fit).
+   - Closes open question 6 as a requirement. Dependencies: step 1. Risk: Medium.
 
 5. **Confirm the rules surface covers a non-primary member**
    - Action: extend `app/src/emulator/firestoreRules.emulator.test.ts` (#445 already adds
@@ -240,7 +275,11 @@ parameter order on `queueOccurrenceTransition`. What remains:
      - `completed` execution with a bounded actual duration → `state: 'completed'` with
        `actualMinutes` (and `actualSystemicCost` when the estimator can bound it);
      - completed/abandoned without a bounded actual → `state: 'unresolved'`, reservation
-       retained (D-LEDGER: missing cost is uncertainty, never spare capacity).
+       retained (D-LEDGER: missing cost is uncertainty, never spare capacity);
+     - `superseded`/`skipped` occurrence → **no entry at all**. These are the two states
+       meaning "this work is not happening and never consumed anything" (steps 4b and 8);
+       counting them would double-reserve a re-imported plan, or charge the day for a member
+       the gates just rejected.
    - Reuse `reconcileEntry` (`dailyLedger.ts:175`) rather than hand-rolling the transitions.
    - Why: the ledger currently sees an empty day, so an AM completion frees nothing and
      reserves nothing — the "90-minute ceiling, 60-minute AM leaves ≤30 for PM" acceptance
@@ -267,18 +306,34 @@ parameter order on `queueOccurrenceTransition`. What remains:
 8. **Adjudicate bundle members** (`app/src/components/Home.tsx`, after `resolveIntradayBundlePlacement`)
    - Action: for a `placed` proposal, take every binding after `bindings[0]` (the primary,
      already handled at `Home.tsx:487`), resolve its v4 session, and for each:
-     1. `getOrCreateExternalPlanOccurrence` (hardened in Phase 1, step 2), passing
-        `intraday.order` as `placementOrder`;
-     2. call `reassessDependentBundleMember` with the target's `intraday` request,
-        predecessor evidence (occurrence state + `completedAt` + `SessionResponse`
-        `immediate` + tissue responses), the Phase-2 ledger, and
-        `computeReassessmentInputRevision(...)`;
-     3. on `proceed`/`scale` → `prepareExternalPlanSessionLaunch` for the accepted
-        definition (for `scale`, **do not** launch the authored blocks — PR 1's rule
-        stands; surface the advice and keep the member unlaunchable until a block-level
-        transform exists);
-     4. attach `{ ...binding, occurrenceId }` to `additionalSessions`;
-     5. on `pending`/`reject` → no binding; carry the reason into the per-member status.
+     1. call `reassessDependentBundleMember` **first**, with the target's `intraday`
+        request, predecessor evidence (the *predecessor's* occurrence state + `completedAt`
+        + `SessionResponse` `immediate` + tissue responses), the Phase-2 ledger, and
+        `computeReassessmentInputRevision(...)`. The target's own occurrence is not an input
+        to its own reassessment, so it must not be created before the verdict is known;
+     2. **`reject` → create nothing.** If an occurrence already exists from an earlier load
+        whose verdict has since flipped, transition it `scheduled → skipped` so the Phase-2
+        ledger stops counting it. A rejected member must never leave a `scheduled`
+        occurrence behind — Phase 2 reads every `scheduled` occurrence as a live minute and
+        systemic-cost reservation, so a rejected member would otherwise consume exactly the
+        capacity it was just denied;
+     3. **`pending` → create the occurrence and reserve.** Deliberately different from
+        `reject`: D-LEDGER counts "accepted pending session reservations" against the day,
+        and a member waiting only on a post-AM confirmation is still intended work. Emit no
+        binding;
+     4. **`scale` → create the occurrence, reserve, emit no binding.** PR 1's rule stands:
+        there is no block-level transformer for external definitions, so the authored blocks
+        must not become an executable prescription. Do **not** call
+        `prepareExternalPlanSessionLaunch` here. Carry the reduction advice in the member's
+        status only;
+     5. **`proceed` → `getOrCreateExternalPlanOccurrence`** (passing `intraday.order` as
+        `placementOrder`), then `prepareExternalPlanSessionLaunch`, then attach
+        `{ ...binding, occurrenceId }` to `additionalSessions`.
+   - Launchability is carried by the presence of a binding and nothing else. Step 10 treats
+     a binding as a Start control, so emitting one for `scale` or `pending` would expose a
+     launch path for a verdict that must not launch. Return `{ status, reason, binding? }`
+     per member and let the absence of `binding` be the single source of truth — do not add
+     a parallel `launchable` flag that the card and the start handler could disagree about.
    - Why: `adjudicateAuthoredSession` alone would trip `alreadyTrainedOverride`;
      `reassessDependentBundleMember` is the authority that bypasses it correctly.
    - Dependencies: steps 5-7. Risk: **High** (blast radius in a 1,400-line component).
@@ -333,19 +388,35 @@ parameter order on `queueOccurrenceTransition`. What remains:
     - Constraint: Firestore transactions require **all reads before any write**, and
       `claimOccurrenceLaunch` reads the occurrence first — so `onBeforeClaim` may only
       read (via `transaction.get`) and stage writes; it must not read after writing.
-    - Date-level lock: the open question in `h4-dreassess-analysis.md` still stands. Recommendation:
-      lock on `users/{userId}/daily_recommendations/{date}` — it already exists, already
-      holds the recommendation revision, and avoids a new collection plus new rules budget.
-      If its rules budget cannot absorb a reservation map, fall back to a dedicated
-      `users/{userId}/daily_ledgers/{date}` document with independent rules. Decide with the
-      emulator budget test, not by inspection.
+    - **The date-level capacity write is required, not optional.** `claimOccurrenceLaunch`
+      transacts on a single occurrence document, so two *different* occurrences can each
+      read the same ledger revision, each find headroom, and both commit — Firestore detects
+      no conflict because they touch disjoint documents. Re-running the reassessment inside
+      `onBeforeClaim` does not fix this: both callers would compute the same
+      stale-but-individually-valid answer. The transaction must therefore, atomically:
+      1. `transaction.get` the canonical per-date ledger/lock document;
+      2. verify its revision against the `ReassessmentInputRevision` the decision assumed;
+      3. write this member's reservation into it **and increment its revision** — this write
+         is what makes a concurrent claim conflict and retry;
+      4. transition the occurrence to `active`.
+      Steps 1-2 must precede every write (Firestore's reads-before-writes rule). Without
+      step 3 the lock document is never written and provides no mutual exclusion at all.
+    - Which document holds it is the only open part. Recommendation:
+      `users/{userId}/daily_recommendations/{date}` — it exists already and already carries a
+      revision — falling back to a dedicated `users/{userId}/daily_ledgers/{date}` with
+      independent rules if the recommendation document's rules budget cannot absorb a
+      reservation map. Decide with the emulator budget test, not by inspection.
     - Rollback: if `resolveSessionDefinition` or `startSession` fails *after* a successful
       claim, the occurrence is stranded in `active` with no execution. Add
       `releaseOccurrenceClaim(userId, occurrenceId)` transitioning `active → scheduled`
       **only when no execution references it**, and call it from the failure path.
-    - Risk: **High** (concurrency + partial failure). Tests: two concurrent claims → exactly
-      one wins; claim on an already-`active`/`completed` occurrence → rejected; stale input
-      revision → rejected and recomputed; failed start → released back to `scheduled`.
+    - Risk: **High** (concurrency + partial failure). Tests: two concurrent claims on the
+      **same** occurrence → exactly one wins; two concurrent claims on **different**
+      occurrences contending for the last remaining minutes/systemic cost → exactly one wins
+      (the case a single-occurrence transaction does not cover, and precisely what
+      ADR-0036's "two tabs cannot spend the same minute" clause is about); claim on an
+      already-`active`/`completed` occurrence → rejected; stale input revision → rejected and
+      recomputed; failed start → released back to `scheduled`.
 
 12. **Runner passes the occurrence through** (`app/src/components/session/SessionRunner.tsx:331`)
     - Action: no signature change needed — `binding.occurrenceId` already flows into
@@ -359,8 +430,12 @@ parameter order on `queueOccurrenceTransition`. What remains:
 13. **Record the `immediate` response** (`app/src/hooks/useSessionRunner.ts`, `completeSession`)
     - Action: after the execution transitions to `completed`, call
       `sessionResponseService.recordResponse(userId, { kind: 'execution', id: executionId, date: execution.date }, 'immediate', execution.date, execution.date, facts, execution.occurrenceId)`
-      where `facts` = `{ sessionRpe, completedFraction, unexpectedFatigue, note }` from the
-      completion payload. Guard with `getResponseForWindow` → `updateResponseFacts` when
+      where `facts` = `{ sessionRpe, completedFraction, unexpectedFatigue, note }`. Note the
+      deliberate rename at this boundary: the sheet's `SessionCompletionPayload.notes`
+      (`SessionCompletionSheet.tsx:23`) maps to the response record's `SessionResponse.note`
+      (`responses/models.ts`). Both names are already shipped on their own records, so
+      neither is renamed here — but the mapping must be written explicitly
+      (`note: payload.notes`) rather than spread, or the athlete's note is silently dropped. Guard with `getResponseForWindow` → `updateResponseFacts` when
       one already exists (the deterministic id makes a double-tap throw otherwise).
     - Why: gap 4 above — without this, every dependent PM member stays `pending`.
     - D-MRESP compliance: write the response **only** from an actually-submitted completion
@@ -493,14 +568,12 @@ separation minimum are satisfied → launch it and confirm exactly one occurrenc
 3. **Multi-region tissue capture** in the completion sheet: expand now, or accept
    single-region capture for this PR and note the limitation?
 4. **Provisional D-AUDIT records (step 9)** — in this PR, or deferred to issue #437?
-5. **Window identity's home** — #445 puts no `windowId`/`bundleId`/bound interval on the
-   occurrence. Persist it on `IntradayDecisionRecord` only (no occurrence-level enforcement
-   of D-WINDOW's one-occurrence-per-window rule), or add a `windowBinding` to the occurrence
-   in PR 3 (a second rules/validation change on top of #445's)?
-6. **Re-import semantics** — settled by #445: the deterministic id hashes the full
-   `externalPlanRef`, so a new revision yields a new occurrence document. Confirm the old
-   one is marked `superseded` rather than left `scheduled` and counted a second time by the
-   Phase 2 ledger.
+5. **Window identity's mechanism** — settled that it cannot live on `IntradayDecisionRecord`
+   alone (Phase 1, step 4a): an append-only audit log cannot enforce uniqueness. Still open:
+   `windowBinding` on the occurrence vs. a `(date, windowId)`-keyed reservation document.
+6. ~~**Re-import semantics**~~ — settled as a requirement in Phase 1, step 4b: supersession
+   must be atomic with the successor's creation, and `superseded` occurrences are excluded
+   from ledger reconstruction.
 
 ---
 
@@ -508,8 +581,13 @@ separation minimum are satisfied → launch it and confirm exactly one occurrenc
 
 - [ ] A v4 bundle's non-primary member appears on `Home.tsx` with its resolved window and a
       launch affordance, or an explicit pending/blocked reason.
-- [ ] Launching it claims capacity atomically; a stale decision recomputes instead of
-      launching; concurrent launches cannot both succeed.
+- [ ] Launching it claims capacity atomically — including two *different* occurrences
+      contending for the same remaining capacity, not only two claims on one occurrence; a
+      stale decision recomputes instead of launching.
+- [ ] A `reject` verdict leaves no reserving occurrence behind, and a re-imported plan
+      revision supersedes its predecessor atomically rather than double-reserving the day.
+- [ ] No `scale` or `pending` member ever receives a launch binding, so no Start control can
+      appear for a verdict that must not launch.
 - [ ] A completed AM occurrence cannot be relaunched, and its execution identity is
       preserved across reload.
 - [ ] Completing the AM session records an `immediate` `SessionResponse` (only when actually
