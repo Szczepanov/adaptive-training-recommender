@@ -1,4 +1,4 @@
-import type { SessionDefinition, ExecutionPrescription, SessionReferenceBinding } from '../sessions/models';
+import { isExternalPlanOccurrence, type SessionDefinition, type ExecutionPrescription, type SessionReferenceBinding } from '../sessions/models';
 import type { PreparedSessionLaunch } from '../sessions/sessionLaunch';
 import type { WorkoutPrescription } from '../workouts/models';
 import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
@@ -149,13 +149,21 @@ export async function prepareAuthoredOccurrenceLaunch(
     };
 }
 
+export interface PrepareExternalPlanSessionLaunchOptions {
+    summaryOverride?: string;
+    now?: string;
+    date?: string;
+    occurrenceId?: string;
+    placementOrder?: number;
+}
+
 /**
  * Freezes the execution-prescription snapshot for a v4 external-plan session (ADR-0036
- * H4). Mirrors prepareCatalogSessionLaunch's shape: no session_occurrences record --
- * the immutable authored source is already identified by
- * (planId, revision, sessionId, contentHash), while the recommendation/execution carries
- * the date separately. Target-event sessions are deliberately rejected: rules.ts treats
- * them as fixed-activity/advisory inputs rather than executable primary recommendations.
+ * H4). A supplied date creates/resolves an external-plan occurrence idempotently. A
+ * supplied occurrenceId is read back and verified against the exact external source (and
+ * date when supplied) before it can be attached to the launch binding. Target-event
+ * sessions are deliberately rejected: rules.ts treats them as fixed-activity/advisory
+ * inputs rather than executable primary recommendations.
  *
  * Idempotent and safe to call every time an executable external-plan recommendation is
  * composed: `executionPrescriptionService.savePrescription` no-ops when the same
@@ -169,12 +177,22 @@ export async function prepareExternalPlanSessionLaunch(
         contentHash: string;
         session: ExternalPlanSessionV4;
     },
-    summaryOverride?: string,
-    now = new Date().toISOString(),
+    summaryOverrideOrOptions?: string | PrepareExternalPlanSessionLaunchOptions,
+    nowFallback = new Date().toISOString(),
 ): Promise<PreparedSessionLaunch> {
     if (externalPlan.session.isEvent) {
         throw new Error('External-plan target events are advisory fixed-activity inputs and cannot be launched as primary sessions.');
     }
+
+    const options: PrepareExternalPlanSessionLaunchOptions =
+        typeof summaryOverrideOrOptions === 'object' && summaryOverrideOrOptions !== null
+            ? summaryOverrideOrOptions
+            : {
+                summaryOverride: summaryOverrideOrOptions,
+                now: nowFallback,
+            };
+
+    const now = options.now ?? nowFallback;
 
     const definition = externalPlan.session.definition;
     // Defense in depth: already validated at import time (validateExternalSessionV2,
@@ -193,7 +211,49 @@ export async function prepareExternalPlanSessionLaunch(
         contentHash: externalPlan.contentHash,
     };
 
-    const effectiveSummary = summaryOverride ?? definition.summary;
+    let effectiveOccurrenceId = options.occurrenceId;
+    if (effectiveOccurrenceId) {
+        const occurrence = await sessionOccurrenceService.getOccurrence(userId, effectiveOccurrenceId);
+        if (occurrence.status !== 'AVAILABLE') {
+            throw new Error(`External-plan occurrence ${effectiveOccurrenceId} is not available (${occurrence.status}).`);
+        }
+        const occurrenceData = occurrence.data;
+        if (
+            !isExternalPlanOccurrence(occurrenceData)
+            || occurrenceData.state !== 'scheduled'
+            || occurrenceData.userId !== userId
+            || occurrenceData.externalPlanRef.planId !== sessionSource.planId
+            || occurrenceData.externalPlanRef.revision !== sessionSource.revision
+            || occurrenceData.externalPlanRef.sessionId !== sessionSource.sessionId
+            || occurrenceData.externalPlanRef.contentHash !== sessionSource.contentHash
+        ) {
+            throw new Error(`External-plan occurrence ${effectiveOccurrenceId} does not match the launch source.`);
+        }
+        if (options.date !== undefined && occurrenceData.date !== options.date) {
+            throw new Error(
+                `External-plan occurrence ${effectiveOccurrenceId} is for ${occurrenceData.date}, expected ${options.date}.`,
+            );
+        }
+    } else if (options.date) {
+        const occurrence = await sessionOccurrenceService.getOrCreateExternalPlanOccurrence(
+            userId,
+            options.date,
+            {
+                planId: externalPlan.planId,
+                revision: externalPlan.revision,
+                sessionId: externalPlan.session.id,
+                contentHash: externalPlan.contentHash,
+            },
+            options.placementOrder,
+            now,
+        );
+        if (occurrence.state !== 'scheduled') {
+            throw new Error(`External-plan occurrence ${occurrence.occurrenceId} does not match the launch source.`);
+        }
+        effectiveOccurrenceId = occurrence.occurrenceId;
+    }
+
+    const effectiveSummary = options.summaryOverride ?? definition.summary;
     const unsignedPrescription: ExecutionPrescription = {
         schemaVersion: 1,
         prescriptionHash: '',
@@ -223,6 +283,7 @@ export async function prepareExternalPlanSessionLaunch(
         definition,
         binding: {
             sessionSource,
+            ...(effectiveOccurrenceId ? { occurrenceId: effectiveOccurrenceId } : {}),
             prescriptionHash,
         },
     };

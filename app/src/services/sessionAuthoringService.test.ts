@@ -15,7 +15,37 @@ const services = vi.hoisted(() => {
                 store.set(prescription.prescriptionHash, prescription);
             }),
         },
-        occurrence: { saveOccurrence: vi.fn().mockResolvedValue(undefined) },
+        occurrence: {
+            saveOccurrence: vi.fn().mockResolvedValue(undefined),
+            getOccurrence: vi.fn().mockImplementation(async (userId: string, occurrenceId: string) => ({
+                status: 'AVAILABLE' as const,
+                data: {
+                    userId,
+                    occurrenceId,
+                    date: '2026-09-06',
+                    authority: 'external_plan' as const,
+                    externalPlanRef: {
+                        planId: 'plan-xyz',
+                        revision: 2,
+                        sessionId: 'session-101',
+                        contentHash: 'c'.repeat(64),
+                    },
+                    state: 'scheduled' as const,
+                    createdAt: '2026-09-06T12:00:00.000Z',
+                    updatedAt: '2026-09-06T12:00:00.000Z',
+                },
+            })),
+            getOrCreateExternalPlanOccurrence: vi.fn().mockImplementation(async (userId, date, ref) => ({
+                userId,
+                occurrenceId: 'occ-ext-created',
+                date,
+                authority: 'external_plan',
+                externalPlanRef: ref,
+                state: 'scheduled',
+                createdAt: '2026-09-06T12:00:00.000Z',
+                updatedAt: '2026-09-06T12:00:00.000Z',
+            })),
+        },
     };
 });
 
@@ -31,6 +61,8 @@ beforeEach(() => {
     services.store.clear();
     services.prescription.savePrescription.mockClear();
     services.occurrence.saveOccurrence.mockClear();
+    services.occurrence.getOccurrence.mockClear();
+    services.occurrence.getOrCreateExternalPlanOccurrence.mockClear();
 });
 
 function makeTestPrescription(templateId: string) {
@@ -188,6 +220,180 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
             duration: { min: 60, max: 60 },
         });
         expect(savedPrescription.createdAt).toBe('2026-09-06T12:00:00.000Z');
+    });
+
+    it('creates and binds an external-plan occurrence when date is provided in options', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const launch = await prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            date: '2026-09-06',
+            now: '2026-09-06T12:00:00.000Z',
+        });
+
+        expect(launch.binding.sessionSource.kind).toBe('external_plan');
+        expect(launch.binding.occurrenceId).toBe('occ-ext-created');
+        expect(services.occurrence.getOrCreateExternalPlanOccurrence).toHaveBeenCalledWith(
+            'u1',
+            '2026-09-06',
+            {
+                planId: 'plan-xyz',
+                revision: 2,
+                sessionId: 'session-101',
+                contentHash: 'c'.repeat(64),
+            },
+            undefined,
+            '2026-09-06T12:00:00.000Z',
+        );
+    });
+
+    it('rejects a date-only launch when existing occurrence is in a terminal state', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        services.occurrence.getOrCreateExternalPlanOccurrence.mockResolvedValueOnce({
+            userId: 'u1',
+            occurrenceId: 'occ-ext-completed',
+            date: '2026-09-06',
+            authority: 'external_plan',
+            externalPlanRef: {
+                planId: 'plan-xyz',
+                revision: 2,
+                sessionId: 'session-101',
+                contentHash: 'c'.repeat(64),
+            },
+            state: 'completed',
+            createdAt: '2026-09-06T12:00:00.000Z',
+            updatedAt: '2026-09-06T12:00:00.000Z',
+        });
+
+        await expect(prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            date: '2026-09-06',
+            now: '2026-09-06T12:00:00.000Z',
+        })).rejects.toThrow(/does not match the launch source/i);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('validates and binds a supplied external-plan occurrence before persisting the prescription', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        const launch = await prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            occurrenceId: 'occ-ext-existing',
+            date: '2026-09-06',
+            now: '2026-09-06T12:00:00.000Z',
+        });
+
+        expect(services.occurrence.getOccurrence).toHaveBeenCalledWith('u1', 'occ-ext-existing');
+        expect(services.occurrence.getOrCreateExternalPlanOccurrence).not.toHaveBeenCalled();
+        expect(launch.binding.occurrenceId).toBe('occ-ext-existing');
+        expect(services.prescription.savePrescription).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a supplied occurrence whose external source identity does not match', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        services.occurrence.getOccurrence.mockResolvedValueOnce({
+            status: 'AVAILABLE',
+            data: {
+                userId: 'u1',
+                occurrenceId: 'occ-ext-wrong',
+                date: '2026-09-06',
+                authority: 'external_plan',
+                externalPlanRef: {
+                    planId: 'plan-xyz',
+                    revision: 2,
+                    sessionId: 'different-session',
+                    contentHash: 'c'.repeat(64),
+                },
+                state: 'scheduled',
+                createdAt: '2026-09-06T12:00:00.000Z',
+                updatedAt: '2026-09-06T12:00:00.000Z',
+            },
+        });
+
+        await expect(prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            occurrenceId: 'occ-ext-wrong',
+            date: '2026-09-06',
+        })).rejects.toThrow(/does not match the launch source/i);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('rejects a supplied occurrence from a different recommendation date', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        services.occurrence.getOccurrence.mockResolvedValueOnce({
+            status: 'AVAILABLE',
+            data: {
+                userId: 'u1',
+                occurrenceId: 'occ-ext-existing',
+                date: '2026-09-05',
+                authority: 'external_plan',
+                externalPlanRef: {
+                    planId: 'plan-xyz',
+                    revision: 2,
+                    sessionId: 'session-101',
+                    contentHash: 'c'.repeat(64),
+                },
+                state: 'scheduled',
+                createdAt: '2026-09-05T12:00:00.000Z',
+                updatedAt: '2026-09-05T12:00:00.000Z',
+            },
+        });
+
+        await expect(prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            occurrenceId: 'occ-ext-existing',
+            date: '2026-09-06',
+        })).rejects.toThrow(/expected 2026-09-06/i);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('rejects a supplied occurrence that is already in completed state', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        services.occurrence.getOccurrence.mockResolvedValueOnce({
+            status: 'AVAILABLE',
+            data: {
+                userId: 'u1',
+                occurrenceId: 'occ-ext-completed',
+                date: '2026-09-06',
+                authority: 'external_plan',
+                externalPlanRef: {
+                    planId: 'plan-xyz',
+                    revision: 2,
+                    sessionId: 'session-101',
+                    contentHash: 'c'.repeat(64),
+                },
+                state: 'completed',
+                createdAt: '2026-09-06T12:00:00.000Z',
+                updatedAt: '2026-09-06T12:00:00.000Z',
+            },
+        });
+
+        await expect(prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            occurrenceId: 'occ-ext-completed',
+            date: '2026-09-06',
+        })).rejects.toThrow(/does not match the launch source/i);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
+    });
+
+    it('rejects a supplied occurrence that is in skipped state', async () => {
+        const externalPlan = makeV4ExternalPlan();
+        services.occurrence.getOccurrence.mockResolvedValueOnce({
+            status: 'AVAILABLE',
+            data: {
+                userId: 'u1',
+                occurrenceId: 'occ-ext-skipped',
+                date: '2026-09-06',
+                authority: 'external_plan',
+                externalPlanRef: {
+                    planId: 'plan-xyz',
+                    revision: 2,
+                    sessionId: 'session-101',
+                    contentHash: 'c'.repeat(64),
+                },
+                state: 'skipped',
+                createdAt: '2026-09-06T12:00:00.000Z',
+                updatedAt: '2026-09-06T12:00:00.000Z',
+            },
+        });
+
+        await expect(prepareExternalPlanSessionLaunch('u1', externalPlan, {
+            occurrenceId: 'occ-ext-skipped',
+            date: '2026-09-06',
+        })).rejects.toThrow(/does not match the launch source/i);
+        expect(services.prescription.savePrescription).not.toHaveBeenCalled();
     });
 
     it('applies a summary override before hashing and persistence', async () => {

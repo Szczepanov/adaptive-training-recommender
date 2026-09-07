@@ -1149,20 +1149,41 @@ service cloud.firestore {
     function hasValidSessionOccurrence(userId, occurrenceId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'state', 'placementOrder', 'createdAt', 'updatedAt'])
-        && data.keys().hasAll(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'state', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'externalPlanRef', 'state', 'placementOrder', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'occurrenceId', 'date', 'authority', 'state', 'createdAt', 'updatedAt'])
+        && (('definitionRef' in data) != ('externalPlanRef' in data))
         && data.occurrenceId == occurrenceId
         && isValidActivityDate(data.date)
-        && data.authority in ['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session']
-        && data.state in ['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed']
-        && data.definitionRef is map
-        && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
-        && data.definitionRef.keys().hasAll(['definitionId', 'revision', 'contentHash'])
-        && data.definitionRef.definitionId is string && data.definitionRef.definitionId.size() > 0
-        && data.definitionRef.revision is int && data.definitionRef.revision >= 1
-        && data.definitionRef.contentHash is string && data.definitionRef.contentHash.size() > 0
+        && data.state in ['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed', 'skipped']
+        && (
+          ('externalPlanRef' in data && data.authority == 'external_plan')
+          || ('definitionRef' in data && data.authority in ['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session'])
+        )
+        && (!('definitionRef' in data) || (
+          data.definitionRef is map
+          && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
+          && data.definitionRef.keys().hasAll(['definitionId', 'revision', 'contentHash'])
+          && data.definitionRef.definitionId is string && data.definitionRef.definitionId.size() > 0
+          && data.definitionRef.revision is int && data.definitionRef.revision >= 1
+          && data.definitionRef.contentHash is string && data.definitionRef.contentHash.size() > 0
+        ))
+        && (!('externalPlanRef' in data) || (
+          data.externalPlanRef is map
+          && data.externalPlanRef.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
+          && data.externalPlanRef.keys().hasAll(['planId', 'revision', 'sessionId', 'contentHash'])
+          && data.externalPlanRef.planId is string && data.externalPlanRef.planId.size() > 0 && data.externalPlanRef.planId.size() <= 64
+          && data.externalPlanRef.revision is int && data.externalPlanRef.revision >= 1
+          && data.externalPlanRef.sessionId is string && data.externalPlanRef.sessionId.size() > 0 && data.externalPlanRef.sessionId.size() <= 64
+          && data.externalPlanRef.contentHash is string && data.externalPlanRef.contentHash.size() > 0 && data.externalPlanRef.contentHash.size() <= 128
+        ))
         && (!('placementOrder' in data) || (data.placementOrder is int && data.placementOrder >= 0))
         && data.createdAt is string && data.updatedAt is string;
+    }
+
+    function isValidOccurrenceStateTransition(fromState, toState) {
+      return fromState == toState
+        || (fromState == 'scheduled' && toState in ['active', 'completed', 'abandoned', 'skipped', 'superseded', 'missed'])
+        || (fromState == 'active' && toState in ['completed', 'abandoned', 'superseded']);
     }
 
     match /users/{userId}/session_occurrences/{occurrenceId} {
@@ -1172,7 +1193,8 @@ service cloud.firestore {
         && keepsOwnership(userId)
         && request.resource.data.date == resource.data.date
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.definitionRef == resource.data.definitionRef
+        && request.resource.data.authority == resource.data.authority
+        && isValidOccurrenceStateTransition(resource.data.state, request.resource.data.state)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt']);
       allow delete: if isOwner(userId);
     }

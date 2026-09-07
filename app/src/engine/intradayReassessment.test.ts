@@ -367,8 +367,8 @@ describe('reassessDependentBundleMember (ADR-0036 D-REASSESS)', () => {
         expect(result.executionDose?.volume).toBeCloseTo(0.7);
     });
 
-    it('rejects PM session when predecessor reached terminal state (superseded, abandoned, missed)', () => {
-        for (const terminalState of ['superseded', 'abandoned', 'missed'] as const) {
+    it('rejects PM session when predecessor reached terminal state (superseded, abandoned, missed, skipped)', () => {
+        for (const terminalState of ['superseded', 'abandoned', 'missed', 'skipped'] as const) {
             const result = reassessDependentBundleMember({
                 target,
                 predecessor: {

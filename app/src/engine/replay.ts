@@ -1,5 +1,5 @@
 import type { DailyRecommendation, ExternalDecisionProvenance, ExternalRestDirective, ExternalRestProvenance, ExternalTrainingPlan } from './models';
-import type { SessionReferenceBinding } from '../sessions/models';
+import { isExternalPlanOccurrence, isManualOccurrence, type SessionReferenceBinding } from '../sessions/models';
 import { computeContentHash } from './externalPlanHash';
 import { resolveRestDate } from './externalPlacement';
 import { externalTemplateId, isExternalTemplateId } from './externalSessionProfiles';
@@ -377,9 +377,18 @@ export async function replayRecommendationAuditAgainstSessions(
             const occurrence = await sessionOccurrenceService.getOccurrence(userId, binding.occurrenceId);
             if (occurrence.status !== 'AVAILABLE' || occurrence.data.date !== recommendation.date) continue;
             if (binding.sessionSource.kind === 'manual' && (
-                occurrence.data.definitionRef.definitionId !== binding.sessionSource.definitionId
+                !isManualOccurrence(occurrence.data)
+                || occurrence.data.definitionRef.definitionId !== binding.sessionSource.definitionId
                 || occurrence.data.definitionRef.revision !== binding.sessionSource.revision
                 || occurrence.data.definitionRef.contentHash !== binding.sessionSource.contentHash
+            )) continue;
+
+            if (binding.sessionSource.kind === 'external_plan' && (
+                !isExternalPlanOccurrence(occurrence.data)
+                || occurrence.data.externalPlanRef.planId !== binding.sessionSource.planId
+                || occurrence.data.externalPlanRef.revision !== binding.sessionSource.revision
+                || occurrence.data.externalPlanRef.sessionId !== binding.sessionSource.sessionId
+                || occurrence.data.externalPlanRef.contentHash !== binding.sessionSource.contentHash
             )) continue;
 
             const expectedAuthority = audit?.authoredOccurrence?.occurrenceId === binding.occurrenceId

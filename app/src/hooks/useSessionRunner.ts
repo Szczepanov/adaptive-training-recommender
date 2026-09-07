@@ -11,6 +11,7 @@ import type {
 } from '../sessions/models';
 import { getDb } from '../firebase';
 import { sessionExecutionService } from '../services/sessionExecutionService';
+import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import { checkinService } from '../services/checkinService';
 import { preferencesService } from '../services/preferencesService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
@@ -641,6 +642,19 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         await batch.commit();
         setExecution(completedExecution);
 
+        if (execution.occurrenceId) {
+            try {
+                await sessionOccurrenceService.transitionOccurrenceState(
+                    userId,
+                    execution.occurrenceId,
+                    'completed',
+                    now,
+                );
+            } catch (err) {
+                console.warn('[useSessionRunner] Failed to transition occurrence state to completed:', err);
+            }
+        }
+
         // PR 1 (ADR-0034) shadow reconciliation: fire-and-forget, never affects
         // completion UX or this function's behavior/return value.
         void reconcileStructuredCompletion(userId, completedExecution, definition?.dominantModality)
@@ -655,10 +669,26 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         } catch (err) {
             console.warn('[useSessionRunner] Failed to persist rest event:', err);
         }
+        const now = new Date().toISOString();
+        const batch = writeBatch(getDb());
         await sessionExecutionService.transitionExecution(userId, execution.executionId, 'abandoned', {
             notes,
-        });
+        }, batch);
+        await batch.commit();
         setExecution(prev => prev ? { ...prev, state: 'abandoned' } : null);
+
+        if (execution.occurrenceId) {
+            try {
+                await sessionOccurrenceService.transitionOccurrenceState(
+                    userId,
+                    execution.occurrenceId,
+                    'abandoned',
+                    now,
+                );
+            } catch (err) {
+                console.warn('[useSessionRunner] Failed to transition occurrence state to abandoned:', err);
+            }
+        }
     }, [execution, userId, closeActiveRest]);
 
     return {

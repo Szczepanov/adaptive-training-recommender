@@ -216,7 +216,10 @@ export type OccurrenceAuthority =
     | 'unplanned_log'
     | 'schedule'
     | 'replace_recommendation'
-    | 'additional_session';
+    | 'additional_session'
+    | 'external_plan';
+
+export type ManualOccurrenceAuthority = Exclude<OccurrenceAuthority, 'external_plan'>;
 
 export type OccurrenceState =
     | 'scheduled'
@@ -224,22 +227,59 @@ export type OccurrenceState =
     | 'superseded'
     | 'completed'
     | 'abandoned'
-    | 'missed';
+    | 'missed'
+    | 'skipped';
 
-export interface SessionOccurrence {
+export interface ManualOccurrenceRef {
+    definitionId: string;
+    revision: number;
+    contentHash: string;
+}
+
+export interface ExternalPlanOccurrenceRef {
+    planId: string;
+    revision: number;
+    sessionId: string;
+    contentHash: string;
+}
+
+export interface BaseSessionOccurrence {
     userId: string;
     occurrenceId: string;
     date: string;
     authority: OccurrenceAuthority;
-    definitionRef: {
-        definitionId: string;
-        revision: number;
-        contentHash: string;
-    };
     state: OccurrenceState;
     placementOrder?: number;
     createdAt: string;
     updatedAt: string;
+}
+
+export interface ManualSessionOccurrence extends BaseSessionOccurrence {
+    authority: ManualOccurrenceAuthority;
+    definitionRef: ManualOccurrenceRef;
+    externalPlanRef?: never;
+}
+
+export interface ExternalPlanSessionOccurrence extends BaseSessionOccurrence {
+    authority: 'external_plan';
+    externalPlanRef: ExternalPlanOccurrenceRef;
+    definitionRef?: never;
+}
+
+export type SessionOccurrence = ManualSessionOccurrence | ExternalPlanSessionOccurrence;
+
+export function isManualOccurrence(occurrence: SessionOccurrence): occurrence is ManualSessionOccurrence {
+    return occurrence.authority !== 'external_plan'
+        && 'definitionRef' in occurrence
+        && occurrence.definitionRef !== null
+        && typeof occurrence.definitionRef === 'object';
+}
+
+export function isExternalPlanOccurrence(occurrence: SessionOccurrence): occurrence is ExternalPlanSessionOccurrence {
+    return occurrence.authority === 'external_plan'
+        && 'externalPlanRef' in occurrence
+        && occurrence.externalPlanRef !== null
+        && typeof occurrence.externalPlanRef === 'object';
 }
 
 /**

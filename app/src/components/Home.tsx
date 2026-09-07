@@ -11,9 +11,9 @@ import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
 import { resolveAvailability } from '../engine/schedule';
 import { adjudicateAuthoredSession, createAuthoredSessionTemplate, estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
-import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, FixedActivity, ShadowVerdict } from '../engine/models';
-import type { SessionReferenceBinding } from '../sessions/models';
+import { isManualOccurrence, type SessionReferenceBinding } from '../sessions/models';
+import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
 import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from '../services/sessionAuthoringService';
@@ -490,6 +490,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                 contentHash: externalContext.contentHash,
                 session: externalContext.session as ExternalPlanSessionV4,
               },
+              { date: input.date },
             );
             if (!isCurrent()) return;
             primarySession = launch.binding;
@@ -520,7 +521,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           let acceptedSameDaySystemicCost = baseRecommendation.template.systemicCost;
           let acceptedSameDayMinutes = baseRecommendation.template.durationMin;
 
-          if (replaceOccurrence) {
+          if (replaceOccurrence && isManualOccurrence(replaceOccurrence)) {
             const source = {
               kind: 'manual' as const,
               definitionId: replaceOccurrence.definitionRef.definitionId,
@@ -591,6 +592,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           const additionalBindings: SessionReferenceBinding[] = [];
           const additionalNotices: string[] = [];
           for (const occurrence of additionalOccurrences) {
+            if (!isManualOccurrence(occurrence)) continue;
             const source = {
               kind: 'manual' as const,
               definitionId: occurrence.definitionRef.definitionId,

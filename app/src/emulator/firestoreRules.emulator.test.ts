@@ -1333,6 +1333,24 @@ emulatorDescribe('Firestore security rules', () => {
         };
     }
 
+    function validExternalPlanSessionOccurrence() {
+        return {
+            userId: ownerId,
+            occurrenceId: 'occ-ext-1',
+            date: '2026-08-18',
+            authority: 'external_plan',
+            state: 'scheduled',
+            externalPlanRef: {
+                planId: 'plan-1',
+                revision: 1,
+                sessionId: 'session-1',
+                contentHash: 'hash-abc-123',
+            },
+            createdAt: '2026-08-18T10:00:00Z',
+            updatedAt: '2026-08-18T10:00:00Z',
+        };
+    }
+
     function validSessionExecution() {
         return {
             userId: ownerId,
@@ -1518,11 +1536,122 @@ emulatorDescribe('Firestore security rules', () => {
             authority: 'additional_session',
         }))).resolves.toBeUndefined();
 
+        // external_plan succeeds in Issue #434 PR 2
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionOccPath}-ext`), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-unplanned-1-ext',
+        }))).resolves.toBeUndefined();
+
         // unknown authority is rejected
         await assertFails(setDoc(doc(ownerDb, `${sessionOccPath}-unknown`), {
             ...validSessionOccurrence(),
             occurrenceId: 'occ-unplanned-1-unknown',
             authority: 'bogus_authority',
+        }));
+    });
+
+    it('allows external-plan occurrence lifecycle (scheduled -> active -> completed / skipped) and enforces mutual exclusivity of refs', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const occPath = `users/${ownerId}/session_occurrences/occ-ext-lifecycle`;
+        const baseOcc = {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-lifecycle',
+        };
+
+        // 1. Create scheduled external-plan occurrence
+        await expect(assertSucceeds(setDoc(doc(ownerDb, occPath), baseOcc))).resolves.toBeUndefined();
+
+        // 2. Transition to active
+        await expect(assertSucceeds(setDoc(doc(ownerDb, occPath), {
+            ...baseOcc,
+            state: 'active',
+            updatedAt: '2026-08-18T10:05:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 3. Transition to completed
+        await expect(assertSucceeds(setDoc(doc(ownerDb, occPath), {
+            ...baseOcc,
+            state: 'completed',
+            updatedAt: '2026-08-18T11:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 3b. Completed occurrence cannot transition back to active
+        await assertFails(setDoc(doc(ownerDb, occPath), {
+            ...baseOcc,
+            state: 'active',
+            updatedAt: '2026-08-18T11:05:00Z',
+        }));
+
+        // 4. Create another occurrence with skipped state
+        const skippedPath = `users/${ownerId}/session_occurrences/occ-ext-skipped`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, skippedPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-skipped',
+            state: 'skipped',
+        }))).resolves.toBeUndefined();
+
+        // 4b. Skipped occurrence cannot transition back to active
+        await assertFails(setDoc(doc(ownerDb, skippedPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-skipped',
+            state: 'active',
+            updatedAt: '2026-08-18T10:05:00Z',
+        }));
+
+        // 4c. Scheduled occurrence can transition directly to completed (production state before PR 3 claims)
+        const directPath = `users/${ownerId}/session_occurrences/occ-ext-direct`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, directPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-direct',
+            state: 'scheduled',
+        }))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, directPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-direct',
+            state: 'completed',
+            updatedAt: '2026-08-18T11:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 4d. Terminal completed occurrence cannot transition back to scheduled
+        await assertFails(setDoc(doc(ownerDb, directPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-direct',
+            state: 'scheduled',
+            updatedAt: '2026-08-18T11:05:00Z',
+        }));
+
+        // 5. Rejects an occurrence with both definitionRef and externalPlanRef
+        const bothPath = `users/${ownerId}/session_occurrences/occ-ext-both`;
+        await assertFails(setDoc(doc(ownerDb, bothPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-both',
+            definitionRef: {
+                definitionId: 'def-full-body',
+                revision: 1,
+                contentHash: 'hash-abc-123',
+            },
+        }));
+
+        // 6. Rejects an occurrence with neither ref
+        const neitherPath = `users/${ownerId}/session_occurrences/occ-ext-neither`;
+        const noRef = { ...validExternalPlanSessionOccurrence(), occurrenceId: 'occ-ext-neither' };
+        delete (noRef as { externalPlanRef?: unknown }).externalPlanRef;
+        await assertFails(setDoc(doc(ownerDb, neitherPath), noRef));
+
+        // 7. Rejects externalPlanRef paired with non-external_plan authority
+        const mismatchedExtPath = `users/${ownerId}/session_occurrences/occ-ext-mismatched`;
+        await assertFails(setDoc(doc(ownerDb, mismatchedExtPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-mismatched',
+            authority: 'replace_recommendation',
+        }));
+
+        // 8. Rejects definitionRef paired with external_plan authority
+        const mismatchedDefPath = `users/${ownerId}/session_occurrences/occ-def-mismatched`;
+        await assertFails(setDoc(doc(ownerDb, mismatchedDefPath), {
+            ...validSessionOccurrence(),
+            occurrenceId: 'occ-def-mismatched',
+            authority: 'external_plan',
         }));
     });
 
