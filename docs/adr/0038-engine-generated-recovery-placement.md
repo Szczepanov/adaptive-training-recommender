@@ -77,6 +77,35 @@ conflated. An authored rest directive should satisfy this requirement; this requ
 must never fabricate an authored directive, and must never claim plan provenance it does
 not have.
 
+### A second recovery mechanism, and what PR #453 does to it
+
+Coverage is not the only place recovery is modelled. `optimizer.recovery_streak_heuristics`
+is an existing, registered and alignment-tested policy
+(`policy.optimizer.recovery_streak_heuristics_v1`): across the contiguous prior
+non-recovery run, days with `systemicCost >= 0.40` accumulate a streak, and at a count of
+three or more with no unresolved objectives, Rest/Mobility receives a 2.0x multiplier while
+easy aerobic is suppressed to 0.3x.
+
+Its input is the projected history's `systemicCost`, which PR #453 now writes dose-scaled
+rather than authored. That silently moves templates across the 0.40 boundary:
+
+```text
+str_full_03   authored 0.45  ->  scaled 0.315   (counted toward the streak; now does not)
+end_mod_01    authored 0.70  ->  scaled 0.525   (unaffected)
+end_easy_01   authored 0.30  ->  scaled 0.180   (never counted either way)
+```
+
+This is a change to the input of an alignment-tested policy claim, made without reviewing
+that claim. It is **not** the cause of the failing borderline scenario — that scenario's
+rest days came from `recover`-tier readiness driven by dimensional fatigue accumulation,
+and its selected templates sit below 0.40 at either dose. But it is a real, separate
+instance of the same underlying problem, and it means recovery placement is currently
+spread across two mechanisms with no single owner.
+
+Whether the streak should count authored or effective `systemicCost` is a question this
+ADR raises but does not settle. It should be answered when
+`policy.optimizer.recovery_streak_heuristics_v1` is next reviewed.
+
 ### Why this needs a decision, not a resolver fix
 
 Introducing a recovery requirement that applies without a plan definition grants a new
@@ -85,13 +114,44 @@ including those the coverage system does not currently model at all. ADR-0016 an
 established that role and coverage authority is explicit and versioned rather than added
 silently to the ranking path. The same precedent applies here.
 
-### Evidence scope
+### Evidence scope and knowledge lineage
 
 This is a repository contract decision. It fixes the mismatch between an invariant the
-repository asserts and a guarantee the engine does not provide. It deliberately does **not**
-settle how often an athlete should rest; the specific minimum is left as an open question
-below, to be answered against the knowledge registry (ADR-0033) rather than inside this
-ADR.
+repository asserts and a guarantee the engine does not provide.
+
+The ADR-0033 sports knowledge registry constrains how the eventual minimum may be
+justified, and the constraint is largely negative. The registry's on-point claim is
+`recovery.training.stress_recovery_balance` (Kellmann et al. recovery consensus): training
+stress should be balanced with adequate recovery, and *recovery requirements vary
+materially both between athletes and within the same athlete across contexts*. Its recorded
+limitation is explicit — the consensus "supports monitoring and individualization, not a
+universal fixed 24-, 48- or 72-hour spacing rule."
+
+So a fixed weekly recovery cadence **cannot** be registered as a scientific claim. The
+registry's own lineage rules forbid it.
+
+The registry does, however, have an established pattern for exactly this situation: pair
+the scientific boundary claim with a separate product-policy claim carrying
+`claimType: 'heuristic'`, `evidenceCertainty: 'not_applicable'`, the
+`PRODUCT-EVERGREEN-DOSE-V1` source, and an explicit limitation disclaiming physiological
+optimality. Two precedents already do this for weekly counts:
+
+- `health.adults.strength.default_upper_target` — three strength sessions per week as a
+  bounded default upper target, deliberately separated from the WHO `>=2 days` claim;
+- `performance.high_intensity.conditional_weekly_prior` — one high-intensity session as a
+  target and no more than two, withheld when recent training evidence is insufficient.
+
+A weekly recovery minimum belongs in that category, not in the scientific one. This is a
+constraint on the form of the answer, and it is available now — it does not need to wait
+for new evidence review.
+
+`knowledgeCoverage.ts` inventories every decision-authority rule with its classification,
+coverage state and research priority. **It contains no item for weekly recovery
+placement.** Recovery appears only as `optimizer.recovery_streak_heuristics`,
+`readiness.post_recover_buffer` and the spacing gates — all reactive to accumulated load,
+none placing a recovery day as a requirement. The absence is itself evidence for this
+ADR's premise: the guarantee was never modelled as a rule, so nothing in the inventory
+owns it.
 
 ## Options considered
 
@@ -214,19 +274,32 @@ The requirement and its escalation must be visible before they are trusted:
 
 ## Open questions
 
-1. **What is the minimum?** One recovery exposure per rolling seven days is the smallest
-   defensible starting point and matches the existing synthesized requirement, but the
-   correct value is likely phase-dependent (a taper or recovery block wants more than a
-   build block). This should be answered against the knowledge registry (ADR-0033), not
-   hard-coded here.
-2. **Does `Mobility/Recovery` satisfy it, or only full `Rest`?** The `recovery_or_rest`
-   coverage key currently admits both. `evergreen_health_two_sessions` already shows a
-   `mob_01` day being flagged as rest-on-a-train-tier-day, which suggests the two are not
-   interchangeable for this purpose.
-3. **Interaction with ADR-0036 intraday windows.** A day with two windows is not obviously
+1. **What is the minimum?** The *form* of the answer is settled by the knowledge lineage
+   above: a product-policy heuristic claim, not a scientific one, following
+   `health.adults.strength.default_upper_target`. The value is not settled. One recovery
+   exposure per rolling seven days is the smallest defensible starting point and matches
+   the requirement `buildCoverageState` already synthesizes; whether it should be
+   phase-dependent (a taper or recovery block plausibly wants more than a build block) is
+   open, and `recovery.training.stress_recovery_balance` argues for individualization
+   without supplying a number.
+2. **Does `Mobility/Recovery` satisfy it, or only full `Rest`?** The registry already takes
+   a position worth inheriting rather than relitigating: the streak in
+   `buildHistoryFeatureSummary` is broken by either category, and
+   `policy.optimizer.recovery_streak_heuristics_v1`'s mixed-recovery rule deliberately
+   *alternates* between them at 1.40x. Existing policy therefore treats both as recovery,
+   with an alternation preference. The counter-signal is
+   `evergreen_health_two_sessions`, where a `mob_01` day is flagged as rest-on-a-train-tier
+   day — but that is a warning about placing recovery on a day the athlete was ready to
+   train, which is a placement question, not evidence that mobility is not recovery.
+   Proposed resolution: both satisfy it; revisit only if placement quality suffers.
+3. **Should the streak count authored or effective `systemicCost`?** Raised by PR #453's
+   change to the projected-history value (see above). Owned by
+   `policy.optimizer.recovery_streak_heuristics_v1`, not by this ADR, but it should not be
+   left unreviewed.
+4. **Interaction with ADR-0036 intraday windows.** A day with two windows is not obviously
    a recovery day because one window is empty. This needs settling before ADR-0036 is
    implemented.
-4. **Should the escalation be date-aware rather than count-aware?** Escalating on the last
+5. **Should the escalation be date-aware rather than count-aware?** Escalating on the last
    available day places recovery at the end of the window, which is not necessarily where
    it belongs. A phase-aware placement preference is the follow-up in the optimization
    analysis's "first-class phase-specific sequence intent" item.
@@ -242,3 +315,16 @@ This ADR is a decision, not an implementation plan. When implemented:
   recovery may be unnecessary, and adding both at once risks double-placement.
 - No change to `materializeEffectiveDose`, the fatigue half-lives, or cost weights is
   implied or authorized by this ADR.
+
+Per ADR-0033, the implementation is not complete without knowledge lineage. It must add:
+
+- a product-policy claim (`policy.load_recovery.weekly_recovery_placement_v1`) stating the
+  exact minimum and escalation rule, sourced to `PRODUCT-EVERGREEN-DOSE-V1`, with a
+  limitation disclaiming physiological optimality and referencing
+  `recovery.training.stress_recovery_balance` as its scientific boundary;
+- a `knowledgeCoverage.ts` inventory item in the `readiness_recovery` or `session_spacing`
+  domain, classified `product_heuristic`, with `codeRefs` naming the requirement seam and
+  the ranking function;
+- a policy-alignment test asserting the registered claim matches the implemented constants,
+  matching the pattern in `loadIntensityRecoveryPolicyAlignment.test.ts` and
+  `optimizerScoringPolicyAlignment.test.ts`.
