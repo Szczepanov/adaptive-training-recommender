@@ -220,6 +220,7 @@ export async function prepareExternalPlanSessionLaunch(
         const occurrenceData = occurrence.data;
         if (
             !isExternalPlanOccurrence(occurrenceData)
+            || occurrenceData.state !== 'scheduled'
             || occurrenceData.userId !== userId
             || occurrenceData.externalPlanRef.planId !== sessionSource.planId
             || occurrenceData.externalPlanRef.revision !== sessionSource.revision
