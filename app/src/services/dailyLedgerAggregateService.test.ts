@@ -212,6 +212,19 @@ describe('DailyLedgerAggregateService', () => {
             expect(result.generations).toEqual({ 'session-pm': 1, 'session-am': 1 });
         });
 
+        it('fails closed when the generations container itself is malformed', () => {
+            const service = new DailyLedgerAggregateService();
+            const malformed = aggregate({
+                generations: 'not-a-map' as unknown as Record<string, number>,
+            });
+            const arrayBacked = aggregate({
+                generations: [] as unknown as Record<string, number>,
+            });
+
+            expect(() => service.currentGeneration(malformed, 'session-am')).toThrow(TypeError);
+            expect(() => service.currentGeneration(arrayBacked, 'session-am')).toThrow(TypeError);
+        });
+
         it('fails closed when a persisted generation is malformed instead of coercing it to generation 0', () => {
             const service = new DailyLedgerAggregateService();
             const malformed = aggregate({
