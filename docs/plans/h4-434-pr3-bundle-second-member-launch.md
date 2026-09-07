@@ -305,8 +305,16 @@ parameter order on `queueOccurrenceTransition`. What remains:
    - Action: define `users/{userId}/daily_ledgers/{date}` (or the reservation map on
      `daily_recommendations/{date}` — step 11's open choice) holding: `revision`, the
      resolved `ceilings`, and `reservations: { [occurrenceId]: { minutes, systemicCost,
-     state, decisionId } }` — `decisionId` is the pointer step 11 uses to name the
+     state, decisionId? } }` — `decisionId` is the pointer step 11 uses to name the
      provisional decision record inside the claim transaction.
+   - `decisionId` is **optional on the entry but mandatory for anything launchable**. Step 8
+     reserves for `pending` and `scale` as well as `proceed`, while step 9 writes a decision
+     record only for a member that receives a binding, so a `pending`/`scale` entry
+     legitimately has none — it is holding capacity, not offering a launch. The claim must
+     therefore reject any entry it is asked to launch that has no `decisionId`, rather than
+     treating the absence as "no staleness to check". (Writing provisional records for
+     `pending`/`scale` too would also close this, at the cost of appending records for
+     verdicts that never launch; the audit value is real but out of scope here.)
    - **Every transition that changes an occurrence's reserving status must update this
      document and increment `revision` in the same transaction**, or the aggregate drifts
      from the occurrences and each direction of drift is a real defect:
@@ -462,9 +470,13 @@ parameter order on `queueOccurrenceTransition`. What remains:
    - **A deterministic id is not by itself an idempotency rule** — it only guarantees the
      retry addresses the same document, not what to do when that document already exists.
      The retry therefore reads it first, inside the transaction, and:
-     - **exact match** on the immutable fields (`occurrenceId`, `predecessorExecutionId`,
-       `verdict`, `reassessmentInputRevision`) → the first attempt did commit; treat the
-       retry as success and do not write again;
+     - **exact match** on every immutable field — the target `occurrenceId`, the
+       predecessor `occurrenceId`, `predecessorExecutionId`, `verdict` and
+       `reassessmentInputRevision` → the first attempt did commit; treat the retry as
+       success and do not write again. The predecessor occurrence belongs in this predicate
+       precisely because the record stores it: two decisions differing only in which
+       predecessor they depend on are different decisions, and omitting it would accept one
+       as an idempotent retry of the other;
      - **any field differs** → this is a different decision colliding on the same id, not a
        retry. Fail the claim rather than overwriting: the record is append-only precisely so
        a decision cannot be rewritten after the fact, and a silent overwrite would break the
