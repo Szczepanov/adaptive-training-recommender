@@ -3,8 +3,8 @@
 ## Status and scope
 
 This document is a point-in-time analysis of the recommender after reviewing the September
-2026 simulation/persona/AI-judge report and tracing the current engine on `main`, with PR
-#453 as the immediate correctness change under review.
+2026 simulation/persona/AI-judge report and tracing the current engine on `main`.
+PR `#453` is the immediate correctness change under review.
 
 It is **analysis and prioritization**, not an accepted architecture decision. Existing ADRs,
 engine code, and policy-versioned knowledge remain authoritative until a follow-up change is
@@ -660,8 +660,10 @@ engineOutputSha256
 normalizedPlanSha256
 ```
 
-If baseline and current engine outputs are byte-/semantically identical but judge scores differ,
-classify that delta as judge variance rather than an engine regression.
+If baseline and current engine outputs are byte-/semantically identical, and evaluator
+provenance (prompt, schema, case set, model, judge configuration) also matches, classify that
+delta as judge variance rather than an engine regression. If evaluator provenance differs, mark
+the comparison as non-comparable rather than attributing the delta to either side.
 
 At summary level, report:
 
@@ -903,28 +905,28 @@ metrics and persona corpus.
 
 Do not define success as “sequencing judge average reaches X”. A robust outcome should combine:
 
-### Deterministic correctness
+## Deterministic correctness
 
 - zero hard-constraint regressions;
 - exact role/coverage semantics preserved;
 - active dose represented consistently in live and simulation state;
 - no new unsupported data inference.
 
-### Sequence quality
+## Sequence quality
 
 - lower residual-fatigue collision where the phase prefers spread quality;
 - no penalty for intentional density where the phase explicitly permits it;
 - fewer unexplained high-utility candidates blocked by soft ordinal discontinuities;
 - required roles remain feasible and resolved.
 
-### Evaluation quality
+## Evaluation quality
 
 - judge deltas on identical engine output are classified as measurement variance;
 - pairwise A/B preference is stable under order reversal;
 - persona families cover materially different training states, not only perturbations of one
   endurance archetype.
 
-### Operational quality
+## Operational quality
 
 - week-ahead latency remains within an explicit budget;
 - diagnostics are cheap enough for CI/simulation and do not require LLM execution;

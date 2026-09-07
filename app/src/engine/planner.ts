@@ -310,6 +310,12 @@ export function effectiveTemplateForProjection(
     return materializeEffectiveDose(enriched, activeDose);
 }
 
+/** An allocator assignment replayed by the projection ledger. `activeDose` is present only
+ * when the caller already knows the dose the candidate would actually be prescribed (the
+ * greedy loop's viability probe); hypothetical allocator reservations leave it undefined
+ * because their final dose is not resolved yet. */
+type ProjectedAssignment = AllocationAssignment & { activeDose?: DoseVariation };
+
 export interface ProjectedObjectiveCreditInput {
     objectiveId: string;
     earnedCredit: number;
@@ -1214,12 +1220,12 @@ export function generateWeekAheadPlan(
 
     const evaluationCache = new Map<string, ProjectedDateEvaluation>();
 
-    const projectedEvaluation = (date: string, applied: readonly AllocationAssignment[]): ProjectedDateEvaluation => {
+    const projectedEvaluation = (date: string, applied: readonly ProjectedAssignment[]): ProjectedDateEvaluation => {
         const cacheKey = [
             resultDays.length,
             externalFatigue.lastUpdatedDate,
             date,
-            applied.map(item => `${item.date}:${item.templateId}`).sort().join(','),
+            applied.map(item => `${item.date}:${item.templateId}:${item.activeDose ? `${item.activeDose.label}:${item.activeDose.doseRatio}` : ''}`).sort().join(','),
         ].join('#');
         const cached = evaluationCache.get(cacheKey);
         if (cached) return cached;
@@ -1244,8 +1250,9 @@ export function generateWeekAheadPlan(
         applied.forEach(item => {
             const template = ENRICHED_TEMPLATES_BY_ID.get(item.templateId);
             if (!template) return;
-            loads.push({ date: item.date, cost: enrichedCostProfile(item.templateId) });
-            const projectedEntry = historyEntryFor(item.date, template);
+            const effective = effectiveTemplateForProjection(template, item.activeDose);
+            loads.push({ date: item.date, cost: effective.costProfile ?? enrichedCostProfile(item.templateId) });
+            const projectedEntry = historyEntryFor(item.date, template, item.activeDose);
             history.push(projectedEntry);
             coverageHistory.push(...resolveCoverageHistory(undefined, [projectedEntry]));
         });
@@ -1263,7 +1270,7 @@ export function generateWeekAheadPlan(
 
     const allocationEvaluator = (
         forecastDates: string[],
-        extra: readonly AllocationAssignment[] = [],
+        extra: readonly ProjectedAssignment[] = [],
     ): AllocationDateEvaluator => ({
         forecastDates,
         evaluate: (assignments, date) => projectedDateOutcomeFrom(
@@ -1369,7 +1376,15 @@ export function generateWeekAheadPlan(
         const incumbentAssignments = [...allocation.reservationsByDate.entries()]
             .map(([reservedDate, item]) => ({ date: reservedDate, templateId: item.templateId }));
         const preservesAllocation = (template: SessionTemplate): boolean => {
-            const evaluator = allocationEvaluator(forecastDatesFrom(offset + 1), [{ date, templateId: template.id }]);
+            const candidateDose = resolveTimeCapDoseAdjustment(
+                template,
+                evaluation.availability.maxTimeMinutes,
+                fatigueTier === 'modify',
+            )?.activeDose;
+            const evaluator = allocationEvaluator(
+                forecastDatesFrom(offset + 1),
+                [{ date, templateId: template.id, ...(candidateDose ? { activeDose: candidateDose } : {}) }],
+            );
             if (allocationSurvives(incumbentAssignments, evaluator)) return true;
             const selfFulfils = occurrenceForTemplate(pendingOccurrences, template).length > 0 ? 1 : 0;
             const after = resolveWeeklyRoleReservations(
