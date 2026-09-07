@@ -27,33 +27,46 @@ explicitly labelled as a recommendation rather than current behavior.
    evaluated before the candidate date, a recovery on `R` can still satisfy the trailing counter
    while the engine is choosing on `R + 7`; selecting training that day would then create seven
    consecutive recovery-free dates. ADR-0038 needs a separate `dueByDate` signal.
-3. **Recovery identity is inconsistent across descriptors.** The active catalog contains mobility,
+3. **Bootstrap must be a first deadline reference, not a moving history placeholder.** When no
+   qualifying recovery is known, a durable `bootstrapDate` acts as the initial deadline reference:
+   `dueByDate = bootstrapDate + 7 local calendar days`. The bootstrap date is not itself recovery
+   credit. The pre-bootstrap unknown prefix is excluded from the rolling invariant, and the first
+   enforceable seven-date window is `bootstrapDate + 1 ... bootstrapDate + 7`.
+4. **Recovery identity is inconsistent across descriptors.** The active catalog contains mobility,
    breathwork and cycling-recovery workouts, but Evergreen currently recognizes only
    `recovery_mobility_tissue_01` and `rest_complete_01` for `recovery_or_rest`. The event descriptor
    recognizes mobility, cycling recovery spin and Rest, but not breathwork.
-4. **Performed-training facts cannot honestly represent a completed full Rest day.** Their source
+5. **Performed-training facts cannot honestly represent a completed full Rest day.** Their source
    model starts from `PerformedTrainingOccurrence`; deliberate non-training needs a separate
    positive day-outcome/recovery fact rather than a fake occurrence or inference from absent
    telemetry.
-5. **ADR-0035 already provides strong authored-rest identity and should be reused.** Its provenance
-   distinguishes the plan, revision, content hash, directive and resolved date, plus explicit
-   athlete override. A generic coverage-credit source enum is too weak to preserve that identity.
-6. **The forecast D-SUPPORT guard has a real single-candidate hole.** The greedy forecast applies
+6. **Performed recovery facts must retain canonical workout identity.** The current canonical fact
+   path already produces `workoutId` for exact coverage credit. A recovery-specific historical fact
+   that stores only `performedOccurrenceId` is not replay-self-contained enough to prove exact
+   `recovery_or_rest` qualification if later lookup is unavailable or mappings change. Persist the
+   canonical `workoutId` and the qualification authority used to validate it; do not require a
+   reverse-derived template id because multiple engine templates may intentionally map to one
+   workout.
+7. **ADR-0035 already provides strong authored-rest identity and should be reused.** The canonical
+   persisted/audit contract is `ExternalRestProvenance`; `ExternalRestDecisionProvenance` is the
+   override-aware extension (`ExternalRestProvenance & { overridden?: true }`). A generic
+   coverage-credit source enum is too weak to preserve that identity.
+8. **The forecast D-SUPPORT guard has a real single-candidate hole.** The greedy forecast applies
    allocation viability only when `ranked.length > 1`. An escalated recovery candidate that is the
    sole accepted candidate can therefore skip the viability proof ADR-0038 requires.
-7. **The current simulation recovery metric does not prove ADR-0038.** `restOrRecoveryDayCount`
+9. **The current simulation recovery metric does not prove ADR-0038.** `restOrRecoveryDayCount`
    counts by broad category (`Rest` or `Mobility/Recovery`), while ADR-0038 requires exact mapped
    identity in every complete seven-local-date window. It also does not report maximum
    non-recovery streak.
-8. **Simulation completion semantics are intentionally stronger than live evidence semantics.**
-   `toCompletedExposure()` converts a simulated selected day into a completed exposure, which is a
-   valid assumed-adherence simulation device but must not be copied into the live historical-Rest
-   path.
-9. **Knowledge-governance infrastructure already supports the required epistemic distinction.**
-   The Sports Knowledge Registry supports `heuristic`, `not_applicable`, and `product_policy`, and
-   already contains the scientific boundary claim `recovery.training.stress_recovery_balance`.
-   ADR-0038 should add an explicit product-policy claim rather than reinterpret that scientific
-   claim as a one-in-seven physiological rule.
+10. **Simulation completion semantics are intentionally stronger than live evidence semantics.**
+    `toCompletedExposure()` converts a simulated selected day into a completed exposure, which is a
+    valid assumed-adherence simulation device but must not be copied into the live historical-Rest
+    path.
+11. **Knowledge-governance infrastructure already supports the required epistemic distinction.**
+    The Sports Knowledge Registry supports `heuristic`, `not_applicable`, and `product_policy`, and
+    already contains the scientific boundary claim `recovery.training.stress_recovery_balance`.
+    ADR-0038 should add an explicit product-policy claim rather than reinterpret that scientific
+    claim as a one-in-seven physiological rule.
 
 ## 1. Current runtime flow
 
@@ -114,7 +127,7 @@ coverage ranking work. That would imply authored plan/block authority that does 
 accidentally introduce Evergreen aerobic/strength requirements. Use Evergreen only as the
 **recovery exact-identity descriptor** for product-policy fallback.
 
-## 2. Deadline semantics are separate from coverage counters
+## 2. Deadline and bootstrap semantics are separate from coverage counters
 
 `buildCoverageState()` uses an `asOfDate`-exclusive history interval. With a seven-day rolling
 window, the preceding seven dates are eligible history while the engine is ranking the current
@@ -132,14 +145,45 @@ So `minimumSessions`, `fulfilledSessions`, `rollingWindowDays` and the current
 `WeeklyCoverageRequirement.windowEnd` cannot by themselves encode ADR-0038's placement boundary.
 The latter is also a plan/block boundary, not a recovery deadline.
 
-The required state is conceptually:
+### 2.1 Known recovery reference
 
-```ts
-latestQualifyingRecoveryDate -> dueByDate = latest + 7 local calendar days
+For the latest qualifying historical or current-forecast projected recovery on local date `R`:
+
+```text
+referenceDate = R
+dueByDate = R + 7 local calendar days
 ```
 
-On `dueByDate`, urgency must already be tier 1 before ranking. When the latest date is unknown, a
-stable bootstrap epoch is needed; recomputing from `asOfDate` would let the deadline drift forever.
+On `dueByDate`, urgency must already be tier 1 before ranking.
+
+### 2.2 Unknown-history bootstrap contract
+
+When `latestQualifyingRecoveryDate` is unknown but a stable `bootstrapDate` exists:
+
+```text
+referenceDate = bootstrapDate
+dueByDate = bootstrapDate + 7 local calendar days
+```
+
+The bootstrap date is a **deadline reference only**. It must not be emitted as a recovery fact or
+counted as a qualifying exposure.
+
+Boundary semantics are explicit:
+
+- the unknown prefix before `bootstrapDate` is outside the enforceable rolling invariant;
+- the bootstrap date itself is the policy-enrollment/reference boundary, not a synthetic Rest day;
+- the first complete enforceable seven-date window is
+  `bootstrapDate + 1 ... bootstrapDate + 7`;
+- on `bootstrapDate + 7`, a qualifying recovery is tier 1 before candidate selection if no real
+  qualifying recovery has appeared since bootstrap;
+- a real qualifying recovery before that boundary replaces bootstrap as the reference and moves the
+  next deadline to `realRecoveryDate + 7`;
+- recomputing tomorrow must reuse the same durable bootstrap date; using each new `asOfDate` would
+  postpone the first deadline indefinitely.
+
+This is the implementation contract implied by ADR-0038's stable-bootstrap requirement. If the ADR
+decider wants a different grace-window interpretation, the ADR itself should be amended before
+activation rather than allowing implementations to choose different boundaries.
 
 ## 3. Exact recovery identity audit
 
@@ -177,9 +221,8 @@ an active recovery identity. ADR-0038 requires descriptor differences to be inte
 The implementation should either add breathwork to event `recovery_or_rest` as well or document a
 specific reason for excluding it; it should not leave the discrepancy accidental.
 
-The event descriptor's separate `recovery_spin` key is not a conflict. The same exact workout can
-serve a recovery role while remaining excluded from `aerobic_volume`; ledgers are intentionally
-independent.
+The event descriptor's separate `recovery_spin` key is not a conflict. The workout can serve a
+recovery role while remaining excluded from `aerobic_volume`; ledgers are intentionally independent.
 
 ## 4. Historical truth needs a recovery-day fact boundary
 
@@ -190,6 +233,15 @@ occurrence carries an exact workout identity found in the active descriptor. Tha
 path for a performed mobility, breathwork or recovery-spin session once mappings are complete.
 
 It deliberately does not fabricate role credit from generic modality alone. That matches ADR-0038.
+
+The current fact model is also important for future persistence: `CoverageCreditFact` carries the
+canonical `workoutId`, and `PerformedExposureFact` carries `performedOccurrenceId` plus exact
+workout/template identity when proven. `templateIdForWorkoutId()` intentionally refuses ambiguous
+reverse inference when more than one engine template maps to one workout.
+
+Therefore recovery qualification should use canonical `workoutId` as the required replay identity.
+A template id may be copied only when it was directly authoritative or unambiguous; it must not be
+fabricated to make the recovery fact look more specific.
 
 ### 4.2 Complete Rest is not performed training
 
@@ -213,13 +265,23 @@ A useful source union would preserve identity rather than reducing everything to
 
 ```ts
 type RecoveryFactSource =
-  | { kind: 'performed_recovery'; performedOccurrenceId: string }
+  | {
+      kind: 'performed_recovery';
+      performedOccurrenceId: string;
+      workoutId: string;
+      qualification: {
+        coverageSetId: CoverageSetId;
+        phase: PlanPhase;
+        coverageKey: 'recovery_or_rest';
+      };
+      templateId?: string; // metadata only when directly authoritative/unambiguous
+    }
   | {
       kind: 'authored_rest';
       planId: string;
       revision: number;
       contentHash: string;
-      directiveId: string;
+      restDirectiveId: string;
       resolvedDate: string;
       overridden?: true;
     }
@@ -233,6 +295,11 @@ type RecoveryFactSource =
 
 The fields above are a recommended domain shape, not current repository types. Existing persisted
 identifiers should be reused where available rather than duplicated under new names.
+
+For `performed_recovery`, replay/validation must prove that the persisted `workoutId` belongs to
+`recovery_or_rest` under the recorded qualification authority. A future implementation may instead
+reference an immutable canonical-fact snapshot that already guarantees those fields, but an opaque
+occurrence id plus a mutable lookup is insufficient by itself.
 
 ### 4.3 Generated Rest requires positive closure, not missing telemetry
 
@@ -254,22 +321,38 @@ historical recovery state remains `unknown` and no completed Rest credit is mint
 This is the most important data-trust boundary in the implementation. It should be expressed by a
 pure reconciliation function fed explicit facts, not by asking the optimizer to infer absence.
 
-## 5. ADR-0035 authored rest is reusable provenance
+## 5. ADR-0035 authored Rest is reusable provenance
 
-`externalRestProvenance.ts` extends the persisted `ExternalRestProvenance` identity with an optional
-`overridden: true` marker. ADR-0035 additionally requires plan id, revision, immutable content hash,
-directive id and resolved date to match for replay.
+`app/src/engine/models.ts` defines `ExternalRestProvenance` as the persisted/audit identity for an
+authored rest directive: plan id, revision, immutable content hash, `restDirectiveId`, and resolved
+date. `Recommendation.decisionTrace.externalRest` and the persisted audit use that base contract.
 
-That is already the right source identity for the ADR-0038 authored-rest bridge. The recovery fact
-should reference/reuse those fields rather than translating authored rest into a fake workout or a
-generic `completed` coverage source.
+`app/src/engine/externalRestProvenance.ts` defines:
+
+```ts
+type ExternalRestDecisionProvenance = ExternalRestProvenance & {
+  overridden?: true;
+};
+```
+
+That is not a competing persisted identity. It is the decision-time extension used to express the
+ADR-0035 explicit athlete override while retaining all base replay fields.
+
+The ADR-0038 authored-rest bridge should therefore:
+
+1. treat `ExternalRestProvenance` as the canonical persisted/replay source identity;
+2. consume `ExternalRestDecisionProvenance` (or an equivalent adapter) where override adjudication
+   is available;
+3. validate the base provenance with the existing replay path before minting recovery credit;
+4. suppress recovery credit when the extension reports `overridden: true`;
+5. never translate authored Rest into a fake workout or generic `completed` coverage source.
 
 One edge remains deliberately unresolved by ADR-0038: it explicitly says an athlete override
 removes authored-rest credit, but does not define what to do if the athlete ignores an authored Rest
 without using the explicit override path and a canonical performed occurrence later appears on that
 date. The implementation must not invent that policy silently. Resolve this during the historical-
 fact work package; the safest candidate is to treat contradictory performed training as
-non-fulfillment, but that requires ADR/owner confirmation because authored rest is plan intent, not
+non-fulfillment, but that requires ADR/owner confirmation because authored Rest is plan intent, not
 an adherence fact.
 
 ## 6. D-SUPPORT has a concrete single-candidate bypass
@@ -315,8 +398,10 @@ The implementation needs a policy-aware derived metric:
 
 - qualifying recovery dates by exact workout identity under the applicable recovery authority;
 - maximum consecutive non-recovery dates after authoritative bootstrap;
-- every complete seven-local-date window contains at least one qualifying recovery;
-- unknown-history prefix is reported, not silently counted as failure or success.
+- every complete seven-local-date window after bootstrap contains at least one qualifying recovery;
+- the pre-bootstrap unknown-history prefix is reported/excluded rather than silently counted as
+  failure or success;
+- the bootstrap date itself is not counted as a recovery exposure.
 
 Keep `restOrRecoveryDayCount` as a coarse descriptive metric if useful, but it must not be the ADR
 invariant.
@@ -350,10 +435,12 @@ inventory/alignment coverage. The existing `knowledgeCoverage.ts` domains alread
 `readiness_recovery` and `session_spacing`.
 
 `app/src/engine/policy.ts` currently identifies live decision behavior as
-`2026-09-h4-intraday-reassessment-v1`. The ADR-0038 activation PR must bump `POLICY_VERSION` and move
-the superseded version into the historical list according to the existing convention.
+`2026-09-h4-intraday-reassessment-v1`. The ADR-0038 activation boundary must bump `POLICY_VERSION`
+and move the superseded version into the historical list according to the existing convention.
 
-No policy-version bump belongs in this documentation PR.
+No policy-version bump belongs in this documentation PR, and no future implementation PR should
+bump the version before the deterministic simulation invariant and corpus review required for
+activation have passed.
 
 ## 9. Recommended architecture
 
@@ -374,6 +461,10 @@ interface RecoveryPlacementState {
   historyState: 'known' | 'unknown';
   latestQualifyingRecoveryDate: string | null;
   bootstrapDate: string | null;
+  deadlineReference: {
+    kind: 'qualifying_recovery' | 'bootstrap';
+    date: string;
+  } | null;
   dueByDate: string | null;
   overdue: boolean;
   fulfilledHistorical: boolean;
@@ -382,7 +473,8 @@ interface RecoveryPlacementState {
 ```
 
 This is an architectural recommendation, not a required literal TypeScript interface. The required
-properties are the semantics from ADR-0038.
+properties are the semantics from ADR-0038. `deadlineReference` is recommended because it prevents
+callers from mistaking `bootstrapDate` for a completed recovery fact.
 
 Authority resolution should be:
 
@@ -416,8 +508,9 @@ masquerading as a hard authored anchor.
 
 Build recovery history from explicit source facts:
 
-- canonical exact performed recovery occurrences;
-- ADR-0035 authored-rest facts with full directive provenance and no applicable override;
+- canonical exact performed recovery occurrences with persisted `workoutId` and qualification
+  authority;
+- ADR-0035 authored-rest facts with canonical `ExternalRestProvenance` and override adjudication;
 - reconciled engine-Rest day-outcome facts;
 - projected selections only inside the current forecast.
 
@@ -431,6 +524,11 @@ layer must source it durably; it must not default to the current `asOfDate` on e
 Candidate durable sources include a persisted policy-enrollment/first-evaluation date or an existing
 account/history boundary if that boundary is already authoritative for this purpose.
 
+When no qualifying recovery is known, `bootstrapDate` is the deadline reference and
+`dueByDate = bootstrapDate + 7`. It is not a qualifying recovery fact. The pre-bootstrap unknown
+prefix is excluded, and the first enforced seven-date window is the seven dates strictly after the
+bootstrap boundary.
+
 The exact storage owner should be selected during the history/provenance implementation slice after
 tracing existing user/audit persistence. The invariant is more important than the storage location:
 **the same athlete and same historical state must not acquire a later bootstrap deadline just
@@ -442,30 +540,34 @@ because the planner was recomputed tomorrow.**
 | --- | --- | --- |
 | Policy state | `engine/coverage.ts` | Prefer new recovery-placement state/helper; compose with coverage rather than fabricate plan state |
 | Exact identity | `workouts/event-plan.ts`, catalog mappings | Complete Evergreen mappings; resolve/document event breathwork consistency |
-| Performed recovery | `engine/performedTrainingFacts.ts` | Reuse exact workout identity to feed recovery facts |
-| Authored Rest | `engine/externalRestProvenance.ts`, ADR-0035 resolution | Bridge directive provenance without fake occurrence |
+| Performed recovery | `engine/performedTrainingFacts.ts` | Reuse exact `workoutId`; persist qualification authority for recovery facts |
+| Authored Rest | `engine/externalRestProvenance.ts`, ADR-0035 resolution | Treat `ExternalRestProvenance` as canonical persisted identity; use override-aware adapter without fake occurrence |
 | Engine Rest history | recommendation/audit + canonical occurrence reconciliation | Add positive day-outcome fact/reconciliation boundary |
 | Ranking | `engine/optimizer.ts`, `engine/planner.ts` | Compose recovery tier 2/1 into existing coverage tier |
 | Allocation viability | `engine/planner.ts`, `engine/weeklyAllocation.ts` | Remove single-candidate bypass for applicable train/modify discretionary picks; do not reserve recovery |
 | Diagnostics | recommendation/planner decision trace | Add typed recovery authority/deadline/rejection fields |
-| Simulation | `engine/simulation/analyze.ts` | Exact-identity rolling invariant + max non-recovery streak |
+| Simulation | `engine/simulation/analyze.ts` | Exact-identity rolling invariant + max non-recovery streak + bootstrap-prefix semantics |
 | Knowledge | `knowledge/sportsKnowledge.ts`, `knowledgeCoverage.ts`, alignment tests | Register heuristic policy and bind code scalar/identity/escalation |
-| Replay/version | `engine/policy.ts` and audit/replay tests | Bump policy version only when behavior activates |
+| Replay/version | `engine/policy.ts` and audit/replay tests | Bump policy version only at reviewed live activation after simulation proof |
 
 File names for a new recovery module/fact type are intentionally not mandated here; the plan may
 choose the smallest cohesive module after implementation begins.
 
 ## 11. Test matrix implied by the audit
 
-The implementation should prove at least these layers independently:
+The implementation should prove at least these layers independently.
 
 ### Pure policy tests
 
 - latest recovery `R` => `dueByDate = R + 7`;
+- no known recovery + bootstrap `B` => `dueByDate = B + 7`;
+- bootstrap date is not emitted/counted as recovery;
+- first enforceable window is `B + 1 ... B + 7` and pre-bootstrap history is excluded;
 - due day is tier 1 before candidate selection;
 - slack days are tier 2;
 - overdue remains tier 1, never tier 0;
 - unknown history is distinct from known unmet history;
+- a real recovery before the bootstrap deadline becomes the next deadline reference;
 - stable bootstrap does not move across repeated recomputation.
 
 ### Identity tests
@@ -477,13 +579,16 @@ The implementation should prove at least these layers independently:
 
 ### Historical truth tests
 
-- exact performed active recovery qualifies;
+- exact performed active recovery qualifies with canonical `workoutId` retained;
+- replay rejects/does not credit a performed recovery whose stored identity cannot be validated
+  under its recorded qualification authority;
 - projected Rest qualifies only within current forecast;
 - recommendation alone does not create historical Rest;
 - authoritative reconciled Rest outcome does;
 - contradictory performed training suppresses generated-Rest credit;
 - incomplete reconciliation yields `unknown`, not Rest;
-- authored rest carries exact ADR-0035 provenance and override suppresses credit.
+- authored Rest carries exact ADR-0035 `ExternalRestProvenance`;
+- override-aware provenance suppresses authored-rest credit without changing base replay identity.
 
 ### Planner/allocation tests
 
@@ -496,9 +601,10 @@ The implementation should prove at least these layers independently:
 ### Simulation/end-to-end tests
 
 - every complete seven-date window after bootstrap contains exact qualifying recovery;
+- bootstrap date itself does not satisfy the first window;
 - maximum non-recovery streak <= 6 when no higher-priority hard constraint prevents it;
 - prevented/deferred deadline is reported rather than hidden;
-- existing scenario corpus and judge artifacts are re-run after activation, with expectation changes
+- existing scenario corpus and judge artifacts are re-run before activation, with expectation changes
   reviewed individually rather than bulk re-baselined.
 
 ## 12. Risks and decisions to close before activation
@@ -527,19 +633,41 @@ A missed product-policy deadline must be observable but must not bypass clinical
 availability, equipment or readiness constraints. Tests must cover “deadline missed because no
 admissible recovery identity exists” as a legitimate diagnostic state, not force an invalid pick.
 
-### R5 — Evaluation drift
+### R5 — Evaluation/activation ordering
+
+Knowledge registration and ranking plumbing can be prepared before live activation, but the policy
+must not become the default live decision path or bump `POLICY_VERSION` until deterministic rolling-
+window simulation, miss/defer diagnostics and corpus review are complete. This avoids declaring a
+new replay policy version before the acceptance invariant that motivates the ADR has been proven.
+
+### R6 — Bootstrap policy ownership
+
+The concrete `bootstrapDate + 7` grace-window interpretation closes an ambiguity necessary for a
+deterministic implementation. Because it is behavior-bearing, ADR #455 should be kept aligned with
+this interpretation before ADR-0038 is accepted. If the owner chooses a different bootstrap window,
+change the ADR and this plan together before runtime activation.
+
+### R7 — Evaluation drift
 
 PR #453 changes effective projected dose and ADR-0038 will deliberately change recovery placement.
 Judge/simulation deltas should therefore be interpreted with deterministic recovery diagnostics,
 not by preserving old snapshots at all costs.
+
+## Evidence boundary check
+
+The repository's ADR framing remains appropriate. Current endurance-recovery evidence supports
+individualized stress/recovery management and does not establish a universal one-rest-or-recovery-
+exposure-per-seven-days physiological rule. The one-in-seven scalar should therefore remain a
+registered product heuristic rather than be upgraded into a scientific claim. This implementation
+analysis does not add a new evidence assertion beyond the ADR's existing evidence boundary.
 
 ## Conclusion
 
 ADR-0038 fits the existing architecture if implemented as a **plan-independent recovery policy
 state with exact identity and explicit deadline**, composed into the existing coverage-need ranking
 axis. The dangerous shortcuts are also clear: a fake Evergreen plan, trailing-window-only deadline,
-category-based credit, “no activity means Rest”, and skipping D-SUPPORT when only one recovery
-candidate survives.
+a sliding bootstrap, category-based credit, opaque performed-recovery provenance, “no activity
+means Rest”, and skipping D-SUPPORT when only one recovery candidate survives.
 
 The companion implementation plan converts these findings into ordered work packages and PR
 cut-lines without activating behavior while ADR-0038 remains Proposed.
