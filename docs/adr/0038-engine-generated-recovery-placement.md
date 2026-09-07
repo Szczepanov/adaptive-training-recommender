@@ -141,9 +141,18 @@ For v1:
 
 * minimum: **one qualifying recovery exposure**;
 * interval: **every seven consecutive local calendar dates**;
-* equivalent invariant: there may be at most **six consecutive non-recovery dates** once
-  the policy has authoritative history or a stable bootstrap epoch;
+* credit unit: **one qualifying local date**, not one qualifying exposure;
+* equivalent target: there should be at most **six consecutive non-recovery dates** once
+  the policy has authoritative history or a stable bootstrap epoch — a target the policy
+  pursues, not an invariant it can guarantee (see Ranking authority);
 * policy type: **product heuristic**, not a physiological optimum.
+
+The credit unit matters because two measures coexist. `WeeklyCoverageRequirement` counts
+`completedSessions + projectedSessions`, which is exposure-based, while the deadline below
+is anchored on the latest qualifying *date*. A Rest and a mobility exposure on the same
+date must therefore yield one credit, not two. At a v1 minimum of one this changes nothing;
+it stops being harmless the moment a later policy version raises the minimum, and a latent
+double-count is a poor thing to leave behind that change.
 
 This deliberately settles the implementation scalar rather than leaving an ADR that cannot
 be implemented or alignment-tested. A later policy version may make the cadence
@@ -215,9 +224,30 @@ The implementation must distinguish **authoritative no-recovery history** from *
 history**.
 
 A brand-new or history-incomplete athlete must use a stable bootstrap epoch for the policy;
-the deadline may not slide forward every time the rolling plan is recomputed. The exact
-storage/source of that epoch is an implementation choice, but the acceptance test must
-prove that repeated daily recomputation cannot postpone recovery indefinitely.
+the deadline may not slide forward every time the rolling plan is recomputed.
+
+When no qualifying recovery date is known, let the durable bootstrap date be `B`. `B` is an
+**initial deadline reference only**: it does not itself count as a recovery date. The first
+recovery is due no later than `B + 7` local calendar days, so `dueByDate = B + 7`, and the
+first complete policy window that can be evaluated is `B + 1 ... B + 7`. Dates before and
+including the unknown-history prefix through `B` are excluded from rolling-window success or
+failure rather than being silently treated as recovery or non-recovery. If a qualifying
+recovery occurs after `B` and before or on that first deadline, that real date becomes the
+latest qualifying recovery reference and subsequent deadlines follow the normal `R + 7`
+rule.
+
+The storage/source of that epoch is an implementation choice only within limits, because
+not every choice provides the stability the policy depends on. The epoch must be **durable
+and identity-scoped**: persisted against the athlete's identity, or derived deterministically
+from data that already is. A process-local value, an in-memory default, or anything
+recomputed from the current date fails the requirement in a way no single-run test would
+catch — it resets on restart, and differs on a second device, and each reset moves the
+deadline forward. Repeated resets postpone recovery indefinitely, which is exactly the
+failure this section exists to prevent.
+
+Accordingly the acceptance test must prove both boundary semantics and stability **across a
+restart and across a second device or session**, not merely across repeated recomputation
+within one run.
 
 ### Projected recovery versus historical recovery
 
@@ -287,6 +317,25 @@ its own typed diagnostic for:
 * Every hard safety, clinical, availability, equipment and readiness gate still runs before
   this ordering participates.
 
+**Placement is therefore best-effort, and the seven-date target is not a hard invariant.**
+Tier-1 escalation raises recovery's urgency; it neither reserves a date nor outranks a
+tier-0 candidate, and D-SUPPORT may reject it. A horizon saturated with tier-0 or
+required-role work can pass `dueByDate` with no qualifying recovery placed.
+
+That outcome is correct — hard roles and feasibility outrank a product-policy recovery
+minimum, and forcing recovery through would mean overturning ADR-0018 — but it has to be
+stated rather than implied, because "invariant" and "requirement" otherwise promise a
+guarantee this mechanism cannot make. A missed deadline is a reported diagnostic, not a
+silent absence.
+
+Two consequences for the acceptance tests below: the rolling-window test must be scoped to
+scenarios where recovery is actually placeable, and a saturated-horizon scenario is itself
+a required case — asserting that the deadline passes unfulfilled, that nothing is forced
+through a protected role, and that the miss surfaces on the diagnostic.
+
+If a hard guarantee is wanted instead, that is a different decision: it would require
+recovery to reserve a date, which means amending ADR-0018. This ADR does not propose that.
+
 This is a statement about ADR-0016/ADR-0018 coverage-need ordering, not ADR-0011's separate
 post-gate anchor modifiers. ADR-0011's "anchors nudge; they do not command" remains true for
 those modifiers. The existing `coverageNeedTierForTemplate` comment describing tier 0 as
@@ -309,15 +358,22 @@ The existing `restOrRecoveryDayCount > 0` assertion remains useful as a coarse s
 but it is far too weak to prove a seven-day invariant over a multi-week simulation. The
 implementation is not complete without deterministic tests for all of the following:
 
-1. **Rolling-window invariant:** every complete seven-local-date window after bootstrap has
-   at least one qualifying recovery exposure.
+1. **Rolling-window target:** in a scenario where recovery is placeable, every complete
+   seven-local-date window after bootstrap has at least one qualifying recovery exposure.
+   For unknown-history bootstrap `B`, the first evaluated window is exactly
+   `B + 1 ... B + 7`; the pre-bootstrap unknown prefix is excluded. Scoped deliberately:
+   the mechanism is best-effort, so an unscoped assertion would be testing a guarantee the
+   policy does not make.
 2. **Boundary day:** a recovery on `R` followed by six non-recovery days makes `R + 7` a
    tier-1 recovery deadline before the candidate is selected.
 3. **Plan-less ranking:** product-policy recovery receives exact identity authority and can
    actually move from tier 2 to tier 1; `descriptor: null`/`phase: null` cannot silently
    neuter it.
-4. **Stable bootstrap:** repeated daily recomputation cannot keep pushing an unknown-history
-   recovery deadline forward.
+4. **Stable bootstrap:** with no known recovery, `B` is not credited as recovery,
+   `dueByDate = B + 7`, and repeated daily recomputation cannot push that deadline forward;
+   neither can a restart or a second device/session — the epoch survives both because it is
+   durable and identity-scoped. A real recovery before/on `B + 7` becomes the next `R` and
+   resets the deadline to `R + 7`.
 5. **Exact identity:** unmapped generic Mobility/Recovery does not satisfy the policy;
    mapped Rest, mobility/breathwork and cycling recovery-spin identities do.
 6. **Authored rest bridge:** an ADR-0035 rest directive satisfies recovery with directive
@@ -331,7 +387,12 @@ implementation is not complete without deterministic tests for all of the follow
    including the single-ranked-candidate edge case.
 10. **Miss diagnostics:** an unfulfilled recovery deadline is observable even though D-MISS
     has no `WeeklyRoleAllocationReport` occurrence for it.
-11. **Cross-descriptor consistency:** Evergreen and event recovery mappings intentionally
+11. **Saturated horizon:** when tier-0 and required-role work occupies every date, the
+    deadline passes unfulfilled, no recovery is forced through a protected role, and the
+    miss surfaces on the diagnostic rather than passing silently.
+12. **One credit per date:** a date carrying two qualifying identities — a Rest and a
+    mobility exposure — advances the policy by one credit, not two.
+13. **Cross-descriptor consistency:** Evergreen and event recovery mappings intentionally
     differ only where documented, and `cycling_recovery_spin_01` is recovery without
     becoming aerobic-volume credit.
 
