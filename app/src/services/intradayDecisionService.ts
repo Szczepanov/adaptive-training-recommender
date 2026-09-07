@@ -101,6 +101,12 @@ export function writeProvisionalDecisionInTransaction(
     record: IntradayDecisionRecord,
 ): IntradayDecisionRecord {
     const validated = validateIntradayDecisionRecord(record);
+    if (validated.status !== 'provisional') {
+        throw new TypeError('writeProvisionalDecisionInTransaction requires status "provisional"');
+    }
+    if (validated.userId !== userId) {
+        throw new TypeError('userId must match record.userId');
+    }
     if (existing) {
         if (!decisionRecordsMatch(existing, validated)) {
             throw new Error(

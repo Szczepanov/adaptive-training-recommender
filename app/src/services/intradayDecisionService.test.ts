@@ -267,4 +267,28 @@ describe('writeProvisionalDecisionInTransaction (H4 #434 PR 3 step 9)', () => {
         );
         expect((tx as unknown as { set: ReturnType<typeof vi.fn> }).set).not.toHaveBeenCalled();
     });
+
+    it('rejects records with non-provisional status', () => {
+        const tx = mockTransaction();
+        const nonProvisional = sampleRecord('dec-1', { status: 'confirmed' });
+        expect(() => writeProvisionalDecisionInTransaction(tx, 'u1', null, nonProvisional)).toThrow(
+            TypeError,
+        );
+        expect(() => writeProvisionalDecisionInTransaction(tx, 'u1', null, nonProvisional)).toThrow(
+            /requires status "provisional"/,
+        );
+        expect((tx as unknown as { set: ReturnType<typeof vi.fn> }).set).not.toHaveBeenCalled();
+    });
+
+    it('rejects records where userId does not match the path userId', () => {
+        const tx = mockTransaction();
+        const mismatchedUser = sampleRecord('dec-1', { userId: 'u2' });
+        expect(() => writeProvisionalDecisionInTransaction(tx, 'u1', null, mismatchedUser)).toThrow(
+            TypeError,
+        );
+        expect(() => writeProvisionalDecisionInTransaction(tx, 'u1', null, mismatchedUser)).toThrow(
+            /userId must match record\.userId/,
+        );
+        expect((tx as unknown as { set: ReturnType<typeof vi.fn> }).set).not.toHaveBeenCalled();
+    });
 });
