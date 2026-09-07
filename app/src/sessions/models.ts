@@ -219,6 +219,8 @@ export type OccurrenceAuthority =
     | 'additional_session'
     | 'external_plan';
 
+export type ManualOccurrenceAuthority = Exclude<OccurrenceAuthority, 'external_plan'>;
+
 export type OccurrenceState =
     | 'scheduled'
     | 'active'
@@ -253,11 +255,13 @@ export interface BaseSessionOccurrence {
 }
 
 export interface ManualSessionOccurrence extends BaseSessionOccurrence {
+    authority: ManualOccurrenceAuthority;
     definitionRef: ManualOccurrenceRef;
     externalPlanRef?: never;
 }
 
 export interface ExternalPlanSessionOccurrence extends BaseSessionOccurrence {
+    authority: 'external_plan';
     externalPlanRef: ExternalPlanOccurrenceRef;
     definitionRef?: never;
 }
@@ -265,13 +269,15 @@ export interface ExternalPlanSessionOccurrence extends BaseSessionOccurrence {
 export type SessionOccurrence = ManualSessionOccurrence | ExternalPlanSessionOccurrence;
 
 export function isManualOccurrence(occurrence: SessionOccurrence): occurrence is ManualSessionOccurrence {
-    return 'definitionRef' in occurrence
+    return occurrence.authority !== 'external_plan'
+        && 'definitionRef' in occurrence
         && occurrence.definitionRef !== null
         && typeof occurrence.definitionRef === 'object';
 }
 
 export function isExternalPlanOccurrence(occurrence: SessionOccurrence): occurrence is ExternalPlanSessionOccurrence {
-    return 'externalPlanRef' in occurrence
+    return occurrence.authority === 'external_plan'
+        && 'externalPlanRef' in occurrence
         && occurrence.externalPlanRef !== null
         && typeof occurrence.externalPlanRef === 'object';
 }
