@@ -247,6 +247,9 @@ export async function prepareExternalPlanSessionLaunch(
             options.placementOrder,
             now,
         );
+        if (occurrence.state !== 'scheduled') {
+            throw new Error(`External-plan occurrence ${occurrence.occurrenceId} does not match the launch source.`);
+        }
         effectiveOccurrenceId = occurrence.occurrenceId;
     }
 
