@@ -203,9 +203,13 @@ export function reassessDependentBundleMember(
 
         // Check for acute reactive tissue responses (severe/adverse pain)
         if (predecessor.tissueResponses) {
-            const adverseRegion = predecessor.tissueResponses.find(
-                tr => tr.afterTrainingState === 'severe' || deriveTissueSeverity(tr) === 'exclude',
-            );
+            const severities = predecessor.tissueResponses.map(tr => ({
+                response: tr,
+                severity: deriveTissueSeverity(tr),
+            }));
+            const adverseRegion = severities.find(
+                s => s.response.afterTrainingState === 'severe' || s.severity === 'exclude',
+            )?.response;
             if (adverseRegion) {
                 return {
                     decision: 'reject',
@@ -218,6 +222,9 @@ export function reassessDependentBundleMember(
             }
         }
     }
+
+    // Confirmation is only meaningful when a predecessor is required.
+    const predecessorConfirmed = target.afterSessionId !== undefined;
 
     // ── 4. Readiness & Safety Envelopes (with alreadyTrainedOverride bypass) ───
     const envelopeState = evaluateReadinessAndSafetyEnvelope(
@@ -237,7 +244,7 @@ export function reassessDependentBundleMember(
             gateFailures: ['restricted_category'],
             inputRevision,
             timingPrerequisiteMet: true,
-            predecessorConfirmed: true,
+            predecessorConfirmed,
         };
     }
 
@@ -255,7 +262,7 @@ export function reassessDependentBundleMember(
             reason: `Shared daily ledger capacity exhausted (remaining: ${dailyLedger.remainingMinutes}m, systemic cost: ${dailyLedger.remainingSystemicCost.toFixed(2)}; candidate requires: ${candidateMinutes}m, cost: ${candidateSystemicCost.toFixed(2)}).`,
             inputRevision,
             timingPrerequisiteMet: true,
-            predecessorConfirmed: true,
+            predecessorConfirmed,
             gateFailures: ['time_limit'],
         };
     }
@@ -279,13 +286,17 @@ export function reassessDependentBundleMember(
             gateFailures: authoredVerdict.gateFailures,
             inputRevision,
             timingPrerequisiteMet: true,
-            predecessorConfirmed: true,
+            predecessorConfirmed,
         };
     }
 
-    // Check for scaling triggers: modify mode, unexpected fatigue, or aching tissue
-    const hasAche = predecessor?.tissueResponses?.some(
-        tr => tr.afterTrainingState === 'mild' || tr.afterTrainingState === 'moderate',
+    // Check for scaling triggers: modify mode, unexpected fatigue, or aching/limiting tissue
+    const severities = predecessor?.tissueResponses?.map(tr => ({
+        response: tr,
+        severity: deriveTissueSeverity(tr),
+    })) ?? [];
+    const hasAche = severities.some(
+        s => s.severity === 'limit' || s.response.afterTrainingState === 'mild' || s.response.afterTrainingState === 'moderate',
     );
     const hasUnexpectedFatigue = predecessor?.response?.unexpectedFatigue === true;
 
@@ -299,7 +310,7 @@ export function reassessDependentBundleMember(
             admittedMinutes: admission.admittedMinutes,
             inputRevision,
             timingPrerequisiteMet: true,
-            predecessorConfirmed: true,
+            predecessorConfirmed,
         };
     }
 
@@ -315,12 +326,17 @@ export function reassessDependentBundleMember(
             decision: 'scale',
             reason: fatigueReason,
             scaledDefinition: scaledDef,
-            executionDose: authoredVerdict.executionDose,
+            executionDose: authoredVerdict.executionDose
+                ? {
+                    ...authoredVerdict.executionDose,
+                    volume: authoredVerdict.executionDose.volume * 0.7,
+                }
+                : undefined,
             acceptedSystemicCost: estimateAuthoredSessionSystemicCost(scaledDef),
             admittedMinutes: admission.admittedMinutes,
             inputRevision,
             timingPrerequisiteMet: true,
-            predecessorConfirmed: true,
+            predecessorConfirmed,
         };
     }
 
@@ -332,6 +348,6 @@ export function reassessDependentBundleMember(
         admittedMinutes: admission.admittedMinutes,
         inputRevision,
         timingPrerequisiteMet: true,
-        predecessorConfirmed: true,
+        predecessorConfirmed,
     };
 }

@@ -327,11 +327,44 @@ describe('reassessDependentBundleMember (ADR-0036 D-REASSESS)', () => {
         expect(result.predecessorConfirmed).toBe(true);
         expect(result.reason).toContain('unexpected fatigue');
         expect(result.scaledDefinition).toBeDefined();
+        expect(result.executionDose?.volume).toBeCloseTo(0.7);
         // Repetition sets scaled down by 0.7 (4 sets * 0.7 = 3 sets)
         const scaledSets = result.scaledDefinition?.blocks[0].steps[0].dose;
         if (scaledSets?.kind === 'repetition') {
             expect(scaledSets.sets).toBe(3);
         }
+    });
+
+    it('scales PM session when predecessor reported moderate tissue irritability (limit severity)', () => {
+        const moderateTissuePredecessor: PredecessorEvidence = {
+            ...healthyPredecessor,
+            tissueResponses: [
+                {
+                    region: 'hamstring',
+                    morningState: 'moderate',
+                    afterTrainingState: 'normal',
+                },
+            ],
+        };
+
+        const result = reassessDependentBundleMember({
+            target,
+            predecessor: moderateTissuePredecessor,
+            evaluationInstant: '2026-09-06T15:00:00.000Z',
+            readiness: createMockReadiness(),
+            context: createMockContext(),
+            date: '2026-09-06',
+            availability: createMockAvailability(),
+            candidateWindowMinutes: 60,
+            dailyLedger: validLedger,
+            acceptedSameDaySystemicCost: 0.2,
+            inputRevision: mockInputRevision,
+        });
+
+        expect(result.decision).toBe('scale');
+        expect(result.predecessorConfirmed).toBe(true);
+        expect(result.reason).toContain('muscle ache');
+        expect(result.executionDose?.volume).toBeCloseTo(0.7);
     });
 
     it('proceeds despite alreadyTrainedToday being true on morning inputs (bypassing alreadyTrainedOverride)', () => {
@@ -363,7 +396,7 @@ describe('reassessDependentBundleMember (ADR-0036 D-REASSESS)', () => {
     it('rejects PM session when daily ledger minute capacity is exhausted', () => {
         const exhaustedLedger: DailyLedgerResult = {
             remainingMinutes: 20, // Candidate requires 45m
-            remainingSystemicCost: 0.5,
+            remainingSystemicCost: 1.0,
             unresolvedEntries: [],
         };
 
@@ -433,5 +466,6 @@ describe('reassessDependentBundleMember (ADR-0036 D-REASSESS)', () => {
 
         expect(result.decision).toBe('proceed');
         expect(result.timingPrerequisiteMet).toBe(true);
+        expect(result.predecessorConfirmed).toBe(false);
     });
 });
