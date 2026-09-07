@@ -133,11 +133,11 @@ export class SessionOccurrenceService {
         this.db = db;
     }
 
-    private occurrenceRef(userId: string, occurrenceId: string) {
+    occurrenceRef(userId: string, occurrenceId: string) {
         return doc(this.db, 'users', userId, 'session_occurrences', occurrenceId);
     }
 
-    private windowReservationRef(userId: string, date: string, windowId: string) {
+    windowReservationRef(userId: string, date: string, windowId: string) {
         return doc(this.db, 'users', userId, 'session_occurrence_windows', windowReservationId(date, windowId));
     }
 
@@ -287,11 +287,13 @@ export class SessionOccurrenceService {
         options: {
             placementOrder?: number;
             windowBinding?: OccurrenceWindowBinding;
+            generation?: number;
             now?: string;
         } = {},
     ): Promise<SessionOccurrence> {
         const now = options.now ?? new Date().toISOString();
-        const deterministicId = await deterministicExternalPlanOccurrenceId(date, externalPlanRef);
+        const generation = options.generation ?? 0;
+        const deterministicId = await deterministicExternalPlanOccurrenceId(date, externalPlanRef, generation);
         const ref = this.occurrenceRef(userId, deterministicId);
         const windowReservationRef = options.windowBinding
             ? this.windowReservationRef(userId, date, options.windowBinding.windowId)
@@ -326,10 +328,40 @@ export class SessionOccurrenceService {
 
             if (reservationSnap?.exists()) {
                 const owner = reservationSnap.data()?.occurrenceId as string | undefined;
-                if (owner !== priorRevision?.occurrenceId) {
-                    throw new Error(
-                        `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                if (owner && owner !== deterministicId) {
+                    const ownerRef = (priorRef && owner === priorRevision?.occurrenceId)
+                        ? priorRef
+                        : this.occurrenceRef(userId, owner);
+                    const ownerSnap = (ownerRef === priorRef && priorSnap)
+                        ? priorSnap
+                        : await transaction.get(ownerRef);
+
+                    if (!ownerSnap || !ownerSnap.exists()) {
+                        throw new Error(
+                            `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                        );
+                    }
+
+                    const parsedOwner = parseSessionOccurrenceDocument(ownerSnap.data(), ownerRef.path);
+                    if (parsedOwner.status !== 'AVAILABLE' || !isExternalPlanOccurrence(parsedOwner.data)) {
+                        throw new Error(
+                            `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                        );
+                    }
+
+                    const ownerOcc = parsedOwner.data;
+                    const isMatchingSession = ownerOcc.externalPlanRef.planId === externalPlanRef.planId
+                        && ownerOcc.externalPlanRef.sessionId === externalPlanRef.sessionId;
+                    const isNotActiveOrCompleted = ownerOcc.state !== 'active' && ownerOcc.state !== 'completed';
+                    const isHandoffAllowed = isMatchingSession && isNotActiveOrCompleted && (
+                        ownerOcc.state === 'scheduled' || generation > 0
                     );
+
+                    if (!isHandoffAllowed) {
+                        throw new Error(
+                            `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                        );
+                    }
                 }
             }
 

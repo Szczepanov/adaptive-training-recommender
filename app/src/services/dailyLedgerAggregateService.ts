@@ -48,6 +48,7 @@ export interface DailyLedgerReservation {
     actualMinutes?: number;
     actualSystemicCost?: number;
     decisionId?: string;
+    postReservationLedgerRevision?: string;
 }
 
 /**
