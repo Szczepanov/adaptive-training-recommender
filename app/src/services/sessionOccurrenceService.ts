@@ -14,9 +14,9 @@ import {
 import { getDb } from '../firebase';
 import type { DataState } from '../engine/dataState';
 import {
-    type OccurrenceAuthority,
     type OccurrenceState,
     type SessionOccurrence,
+    type ManualOccurrenceAuthority,
     type ManualOccurrenceRef,
     type ExternalPlanOccurrenceRef,
     type ExternalPlanSessionOccurrence,
@@ -28,9 +28,10 @@ const ACTIVE_OCCURRENCE_STATES: ReadonlySet<SessionOccurrence['state']> = new Se
 
 /**
  * Valid occurrence lifecycle transitions.
- * Scheduled occurrences may be claimed (active), skipped, superseded, or marked missed.
- * Active occurrences may be completed, abandoned, or superseded.
- * Terminal states (completed, abandoned, missed, skipped, superseded) cannot transition to any other state.
+ * Until the PR 3 launch-claim path is wired for every occurrence-backed execution,
+ * a scheduled occurrence may finish directly as completed/abandoned as well as being
+ * claimed (active), skipped, superseded, or marked missed. Once claimed, active
+ * occurrences may be completed, abandoned, or superseded. Terminal states cannot move.
  */
 export const VALID_OCCURRENCE_TRANSITIONS: Record<OccurrenceState, readonly OccurrenceState[]> = {
     scheduled: ['active', 'completed', 'abandoned', 'skipped', 'superseded', 'missed'],
@@ -135,7 +136,7 @@ export class SessionOccurrenceService {
     private async createOccurrence(
         userId: string,
         date: string,
-        authority: OccurrenceAuthority,
+        authority: ManualOccurrenceAuthority,
         definitionRef: ManualOccurrenceRef,
         placementOrder?: number,
         now = new Date().toISOString(),
