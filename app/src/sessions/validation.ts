@@ -486,6 +486,36 @@ export function validateSessionOccurrence(raw: unknown): ValidationResult<Sessio
         }
     }
 
+    if ('windowBinding' in raw && raw.windowBinding !== undefined) {
+        if (!hasExternalPlanRef) {
+            issues.push({ path: 'windowBinding', message: 'windowBinding requires externalPlanRef' });
+        } else if (!isObject(raw.windowBinding)) {
+            issues.push({ path: 'windowBinding', message: 'Invalid windowBinding' });
+        } else {
+            const wb = raw.windowBinding as Record<string, unknown>;
+            // HH:mm, mirroring localInstant.ts's HHMM_PATTERN -- a non-empty string alone
+            // (the prior check) accepted reversed or malformed intervals, which
+            // parseSessionOccurrenceDocument would then expose as an available occurrence.
+            const isValidHHmm = (value: unknown): value is string =>
+                typeof value === 'string' && /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+            const validLocalBounds = isValidHHmm(wb.boundStartLocal) && isValidHHmm(wb.boundEndLocal)
+                && wb.boundEndLocal > wb.boundStartLocal;
+            const startInstantMs = typeof wb.startInstant === 'string' ? Date.parse(wb.startInstant) : NaN;
+            const endInstantMs = typeof wb.endInstant === 'string' ? Date.parse(wb.endInstant) : NaN;
+            const validInstantInterval = Number.isFinite(startInstantMs) && Number.isFinite(endInstantMs)
+                && endInstantMs > startInstantMs;
+            if (
+                typeof wb.windowId !== 'string' || wb.windowId.length === 0
+                || typeof wb.bundleId !== 'string' || wb.bundleId.length === 0
+                || typeof wb.order !== 'number' || !Number.isInteger(wb.order) || wb.order < 0
+                || !validLocalBounds
+                || !validInstantInterval
+            ) {
+                issues.push({ path: 'windowBinding', message: 'Invalid windowBinding' });
+            }
+        }
+    }
+
     if (issues.length > 0) return { ok: false, issues };
     return { ok: true, value: raw as unknown as SessionOccurrence };
 }

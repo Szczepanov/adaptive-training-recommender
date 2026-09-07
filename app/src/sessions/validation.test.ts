@@ -134,6 +134,81 @@ describe('Session Validation (M2.1 / ADR-0023)', () => {
             expect(result.ok).toBe(true);
         });
 
+        describe('windowBinding (H4 #434 PR 3, D-WINDOW)', () => {
+            function externalPlanOccurrence(windowBinding?: unknown) {
+                return {
+                    userId: 'user-1',
+                    occurrenceId: 'occ-ext-1',
+                    date: '2026-08-18',
+                    authority: 'external_plan',
+                    externalPlanRef: {
+                        planId: 'plan-1', revision: 1, sessionId: 'session-1', contentHash: 'a'.repeat(64),
+                    },
+                    state: 'scheduled',
+                    createdAt: '2026-08-18T10:00:00Z',
+                    updatedAt: '2026-08-18T10:00:00Z',
+                    ...(windowBinding !== undefined ? { windowBinding } : {}),
+                };
+            }
+
+            function validWindowBinding(overrides: Record<string, unknown> = {}) {
+                return {
+                    windowId: 'window-1', bundleId: 'bundle-1', order: 0,
+                    boundStartLocal: '07:00', boundEndLocal: '08:00',
+                    startInstant: '2026-08-18T05:00:00Z', endInstant: '2026-08-18T06:00:00Z',
+                    ...overrides,
+                };
+            }
+
+            it('accepts a valid windowBinding', () => {
+                const result = validateSessionOccurrence(externalPlanOccurrence(validWindowBinding()));
+                expect(result.ok).toBe(true);
+            });
+
+            it('rejects windowBinding on a manual (non-external_plan) occurrence', () => {
+                const manual = {
+                    userId: 'user-1', occurrenceId: 'occ-1', date: '2026-08-18',
+                    authority: 'schedule', definitionRef: { definitionId: 'def-1', revision: 1, contentHash: 'a'.repeat(64) },
+                    state: 'scheduled', createdAt: '2026-08-18T10:00:00Z', updatedAt: '2026-08-18T10:00:00Z',
+                    windowBinding: validWindowBinding(),
+                };
+                const result = validateSessionOccurrence(manual);
+                expect(result.ok).toBe(false);
+            });
+
+            it('rejects a resolved interval where endInstant does not come after startInstant (the exact bug: reversed but individually-valid ISO timestamps must not pass)', () => {
+                const reversed = validateSessionOccurrence(externalPlanOccurrence(validWindowBinding({
+                    startInstant: '2026-08-18T06:00:00Z', endInstant: '2026-08-18T05:00:00Z',
+                })));
+                expect(reversed.ok).toBe(false);
+
+                const zeroWidth = validateSessionOccurrence(externalPlanOccurrence(validWindowBinding({
+                    startInstant: '2026-08-18T05:00:00Z', endInstant: '2026-08-18T05:00:00Z',
+                })));
+                expect(zeroWidth.ok).toBe(false);
+            });
+
+            it('rejects local bounds that are not valid HH:mm values', () => {
+                expect(validateSessionOccurrence(externalPlanOccurrence(validWindowBinding({ boundStartLocal: '25:00' }))).ok).toBe(false);
+                expect(validateSessionOccurrence(externalPlanOccurrence(validWindowBinding({ boundEndLocal: 'not-a-time' }))).ok).toBe(false);
+                expect(validateSessionOccurrence(externalPlanOccurrence(validWindowBinding({ boundStartLocal: '7:00' }))).ok).toBe(false);
+            });
+
+            it('rejects reversed local bounds even when both are individually valid HH:mm', () => {
+                const result = validateSessionOccurrence(externalPlanOccurrence(validWindowBinding({
+                    boundStartLocal: '08:00', boundEndLocal: '07:00',
+                })));
+                expect(result.ok).toBe(false);
+            });
+
+            it('rejects a windowBinding missing a required field', () => {
+                const missingOrder = validWindowBinding() as Partial<ReturnType<typeof validWindowBinding>>;
+                delete missingOrder.order;
+                const result = validateSessionOccurrence(externalPlanOccurrence(missingOrder));
+                expect(result.ok).toBe(false);
+            });
+        });
+
         it('rejects occurrence when neither or both definitionRef and externalPlanRef are provided', () => {
             const neither = {
                 userId: 'user-1',

@@ -240,8 +240,11 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
                 sessionId: 'session-101',
                 contentHash: 'c'.repeat(64),
             },
-            undefined,
-            '2026-09-06T12:00:00.000Z',
+            {
+                placementOrder: undefined,
+                windowBinding: undefined,
+                now: '2026-09-06T12:00:00.000Z',
+            },
         );
     });
 

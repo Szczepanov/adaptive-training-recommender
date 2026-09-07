@@ -10,13 +10,14 @@ import type {
 import type { ExternalPlanContext, ExternalRestContext } from '../engine/rules';
 import { estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
 import type { DailyLedgerResult } from '../engine/dailyLedger';
-import { proposeBundlePlacement, type BundlePlacementProposal, type IntradayBundleMember } from '../engine/intradayBundlePlacement';
+import { proposeBundlePlacement, type BundlePlacementProposal, type IntradayBundleMember, type ResolvedWindowBinding } from '../engine/intradayBundlePlacement';
 import { externalPlanService, type ExternalPlanService } from './externalPlanService';
 // M3.6: an active plan may be any supported schema version -- resolvePlacement and most
 // downstream session handling read envelope fields shared by every version. ADR-0035 adds
 // plan-level rest directives in v3, resolved separately below rather than faked as sessions.
 import type { AnyExternalTrainingPlan as ExternalTrainingPlan, AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
 import type { ExternalIntradayPlacement, ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+import { isExternalPlanOccurrence, type SessionOccurrence } from '../sessions/models';
 
 export interface ActiveExternalPlan {
     header: ExternalPlanHeader;
@@ -75,11 +76,82 @@ export interface IntradayBundlePlacementContext {
     scheduleWindows: readonly ScheduleWindow[];
     fixedActivities: readonly FixedActivity[];
     ledger: DailyLedgerResult;
+    /**
+     * H4 (#434) PR 3, Phase 2 step 7: real per-member execution state, keyed by the v4
+     * session's own `sessionId` (`ExternalPlanSessionV4.id`), when the caller has already
+     * resolved today's occurrence/launch state for this bundle. Absent (or a member with
+     * no entry) falls back to `started: false` -- the exact pre-PR-3 behavior -- so a
+     * caller that has not yet wired occurrence lookups keeps working unchanged.
+     */
+    memberState?: ReadonlyMap<string, { started: boolean; existingBinding?: ResolvedWindowBinding }>;
 }
 
-function toMembers(bundleSessions: readonly (PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } })[]): IntradayBundleMember[] {
+/**
+ * H4 (#434) PR 3 step 7: maps today's already-fetched external-plan occurrences onto
+ * `IntradayBundlePlacementContext['memberState']`, keyed by the v4 session's own
+ * `sessionId` via `externalPlanRef.sessionId`. Pure and unit-testable on its own --
+ * `Home.tsx` only needs to fetch the occurrences (`sessionOccurrenceService
+ * .getExternalPlanOccurrencesForDate`) and pass the result through.
+ *
+ * `activePlanRef` is required, not optional: `getExternalPlanOccurrencesForDate` returns
+ * every external-plan occurrence for the date regardless of which plan or revision it
+ * belongs to, and a v4 session's `sessionId` is plan-internal, not globally unique -- a
+ * stale occurrence from a superseded revision, or an unrelated imported plan that happens
+ * to reuse the same session id, could otherwise silently apply its `started`/
+ * `existingBinding` to the *current* plan's member of the same id. Only an occurrence
+ * whose `externalPlanRef` matches the active plan's `planId` **and** `revision` is
+ * considered; every other occurrence is skipped, not merged.
+ *
+ * `started` is true once the occurrence's execution has actually begun --
+ * `active`/`completed`/`abandoned` -- never for `scheduled` (not launched),
+ * `missed` (never launched), or `superseded`/`skipped` (already excluded by
+ * `getExternalPlanOccurrencesForDate`, but excluded here too for callers that pass an
+ * unfiltered list). `existingBinding` is populated only for a started member that also
+ * carries a persisted `windowBinding` -- until a caller passes `windowBinding` into
+ * `getOrCreateExternalPlanOccurrence` when creating a bundle member's occurrence, this
+ * stays absent even for a started member; `started` alone is still real and meaningful.
+ */
+export function buildIntradayMemberState(
+    occurrences: readonly SessionOccurrence[],
+    activePlanRef: { planId: string; revision: number },
+): NonNullable<IntradayBundlePlacementContext['memberState']> {
+    const memberState = new Map<string, { started: boolean; existingBinding?: ResolvedWindowBinding }>();
+    for (const occurrence of occurrences) {
+        if (!isExternalPlanOccurrence(occurrence)) continue;
+        if (occurrence.externalPlanRef.planId !== activePlanRef.planId
+            || occurrence.externalPlanRef.revision !== activePlanRef.revision) continue;
+        const started = occurrence.state === 'active' || occurrence.state === 'completed' || occurrence.state === 'abandoned';
+        const windowBinding = occurrence.windowBinding;
+        const sessionId = occurrence.externalPlanRef.sessionId;
+        memberState.set(sessionId, {
+            started,
+            ...(started && windowBinding ? {
+                existingBinding: {
+                    sessionId,
+                    windowId: windowBinding.windowId,
+                    boundStartLocal: windowBinding.boundStartLocal,
+                    boundEndLocal: windowBinding.boundEndLocal,
+                    startInstant: windowBinding.startInstant,
+                    endInstant: windowBinding.endInstant,
+                },
+            } : {}),
+        });
+    }
+    return memberState;
+}
+
+function toMembers(
+    bundleSessions: readonly (PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } })[],
+    memberState?: IntradayBundlePlacementContext['memberState'],
+): IntradayBundleMember[] {
     return bundleSessions.map(placed => {
         const { intraday, definition, priority, id } = placed.session;
+        // ADR-0036 D-PLACEMENT: "once a member starts, do not move its history." Before
+        // PR 3 wired real occurrence state through, every member was evaluated as
+        // not-yet-started regardless of what actually happened -- a placed-but-launched
+        // member's window could be silently reassigned on the next dashboard load. The
+        // caller-supplied state is authoritative when present.
+        const state = memberState?.get(id);
         return {
             sessionId: id,
             order: intraday.order,
@@ -89,10 +161,8 @@ function toMembers(bundleSessions: readonly (PlacedSession & { session: External
             minimumSeparationMinutes: intraday.minimumSeparationMinutes,
             estimatedMinutes: definition.duration?.max ?? definition.duration?.min ?? 45,
             estimatedSystemicCost: estimateAuthoredSessionSystemicCost(definition),
-            // Placement-correctness resolution only: execution status is not wired in
-            // here. Every member is evaluated as not-yet-started; reconciling against
-            // actual launch/completion is D-REASSESS, not this PR.
-            started: false,
+            started: state?.started ?? false,
+            ...(state?.existingBinding !== undefined ? { existingBinding: state.existingBinding } : {}),
         };
     });
 }
@@ -135,7 +205,7 @@ export function resolveIntradayBundlePlacement(
     for (const key of [...groups.keys()].sort()) {
         const groupSessions = groups.get(key)!;
         const bundleId = groupSessions[0].session.intraday.bundleId;
-        const result = proposeBundlePlacement(bundleId, date, toMembers(groupSessions), context.scheduleWindows, context.fixedActivities, restDates, context.ledger);
+        const result = proposeBundlePlacement(bundleId, date, toMembers(groupSessions, context.memberState), context.scheduleWindows, context.fixedActivities, restDates, context.ledger);
         firstResult ??= result;
         if (result.outcome === 'placed') return result;
     }

@@ -1,4 +1,4 @@
-import { isExternalPlanOccurrence, type SessionDefinition, type ExecutionPrescription, type SessionReferenceBinding } from '../sessions/models';
+import { isExternalPlanOccurrence, type SessionDefinition, type ExecutionPrescription, type SessionReferenceBinding, type OccurrenceWindowBinding } from '../sessions/models';
 import type { PreparedSessionLaunch } from '../sessions/sessionLaunch';
 import type { WorkoutPrescription } from '../workouts/models';
 import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
@@ -155,6 +155,10 @@ export interface PrepareExternalPlanSessionLaunchOptions {
     date?: string;
     occurrenceId?: string;
     placementOrder?: number;
+    /** H4 (#434) PR 3: the D-PLACEMENT-resolved window this member sits in. Only meaningful
+     * alongside `date` (occurrence creation); ignored when `occurrenceId` is supplied
+     * directly, since an existing occurrence's `windowBinding` is already immutable. */
+    windowBinding?: OccurrenceWindowBinding;
 }
 
 /**
@@ -244,8 +248,11 @@ export async function prepareExternalPlanSessionLaunch(
                 sessionId: externalPlan.session.id,
                 contentHash: externalPlan.contentHash,
             },
-            options.placementOrder,
-            now,
+            {
+                placementOrder: options.placementOrder,
+                windowBinding: options.windowBinding,
+                now,
+            },
         );
         if (occurrence.state !== 'scheduled') {
             throw new Error(`External-plan occurrence ${occurrence.occurrenceId} does not match the launch source.`);
