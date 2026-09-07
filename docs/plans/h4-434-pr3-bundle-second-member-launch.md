@@ -305,8 +305,10 @@ parameter order on `queueOccurrenceTransition`. What remains:
    - Action: define `users/{userId}/daily_ledgers/{date}` (or the reservation map on
      `daily_recommendations/{date}` — step 11's open choice) holding: `revision`, the
      resolved `ceilings`, and `reservations: { [occurrenceId]: { minutes, systemicCost,
-     state, decisionId? } }` — `decisionId` is the pointer step 11 uses to name the
-     provisional decision record inside the claim transaction.
+     state, decisionId? } }`, plus a per-`(date, sessionId)` `generation` counter used to
+     mint a fresh occurrence identity after a `reject` (step 8, 2a). `decisionId` is the
+     pointer step 11 uses to name the provisional decision record inside the claim
+     transaction.
    - `decisionId` is **optional on the entry but mandatory for anything launchable**. Step 8
      reserves for `pending` and `scale` as well as `proceed`, while step 9 writes a decision
      record only for a member that receives a binding, so a `pending`/`scale` entry
@@ -381,7 +383,15 @@ parameter order on `queueOccurrenceTransition`. What remains:
         request, predecessor evidence (the *predecessor's* occurrence state + `completedAt`
         + `SessionResponse` `immediate` + tissue responses), the Phase-2 ledger, and
         `computeReassessmentInputRevision(...)`. The target's own occurrence is not an input
-        to its own reassessment, so it must not be created before the verdict is known;
+        to its own reassessment, so it must not be created before the verdict is known —
+        **and on every load after the first, its existing reservation must be excluded from
+        the ledger passed to it.** On a second load the target already holds a `scheduled`
+        reservation from the first, step 6 counts it, and `admitsCandidate` then measures
+        the candidate against a remainder its own reservation already reduced. A member that
+        was admitted at 09:00 would flip to rejected at 09:05 with every input unchanged,
+        purely by consuming itself. Subtract the target occurrence's own entry (or pass a
+        ledger computed with it excluded) before reassessing it, and cover it with a
+        two-load regression test asserting an unchanged verdict;
      2. **`reject` → create nothing**, and emit no binding. If an occurrence already exists
         from an earlier load whose verdict has since flipped, what happens depends on the
         state it is in:
@@ -390,6 +400,8 @@ parameter order on `queueOccurrenceTransition`. What remains:
           behind: Phase 2 reads every `scheduled` occurrence as a live minute and
           systemic-cost reservation, so it would otherwise consume exactly the capacity it
           was just denied;
+          A `skipped` occurrence is terminal, so this is a one-way door for that occurrence
+          identity — see the recovery rule below;
         - `active` or `completed` → **change nothing.** The work is under way or already
           done; its consumption is real and stays in both the derived ledger and the
           aggregate. `active → skipped` is not even a legal transition in the merged table,
@@ -397,6 +409,24 @@ parameter order on `queueOccurrenceTransition`. What remains:
           exactly what D-LEDGER forbids. A late `reject` for an occurrence in these states
           means only "do not offer it again", which is already true because a binding is
           emitted solely on `proceed` and the claim rejects any non-`scheduled` occurrence;
+     2a. **Recovery from a `reject` that later becomes `pending`/`proceed`.** Conditions
+        change within a day — a predecessor completes, a symptom resolves, capacity frees up
+        — so a member rejected at 09:00 can legitimately be admissible at 14:00. The plan
+        must define that path, because nothing else does: `skipped` is terminal in #445's
+        transition table, `getOrCreateExternalPlanOccurrence` matches on the ref regardless
+        of state and would hand back the skipped document, and the claim rejects every
+        non-`scheduled` occurrence. Left undefined, one morning `reject` silently disables
+        that member for the rest of the day.
+        Recovery therefore creates a **new occurrence identity**, never reactivates the
+        skipped one. That requires a discriminator in the deterministic id, whose inputs
+        (`date`, `planId`, `sessionId`, `revision`, `contentHash`) are otherwise all
+        unchanged: carry a per-`(date, sessionId)` `generation` counter in the step-6a
+        aggregate, include it in the id, and increment it in the same transaction that skips
+        the previous occurrence. Idempotency is preserved *within* a generation — two tabs
+        recovering at once converge on the same new document — while the skipped record
+        stays intact as history. Tests: `reject → pending` and `reject → proceed` on a later
+        load each produce exactly one new reserved occurrence, and the skipped one is
+        untouched;
      3. **`pending` → create the occurrence and reserve.** Deliberately different from
         `reject`: D-LEDGER counts "accepted pending session reservations" against the day,
         and a member waiting only on a post-AM confirmation is still intended work. Emit no
@@ -432,6 +462,18 @@ parameter order on `queueOccurrenceTransition`. What remains:
    - Action: for every member that receives a binding, write an `IntradayDecisionRecord`
      with `status: 'provisional'` via `saveIntradayDecision` **before** the binding is
      exposed, carrying the `ReassessmentInputRevision` the verdict was computed against.
+   - **Record the post-reservation revision, not the one the verdict was computed against.**
+     These differ by exactly one increment and conflating them breaks every launch: step 8
+     computes the revision, then creating the target's reservation bumps the aggregate
+     (step 6a), so a record storing the pre-create value is stale the instant it is written
+     and step 11's comparison rejects the member on its own reservation write. Nothing would
+     ever launch on first attempt. The decision, the reservation and the occurrence are
+     written in one transaction (below), so that transaction knows the resulting revision:
+     store *that* value. The verdict is still the one computed from the pre-create inputs —
+     only the revision is taken after the write, because the revision's job is to detect
+     *other* writers, not to notice the decision recording itself.
+   - Test: adjudicate `proceed` and claim immediately, with nothing else touching the day —
+     the claim must succeed. A failure here means the self-invalidation above is present.
    - Why this is not optional: step 11's claim compares the *current* ledger revision
      against "the revision the decision assumed". That expected value has to be durable —
      it is read back in a transaction that may run in another tab, after a reload, or hours
