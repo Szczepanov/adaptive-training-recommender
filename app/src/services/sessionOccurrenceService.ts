@@ -328,19 +328,40 @@ export class SessionOccurrenceService {
 
             if (reservationSnap?.exists()) {
                 const owner = reservationSnap.data()?.occurrenceId as string | undefined;
-                const isOwnedByPrior = owner === priorRevision?.occurrenceId
-                    || (generation > 0 && sameDayOccurrences.some(
-                        occ => isExternalPlanOccurrence(occ)
-                            && occ.externalPlanRef.planId === externalPlanRef.planId
-                            && occ.externalPlanRef.sessionId === externalPlanRef.sessionId
-                            && occ.occurrenceId === owner
-                            && occ.state !== 'active'
-                            && occ.state !== 'completed',
-                    ));
-                if (!isOwnedByPrior) {
-                    throw new Error(
-                        `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                if (owner && owner !== deterministicId) {
+                    const ownerRef = (priorRef && owner === priorRevision?.occurrenceId)
+                        ? priorRef
+                        : this.occurrenceRef(userId, owner);
+                    const ownerSnap = (ownerRef === priorRef && priorSnap)
+                        ? priorSnap
+                        : await transaction.get(ownerRef);
+
+                    if (!ownerSnap || !ownerSnap.exists()) {
+                        throw new Error(
+                            `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                        );
+                    }
+
+                    const parsedOwner = parseSessionOccurrenceDocument(ownerSnap.data(), ownerRef.path);
+                    if (parsedOwner.status !== 'AVAILABLE' || !isExternalPlanOccurrence(parsedOwner.data)) {
+                        throw new Error(
+                            `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                        );
+                    }
+
+                    const ownerOcc = parsedOwner.data;
+                    const isMatchingSession = ownerOcc.externalPlanRef.planId === externalPlanRef.planId
+                        && ownerOcc.externalPlanRef.sessionId === externalPlanRef.sessionId;
+                    const isNotActiveOrCompleted = ownerOcc.state !== 'active' && ownerOcc.state !== 'completed';
+                    const isHandoffAllowed = isMatchingSession && isNotActiveOrCompleted && (
+                        ownerOcc.state === 'scheduled' || generation > 0
                     );
+
+                    if (!isHandoffAllowed) {
+                        throw new Error(
+                            `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                        );
+                    }
                 }
             }
 
