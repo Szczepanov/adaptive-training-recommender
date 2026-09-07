@@ -1726,16 +1726,30 @@ emulatorDescribe('Firestore security rules', () => {
         delete missingField.occurrenceId;
         await assertFails(setDoc(doc(ownerDb, missingFieldPath), missingField));
 
-        // 3. Updates are never allowed -- a reservation is claimed once and released by
-        // deletion, never silently repointed to a different occurrence.
+        // 3. A same-window handoff (occurrenceId repointed, date/windowId unchanged) is
+        // allowed -- this is exactly what getOrCreateExternalPlanOccurrence's re-import
+        // supersession does when the successor keeps the predecessor's resolved window:
+        // Firestore evaluates that `set()` on an existing document as `update`, so without
+        // this the whole occurrence-creation transaction would fail with permission-denied.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, reservationPath), {
+            ...validReservation(), occurrenceId: 'occ-ext-2', createdAt: '2026-08-18T11:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 4. The reservation's identity (date, windowId) stays immutable even though
+        // occurrenceId can change -- a reservation must never be silently moved to cover a
+        // different window or date.
         await assertFails(setDoc(doc(ownerDb, reservationPath), {
-            ...validReservation(), occurrenceId: 'occ-ext-2',
+            ...validReservation(), windowId: 'window-2',
+        }));
+        await assertFails(setDoc(doc(ownerDb, reservationPath), {
+            ...validReservation(), date: '2026-08-19',
         }));
 
-        // 4. The owner may delete their own reservation (releasing the window); a
-        // cross-user read/write is denied.
+        // 5. The owner may delete their own reservation (releasing the window); a
+        // cross-user read/write/update is denied.
         await assertFails(getDoc(doc(otherDb, reservationPath)));
         await assertFails(deleteDoc(doc(otherDb, reservationPath)));
+        await assertFails(setDoc(doc(otherDb, reservationPath), { ...validReservation(), occurrenceId: 'occ-hijacked' }));
         await expect(assertSucceeds(deleteDoc(doc(ownerDb, reservationPath)))).resolves.toBeUndefined();
     });
 

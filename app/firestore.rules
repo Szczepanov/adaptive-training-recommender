@@ -1222,9 +1222,9 @@ service cloud.firestore {
     // (see `windowReservationId` in `sessionOccurrenceService.ts`), so a create-if-absent
     // write inside the same transaction that creates the occurrence is what makes a
     // duplicate binding to one window impossible -- `windowBinding` on the occurrence
-    // itself is a snapshot, not an enforcement mechanism. Released (deleted) in the same
-    // transaction that supersedes/skips the occurrence holding it, freeing the window for
-    // a later generation.
+    // itself is a snapshot, not an enforcement mechanism. Released by deletion in the same
+    // transaction that supersedes/skips the occurrence holding it and binds a *different*
+    // window, or handed to a same-window successor via the constrained update below.
     function hasValidWindowReservation(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
@@ -1239,7 +1239,18 @@ service cloud.firestore {
     match /users/{userId}/session_occurrence_windows/{reservationId} {
       allow read: if isOwner(userId);
       allow create: if hasValidWindowReservation(userId);
-      allow update: if false;
+      // A re-import that keeps the same resolved window (`getOrCreateExternalPlanOccurrence`
+      // superseding a stale-revision predecessor) hands this reservation to the successor
+      // occurrence in place, rather than deleting and recreating it -- Firestore evaluates a
+      // `set()` on an existing document as `update`, so the reservation-claiming write for
+      // exactly that case needs an update rule, not just create. Everything the reservation's
+      // *identity* is keyed on (`date`, `windowId`, ownership) stays immutable; only the
+      // occurrence it points at (and the timestamp) may change.
+      allow update: if hasValidWindowReservation(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.windowId == resource.data.windowId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occurrenceId', 'createdAt']);
       allow delete: if isOwner(userId);
     }
 
