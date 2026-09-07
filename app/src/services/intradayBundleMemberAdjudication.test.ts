@@ -948,18 +948,27 @@ describe('adjudicateIntradayBundleMembers', () => {
             reservations: {
                 ...firstAgg.reservations,
                 'intervening-occ': {
-                    minutes: 30,
-                    systemicCost: 0.2,
+                    minutes: 10,
+                    systemicCost: 0.05,
                     state: 'reserved',
                     postReservationLedgerRevision: '3',
                 },
             },
         };
-        store.set(`users/${USER_ID}/daily_ledgers/${DATE}`, advancedAgg);
 
-        // Run adjudication again: atomic read detects fresh aggregate revision 3,
-        // so postReservationLedgerRevision "2" does not match revision 3, and the decision
-        // is evaluated against current ledger revision "3".
+        // Advance aggregate in Firestore immediately after the initial aggregateService.get call (line 173)
+        // so that the initial read receives stale revision 2, but the member's atomic transaction observes revision 3.
+        const originalGet = dailyLedgerAggregateService.get.bind(dailyLedgerAggregateService);
+        vi.spyOn(dailyLedgerAggregateService, 'get').mockImplementationOnce(async (userId, date) => {
+            const initial = await originalGet(userId, date);
+            store.set(`users/${USER_ID}/daily_ledgers/${DATE}`, advancedAgg);
+            return initial;
+        });
+
+        // Run adjudication again: initial read receives revision 2,
+        // but member adjudication's atomic transaction re-reads fresh aggregate revision 3,
+        // reconciles 'intervening-occ' into the candidate ledger, evaluates capacity,
+        // and commits the decision with ledgerRevision '3'.
         const second = await adjudicateIntradayBundleMembers(params);
         expect(second.statuses[0].status).toBe('proceed');
         const secondAgg = store.get(`users/${USER_ID}/daily_ledgers/${DATE}`) as DailyLedgerAggregate;
@@ -969,5 +978,6 @@ describe('adjudicateIntradayBundleMembers', () => {
             `users/${USER_ID}/intraday_decisions/${decisionId}`,
         ) as IntradayDecisionRecord;
         expect(secondDecisionDoc.reassessmentInputRevision.ledgerRevision).toBe('3');
+        expect(secondDecisionDoc.ledgerSnapshot.entries.some(e => e.occurrenceId === 'intervening-occ')).toBe(true);
     });
 });

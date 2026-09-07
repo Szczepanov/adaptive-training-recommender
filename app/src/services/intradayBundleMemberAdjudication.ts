@@ -295,8 +295,62 @@ export async function adjudicateIntradayBundleMembers(
             }
         }
 
-        // 8.1 Exclude target's own reservation from its candidate ledger
-        const targetIdsToExclude = new Set(targetExistingOccurrences.map(o => o.occurrenceId));
+        // 8.1 Refresh aggregate and existing decision atomically before computing candidate capacity
+        let decData: IntradayDecisionRecord | null = null;
+        const aggRef = aggregateService.ref(userId, date);
+        if (targetScheduledOccurrence && aggregate?.reservations[targetScheduledOccurrence.occurrenceId]?.decisionId) {
+            // Target already held a reservation from this load or earlier:
+            // Read aggregate and decision atomically in one transaction so stale aggregate revision
+            // can never falsely match postReservationLedgerRevision if another reservation advanced the aggregate.
+            const existingDecisionId = aggregate.reservations[targetScheduledOccurrence.occurrenceId].decisionId!;
+            const existingDecDoc = doc(db, getIntradayDecisionDocPath(userId, existingDecisionId));
+
+            const res = await runTransaction(db, async transaction => {
+                const aggSnap = await transaction.get(aggRef);
+                const decSnap = await transaction.get(existingDecDoc);
+                return {
+                    freshAgg: aggSnap.exists() ? (aggSnap.data() as DailyLedgerAggregate) : null,
+                    decData: decSnap.exists() ? (decSnap.data() as IntradayDecisionRecord) : null,
+                };
+            });
+
+            if (res.freshAgg) {
+                aggregate = res.freshAgg;
+            }
+            decData = res.decData;
+        } else {
+            const freshAgg = await aggregateService.get(userId, date);
+            if (freshAgg) {
+                aggregate = freshAgg;
+            }
+        }
+
+        // Reconcile currentLedgerInputs against the refreshed aggregate reservations
+        // so capacity evaluation includes any reservations committed concurrently
+        if (aggregate?.reservations) {
+            for (const [resOccId, res] of Object.entries(aggregate.reservations)) {
+                const existingIdx = currentLedgerInputs.findIndex(inp => inp.occurrenceId === resOccId);
+                if (res.state === 'reserved' || res.state === 'in_progress') {
+                    if (existingIdx < 0) {
+                        currentLedgerInputs.push({
+                            occurrenceId: resOccId,
+                            occurrenceState: res.state === 'in_progress' ? 'active' : 'scheduled',
+                            estimatedMinutes: res.minutes,
+                            estimatedSystemicCost: res.systemicCost,
+                            revision: Date.now(),
+                        });
+                    }
+                }
+            }
+        }
+
+        // Exclude target's own reservation and occurrence from its candidate ledger
+        const generation = aggregate ? aggregateService.currentGeneration(aggregate, targetSession.id) : 0;
+        const deterministicOccId = await deterministicExternalPlanOccurrenceId(date, externalPlanRef, generation);
+        const targetIdsToExclude = new Set([
+            ...targetExistingOccurrences.map(o => o.occurrenceId),
+            deterministicOccId,
+        ]);
         const inputsExcludingTarget = currentLedgerInputs.filter(inp => !targetIdsToExclude.has(inp.occurrenceId));
         const entriesExcludingTarget = buildLedgerEntries(inputsExcludingTarget);
         const targetLedger = computeDailyLedger(ceilings, entriesExcludingTarget);
@@ -309,29 +363,8 @@ export async function adjudicateIntradayBundleMembers(
 
         // Derive pre-reservation ledgerRevision
         let preReservationLedgerRevision = String(aggregate?.revision ?? 0);
-        if (targetScheduledOccurrence && aggregate?.reservations[targetScheduledOccurrence.occurrenceId]?.decisionId) {
-            // Target already held a reservation from this load or earlier:
-            // Read aggregate and decision atomically in one transaction so stale aggregate revision
-            // can never falsely match postReservationLedgerRevision if another reservation advanced the aggregate.
-            const existingDecisionId = aggregate.reservations[targetScheduledOccurrence.occurrenceId].decisionId!;
-            const existingDecDoc = doc(db, getIntradayDecisionDocPath(userId, existingDecisionId));
-            const aggRef = aggregateService.ref(userId, date);
-
-            const { freshAgg, decData } = await runTransaction(db, async transaction => {
-                const aggSnap = await transaction.get(aggRef);
-                const decSnap = await transaction.get(existingDecDoc);
-                return {
-                    freshAgg: aggSnap.exists() ? (aggSnap.data() as DailyLedgerAggregate) : null,
-                    decData: decSnap.exists() ? (decSnap.data() as IntradayDecisionRecord) : null,
-                };
-            });
-
-            if (freshAgg) {
-                aggregate = freshAgg;
-            }
-            if (decData && decData.postReservationLedgerRevision && String(aggregate?.revision) === decData.postReservationLedgerRevision) {
-                preReservationLedgerRevision = decData.reassessmentInputRevision.ledgerRevision;
-            }
+        if (decData && decData.postReservationLedgerRevision && String(aggregate?.revision) === decData.postReservationLedgerRevision) {
+            preReservationLedgerRevision = decData.reassessmentInputRevision.ledgerRevision;
         }
 
         const computedRevision = computeReassessmentInputRevision({
@@ -448,13 +481,8 @@ export async function adjudicateIntradayBundleMembers(
             continue;
         }
 
-        // Recovery check: read current generation from aggregate for this session (defaults to 0 if absent)
-        const generation = aggregate ? aggregateService.currentGeneration(aggregate, targetSession.id) : 0;
-
-        const deterministicOccId = await deterministicExternalPlanOccurrenceId(date, externalPlanRef, generation);
         const occRef = occurrenceService.occurrenceRef(userId, deterministicOccId);
         const winRef = occurrenceService.windowReservationRef(userId, date, binding.windowId);
-        const aggRef = aggregateService.ref(userId, date);
 
         if (verdict.decision === 'pending' || verdict.decision === 'scale') {
             // 8.3 / 8.4: Create occurrence and reserve capacity; emit no binding
