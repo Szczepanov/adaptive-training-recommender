@@ -1719,7 +1719,7 @@ service cloud.firestore {
     function hasValidDailyLedgerAggregate(userId, date) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'date', 'revision', 'ceilings', 'reservations', 'seededAt', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'date', 'revision', 'ceilings', 'reservations', 'generations', 'seededAt', 'createdAt', 'updatedAt'])
         && data.keys().hasAll(['userId', 'date', 'revision', 'ceilings', 'reservations', 'seededAt', 'createdAt', 'updatedAt'])
         && data.date == date
         && isValidActivityDate(data.date)
@@ -1731,6 +1731,10 @@ service cloud.firestore {
         && data.ceilings.dailySystemicCostCeiling is number && data.ceilings.dailySystemicCostCeiling >= 0 && data.ceilings.dailySystemicCostCeiling <= 1
         && data.reservations is map
         && data.reservations.size() <= 50
+        // H4 (#434) PR 3 step 8, item 2a: per-sessionId recovery generation counters,
+        // keyed the same dynamic way as `reservations` -- see that field's comment on
+        // why the rules language cannot validate individual entry values here.
+        && (!('generations' in data) || (data.generations is map && data.generations.size() <= 50))
         && data.seededAt is string && data.seededAt.size() > 0
         && data.createdAt is string && data.updatedAt is string;
     }

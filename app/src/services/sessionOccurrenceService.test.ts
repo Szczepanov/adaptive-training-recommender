@@ -16,6 +16,7 @@ vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
 import { SessionOccurrenceService, deterministicExternalPlanOccurrenceId } from './sessionOccurrenceService';
+import { MAX_RECOVERY_GENERATION } from './dailyLedgerAggregateService';
 
 const definitionRef: ManualOccurrenceRef = {
     definitionId: 'def-1', revision: 1, contentHash: 'a'.repeat(64),
@@ -584,6 +585,51 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             });
 
             expect(idA).not.toBe(idB);
+        });
+
+        it('defaults generation to 0, producing exactly the same id as before this parameter existed (H4 #434 PR 3 step 8, item 2a)', async () => {
+            const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
+            const withoutGeneration = await deterministicExternalPlanOccurrenceId('2026-08-18', ref);
+            const withGenerationZero = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 0);
+            expect(withoutGeneration).toBe(withGenerationZero);
+        });
+
+        it('produces a distinct id for a nonzero recovery generation', async () => {
+            const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
+            const generation0 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 0);
+            const generation1 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 1);
+            const generation2 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 2);
+            expect(new Set([generation0, generation1, generation2]).size).toBe(3);
+        });
+
+        it('is deterministic for the same nonzero generation', async () => {
+            const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
+            const first = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 3);
+            const second = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 3);
+            expect(first).toBe(second);
+        });
+
+        it('rejects negative, non-integer, or non-numeric generations instead of reusing generation 0', async () => {
+            const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
+            await expect(deterministicExternalPlanOccurrenceId('2026-08-18', ref, -1)).rejects.toThrow(RangeError);
+            await expect(deterministicExternalPlanOccurrenceId('2026-08-18', ref, 1.5)).rejects.toThrow(TypeError);
+            await expect(deterministicExternalPlanOccurrenceId(
+                '2026-08-18', ref, '1' as unknown as number,
+            )).rejects.toThrow(TypeError);
+        });
+
+        it('accepts MAX_RECOVERY_GENERATION and rejects values above the supported bound', async () => {
+            const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
+            const gen0 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 0);
+            const atMax = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, MAX_RECOVERY_GENERATION);
+
+            expect(atMax).not.toBe(gen0);
+            await expect(deterministicExternalPlanOccurrenceId(
+                '2026-08-18', ref, MAX_RECOVERY_GENERATION + 1,
+            )).rejects.toThrow(RangeError);
+            await expect(deterministicExternalPlanOccurrenceId(
+                '2026-08-18', ref, Number.MAX_SAFE_INTEGER,
+            )).rejects.toThrow(RangeError);
         });
     });
 

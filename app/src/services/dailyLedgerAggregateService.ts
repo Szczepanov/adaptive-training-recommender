@@ -19,14 +19,15 @@
  * commit atomically with whatever occurrence/decision write triggered it, not as a
  * separate round trip.
  *
- * Wiring status (tracked here so this doesn't read as silently "done"): `seedIfAbsent`
- * and `applyReservation` are implemented and tested against every acceptance case named
- * in the plan's step 6a. The six call sites in the transition table are wired in as each
- * phase builds them -- `getOrCreateExternalPlanOccurrence`
- * (`sessionOccurrenceService.ts`) is the first, covering "create" and the re-import
- * "supersede" rows; "reject" (Phase 3 step 8), "claim"/"release" (Phase 4 step 11) and
- * completion/abandonment reconciliation (`useSessionRunner.ts`) still need to call
- * `applyReservation` from their own transactions once those call sites exist.
+ * Wiring status (tracked here so this doesn't read as silently "done"):
+ * `getOrCreateExternalPlanOccurrence` (`sessionOccurrenceService.ts`) already covers the
+ * "create" and re-import "supersede" rows. Phase 3 step 8 item 2a now has the dedicated
+ * `rejectReservationAndIncrementGeneration` aggregate primitive, but the Home adjudication
+ * transaction still has to compose it with the occurrence's `scheduled -> skipped` write.
+ * "claim"/"release" (Phase 4 step 11) and completion/abandonment reconciliation
+ * (`useSessionRunner.ts`) still need to compose `applyReservation` once those call sites
+ * exist. The primitive layer therefore enforces the ledger invariants without claiming the
+ * later end-to-end wiring is already shipped.
  */
 
 import { doc, getDoc, type DocumentReference, type Firestore, type Transaction } from 'firebase/firestore';
@@ -49,12 +50,31 @@ export interface DailyLedgerReservation {
     decisionId?: string;
 }
 
+/**
+ * Maximum permitted recovery generation counter. Kept deliberately far below
+ * Number.MAX_SAFE_INTEGER. Reaching the cap is an explicit fail-closed condition: silently
+ * saturating here would let a later recovery reuse the same deterministic occurrence id.
+ */
+export const MAX_RECOVERY_GENERATION = 1_000_000;
+
 export interface DailyLedgerAggregate {
     userId: string;
     date: string;
     revision: number;
     ceilings: LedgerCeilings;
     reservations: Record<string, DailyLedgerReservation>;
+    /**
+     * H4 (#434) PR 3 plan step 8, item 2a: per-`sessionId` recovery generation counters.
+     * `date` is already this document's own identity, so the key is `sessionId` alone.
+     * A `reject` that transitions a `scheduled` occurrence to `skipped` increments the
+     * counter for that session in the same transaction; a later `pending`/`proceed`
+     * verdict for the same session mints a *new* occurrence identity carrying the current
+     * generation, rather than reactivating the terminal `skipped` document (which #445's
+     * transition table forbids). Absent key means generation 0 -- the original,
+     * pre-recovery occurrence identity `deterministicExternalPlanOccurrenceId` already
+     * produces unchanged, so a session that has never been rejected needs no entry here.
+     */
+    generations?: Record<string, number>;
     /** Presence (not just document existence) is what "seeded" means -- see
      * `hasSeededAggregate`. A partially-written document without this field must still
      * fail closed rather than read as an empty day. */
@@ -196,6 +216,78 @@ export class DailyLedgerAggregateService {
         };
         transaction.set(this.ref(userId, date), next);
         return next;
+    }
+
+    /**
+     * The "reject" row of the plan step 6a transition table, as one combined write: drops
+     * the rejected occurrence's reservation *and* bumps its recovery generation counter,
+     * in a single `transaction.set` (bumping `revision` by exactly one total, matching the
+     * rules' strict +1-per-write enforcement). Deliberately not two separate
+     * `applyReservation`/generation calls -- multiple writes to the same document
+     * reference within one transaction is more than this module needs to rely on when a
+     * single combined write says the same thing unambiguously. The returned generation is
+     * what a later recovery (step 8, item 2a) mints its new occurrence identity with.
+     *
+     * If the stored generation is malformed or already at the supported maximum this
+     * method throws before writing. Falling back to 0 or saturating at the maximum would
+     * allow a later recovery to reuse a terminal skipped occurrence's deterministic id.
+     */
+    rejectReservationAndIncrementGeneration(
+        transaction: Transaction,
+        userId: string,
+        date: string,
+        current: DailyLedgerAggregate,
+        occurrenceId: string,
+        sessionId: string,
+        now = new Date().toISOString(),
+    ): { aggregate: DailyLedgerAggregate; generation: number } {
+        const currentGeneration = this.currentGeneration(current, sessionId);
+        if (currentGeneration >= MAX_RECOVERY_GENERATION) {
+            throw new RangeError(
+                `Recovery generation exhausted for session '${sessionId}' on ${date}; refusing to reuse an occurrence identity.`,
+            );
+        }
+
+        const reservations = { ...current.reservations };
+        delete reservations[occurrenceId];
+        const generation = currentGeneration + 1;
+        const generations = { ...current.generations, [sessionId]: generation };
+        const next: DailyLedgerAggregate = {
+            ...current,
+            reservations,
+            generations,
+            revision: current.revision + 1,
+            updatedAt: now,
+        };
+        transaction.set(this.ref(userId, date), next);
+        return { aggregate: next, generation };
+    }
+
+    /**
+     * The current recovery generation for a session. An absent map or key means generation
+     * 0. A present map/value is persisted identity state, not advisory metadata: malformed
+     * container shape, negative/non-safe-integer values, or out-of-range values fail closed
+     * instead of being coerced to 0, because coercion could mint an occurrence id that was
+     * already used by an earlier generation.
+     */
+    currentGeneration(aggregate: DailyLedgerAggregate, sessionId: string): number {
+        const generations = aggregate.generations;
+        if (generations === undefined) return 0;
+        if (generations === null || typeof generations !== 'object' || Array.isArray(generations)) {
+            throw new TypeError('Invalid recovery generation map.');
+        }
+        if (!Object.prototype.hasOwnProperty.call(generations, sessionId)) return 0;
+
+        const val = generations[sessionId];
+        if (
+            typeof val !== 'number'
+            || !Number.isSafeInteger(val)
+            || val < 0
+            || val > MAX_RECOVERY_GENERATION
+        ) {
+            throw new TypeError(`Invalid recovery generation for session '${sessionId}'.`);
+        }
+        return val;
     }
 }
 
