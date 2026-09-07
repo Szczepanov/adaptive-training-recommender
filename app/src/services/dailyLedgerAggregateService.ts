@@ -19,14 +19,15 @@
  * commit atomically with whatever occurrence/decision write triggered it, not as a
  * separate round trip.
  *
- * Wiring status (tracked here so this doesn't read as silently "done"): `seedIfAbsent`
- * and `applyReservation` are implemented and tested against every acceptance case named
- * in the plan's step 6a. The six call sites in the transition table are wired in as each
- * phase builds them -- `getOrCreateExternalPlanOccurrence`
- * (`sessionOccurrenceService.ts`) is the first, covering "create" and the re-import
- * "supersede" rows; "reject" (Phase 3 step 8), "claim"/"release" (Phase 4 step 11) and
- * completion/abandonment reconciliation (`useSessionRunner.ts`) still need to call
- * `applyReservation` from their own transactions once those call sites exist.
+ * Wiring status (tracked here so this doesn't read as silently "done"):
+ * `getOrCreateExternalPlanOccurrence` (`sessionOccurrenceService.ts`) already covers the
+ * "create" and re-import "supersede" rows. Phase 3 step 8 item 2a now has the dedicated
+ * `rejectReservationAndIncrementGeneration` aggregate primitive, but the Home adjudication
+ * transaction still has to compose it with the occurrence's `scheduled -> skipped` write.
+ * "claim"/"release" (Phase 4 step 11) and completion/abandonment reconciliation
+ * (`useSessionRunner.ts`) still need to compose `applyReservation` once those call sites
+ * exist. The primitive layer therefore enforces the ledger invariants without claiming the
+ * later end-to-end wiring is already shipped.
  */
 
 import { doc, getDoc, type DocumentReference, type Firestore, type Transaction } from 'firebase/firestore';
@@ -263,18 +264,21 @@ export class DailyLedgerAggregateService {
     }
 
     /**
-     * The current recovery generation for a session. An absent key means generation 0.
-     * A present value is persisted identity state, not advisory metadata: malformed,
-     * negative, non-safe-integer, or out-of-range values fail closed instead of being
-     * coerced to 0, because coercion could mint an occurrence id that was already used by
-     * an earlier generation.
+     * The current recovery generation for a session. An absent map or key means generation
+     * 0. A present map/value is persisted identity state, not advisory metadata: malformed
+     * container shape, negative/non-safe-integer values, or out-of-range values fail closed
+     * instead of being coerced to 0, because coercion could mint an occurrence id that was
+     * already used by an earlier generation.
      */
     currentGeneration(aggregate: DailyLedgerAggregate, sessionId: string): number {
-        if (!aggregate.generations || !Object.prototype.hasOwnProperty.call(aggregate.generations, sessionId)) {
-            return 0;
+        const generations = aggregate.generations;
+        if (generations === undefined) return 0;
+        if (generations === null || typeof generations !== 'object' || Array.isArray(generations)) {
+            throw new TypeError('Invalid recovery generation map.');
         }
+        if (!Object.prototype.hasOwnProperty.call(generations, sessionId)) return 0;
 
-        const val = aggregate.generations[sessionId];
+        const val = generations[sessionId];
         if (
             typeof val !== 'number'
             || !Number.isSafeInteger(val)
