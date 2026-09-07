@@ -91,6 +91,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0035: Explicit Rest-Day Authoring in External Plans**](./adr/0035-explicit-rest-day-authoring.md) — *Accepted, implemented.* Distinguishes a plan author's deliberate protected rest day from an ordinary unplanned date via a new, relative `restDays` directive in `external-plan@3` (v1/v2 stay immutable); keeps readiness separate from plan intent.
 * [**ADR-0036: Intraday Training Windows and Post-Session Reassessment**](./adr/0036-intraday-training-windows-and-reassessment.md) — *Accepted.* Explicit windows, v4-authored sequencing, shared daily accounting and post-AM reassessment; implementation unstarted, automatic doubles deferred until execution acceptance.
 * [**ADR-0037: Block Intent and Controlled Progression**](./adr/0037-block-intent-and-controlled-progression.md) — *Accepted.* Explicit develop/maintain objectives, v5 import authority, report-only progression review and confirmed bounded revisions; implementation unstarted, unattended progression deferred.
+* [**ADR-0038: Engine-Generated Recovery Placement as a Requirement**](./adr/0038-engine-generated-recovery-placement.md) — *Proposed.* Makes the weekly recovery day an enforced requirement that exists without a plan definition, instead of an emergent side-effect of projected fatigue; raised by [PR #453](https://github.com/Szczepanov/adaptive-training-recommender/pull/453), implementation unstarted.
 ---
 
 ### 🔍 Reviews & Analysis
