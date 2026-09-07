@@ -1,10 +1,10 @@
 # ADR-0038 recovery placement implementation plan
 
-**Status:** Draft — ADR-0038 is Proposed  
-**Tracks:** [ADR-0038](../adr/0038-engine-generated-recovery-placement.md), PR #455  
-**Blocked by:** acceptance of ADR-0038 / PR #455 before runtime activation  
-**Unlocks:** explicit plan-independent recovery placement, rolling seven-date recovery invariant, recovery deadline diagnostics  
-**Builds on:** PR #453 effective-dose projection; ADR-0016 exact coverage identity; ADR-0018 weekly-role allocation/D-SUPPORT; ADR-0033 knowledge governance; ADR-0034 canonical performed-training occurrences; ADR-0035 authored rest; ADR-0036 schedule windows  
+**Status:** Draft — ADR-0038 is Proposed
+**Tracks:** [ADR-0038](../adr/0038-engine-generated-recovery-placement.md), PR #455
+**Blocked by:** acceptance of ADR-0038 / PR #455 before runtime activation
+**Unlocks:** explicit plan-independent recovery placement, rolling seven-date recovery invariant, recovery deadline diagnostics
+**Builds on:** PR #453 effective-dose projection; ADR-0016 exact coverage identity; ADR-0018 weekly-role allocation/D-SUPPORT; ADR-0033 knowledge governance; ADR-0034 canonical performed-training occurrences; ADR-0035 authored rest; ADR-0036 schedule windows
 **Source analysis:** [2026-09-07 ADR-0038 implementation analysis](../analysis/2026-09-07-adr-0038-recovery-placement-implementation-analysis.md)
 
 ---
@@ -172,9 +172,8 @@ Bootstrap semantics are deliberately explicit:
 - `B` must be durable and reused across daily recomputation; it must never default to each new
   `asOfDate`.
 
-This closes an ambiguity in the current Proposed ADR. Before ADR-0038 is accepted, keep PR #455
-aligned with this bootstrap interpretation (or change this plan if the owner chooses a different
-explicit grace-window contract).
+The merged ADR now carries this bootstrap interpretation. Keep this plan aligned with ADR-0038 if
+the owner changes the grace-window contract before acceptance.
 
 ## E. D-SUPPORT remains authoritative
 
@@ -208,8 +207,8 @@ behavior.
 
 ## RP0 — Freeze contracts and pure recovery state
 
-**Status:** blocked by ADR-0038 acceptance for behavior; pure scaffolding may be prepared earlier  
-**Depends on:** PR #455  
+**Status:** blocked by ADR-0038 acceptance for behavior; pure scaffolding may be prepared earlier
+**Depends on:** PR #455
 **Behavior change:** none if kept disconnected from live ranking
 
 ### Work
@@ -256,8 +255,8 @@ qualifying candidate receive?** No optimizer change yet.
 
 ## RP1 — Complete exact recovery identity
 
-**Status:** planned  
-**Depends on:** RP0  
+**Status:** planned
+**Depends on:** RP0
 **Behavior change:** exact coverage/fact semantics may change; review persistence/replay impact before merge
 
 ### Work
@@ -295,8 +294,8 @@ Exact identity is deterministic and complete enough for ADR-0038. No broad categ
 
 ## RP2 — Historical recovery facts, authored-rest bridge and bootstrap persistence
 
-**Status:** planned  
-**Depends on:** RP0, RP1  
+**Status:** planned
+**Depends on:** RP0, RP1
 **Behavior change:** historical recovery state becomes available, but ranking activation remains off
 
 This is the highest data-trust-risk package and should be reviewed independently from ranking.
@@ -403,8 +402,8 @@ mutable lookup to recover exact performed-recovery identity.
 
 ## RP3 — Integrate deadline urgency into ranking and close D-SUPPORT hole
 
-**Status:** planned  
-**Depends on:** RP0-RP2  
+**Status:** planned
+**Depends on:** RP0-RP2
 **Behavior change:** behavior-bearing implementation, but must remain default-off/disconnected until RP4/RP5B activation
 
 ### Work A — optimizer context
@@ -471,8 +470,8 @@ but production recommendation behavior is not switched over yet.
 
 ## RP4 — Observability and deterministic simulation invariant
 
-**Status:** planned  
-**Depends on:** RP3  
+**Status:** planned
+**Depends on:** RP3
 **Behavior change:** diagnostics/evaluation only while activation remains off
 
 ### Work
@@ -524,8 +523,8 @@ live activation.
 
 ## RP5A — Knowledge governance before activation
 
-**Status:** planned  
-**Depends on:** RP1, RP3  
+**Status:** planned
+**Depends on:** RP1, RP3
 **Behavior change:** metadata/alignment only; no live activation and no `POLICY_VERSION` bump
 
 ### Knowledge registry
@@ -573,8 +572,8 @@ activation, without claiming the behavior is already the live policy version.
 
 ## RP5B — Activation, replay version and final proof
 
-**Status:** planned  
-**Depends on:** RP4, RP5A  
+**Status:** planned
+**Depends on:** RP4, RP5A
 **Behavior change:** **yes — sole live activation boundary**
 
 ### Preconditions
@@ -634,7 +633,7 @@ than one large runtime PR.
 
 ## Implementation PR A — policy model + exact identity
 
-**Contains:** RP0 + RP1 pure/domain work.  
+**Contains:** RP0 + RP1 pure/domain work.
 **Goal:** establish exact identities, bootstrap semantics and deadline state with exhaustive unit
 tests, without changing live selection.
 
@@ -644,7 +643,7 @@ Suggested title:
 
 ## Implementation PR B — historical recovery truth
 
-**Contains:** RP2.  
+**Contains:** RP2.
 **Goal:** establish performed-active-recovery, authored-rest and engine-Rest day-outcome facts plus
 stable bootstrap persistence/reconciliation.
 
@@ -656,7 +655,7 @@ This PR should be independently reviewed for data-trust, persistence and replay 
 
 ## Implementation PR C — staged ranking + governance
 
-**Contains:** RP3 + RP5A.  
+**Contains:** RP3 + RP5A.
 **Goal:** implement deadline tier escalation, close single-candidate D-SUPPORT, add minimum typed
 trace and register/alignment-test policy lineage **without enabling the live path or bumping
 `POLICY_VERSION`**.
@@ -670,7 +669,7 @@ simulation can exercise the real ranking path before activation.
 
 ## Implementation PR D — simulation proof + activation
 
-**Contains:** RP4 + RP5B.  
+**Contains:** RP4 + RP5B.
 **Goal:** prove the rolling invariant and bootstrap semantics, review corpus deltas, then activate
 the already-tested path and bump `POLICY_VERSION` in the same final review boundary.
 
