@@ -305,6 +305,7 @@ parameter order on `queueOccurrenceTransition`. What remains:
    - **Every transition that changes an occurrence's reserving status must update this
      document and increment `revision` in the same transaction**, or the aggregate drifts
      from the occurrences and each direction of drift is a real defect:
+
      | Transition | Aggregate effect |
      |---|---|
      | create on `proceed`/`pending`/`scale` | add the reservation |
@@ -312,17 +313,34 @@ parameter order on `queueOccurrenceTransition`. What remains:
      | re-import → `scheduled → superseded` (step 4b) | remove it |
      | claim → `scheduled → active` (step 11) | mark `in_progress`, same debit, never re-add |
      | release → `active → scheduled` (step 11) | back to reserved, not removed |
-     | completion/abandonment (`useSessionRunner`) | reconcile to the known actual, or
-       `unresolved` when no bounded actual exists |
+     | completion/abandonment (`useSessionRunner`) | reconcile to the known actual, or `unresolved` when no bounded actual is available |
+
    - Why: a stale reservation left behind by a rejected or superseded member silently
      blocks a launch the athlete is entitled to, while a reservation that was never written
      for a `pending`/`scale` member lets two concurrent claims overbook the same capacity.
      Step 6's filtering fixes only the derived read; without this, the document step 11
      serializes on disagrees with it.
+   - **Initialization is part of the contract, not a migration afterthought.** #445 already
+     creates external-plan occurrences on every dashboard load, so real users will have
+     `scheduled`, `active`, and `completed` occurrences for a date *before* this document
+     exists. An absent or partial aggregate must therefore never read as an empty day:
+     - a claim whose aggregate is absent, or whose `seededAt`/`ceilings` are missing, **fails
+       closed** — no launch — rather than treating unaccounted occurrences as free capacity;
+     - seeding is create-if-absent: read the date's occurrences and executions outside the
+       transaction (a transaction cannot query), then inside one transaction re-check that
+       the document still does not exist and write the seeded totals. A concurrent seeder
+       loses the create and re-reads, so two tabs opening the same day cannot produce two
+       different starting balances;
+     - seed from `scheduled` (reserved), `active` (in-progress), and `completed`/`partial`
+       (actuals, or `unresolved` when no bounded actual exists) — the same mapping step 6
+       derives, so a freshly seeded aggregate and the derived ledger agree by construction;
+     - `superseded`/`skipped` seed nothing.
    - Reconciliation check: on each dashboard load, recompute the derived ledger from
      occurrences (step 6) and compare it against the persisted aggregate. A mismatch is a
      bug, not a state to paper over — surface it and prefer the conservative (higher
      consumption) side rather than silently releasing capacity.
+   - Tests: rollout against a date that already has occurrences of each state; two
+     concurrent seeders; a claim attempted while the aggregate is absent (must refuse).
    - Dependencies: steps 4a-6. Risk: **High** — this is the shared mutable state; test each
      row of the table above, plus the drift check.
 
@@ -409,7 +427,22 @@ parameter order on `queueOccurrenceTransition`. What remains:
    - Alternative if this is deferred anyway: persist the revision on the occurrence and
      bump its own revision on every reassessment — strictly more schema churn on a document
      #445 just froze, for the same guarantee. Prefer the decision record.
-   - This closes open question 4. Risk: Low.
+   - **Steps 8 and 9 must not be able to half-succeed.** Step 8 creates the occurrence and
+     its reservation; step 9 writes the decision record that carries the expected revision.
+     If step 9 fails on its own, the day is left holding a reservation for a member with no
+     binding and no recoverable expected revision — capacity consumed by a session the
+     athlete can never start. `saveIntradayDecision` currently does its own `getDoc`/`setDoc`
+     (`intradayDecisionService.ts`), so it cannot participate as written. Either:
+     1. give it a transaction-accepting variant and commit the occurrence create, the
+        aggregate update, and the decision record in **one** transaction (preferred — the
+        decision record is create-only under its rules, so it composes cleanly); or
+     2. keep them separate and add explicit compensating cleanup: on a failed decision
+        write, roll the occurrence back to `skipped` and remove its reservation, in one
+        transaction, before surfacing the failure.
+     Whichever is chosen, add a failure-path test that injects a decision-write failure and
+     asserts no orphaned reservation survives it.
+   - This closes open question 4. Risk: Low for the record itself; Medium for the
+     atomicity requirement above.
 
 ### Phase 4 — Launch affordance and the atomic claim
 
@@ -459,6 +492,29 @@ parameter order on `queueOccurrenceTransition`. What remains:
       4. transition the occurrence to `active`.
       Steps 1-2 must precede every write (Firestore's reads-before-writes rule). Without
       step 3 the lock document is never written and provides no mutual exclusion at all.
+    - **Every reassessment input must be transaction-scoped, not just the aggregate.**
+      `claimOccurrenceLaunch` reads only the target occurrence before invoking
+      `onBeforeClaim`, so anything the hook consults outside the transaction can change
+      between the read and the commit while the aggregate revision still matches. Split the
+      inputs by whether Firestore can address them as a single document:
+      - **Read inside the transaction, by id** — the aggregate; the target occurrence
+        (already read by `claimOccurrenceLaunch`); the predecessor occurrence (its id is
+        known from the bundle); the day's check-in, which is date-keyed at
+        `users/{userId}/daily_subjective_checkins/{date}` and carries `tissueResponses`; the
+        predecessor's `SessionResponse`, whose id is deterministic
+        (`resp-execution-{executionId}-immediate`) provided the provisional decision record
+        stores that `executionId`; and the provisional decision record itself, which supplies
+        the expected `ReassessmentInputRevision` including
+        `postPredecessorConfirmationRevision`.
+      - **Not addressable, so folded into the aggregate's `revision`** — schedule windows
+        (`users/{userId}/schedule_windows/*`, resolved by query), plan placement, and the
+        performed-facts snapshot. A transaction cannot query, so whichever writer changes
+        one of these must bump the aggregate revision; the claim then detects the change by
+        revision alone. Say so explicitly in the implementation, because the alternative —
+        reading them outside the transaction — silently reintroduces the race.
+      - Tests: one two-tab race per input — predecessor completion, response/tissue edit,
+        check-in edit, window change, placement change — each asserting the second claim
+        recomputes rather than launching on a stale verdict.
     - Step 6a defines that document's shape and the writers that must keep it consistent;
       only *which* document holds it is still open. Recommendation:
       `users/{userId}/daily_recommendations/{date}` — it exists already and already carries a
