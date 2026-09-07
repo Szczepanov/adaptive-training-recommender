@@ -57,6 +57,7 @@ import {
     ANCHOR_HISTORY_CATEGORIES,
     buildOptimizationContext,
     candidateMatchesAnchorRole,
+    materializeEffectiveDose,
     rankCandidates,
     resolveRecoveryStyle,
     resolveTimeCapDoseAdjustment,
@@ -94,11 +95,9 @@ export interface WeekAheadDay {
     dayOffset: number;
     confidence: 'provisional' | 'projected';
     phaseName: string;
-    /** The authored catalog template, unmodified -- coverage/history bookkeeping keys off
-     * its authored identity and duration. When `activeDose` is set, a display consumer
-     * should render that dose's duration instead of the template's own, exactly like
-     * `Recommendation` already does for today's pick; nothing here mutates `template` for
-     * that purpose so credit/history accounting is unaffected by which dose is displayed. */
+    /** Authored catalog identity remains stable for coverage and display. When `activeDose`
+     * is present, the projection ledger materializes that dose before charging fatigue,
+     * objective stimulus, duration, and projected-history cost. */
     template: SessionTemplate;
     mode: 'train' | 'recover';
     rationale: string;
@@ -296,6 +295,21 @@ export function enrichedStimulusProfile(template: SessionTemplate): WorkoutStimu
     return template.stimulusProfile ?? ENRICHED_TEMPLATES_BY_ID.get(template.id)?.stimulusProfile ?? ZERO_STIMULUS;
 }
 
+/** Materialize an authored template into the exact dose the projection ledger should
+ * charge. Enrichment happens before dose scaling so catalog fallback cost/stimulus are
+ * scaled even if the caller passed a sparse template object. */
+export function effectiveTemplateForProjection(
+    template: SessionTemplate,
+    activeDose?: DoseVariation,
+): SessionTemplate {
+    const enriched: SessionTemplate = {
+        ...template,
+        costProfile: template.costProfile ?? enrichedCostProfile(template.id),
+        stimulusProfile: enrichedStimulusProfile(template),
+    };
+    return materializeEffectiveDose(enriched, activeDose);
+}
+
 export interface ProjectedObjectiveCreditInput {
     objectiveId: string;
     earnedCredit: number;
@@ -366,9 +380,6 @@ export function realizedSessionRole(
     return ANCHOR_HISTORY_CATEGORIES.includes(template.category) ? 'anchor' : 'supporting';
 }
 
-/** Apply the same day-specific equipment and environment gates to every planner layer.
- * `eligibleTemplates` only knows standing UserContext; schedule/fixed-activity overrides
- * live in ResolvedAvailability and therefore must be checked explicitly here. */
 function templateFitsResolvedAvailability(
     template: SessionTemplate,
     availability: ReturnType<typeof resolveAvailability>,
@@ -451,15 +462,6 @@ export function resolveWeeklyAnchors(
     return { eventSpecificAnchorDate, qualityAnchorDate };
 }
 
-/**
- * Phase 7A.2 -- the single projected-date evaluation seam.
- *
- * `generateWeekAheadPlan`'s greedy loop and `weeklyAllocation.ts`'s reservation search
- * both go through this function, so there is exactly one availability / phase / fatigue-
- * tier / intensity / injury / spacing path. Copying any of it into the allocator would
- * create a second policy path that drifts from the production hard gates (ADR-0018
- * D-FEASIBILITY).
- */
 export interface ProjectedDatePlanningContext {
     context: UserContext;
     preferences: UserPreferences;
@@ -476,14 +478,9 @@ export interface ProjectedDatePlanningContext {
 }
 
 export interface ProjectedDateState {
-    /** Objective state. Candidate *acceptance* never depends on it -- `rankCandidates`
-     * uses unresolved objectives for benefit only -- so the allocator may safely hold it
-     * frozen at pre-pass time while the greedy loop advances it. */
     microcycle: MicrocycleState;
     externalFatigue: FatigueState;
     projectedHistory: (RecentHistoryEntry | SessionHistoryEntry)[];
-    /** Coverage history is a separate semantic ledger: canonical completed facts plus
-     * hypothetical projected/fixed entries. */
     coverageHistory?: CoverageHistoryEntry[];
 }
 
@@ -496,9 +493,7 @@ export interface ProjectedDateEvaluation {
     fatigueTier: 'train' | 'modify' | 'recover';
     anchorRole: 'event-specific' | 'quality' | null;
     adjacentToAnchor: boolean;
-    /** Survives availability, equipment, phase and environment gating. */
     eligible: SessionTemplate[];
-    /** `eligible` after the projected fatigue ceiling. */
     fatigueGated: SessionTemplate[];
     optimizationContext: OptimizationContext;
     rank(candidates: readonly SessionTemplate[]): RankCandidatesResult;
@@ -609,14 +604,9 @@ export function evaluateProjectedDate(
     };
 }
 
-/** Reason recorded for a template the date-level gates removed before ranking could see
- * it (time budget, equipment, phase or environment). */
 const NOT_ELIGIBLE_ON_DATE = 'NOT_ELIGIBLE_ON_DATE';
-
 const PROJECTED_DATE_OUTCOMES = new WeakMap<ProjectedDateEvaluation, ProjectedDateOutcome>();
 
-/** Project the accepted/rejected identity sets the allocator reasons over, from one
- * evaluation of the shared seam. */
 export function projectedDateOutcomeFrom(evaluation: ProjectedDateEvaluation): ProjectedDateOutcome {
     const memoized = PROJECTED_DATE_OUTCOMES.get(evaluation);
     if (memoized) return memoized;
@@ -812,8 +802,6 @@ export interface ProjectionExposure {
     modality?: SessionTemplate['modality'];
     category?: SessionTemplate['category'];
     durationMin?: number;
-    /** Evidence confidence for projected objective credit. Catalog projections remain exact;
-     * ADR-0019 external-authored event commitments carry inferred confidence. */
     stimulusConfidence?: StimulusConfidence;
 }
 
@@ -904,13 +892,6 @@ export interface FixedActivityStimulusResult {
     exposures: ProjectionExposure[];
 }
 
-/**
- * A fixed activity may reserve time/cost without usable stimulus identity. Objective credit
- * remains identity-scoped: exact catalog links earn exact credit; a transient ADR-0019
- * external-authored event identity supplies known modality/category but keeps inferred
- * confidence; legacy anonymous activities retain the unscoped sentinel and cannot satisfy
- * modality/category-qualified objectives. No title/category heuristic is introduced.
- */
 export function applyFixedActivityStimulusCredit(
     microcycle: MicrocycleState,
     fixedActivities: FixedActivity[],
@@ -1054,8 +1035,9 @@ export function generateWeekAheadPlan(
         earnedCredit: number;
     };
 
-    const creditingObjectivesFor = (template: SessionTemplate): DerivedPlanningCredit[] => {
-        const stimulus = enrichedStimulusProfile(template);
+    const creditingObjectivesFor = (template: SessionTemplate, activeDose?: DoseVariation): DerivedPlanningCredit[] => {
+        const effectiveTemplate = effectiveTemplateForProjection(template, activeDose);
+        const stimulus = enrichedStimulusProfile(effectiveTemplate);
         return getUnresolvedObjectives(microcycle, true).flatMap(objective => {
             const credit = deriveObjectiveCreditFromProfile(objective, stimulus, {}, {
                 modality: template.modality,
@@ -1070,11 +1052,13 @@ export function generateWeekAheadPlan(
     const applyPick = (
         date: string,
         template: SessionTemplate,
-        derivedCredits: DerivedPlanningCredit[] = creditingObjectivesFor(template),
+        activeDose?: DoseVariation,
+        derivedCredits: DerivedPlanningCredit[] = creditingObjectivesFor(template, activeDose),
     ) => {
         const occurrenceKey = `recommendation:${date}`;
         if (appliedProjectionOccurrences.has(occurrenceKey)) return;
         appliedProjectionOccurrences.add(occurrenceKey);
+        const effectiveTemplate = effectiveTemplateForProjection(template, activeDose);
 
         const projected = applyProjectedObjectiveCredits(
             microcycle,
@@ -1095,15 +1079,20 @@ export function generateWeekAheadPlan(
             });
         });
         microcycle = projected.microcycle;
-        externalFatigue = applyCompletedSessionLoad(externalFatigue, date, enrichedCostProfile(template.id), fatigueFusionPolicy);
+        externalFatigue = applyCompletedSessionLoad(
+            externalFatigue,
+            date,
+            effectiveTemplate.costProfile ?? enrichedCostProfile(template.id),
+            fatigueFusionPolicy,
+        );
         projectionExposures.push({
             occurrenceKey,
             date,
-            stimulus: enrichedStimulusProfile(template),
+            stimulus: enrichedStimulusProfile(effectiveTemplate),
             templateId: template.id,
             modality: template.modality,
             category: template.category,
-            durationMin: template.durationMin,
+            durationMin: effectiveTemplate.durationMin,
         });
     };
 
@@ -1131,10 +1120,6 @@ export function generateWeekAheadPlan(
         externalFatigue = applyCompletedSessionLoad(externalFatigue, date, costProfile, fatigueFusionPolicy);
     };
 
-    /** Same-day ranking treats overlay cost as reserved future capacity. Once that day has
-     * been selected/passed, carry the exact same authored cost into external fatigue once,
-     * so the next projected date sees the trip/activity load as prior work rather than
-     * forgetting it at midnight. */
     const applyScheduleOverlayCost = (date: string) => {
         if (appliedScheduleOverlayCostDates.has(date)) return;
         appliedScheduleOverlayCostDates.add(date);
@@ -1144,7 +1129,7 @@ export function generateWeekAheadPlan(
     };
 
     applyFixedActivityStimulus(todayDate);
-    applyPick(todayDate, todayRec.template);
+    applyPick(todayDate, todayRec.template, todayRec.activeDose);
     applyFixedActivityCost(todayDate);
     applyScheduleOverlayCost(todayDate);
 
@@ -1155,7 +1140,7 @@ export function generateWeekAheadPlan(
         microcycle = tomorrowReconciled.microcycle;
         accumulateNewDrops(droppedContributorObjectives, currentlyDroppedPairs, tomorrowReconciled.droppedContributorObjectives);
         applyFixedActivityStimulus(tomorrowDate);
-        const tomorrowCredits = creditingObjectivesFor(tomorrowRec.template);
+        const tomorrowCredits = creditingObjectivesFor(tomorrowRec.template, tomorrowRec.activeDose);
         resultDays.push({
             date: tomorrowDate,
             dayOffset: 1,
@@ -1167,7 +1152,7 @@ export function generateWeekAheadPlan(
             addressesObjectives: tomorrowCredits.map(item => item.objective.title),
             ...(tomorrowRec.activeDose ? { activeDose: tomorrowRec.activeDose, adjustment: tomorrowRec.adjustment } : {}),
         });
-        applyPick(tomorrowDate, tomorrowRec.template, tomorrowCredits);
+        applyPick(tomorrowDate, tomorrowRec.template, tomorrowRec.activeDose, tomorrowCredits);
         applyFixedActivityCost(tomorrowDate);
         applyScheduleOverlayCost(tomorrowDate);
     }
@@ -1188,24 +1173,27 @@ export function generateWeekAheadPlan(
     };
 
     type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected' };
-    const historyEntryFor = (date: string, template: SessionTemplate): ProjectedHistoryEntry => ({
-        date,
-        templateId: template.id,
-        category: template.category,
-        modality: template.modality,
-        role: realizedSessionRole(date, template, anchors),
-        systemicCost: template.systemicCost,
-        lowerBodyCost: template.costProfile?.lowerBody ?? 0,
-        durationMin: template.durationMin,
-        recoveryHours: resolveRecoveryHoursForTemplate(template.id),
-        type: template.title,
-        source: 'projected',
-    });
+    const historyEntryFor = (date: string, template: SessionTemplate, activeDose?: DoseVariation): ProjectedHistoryEntry => {
+        const effectiveTemplate = effectiveTemplateForProjection(template, activeDose);
+        return {
+            date,
+            templateId: template.id,
+            category: template.category,
+            modality: template.modality,
+            role: realizedSessionRole(date, template, anchors),
+            systemicCost: effectiveTemplate.systemicCost,
+            lowerBodyCost: effectiveTemplate.costProfile?.lowerBody ?? 0,
+            durationMin: effectiveTemplate.durationMin,
+            recoveryHours: resolveRecoveryHoursForTemplate(template.id),
+            type: template.title,
+            source: 'projected',
+        };
+    };
 
     const liveProjectedHistory = (): (RecentHistoryEntry | SessionHistoryEntry)[] => [
         ...(seed.trailingHistory ?? []),
-        historyEntryFor(todayDate, todayRec.template),
-        ...resultDays.map(day => historyEntryFor(day.date, day.template)),
+        historyEntryFor(todayDate, todayRec.template, todayRec.activeDose),
+        ...resultDays.map(day => historyEntryFor(day.date, day.template, day.activeDose)),
     ];
 
     const completedCoverageHistory = seed.completedCoverageHistory
@@ -1213,8 +1201,8 @@ export function generateWeekAheadPlan(
     const liveProjectedCoverageHistory = (): CoverageHistoryEntry[] => [
         ...completedCoverageHistory,
         ...resolveCoverageHistory(undefined, [
-            historyEntryFor(todayDate, todayRec.template),
-            ...resultDays.map(day => historyEntryFor(day.date, day.template)),
+            historyEntryFor(todayDate, todayRec.template, todayRec.activeDose),
+            ...resultDays.map(day => historyEntryFor(day.date, day.template, day.activeDose)),
         ]),
     ];
 
@@ -1245,9 +1233,6 @@ export function generateWeekAheadPlan(
                 date: activity.date,
                 cost: fixedActivityCostProfileForDate([activity], activity.date),
             }));
-        // Reservation search can jump over dates that the greedy loop has not committed
-        // yet. Replay overlay load on those intervening dates so allocator feasibility is
-        // evaluated against the same fatigue history the eventual greedy path will build.
         for (
             let cursor = addDaysToLocalDateString(externalFatigue.lastUpdatedDate, 1);
             cursor < date;
@@ -1402,10 +1387,11 @@ export function generateWeekAheadPlan(
             ?? ranked[0] ?? fallbackPick;
 
         const bestBenefit = [...(ranked.length > 0 ? ranked : [{ template: restFallback, benefitScore: 0 }])].sort((a, b) => b.benefitScore - a.benefitScore)[0];
-
-        const pickCredits = creditingObjectivesFor(pick.template);
+        const forecastDoseAdjustment = resolveTimeCapDoseAdjustment(pick.template, evaluation.availability.maxTimeMinutes, fatigueTier === 'modify');
+        const forecastActiveDose = forecastDoseAdjustment?.activeDose;
+        const pickCredits = creditingObjectivesFor(pick.template, forecastActiveDose);
         const addressed = pickCredits.map(item => item.objective.title);
-        applyPick(date, pick.template, pickCredits);
+        applyPick(date, pick.template, forecastActiveDose, pickCredits);
         applyFixedActivityCost(date);
         applyScheduleOverlayCost(date);
 
@@ -1441,7 +1427,6 @@ export function generateWeekAheadPlan(
             );
         }
 
-        const forecastDoseAdjustment = resolveTimeCapDoseAdjustment(pick.template, evaluation.availability.maxTimeMinutes, fatigueTier === 'modify');
         const forecastRationale = forecastDoseAdjustment ? `${pick.rationale} ${forecastDoseAdjustment.adjustment.rationale}` : pick.rationale;
 
         resultDays.push({
