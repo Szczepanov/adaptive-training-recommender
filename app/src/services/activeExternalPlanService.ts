@@ -93,6 +93,15 @@ export interface IntradayBundlePlacementContext {
  * `Home.tsx` only needs to fetch the occurrences (`sessionOccurrenceService
  * .getExternalPlanOccurrencesForDate`) and pass the result through.
  *
+ * `activePlanRef` is required, not optional: `getExternalPlanOccurrencesForDate` returns
+ * every external-plan occurrence for the date regardless of which plan or revision it
+ * belongs to, and a v4 session's `sessionId` is plan-internal, not globally unique -- a
+ * stale occurrence from a superseded revision, or an unrelated imported plan that happens
+ * to reuse the same session id, could otherwise silently apply its `started`/
+ * `existingBinding` to the *current* plan's member of the same id. Only an occurrence
+ * whose `externalPlanRef` matches the active plan's `planId` **and** `revision` is
+ * considered; every other occurrence is skipped, not merged.
+ *
  * `started` is true once the occurrence's execution has actually begun --
  * `active`/`completed`/`abandoned` -- never for `scheduled` (not launched),
  * `missed` (never launched), or `superseded`/`skipped` (already excluded by
@@ -104,10 +113,13 @@ export interface IntradayBundlePlacementContext {
  */
 export function buildIntradayMemberState(
     occurrences: readonly SessionOccurrence[],
+    activePlanRef: { planId: string; revision: number },
 ): NonNullable<IntradayBundlePlacementContext['memberState']> {
     const memberState = new Map<string, { started: boolean; existingBinding?: ResolvedWindowBinding }>();
     for (const occurrence of occurrences) {
         if (!isExternalPlanOccurrence(occurrence)) continue;
+        if (occurrence.externalPlanRef.planId !== activePlanRef.planId
+            || occurrence.externalPlanRef.revision !== activePlanRef.revision) continue;
         const started = occurrence.state === 'active' || occurrence.state === 'completed' || occurrence.state === 'abandoned';
         const windowBinding = occurrence.windowBinding;
         const sessionId = occurrence.externalPlanRef.sessionId;

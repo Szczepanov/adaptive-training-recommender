@@ -440,9 +440,20 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         // member; `started` alone is already real and meaningful today.
         let todaysExternalPlanMemberState: IntradayBundlePlacementContext['memberState'];
         try {
-          const todaysExternalPlanOccurrences = await sessionOccurrenceService.getExternalPlanOccurrencesForDate(userId, input.date);
+          // `getExternalPlanOccurrencesForDate` returns every external-plan occurrence for
+          // the date regardless of plan/revision, and a v4 session's `sessionId` is
+          // plan-internal, not globally unique -- `buildIntradayMemberState` requires the
+          // active plan's identity so a stale or unrelated occurrence sharing a session id
+          // can never silently apply its started/existingBinding to the current plan's
+          // member. No active plan means no bundle to place against, so memberState stays
+          // unset entirely rather than built from an identity that doesn't exist.
+          const todaysExternalPlanOccurrences = activeExternal
+            ? await sessionOccurrenceService.getExternalPlanOccurrencesForDate(userId, input.date)
+            : [];
           if (!isCurrent()) return;
-          todaysExternalPlanMemberState = buildIntradayMemberState(todaysExternalPlanOccurrences);
+          todaysExternalPlanMemberState = activeExternal
+            ? buildIntradayMemberState(todaysExternalPlanOccurrences, { planId: activeExternal.plan.planId, revision: activeExternal.plan.revision })
+            : undefined;
         } catch (err) {
           // A failed read must not silently become "nothing has started" -- that would let
           // D-PLACEMENT re-resolve a member that has actually already launched. Omit
