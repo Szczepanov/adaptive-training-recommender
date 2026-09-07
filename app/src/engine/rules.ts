@@ -24,7 +24,7 @@ import type {
     ScheduleOverlay,
 } from './models';
 import type { ExternalRestDecisionProvenance } from './externalRestProvenance';
-import { TEMPLATES, ENRICHED_TEMPLATES } from './templates';
+import { TEMPLATES, ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID, TEMPLATES_BY_ID } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { buildOptimizationContext, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
 import { addDaysToLocalDateString } from '../utils/localDate';
@@ -62,8 +62,8 @@ function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemp
 }
 
 export function getCanonicalRestTemplate(): SessionTemplate {
-    return ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
-        ?? TEMPLATES.find(template => template.category === 'Rest')
+    return ENRICHED_TEMPLATES_BY_ID.get('rest_01')
+        ?? TEMPLATES_BY_ID.get('rest_01')
         ?? {
             id: 'rest_01',
             category: 'Rest',
