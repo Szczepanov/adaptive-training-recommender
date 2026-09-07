@@ -585,6 +585,28 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
 
             expect(idA).not.toBe(idB);
         });
+
+        it('defaults generation to 0, producing exactly the same id as before this parameter existed (H4 #434 PR 3 step 8, item 2a)', async () => {
+            const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
+            const withoutGeneration = await deterministicExternalPlanOccurrenceId('2026-08-18', ref);
+            const withGenerationZero = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 0);
+            expect(withoutGeneration).toBe(withGenerationZero);
+        });
+
+        it('produces a distinct id for a nonzero recovery generation', async () => {
+            const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
+            const generation0 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 0);
+            const generation1 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 1);
+            const generation2 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 2);
+            expect(new Set([generation0, generation1, generation2]).size).toBe(3);
+        });
+
+        it('is deterministic for the same nonzero generation', async () => {
+            const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
+            const first = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 3);
+            const second = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 3);
+            expect(first).toBe(second);
+        });
     });
 
     describe('transitionOccurrenceState (lifecycle)', () => {

@@ -55,6 +55,18 @@ export interface DailyLedgerAggregate {
     revision: number;
     ceilings: LedgerCeilings;
     reservations: Record<string, DailyLedgerReservation>;
+    /**
+     * H4 (#434) PR 3 plan step 8, item 2a: per-`sessionId` recovery generation counters.
+     * `date` is already this document's own identity, so the key is `sessionId` alone.
+     * A `reject` that transitions a `scheduled` occurrence to `skipped` increments the
+     * counter for that session in the same transaction; a later `pending`/`proceed`
+     * verdict for the same session mints a *new* occurrence identity carrying the current
+     * generation, rather than reactivating the terminal `skipped` document (which #445's
+     * transition table forbids). Absent key means generation 0 -- the original,
+     * pre-recovery occurrence identity `deterministicExternalPlanOccurrenceId` already
+     * produces unchanged, so a session that has never been rejected needs no entry here.
+     */
+    generations?: Record<string, number>;
     /** Presence (not just document existence) is what "seeded" means -- see
      * `hasSeededAggregate`. A partially-written document without this field must still
      * fail closed rather than read as an empty day. */
@@ -196,6 +208,48 @@ export class DailyLedgerAggregateService {
         };
         transaction.set(this.ref(userId, date), next);
         return next;
+    }
+
+    /**
+     * The "reject" row of the plan step 6a transition table, as one combined write: drops
+     * the rejected occurrence's reservation *and* bumps its recovery generation counter,
+     * in a single `transaction.set` (bumping `revision` by exactly one total, matching the
+     * rules' strict +1-per-write enforcement). Deliberately not two separate
+     * `applyReservation`/generation calls -- multiple writes to the same document
+     * reference within one transaction is more than this module needs to rely on when a
+     * single combined write says the same thing unambiguously. The returned generation is
+     * what a later recovery (step 8, item 2a) mints its new occurrence identity with.
+     */
+    rejectReservationAndIncrementGeneration(
+        transaction: Transaction,
+        userId: string,
+        date: string,
+        current: DailyLedgerAggregate,
+        occurrenceId: string,
+        sessionId: string,
+        now = new Date().toISOString(),
+    ): { aggregate: DailyLedgerAggregate; generation: number } {
+        const reservations = { ...current.reservations };
+        delete reservations[occurrenceId];
+        const generation = (current.generations?.[sessionId] ?? 0) + 1;
+        const generations = { ...current.generations, [sessionId]: generation };
+        const next: DailyLedgerAggregate = {
+            ...current,
+            reservations,
+            generations,
+            revision: current.revision + 1,
+            updatedAt: now,
+        };
+        transaction.set(this.ref(userId, date), next);
+        return { aggregate: next, generation };
+    }
+
+    /** The current recovery generation for a session -- 0 if it has never been rejected.
+     * A `pending`/`proceed` recovery after a `reject` mints its new occurrence identity
+     * with this value (already incremented by the `reject` that produced it); it is not
+     * incremented again at recovery time. */
+    currentGeneration(aggregate: DailyLedgerAggregate, sessionId: string): number {
+        return aggregate.generations?.[sessionId] ?? 0;
     }
 }
 

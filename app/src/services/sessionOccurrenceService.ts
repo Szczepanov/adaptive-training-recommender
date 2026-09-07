@@ -62,10 +62,22 @@ export function isValidOccurrenceTransition(from: OccurrenceState, to: Occurrenc
  * Computes a deterministic Firestore document ID for an external-plan occurrence using SHA-256.
  * Ensures concurrent getOrCreate operations resolve to the exact same document ID without
  * character replacement collisions or reserved Firestore identifier issues.
+ *
+ * `generation` (H4 #434 PR 3 plan step 8, item 2a) is the recovery discriminator: a member
+ * rejected earlier in the day and later admissible again (predecessor completed, symptom
+ * resolved, capacity freed) must recover as a *new* occurrence identity rather than
+ * reactivate the terminal `skipped` document (#445's transition table forbids that
+ * transition). `generation` defaults to `0`, which hashes identically to every id already
+ * minted before this parameter existed -- this is a pure additive extension, not a change
+ * to any occurrence identity that already exists in production. `generation` is not
+ * incremented here; the caller reads the current value from
+ * `dailyLedgerAggregateService.currentGeneration` (already bumped by the `reject` that
+ * necessitated the recovery) and passes it in.
  */
 export async function deterministicExternalPlanOccurrenceId(
     date: string,
     ref: ExternalPlanOccurrenceRef,
+    generation = 0,
 ): Promise<string> {
     const raw = JSON.stringify([
         date,
@@ -73,6 +85,7 @@ export async function deterministicExternalPlanOccurrenceId(
         ref.sessionId,
         ref.revision,
         ref.contentHash,
+        ...(generation > 0 ? [generation] : []),
     ]);
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
     const hash = Array.from(new Uint8Array(digest))

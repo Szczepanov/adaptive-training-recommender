@@ -167,4 +167,48 @@ describe('DailyLedgerAggregateService', () => {
             expect(result.reservations['occ-other']).toEqual({ minutes: 20, systemicCost: 0.1, state: 'reserved' });
         });
     });
+
+    describe('currentGeneration and rejectReservationAndIncrementGeneration (H4 #434 PR 3 step 8, item 2a)', () => {
+        it('defaults to generation 0 for a session that has never been rejected', () => {
+            const service = new DailyLedgerAggregateService();
+            expect(service.currentGeneration(aggregate(), 'session-am')).toBe(0);
+        });
+
+        it('drops the reservation and bumps the generation in one combined write', () => {
+            const service = new DailyLedgerAggregateService();
+            const mockTx = { set: vi.fn() };
+            const current = aggregate({
+                revision: 2,
+                reservations: { 'occ-rejected': { minutes: 45, systemicCost: 0.3, state: 'reserved' } },
+            });
+            const { aggregate: result, generation } = service.rejectReservationAndIncrementGeneration(
+                mockTx as never, 'u1', '2026-08-18', current, 'occ-rejected', 'session-am',
+            );
+            expect(generation).toBe(1);
+            expect(result.revision).toBe(3);
+            expect(result.reservations).not.toHaveProperty('occ-rejected');
+            expect(result.generations).toEqual({ 'session-am': 1 });
+            expect(mockTx.set).toHaveBeenCalledTimes(1);
+        });
+
+        it('increments an existing generation rather than resetting it', () => {
+            const service = new DailyLedgerAggregateService();
+            const mockTx = { set: vi.fn() };
+            const current = aggregate({ generations: { 'session-am': 2 } });
+            const { generation } = service.rejectReservationAndIncrementGeneration(
+                mockTx as never, 'u1', '2026-08-18', current, 'occ-rejected-again', 'session-am',
+            );
+            expect(generation).toBe(3);
+        });
+
+        it('never touches another session\'s generation', () => {
+            const service = new DailyLedgerAggregateService();
+            const mockTx = { set: vi.fn() };
+            const current = aggregate({ generations: { 'session-pm': 1 } });
+            const { aggregate: result } = service.rejectReservationAndIncrementGeneration(
+                mockTx as never, 'u1', '2026-08-18', current, 'occ-am', 'session-am',
+            );
+            expect(result.generations).toEqual({ 'session-pm': 1, 'session-am': 1 });
+        });
+    });
 });
