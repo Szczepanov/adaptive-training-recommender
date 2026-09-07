@@ -9,7 +9,6 @@ import {
     runTransaction,
     type Firestore,
     type Transaction,
-    type WriteBatch,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DataState } from '../engine/dataState';
@@ -20,11 +19,20 @@ import {
     type ManualOccurrenceRef,
     type ExternalPlanOccurrenceRef,
     type ExternalPlanSessionOccurrence,
+    isExternalPlanOccurrence,
 } from '../sessions/models';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
 
 /** ACTIVE_OCCURRENCE_STATES excludes terminal/superseded states from "what governs today". */
 const ACTIVE_OCCURRENCE_STATES: ReadonlySet<SessionOccurrence['state']> = new Set(['scheduled', 'active']);
+
+/**
+ * H4 (#434) PR 3, Phase 1 step 4: a rejected member (`scheduled -> skipped`, plan step 8)
+ * or a re-imported revision's predecessor (`scheduled -> superseded`, plan step 4b) has
+ * never governed today's decision and never will again -- neither reserves capacity nor
+ * is offered for adjudication. Both are excluded from the bundle-member query below.
+ */
+const BUNDLE_QUERY_EXCLUDED_STATES: ReadonlySet<SessionOccurrence['state']> = new Set(['superseded', 'skipped']);
 
 /**
  * Valid occurrence lifecycle transitions.
@@ -271,6 +279,25 @@ export class SessionOccurrenceService {
     }
 
     /**
+     * Every external-plan occurrence on `date`, ordered by `placementOrder` (the bundle's
+     * `intraday.order`) then `occurrenceId` for a deterministic tie-break. `superseded` and
+     * `skipped` are excluded (see `BUNDLE_QUERY_EXCLUDED_STATES`) -- unlike
+     * `getAdditionalOccurrencesForDate`, every other state is included, because callers
+     * need `completed`/`abandoned` history too: predecessor-completion checks (D-REASSESS)
+     * and the reject-against-an-existing-occurrence branch (plan step 8) both read states
+     * this filter would otherwise hide.
+     */
+    async getExternalPlanOccurrencesForDate(userId: string, date: string): Promise<ExternalPlanSessionOccurrence[]> {
+        const occurrences = await this.getOccurrencesForDate(userId, date);
+        return occurrences
+            .filter(isExternalPlanOccurrence)
+            .filter(item => !BUNDLE_QUERY_EXCLUDED_STATES.has(item.state))
+            .sort((a, b) =>
+                (a.placementOrder ?? 0) - (b.placementOrder ?? 0)
+                || a.occurrenceId.localeCompare(b.occurrenceId));
+    }
+
+    /**
      * ADR-0036 (H4) D-REASSESS: atomically claim a scheduled occurrence for launch.
      * Prevents duplicate/concurrent requests from launching the same occurrence twice
      * or claiming an occurrence that has already transitioned to active/terminal.
@@ -356,44 +383,6 @@ export class SessionOccurrenceService {
             transaction.set(ref, transitioned);
         });
         return transitioned!;
-    }
-
-    /**
-     * Reads the occurrence document, validates the state transition, and queues the state update
-     * into the caller's WriteBatch so that occurrence and execution updates commit atomically.
-     */
-    async queueOccurrenceTransition(
-        userId: string,
-        occurrenceId: string,
-        nextState: OccurrenceState,
-        batch: WriteBatch,
-        now = new Date().toISOString(),
-    ): Promise<SessionOccurrence> {
-        const ref = this.occurrenceRef(userId, occurrenceId);
-        const snap = await getDoc(ref);
-        if (!snap.exists()) {
-            throw new Error(`Occurrence ${occurrenceId} not found.`);
-        }
-        const parsed = parseSessionOccurrenceDocument(snap.data(), ref.path);
-        if (parsed.status !== 'AVAILABLE') {
-            throw new Error(`Occurrence ${occurrenceId} could not be parsed (${parsed.status}).`);
-        }
-        const current = parsed.data;
-        if (current.state === nextState) {
-            return current;
-        }
-        if (!isValidOccurrenceTransition(current.state, nextState)) {
-            throw new Error(
-                `Cannot transition occurrence ${occurrenceId} from '${current.state}' to '${nextState}'.`,
-            );
-        }
-        const transitioned: SessionOccurrence = {
-            ...current,
-            state: nextState,
-            updatedAt: now,
-        } as SessionOccurrence;
-        batch.set(ref, transitioned);
-        return transitioned;
     }
 }
 

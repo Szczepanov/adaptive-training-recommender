@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { WriteBatch } from 'firebase/firestore';
 import type { ExternalPlanSessionOccurrence, ManualOccurrenceRef, SessionOccurrence } from '../sessions/models';
 
 const firestore = vi.hoisted(() => ({
@@ -578,32 +577,6 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             ).rejects.toThrow("Cannot transition occurrence occ-1 from 'completed' to 'active'.");
 
             expect(mockTx.set).not.toHaveBeenCalled();
-        });
-
-        it('queueOccurrenceTransition queues state change into batch starting from scheduled to completed', async () => {
-            const scheduled = occurrenceDoc({ occurrenceId: 'occ-1', state: 'scheduled' });
-            firestore.getDoc.mockResolvedValue({
-                exists: () => true,
-                data: () => scheduled,
-            });
-            const mockBatch = {
-                set: vi.fn(),
-            };
-
-            const service = new SessionOccurrenceService();
-            const result = await service.queueOccurrenceTransition(
-                'u1',
-                'occ-1',
-                'completed',
-                mockBatch as unknown as WriteBatch,
-                '2026-08-18T12:00:00Z',
-            );
-
-            expect(result.state).toBe('completed');
-            expect(mockBatch.set).toHaveBeenCalledWith(
-                expect.anything(),
-                expect.objectContaining({ state: 'completed', updatedAt: '2026-08-18T12:00:00Z' }),
-            );
         });
     });
 });
