@@ -376,6 +376,11 @@ parameter order on `queueOccurrenceTransition`. What remains:
 
 ### Phase 3 — Surface non-primary members as `additionalSessions`
 
+> **Handover:** steps 1-4a-4b-6-6a-7 and step 8's item 2a are delivered (#448, #450, #451).
+> See [`h4-434-pr3-phase3-handover.md`](./h4-434-pr3-phase3-handover.md) for exactly what
+> remains in steps 8/9, the current signature of every primitive to compose, and the traps
+> already found and fixed along the way.
+
 8. **Adjudicate bundle members** (`app/src/components/Home.tsx`, after `resolveIntradayBundlePlacement`)
    - Action: for a `placed` proposal, take every binding after `bindings[0]` (the primary,
      already handled at `Home.tsx:487`), resolve its v4 session, and for each:
