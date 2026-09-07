@@ -297,7 +297,7 @@ export function normalizeHistory(
         // semantics unresolved, and the same history feeds rolling-hard/intensity/lower-body
         // thresholds. Preserve the authored catalog load for projected policy history until
         // those thresholds are changed under their own policy/version/alignment review.
-        const projectedTemplate = entry.source === 'projected' && entry.templateId
+        const projectedTemplate = 'source' in entry && entry.source === 'projected' && entry.templateId
             ? ENRICHED_TEMPLATES_BY_ID.get(entry.templateId)
             : undefined;
         const systemicCost = projectedTemplate?.systemicCost ?? entry.systemicCost ?? 0;
