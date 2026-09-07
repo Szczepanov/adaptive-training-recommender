@@ -6,6 +6,7 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 - **User Scoping**: Ingestion output path MUST be `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`. Never write `"default_user"` documents.
 - **Timezone**: Dates MUST be computed in `Europe/Warsaw` timezone (`local_today()` in Python, `getLocalDateString()` in TS). Avoid UTC `.toISOString().split('T')[0]` for calendar dates.
 - **Step Semantics**: `totalSteps` represents previous completed day (`D - 1`). Baselines and activity-deducted ambient surges feed `fatigue.ts`.
+- **Knowledge Lineage**: Before proposing or changing any engine threshold, weight, cadence or policy constant, check `app/src/knowledge/knowledgeCoverage.ts` for an existing coverage item and `sportsKnowledgeRegistry.ts` for existing claims — the answer, or an explicit statement that the evidence does not support one, is often already registered. New decision-authority rules require a claim, a coverage item and a policy-alignment test (ADR-0033). The registry is invisible exactly when it matters most: you are reading a bare `0.40` in `optimizer.ts`, and nothing there says an alignment-tested claim owns it.
 - **Security**: Never commit credentials, `.garth` token directories, `.env` files, or raw health JSON logs.
 
 ## Essential Development Commands
@@ -59,6 +60,8 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 ---
 
 ## Key Code Locations
+- `AGENTS.md`: **Authoritative package map** — the file-by-file index for everything not listed below. This section is a shortlist, not an inventory; check `AGENTS.md` before concluding a capability does not exist.
+- `app/src/knowledge/`: Sports knowledge registry (ADR-0033) — scientific claims, product-policy claims and their evidence lineage. `knowledgeCoverage.ts` inventories every decision-authority rule in the engine with its classification, coverage state and research priority; `*PolicyAlignment.test.ts` assert registered claims match implemented constants.
 - `src/garmin_sync/`: Core Python Garmin ingestion package.
 - `scripts/bootstrap_garmin_tokens.py`: Garmin OAuth token bootstrap utility.
 - `app/src/engine/`: Core adaptive engine modules (`rules.ts`, `schedule.ts`, `periodization.ts`, `microcycle.ts`, `fatigue.ts`, `optimizer.ts`).
