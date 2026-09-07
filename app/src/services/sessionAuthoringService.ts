@@ -1,6 +1,7 @@
 import type { SessionDefinition, ExecutionPrescription, SessionReferenceBinding } from '../sessions/models';
 import type { PreparedSessionLaunch } from '../sessions/sessionLaunch';
 import type { WorkoutPrescription } from '../workouts/models';
+import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 import { validateSessionDefinition } from '../sessions/validation';
 import { adaptCatalogPrescriptionToSessionDefinition, createExecutionPrescriptionFromCatalog } from '../sessions/catalogSessionAdapter';
 import { executionPrescriptionService } from './executionPrescriptionService';
@@ -143,6 +144,85 @@ export async function prepareAuthoredOccurrenceLaunch(
         binding: {
             sessionSource: source,
             occurrenceId,
+            prescriptionHash,
+        },
+    };
+}
+
+/**
+ * Freezes the execution-prescription snapshot for a v4 external-plan session (ADR-0036
+ * H4). Mirrors prepareCatalogSessionLaunch's shape: no session_occurrences record --
+ * the immutable authored source is already identified by
+ * (planId, revision, sessionId, contentHash), while the recommendation/execution carries
+ * the date separately. Target-event sessions are deliberately rejected: rules.ts treats
+ * them as fixed-activity/advisory inputs rather than executable primary recommendations.
+ *
+ * Idempotent and safe to call every time an executable external-plan recommendation is
+ * composed: `executionPrescriptionService.savePrescription` no-ops when the same
+ * content-addressed hash is already stored.
+ */
+export async function prepareExternalPlanSessionLaunch(
+    userId: string,
+    externalPlan: {
+        planId: string;
+        revision: number;
+        contentHash: string;
+        session: ExternalPlanSessionV4;
+    },
+    summaryOverride?: string,
+    now = new Date().toISOString(),
+): Promise<PreparedSessionLaunch> {
+    if (externalPlan.session.isEvent) {
+        throw new Error('External-plan target events are advisory fixed-activity inputs and cannot be launched as primary sessions.');
+    }
+
+    const definition = externalPlan.session.definition;
+    // Defense in depth: already validated at import time (validateExternalSessionV2,
+    // reused unchanged by v4), but every other launch path re-validates too.
+    const validation = validateSessionDefinition(definition);
+    if (!validation.ok) {
+        throw new Error(validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('\n'));
+    }
+
+    const definitionHash = await hashSessionDefinition(definition);
+    const sessionSource: Extract<SessionReferenceBinding['sessionSource'], { kind: 'external_plan' }> = {
+        kind: 'external_plan',
+        planId: externalPlan.planId,
+        revision: externalPlan.revision,
+        sessionId: externalPlan.session.id,
+        contentHash: externalPlan.contentHash,
+    };
+
+    const effectiveSummary = summaryOverride ?? definition.summary;
+    const unsignedPrescription: ExecutionPrescription = {
+        schemaVersion: 1,
+        prescriptionHash: '',
+        sessionSource,
+        definitionHash,
+        blocks: definition.blocks,
+        displayMetadata: {
+            title: definition.title,
+            ...(effectiveSummary !== undefined ? { summary: effectiveSummary } : {}),
+            intent: definition.intent,
+            ...(definition.dominantModality !== undefined ? { dominantModality: definition.dominantModality } : {}),
+            ...(definition.duration !== undefined ? { duration: definition.duration } : {}),
+        },
+        createdAt: now,
+    };
+
+    // Note: hashExecutionPrescription delegates to canonicalExecutionPrescriptionJson,
+    // which explicitly omits createdAt (ADR-0023 D-MSNAP) so that identical sessions produce
+    // identical content-addressed hashes regardless of invocation timestamp.
+    const prescriptionHash = await hashExecutionPrescription(unsignedPrescription);
+    await executionPrescriptionService.savePrescription(userId, {
+        ...unsignedPrescription,
+        prescriptionHash,
+    });
+
+    return {
+        definition,
+        binding: {
+            sessionSource,
             prescriptionHash,
         },
     };
