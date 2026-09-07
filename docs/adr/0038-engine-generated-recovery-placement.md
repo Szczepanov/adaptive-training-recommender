@@ -45,7 +45,8 @@ even when the active block's objectives do not mention it
 Two deliberate limits keep it from ever placing a day:
 
 1. `deriveRequiredRoleOccurrences` filters it out, so the weekly allocator never reserves a
-   date for it ([`weeklyAllocation.ts:140`](../../app/src/engine/weeklyAllocation.ts));
+   date for it ([`weeklyAllocation.ts:140`](../../app/src/engine/weeklyAllocation.ts)) —
+   this filter implements an explicit ADR-0018 decision, not an incidental omission;
 2. `coverageNeedTierForTemplate` classifies it as deferred support, so an unmet recovery
    minimum ranks at tier 2 and loses to any tier 0/1 candidate
    ([`coverage.ts:519`](../../app/src/engine/coverage.ts)).
@@ -185,10 +186,12 @@ middle ground.
 Remove the `weeklyAllocation.ts:140` filter so the allocator reserves a date for recovery
 like any other required role.
 
-**Rejected as insufficient alone.** It has no effect without a plan definition, which is
-the failing case. It also risks the outcome the filter was added to prevent: recovery
-competing for an authored hard role's nominated date. Retained as a *component* of the
-decision below, not as the decision.
+**Rejected.** Three reasons, in increasing order of decisiveness. It has no effect without
+a plan definition, which is the failing case. It risks the outcome the filter was added to
+prevent: recovery competing for an authored hard role's nominated date. And ADR-0018
+already decided the point — "`recovery_or_rest` remains satisfied by the existing coverage
+ledger and recovery policy; it does not reserve a discretionary training date." Adopting
+Option C would require overturning an accepted ADR, which this one does not propose to do.
 
 ### Option D — A plan-independent recovery requirement with deadline escalation
 
@@ -202,14 +205,75 @@ Adopt **Option D**.
 ### Requirement model
 
 - A baseline recovery requirement is seeded for every athlete, independent of
-  `PlanDefinition`. Where a plan definition exists, the authored `recovery_or_rest`
-  requirement continues to be the authority and is not duplicated.
+  `PlanDefinition`.
+- Deduplication is against an **active authored `recovery_or_rest` requirement**, not
+  against the presence of a `PlanDefinition`. `buildCoverageState` also returns an empty
+  state when a plan definition exists but the date falls outside any block, or the
+  descriptor cannot be resolved. Keying on plan presence would suppress the baseline
+  requirement in exactly those cases while no authored requirement exists to replace it.
+  Where an active authored requirement is present it remains the authority and the
+  baseline is not seeded.
 - The requirement uses the existing `WeeklyCoverageRequirement` shape — a rolling
   seven-day window and a minimum session count — so it participates in the ranking path
   already built rather than introducing a parallel one.
 - Satisfying exposures are the ones that already carry the `recovery_or_rest` coverage key.
-  An ADR-0035 authored rest day satisfies it. A same-day athlete override that replaces
-  rest with training does not.
+  A same-day athlete override that replaces rest with training does not satisfy it.
+
+### How an ADR-0035-authored rest day satisfies it
+
+ADR-0016 permits coverage only through explicit authored identity, and ADR-0035 defines
+`restDays` as a plan-level directive that is deliberately *not* a session occurrence. The
+two need an explicit bridge, or the engine can place generated recovery on a date the plan
+already closed to training.
+
+The directive **materializes a `recovery_or_rest` coverage exposure** on its resolved
+plan-local date; it is not counted by a second, parallel path. That keeps ADR-0016's
+authored-identity rule intact, gives the exposure the same shape as any other coverage
+credit, and makes the requirement satisfied by construction on an authored rest date rather
+than by a special case in the ranking path.
+
+Two consequences follow, and both are intended:
+
+- an authored rest date cannot also attract generated recovery, because the requirement is
+  already met;
+- an ADR-0035 override (`athleteOverridesAuthoredRest`) removes the materialized exposure
+  along with the rest, so the requirement becomes unmet again and normal placement resumes.
+
+The materialized exposure must carry the directive's provenance, so audit can distinguish
+authored rest from engine-placed recovery. It must not be attributed to a template or
+workout the plan did not author.
+
+### Allocation, viability and miss reporting
+
+ADR-0018 already rules on this and this ADR does **not** overturn it:
+
+> `recovery_or_rest` remains satisfied by the existing coverage ledger and recovery policy;
+> it does not reserve a discretionary training date.
+
+So the baseline requirement is **not** promoted to a `RequiredRoleOccurrence` and takes no
+allocator reservation. The `deriveRequiredRoleOccurrences` filter stays. Escalation is a
+change to ranking order only.
+
+D-SUPPORT already covers the resulting selection, and the escalated recovery is subordinate
+to it:
+
+> On a train/modify-tier unreserved date, a discretionary Rest selection consumes the date
+> and therefore receives the same stateful viability proof as any supporting selection. It
+> is rejected when it would remove the last proven required-role allocation.
+
+An escalated tier-1 recovery candidate on a train- or modify-tier date is therefore still
+subject to that proof and may be rejected by it. In a true recover tier, ADR-0018's
+Rest-first rule already outranks the proof and nothing here changes that.
+
+Because recovery takes no reservation, D-MISS does not report it: an unmet recovery
+requirement produces no `WeeklyRoleAllocationReport` outcome. That is consistent, but it
+means an unfulfilled recovery requirement is currently invisible. This ADR requires a
+separate diagnostic for it (see Observability) rather than forcing recovery into the
+reservation model to inherit D-MISS.
+
+**Required acceptance test:** a plan-less scenario in which supporting work would otherwise
+consume the only remaining recovery opportunity, proving that escalation occurs before the
+window closes and that D-SUPPORT still governs the selection.
 
 ### Ranking authority
 
@@ -218,8 +282,20 @@ Adopt **Option D**.
 - When the days remaining in the window are no more than the still-unmet minimum, the
   requirement escalates to **tier 1**. This mirrors the existing overdue-hard-role repair
   pattern in `coverageNeedTierForTemplate`.
-- It never escalates to tier 0. Tier 0 is date-level programming authority reserved for a
-  nominated anchor, and recovery must not be able to steal an authored anchor date.
+- It never escalates to tier 0. Within the ADR-0016 coverage-need ordering that
+  `coverageNeedTierForTemplate` implements, tier 0 is reserved for a candidate matching the
+  role nominated for that date, so recovery must not be able to displace a nominated anchor
+  through the coverage tier.
+
+  This is a statement about the coverage-need ordering, not about ADR-0011. ADR-0011's
+  "anchors nudge; they do not command" is scoped to its own three post-gate modifiers —
+  the ×1.35 role boost, the ×0.3 adjacency suppression and the variety tie-break — which
+  are multipliers and tie-breaks applied after hard gates. The coverage-need tier is a
+  separate, later mechanism introduced by ADR-0016/ADR-0018 and is a lexicographic sort
+  key, not a multiplier. Both statements are true of their own mechanism, and nothing here
+  changes either. The `coverage.ts` comment describing tier 0 as "date-level programming
+  authority" is loose wording for a ranking key and would be better re-scoped when that
+  function is next touched.
 - Every hard safety, clinical, availability, equipment and readiness gate continues to run
   before this ordering participates, unchanged.
 
@@ -238,6 +314,10 @@ The requirement and its escalation must be visible before they are trusted:
 
 - the decision trace records the recovery requirement's state and whether escalation
   applied on the evaluated date;
+- an unmet recovery requirement is reported explicitly. Because recovery takes no allocator
+  reservation it is invisible to D-MISS, so it needs its own diagnostic rather than a
+  silent absence — including whether the window closed unfulfilled, and whether D-SUPPORT
+  rejected an escalated recovery candidate;
 - the simulation harness reports recovery placement as a metric, not only as a pass/fail
   invariant, so a future change that erodes it is measurable rather than binary;
 - `restOrRecoveryDayCount > 0` remains asserted, but becomes a consequence of an enforced
@@ -308,11 +388,14 @@ The requirement and its escalation must be visible before they are trusted:
 
 This ADR is a decision, not an implementation plan. When implemented:
 
-- `buildCoverageState`'s early return for a missing plan definition is the seam to change,
-  not the ranking function — the requirement must exist before it can be ranked.
-- The `weeklyAllocation.ts:140` filter should be revisited at the same time (Option C as a
-  component): with deadline escalation in the ranking path, an allocator reservation for
-  recovery may be unnecessary, and adding both at once risks double-placement.
+- `buildCoverageState`'s early returns are the seam to change, not the ranking function —
+  the requirement must exist before it can be ranked. Note there are several early returns,
+  not one: a missing plan definition, a date outside every block, and an unresolvable
+  descriptor all produce an empty state, and the baseline requirement must survive all of
+  them.
+- The `weeklyAllocation.ts:140` filter stays. It implements ADR-0018's decision that
+  `recovery_or_rest` does not reserve a discretionary training date, and this ADR places
+  recovery through ranking escalation instead.
 - No change to `materializeEffectiveDose`, the fatigue half-lives, or cost weights is
   implied or authorized by this ADR.
 
