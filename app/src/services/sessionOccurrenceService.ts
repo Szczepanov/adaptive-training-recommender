@@ -57,7 +57,13 @@ export async function deterministicExternalPlanOccurrenceId(
     date: string,
     ref: ExternalPlanOccurrenceRef,
 ): Promise<string> {
-    const raw = `${date}:${ref.planId}:${ref.sessionId}:${ref.revision}:${ref.contentHash}`;
+    const raw = JSON.stringify([
+        date,
+        ref.planId,
+        ref.sessionId,
+        ref.revision,
+        ref.contentHash,
+    ]);
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
     const hash = Array.from(new Uint8Array(digest))
         .map(byte => byte.toString(16).padStart(2, '0'))
@@ -204,6 +210,7 @@ export class SessionOccurrenceService {
     /**
      * Idempotently retrieves an existing external-plan occurrence for (userId, date, planId, sessionId, revision, contentHash),
      * or schedules a new one with a deterministic occurrenceId if not yet present.
+     * Transactionally reads and creates to prevent concurrent double-creations and permission errors on Firestore updates.
      */
     async getOrCreateExternalPlanOccurrence(
         userId: string,
@@ -214,15 +221,32 @@ export class SessionOccurrenceService {
     ): Promise<SessionOccurrence> {
         const deterministicId = await deterministicExternalPlanOccurrenceId(date, externalPlanRef);
         const ref = this.occurrenceRef(userId, deterministicId);
-        const snap = await getDoc(ref);
-        if (snap.exists()) {
-            const parsed = parseSessionOccurrenceDocument(snap.data(), ref.path);
-            if (parsed.status !== 'AVAILABLE') {
-                throw new Error(`External plan occurrence ${deterministicId} exists but could not be parsed (${parsed.status}).`);
+        let result: SessionOccurrence | null = null;
+        await runTransaction(this.db, async transaction => {
+            const snap = await transaction.get(ref);
+            if (snap.exists()) {
+                const parsed = parseSessionOccurrenceDocument(snap.data(), ref.path);
+                if (parsed.status !== 'AVAILABLE') {
+                    throw new Error(`External plan occurrence ${deterministicId} exists but could not be parsed (${parsed.status}).`);
+                }
+                result = parsed.data;
+                return;
             }
-            return parsed.data;
-        }
-        return this.scheduleExternalPlanOccurrence(userId, date, externalPlanRef, placementOrder, now, deterministicId);
+            const occurrence: ExternalPlanSessionOccurrence = {
+                userId,
+                occurrenceId: deterministicId,
+                date,
+                authority: 'external_plan',
+                externalPlanRef,
+                state: 'scheduled',
+                ...(placementOrder !== undefined ? { placementOrder } : {}),
+                createdAt: now,
+                updatedAt: now,
+            };
+            transaction.set(ref, occurrence);
+            result = occurrence;
+        });
+        return result!;
     }
 
     /** The occurrence, if any, currently claiming to replace `date`'s recommendation.

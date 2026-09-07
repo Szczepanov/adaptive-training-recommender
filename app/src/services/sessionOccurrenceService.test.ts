@@ -351,7 +351,7 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             );
         });
 
-        it('getOrCreateExternalPlanOccurrence returns existing occurrence if document exists at deterministic ID', async () => {
+        it('getOrCreateExternalPlanOccurrence returns existing occurrence transactionally if document exists at deterministic ID', async () => {
             const existing = {
                 userId: 'u1',
                 occurrenceId: 'ext_2026-08-18_0123456789abcdef01234567',
@@ -362,22 +362,30 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
                 createdAt: '2026-08-18T00:00:00Z',
                 updatedAt: '2026-08-18T00:00:00Z',
             };
-            firestore.getDoc.mockResolvedValue({
-                exists: () => true,
-                data: () => existing,
-                ref: { path: 'x' },
-            });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => existing,
+                    ref: { path: 'users/u1/session_occurrences/ext_2026-08-18_0123456789abcdef01234567' },
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
 
             const service = new SessionOccurrenceService();
             const result = await service.getOrCreateExternalPlanOccurrence('u1', '2026-08-18', extPlanRef);
 
             expect(result.occurrenceId).toBe('ext_2026-08-18_0123456789abcdef01234567');
             expect(result.state).toBe('scheduled');
-            expect(firestore.setDoc).not.toHaveBeenCalled();
+            expect(mockTx.set).not.toHaveBeenCalled();
         });
 
-        it('getOrCreateExternalPlanOccurrence creates a new occurrence with deterministic ID if none exists', async () => {
-            firestore.getDoc.mockResolvedValue({ exists: () => false });
+        it('getOrCreateExternalPlanOccurrence transactionally creates a new occurrence with deterministic ID if none exists', async () => {
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({ exists: () => false }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
 
             const service = new SessionOccurrenceService();
             const result = await service.getOrCreateExternalPlanOccurrence('u1', '2026-08-18', extPlanRef);
@@ -385,7 +393,7 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             expect(result.authority).toBe('external_plan');
             expect(result.state).toBe('scheduled');
             expect(result.occurrenceId).toMatch(/^ext_2026-08-18_[a-f0-9]{24}$/);
-            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+            expect(mockTx.set).toHaveBeenCalledTimes(1);
         });
     });
 
@@ -413,6 +421,23 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             expect(id1).toBe(id3);
             expect(id1).not.toBe(id2);
             expect(id1).toMatch(/^ext_2026-08-18_[a-f0-9]{24}$/);
+        });
+
+        it('produces distinct IDs for colon-containing identifiers that would otherwise collide', async () => {
+            const idA = await deterministicExternalPlanOccurrenceId('2026-08-18', {
+                planId: 'plan:part1',
+                sessionId: 'part2',
+                revision: 1,
+                contentHash: 'a'.repeat(64),
+            });
+            const idB = await deterministicExternalPlanOccurrenceId('2026-08-18', {
+                planId: 'plan',
+                sessionId: 'part1:part2',
+                revision: 1,
+                contentHash: 'a'.repeat(64),
+            });
+
+            expect(idA).not.toBe(idB);
         });
     });
 
