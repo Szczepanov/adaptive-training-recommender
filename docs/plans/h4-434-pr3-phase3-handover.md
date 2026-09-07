@@ -117,14 +117,19 @@ Conflating these breaks retries or launches:
   ambiguous-acknowledgement retry (which re-evaluates against pre-reservation inputs) will either
   derive a different decision ID or fail `decisionRecordsMatch` (which compares `reassessmentInputRevision`
   equality) and throw a collision error on an append-only store.
-- However, creating the target's reservation in the same transaction increments `DailyLedgerAggregate.revision`.
+- Furthermore, the post-reservation revision is not always `pre-reservation + 1`: if the date had no
+  prior aggregate, `seedIfAbsent` creates the document at `revision: 1`, and the subsequent
+  `applyReservation` bumps it to `revision: 2`. Rather than calculating or guessing the post-reservation
+  value, the transaction's final `applyReservation` call returns the updated `DailyLedgerAggregate`
+  directly.
+- Creating the target's reservation in the same transaction increments `DailyLedgerAggregate.revision`.
   If Phase 4 step 11's claim staleness check compared the current aggregate against the pre-reservation
   revision, it would reject the launch on its own reservation write.
-- **Resolution for implementation:** Keep `reassessmentInputRevision` as the stable pre-reservation input
-  fingerprint used for verdict evaluation, deterministic ID derivation, and retry matching. Store the expected
-  post-reservation `ledgerRevision` separately (or define an explicit match projection in `decisionRecordsMatch`
-  that handles the post-reservation delta), so retries converge cleanly while step 11 still has an authoritative
-  post-reservation baseline to detect subsequent concurrent writers.
+- **Resolution for implementation:** Keep `reassessmentInputRevision.ledgerRevision` unchanged as the
+  stable pre-reservation input fingerprint used for verdict evaluation, deterministic ID derivation, and
+  retry matching. Capture the updated aggregate returned by the transaction's final `applyReservation` write,
+  and persist its transaction-produced `revision` (as a separate expected post-reservation ledger revision,
+  e.g. `postReservationLedgerRevision: string`) for Phase 4 step 11's claim staleness validation.
 
 ## Where this plugs into `Home.tsx`
 

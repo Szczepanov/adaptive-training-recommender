@@ -470,17 +470,17 @@ parameter order on `queueOccurrenceTransition`. What remains:
      with `status: 'provisional'` via `saveIntradayDecision` **before** the binding is
      exposed, carrying the `ReassessmentInputRevision` the verdict was computed against.
    - **Separate the decision-input revision from the post-reservation ledger revision.**
-     These differ by exactly one increment and conflating them breaks retries or launches:
-     step 8 evaluates the verdict against pre-reservation inputs (with the target's own
-     reservation excluded), so `deterministicIntradayDecisionId` and `decisionRecordsMatch`
-     must be derived from the stable decision-input `ReassessmentInputRevision` to preserve
-     idempotent retry convergence. However, creating the target's reservation in the same
-     transaction bumps the aggregate revision (step 6a). If step 11's claim check compared
-     the post-decision aggregate against the pre-reservation revision, it would fail as
-     stale on first launch. Therefore, store the expected post-reservation ledger revision
-     explicitly (or project it cleanly) for step 11's staleness gate, while keeping the
-     decision-input revision stable so retries derive the identical decision ID and pass
-     `decisionRecordsMatch` without collision errors.
+     Conflating these breaks retries or launches: step 8 evaluates the verdict against
+     pre-reservation inputs (with the target's own reservation excluded), so
+     `deterministicIntradayDecisionId` and `decisionRecordsMatch` must be derived from the
+     stable decision-input `ReassessmentInputRevision` to preserve idempotent retry
+     convergence. Note that the post-reservation revision is not always `pre-reservation + 1`:
+     if the aggregate was absent, `seedIfAbsent` creates at `revision: 1` and `applyReservation`
+     increments to `revision: 2`. The transaction's final `applyReservation` write returns the
+     updated `DailyLedgerAggregate` directly. Persist this transaction-produced `revision`
+     separately for Phase 4 step 11's staleness gate, while keeping
+     `reassessmentInputRevision.ledgerRevision` unchanged so retries derive the identical
+     decision ID and pass `decisionRecordsMatch` without collision errors.
    - Test: adjudicate `proceed` and claim immediately, with nothing else touching the day —
      the claim must succeed. A failure here means the self-invalidation above is present.
    - Why this is not optional: step 11's claim compares the *current* ledger revision
