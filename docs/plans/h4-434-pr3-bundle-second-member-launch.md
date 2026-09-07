@@ -376,7 +376,7 @@ parameter order on `queueOccurrenceTransition`. What remains:
 
 ### Phase 3 — Surface non-primary members as `additionalSessions`
 
-> **Handover:** steps 1-4a-4b-6-6a-7 and step 8's item 2a are delivered (#448, #450, #451).
+> **Handover:** steps 1-4a-4b-6-6a-7 and step 8's item 2a are delivered and merged on `main` (#448, #450, #451).
 > See [`h4-434-pr3-phase3-handover.md`](./h4-434-pr3-phase3-handover.md) for exactly what
 > remains in steps 8/9, the current signature of every primitive to compose, and the traps
 > already found and fixed along the way.
@@ -401,10 +401,12 @@ parameter order on `queueOccurrenceTransition`. What remains:
         from an earlier load whose verdict has since flipped, what happens depends on the
         state it is in:
         - `scheduled` → transition `scheduled → skipped` and drop its reservation from the
-          aggregate (step 6a). A rejected member must never leave a `scheduled` occurrence
-          behind: Phase 2 reads every `scheduled` occurrence as a live minute and
-          systemic-cost reservation, so it would otherwise consume exactly the capacity it
-          was just denied;
+          aggregate (step 6a) atomically inside a single caller-owned transaction. A rejected
+          member must never leave a `scheduled` occurrence behind: Phase 2 reads every
+          `scheduled` occurrence as a live minute and systemic-cost reservation, so it would
+          otherwise consume exactly the capacity it was just denied. Both the occurrence state
+          update and the ledger reservation drop + generation increment must commit together
+          (do not call standalone `transitionOccurrenceState` which manages its own transaction).
           A `skipped` occurrence is terminal, so this is a one-way door for that occurrence
           identity — see the recovery rule below;
         - `active` or `completed` → **change nothing.** The work is under way or already
@@ -467,16 +469,18 @@ parameter order on `queueOccurrenceTransition`. What remains:
    - Action: for every member that receives a binding, write an `IntradayDecisionRecord`
      with `status: 'provisional'` via `saveIntradayDecision` **before** the binding is
      exposed, carrying the `ReassessmentInputRevision` the verdict was computed against.
-   - **Record the post-reservation revision, not the one the verdict was computed against.**
-     These differ by exactly one increment and conflating them breaks every launch: step 8
-     computes the revision, then creating the target's reservation bumps the aggregate
-     (step 6a), so a record storing the pre-create value is stale the instant it is written
-     and step 11's comparison rejects the member on its own reservation write. Nothing would
-     ever launch on first attempt. The decision, the reservation and the occurrence are
-     written in one transaction (below), so that transaction knows the resulting revision:
-     store *that* value. The verdict is still the one computed from the pre-create inputs —
-     only the revision is taken after the write, because the revision's job is to detect
-     *other* writers, not to notice the decision recording itself.
+   - **Separate the decision-input revision from the post-reservation ledger revision.**
+     These differ by exactly one increment and conflating them breaks retries or launches:
+     step 8 evaluates the verdict against pre-reservation inputs (with the target's own
+     reservation excluded), so `deterministicIntradayDecisionId` and `decisionRecordsMatch`
+     must be derived from the stable decision-input `ReassessmentInputRevision` to preserve
+     idempotent retry convergence. However, creating the target's reservation in the same
+     transaction bumps the aggregate revision (step 6a). If step 11's claim check compared
+     the post-decision aggregate against the pre-reservation revision, it would fail as
+     stale on first launch. Therefore, store the expected post-reservation ledger revision
+     explicitly (or project it cleanly) for step 11's staleness gate, while keeping the
+     decision-input revision stable so retries derive the identical decision ID and pass
+     `decisionRecordsMatch` without collision errors.
    - Test: adjudicate `proceed` and claim immediately, with nothing else touching the day —
      the claim must succeed. A failure here means the self-invalidation above is present.
    - Why this is not optional: step 11's claim compares the *current* ledger revision

@@ -16,11 +16,10 @@ does not restate the plan's own reasoning.
 | [#448](https://github.com/Szczepanov/adaptive-training-recommender/pull/448) | Merged (`ee6d132b`) | Phase 1 (window exclusivity, re-import supersession) + Phase 2 (`intradayLedgerInputs.ts`, `daily_ledgers` aggregate, real `started`/`existingBinding` wiring into `Home.tsx`) |
 | [#449](https://github.com/Szczepanov/adaptive-training-recommender/pull/449) | Merged | Docs-only: corrected `docs/plans/README.md`'s stale H4 status |
 | [#450](https://github.com/Szczepanov/adaptive-training-recommender/pull/450) | Merged (`eddacc09`) | Unified `ReassessmentInputRevision`; `IntradayDecisionRecord` gained required `predecessorExecutionId`/`predecessorOccurrenceId`; `intradayDecisionService.ts` gained `deterministicIntradayDecisionId`, `decisionRecordsMatch`, `writeProvisionalDecisionInTransaction` |
-| [#451](https://github.com/Szczepanov/adaptive-training-recommender/pull/451) | Open, reviewed, believed close to merge | Step 8 item 2a: `daily_ledgers`' `generations` map, `rejectReservationAndIncrementGeneration`, `currentGeneration`, and a backward-compatible `generation` parameter on `deterministicExternalPlanOccurrenceId` (bounded by `MAX_RECOVERY_GENERATION`, added during review) |
+| [#451](https://github.com/Szczepanov/adaptive-training-recommender/pull/451) | Merged (`7399ec31`) | Step 8 item 2a: `daily_ledgers`' `generations` map, `rejectReservationAndIncrementGeneration`, `currentGeneration`, and a backward-compatible `generation` parameter on `deterministicExternalPlanOccurrenceId` (bounded by `MAX_RECOVERY_GENERATION`, added during review) |
 
-**Before starting new work: `git fetch origin main` and confirm #451 is actually merged.**
-Everything below assumes its API surface (`rejectReservationAndIncrementGeneration`,
-`currentGeneration`, the `generation` parameter) exists on `main`.
+**PR #451 is merged on `main` (`7399ec31`).** Its API surface (`rejectReservationAndIncrementGeneration`,
+`currentGeneration`, the bounded `generation` parameter) is available on `main` and verified.
 
 ## What genuinely remains
 
@@ -69,10 +68,21 @@ Re-reading the plan's own numbered sub-steps (8.1–8.5, 8/2a) against what exis
    reservation already reduced (a member admitted at 09:00 flips to rejected at 09:05 with
    every real input unchanged). Filter it out of the `OccurrenceLedgerInput[]` before calling
    `buildLedgerEntries`/`computeDailyLedger`.
-2. **`reject`** → create nothing. If a `scheduled` occurrence already exists for this member
-   (from an earlier load whose verdict has since flipped), call
-   `rejectReservationAndIncrementGeneration`. If it's `active`/`completed`, touch nothing —
-   `active → skipped` isn't even a legal transition, and the work is real.
+2. **`reject`** → create nothing and emit no binding. If a `scheduled` occurrence already exists
+   for this member (from an earlier load whose verdict has since flipped to `reject`), the occurrence
+   and ledger state must be updated **together in a single caller-owned transaction**:
+   - Inside the transaction, read both `session_occurrences/{occurrenceId}` and `daily_ledgers/{date}`.
+   - Atomically transition the occurrence from `scheduled` to `skipped` (`updatedAt: now`).
+     Do **not** call standalone `sessionOccurrenceService.transitionOccurrenceState(...)` here, as that
+     method manages its own internal transaction and would risk partial commits.
+   - Atomically update the ledger reservation via
+     `dailyLedgerAggregateService.rejectReservationAndIncrementGeneration(transaction, ...)`
+     (dropping the reservation from the aggregate and incrementing the generation counter).
+   - Both writes must commit together: partial failure would leave an unreserved `scheduled` occurrence
+     or a `skipped` occurrence holding unreleased capacity.
+   - If the existing occurrence is in state `active` or `completed`, **touch neither document**:
+     `active → skipped` is not a valid lifecycle transition, the session was already started or completed,
+     and its capacity consumption is real.
 3. **Recovery (2a).** If the existing occurrence for this `(planId, sessionId)` is `skipped`
    and the new verdict is `pending`/`proceed`, this is a recovery: read
    `dailyLedgerAggregateService.currentGeneration(aggregate, sessionId)` and pass it to
@@ -98,12 +108,23 @@ returning). Remember Firestore's reads-before-writes rule: every `transaction.ge
 combined operation needs (occurrence, prior-revision occurrence, window reservation,
 aggregate, existing decision record) must happen before any `transaction.set`.
 
-**The revision stored in the decision record must be the post-reservation one, not the
-pre-create one** — compute `reassessmentInputRevision` before creating anything, but only
-*write* the decision record after the aggregate's reservation write is queued in the same
-transaction, storing the resulting (already-incremented) `ledgerRevision`. Storing the
-pre-create value makes the claim reject the member on its own reservation write; see the
-plan's step 9 for why.
+**Separate the decision-input revision from the post-reservation ledger revision.**
+Conflating these breaks retries or launches:
+- `reassessDependentBundleMember` computes the verdict against pre-reservation inputs (with the
+  target's own reservation excluded). Both `deterministicIntradayDecisionId(occurrenceId, reassessmentInputRevision)`
+  and `decisionRecordsMatch(existing, candidate)` rely on this stable decision-input revision.
+- If you mutate `reassessmentInputRevision.ledgerRevision` to the post-reservation value on write, an
+  ambiguous-acknowledgement retry (which re-evaluates against pre-reservation inputs) will either
+  derive a different decision ID or fail `decisionRecordsMatch` (which compares `reassessmentInputRevision`
+  equality) and throw a collision error on an append-only store.
+- However, creating the target's reservation in the same transaction increments `DailyLedgerAggregate.revision`.
+  If Phase 4 step 11's claim staleness check compared the current aggregate against the pre-reservation
+  revision, it would reject the launch on its own reservation write.
+- **Resolution for implementation:** Keep `reassessmentInputRevision` as the stable pre-reservation input
+  fingerprint used for verdict evaluation, deterministic ID derivation, and retry matching. Store the expected
+  post-reservation `ledgerRevision` separately (or define an explicit match projection in `decisionRecordsMatch`
+  that handles the post-reservation delta), so retries converge cleanly while step 11 still has an authoritative
+  post-reservation baseline to detect subsequent concurrent writers.
 
 ## Where this plugs into `Home.tsx`
 
@@ -167,7 +188,10 @@ they're solved elsewhere:
   Any dependent member must supply both.
 - **Ambiguous-acknowledgement retries.** `writeProvisionalDecisionInTransaction` already
   handles this (exact-match-or-throw on `occurrenceId`, predecessor identity, `verdict`,
-  `reassessmentInputRevision`) — do not add a second retry mechanism on top of it.
+  `reassessmentInputRevision`) — do not add a second retry mechanism on top of it. Remember
+  that `decisionRecordsMatch` checks `reassessmentInputRevision` equality; ensure the decision-input
+  revision used for the ID and match check remains stable rather than being mutated by the post-reservation
+  ledger revision write.
 
 ## Verification bar to match
 
