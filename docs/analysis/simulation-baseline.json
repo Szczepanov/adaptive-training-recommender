@@ -316,6 +316,7 @@
                   "eligibleTemplateIds": [
                     "end_easy_01",
                     "end_easy_02",
+                    "end_easy_04",
                     "end_walk_01"
                   ],
                   "eligibleWorkoutIds": [
@@ -332,7 +333,14 @@
                   "workoutId": "walking_brisk_continuous_01",
                   "wasMoved": false
                 },
-                "status": "fulfilled"
+                "status": "fulfilled",
+                "observedBlockers": [
+                  "2026-08-09:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-10:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-11:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-12:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-13:NOT_ELIGIBLE_ON_DATE"
+                ]
               }
             ]
           }
@@ -355,6 +363,7 @@
                   "eligibleTemplateIds": [
                     "end_easy_01",
                     "end_easy_02",
+                    "end_easy_04",
                     "end_walk_01"
                   ],
                   "eligibleWorkoutIds": [
@@ -371,7 +380,13 @@
                   "workoutId": "cycling_zone2_standard_01",
                   "wasMoved": false
                 },
-                "status": "fulfilled"
+                "status": "fulfilled",
+                "observedBlockers": [
+                  "2026-08-17:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-18:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-19:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-20:NOT_ELIGIBLE_ON_DATE"
+                ]
               }
             ]
           }
@@ -568,6 +583,7 @@
                   "eligibleTemplateIds": [
                     "end_easy_01",
                     "end_easy_02",
+                    "end_easy_04",
                     "end_walk_01"
                   ],
                   "eligibleWorkoutIds": [
@@ -584,7 +600,14 @@
                   "workoutId": "walking_brisk_continuous_01",
                   "wasMoved": false
                 },
-                "status": "fulfilled"
+                "status": "fulfilled",
+                "observedBlockers": [
+                  "2026-08-09:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-10:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-11:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-12:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-13:NOT_ELIGIBLE_ON_DATE"
+                ]
               },
               {
                 "occurrence": {
@@ -600,6 +623,7 @@
                   "eligibleTemplateIds": [
                     "end_easy_01",
                     "end_easy_02",
+                    "end_easy_04",
                     "end_walk_01"
                   ],
                   "eligibleWorkoutIds": [
@@ -616,7 +640,13 @@
                   "workoutId": "cycling_zone2_standard_01",
                   "wasMoved": false
                 },
-                "status": "fulfilled"
+                "status": "fulfilled",
+                "observedBlockers": [
+                  "2026-08-10:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-11:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-12:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-13:NOT_ELIGIBLE_ON_DATE"
+                ]
               }
             ]
           }
@@ -639,6 +669,7 @@
                   "eligibleTemplateIds": [
                     "end_easy_01",
                     "end_easy_02",
+                    "end_easy_04",
                     "end_walk_01"
                   ],
                   "eligibleWorkoutIds": [
@@ -655,7 +686,13 @@
                   "workoutId": "cycling_zone2_standard_01",
                   "wasMoved": false
                 },
-                "status": "fulfilled"
+                "status": "fulfilled",
+                "observedBlockers": [
+                  "2026-08-17:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-18:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-19:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-20:NOT_ELIGIBLE_ON_DATE"
+                ]
               },
               {
                 "occurrence": {
@@ -671,6 +708,7 @@
                   "eligibleTemplateIds": [
                     "end_easy_01",
                     "end_easy_02",
+                    "end_easy_04",
                     "end_walk_01"
                   ],
                   "eligibleWorkoutIds": [
@@ -687,7 +725,12 @@
                   "workoutId": "walking_brisk_continuous_01",
                   "wasMoved": false
                 },
-                "status": "fulfilled"
+                "status": "fulfilled",
+                "observedBlockers": [
+                  "2026-08-18:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-19:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-20:NOT_ELIGIBLE_ON_DATE"
+                ]
               }
             ]
           }
@@ -722,25 +765,24 @@
       "weeksSimulated": 4,
       "totalDays": 28,
       "categoryDistribution": {
-        "Easy Endurance": 7,
-        "Full-body Strength": 4,
+        "Easy Endurance": 10,
+        "Full-body Strength": 3,
         "Race-Specific Endurance": 3,
         "Mobility/Recovery": 1,
         "Hard Endurance": 3,
-        "Rest": 8,
-        "Upper-body Strength": 1,
-        "Technical Skill": 1
+        "Rest": 7,
+        "Upper-body Strength": 1
       },
       "modalityDistribution": {
-        "Cycling": 14,
-        "Strength": 5,
+        "Cycling": 16,
+        "Strength": 4,
         "Mobility": 1,
-        "None": 8
+        "None": 7
       },
-      "restOrRecoveryDayCount": 9,
-      "restOrRecoveryDayPct": 32.1,
-      "maxConsecutiveSameTemplateStreakWithinCall": 2,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
+      "restOrRecoveryDayCount": 8,
+      "restOrRecoveryDayPct": 28.6,
+      "maxConsecutiveSameTemplateStreakWithinCall": 1,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -789,8 +831,8 @@
           "date": "2026-08-09",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_01",
-          "templateTitle": "Zone 2 Spin",
+          "templateId": "end_easy_04",
+          "templateTitle": "Outdoor Zone 2 Ride",
           "modality": "Cycling",
           "earnedCredit": 0.8
         },
@@ -886,7 +928,7 @@
         },
         {
           "weekIndex": 3,
-          "date": "2026-08-30",
+          "date": "2026-09-01",
           "objectiveKey": "threshold_quality",
           "objectiveTitle": "Threshold Development",
           "templateId": "end_hard_02",
@@ -896,8 +938,8 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 10,
-        "lowerBenefitSelectionCount": 11,
+        "fragileSelectionCount": 12,
+        "lowerBenefitSelectionCount": 9,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
@@ -949,14 +991,14 @@
           "eventSpecificAnchorHit": false,
           "eventSpecificExposureDates": [],
           "eventSpecificAnchorFulfilled": false,
-          "qualityAnchorHit": false
+          "qualityAnchorHit": true
         }
       ],
       "anchorScopeNote": null,
       "fatigueTierDayCounts": {
-        "train": 10,
-        "modify": 2,
-        "recover": 8
+        "train": 9,
+        "modify": 4,
+        "recover": 7
       },
       "constraintViolations": [],
       "allocationReports": [
@@ -1130,11 +1172,11 @@
                 },
                 "reservation": {
                   "occurrenceId": "september_cycling_event|2026-08-23|2026-09-12|peak|sustained_quality|september_cycling_event%3Asustained_quality|0",
-                  "nominatedDate": "2026-08-30",
-                  "assignedDate": "2026-08-30",
+                  "nominatedDate": "2026-08-31",
+                  "assignedDate": "2026-09-01",
                   "templateId": "end_hard_02",
                   "workoutId": "cycling_over_under_3x12_01",
-                  "wasMoved": false
+                  "wasMoved": true
                 },
                 "status": "fulfilled"
               }
@@ -1173,11 +1215,11 @@
         {
           "weekIndex": 3,
           "fatigueTierDayCounts": {
-            "train": 2,
-            "modify": 0,
-            "recover": 3
+            "train": 1,
+            "modify": 2,
+            "recover": 2
           },
-          "restOrRecoveryDayCount": 3
+          "restOrRecoveryDayCount": 2
         }
       ]
     },
@@ -1259,8 +1301,8 @@
           "date": "2026-08-09",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_01",
-          "templateTitle": "Zone 2 Spin",
+          "templateId": "end_easy_04",
+          "templateTitle": "Outdoor Zone 2 Ride",
           "modality": "Cycling",
           "earnedCredit": 0.8
         },
@@ -1386,7 +1428,7 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 13,
+        "fragileSelectionCount": 14,
         "lowerBenefitSelectionCount": 10,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -1697,8 +1739,8 @@
       },
       "restOrRecoveryDayCount": 7,
       "restOrRecoveryDayPct": 25,
-      "maxConsecutiveSameTemplateStreakWithinCall": 2,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
+      "maxConsecutiveSameTemplateStreakWithinCall": 1,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -1752,8 +1794,8 @@
           "date": "2026-08-09",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Aerobic Base (Zone 2)",
-          "templateId": "end_easy_01",
-          "templateTitle": "Zone 2 Spin",
+          "templateId": "end_easy_04",
+          "templateTitle": "Outdoor Zone 2 Ride",
           "modality": "Cycling",
           "earnedCredit": 0.8
         },
@@ -1879,7 +1921,7 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 12,
+        "fragileSelectionCount": 14,
         "lowerBenefitSelectionCount": 9,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -2370,7 +2412,7 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 15,
+        "fragileSelectionCount": 17,
         "lowerBenefitSelectionCount": 13,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -2450,7 +2492,8 @@
                   "ordinal": 0,
                   "label": "Easy Zone 2 aerobic volume",
                   "eligibleTemplateIds": [
-                    "end_easy_01"
+                    "end_easy_01",
+                    "end_easy_04"
                   ],
                   "eligibleWorkoutIds": [
                     "cycling_zone2_standard_01"
@@ -2582,7 +2625,8 @@
                   "ordinal": 0,
                   "label": "Easy Zone 2 aerobic volume",
                   "eligibleTemplateIds": [
-                    "end_easy_01"
+                    "end_easy_01",
+                    "end_easy_04"
                   ],
                   "eligibleWorkoutIds": [
                     "cycling_zone2_standard_01"
@@ -2994,7 +3038,8 @@
                   "ordinal": 0,
                   "label": "Easy Zone 2 aerobic volume",
                   "eligibleTemplateIds": [
-                    "end_easy_01"
+                    "end_easy_01",
+                    "end_easy_04"
                   ],
                   "eligibleWorkoutIds": [
                     "cycling_zone2_standard_01"
@@ -3008,7 +3053,14 @@
                   "workoutId": "cycling_zone2_standard_01",
                   "wasMoved": false
                 },
-                "status": "fulfilled"
+                "status": "fulfilled",
+                "observedBlockers": [
+                  "2026-08-09:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-10:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-11:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-12:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-13:NOT_ELIGIBLE_ON_DATE"
+                ]
               },
               {
                 "occurrence": {
@@ -3838,23 +3890,23 @@
       "totalDays": 28,
       "categoryDistribution": {
         "Moderate Endurance": 4,
-        "Easy Endurance": 11,
-        "Rest": 5,
-        "Upper-body Strength": 4,
-        "Hard Endurance": 1,
-        "Race-Specific Endurance": 3
+        "Easy Endurance": 12,
+        "Rest": 6,
+        "Hard Endurance": 2,
+        "Lower-body Strength": 2,
+        "Upper-body Strength": 2
       },
       "modalityDistribution": {
-        "Running": 11,
-        "None": 5,
-        "Swimming": 5,
+        "Running": 8,
+        "Cycling": 6,
+        "None": 6,
         "Strength": 4,
-        "Cycling": 3
+        "Swimming": 4
       },
-      "restOrRecoveryDayCount": 5,
-      "restOrRecoveryDayPct": 17.9,
-      "maxConsecutiveSameTemplateStreakWithinCall": 2,
-      "maxConsecutiveSameTemplateStreakAcrossWeeks": 2,
+      "restOrRecoveryDayCount": 6,
+      "restOrRecoveryDayPct": 21.4,
+      "maxConsecutiveSameTemplateStreakWithinCall": 1,
+      "maxConsecutiveSameTemplateStreakAcrossWeeks": 1,
       "objectiveResolution": [
         {
           "key": "zone2_aerobic",
@@ -3869,12 +3921,12 @@
         {
           "key": "surge_repeatability",
           "timesGenerated": 4,
-          "timesResolved": 3
+          "timesResolved": 4
         },
         {
           "key": "strength_maintenance",
           "timesGenerated": 4,
-          "timesResolved": 4
+          "timesResolved": 3
         }
       ],
       "objectiveCredits": [
@@ -3902,65 +3954,45 @@
           "weekIndex": 0,
           "date": "2026-08-08",
           "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Triathlon Bike Aerobic Exposure",
+          "templateId": "end_easy_04",
+          "templateTitle": "Outdoor Zone 2 Ride",
+          "modality": "Cycling",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 0,
+          "date": "2026-08-09",
+          "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Triathlon Run Aerobic Exposure",
-          "templateId": "end_easy_02",
-          "templateTitle": "Light Base Run",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
           "modality": "Running",
           "earnedCredit": 0.30000000000000004
         },
         {
           "weekIndex": 0,
-          "date": "2026-08-10",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Triathlon Swim Aerobic Exposure",
-          "templateId": "swim_threshold_01",
-          "templateTitle": "Sustained Swim Intervals",
-          "modality": "Swimming",
-          "earnedCredit": 0.7
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-10",
+          "date": "2026-08-09",
           "objectiveKey": "threshold_quality",
           "objectiveTitle": "Threshold Development",
-          "templateId": "swim_threshold_01",
-          "templateTitle": "Sustained Swim Intervals",
-          "modality": "Swimming",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
           "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 0,
           "date": "2026-08-11",
-          "objectiveKey": "strength_maintenance",
-          "objectiveTitle": "Strength & Neuromuscular Maintenance",
-          "templateId": "str_upper_01",
-          "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength",
-          "earnedCredit": 0.8
-        },
-        {
-          "weekIndex": 0,
-          "date": "2026-08-12",
-          "objectiveKey": "strength_maintenance",
-          "objectiveTitle": "Strength & Neuromuscular Maintenance",
-          "templateId": "str_upper_01",
-          "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Triathlon Bike Aerobic Exposure",
+          "templateId": "end_easy_04",
+          "templateTitle": "Outdoor Zone 2 Ride",
+          "modality": "Cycling",
           "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 0,
-          "date": "2026-08-13",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Triathlon Swim Aerobic Exposure",
-          "templateId": "swim_easy_01",
-          "templateTitle": "Easy Aerobic Swim",
-          "modality": "Swimming",
-          "earnedCredit": 0.30000000000000004
-        },
-        {
-          "weekIndex": 1,
-          "date": "2026-08-14",
+          "date": "2026-08-12",
           "objectiveKey": "surge_repeatability",
           "objectiveTitle": "Surge & High-Intensity Repeatability",
           "templateId": "end_hard_01",
@@ -3970,114 +4002,143 @@
         },
         {
           "weekIndex": 1,
-          "date": "2026-08-19",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Triathlon Bike Aerobic Exposure",
-          "templateId": "end_race_specific_01",
-          "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling",
+          "date": "2026-08-14",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
+          "modality": "Strength",
           "earnedCredit": 0.9
         },
         {
-          "weekIndex": 2,
-          "date": "2026-08-21",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Triathlon Swim Aerobic Exposure",
-          "templateId": "swim_threshold_01",
-          "templateTitle": "Sustained Swim Intervals",
-          "modality": "Swimming",
-          "earnedCredit": 0.7
-        },
-        {
-          "weekIndex": 2,
-          "date": "2026-08-21",
-          "objectiveKey": "threshold_quality",
-          "objectiveTitle": "Threshold Development",
-          "templateId": "swim_threshold_01",
-          "templateTitle": "Sustained Swim Intervals",
-          "modality": "Swimming",
-          "earnedCredit": 0.19999999999999996
-        },
-        {
-          "weekIndex": 2,
-          "date": "2026-08-22",
-          "objectiveKey": "strength_maintenance",
-          "objectiveTitle": "Strength & Neuromuscular Maintenance",
-          "templateId": "str_upper_01",
-          "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength",
-          "earnedCredit": 0.8
-        },
-        {
-          "weekIndex": 2,
-          "date": "2026-08-23",
-          "objectiveKey": "strength_maintenance",
-          "objectiveTitle": "Strength & Neuromuscular Maintenance",
-          "templateId": "str_upper_01",
-          "templateTitle": "Upper Body Push/Pull",
-          "modality": "Strength",
-          "earnedCredit": 0.19999999999999996
-        },
-        {
-          "weekIndex": 2,
-          "date": "2026-08-24",
+          "weekIndex": 1,
+          "date": "2026-08-15",
           "objectiveKey": "zone2_aerobic",
           "objectiveTitle": "Triathlon Swim Aerobic Exposure",
           "templateId": "swim_easy_01",
           "templateTitle": "Easy Aerobic Swim",
           "modality": "Swimming",
-          "earnedCredit": 0.30000000000000004
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-17",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.09999999999999998
+        },
+        {
+          "weekIndex": 1,
+          "date": "2026-08-20",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Triathlon Swim Aerobic Exposure",
+          "templateId": "swim_easy_01",
+          "templateTitle": "Easy Aerobic Swim",
+          "modality": "Swimming",
+          "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 2,
-          "date": "2026-08-26",
+          "date": "2026-08-21",
           "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Triathlon Bike Aerobic Exposure",
-          "templateId": "end_race_specific_01",
-          "templateTitle": "Event-Specific Endurance Ride",
-          "modality": "Cycling",
-          "earnedCredit": 0.09999999999999998
+          "objectiveTitle": "Triathlon Run Aerobic Exposure",
+          "templateId": "end_hard_01",
+          "templateTitle": "Interval Speed Work",
+          "modality": "Running",
+          "earnedCredit": 0.19999999999999996
         },
         {
-          "weekIndex": 3,
-          "date": "2026-08-28",
-          "objectiveKey": "zone2_aerobic",
-          "objectiveTitle": "Triathlon Bike Aerobic Exposure",
-          "templateId": "end_race_sim_01",
-          "templateTitle": "Race Simulation",
-          "modality": "Cycling",
-          "earnedCredit": 0.09999999999999998
-        },
-        {
-          "weekIndex": 3,
-          "date": "2026-08-28",
+          "weekIndex": 2,
+          "date": "2026-08-21",
           "objectiveKey": "threshold_quality",
           "objectiveTitle": "Threshold Development",
-          "templateId": "end_race_sim_01",
-          "templateTitle": "Race Simulation",
+          "templateId": "end_hard_01",
+          "templateTitle": "Interval Speed Work",
+          "modality": "Running",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-21",
+          "objectiveKey": "surge_repeatability",
+          "objectiveTitle": "Surge & High-Intensity Repeatability",
+          "templateId": "end_hard_01",
+          "templateTitle": "Interval Speed Work",
+          "modality": "Running",
+          "earnedCredit": 1
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-22",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Triathlon Bike Aerobic Exposure",
+          "templateId": "end_easy_04",
+          "templateTitle": "Outdoor Zone 2 Ride",
           "modality": "Cycling",
+          "earnedCredit": 0.19999999999999996
+        },
+        {
+          "weekIndex": 2,
+          "date": "2026-08-24",
+          "objectiveKey": "threshold_quality",
+          "objectiveTitle": "Threshold Development",
+          "templateId": "end_mod_01",
+          "templateTitle": "Steady-State Tempo Run",
+          "modality": "Running",
           "earnedCredit": 0.19999999999999996
         },
         {
           "weekIndex": 3,
           "date": "2026-08-28",
-          "objectiveKey": "surge_repeatability",
-          "objectiveTitle": "Surge & High-Intensity Repeatability",
-          "templateId": "end_race_sim_01",
-          "templateTitle": "Race Simulation",
-          "modality": "Cycling",
-          "earnedCredit": 1
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_lower_01",
+          "templateTitle": "Lower Body Strength & Power",
+          "modality": "Strength",
+          "earnedCredit": 0.9
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-08-29",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Triathlon Swim Aerobic Exposure",
+          "templateId": "swim_easy_01",
+          "templateTitle": "Easy Aerobic Swim",
+          "modality": "Swimming",
+          "earnedCredit": 0.8
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-08-31",
+          "objectiveKey": "strength_maintenance",
+          "objectiveTitle": "Strength & Neuromuscular Maintenance",
+          "templateId": "str_upper_01",
+          "templateTitle": "Upper Body Push/Pull",
+          "modality": "Strength",
+          "earnedCredit": 0.09999999999999998
+        },
+        {
+          "weekIndex": 3,
+          "date": "2026-09-01",
+          "objectiveKey": "zone2_aerobic",
+          "objectiveTitle": "Triathlon Swim Aerobic Exposure",
+          "templateId": "swim_easy_01",
+          "templateTitle": "Easy Aerobic Swim",
+          "modality": "Swimming",
+          "earnedCredit": 0.19999999999999996
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 14,
-        "lowerBenefitSelectionCount": 7,
+        "fragileSelectionCount": 9,
+        "lowerBenefitSelectionCount": 8,
         "trainTierRestOrRecoveryCount": 0
       },
       "qualityWarnings": [
-        "Unresolved weekly objectives: zone2_aerobic 11/12, surge_repeatability 3/4.",
-        "Event-specific anchor missed in 1 nominated week(s).",
-        "Event-specific exposure occurred off the nominated anchor date in 3 week(s) (adaptively fulfilled in-window)."
+        "Unresolved weekly objectives: zone2_aerobic 11/12, strength_maintenance 3/4.",
+        "Event-specific anchor missed in 4 nominated week(s)."
       ],
       "anchorWeeks": [
         {
@@ -4096,10 +4157,8 @@
           "eventSpecificAnchorDate": "2026-08-16",
           "qualityAnchorDate": null,
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [
-            "2026-08-19"
-          ],
-          "eventSpecificAnchorFulfilled": true,
+          "eventSpecificExposureDates": [],
+          "eventSpecificAnchorFulfilled": false,
           "qualityAnchorHit": null
         },
         {
@@ -4108,10 +4167,8 @@
           "eventSpecificAnchorDate": "2026-08-23",
           "qualityAnchorDate": null,
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [
-            "2026-08-26"
-          ],
-          "eventSpecificAnchorFulfilled": true,
+          "eventSpecificExposureDates": [],
+          "eventSpecificAnchorFulfilled": false,
           "qualityAnchorHit": null
         },
         {
@@ -4120,18 +4177,16 @@
           "eventSpecificAnchorDate": "2026-08-30",
           "qualityAnchorDate": null,
           "eventSpecificAnchorHit": false,
-          "eventSpecificExposureDates": [
-            "2026-08-28"
-          ],
-          "eventSpecificAnchorFulfilled": true,
+          "eventSpecificExposureDates": [],
+          "eventSpecificAnchorFulfilled": false,
           "qualityAnchorHit": null
         }
       ],
       "anchorScopeNote": null,
       "fatigueTierDayCounts": {
-        "train": 7,
-        "modify": 8,
-        "recover": 5
+        "train": 9,
+        "modify": 5,
+        "recover": 6
       },
       "constraintViolations": [],
       "allocationReports": [
@@ -4164,6 +4219,15 @@
         {
           "weekIndex": 0,
           "fatigueTierDayCounts": {
+            "train": 3,
+            "modify": 0,
+            "recover": 2
+          },
+          "restOrRecoveryDayCount": 2
+        },
+        {
+          "weekIndex": 1,
+          "fatigueTierDayCounts": {
             "train": 2,
             "modify": 2,
             "recover": 1
@@ -4171,31 +4235,22 @@
           "restOrRecoveryDayCount": 1
         },
         {
-          "weekIndex": 1,
+          "weekIndex": 2,
           "fatigueTierDayCounts": {
-            "train": 2,
-            "modify": 1,
+            "train": 3,
+            "modify": 0,
             "recover": 2
           },
           "restOrRecoveryDayCount": 2
-        },
-        {
-          "weekIndex": 2,
-          "fatigueTierDayCounts": {
-            "train": 1,
-            "modify": 4,
-            "recover": 0
-          },
-          "restOrRecoveryDayCount": 0
         },
         {
           "weekIndex": 3,
           "fatigueTierDayCounts": {
-            "train": 2,
-            "modify": 1,
-            "recover": 2
+            "train": 1,
+            "modify": 3,
+            "recover": 1
           },
-          "restOrRecoveryDayCount": 2
+          "restOrRecoveryDayCount": 1
         }
       ]
     },
@@ -4413,7 +4468,7 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 12,
+        "fragileSelectionCount": 14,
         "lowerBenefitSelectionCount": 11,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -4654,7 +4709,7 @@
         }
       ],
       "utilityDiagnostics": {
-        "fragileSelectionCount": 4,
+        "fragileSelectionCount": 5,
         "lowerBenefitSelectionCount": 1,
         "trainTierRestOrRecoveryCount": 0
       },
@@ -7289,7 +7344,8 @@
                   "ordinal": 0,
                   "label": "Easy Zone 2 aerobic volume",
                   "eligibleTemplateIds": [
-                    "end_easy_01"
+                    "end_easy_01",
+                    "end_easy_04"
                   ],
                   "eligibleWorkoutIds": [
                     "cycling_zone2_standard_01"
@@ -7303,7 +7359,14 @@
                   "workoutId": "cycling_zone2_standard_01",
                   "wasMoved": false
                 },
-                "status": "fulfilled"
+                "status": "fulfilled",
+                "observedBlockers": [
+                  "2026-08-09:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-10:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-11:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-12:NOT_ELIGIBLE_ON_DATE",
+                  "2026-08-13:NOT_ELIGIBLE_ON_DATE"
+                ]
               },
               {
                 "occurrence": {
