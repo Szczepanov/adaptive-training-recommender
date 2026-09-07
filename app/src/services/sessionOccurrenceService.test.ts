@@ -609,25 +609,27 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             expect(first).toBe(second);
         });
 
-        it('treats negative or non-integer generation as generation 0', async () => {
+        it('rejects negative, non-integer, or non-numeric generations instead of reusing generation 0', async () => {
             const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
-            const gen0 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 0);
-            const neg = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, -1);
-            const float = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 1.5 as number);
-            expect(neg).toBe(gen0);
-            expect(float).toBe(gen0);
+            await expect(deterministicExternalPlanOccurrenceId('2026-08-18', ref, -1)).rejects.toThrow(RangeError);
+            await expect(deterministicExternalPlanOccurrenceId('2026-08-18', ref, 1.5)).rejects.toThrow(TypeError);
+            await expect(deterministicExternalPlanOccurrenceId(
+                '2026-08-18', ref, '1' as unknown as number,
+            )).rejects.toThrow(TypeError);
         });
 
-        it('enforces MAX_RECOVERY_GENERATION upper bound', async () => {
+        it('accepts MAX_RECOVERY_GENERATION and rejects values above the supported bound', async () => {
             const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
             const gen0 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 0);
             const atMax = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, MAX_RECOVERY_GENERATION);
-            const aboveMax = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, MAX_RECOVERY_GENERATION + 1);
-            const unsafe = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, Number.MAX_SAFE_INTEGER);
 
             expect(atMax).not.toBe(gen0);
-            expect(aboveMax).toBe(gen0);
-            expect(unsafe).toBe(gen0);
+            await expect(deterministicExternalPlanOccurrenceId(
+                '2026-08-18', ref, MAX_RECOVERY_GENERATION + 1,
+            )).rejects.toThrow(RangeError);
+            await expect(deterministicExternalPlanOccurrenceId(
+                '2026-08-18', ref, Number.MAX_SAFE_INTEGER,
+            )).rejects.toThrow(RangeError);
         });
     });
 
