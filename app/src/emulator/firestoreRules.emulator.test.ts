@@ -1598,18 +1598,26 @@ emulatorDescribe('Firestore security rules', () => {
             updatedAt: '2026-08-18T10:05:00Z',
         }));
 
-        // 4c. Scheduled occurrence cannot jump directly to completed
+        // 4c. Scheduled occurrence can transition directly to completed (production state before PR 3 claims)
         const directPath = `users/${ownerId}/session_occurrences/occ-ext-direct`;
         await expect(assertSucceeds(setDoc(doc(ownerDb, directPath), {
             ...validExternalPlanSessionOccurrence(),
             occurrenceId: 'occ-ext-direct',
             state: 'scheduled',
         }))).resolves.toBeUndefined();
-        await assertFails(setDoc(doc(ownerDb, directPath), {
+        await expect(assertSucceeds(setDoc(doc(ownerDb, directPath), {
             ...validExternalPlanSessionOccurrence(),
             occurrenceId: 'occ-ext-direct',
             state: 'completed',
             updatedAt: '2026-08-18T11:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 4d. Terminal completed occurrence cannot transition back to scheduled
+        await assertFails(setDoc(doc(ownerDb, directPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-direct',
+            state: 'scheduled',
+            updatedAt: '2026-08-18T11:05:00Z',
         }));
 
         // 5. Rejects an occurrence with both definitionRef and externalPlanRef

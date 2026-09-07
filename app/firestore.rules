@@ -1182,7 +1182,7 @@ service cloud.firestore {
 
     function isValidOccurrenceStateTransition(fromState, toState) {
       return fromState == toState
-        || (fromState == 'scheduled' && toState in ['active', 'skipped', 'superseded', 'missed'])
+        || (fromState == 'scheduled' && toState in ['active', 'completed', 'abandoned', 'skipped', 'superseded', 'missed'])
         || (fromState == 'active' && toState in ['completed', 'abandoned', 'superseded']);
     }
 
