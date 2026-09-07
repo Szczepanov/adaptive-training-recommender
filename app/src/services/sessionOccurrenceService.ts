@@ -9,6 +9,7 @@ import {
     runTransaction,
     type Firestore,
     type Transaction,
+    type WriteBatch,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DataState } from '../engine/dataState';
@@ -26,14 +27,36 @@ import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDe
 /** ACTIVE_OCCURRENCE_STATES excludes terminal/superseded states from "what governs today". */
 const ACTIVE_OCCURRENCE_STATES: ReadonlySet<SessionOccurrence['state']> = new Set(['scheduled', 'active']);
 
-/** TERMINAL_OCCURRENCE_STATES cannot transition to any subsequent state. */
-const TERMINAL_OCCURRENCE_STATES: ReadonlySet<OccurrenceState> = new Set([
-    'completed',
-    'abandoned',
-    'missed',
-    'skipped',
-    'superseded',
-]);
+/**
+ * Valid occurrence lifecycle transitions.
+ * Scheduled occurrences may be claimed (active), skipped, superseded, or marked missed.
+ * Active occurrences may be completed, abandoned, or superseded.
+ * Terminal states (completed, abandoned, missed, skipped, superseded) cannot transition to any other state.
+ */
+export const VALID_OCCURRENCE_TRANSITIONS: Record<OccurrenceState, readonly OccurrenceState[]> = {
+    scheduled: ['active', 'skipped', 'superseded', 'missed'],
+    active: ['completed', 'abandoned', 'superseded'],
+    completed: [],
+    abandoned: [],
+    missed: [],
+    skipped: [],
+    superseded: [],
+};
+
+export function isValidOccurrenceTransition(from: OccurrenceState, to: OccurrenceState): boolean {
+    if (from === to) return true;
+    const allowed = VALID_OCCURRENCE_TRANSITIONS[from];
+    return allowed !== undefined && allowed.includes(to);
+}
+
+/**
+ * Computes a deterministic Firestore document ID for an external-plan occurrence.
+ * Ensures concurrent getOrCreate operations resolve to the exact same document ID.
+ */
+export function deterministicExternalPlanOccurrenceId(date: string, ref: ExternalPlanOccurrenceRef): string {
+    const raw = `ext_${date}_${ref.planId}_${ref.sessionId}_r${ref.revision}_${ref.contentHash.slice(0, 16)}`;
+    return raw.replace(/[^a-zA-Z0-9_.-]/g, '_');
+}
 
 export interface ClaimOccurrenceLaunchOptions {
     now?: string;
@@ -153,10 +176,11 @@ export class SessionOccurrenceService {
         externalPlanRef: ExternalPlanOccurrenceRef,
         placementOrder?: number,
         now = new Date().toISOString(),
+        customOccurrenceId?: string,
     ): Promise<ExternalPlanSessionOccurrence> {
         const occurrence: ExternalPlanSessionOccurrence = {
             userId,
-            occurrenceId: this.newOccurrenceId(),
+            occurrenceId: customOccurrenceId ?? this.newOccurrenceId(),
             date,
             authority: 'external_plan',
             externalPlanRef,
@@ -170,8 +194,8 @@ export class SessionOccurrenceService {
     }
 
     /**
-     * Idempotently retrieves an existing external-plan occurrence for (userId, date, planId, sessionId),
-     * or schedules a new one if not yet present.
+     * Idempotently retrieves an existing external-plan occurrence for (userId, date, planId, sessionId, revision, contentHash),
+     * or schedules a new one with a deterministic occurrenceId if not yet present.
      */
     async getOrCreateExternalPlanOccurrence(
         userId: string,
@@ -184,12 +208,15 @@ export class SessionOccurrenceService {
         const existing = occurrences.find(occ =>
             isExternalPlanOccurrence(occ) &&
             occ.externalPlanRef.planId === externalPlanRef.planId &&
-            occ.externalPlanRef.sessionId === externalPlanRef.sessionId,
+            occ.externalPlanRef.sessionId === externalPlanRef.sessionId &&
+            occ.externalPlanRef.revision === externalPlanRef.revision &&
+            occ.externalPlanRef.contentHash === externalPlanRef.contentHash,
         );
         if (existing) {
             return existing;
         }
-        return this.scheduleExternalPlanOccurrence(userId, date, externalPlanRef, placementOrder, now);
+        const deterministicId = deterministicExternalPlanOccurrenceId(date, externalPlanRef);
+        return this.scheduleExternalPlanOccurrence(userId, date, externalPlanRef, placementOrder, now, deterministicId);
     }
 
     /** The occurrence, if any, currently claiming to replace `date`'s recommendation.
@@ -261,7 +288,7 @@ export class SessionOccurrenceService {
 
     /**
      * Transitions an occurrence state across its lifecycle (e.g. active -> completed, active -> abandoned, scheduled -> skipped).
-     * Prevents invalid transitions from terminal states.
+     * Prevents invalid transitions using the explicit occurrence lifecycle table.
      */
     async transitionOccurrenceState(
         userId: string,
@@ -285,9 +312,9 @@ export class SessionOccurrenceService {
                 transitioned = current;
                 return;
             }
-            if (TERMINAL_OCCURRENCE_STATES.has(current.state)) {
+            if (!isValidOccurrenceTransition(current.state, nextState)) {
                 throw new Error(
-                    `Cannot transition occurrence ${occurrenceId} from terminal state '${current.state}' to '${nextState}'.`,
+                    `Cannot transition occurrence ${occurrenceId} from '${current.state}' to '${nextState}'.`,
                 );
             }
             transitioned = {
@@ -298,6 +325,44 @@ export class SessionOccurrenceService {
             transaction.set(ref, transitioned);
         });
         return transitioned!;
+    }
+
+    /**
+     * Reads the occurrence document, validates the state transition, and queues the state update
+     * into the caller's WriteBatch so that occurrence and execution updates commit atomically.
+     */
+    async queueOccurrenceTransition(
+        userId: string,
+        occurrenceId: string,
+        nextState: OccurrenceState,
+        now = new Date().toISOString(),
+        batch: WriteBatch,
+    ): Promise<SessionOccurrence> {
+        const ref = this.occurrenceRef(userId, occurrenceId);
+        const snap = await getDoc(ref);
+        if (!snap.exists()) {
+            throw new Error(`Occurrence ${occurrenceId} not found.`);
+        }
+        const parsed = parseSessionOccurrenceDocument(snap.data(), ref.path);
+        if (parsed.status !== 'AVAILABLE') {
+            throw new Error(`Occurrence ${occurrenceId} could not be parsed (${parsed.status}).`);
+        }
+        const current = parsed.data;
+        if (current.state === nextState) {
+            return current;
+        }
+        if (!isValidOccurrenceTransition(current.state, nextState)) {
+            throw new Error(
+                `Cannot transition occurrence ${occurrenceId} from '${current.state}' to '${nextState}'.`,
+            );
+        }
+        const transitioned: SessionOccurrence = {
+            ...current,
+            state: nextState,
+            updatedAt: now,
+        } as SessionOccurrence;
+        batch.set(ref, transitioned);
+        return transitioned;
     }
 }
 

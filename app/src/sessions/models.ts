@@ -265,11 +265,15 @@ export interface ExternalPlanSessionOccurrence extends BaseSessionOccurrence {
 export type SessionOccurrence = ManualSessionOccurrence | ExternalPlanSessionOccurrence;
 
 export function isManualOccurrence(occurrence: SessionOccurrence): occurrence is ManualSessionOccurrence {
-    return 'definitionRef' in occurrence && occurrence.definitionRef !== undefined;
+    return 'definitionRef' in occurrence
+        && occurrence.definitionRef !== null
+        && typeof occurrence.definitionRef === 'object';
 }
 
 export function isExternalPlanOccurrence(occurrence: SessionOccurrence): occurrence is ExternalPlanSessionOccurrence {
-    return 'externalPlanRef' in occurrence && occurrence.externalPlanRef !== undefined;
+    return 'externalPlanRef' in occurrence
+        && occurrence.externalPlanRef !== null
+        && typeof occurrence.externalPlanRef === 'object';
 }
 
 /**

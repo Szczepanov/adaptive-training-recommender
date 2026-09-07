@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { WriteBatch } from 'firebase/firestore';
 import type { ExternalPlanSessionOccurrence, ManualOccurrenceRef, SessionOccurrence } from '../sessions/models';
 
 const firestore = vi.hoisted(() => ({
@@ -350,7 +351,7 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             );
         });
 
-        it('getOrCreateExternalPlanOccurrence returns existing occurrence if one already exists for (planId, sessionId)', async () => {
+        it('getOrCreateExternalPlanOccurrence returns existing occurrence if full source identity matches', async () => {
             const existing = {
                 userId: 'u1',
                 occurrenceId: 'occ-ext-existing',
@@ -373,7 +374,32 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 
-        it('getOrCreateExternalPlanOccurrence creates a new occurrence if none exists', async () => {
+        it('getOrCreateExternalPlanOccurrence creates new occurrence if revision or contentHash differs', async () => {
+            const existingRev1 = {
+                userId: 'u1',
+                occurrenceId: 'occ-ext-rev-1',
+                date: '2026-08-18',
+                authority: 'external_plan' as const,
+                externalPlanRef: extPlanRef,
+                state: 'completed' as const,
+                createdAt: '2026-08-18T00:00:00Z',
+                updatedAt: '2026-08-18T00:00:00Z',
+            };
+            firestore.getDocs.mockResolvedValue({
+                docs: [{ data: () => existingRev1, ref: { path: 'x' } }],
+            });
+
+            const revisedPlanRef = { ...extPlanRef, revision: 2, contentHash: 'd'.repeat(64) };
+            const service = new SessionOccurrenceService();
+            const result = await service.getOrCreateExternalPlanOccurrence('u1', '2026-08-18', revisedPlanRef);
+
+            expect(result.occurrenceId).not.toBe('occ-ext-rev-1');
+            expect(result.occurrenceId).toContain('ext_2026-08-18_p-1_s-1_r2');
+            expect(result.state).toBe('scheduled');
+            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+        });
+
+        it('getOrCreateExternalPlanOccurrence creates a new occurrence with deterministic ID if none exists', async () => {
             firestore.getDocs.mockResolvedValue({ docs: [] });
 
             const service = new SessionOccurrenceService();
@@ -381,6 +407,7 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
 
             expect(result.authority).toBe('external_plan');
             expect(result.state).toBe('scheduled');
+            expect(result.occurrenceId).toContain('ext_2026-08-18_p-1_s-1_r1');
             expect(firestore.setDoc).toHaveBeenCalledTimes(1);
         });
     });
@@ -447,6 +474,29 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             expect(mockTx.set).not.toHaveBeenCalled();
         });
 
+        it('throws when attempting an illegal transition (e.g. scheduled to completed, active to scheduled)', async () => {
+            const scheduled = occurrenceDoc({ occurrenceId: 'occ-1', state: 'scheduled' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => scheduled,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const service = new SessionOccurrenceService();
+            await expect(
+                service.transitionOccurrenceState('u1', 'occ-1', 'completed'),
+            ).rejects.toThrow("Cannot transition occurrence occ-1 from 'scheduled' to 'completed'.");
+
+            const active = occurrenceDoc({ occurrenceId: 'occ-2', state: 'active' });
+            mockTx.get.mockResolvedValue({ exists: () => true, data: () => active });
+            await expect(
+                service.transitionOccurrenceState('u1', 'occ-2', 'scheduled'),
+            ).rejects.toThrow("Cannot transition occurrence occ-2 from 'active' to 'scheduled'.");
+        });
+
         it('throws when transitioning from a terminal state', async () => {
             const completed = occurrenceDoc({ occurrenceId: 'occ-1', state: 'completed' });
             const mockTx = {
@@ -461,9 +511,29 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             const service = new SessionOccurrenceService();
             await expect(
                 service.transitionOccurrenceState('u1', 'occ-1', 'active'),
-            ).rejects.toThrow("Cannot transition occurrence occ-1 from terminal state 'completed' to 'active'.");
+            ).rejects.toThrow("Cannot transition occurrence occ-1 from 'completed' to 'active'.");
 
             expect(mockTx.set).not.toHaveBeenCalled();
+        });
+
+        it('queueOccurrenceTransition queues state change into batch', async () => {
+            const active = occurrenceDoc({ occurrenceId: 'occ-1', state: 'active' });
+            firestore.getDoc.mockResolvedValue({
+                exists: () => true,
+                data: () => active,
+            });
+            const mockBatch = {
+                set: vi.fn(),
+            };
+
+            const service = new SessionOccurrenceService();
+            const result = await service.queueOccurrenceTransition('u1', 'occ-1', 'completed', '2026-08-18T12:00:00Z', mockBatch as unknown as WriteBatch);
+
+            expect(result.state).toBe('completed');
+            expect(mockBatch.set).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({ state: 'completed', updatedAt: '2026-08-18T12:00:00Z' }),
+            );
         });
     });
 });

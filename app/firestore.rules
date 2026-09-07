@@ -1154,8 +1154,11 @@ service cloud.firestore {
         && (('definitionRef' in data) != ('externalPlanRef' in data))
         && data.occurrenceId == occurrenceId
         && isValidActivityDate(data.date)
-        && data.authority in ['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session', 'external_plan']
         && data.state in ['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed', 'skipped']
+        && (
+          ('externalPlanRef' in data && data.authority == 'external_plan')
+          || ('definitionRef' in data && data.authority in ['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session'])
+        )
         && (!('definitionRef' in data) || (
           data.definitionRef is map
           && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
@@ -1177,6 +1180,12 @@ service cloud.firestore {
         && data.createdAt is string && data.updatedAt is string;
     }
 
+    function isValidOccurrenceStateTransition(fromState, toState) {
+      return fromState == toState
+        || (fromState == 'scheduled' && toState in ['active', 'skipped', 'superseded', 'missed'])
+        || (fromState == 'active' && toState in ['completed', 'abandoned', 'superseded']);
+    }
+
     match /users/{userId}/session_occurrences/{occurrenceId} {
       allow read: if isOwner(userId);
       allow create: if hasValidSessionOccurrence(userId, occurrenceId);
@@ -1185,6 +1194,7 @@ service cloud.firestore {
         && request.resource.data.date == resource.data.date
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.authority == resource.data.authority
+        && isValidOccurrenceStateTransition(resource.data.state, request.resource.data.state)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt']);
       allow delete: if isOwner(userId);
     }

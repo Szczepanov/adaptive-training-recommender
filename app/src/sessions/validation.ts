@@ -445,6 +445,13 @@ export function validateSessionOccurrence(raw: unknown): ValidationResult<Sessio
         issues.push({ path: 'state', message: `Invalid state: ${String(raw.state)}` });
     }
 
+    if ('definitionRef' in raw && raw.definitionRef !== undefined && !isObject(raw.definitionRef)) {
+        issues.push({ path: 'definitionRef', message: 'Invalid definitionRef' });
+    }
+    if ('externalPlanRef' in raw && raw.externalPlanRef !== undefined && !isObject(raw.externalPlanRef)) {
+        issues.push({ path: 'externalPlanRef', message: 'Invalid externalPlanRef' });
+    }
+
     const hasDefinitionRef = isObject(raw.definitionRef);
     const hasExternalPlanRef = isObject(raw.externalPlanRef);
 
@@ -453,6 +460,9 @@ export function validateSessionOccurrence(raw: unknown): ValidationResult<Sessio
     } else if (hasDefinitionRef && hasExternalPlanRef) {
         issues.push({ path: 'ref', message: 'Session occurrence cannot have both definitionRef and externalPlanRef' });
     } else if (hasDefinitionRef) {
+        if (raw.authority === 'external_plan') {
+            issues.push({ path: 'authority', message: 'definitionRef cannot have authority external_plan' });
+        }
         const def = raw.definitionRef as Record<string, unknown>;
         if (
             typeof def.definitionId !== 'string' || def.definitionId.length === 0
@@ -462,6 +472,9 @@ export function validateSessionOccurrence(raw: unknown): ValidationResult<Sessio
             issues.push({ path: 'definitionRef', message: 'Invalid definitionRef' });
         }
     } else if (hasExternalPlanRef) {
+        if (raw.authority !== 'external_plan') {
+            issues.push({ path: 'authority', message: 'externalPlanRef requires authority external_plan' });
+        }
         const ext = raw.externalPlanRef as Record<string, unknown>;
         if (
             typeof ext.planId !== 'string' || ext.planId.length === 0

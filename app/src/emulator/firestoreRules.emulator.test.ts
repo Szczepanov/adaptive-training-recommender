@@ -1575,6 +1575,13 @@ emulatorDescribe('Firestore security rules', () => {
             updatedAt: '2026-08-18T11:00:00Z',
         }))).resolves.toBeUndefined();
 
+        // 3b. Completed occurrence cannot transition back to active
+        await assertFails(setDoc(doc(ownerDb, occPath), {
+            ...baseOcc,
+            state: 'active',
+            updatedAt: '2026-08-18T11:05:00Z',
+        }));
+
         // 4. Create another occurrence with skipped state
         const skippedPath = `users/${ownerId}/session_occurrences/occ-ext-skipped`;
         await expect(assertSucceeds(setDoc(doc(ownerDb, skippedPath), {
@@ -1582,6 +1589,28 @@ emulatorDescribe('Firestore security rules', () => {
             occurrenceId: 'occ-ext-skipped',
             state: 'skipped',
         }))).resolves.toBeUndefined();
+
+        // 4b. Skipped occurrence cannot transition back to active
+        await assertFails(setDoc(doc(ownerDb, skippedPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-skipped',
+            state: 'active',
+            updatedAt: '2026-08-18T10:05:00Z',
+        }));
+
+        // 4c. Scheduled occurrence cannot jump directly to completed
+        const directPath = `users/${ownerId}/session_occurrences/occ-ext-direct`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, directPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-direct',
+            state: 'scheduled',
+        }))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, directPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-direct',
+            state: 'completed',
+            updatedAt: '2026-08-18T11:00:00Z',
+        }));
 
         // 5. Rejects an occurrence with both definitionRef and externalPlanRef
         const bothPath = `users/${ownerId}/session_occurrences/occ-ext-both`;
@@ -1600,6 +1629,22 @@ emulatorDescribe('Firestore security rules', () => {
         const noRef = { ...validExternalPlanSessionOccurrence(), occurrenceId: 'occ-ext-neither' };
         delete (noRef as { externalPlanRef?: unknown }).externalPlanRef;
         await assertFails(setDoc(doc(ownerDb, neitherPath), noRef));
+
+        // 7. Rejects externalPlanRef paired with non-external_plan authority
+        const mismatchedExtPath = `users/${ownerId}/session_occurrences/occ-ext-mismatched`;
+        await assertFails(setDoc(doc(ownerDb, mismatchedExtPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-mismatched',
+            authority: 'replace_recommendation',
+        }));
+
+        // 8. Rejects definitionRef paired with external_plan authority
+        const mismatchedDefPath = `users/${ownerId}/session_occurrences/occ-def-mismatched`;
+        await assertFails(setDoc(doc(ownerDb, mismatchedDefPath), {
+            ...validSessionOccurrence(),
+            occurrenceId: 'occ-def-mismatched',
+            authority: 'external_plan',
+        }));
     });
 
     it('allows recommendations with primarySession and additionalSessions bindings', async () => {
