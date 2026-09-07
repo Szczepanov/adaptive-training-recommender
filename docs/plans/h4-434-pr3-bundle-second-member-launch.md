@@ -291,6 +291,41 @@ parameter order on `queueOccurrenceTransition`. What remains:
      with `Home.tsx` only supplying loaded data. Keeps the "engine pure, persistence in
      callers" invariant and makes the acceptance cases testable.
 
+6a. **The persisted date-level reservation aggregate** (new; consumed by step 11)
+   - Firestore constraint that forces this design: in the Web SDK, `Transaction.get()`
+     accepts a `DocumentReference` only — **it cannot run a query**. So the claim
+     transaction physically cannot read "every occurrence for this date" and re-derive the
+     ledger; it can only read documents it can name. The day's reservation totals must
+     therefore live in one named document that every writer maintains, and step 6's derived
+     ledger is a read-side projection, not the serialization authority.
+   - Action: define `users/{userId}/daily_ledgers/{date}` (or the reservation map on
+     `daily_recommendations/{date}` — step 11's open choice) holding: `revision`, the
+     resolved `ceilings`, and `reservations: { [occurrenceId]: { minutes, systemicCost,
+     state } }`.
+   - **Every transition that changes an occurrence's reserving status must update this
+     document and increment `revision` in the same transaction**, or the aggregate drifts
+     from the occurrences and each direction of drift is a real defect:
+     | Transition | Aggregate effect |
+     |---|---|
+     | create on `proceed`/`pending`/`scale` | add the reservation |
+     | `reject` → `scheduled → skipped` (step 8) | remove it |
+     | re-import → `scheduled → superseded` (step 4b) | remove it |
+     | claim → `scheduled → active` (step 11) | mark `in_progress`, same debit, never re-add |
+     | release → `active → scheduled` (step 11) | back to reserved, not removed |
+     | completion/abandonment (`useSessionRunner`) | reconcile to the known actual, or
+       `unresolved` when no bounded actual exists |
+   - Why: a stale reservation left behind by a rejected or superseded member silently
+     blocks a launch the athlete is entitled to, while a reservation that was never written
+     for a `pending`/`scale` member lets two concurrent claims overbook the same capacity.
+     Step 6's filtering fixes only the derived read; without this, the document step 11
+     serializes on disagrees with it.
+   - Reconciliation check: on each dashboard load, recompute the derived ledger from
+     occurrences (step 6) and compare it against the persisted aggregate. A mismatch is a
+     bug, not a state to paper over — surface it and prefer the conservative (higher
+     consumption) side rather than silently releasing capacity.
+   - Dependencies: steps 4a-6. Risk: **High** — this is the shared mutable state; test each
+     row of the table above, plus the drift check.
+
 7. **Real execution state into placement** (`app/src/services/activeExternalPlanService.ts:82`)
    - Action: give `IntradayBundlePlacementContext` an optional
      `memberState?: ReadonlyMap<string, { started: boolean; existingBinding?: ResolvedWindowBinding }>`
@@ -311,12 +346,21 @@ parameter order on `queueOccurrenceTransition`. What remains:
         + `SessionResponse` `immediate` + tissue responses), the Phase-2 ledger, and
         `computeReassessmentInputRevision(...)`. The target's own occurrence is not an input
         to its own reassessment, so it must not be created before the verdict is known;
-     2. **`reject` → create nothing.** If an occurrence already exists from an earlier load
-        whose verdict has since flipped, transition it `scheduled → skipped` so the Phase-2
-        ledger stops counting it. A rejected member must never leave a `scheduled`
-        occurrence behind — Phase 2 reads every `scheduled` occurrence as a live minute and
-        systemic-cost reservation, so a rejected member would otherwise consume exactly the
-        capacity it was just denied;
+     2. **`reject` → create nothing**, and emit no binding. If an occurrence already exists
+        from an earlier load whose verdict has since flipped, what happens depends on the
+        state it is in:
+        - `scheduled` → transition `scheduled → skipped` and drop its reservation from the
+          aggregate (step 6a). A rejected member must never leave a `scheduled` occurrence
+          behind: Phase 2 reads every `scheduled` occurrence as a live minute and
+          systemic-cost reservation, so it would otherwise consume exactly the capacity it
+          was just denied;
+        - `active` or `completed` → **change nothing.** The work is under way or already
+          done; its consumption is real and stays in both the derived ledger and the
+          aggregate. `active → skipped` is not even a legal transition in the merged table,
+          and hiding such an occurrence would erase performed work to make later work fit —
+          exactly what D-LEDGER forbids. A late `reject` for an occurrence in these states
+          means only "do not offer it again", which is already true because a binding is
+          emitted solely on `proceed` and the claim rejects any non-`scheduled` occurrence;
      3. **`pending` → create the occurrence and reserve.** Deliberately different from
         `reject`: D-LEDGER counts "accepted pending session reservations" against the day,
         and a member waiting only on a post-AM confirmation is still intended work. Emit no
@@ -348,13 +392,24 @@ parameter order on `queueOccurrenceTransition`. What remains:
      notice if the bundle would exceed the cap rather than producing an invalid
      recommendation.
 
-9. **Persist the provisional decision (D-AUDIT)** — optional in this PR, recommended
-   - Action: after each member is adjudicated, write an `IntradayDecisionRecord` with
-     `status: 'provisional'` via `saveIntradayDecision`.
-   - Why: the store already exists and is write-once; without a provisional record, the
-     launch-time record has no `supersededDecisionId` chain to link to.
-   - Risk: Low; skip only if the PR gets too large — but then say so explicitly in the PR
-     description rather than leaving it silently unwritten.
+9. **Persist the provisional decision (D-AUDIT)** — **required, not optional**
+   - Action: for every member that receives a binding, write an `IntradayDecisionRecord`
+     with `status: 'provisional'` via `saveIntradayDecision` **before** the binding is
+     exposed, carrying the `ReassessmentInputRevision` the verdict was computed against.
+   - Why this is not optional: step 11's claim compares the *current* ledger revision
+     against "the revision the decision assumed". That expected value has to be durable —
+     it is read back in a transaction that may run in another tab, after a reload, or hours
+     later. `SessionReferenceBinding` has no field for it (`sessionSource`, `occurrenceId`,
+     `prescriptionHash`), and inventing one would change a shipped, rules-validated,
+     replayed shape. The provisional record is the store that already exists for exactly
+     this, so a deferred record leaves the claim with no expected revision and its staleness
+     check becomes a no-op that compares the current value against itself.
+   - Secondary benefit, which was the original reason: the launch-time record gains a
+     `supersededDecisionId` chain to link to.
+   - Alternative if this is deferred anyway: persist the revision on the occurrence and
+     bump its own revision on every reassessment — strictly more schema churn on a document
+     #445 just froze, for the same guarantee. Prefer the decision record.
+   - This closes open question 4. Risk: Low.
 
 ### Phase 4 — Launch affordance and the atomic claim
 
@@ -394,14 +449,18 @@ parameter order on `queueOccurrenceTransition`. What remains:
       no conflict because they touch disjoint documents. Re-running the reassessment inside
       `onBeforeClaim` does not fix this: both callers would compute the same
       stale-but-individually-valid answer. The transaction must therefore, atomically:
-      1. `transaction.get` the canonical per-date ledger/lock document;
+      1. `transaction.get` the step-6a aggregate document (it must be read by name — a
+         transaction cannot query for the date's occurrences);
       2. verify its revision against the `ReassessmentInputRevision` the decision assumed;
-      3. write this member's reservation into it **and increment its revision** — this write
-         is what makes a concurrent claim conflict and retry;
+      3. move this member's entry from reserved to in-progress **and increment `revision`**
+         (same debit, never re-added — D-LEDGER: a pending reservation that becomes
+         in-progress keeps its identity and is not charged twice). This write is what makes
+         a concurrent claim conflict and retry;
       4. transition the occurrence to `active`.
       Steps 1-2 must precede every write (Firestore's reads-before-writes rule). Without
       step 3 the lock document is never written and provides no mutual exclusion at all.
-    - Which document holds it is the only open part. Recommendation:
+    - Step 6a defines that document's shape and the writers that must keep it consistent;
+      only *which* document holds it is still open. Recommendation:
       `users/{userId}/daily_recommendations/{date}` — it exists already and already carries a
       revision — falling back to a dedicated `users/{userId}/daily_ledgers/{date}` with
       independent rules if the recommendation document's rules budget cannot absorb a
@@ -567,7 +626,9 @@ separation minimum are satisfied → launch it and confirm exactly one occurrenc
    D-AUDIT validator is acceptable versus versioning the record (`schemaVersion: 2`).
 3. **Multi-region tissue capture** in the completion sheet: expand now, or accept
    single-region capture for this PR and note the limitation?
-4. **Provisional D-AUDIT records (step 9)** — in this PR, or deferred to issue #437?
+4. ~~**Provisional D-AUDIT records (step 9)**~~ — settled as required: the claim's
+   staleness check needs a durable expected revision, and the decision record is the only
+   shipped store that can hold one.
 5. **Window identity's mechanism** — settled that it cannot live on `IntradayDecisionRecord`
    alone (Phase 1, step 4a): an append-only audit log cannot enforce uniqueness. Still open:
    `windowBinding` on the occurrence vs. a `(date, windowId)`-keyed reservation document.
