@@ -23,6 +23,7 @@ import {
     isExternalPlanOccurrence,
 } from '../sessions/models';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
+import { MAX_RECOVERY_GENERATION } from './dailyLedgerAggregateService';
 
 /** ACTIVE_OCCURRENCE_STATES excludes terminal/superseded states from "what governs today". */
 const ACTIVE_OCCURRENCE_STATES: ReadonlySet<SessionOccurrence['state']> = new Set(['scheduled', 'active']);
@@ -62,17 +63,39 @@ export function isValidOccurrenceTransition(from: OccurrenceState, to: Occurrenc
  * Computes a deterministic Firestore document ID for an external-plan occurrence using SHA-256.
  * Ensures concurrent getOrCreate operations resolve to the exact same document ID without
  * character replacement collisions or reserved Firestore identifier issues.
+ *
+ * `generation` (H4 #434 PR 3 plan step 8, item 2a) is the recovery discriminator: a member
+ * rejected earlier in the day and later admissible again (predecessor completed, symptom
+ * resolved, capacity freed) must recover as a *new* occurrence identity rather than
+ * reactivate the terminal `skipped` document (#445's transition table forbids that
+ * transition). `generation` defaults to `0`, which hashes identically to every id already
+ * minted before this parameter existed -- this is a pure additive extension, not a change
+ * to any occurrence identity that already exists in production. `generation` is not
+ * incremented here; the caller reads the current value from
+ * `dailyLedgerAggregateService.currentGeneration` (already bumped by the `reject` that
+ * necessitated the recovery) and passes it in. Explicit malformed or unsupported values
+ * fail closed: silently mapping them back to generation 0 could reuse a terminal occurrence
+ * identity and defeat the recovery discriminator itself.
  */
 export async function deterministicExternalPlanOccurrenceId(
     date: string,
     ref: ExternalPlanOccurrenceRef,
+    generation = 0,
 ): Promise<string> {
+    if (typeof generation !== 'number' || !Number.isSafeInteger(generation)) {
+        throw new TypeError('Recovery generation must be a safe integer.');
+    }
+    if (generation < 0 || generation > MAX_RECOVERY_GENERATION) {
+        throw new RangeError(`Recovery generation must be between 0 and ${MAX_RECOVERY_GENERATION}.`);
+    }
+
     const raw = JSON.stringify([
         date,
         ref.planId,
         ref.sessionId,
         ref.revision,
         ref.contentHash,
+        ...(generation > 0 ? [generation] : []),
     ]);
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
     const hash = Array.from(new Uint8Array(digest))
@@ -110,11 +133,11 @@ export class SessionOccurrenceService {
         this.db = db;
     }
 
-    private occurrenceRef(userId: string, occurrenceId: string) {
+    occurrenceRef(userId: string, occurrenceId: string) {
         return doc(this.db, 'users', userId, 'session_occurrences', occurrenceId);
     }
 
-    private windowReservationRef(userId: string, date: string, windowId: string) {
+    windowReservationRef(userId: string, date: string, windowId: string) {
         return doc(this.db, 'users', userId, 'session_occurrence_windows', windowReservationId(date, windowId));
     }
 
@@ -264,11 +287,13 @@ export class SessionOccurrenceService {
         options: {
             placementOrder?: number;
             windowBinding?: OccurrenceWindowBinding;
+            generation?: number;
             now?: string;
         } = {},
     ): Promise<SessionOccurrence> {
         const now = options.now ?? new Date().toISOString();
-        const deterministicId = await deterministicExternalPlanOccurrenceId(date, externalPlanRef);
+        const generation = options.generation ?? 0;
+        const deterministicId = await deterministicExternalPlanOccurrenceId(date, externalPlanRef, generation);
         const ref = this.occurrenceRef(userId, deterministicId);
         const windowReservationRef = options.windowBinding
             ? this.windowReservationRef(userId, date, options.windowBinding.windowId)
@@ -303,10 +328,40 @@ export class SessionOccurrenceService {
 
             if (reservationSnap?.exists()) {
                 const owner = reservationSnap.data()?.occurrenceId as string | undefined;
-                if (owner !== priorRevision?.occurrenceId) {
-                    throw new Error(
-                        `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                if (owner && owner !== deterministicId) {
+                    const ownerRef = (priorRef && owner === priorRevision?.occurrenceId)
+                        ? priorRef
+                        : this.occurrenceRef(userId, owner);
+                    const ownerSnap = (ownerRef === priorRef && priorSnap)
+                        ? priorSnap
+                        : await transaction.get(ownerRef);
+
+                    if (!ownerSnap || !ownerSnap.exists()) {
+                        throw new Error(
+                            `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                        );
+                    }
+
+                    const parsedOwner = parseSessionOccurrenceDocument(ownerSnap.data(), ownerRef.path);
+                    if (parsedOwner.status !== 'AVAILABLE' || !isExternalPlanOccurrence(parsedOwner.data)) {
+                        throw new Error(
+                            `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                        );
+                    }
+
+                    const ownerOcc = parsedOwner.data;
+                    const isMatchingSession = ownerOcc.externalPlanRef.planId === externalPlanRef.planId
+                        && ownerOcc.externalPlanRef.sessionId === externalPlanRef.sessionId;
+                    const isNotActiveOrCompleted = ownerOcc.state !== 'active' && ownerOcc.state !== 'completed';
+                    const isHandoffAllowed = isMatchingSession && isNotActiveOrCompleted && (
+                        ownerOcc.state === 'scheduled' || generation > 0
                     );
+
+                    if (!isHandoffAllowed) {
+                        throw new Error(
+                            `Window '${options.windowBinding!.windowId}' on ${date} is already bound to occurrence '${owner}'.`,
+                        );
+                    }
                 }
             }
 

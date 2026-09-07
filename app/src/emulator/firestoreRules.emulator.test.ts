@@ -1804,6 +1804,16 @@ emulatorDescribe('Firestore security rules', () => {
         const malformed = validAggregate() as Partial<ReturnType<typeof validAggregate>>;
         delete malformed.ceilings;
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_ledgers/2026-08-19`), malformed));
+
+        // 8. generations (H4 #434 PR 3 step 8, item 2a) is optional and, when present, a
+        // map -- the same dynamic-keyed tradeoff as reservations.
+        const withGenerationsPath = `users/${ownerId}/daily_ledgers/2026-08-20`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, withGenerationsPath), {
+            ...validAggregate(), date: '2026-08-20', generations: { 'session-am': 1 },
+        }))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_ledgers/2026-08-21`), {
+            ...validAggregate(), date: '2026-08-21', generations: 'not-a-map',
+        }));
     });
 
     it('allows recommendations with primarySession and additionalSessions bindings', async () => {

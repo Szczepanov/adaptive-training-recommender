@@ -38,9 +38,15 @@ import {
   buildIntradayMemberState,
   externalPlanContextForDate,
   externalRestContextForDate,
+  resolveIntradayBundlePlacement,
   type ActiveExternalPlan,
   type IntradayBundlePlacementContext,
 } from '../services/activeExternalPlanService';
+import {
+  adjudicateIntradayBundleMembers,
+  type IntradayBundleMemberStatus,
+} from '../services/intradayBundleMemberAdjudication';
+import type { LedgerCeilings } from '../engine/dailyLedger';
 import { checkinService } from '../services/checkinService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
@@ -114,6 +120,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
   const [recentActivities, setRecentActivities] = useState<NormalizedGarminActivity[]>([]);
   const [, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
+  const [, setBundleMemberStatuses] = useState<IntradayBundleMemberStatus[]>([]);
   const [hasPendingSessionResponse, setHasPendingSessionResponse] = useState(false);
   const pendingAdherenceRef = useRef(pendingAdherence);
   useEffect(() => { pendingAdherenceRef.current = pendingAdherence; }, [pendingAdherence]);
@@ -482,6 +489,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               memberState: todaysExternalPlanMemberState,
             }
           : undefined;
+        const bundlePlacement = (activeExternal && bundleContext && isV4Plan(activeExternal.plan))
+          ? resolveIntradayBundlePlacement(activeExternal, input.date, bundleContext)
+          : null;
         const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, bundleContext) : null;
         const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;
 
@@ -662,6 +672,40 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             additionalBindings.push(launch.binding);
             acceptedSameDaySystemicCost += verdict.acceptedSystemicCost ?? estimateAuthoredSessionSystemicCost(targetDef);
             acceptedSameDayMinutes += targetDef.duration?.min ?? 45;
+          }
+
+          if (activeExternal && isV4Plan(activeExternal.plan) && bundlePlacement?.outcome === 'placed') {
+            const ceilings: LedgerCeilings = {
+              dailyMinuteCeiling: availability.maxTimeMinutes,
+              dailySystemicCostCeiling: Math.max(0, 1 - availability.reservedCapacityCost),
+            };
+            const memberResult = await adjudicateIntradayBundleMembers({
+              userId,
+              date: input.date,
+              activePlan: activeExternal,
+              bundlePlacement,
+              subjective,
+              objective,
+              subjectiveBaseline: input.subjectiveBaseline,
+              userContext: context,
+              availability,
+              ceilings,
+              inputRevision: {
+                availabilityRevision: `${input.date}:${availability.maxTimeMinutes}:${availability.reservedCapacityCost}`,
+                completedFactsRevision: preparedSnapshot.performedTrainingFacts?.revision ?? preparedSnapshot.revision,
+                checkinRevision: (input.sourceStates?.subjectiveCheckin?.status === 'AVAILABLE' && input.sourceStates.subjectiveCheckin.revision)
+                  ? input.sourceStates.subjectiveCheckin.revision
+                  : (input.subjectiveCheckin ? 'checkin-present' : 'checkin-missing'),
+                placementRevision: `${activeExternal.plan.planId}:${activeExternal.plan.revision}`,
+              },
+              existingAdditionalBindingsCount: additionalBindings.length,
+            });
+            if (!isCurrent()) return;
+            setBundleMemberStatuses(memberResult.statuses);
+            additionalBindings.push(...memberResult.bindings);
+            additionalNotices.push(...memberResult.notices);
+          } else {
+            setBundleMemberStatuses([]);
           }
 
           if (additionalBindings.length > 0 || additionalNotices.length > 0) {

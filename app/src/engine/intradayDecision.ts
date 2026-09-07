@@ -78,6 +78,9 @@ export interface IntradayDecisionRecord {
 
     /** Decision outcome and reasons */
     verdict: IntradayDecisionVerdict;
+
+    /** The transaction-produced post-reservation ledger revision, captured for Phase 4 claim staleness validation */
+    postReservationLedgerRevision?: string;
 }
 
 const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
@@ -252,6 +255,11 @@ export function validateIntradayDecisionRecord(raw: unknown): IntradayDecisionRe
         reasons: vd.reasons.map((r, i) => assertString(r, `verdict.reasons[${i}]`, 1, 256)),
     };
 
+    let postReservationLedgerRevision: string | undefined;
+    if ('postReservationLedgerRevision' in data && data.postReservationLedgerRevision !== undefined) {
+        postReservationLedgerRevision = assertString(data.postReservationLedgerRevision, 'postReservationLedgerRevision', 1, 128);
+    }
+
     return {
         id,
         userId,
@@ -272,6 +280,7 @@ export function validateIntradayDecisionRecord(raw: unknown): IntradayDecisionRe
         bundlePlacement,
         ledgerSnapshot,
         verdict,
+        ...(postReservationLedgerRevision !== undefined ? { postReservationLedgerRevision } : {}),
     };
 }
 
