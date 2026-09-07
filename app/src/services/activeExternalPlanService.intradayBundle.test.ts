@@ -88,6 +88,27 @@ describe('resolveIntradayBundlePlacement', () => {
         expect(result?.bindings?.map(b => b.sessionId)).toEqual(['s-am', 's-pm']);
     });
 
+    it('preserves a started member\'s history via memberState instead of hardcoding started: false (H4 #434 PR 3 step 7)', () => {
+        const active = activePlan([
+            intradaySession({ id: 's-am', intraday: { window: { startLocal: '06:00', endLocal: '07:00' }, bundleId: 'double-monday', order: 0 } }),
+            intradaySession({ id: 's-pm', title: 'PM', intraday: { window: { startLocal: '17:00', endLocal: '18:00' }, bundleId: 'double-monday', order: 1 } }),
+        ]);
+        const existingBinding = {
+            sessionId: 's-am', windowId: 'am',
+            boundStartLocal: '06:00', boundEndLocal: '07:00',
+            startInstant: '2026-08-17T04:00:00Z', endInstant: '2026-08-17T05:00:00Z',
+        };
+        const result = resolveIntradayBundlePlacement(active, DATE, bundleContext({
+            scheduleWindows: [scheduleWindow({ id: 'am', startLocal: '06:00', endLocal: '07:00' }), scheduleWindow({ id: 'pm', startLocal: '17:00', endLocal: '18:00' })],
+            memberState: new Map([['s-am', { started: true, existingBinding }]]),
+        }));
+        expect(result?.outcome).toBe('placed');
+        // The started member's binding is carried through unchanged, not re-derived --
+        // without memberState wired through, toMembers would hardcode started: false and
+        // this exact instant pair could silently move on a later dashboard load.
+        expect(result?.bindings?.find(b => b.sessionId === 's-am')).toEqual(existingBinding);
+    });
+
     it('does not merge two distinct bundle instances that land on the same date, and lets the first feasible one win', () => {
         // An athlete's explicit per-session overlay can move any single session --
         // including one bundle member independently of its siblings -- to an arbitrary

@@ -10,7 +10,7 @@ import type {
 import type { ExternalPlanContext, ExternalRestContext } from '../engine/rules';
 import { estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
 import type { DailyLedgerResult } from '../engine/dailyLedger';
-import { proposeBundlePlacement, type BundlePlacementProposal, type IntradayBundleMember } from '../engine/intradayBundlePlacement';
+import { proposeBundlePlacement, type BundlePlacementProposal, type IntradayBundleMember, type ResolvedWindowBinding } from '../engine/intradayBundlePlacement';
 import { externalPlanService, type ExternalPlanService } from './externalPlanService';
 // M3.6: an active plan may be any supported schema version -- resolvePlacement and most
 // downstream session handling read envelope fields shared by every version. ADR-0035 adds
@@ -75,11 +75,28 @@ export interface IntradayBundlePlacementContext {
     scheduleWindows: readonly ScheduleWindow[];
     fixedActivities: readonly FixedActivity[];
     ledger: DailyLedgerResult;
+    /**
+     * H4 (#434) PR 3, Phase 2 step 7: real per-member execution state, keyed by the v4
+     * session's own `sessionId` (`ExternalPlanSessionV4.id`), when the caller has already
+     * resolved today's occurrence/launch state for this bundle. Absent (or a member with
+     * no entry) falls back to `started: false` -- the exact pre-PR-3 behavior -- so a
+     * caller that has not yet wired occurrence lookups keeps working unchanged.
+     */
+    memberState?: ReadonlyMap<string, { started: boolean; existingBinding?: ResolvedWindowBinding }>;
 }
 
-function toMembers(bundleSessions: readonly (PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } })[]): IntradayBundleMember[] {
+function toMembers(
+    bundleSessions: readonly (PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } })[],
+    memberState?: IntradayBundlePlacementContext['memberState'],
+): IntradayBundleMember[] {
     return bundleSessions.map(placed => {
         const { intraday, definition, priority, id } = placed.session;
+        // ADR-0036 D-PLACEMENT: "once a member starts, do not move its history." Before
+        // PR 3 wired real occurrence state through, every member was evaluated as
+        // not-yet-started regardless of what actually happened -- a placed-but-launched
+        // member's window could be silently reassigned on the next dashboard load. The
+        // caller-supplied state is authoritative when present.
+        const state = memberState?.get(id);
         return {
             sessionId: id,
             order: intraday.order,
@@ -89,10 +106,8 @@ function toMembers(bundleSessions: readonly (PlacedSession & { session: External
             minimumSeparationMinutes: intraday.minimumSeparationMinutes,
             estimatedMinutes: definition.duration?.max ?? definition.duration?.min ?? 45,
             estimatedSystemicCost: estimateAuthoredSessionSystemicCost(definition),
-            // Placement-correctness resolution only: execution status is not wired in
-            // here. Every member is evaluated as not-yet-started; reconciling against
-            // actual launch/completion is D-REASSESS, not this PR.
-            started: false,
+            started: state?.started ?? false,
+            ...(state?.existingBinding !== undefined ? { existingBinding: state.existingBinding } : {}),
         };
     });
 }
@@ -135,7 +150,7 @@ export function resolveIntradayBundlePlacement(
     for (const key of [...groups.keys()].sort()) {
         const groupSessions = groups.get(key)!;
         const bundleId = groupSessions[0].session.intraday.bundleId;
-        const result = proposeBundlePlacement(bundleId, date, toMembers(groupSessions), context.scheduleWindows, context.fixedActivities, restDates, context.ledger);
+        const result = proposeBundlePlacement(bundleId, date, toMembers(groupSessions, context.memberState), context.scheduleWindows, context.fixedActivities, restDates, context.ledger);
         firstResult ??= result;
         if (result.outcome === 'placed') return result;
     }
