@@ -226,6 +226,16 @@ history**.
 A brand-new or history-incomplete athlete must use a stable bootstrap epoch for the policy;
 the deadline may not slide forward every time the rolling plan is recomputed.
 
+When no qualifying recovery date is known, let the durable bootstrap date be `B`. `B` is an
+**initial deadline reference only**: it does not itself count as a recovery date. The first
+recovery is due no later than `B + 7` local calendar days, so `dueByDate = B + 7`, and the
+first complete policy window that can be evaluated is `B + 1 ... B + 7`. Dates before and
+including the unknown-history prefix through `B` are excluded from rolling-window success or
+failure rather than being silently treated as recovery or non-recovery. If a qualifying
+recovery occurs after `B` and before or on that first deadline, that real date becomes the
+latest qualifying recovery reference and subsequent deadlines follow the normal `R + 7`
+rule.
+
 The storage/source of that epoch is an implementation choice only within limits, because
 not every choice provides the stability the policy depends on. The epoch must be **durable
 and identity-scoped**: persisted against the athlete's identity, or derived deterministically
@@ -235,8 +245,9 @@ catch — it resets on restart, and differs on a second device, and each reset m
 deadline forward. Repeated resets postpone recovery indefinitely, which is exactly the
 failure this section exists to prevent.
 
-Accordingly the acceptance test must prove stability **across a restart and across a second
-device or session**, not merely across repeated recomputation within one run.
+Accordingly the acceptance test must prove both boundary semantics and stability **across a
+restart and across a second device or session**, not merely across repeated recomputation
+within one run.
 
 ### Projected recovery versus historical recovery
 
@@ -349,16 +360,20 @@ implementation is not complete without deterministic tests for all of the follow
 
 1. **Rolling-window target:** in a scenario where recovery is placeable, every complete
    seven-local-date window after bootstrap has at least one qualifying recovery exposure.
-   Scoped deliberately: the mechanism is best-effort, so an unscoped assertion would be
-   testing a guarantee the policy does not make.
+   For unknown-history bootstrap `B`, the first evaluated window is exactly
+   `B + 1 ... B + 7`; the pre-bootstrap unknown prefix is excluded. Scoped deliberately:
+   the mechanism is best-effort, so an unscoped assertion would be testing a guarantee the
+   policy does not make.
 2. **Boundary day:** a recovery on `R` followed by six non-recovery days makes `R + 7` a
    tier-1 recovery deadline before the candidate is selected.
 3. **Plan-less ranking:** product-policy recovery receives exact identity authority and can
    actually move from tier 2 to tier 1; `descriptor: null`/`phase: null` cannot silently
    neuter it.
-4. **Stable bootstrap:** repeated daily recomputation cannot keep pushing an unknown-history
-   recovery deadline forward, and neither can a restart or a second device/session — the
-   epoch survives both because it is durable and identity-scoped.
+4. **Stable bootstrap:** with no known recovery, `B` is not credited as recovery,
+   `dueByDate = B + 7`, and repeated daily recomputation cannot push that deadline forward;
+   neither can a restart or a second device/session — the epoch survives both because it is
+   durable and identity-scoped. A real recovery before/on `B + 7` becomes the next `R` and
+   resets the deadline to `R + 7`.
 5. **Exact identity:** unmapped generic Mobility/Recovery does not satisfy the policy;
    mapped Rest, mobility/breathwork and cycling recovery-spin identities do.
 6. **Authored rest bridge:** an ADR-0035 rest directive satisfies recovery with directive
