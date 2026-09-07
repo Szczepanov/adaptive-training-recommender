@@ -267,6 +267,7 @@ describe('writeProvisionalDecisionInTransaction (H4 #434 PR 3 step 9)', () => {
         );
         expect((tx as unknown as { set: ReturnType<typeof vi.fn> }).set).not.toHaveBeenCalled();
     });
+
     it('rejects records with non-provisional status', () => {
         const tx = mockTransaction();
         const nonProvisional = sampleRecord('dec-1', { status: 'confirmed' });
