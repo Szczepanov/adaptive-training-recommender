@@ -1,8 +1,8 @@
-# H4: external-plan execution-binding pipeline — PR-1 implementation and follow-up roadmap
+# H4: external-plan execution-binding pipeline — PR-1/PR-2 implementation and follow-up roadmap
 
-**Status:** PR 1 implemented in [PR #440](https://github.com/Szczepanov/adaptive-training-recommender/pull/440).
-This document records the original gap, the invariants enforced by PR 1, and the remaining
-follow-up work.
+**Status:** PR 1 implemented in [PR #440](https://github.com/Szczepanov/adaptive-training-recommender/pull/440); PR 2 implemented in [PR #445](https://github.com/Szczepanov/adaptive-training-recommender/pull/445).
+This document records the original gap, the invariants established by the first two PRs, and the
+remaining follow-up work.
 
 **Tracks:** [GitHub issue #434](https://github.com/Szczepanov/adaptive-training-recommender/issues/434).
 
@@ -244,16 +244,43 @@ A future implementation may transform external `SessionDefinition.blocks` accord
 accepted scale verdict, then hash and persist the transformed execution snapshot. Until that
 exists, `scale` remains display/advice only and cannot launch.
 
+## PR-2 lifecycle boundary
+
+PR 2 introduces source-appropriate external-plan occurrence identity and the
+`claimOccurrenceLaunch` transaction primitive, but it deliberately does **not** wire the H4
+ledger/reassessment claim into every live occurrence-backed start. Existing M3.3 manual
+occurrences and the new external-plan occurrence path can therefore still be in `scheduled`
+when their execution completes or is abandoned.
+
+Until PR 3 moves launch through the atomic claim/ledger boundary, `scheduled -> completed` and
+`scheduled -> abandoned` remain valid transitions in both service policy and Firestore rules.
+The runner commits the athlete's execution first and performs occurrence completion/abandonment
+as non-blocking bookkeeping afterward; an occurrence-sync failure must not prevent the athlete
+from finishing a recorded session. This is a transitional compatibility rule, not the final
+D-REASSESS launch protocol.
+
+PR 3 should wire the existing claim primitive at the actual launch boundary together with the
+ledger/input-revision checks required by ADR-0036. At that point the live path becomes
+`scheduled -> active -> completed/abandoned`, and the temporary direct terminal transitions can
+be reconsidered/tightened in the same change.
+
+PR 2 also treats an explicitly supplied occurrence id as evidence, not as a trusted string:
+`prepareExternalPlanSessionLaunch` resolves it and verifies user/date (when supplied) plus the
+full `(planId, revision, sessionId, contentHash)` source identity before binding it to a
+prescription.
+
 ## Follow-up roadmap
 
 1. **PR 1 — implemented in PR #440:** prescription-only v4 primary-session launch binding, no
    occurrence record.
-2. **PR 2 — implemented here:** introduce source-appropriate `SessionOccurrence` tracking for
-   `external_plan` (`scheduled → active → completed / skipped / abandoned`), adding an
-   `externalPlanRef` union branch on `SessionOccurrence`, `'external_plan'` authority, and
-   `'skipped'` state, allowing atomic claiming via `claimOccurrenceLaunch`.
+2. **PR 2 — implemented in PR #445:** introduce source-appropriate `SessionOccurrence`
+   tracking for `external_plan`, including a statically discriminated `externalPlanRef` branch,
+   `'external_plan'` authority, `'skipped'` state, deterministic/idempotent occurrence identity,
+   replay validation, lifecycle transitions, and the atomic `claimOccurrenceLaunch` primitive.
+   Live claim/ledger wiring is intentionally deferred as described above.
 3. **PR 3 — bundle member execution:** use resolved intraday placement to adjudicate and
-   surface non-primary v4 members as independently launchable `additionalSessions` entries.
+   surface non-primary v4 members as independently launchable `additionalSessions` entries,
+   wiring launch through the occurrence claim/ledger boundary.
 4. **PR 4 — D-REASSESS:** before a dependent/later member starts, reconcile real predecessor
    completion and elapsed separation against execution evidence, then re-adjudicate using
    current readiness/safety/availability state.
