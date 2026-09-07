@@ -607,6 +607,15 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             const second = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 3);
             expect(first).toBe(second);
         });
+
+        it('treats negative or non-integer generation as generation 0', async () => {
+            const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
+            const gen0 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 0);
+            const neg = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, -1);
+            const float = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 1.5 as number);
+            expect(neg).toBe(gen0);
+            expect(float).toBe(gen0);
+        });
     });
 
     describe('transitionOccurrenceState (lifecycle)', () => {

@@ -79,13 +79,14 @@ export async function deterministicExternalPlanOccurrenceId(
     ref: ExternalPlanOccurrenceRef,
     generation = 0,
 ): Promise<string> {
+    const validGen = typeof generation === 'number' && Number.isInteger(generation) && generation > 0 ? generation : 0;
     const raw = JSON.stringify([
         date,
         ref.planId,
         ref.sessionId,
         ref.revision,
         ref.contentHash,
-        ...(generation > 0 ? [generation] : []),
+        ...(validGen > 0 ? [validGen] : []),
     ]);
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw));
     const hash = Array.from(new Uint8Array(digest))

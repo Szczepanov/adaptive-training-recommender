@@ -231,7 +231,7 @@ export class DailyLedgerAggregateService {
     ): { aggregate: DailyLedgerAggregate; generation: number } {
         const reservations = { ...current.reservations };
         delete reservations[occurrenceId];
-        const generation = (current.generations?.[sessionId] ?? 0) + 1;
+        const generation = this.currentGeneration(current, sessionId) + 1;
         const generations = { ...current.generations, [sessionId]: generation };
         const next: DailyLedgerAggregate = {
             ...current,
@@ -247,9 +247,11 @@ export class DailyLedgerAggregateService {
     /** The current recovery generation for a session -- 0 if it has never been rejected.
      * A `pending`/`proceed` recovery after a `reject` mints its new occurrence identity
      * with this value (already incremented by the `reject` that produced it); it is not
-     * incremented again at recovery time. */
+     * incremented again at recovery time. Non-integer, negative, or invalid values are
+     * sanitized to 0. */
     currentGeneration(aggregate: DailyLedgerAggregate, sessionId: string): number {
-        return aggregate.generations?.[sessionId] ?? 0;
+        const val = aggregate.generations?.[sessionId];
+        return typeof val === 'number' && Number.isInteger(val) && val >= 0 ? val : 0;
     }
 }
 

@@ -210,5 +210,43 @@ describe('DailyLedgerAggregateService', () => {
             );
             expect(result.generations).toEqual({ 'session-pm': 1, 'session-am': 1 });
         });
+
+        it('sanitizes negative, string, and non-integer generations to 0', () => {
+            const service = new DailyLedgerAggregateService();
+            const malformed = aggregate({
+                generations: {
+                    'neg': -1,
+                    'str': '1' as unknown as number,
+                    'float': 1.5,
+                    'nan': Number.NaN,
+                },
+            });
+            expect(service.currentGeneration(malformed, 'neg')).toBe(0);
+            expect(service.currentGeneration(malformed, 'str')).toBe(0);
+            expect(service.currentGeneration(malformed, 'float')).toBe(0);
+            expect(service.currentGeneration(malformed, 'nan')).toBe(0);
+        });
+
+        it('safely increments from 0 when existing generation is corrupted string or negative', () => {
+            const service = new DailyLedgerAggregateService();
+            const mockTx = { set: vi.fn() };
+            const corrupted = aggregate({
+                generations: {
+                    'str-sess': '1' as unknown as number,
+                    'neg-sess': -5,
+                },
+            });
+            const res1 = service.rejectReservationAndIncrementGeneration(
+                mockTx as never, 'u1', '2026-08-18', corrupted, 'occ-1', 'str-sess',
+            );
+            expect(res1.generation).toBe(1);
+            expect(res1.aggregate.generations?.['str-sess']).toBe(1);
+
+            const res2 = service.rejectReservationAndIncrementGeneration(
+                mockTx as never, 'u1', '2026-08-18', corrupted, 'occ-2', 'neg-sess',
+            );
+            expect(res2.generation).toBe(1);
+            expect(res2.aggregate.generations?.['neg-sess']).toBe(1);
+        });
     });
 });
