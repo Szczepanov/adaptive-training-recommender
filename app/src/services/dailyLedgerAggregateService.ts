@@ -50,9 +50,9 @@ export interface DailyLedgerReservation {
 }
 
 /**
- * Maximum permitted recovery generation counter. Strictly bounded below
- * Number.MAX_SAFE_INTEGER so that generation increments always yield distinct,
- * safe integers and hashing cannot experience precision loss or integer overflow.
+ * Maximum permitted recovery generation counter. Kept deliberately far below
+ * Number.MAX_SAFE_INTEGER. Reaching the cap is an explicit fail-closed condition: silently
+ * saturating here would let a later recovery reuse the same deterministic occurrence id.
  */
 export const MAX_RECOVERY_GENERATION = 1_000_000;
 
@@ -226,6 +226,10 @@ export class DailyLedgerAggregateService {
      * reference within one transaction is more than this module needs to rely on when a
      * single combined write says the same thing unambiguously. The returned generation is
      * what a later recovery (step 8, item 2a) mints its new occurrence identity with.
+     *
+     * If the stored generation is malformed or already at the supported maximum this
+     * method throws before writing. Falling back to 0 or saturating at the maximum would
+     * allow a later recovery to reuse a terminal skipped occurrence's deterministic id.
      */
     rejectReservationAndIncrementGeneration(
         transaction: Transaction,
@@ -236,9 +240,16 @@ export class DailyLedgerAggregateService {
         sessionId: string,
         now = new Date().toISOString(),
     ): { aggregate: DailyLedgerAggregate; generation: number } {
+        const currentGeneration = this.currentGeneration(current, sessionId);
+        if (currentGeneration >= MAX_RECOVERY_GENERATION) {
+            throw new RangeError(
+                `Recovery generation exhausted for session '${sessionId}' on ${date}; refusing to reuse an occurrence identity.`,
+            );
+        }
+
         const reservations = { ...current.reservations };
         delete reservations[occurrenceId];
-        const generation = Math.min(this.currentGeneration(current, sessionId) + 1, MAX_RECOVERY_GENERATION);
+        const generation = currentGeneration + 1;
         const generations = { ...current.generations, [sessionId]: generation };
         const next: DailyLedgerAggregate = {
             ...current,
@@ -251,14 +262,28 @@ export class DailyLedgerAggregateService {
         return { aggregate: next, generation };
     }
 
-    /** The current recovery generation for a session -- 0 if it has never been rejected.
-     * A `pending`/`proceed` recovery after a `reject` mints its new occurrence identity
-     * with this value (already incremented by the `reject` that produced it); it is not
-     * incremented again at recovery time. Non-integer, negative, or invalid values, as well
-     * as values exceeding MAX_RECOVERY_GENERATION, are sanitized to 0. */
+    /**
+     * The current recovery generation for a session. An absent key means generation 0.
+     * A present value is persisted identity state, not advisory metadata: malformed,
+     * negative, non-safe-integer, or out-of-range values fail closed instead of being
+     * coerced to 0, because coercion could mint an occurrence id that was already used by
+     * an earlier generation.
+     */
     currentGeneration(aggregate: DailyLedgerAggregate, sessionId: string): number {
-        const val = aggregate.generations?.[sessionId];
-        return typeof val === 'number' && Number.isInteger(val) && val >= 0 && val <= MAX_RECOVERY_GENERATION ? val : 0;
+        if (!aggregate.generations || !Object.prototype.hasOwnProperty.call(aggregate.generations, sessionId)) {
+            return 0;
+        }
+
+        const val = aggregate.generations[sessionId];
+        if (
+            typeof val !== 'number'
+            || !Number.isSafeInteger(val)
+            || val < 0
+            || val > MAX_RECOVERY_GENERATION
+        ) {
+            throw new TypeError(`Invalid recovery generation for session '${sessionId}'.`);
+        }
+        return val;
     }
 }
 
