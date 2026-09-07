@@ -274,8 +274,12 @@ parameter order on `queueOccurrenceTransition`. What remains:
        (never charged again — same occurrence identity);
      - `completed` execution with a bounded actual duration → `state: 'completed'` with
        `actualMinutes` (and `actualSystemicCost` when the estimator can bound it);
-     - completed/abandoned without a bounded actual → `state: 'unresolved'`, reservation
-       retained (D-LEDGER: missing cost is uncertainty, never spare capacity);
+     - `partial` execution with a bounded actual → `state: 'partial'` with that actual: its
+       known performed contribution stays consumed and only the demonstrably unperformed
+       remainder is released (D-LEDGER's partial rule);
+     - `completed`, `partial` **or** `abandoned` without a bounded actual → `state:
+       'unresolved'`, reservation retained (D-LEDGER: missing cost is uncertainty, never
+       spare capacity);
      - `superseded`/`skipped` occurrence → **no entry at all**. These are the two states
        meaning "this work is not happening and never consumed anything" (steps 4b and 8);
        counting them would double-reserve a re-imported plan, or charge the day for a member
@@ -301,7 +305,8 @@ parameter order on `queueOccurrenceTransition`. What remains:
    - Action: define `users/{userId}/daily_ledgers/{date}` (or the reservation map on
      `daily_recommendations/{date}` — step 11's open choice) holding: `revision`, the
      resolved `ceilings`, and `reservations: { [occurrenceId]: { minutes, systemicCost,
-     state } }`.
+     state, decisionId } }` — `decisionId` is the pointer step 11 uses to name the
+     provisional decision record inside the claim transaction.
    - **Every transition that changes an occurrence's reserving status must update this
      document and increment `revision` in the same transaction**, or the aggregate drifts
      from the occurrences and each direction of drift is a real defect:
@@ -454,9 +459,20 @@ parameter order on `queueOccurrenceTransition`. What remains:
      the same verdict — which matters because the record is append-only and cannot be
      cleaned up afterwards. Note `validateIntradayDecisionRecord` accepts any string id up
      to 128 chars, so this needs no schema change.
+   - **A deterministic id is not by itself an idempotency rule** — it only guarantees the
+     retry addresses the same document, not what to do when that document already exists.
+     The retry therefore reads it first, inside the transaction, and:
+     - **exact match** on the immutable fields (`occurrenceId`, `predecessorExecutionId`,
+       `verdict`, `reassessmentInputRevision`) → the first attempt did commit; treat the
+       retry as success and do not write again;
+     - **any field differs** → this is a different decision colliding on the same id, not a
+       retry. Fail the claim rather than overwriting: the record is append-only precisely so
+       a decision cannot be rewritten after the fact, and a silent overwrite would break the
+       replay guarantee the audit store exists for.
    - Tests: inject a failure at each write in the transaction and assert no orphaned
      reservation survives; simulate an ambiguous acknowledgement (write commits, client
-     errors) and assert the retry produces exactly one provisional decision.
+     errors) and assert the retry produces exactly one provisional decision — covering both
+     outcomes, the matching record (accepted) and a conflicting one (rejected).
    - This closes open question 4. Risk: Low for the record itself; Medium for the
      atomicity requirement above.
 
@@ -521,6 +537,20 @@ parameter order on `queueOccurrenceTransition`. What remains:
         (`resp-execution-{executionId}-immediate`); and the provisional decision record
         itself, which supplies the expected `ReassessmentInputRevision` including
         `postPredecessorConfirmationRevision`.
+      - **How the claim names that decision record.** Step 9 derives its id from
+        `(occurrenceId, input-revision hash)`, which creates a circularity at claim time:
+        the claim needs the record to learn the *expected* revision, so it cannot re-derive
+        the id from the *current* revision — that would look up a different document when
+        anything changed, and compare the current revision against itself when nothing did,
+        which is the no-op this whole section exists to prevent. The reservation entry in
+        the step-6a aggregate therefore carries `decisionId`, written in the same
+        transaction that creates the reservation (step 9). The claim reads the aggregate
+        first anyway, so it obtains the reference before it needs it, and the pointer
+        survives reloads and other tabs. Note the two shipped stores that cannot hold it:
+        `SessionReferenceBinding` is a rules-validated, replayed shape, and #445's rules
+        restrict occurrence updates to `['state', 'updatedAt']`.
+      - A reservation whose `decisionId` names a record that is **missing** is stale, not
+        launchable: recompute rather than launching without a durable expected revision.
       - That `SessionResponse` read is only possible if the `executionId` is durably known,
         so **`IntradayDecisionRecord` gains a required `predecessorExecutionId`** (with the
         predecessor `occurrenceId` it belongs to, so the claim can validate that the
@@ -532,6 +562,14 @@ parameter order on `queueOccurrenceTransition`. What remains:
         a `schemaVersion: 2` bump or a tolerated optional-on-read/required-on-write field.
         Without it the claim cannot name the document, and the confirmation check silently
         falls back to a non-transactional read — the exact race this section closes.
+      - **Legacy records are non-claimable, whichever schema route is chosen.** A decision
+        record lacking `predecessorExecutionId` cannot name the predecessor's
+        `SessionResponse`, so the claim must reject it as stale and force a fresh
+        reassessment (which writes a new record that has the field). Optional-on-read must
+        **not** mean "launch without predecessor confirmation" — that would let exactly the
+        unconfirmed PM launch D-REASSESS forbids through the one path that skipped the
+        check. Since these records are provisional and same-day, the practical cost of
+        rejecting them is one recomputation, not lost history.
       - **Not addressable, so folded into the aggregate's `revision`** — schedule windows
         (`users/{userId}/schedule_windows/*`, resolved by query), plan placement, and the
         performed-facts snapshot. A transaction cannot query, so whichever writer changes
