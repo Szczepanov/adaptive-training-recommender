@@ -212,17 +212,20 @@ describe('DailyLedgerAggregateService', () => {
             expect(result.generations).toEqual({ 'session-pm': 1, 'session-am': 1 });
         });
 
-        it('fails closed when the generations container itself is malformed', () => {
+        it('fails closed and never writes when the generations container itself is malformed', () => {
             const service = new DailyLedgerAggregateService();
-            const malformed = aggregate({
-                generations: 'not-a-map' as unknown as Record<string, number>,
-            });
-            const arrayBacked = aggregate({
-                generations: [] as unknown as Record<string, number>,
-            });
+            const malformedContainers: unknown[] = [null, 'not-a-map', []];
 
-            expect(() => service.currentGeneration(malformed, 'session-am')).toThrow(TypeError);
-            expect(() => service.currentGeneration(arrayBacked, 'session-am')).toThrow(TypeError);
+            for (const generations of malformedContainers) {
+                const mockTx = { set: vi.fn() };
+                const malformed = aggregate({
+                    generations: generations as Record<string, number>,
+                });
+                expect(() => service.rejectReservationAndIncrementGeneration(
+                    mockTx as never, 'u1', '2026-08-18', malformed, 'occ-1', 'session-am',
+                )).toThrow(TypeError);
+                expect(mockTx.set).not.toHaveBeenCalled();
+            }
         });
 
         it('fails closed when a persisted generation is malformed instead of coercing it to generation 0', () => {
