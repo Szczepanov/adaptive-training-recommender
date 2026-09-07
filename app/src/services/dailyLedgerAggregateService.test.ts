@@ -212,7 +212,7 @@ describe('DailyLedgerAggregateService', () => {
             expect(result.generations).toEqual({ 'session-pm': 1, 'session-am': 1 });
         });
 
-        it('sanitizes negative, string, and non-integer generations to 0', () => {
+        it('fails closed when a persisted generation is malformed instead of coercing it to generation 0', () => {
             const service = new DailyLedgerAggregateService();
             const malformed = aggregate({
                 generations: {
@@ -222,55 +222,47 @@ describe('DailyLedgerAggregateService', () => {
                     'nan': Number.NaN,
                 },
             });
-            expect(service.currentGeneration(malformed, 'neg')).toBe(0);
-            expect(service.currentGeneration(malformed, 'str')).toBe(0);
-            expect(service.currentGeneration(malformed, 'float')).toBe(0);
-            expect(service.currentGeneration(malformed, 'nan')).toBe(0);
+
+            expect(() => service.currentGeneration(malformed, 'neg')).toThrow(TypeError);
+            expect(() => service.currentGeneration(malformed, 'str')).toThrow(TypeError);
+            expect(() => service.currentGeneration(malformed, 'float')).toThrow(TypeError);
+            expect(() => service.currentGeneration(malformed, 'nan')).toThrow(TypeError);
         });
 
-        it('safely increments from 0 when existing generation is corrupted string or negative', () => {
+        it('does not write when a corrupted persisted generation would make recovery identity ambiguous', () => {
             const service = new DailyLedgerAggregateService();
             const mockTx = { set: vi.fn() };
-            const corrupted = aggregate({
-                generations: {
-                    'str-sess': '1' as unknown as number,
-                    'neg-sess': -5,
-                },
-            });
-            const res1 = service.rejectReservationAndIncrementGeneration(
-                mockTx as never, 'u1', '2026-08-18', corrupted, 'occ-1', 'str-sess',
-            );
-            expect(res1.generation).toBe(1);
-            expect(res1.aggregate.generations?.['str-sess']).toBe(1);
+            const corrupted = aggregate({ generations: { 'session-am': -5 } });
 
-            const res2 = service.rejectReservationAndIncrementGeneration(
-                mockTx as never, 'u1', '2026-08-18', corrupted, 'occ-2', 'neg-sess',
-            );
-            expect(res2.generation).toBe(1);
-            expect(res2.aggregate.generations?.['neg-sess']).toBe(1);
+            expect(() => service.rejectReservationAndIncrementGeneration(
+                mockTx as never, 'u1', '2026-08-18', corrupted, 'occ-1', 'session-am',
+            )).toThrow(TypeError);
+            expect(mockTx.set).not.toHaveBeenCalled();
         });
 
-        it('enforces MAX_RECOVERY_GENERATION upper bound on currentGeneration and reject increments', () => {
+        it('accepts the maximum as current identity state but refuses another reject rather than saturating and reusing it', () => {
             const service = new DailyLedgerAggregateService();
             const mockTx = { set: vi.fn() };
+            const atMax = aggregate({ generations: { 'session-am': MAX_RECOVERY_GENERATION } });
 
-            const atMax = aggregate({
+            expect(service.currentGeneration(atMax, 'session-am')).toBe(MAX_RECOVERY_GENERATION);
+            expect(() => service.rejectReservationAndIncrementGeneration(
+                mockTx as never, 'u1', '2026-08-18', atMax, 'occ-1', 'session-am',
+            )).toThrow(RangeError);
+            expect(mockTx.set).not.toHaveBeenCalled();
+        });
+
+        it('fails closed on above-max or unsafe persisted generations', () => {
+            const service = new DailyLedgerAggregateService();
+            const malformed = aggregate({
                 generations: {
-                    'at-max': MAX_RECOVERY_GENERATION,
                     'above-max': MAX_RECOVERY_GENERATION + 1,
                     'unsafe': Number.MAX_SAFE_INTEGER,
                 },
             });
-            expect(service.currentGeneration(atMax, 'at-max')).toBe(MAX_RECOVERY_GENERATION);
-            expect(service.currentGeneration(atMax, 'above-max')).toBe(0);
-            expect(service.currentGeneration(atMax, 'unsafe')).toBe(0);
 
-            // rejectReservationAndIncrementGeneration caps at MAX_RECOVERY_GENERATION
-            const res = service.rejectReservationAndIncrementGeneration(
-                mockTx as never, 'u1', '2026-08-18', atMax, 'occ-1', 'at-max',
-            );
-            expect(res.generation).toBe(MAX_RECOVERY_GENERATION);
-            expect(res.aggregate.generations?.['at-max']).toBe(MAX_RECOVERY_GENERATION);
+            expect(() => service.currentGeneration(malformed, 'above-max')).toThrow(TypeError);
+            expect(() => service.currentGeneration(malformed, 'unsafe')).toThrow(TypeError);
         });
     });
 });
