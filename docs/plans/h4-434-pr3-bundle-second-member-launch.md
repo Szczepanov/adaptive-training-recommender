@@ -331,16 +331,21 @@ parameter order on `queueOccurrenceTransition`. What remains:
        the document still does not exist and write the seeded totals. A concurrent seeder
        loses the create and re-reads, so two tabs opening the same day cannot produce two
        different starting balances;
-     - seed from `scheduled` (reserved), `active` (in-progress), and `completed`/`partial`
-       (actuals, or `unresolved` when no bounded actual exists) — the same mapping step 6
-       derives, so a freshly seeded aggregate and the derived ledger agree by construction;
+     - seeding **reuses step 6's mapping function verbatim** rather than restating it, so the
+       two cannot drift: `scheduled` → reserved; `active`/`in_progress` → in-progress;
+       `completed`, `partial` **and `abandoned`** → their bounded actual where one exists,
+       otherwise `unresolved` with the reservation retained. Naming a subset here is exactly
+       how a pre-existing abandoned execution would be dropped from the seed, undercounting
+       consumption and admitting a claim the day cannot afford;
      - `superseded`/`skipped` seed nothing.
    - Reconciliation check: on each dashboard load, recompute the derived ledger from
      occurrences (step 6) and compare it against the persisted aggregate. A mismatch is a
      bug, not a state to paper over — surface it and prefer the conservative (higher
      consumption) side rather than silently releasing capacity.
-   - Tests: rollout against a date that already has occurrences of each state; two
-     concurrent seeders; a claim attempted while the aggregate is absent (must refuse).
+   - Tests: rollout against a date that already has occurrences in **each** state —
+     `scheduled`, `active`, `completed`, `partial`, `abandoned` (both with and without a
+     bounded actual), `superseded`, `skipped`; two concurrent seeders; a claim attempted
+     while the aggregate is absent (must refuse).
    - Dependencies: steps 4a-6. Risk: **High** — this is the shared mutable state; test each
      row of the table above, plus the drift check.
 
@@ -432,15 +437,26 @@ parameter order on `queueOccurrenceTransition`. What remains:
      If step 9 fails on its own, the day is left holding a reservation for a member with no
      binding and no recoverable expected revision — capacity consumed by a session the
      athlete can never start. `saveIntradayDecision` currently does its own `getDoc`/`setDoc`
-     (`intradayDecisionService.ts`), so it cannot participate as written. Either:
-     1. give it a transaction-accepting variant and commit the occurrence create, the
-        aggregate update, and the decision record in **one** transaction (preferred — the
-        decision record is create-only under its rules, so it composes cleanly); or
-     2. keep them separate and add explicit compensating cleanup: on a failed decision
-        write, roll the occurrence back to `skipped` and remove its reservation, in one
-        transaction, before surfacing the failure.
-     Whichever is chosen, add a failure-path test that injects a decision-write failure and
-     asserts no orphaned reservation survives it.
+     (`intradayDecisionService.ts`), so it cannot participate as written. **One transaction
+     is the required path**, not one of two options: give `saveIntradayDecision` a
+     transaction-accepting variant and commit the occurrence create, the aggregate update,
+     and the decision record together. The record is create-only under its rules
+     (`allow update, delete: if false`), so it composes cleanly.
+     Compensating cleanup was considered and rejected as the primary design: it is not
+     atomic in either direction. `setDoc` can commit on the server while the client sees a
+     network error, so "the write failed" is unknowable from the caller; and the cleanup
+     write can itself fail, leaving the same orphaned reservation it was meant to remove.
+   - **Idempotent reconciliation for the ambiguous acknowledgement.** Even one transaction
+     can be acknowledged ambiguously to the client. Derive the provisional decision id
+     deterministically from `(occurrenceId, reassessmentInputRevision hash)` instead of a
+     fresh UUID, and make the write create-if-absent. A retry after an unknown outcome then
+     converges on the same document rather than appending a second provisional decision for
+     the same verdict — which matters because the record is append-only and cannot be
+     cleaned up afterwards. Note `validateIntradayDecisionRecord` accepts any string id up
+     to 128 chars, so this needs no schema change.
+   - Tests: inject a failure at each write in the transaction and assert no orphaned
+     reservation survives; simulate an ambiguous acknowledgement (write commits, client
+     errors) and assert the retry produces exactly one provisional decision.
    - This closes open question 4. Risk: Low for the record itself; Medium for the
      atomicity requirement above.
 
@@ -502,19 +518,35 @@ parameter order on `queueOccurrenceTransition`. What remains:
         known from the bundle); the day's check-in, which is date-keyed at
         `users/{userId}/daily_subjective_checkins/{date}` and carries `tissueResponses`; the
         predecessor's `SessionResponse`, whose id is deterministic
-        (`resp-execution-{executionId}-immediate`) provided the provisional decision record
-        stores that `executionId`; and the provisional decision record itself, which supplies
-        the expected `ReassessmentInputRevision` including
+        (`resp-execution-{executionId}-immediate`); and the provisional decision record
+        itself, which supplies the expected `ReassessmentInputRevision` including
         `postPredecessorConfirmationRevision`.
+      - That `SessionResponse` read is only possible if the `executionId` is durably known,
+        so **`IntradayDecisionRecord` gains a required `predecessorExecutionId`** (with the
+        predecessor `occurrenceId` it belongs to, so the claim can validate that the
+        response it reads is the response for *this* bundle's predecessor). This is not a
+        free addition: `hasValidIntradayDecision` in `firestore.rules` pins the key set with
+        `hasOnly(requiredKeys)`, and the record is write-once, so the field must land in the
+        model, `validateIntradayDecisionRecord`, and the rules together — and records written
+        before it exists can never gain it. Decide alongside open question 2 whether that is
+        a `schemaVersion: 2` bump or a tolerated optional-on-read/required-on-write field.
+        Without it the claim cannot name the document, and the confirmation check silently
+        falls back to a non-transactional read — the exact race this section closes.
       - **Not addressable, so folded into the aggregate's `revision`** — schedule windows
         (`users/{userId}/schedule_windows/*`, resolved by query), plan placement, and the
         performed-facts snapshot. A transaction cannot query, so whichever writer changes
-        one of these must bump the aggregate revision; the claim then detects the change by
-        revision alone. Say so explicitly in the implementation, because the alternative —
-        reading them outside the transaction — silently reintroduces the race.
+        one of these must bump the aggregate revision **in the same transaction as the
+        source change**, never as a follow-up write. A separate commit leaves a window in
+        which the source has changed but the revision has not, so a concurrent claim
+        validates the old `ReassessmentInputRevision` and launches on inputs that are
+        already stale — the same race, moved rather than removed. Say so explicitly in the
+        implementation, because the alternative — reading these outside the transaction —
+        reintroduces it directly.
       - Tests: one two-tab race per input — predecessor completion, response/tissue edit,
-        check-in edit, window change, placement change — each asserting the second claim
-        recomputes rather than launching on a stale verdict.
+        check-in edit, window change, placement change, **and a performed-facts change**
+        (`computeReassessmentInputRevision` carries `completedFactsRevision`, so a
+        provider sync landing mid-decision must invalidate it like any other input) — each
+        asserting the second claim recomputes rather than launching on a stale verdict.
     - Step 6a defines that document's shape and the writers that must keep it consistent;
       only *which* document holds it is still open. Recommendation:
       `users/{userId}/daily_recommendations/{date}` — it exists already and already carries a
