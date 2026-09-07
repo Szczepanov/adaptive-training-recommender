@@ -14,18 +14,13 @@ import type { LedgerCeilings, LedgerEntry } from './dailyLedger';
 import type { ExternalRevisionEvidence } from './replay';
 import { POLICY_VERSION } from './policy';
 import { isV4Plan, type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import type { ReassessmentInputRevision } from './intradayReassessment';
+
+export type { ReassessmentInputRevision };
 
 export type IntradayDecisionStatus = 'provisional' | 'confirmed' | 'superseded' | 'dropped';
 
 export type IntradayDecisionVerdictOutcome = 'proceed' | 'scale' | 'defer' | 'skip' | 'pending';
-
-export interface ReassessmentInputRevision {
-    availabilityRevision: string;
-    completedFactsRevision: string;
-    checkinRevision: string;
-    ledgerRevision: string;
-    placementRevision: string;
-}
 
 export interface IntradayDecisionLedgerSnapshot {
     ceilings: LedgerCeilings;
@@ -59,6 +54,20 @@ export interface IntradayDecisionRecord {
     windowId: string;
     bundleId: string;
     orderInBundle: number;
+
+    /**
+     * The predecessor this decision was reassessed against, or `null` for an order-0
+     * bundle member with no `afterSessionId` (nothing to confirm). Required as a pair,
+     * not optional, because the claim (Phase 4 step 11) must be able to read the
+     * predecessor's `immediate` `SessionResponse` at the deterministic id
+     * `resp-execution-{predecessorExecutionId}-immediate` inside its own transaction --
+     * without a durable pointer to *which* execution, that read would have to fall back to
+     * a non-transactional lookup, reintroducing the exact race the transaction exists to
+     * close. No production caller has ever written to this store (`saveIntradayDecision`
+     * has no caller as of #448), so there is no legacy-record migration concern here.
+     */
+    predecessorExecutionId: string | null;
+    predecessorOccurrenceId: string | null;
 
     /** Saved input revision fingerprints for change detection */
     reassessmentInputRevision: ReassessmentInputRevision;
@@ -128,6 +137,21 @@ export function validateIntradayDecisionRecord(raw: unknown): IntradayDecisionRe
     const bundleId = assertString(data.bundleId, 'bundleId', 1, 128);
     const orderInBundle = assertInteger(data.orderInBundle, 'orderInBundle', 0);
 
+    if (!('predecessorExecutionId' in data) || !('predecessorOccurrenceId' in data)) {
+        throw new TypeError('predecessorExecutionId and predecessorOccurrenceId are required (null for an order-0 member with no predecessor)');
+    }
+    let predecessorExecutionId: string | null = null;
+    if (data.predecessorExecutionId !== null) {
+        predecessorExecutionId = assertString(data.predecessorExecutionId, 'predecessorExecutionId', 1, 128);
+    }
+    let predecessorOccurrenceId: string | null = null;
+    if (data.predecessorOccurrenceId !== null) {
+        predecessorOccurrenceId = assertString(data.predecessorOccurrenceId, 'predecessorOccurrenceId', 1, 128);
+    }
+    if ((predecessorExecutionId === null) !== (predecessorOccurrenceId === null)) {
+        throw new TypeError('predecessorExecutionId and predecessorOccurrenceId must both be null or both be set');
+    }
+
     if (!data.reassessmentInputRevision || typeof data.reassessmentInputRevision !== 'object') {
         throw new TypeError('reassessmentInputRevision must be a non-null object');
     }
@@ -138,6 +162,9 @@ export function validateIntradayDecisionRecord(raw: unknown): IntradayDecisionRe
         checkinRevision: assertString(rev.checkinRevision, 'reassessmentInputRevision.checkinRevision', 1, 128),
         ledgerRevision: assertString(rev.ledgerRevision, 'reassessmentInputRevision.ledgerRevision', 1, 128),
         placementRevision: assertString(rev.placementRevision, 'reassessmentInputRevision.placementRevision', 1, 128),
+        ...(rev.postPredecessorConfirmationRevision !== undefined
+            ? { postPredecessorConfirmationRevision: assertString(rev.postPredecessorConfirmationRevision, 'reassessmentInputRevision.postPredecessorConfirmationRevision', 1, 128) }
+            : {}),
     };
 
     if (!data.bundlePlacement || typeof data.bundlePlacement !== 'object') {
@@ -239,6 +266,8 @@ export function validateIntradayDecisionRecord(raw: unknown): IntradayDecisionRe
         windowId,
         bundleId,
         orderInBundle,
+        predecessorExecutionId,
+        predecessorOccurrenceId,
         reassessmentInputRevision,
         bundlePlacement,
         ledgerSnapshot,

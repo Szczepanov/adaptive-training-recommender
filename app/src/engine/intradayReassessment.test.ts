@@ -117,7 +117,7 @@ const mockInputRevision: ReassessmentInputRevision = {
     availabilityRevision: 'avail-rev-1',
     completedFactsRevision: 'facts-rev-1',
     checkinRevision: 'checkin-rev-1',
-    ledgerRevision: 2,
+    ledgerRevision: 'ledger-rev-2',
     placementRevision: 'placement-rev-1',
     postPredecessorConfirmationRevision: 'resp-rev-1',
 };
