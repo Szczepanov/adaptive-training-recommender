@@ -8,6 +8,9 @@ import {
     listIntradayDecisionsForDate,
     getActiveIntradayDecisionsForDate,
     getActiveIntradayDecisionForOccurrence,
+    deterministicIntradayDecisionId,
+    decisionRecordsMatch,
+    writeProvisionalDecisionInTransaction,
 } from './intradayDecisionService';
 
 const mockSetDoc = vi.fn();
@@ -43,6 +46,8 @@ function sampleRecord(id = 'dec-1', overrides: Partial<IntradayDecisionRecord> =
         windowId: 'win-1',
         bundleId: 'bundle-1',
         orderInBundle: 0,
+        predecessorExecutionId: null,
+        predecessorOccurrenceId: null,
         reassessmentInputRevision: {
             availabilityRevision: 'a1',
             completedFactsRevision: 'c1',
@@ -175,5 +180,115 @@ describe('intradayDecisionService', () => {
 
         const active = await getActiveIntradayDecisionsForDate('u1', '2026-09-06');
         expect(active.map(r => r.id).sort()).toEqual(['dec-occ1', 'dec-occ2']);
+    });
+});
+
+describe('deterministicIntradayDecisionId (H4 #434 PR 3 step 9)', () => {
+    const revision = {
+        availabilityRevision: 'a1', completedFactsRevision: 'c1',
+        checkinRevision: 'ch1', ledgerRevision: 'l1', placementRevision: 'p1',
+    };
+
+    it('is deterministic for the same occurrence and revision', async () => {
+        const id1 = await deterministicIntradayDecisionId('occ-1', revision);
+        const id2 = await deterministicIntradayDecisionId('occ-1', revision);
+        expect(id1).toBe(id2);
+    });
+
+    it('differs when the occurrence differs', async () => {
+        const id1 = await deterministicIntradayDecisionId('occ-1', revision);
+        const id2 = await deterministicIntradayDecisionId('occ-2', revision);
+        expect(id1).not.toBe(id2);
+    });
+
+    it('differs when the revision differs', async () => {
+        const id1 = await deterministicIntradayDecisionId('occ-1', revision);
+        const id2 = await deterministicIntradayDecisionId('occ-1', { ...revision, ledgerRevision: 'l2' });
+        expect(id1).not.toBe(id2);
+    });
+});
+
+describe('decisionRecordsMatch (H4 #434 PR 3 step 9)', () => {
+    it('matches two records identical on every immutable field', () => {
+        const a = sampleRecord('dec-1', { predecessorExecutionId: 'exec-1', predecessorOccurrenceId: 'occ-am' });
+        const b = sampleRecord('dec-1', { predecessorExecutionId: 'exec-1', predecessorOccurrenceId: 'occ-am' });
+        expect(decisionRecordsMatch(a, b)).toBe(true);
+    });
+
+    it('does not match when the verdict differs', () => {
+        const a = sampleRecord('dec-1');
+        const b = sampleRecord('dec-1', { verdict: { decision: 'defer', reasons: ['different'] } });
+        expect(decisionRecordsMatch(a, b)).toBe(false);
+    });
+
+    it('does not match when only the predecessor differs -- two decisions colliding on one id are not the same decision', () => {
+        const a = sampleRecord('dec-1', { predecessorExecutionId: 'exec-1', predecessorOccurrenceId: 'occ-am' });
+        const b = sampleRecord('dec-1', { predecessorExecutionId: 'exec-2', predecessorOccurrenceId: 'occ-am-2' });
+        expect(decisionRecordsMatch(a, b)).toBe(false);
+    });
+
+    it('does not match when the input revision differs', () => {
+        const a = sampleRecord('dec-1');
+        const b = sampleRecord('dec-1', {
+            reassessmentInputRevision: { ...sampleRecord().reassessmentInputRevision, ledgerRevision: 'l2' },
+        });
+        expect(decisionRecordsMatch(a, b)).toBe(false);
+    });
+});
+
+describe('writeProvisionalDecisionInTransaction (H4 #434 PR 3 step 9)', () => {
+    function mockTransaction() {
+        return { set: vi.fn() } as unknown as import('firebase/firestore').Transaction;
+    }
+
+    it('creates the record when none exists', () => {
+        const tx = mockTransaction();
+        const record = sampleRecord('dec-1');
+        const result = writeProvisionalDecisionInTransaction(tx, 'u1', null, record);
+        expect(result).toEqual(record);
+        expect((tx as unknown as { set: ReturnType<typeof vi.fn> }).set).toHaveBeenCalledTimes(1);
+    });
+
+    it('is a no-op returning the existing record on a matching retry', () => {
+        const tx = mockTransaction();
+        const existing = sampleRecord('dec-1');
+        const retry = sampleRecord('dec-1');
+        const result = writeProvisionalDecisionInTransaction(tx, 'u1', existing, retry);
+        expect(result).toBe(existing);
+        expect((tx as unknown as { set: ReturnType<typeof vi.fn> }).set).not.toHaveBeenCalled();
+    });
+
+    it('throws on a conflicting record at the same id rather than overwriting', () => {
+        const tx = mockTransaction();
+        const existing = sampleRecord('dec-1', { occurrenceId: 'occ-1' });
+        const conflicting = sampleRecord('dec-1', { occurrenceId: 'occ-2' });
+        expect(() => writeProvisionalDecisionInTransaction(tx, 'u1', existing, conflicting)).toThrow(
+            /already holds a different decision/,
+        );
+        expect((tx as unknown as { set: ReturnType<typeof vi.fn> }).set).not.toHaveBeenCalled();
+    });
+
+    it('rejects records with non-provisional status', () => {
+        const tx = mockTransaction();
+        const nonProvisional = sampleRecord('dec-1', { status: 'confirmed' });
+        expect(() => writeProvisionalDecisionInTransaction(tx, 'u1', null, nonProvisional)).toThrow(
+            TypeError,
+        );
+        expect(() => writeProvisionalDecisionInTransaction(tx, 'u1', null, nonProvisional)).toThrow(
+            /requires status "provisional"/,
+        );
+        expect((tx as unknown as { set: ReturnType<typeof vi.fn> }).set).not.toHaveBeenCalled();
+    });
+
+    it('rejects records where userId does not match the path userId', () => {
+        const tx = mockTransaction();
+        const mismatchedUser = sampleRecord('dec-1', { userId: 'u2' });
+        expect(() => writeProvisionalDecisionInTransaction(tx, 'u1', null, mismatchedUser)).toThrow(
+            TypeError,
+        );
+        expect(() => writeProvisionalDecisionInTransaction(tx, 'u1', null, mismatchedUser)).toThrow(
+            /userId must match record\.userId/,
+        );
+        expect((tx as unknown as { set: ReturnType<typeof vi.fn> }).set).not.toHaveBeenCalled();
     });
 });

@@ -1659,7 +1659,8 @@ service cloud.firestore {
       let requiredKeys = [
         'id', 'userId', 'date', 'asOf', 'policyVersion', 'schemaVersion',
         'status', 'supersededDecisionId', 'occurrenceId', 'sessionId',
-        'windowId', 'bundleId', 'orderInBundle', 'reassessmentInputRevision',
+        'windowId', 'bundleId', 'orderInBundle', 'predecessorExecutionId',
+        'predecessorOccurrenceId', 'reassessmentInputRevision',
         'bundlePlacement', 'ledgerSnapshot', 'verdict'
       ];
       return hasOwnedUserId(userId)
@@ -1678,6 +1679,9 @@ service cloud.firestore {
         && data.windowId is string && data.windowId.size() > 0 && data.windowId.size() <= 128
         && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
         && data.orderInBundle is int && data.orderInBundle >= 0
+        && (data.predecessorExecutionId == null || (data.predecessorExecutionId is string && data.predecessorExecutionId.size() > 0 && data.predecessorExecutionId.size() <= 128))
+        && (data.predecessorOccurrenceId == null || (data.predecessorOccurrenceId is string && data.predecessorOccurrenceId.size() > 0 && data.predecessorOccurrenceId.size() <= 128))
+        && (data.predecessorExecutionId == null) == (data.predecessorOccurrenceId == null)
         && data.reassessmentInputRevision is map
         && data.reassessmentInputRevision.keys().hasAll(['availabilityRevision', 'completedFactsRevision', 'checkinRevision', 'ledgerRevision', 'placementRevision'])
         && data.bundlePlacement is map

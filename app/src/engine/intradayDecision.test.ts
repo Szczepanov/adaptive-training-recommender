@@ -25,6 +25,8 @@ function sampleRecord(overrides: Partial<IntradayDecisionRecord> = {}): Intraday
         windowId: 'window-morning',
         bundleId: 'bundle-sunday',
         orderInBundle: 0,
+        predecessorExecutionId: null,
+        predecessorOccurrenceId: null,
         reassessmentInputRevision: {
             availabilityRevision: 'avail-rev-1',
             completedFactsRevision: 'facts-rev-1',
@@ -137,6 +139,44 @@ describe('intradayDecision validation and replay', () => {
             ...sampleRecord(),
             bundlePlacement: { bundleId: 'b1', outcome: 'infeasible', reason: '' },
         })).toThrow(TypeError);
+    });
+
+    it('accepts a non-null predecessor pair (a dependent bundle member)', () => {
+        const record = sampleRecord({ predecessorExecutionId: 'exec-am-1', predecessorOccurrenceId: 'occ-am-1' });
+        const validated = validateIntradayDecisionRecord(record);
+        expect(validated.predecessorExecutionId).toBe('exec-am-1');
+        expect(validated.predecessorOccurrenceId).toBe('occ-am-1');
+    });
+
+    it('rejects a record missing predecessorExecutionId/predecessorOccurrenceId entirely', () => {
+        const record = sampleRecord() as unknown as Record<string, unknown>;
+        delete record.predecessorExecutionId;
+        delete record.predecessorOccurrenceId;
+        expect(() => validateIntradayDecisionRecord(record)).toThrow(TypeError);
+    });
+
+    it('rejects a mismatched predecessor pair -- one null, one set', () => {
+        expect(() => validateIntradayDecisionRecord(sampleRecord({
+            predecessorExecutionId: 'exec-am-1', predecessorOccurrenceId: null,
+        }))).toThrow(TypeError);
+        expect(() => validateIntradayDecisionRecord(sampleRecord({
+            predecessorExecutionId: null, predecessorOccurrenceId: 'occ-am-1',
+        }))).toThrow(TypeError);
+    });
+
+    it('accepts an optional postPredecessorConfirmationRevision on reassessmentInputRevision', () => {
+        const record = sampleRecord({
+            reassessmentInputRevision: {
+                availabilityRevision: 'avail-rev-1',
+                completedFactsRevision: 'facts-rev-1',
+                checkinRevision: 'checkin-rev-1',
+                ledgerRevision: 'ledger-rev-1',
+                placementRevision: 'placement-rev-1',
+                postPredecessorConfirmationRevision: 'confirmation-rev-1',
+            },
+        });
+        const validated = validateIntradayDecisionRecord(record);
+        expect(validated.reassessmentInputRevision.postPredecessorConfirmationRevision).toBe('confirmation-rev-1');
     });
 
     it('validates an infeasible proposal with a non-empty reason', () => {

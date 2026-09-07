@@ -41,11 +41,21 @@ import {
 import { evaluateReadinessAndSafetyEnvelope } from './rules';
 import { deriveTissueSeverity } from './injuryPolicy';
 
+/**
+ * The canonical shape -- also used, unimported, by `intradayDecision.ts`'s persisted
+ * `IntradayDecisionRecord` until this change. That copy declared `ledgerRevision: string`
+ * (it stringifies `DailyLedgerAggregate.revision`, matching every other field's
+ * fingerprint-string convention) while this one declared `number`; this module's own
+ * `ledgerRevision` is never used arithmetically, so unifying on `string` -- the shape the
+ * shipped, rules-validated persisted record already committed to -- and having
+ * `intradayDecision.ts` import this type instead of re-declaring it is a pure
+ * consolidation, not a behavior change.
+ */
 export interface ReassessmentInputRevision {
     availabilityRevision: string;
     completedFactsRevision: string;
     checkinRevision: string;
-    ledgerRevision: number;
+    ledgerRevision: string;
     placementRevision: string;
     postPredecessorConfirmationRevision?: string;
 }
@@ -54,7 +64,7 @@ export function computeReassessmentInputRevision(params: {
     availabilityRevision: string;
     completedFactsRevision: string;
     checkinRevision: string;
-    ledgerRevision: number;
+    ledgerRevision: string;
     placementRevision: string;
     postPredecessorConfirmationRevision?: string;
 }): ReassessmentInputRevision {

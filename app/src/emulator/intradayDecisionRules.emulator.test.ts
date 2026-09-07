@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import {
     assertFails,
     assertSucceeds,
@@ -32,6 +32,8 @@ function validRecord() {
         windowId: 'win-am-1',
         bundleId: 'bundle-sunday-1',
         orderInBundle: 0,
+        predecessorExecutionId: null,
+        predecessorOccurrenceId: null,
         reassessmentInputRevision: {
             availabilityRevision: 'avail-rev-1',
             completedFactsRevision: 'facts-rev-1',
@@ -109,6 +111,26 @@ emulatorDescribe('Intraday decision security rules (ADR-0036 D-AUDIT)', () => {
         const db = testEnvironment.authenticatedContext(ownerId).firestore();
         const mismatchedPath = `users/${ownerId}/intraday_decisions/different-id`;
         await assertFails(setDoc(doc(db, mismatchedPath), validRecord()));
+    });
+
+    it('accepts a non-null predecessor pair, and rejects a mismatched one (H4 #434 PR 3)', async () => {
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        const withPredecessorPath = `users/${ownerId}/intraday_decisions/${decisionId}-with-predecessor`;
+        await expect(assertSucceeds(setDoc(doc(db, withPredecessorPath), {
+            ...validRecord(), id: `${decisionId}-with-predecessor`,
+            predecessorExecutionId: 'exec-am-1', predecessorOccurrenceId: 'occ-am-1',
+        }))).resolves.toBeUndefined();
+
+        const mismatchedPath = `users/${ownerId}/intraday_decisions/${decisionId}-mismatched`;
+        await assertFails(setDoc(doc(db, mismatchedPath), {
+            ...validRecord(), id: `${decisionId}-mismatched`,
+            predecessorExecutionId: 'exec-am-1', predecessorOccurrenceId: null,
+        }));
+
+        const missingPath = `users/${ownerId}/intraday_decisions/${decisionId}-missing-predecessor`;
+        const missing = { ...validRecord(), id: `${decisionId}-missing-predecessor` } as Partial<ReturnType<typeof validRecord>>;
+        delete missing.predecessorExecutionId;
+        await assertFails(setDoc(doc(db, missingPath), missing));
     });
 
     it('rejects malformed payloads and invalid enums', async () => {
