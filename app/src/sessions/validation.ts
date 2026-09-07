@@ -486,6 +486,27 @@ export function validateSessionOccurrence(raw: unknown): ValidationResult<Sessio
         }
     }
 
+    if ('windowBinding' in raw && raw.windowBinding !== undefined) {
+        if (!hasExternalPlanRef) {
+            issues.push({ path: 'windowBinding', message: 'windowBinding requires externalPlanRef' });
+        } else if (!isObject(raw.windowBinding)) {
+            issues.push({ path: 'windowBinding', message: 'Invalid windowBinding' });
+        } else {
+            const wb = raw.windowBinding as Record<string, unknown>;
+            if (
+                typeof wb.windowId !== 'string' || wb.windowId.length === 0
+                || typeof wb.bundleId !== 'string' || wb.bundleId.length === 0
+                || typeof wb.order !== 'number' || !Number.isInteger(wb.order) || wb.order < 0
+                || typeof wb.boundStartLocal !== 'string' || wb.boundStartLocal.length === 0
+                || typeof wb.boundEndLocal !== 'string' || wb.boundEndLocal.length === 0
+                || typeof wb.startInstant !== 'string' || Number.isNaN(Date.parse(wb.startInstant))
+                || typeof wb.endInstant !== 'string' || Number.isNaN(Date.parse(wb.endInstant))
+            ) {
+                issues.push({ path: 'windowBinding', message: 'Invalid windowBinding' });
+            }
+        }
+    }
+
     if (issues.length > 0) return { ok: false, issues };
     return { ok: true, value: raw as unknown as SessionOccurrence };
 }

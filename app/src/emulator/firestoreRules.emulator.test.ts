@@ -1655,6 +1655,90 @@ emulatorDescribe('Firestore security rules', () => {
         }));
     });
 
+    it('validates windowBinding on external-plan occurrences (H4 #434 PR 3, D-WINDOW)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        function validWindowBinding() {
+            return {
+                windowId: 'window-1', bundleId: 'bundle-1', order: 0,
+                boundStartLocal: '07:00', boundEndLocal: '08:00',
+                startInstant: '2026-08-18T05:00:00Z', endInstant: '2026-08-18T06:00:00Z',
+            };
+        }
+
+        // 1. Accepts a valid windowBinding on an external-plan occurrence.
+        const boundPath = `users/${ownerId}/session_occurrences/occ-ext-bound`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, boundPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-bound',
+            windowBinding: validWindowBinding(),
+        }))).resolves.toBeUndefined();
+
+        // 2. Rejects windowBinding on a manual (non-external-plan) occurrence.
+        const manualWithWindowPath = `users/${ownerId}/session_occurrences/occ-manual-window`;
+        await assertFails(setDoc(doc(ownerDb, manualWithWindowPath), {
+            ...validSessionOccurrence(),
+            occurrenceId: 'occ-manual-window',
+            windowBinding: validWindowBinding(),
+        }));
+
+        // 3. Rejects a windowBinding missing a required field.
+        const incompletePath = `users/${ownerId}/session_occurrences/occ-ext-incomplete-window`;
+        const incompleteBinding = validWindowBinding() as Partial<ReturnType<typeof validWindowBinding>>;
+        delete incompleteBinding.order;
+        await assertFails(setDoc(doc(ownerDb, incompletePath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-incomplete-window',
+            windowBinding: incompleteBinding,
+        }));
+
+        // 4. windowBinding is immutable once set (the update rule's diff().affectedKeys()
+        // already restricts updates to ['state', 'updatedAt'], so any windowBinding change
+        // on update is rejected the same way externalPlanRef changes are).
+        await assertFails(setDoc(doc(ownerDb, boundPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-bound',
+            windowBinding: { ...validWindowBinding(), windowId: 'window-2' },
+            updatedAt: '2026-08-18T11:00:00Z',
+        }));
+    });
+
+    it('enforces session_occurrence_windows as the D-WINDOW exclusivity mechanism (H4 #434 PR 3)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const reservationPath = `users/${ownerId}/session_occurrence_windows/win-2026-08-18-window-1`;
+
+        function validReservation() {
+            return {
+                userId: ownerId, date: '2026-08-18', windowId: 'window-1',
+                occurrenceId: 'occ-ext-1', createdAt: '2026-08-18T10:00:00Z',
+            };
+        }
+
+        // 1. Owner can create a valid reservation.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, reservationPath), validReservation())))
+            .resolves.toBeUndefined();
+
+        // 2. Rejects a shape with an extra/missing field.
+        const malformedPath = `users/${ownerId}/session_occurrence_windows/win-2026-08-18-window-2`;
+        await assertFails(setDoc(doc(ownerDb, malformedPath), { ...validReservation(), extra: 'nope' }));
+        const missingFieldPath = `users/${ownerId}/session_occurrence_windows/win-2026-08-18-window-3`;
+        const missingField: Partial<ReturnType<typeof validReservation>> = validReservation();
+        delete missingField.occurrenceId;
+        await assertFails(setDoc(doc(ownerDb, missingFieldPath), missingField));
+
+        // 3. Updates are never allowed -- a reservation is claimed once and released by
+        // deletion, never silently repointed to a different occurrence.
+        await assertFails(setDoc(doc(ownerDb, reservationPath), {
+            ...validReservation(), occurrenceId: 'occ-ext-2',
+        }));
+
+        // 4. The owner may delete their own reservation (releasing the window); a
+        // cross-user read/write is denied.
+        await assertFails(getDoc(doc(otherDb, reservationPath)));
+        await assertFails(deleteDoc(doc(otherDb, reservationPath)));
+        await expect(assertSucceeds(deleteDoc(doc(ownerDb, reservationPath)))).resolves.toBeUndefined();
+    });
+
     it('allows recommendations with primarySession and additionalSessions bindings', async () => {
         const base = validRecommendation();
         const recWithBindings = {

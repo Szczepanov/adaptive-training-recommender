@@ -1146,11 +1146,29 @@ service cloud.firestore {
       }
     }
 
+    function hasValidOccurrenceWindowBinding(binding) {
+      return binding is map
+        && binding.keys().hasOnly(['windowId', 'bundleId', 'order', 'boundStartLocal', 'boundEndLocal', 'startInstant', 'endInstant'])
+        && binding.keys().hasAll(['windowId', 'bundleId', 'order', 'boundStartLocal', 'boundEndLocal', 'startInstant', 'endInstant'])
+        && binding.windowId is string && binding.windowId.size() > 0 && binding.windowId.size() <= 128
+        && binding.bundleId is string && binding.bundleId.size() > 0 && binding.bundleId.size() <= 128
+        && binding.order is int && binding.order >= 0
+        && binding.boundStartLocal is string && binding.boundStartLocal.size() > 0
+        && binding.boundEndLocal is string && binding.boundEndLocal.size() > 0
+        && binding.startInstant is string && binding.startInstant.size() > 0
+        && binding.endInstant is string && binding.endInstant.size() > 0;
+    }
+
+    // H4 (#434) PR 3 / ADR-0036 D-WINDOW: `windowBinding` on its own records the resolved
+    // window an intraday member sits in but enforces nothing across documents -- real
+    // exclusivity comes from `session_occurrence_windows` below, whose document id *is*
+    // `(date, windowId)`.
     function hasValidSessionOccurrence(userId, occurrenceId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'externalPlanRef', 'state', 'placementOrder', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'externalPlanRef', 'windowBinding', 'state', 'placementOrder', 'createdAt', 'updatedAt'])
         && data.keys().hasAll(['userId', 'occurrenceId', 'date', 'authority', 'state', 'createdAt', 'updatedAt'])
+        && (!('windowBinding' in data) || ('externalPlanRef' in data && hasValidOccurrenceWindowBinding(data.windowBinding)))
         && (('definitionRef' in data) != ('externalPlanRef' in data))
         && data.occurrenceId == occurrenceId
         && isValidActivityDate(data.date)
@@ -1196,6 +1214,32 @@ service cloud.firestore {
         && request.resource.data.authority == resource.data.authority
         && isValidOccurrenceStateTransition(resource.data.state, request.resource.data.state)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt']);
+      allow delete: if isOwner(userId);
+    }
+
+    // H4 (#434) PR 3 / ADR-0036 D-WINDOW: transactional exclusivity for "at most one
+    // occurrence per resolved window". Document id is deterministic from (date, windowId)
+    // (see `windowReservationId` in `sessionOccurrenceService.ts`), so a create-if-absent
+    // write inside the same transaction that creates the occurrence is what makes a
+    // duplicate binding to one window impossible -- `windowBinding` on the occurrence
+    // itself is a snapshot, not an enforcement mechanism. Released (deleted) in the same
+    // transaction that supersedes/skips the occurrence holding it, freeing the window for
+    // a later generation.
+    function hasValidWindowReservation(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'date', 'windowId', 'occurrenceId', 'createdAt'])
+        && data.keys().hasAll(['userId', 'date', 'windowId', 'occurrenceId', 'createdAt'])
+        && isValidActivityDate(data.date)
+        && data.windowId is string && data.windowId.size() > 0 && data.windowId.size() <= 128
+        && data.occurrenceId is string && data.occurrenceId.size() > 0 && data.occurrenceId.size() <= 128
+        && data.createdAt is string;
+    }
+
+    match /users/{userId}/session_occurrence_windows/{reservationId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidWindowReservation(userId);
+      allow update: if false;
       allow delete: if isOwner(userId);
     }
 

@@ -243,6 +243,29 @@ export interface ExternalPlanOccurrenceRef {
     contentHash: string;
 }
 
+/**
+ * H4 (#434) PR 3 / ADR-0036 D-WINDOW: the real dated window an intraday bundle member is
+ * bound to. A deliberate snapshot, not a reference to the live `ResolvedWindowBinding`
+ * engine type (`intradayBundlePlacement.ts`) or `ScheduleWindow` -- the same reasoning as
+ * `SessionDisplayMetadata` above: a persisted occurrence must remain readable if the
+ * engine's placement shape evolves, and replay must bind to the window an athlete actually
+ * saw, not one re-derived from live (and possibly since-edited) availability.
+ *
+ * Immutable once set, exactly like `externalPlanRef` (see `hasValidOccurrenceUpdate` in
+ * `firestore.rules`): D-WINDOW's "at most one occurrence per resolved window" is enforced
+ * by this field being part of the occurrence's identity for the life of that occurrence,
+ * not by re-validating it on every update.
+ */
+export interface OccurrenceWindowBinding {
+    windowId: string;
+    bundleId: string;
+    order: number;
+    boundStartLocal: string;
+    boundEndLocal: string;
+    startInstant: string;
+    endInstant: string;
+}
+
 export interface BaseSessionOccurrence {
     userId: string;
     occurrenceId: string;
@@ -264,6 +287,11 @@ export interface ExternalPlanSessionOccurrence extends BaseSessionOccurrence {
     authority: 'external_plan';
     externalPlanRef: ExternalPlanOccurrenceRef;
     definitionRef?: never;
+    /** Present once D-PLACEMENT has resolved this member to a real (or legacy-sentinel)
+     * window. Absent for a v4 primary session, which is not part of a bundle. Recording
+     * the fact does not by itself enforce D-WINDOW's one-occurrence-per-window rule --
+     * that is `session_occurrence_windows`' job (`sessionOccurrenceService.ts`). */
+    windowBinding?: OccurrenceWindowBinding;
 }
 
 export type SessionOccurrence = ManualSessionOccurrence | ExternalPlanSessionOccurrence;
