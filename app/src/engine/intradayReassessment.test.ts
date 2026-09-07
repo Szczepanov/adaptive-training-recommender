@@ -417,6 +417,32 @@ describe('reassessDependentBundleMember (ADR-0036 D-REASSESS)', () => {
         expect(result.timingPrerequisiteMet).toBe(false);
     });
 
+    it('rejects evaluation instant that predates predecessor completion by seconds (preventing -0 rounding bypass)', () => {
+        const targetWithoutSeparation: DependentBundleMemberTarget = {
+            ...target,
+            minimumSeparationMinutes: undefined,
+        };
+
+        // Predecessor completed at 10:00:00Z; evaluation is at 09:59:50Z (10 seconds before completion)
+        const result = reassessDependentBundleMember({
+            target: targetWithoutSeparation,
+            predecessor: healthyPredecessor, // completedAt is 2026-09-06T10:00:00.000Z
+            evaluationInstant: '2026-09-06T09:59:50.000Z',
+            readiness: createMockReadiness(),
+            context: createMockContext(),
+            date: '2026-09-06',
+            availability: createMockAvailability(),
+            candidateWindowMinutes: 60,
+            dailyLedger: validLedger,
+            acceptedSameDaySystemicCost: 0.2,
+            inputRevision: mockInputRevision,
+        });
+
+        expect(result.decision).toBe('pending');
+        expect(result.reason).toContain('predates predecessor completion');
+        expect(result.timingPrerequisiteMet).toBe(false);
+    });
+
     it('proceeds despite alreadyTrainedToday being true on morning inputs (bypassing alreadyTrainedOverride)', () => {
         const readinessWithSameDayTraining = createMockReadiness({
             subjective: { alreadyTrainedToday: true },

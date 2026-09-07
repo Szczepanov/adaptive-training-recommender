@@ -189,8 +189,10 @@ export function reassessDependentBundleMember(
         }
 
         // ── 2. Timing separation gate (D-TIME) ──────────────────────────────────
+        const evalMs = Date.parse(evaluationInstant);
+        const predMs = Date.parse(predecessor.completedAt);
         const elapsed = elapsedMinutesBetweenInstants(evaluationInstant, predecessor.completedAt);
-        if (elapsed < 0) {
+        if (evalMs < predMs || elapsed < 0 || Object.is(elapsed, -0)) {
             return {
                 decision: 'pending',
                 reason: `Evaluation instant (${evaluationInstant}) predates predecessor completion (${predecessor.completedAt}).`,

@@ -171,9 +171,10 @@ actionable bundle members.
    - **Elapsed separation:** If `minimumSeparationMinutes` is defined, computes
      `elapsedMinutesBetweenInstants(prospectiveStartInstant, predecessorActualEndInstant)` via `localInstant.ts`.
      If timestamps are missing or elapsed interval is insufficient, returns `pending` (unresolved timing prerequisite).
-   - **Post-predecessor confirmation:** Queries `SessionResponse` (`window: 'immediate'`)
-     and `DailySubjectiveCheckin.tissueResponses` for the predecessor. If absent, returns
-     `pending`. If adverse symptoms or reactive tissue responses are present, scales or rejects.
+   - **Post-predecessor confirmation:** Evaluates the predecessor `SessionResponse`
+     (`window: 'immediate'`) and tissue responses supplied by the caller. If absent,
+     returns `pending`. If adverse symptoms or reactive tissue responses are present,
+     scales or rejects.
    - **Readiness & safety envelopes:** Re-runs `evaluateReadinessAndSafetyEnvelope` with
      `ignoreAlreadyTrainedOverride: true` (since same-day load is accounted for via ledger).
    - **Ledger admission:** Recomputes `computeDailyLedger` with today's latest canonical facts

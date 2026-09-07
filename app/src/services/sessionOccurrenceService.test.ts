@@ -205,5 +205,48 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             );
             expect(mockTx.set).not.toHaveBeenCalled();
         });
+
+        it('executes onBeforeClaim hook atomically before claiming occurrence', async () => {
+            const scheduled = occurrenceDoc({ occurrenceId: 'occ-1', state: 'scheduled' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => scheduled,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const onBeforeClaim = vi.fn().mockResolvedValue(undefined);
+            const service = new SessionOccurrenceService();
+            const result = await service.claimOccurrenceLaunch('u1', 'occ-1', {
+                now: '2026-08-18T10:00:00Z',
+                onBeforeClaim,
+            });
+
+            expect(onBeforeClaim).toHaveBeenCalledWith(mockTx, expect.objectContaining({ occurrenceId: 'occ-1', state: 'scheduled' }));
+            expect(result.state).toBe('active');
+            expect(mockTx.set).toHaveBeenCalledTimes(1);
+        });
+
+        it('aborts transaction and does not set occurrence when onBeforeClaim fails', async () => {
+            const scheduled = occurrenceDoc({ occurrenceId: 'occ-1', state: 'scheduled' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => scheduled,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const onBeforeClaim = vi.fn().mockRejectedValue(new Error('Revision mismatch'));
+            const service = new SessionOccurrenceService();
+            await expect(
+                service.claimOccurrenceLaunch('u1', 'occ-1', { onBeforeClaim }),
+            ).rejects.toThrow('Revision mismatch');
+
+            expect(mockTx.set).not.toHaveBeenCalled();
+        });
     });
 });
