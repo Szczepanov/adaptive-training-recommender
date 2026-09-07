@@ -274,6 +274,13 @@ function metricStrain(
     return { acuteDeviation, multiDayDrift, total: acuteDeviation + multiDayDrift };
 }
 
+export interface EvaluateReadinessOptions {
+    /** ADR-0036 (H4) D-LEDGER/D-REASSESS: an intraday bundle member whose predecessor
+     * completed as planned accounts for its same-day load via the shared daily ledger debit,
+     * rather than tripping the single-session-per-day alreadyTrainedOverride fail-stop. */
+    ignoreAlreadyTrainedOverride?: boolean;
+}
+
 export function evaluateReadinessAndSafetyEnvelope(
     readiness: DailyReadiness,
     context: UserContext,
@@ -284,7 +291,8 @@ export function evaluateReadinessAndSafetyEnvelope(
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     /** Phase 9.3/D-SUBJCAL: experimental, not yet tuned. Only reachable by explicitly
      *  passing a non-default value -- no production call site does. */
-    subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS
+    subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+    options?: EvaluateReadinessOptions,
 ): {
     mode: 'train' | 'modify' | 'recover';
     envelopes: { safety: SafetyEnvelope; plan: PlanEnvelope };
@@ -403,7 +411,9 @@ export function evaluateReadinessAndSafetyEnvelope(
 
     const postRecoverBufferApplied = mode === 'train' && previousMode === 'recover';
     if (postRecoverBufferApplied) mode = 'modify';
-    const alreadyTrainedOverride = subjective.alreadyTrainedToday === true || objective.today_training !== null;
+    const alreadyTrainedOverride = options?.ignoreAlreadyTrainedOverride === true
+        ? false
+        : (subjective.alreadyTrainedToday === true || objective.today_training !== null);
     // Mirror evaluateEnvelopes' red-flag predicate: a disclosed red flag that resolved to
     // no findings still surfaces as clinicalEnvelopeSources: ['red_flag'] and must force
     // recover, not just a non-empty redFlagFindings list.
@@ -434,7 +444,7 @@ export function evaluateReadinessAndSafetyEnvelope(
 
     return {
         mode,
-        envelopes: evaluateEnvelopes(readiness, context),
+        envelopes: evaluateEnvelopes(readiness, context, options),
         telemetry,
         alreadyTrainedOverride,
         fatigueTriggeredRecover,
@@ -956,7 +966,11 @@ export async function evaluateTrainingWithIntent(
     };
 }
 
-export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContext): { safety: SafetyEnvelope; plan: PlanEnvelope } {
+export function evaluateEnvelopes(
+    readiness: DailyReadiness,
+    context: UserContext,
+    options?: EvaluateReadinessOptions,
+): { safety: SafetyEnvelope; plan: PlanEnvelope } {
     const legacyClinicalFlag = readiness.subjective.painFlag;
     const restrictedModalities = [...(context.constraints.restrictedModalities ?? [])];
     const hasActiveInjury = restrictedModalities.length > 0 || (context.constraints.impliedGuardrails ?? []).length > 0 || (context.constraints.restrictedCategories ?? []).length > 0;
@@ -990,7 +1004,10 @@ export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContex
 
     const clinicalFlagActive = hasCurrentClinicalSymptoms || hasActiveInjury;
     let maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard' = 'Hard';
-    if (readiness.subjective.alreadyTrainedToday || redFlagActive) maxAllowableTier = 'Rest';
+    const alreadyTrained = options?.ignoreAlreadyTrainedOverride === true
+        ? false
+        : readiness.subjective.alreadyTrainedToday;
+    if (alreadyTrained || redFlagActive) maxAllowableTier = 'Rest';
     else if (hasCurrentClinicalSymptoms) maxAllowableTier = 'Mobility';
     else if (
         (readiness.objective.body_battery_wake !== null && readiness.objective.body_battery_wake < 30) ||

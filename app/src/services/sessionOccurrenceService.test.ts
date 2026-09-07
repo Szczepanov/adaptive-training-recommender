@@ -9,6 +9,7 @@ const firestore = vi.hoisted(() => ({
     query: vi.fn(),
     where: vi.fn(),
     getDocs: vi.fn(),
+    runTransaction: vi.fn(),
 }));
 
 vi.mock('firebase/firestore', () => firestore);
@@ -128,5 +129,159 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
         const service = new SessionOccurrenceService();
         const result = await service.getAdditionalOccurrencesForDate('u1', '2026-08-18');
         expect(result.map(item => item.occurrenceId)).toEqual(['occ-a', 'occ-b', 'occ-z']);
+    });
+
+    describe('claimOccurrenceLaunch (ADR-0036 D-REASSESS)', () => {
+        it('successfully claims a scheduled occurrence and transitions state to active', async () => {
+            const scheduled = occurrenceDoc({ occurrenceId: 'occ-1', state: 'scheduled' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => scheduled,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const service = new SessionOccurrenceService();
+            const result = await service.claimOccurrenceLaunch('u1', 'occ-1', '2026-08-18T10:00:00Z');
+
+            expect(result.state).toBe('active');
+            expect(result.updatedAt).toBe('2026-08-18T10:00:00Z');
+            expect(mockTx.set).toHaveBeenCalledWith(
+                expect.objectContaining({ path: 'session_occurrences/x' }),
+                expect.objectContaining({ state: 'active', updatedAt: '2026-08-18T10:00:00Z' }),
+            );
+        });
+
+        it('throws when occurrence does not exist', async () => {
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => false,
+                    data: () => null,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const service = new SessionOccurrenceService();
+            await expect(service.claimOccurrenceLaunch('u1', 'occ-missing')).rejects.toThrow(
+                'Occurrence occ-missing not found.',
+            );
+            expect(mockTx.set).not.toHaveBeenCalled();
+        });
+
+        it('throws when occurrence state is not scheduled', async () => {
+            const active = occurrenceDoc({ occurrenceId: 'occ-1', state: 'active' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => active,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const service = new SessionOccurrenceService();
+            await expect(service.claimOccurrenceLaunch('u1', 'occ-1')).rejects.toThrow(
+                "Occurrence occ-1 cannot be claimed; state is 'active', expected 'scheduled'.",
+            );
+            expect(mockTx.set).not.toHaveBeenCalled();
+        });
+
+        it('throws when occurrence document cannot be parsed', async () => {
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => ({ invalid: 'document' }),
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const service = new SessionOccurrenceService();
+            await expect(service.claimOccurrenceLaunch('u1', 'occ-1')).rejects.toThrow(
+                'Occurrence occ-1 could not be parsed',
+            );
+            expect(mockTx.set).not.toHaveBeenCalled();
+        });
+
+        it('executes onBeforeClaim hook atomically before claiming occurrence', async () => {
+            const scheduled = occurrenceDoc({ occurrenceId: 'occ-1', state: 'scheduled' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => scheduled,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const onBeforeClaim = vi.fn().mockResolvedValue(undefined);
+            const service = new SessionOccurrenceService();
+            const result = await service.claimOccurrenceLaunch('u1', 'occ-1', {
+                now: '2026-08-18T10:00:00Z',
+                onBeforeClaim,
+            });
+
+            expect(onBeforeClaim).toHaveBeenCalledWith(mockTx, expect.objectContaining({ occurrenceId: 'occ-1', state: 'scheduled' }));
+            expect(result.state).toBe('active');
+            expect(mockTx.set).toHaveBeenCalledTimes(1);
+        });
+
+        it('aborts transaction and does not set occurrence when onBeforeClaim fails', async () => {
+            const scheduled = occurrenceDoc({ occurrenceId: 'occ-1', state: 'scheduled' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => scheduled,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const onBeforeClaim = vi.fn().mockRejectedValue(new Error('Revision mismatch'));
+            const service = new SessionOccurrenceService();
+            await expect(
+                service.claimOccurrenceLaunch('u1', 'occ-1', { onBeforeClaim }),
+            ).rejects.toThrow('Revision mismatch');
+
+            expect(mockTx.set).not.toHaveBeenCalled();
+        });
+
+        it('prevents onBeforeClaim from mutating the committed occurrence', async () => {
+            const scheduled = occurrenceDoc({ occurrenceId: 'occ-1', state: 'scheduled', date: '2026-08-18' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => scheduled,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const onBeforeClaim = vi.fn().mockImplementation((_tx, occ: unknown) => {
+                // Attempt to mutate the passed occurrence
+                const mutable = occ as { date: string; definitionRef: { definitionId: string } };
+                mutable.date = '2099-01-01';
+                mutable.definitionRef.definitionId = 'hijacked-def';
+            });
+            const service = new SessionOccurrenceService();
+            const result = await service.claimOccurrenceLaunch('u1', 'occ-1', {
+                now: '2026-08-18T10:00:00Z',
+                onBeforeClaim,
+            });
+
+            expect(result.date).toBe('2026-08-18');
+            expect(result.definitionRef.definitionId).toBe('def-1');
+            expect(mockTx.set).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({
+                    date: '2026-08-18',
+                    definitionRef: expect.objectContaining({ definitionId: 'def-1' }),
+                    state: 'active',
+                }),
+            );
+        });
     });
 });

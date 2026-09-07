@@ -6,7 +6,9 @@ import {
     query,
     where,
     getDocs,
+    runTransaction,
     type Firestore,
+    type Transaction,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { DataState } from '../engine/dataState';
@@ -15,6 +17,16 @@ import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDe
 
 /** ACTIVE_OCCURRENCE_STATES excludes terminal/superseded states from "what governs today". */
 const ACTIVE_OCCURRENCE_STATES: ReadonlySet<SessionOccurrence['state']> = new Set(['scheduled', 'active']);
+
+export interface ClaimOccurrenceLaunchOptions {
+    now?: string;
+    /**
+     * Optional atomic pre-claim hook executed within the same Firestore transaction.
+     * Allows callers to read date-level ledger documents, verify ReassessmentInputRevision,
+     * or persist capacity reservations atomically before transitioning the occurrence to active.
+     */
+    onBeforeClaim?: (transaction: Transaction, occurrence: Readonly<SessionOccurrence>) => Promise<void> | void;
+}
 
 export class SessionOccurrenceService {
     private readonly db: Firestore;
@@ -133,6 +145,52 @@ export class SessionOccurrenceService {
     async getAdditionalOccurrencesForDate(userId: string, date: string): Promise<SessionOccurrence[]> {
         const occurrences = await this.getOccurrencesForDate(userId, date);
         return occurrences.filter(item => item.authority === 'additional_session' && ACTIVE_OCCURRENCE_STATES.has(item.state));
+    }
+
+    /**
+     * ADR-0036 (H4) D-REASSESS: atomically claim a scheduled occurrence for launch.
+     * Prevents duplicate/concurrent requests from launching the same occurrence twice
+     * or claiming an occurrence that has already transitioned to active/terminal.
+     */
+    async claimOccurrenceLaunch(
+        userId: string,
+        occurrenceId: string,
+        nowOrOptions?: string | ClaimOccurrenceLaunchOptions,
+    ): Promise<SessionOccurrence> {
+        const options: ClaimOccurrenceLaunchOptions =
+            typeof nowOrOptions === 'string'
+                ? { now: nowOrOptions }
+                : (nowOrOptions ?? {});
+        const now = options.now ?? new Date().toISOString();
+        const ref = this.occurrenceRef(userId, occurrenceId);
+        let transitioned: SessionOccurrence | null = null;
+        await runTransaction(this.db, async transaction => {
+            const snap = await transaction.get(ref);
+            if (!snap.exists()) {
+                throw new Error(`Occurrence ${occurrenceId} not found.`);
+            }
+            const parsed = parseSessionOccurrenceDocument(snap.data(), ref.path);
+            if (parsed.status !== 'AVAILABLE') {
+                throw new Error(`Occurrence ${occurrenceId} could not be parsed (${parsed.status}).`);
+            }
+            const current = parsed.data;
+            if (current.state !== 'scheduled') {
+                throw new Error(`Occurrence ${occurrenceId} cannot be claimed; state is '${current.state}', expected 'scheduled'.`);
+            }
+            if (options.onBeforeClaim) {
+                await options.onBeforeClaim(transaction, {
+                    ...current,
+                    definitionRef: { ...current.definitionRef },
+                });
+            }
+            transitioned = {
+                ...current,
+                state: 'active',
+                updatedAt: now,
+            };
+            transaction.set(ref, transitioned);
+        });
+        return transitioned!;
     }
 }
 
