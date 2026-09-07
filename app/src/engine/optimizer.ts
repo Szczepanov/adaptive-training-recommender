@@ -26,6 +26,7 @@ import { buildCoverageState, coverageNeedTierForTemplate, resolveCoverageHistory
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
@@ -139,6 +140,10 @@ export interface RecentHistoryEntry {
     lowerBodyCost?: number;
     durationMin?: number;
     recoveryHours?: number;
+    /** Forecast-only marker. Projected entries may carry effective-dose loads for state
+     * fidelity, while legacy threshold policies remain authored-load based until those
+     * policies are explicitly migrated and re-governed. */
+    source?: 'projected';
 }
 
 export interface OptimizationOptions {
@@ -286,8 +291,18 @@ export function normalizeHistory(
     return validHistory.map((entry, idx) => {
         const date = entry.date ?? addDaysToLocalDateString(targetDate, -(total - idx));
         const modality = ((entry.modality ?? entry.type ?? 'None') as SessionTemplate['modality']);
-        const systemicCost = entry.systemicCost ?? 0;
-        const lowerBodyCost = ('lowerBodyCost' in entry && typeof entry.lowerBodyCost === 'number') ? entry.lowerBodyCost : 0;
+        // PR #453 makes projected load accounting dose-aware. That must not silently
+        // migrate the separate, registered threshold policies that consume normalized
+        // history. ADR-0038 explicitly leaves authored-vs-effective recovery-streak
+        // semantics unresolved, and the same history feeds rolling-hard/intensity/lower-body
+        // thresholds. Preserve the authored catalog load for projected policy history until
+        // those thresholds are changed under their own policy/version/alignment review.
+        const projectedTemplate = entry.source === 'projected' && entry.templateId
+            ? ENRICHED_TEMPLATES_BY_ID.get(entry.templateId)
+            : undefined;
+        const systemicCost = projectedTemplate?.systemicCost ?? entry.systemicCost ?? 0;
+        const lowerBodyCost = projectedTemplate?.costProfile?.lowerBody
+            ?? (('lowerBodyCost' in entry && typeof entry.lowerBodyCost === 'number') ? entry.lowerBodyCost : 0);
         const recoveryHours = ('recoveryHours' in entry && typeof entry.recoveryHours === 'number') ? entry.recoveryHours : undefined;
 
         let role: SessionRole = 'supporting';
