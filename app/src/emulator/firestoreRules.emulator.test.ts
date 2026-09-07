@@ -1537,7 +1537,10 @@ emulatorDescribe('Firestore security rules', () => {
         }))).resolves.toBeUndefined();
 
         // external_plan succeeds in Issue #434 PR 2
-        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionOccPath}-ext`), validExternalPlanSessionOccurrence()))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionOccPath}-ext`), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-unplanned-1-ext',
+        }))).resolves.toBeUndefined();
 
         // unknown authority is rejected
         await assertFails(setDoc(doc(ownerDb, `${sessionOccPath}-unknown`), {
