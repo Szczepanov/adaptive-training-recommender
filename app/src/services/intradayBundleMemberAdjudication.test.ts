@@ -8,7 +8,8 @@ import type {
 } from '../engine/models';
 import type { BundlePlacementProposal } from '../engine/intradayBundlePlacement';
 import type { LedgerCeilings } from '../engine/dailyLedger';
-import { EXTERNAL_PLAN_SCHEMA_V4 } from '../sessions/externalPlanV4';
+import { EXTERNAL_PLAN_SCHEMA_V4, type ExternalPlanSessionV4, type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import type { SessionDefinition } from '../sessions/models';
 import fixture01 from '../sessions/fixtures/01-full-body-maintenance.json';
 import type { ActiveExternalPlan } from './activeExternalPlanService';
 import { resolvePlacement } from '../engine/externalPlacement';
@@ -166,31 +167,31 @@ const mockUserContext: UserContext = {
 const mockAvailability: import('../engine/schedule').ResolvedAvailability = {
     date: DATE,
     maxTimeMinutes: 120,
-    availableEquipment: ['barbell', 'dumbbell'],
+    availableEquipment: ['free_weights', 'barbell', 'dumbbell'],
     fixedActivities: [],
     reservedCapacityCost: 0,
     reservedCapacityCostProfile: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
     environmentOverride: null,
 };
 
-function createPlan(amSessionOverrides = {}, pmSessionOverrides = {}): ActiveExternalPlan {
-    const am = {
+function createPlan(amSessionOverrides: Partial<ExternalPlanSessionV4> = {}, pmSessionOverrides: Partial<ExternalPlanSessionV4> = {}): ActiveExternalPlan {
+    const am: ExternalPlanSessionV4 = {
         id: 'am-run',
         title: 'Morning Easy Run',
-        priority: 'key' as const,
-        placement: { week: 1, preferredDay: 'monday' as const, flexibility: 'preferred' as const, ifMissed: 'drop' as const },
-        gating: { modality: 'running' as const, intensity: 'low' as const, durationMin: 45, durationMax: 50, environment: 'either' as const, equipment: [] },
-        definition: fixture01,
+        priority: 'key',
+        placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' },
+        gating: { modality: 'running', intensity: 'easy', durationMin: 45, durationMax: 50, environment: 'either', equipment: [] },
+        definition: fixture01 as unknown as SessionDefinition,
         intraday: { window: { startLocal: '07:00', endLocal: '08:00' }, bundleId: 'b-double', order: 0 },
         ...amSessionOverrides,
     };
-    const pm = {
+    const pm: ExternalPlanSessionV4 = {
         id: 'pm-strength',
         title: 'Afternoon Strength',
-        priority: 'secondary' as const,
-        placement: { week: 1, preferredDay: 'monday' as const, flexibility: 'preferred' as const, ifMissed: 'drop' as const },
-        gating: { modality: 'strength' as const, intensity: 'moderate' as const, durationMin: 45, durationMax: 55, environment: 'either' as const, equipment: ['barbell'] },
-        definition: fixture01,
+        priority: 'supporting',
+        placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' },
+        gating: { modality: 'strength', intensity: 'moderate', durationMin: 45, durationMax: 55, environment: 'either', equipment: ['free_weights'] },
+        definition: fixture01 as unknown as SessionDefinition,
         intraday: {
             window: { startLocal: '16:00', endLocal: '17:00' },
             bundleId: 'b-double',
@@ -200,7 +201,7 @@ function createPlan(amSessionOverrides = {}, pmSessionOverrides = {}): ActiveExt
         },
         ...pmSessionOverrides,
     };
-    const plan = {
+    const plan: ExternalTrainingPlanV4 = {
         schema: EXTERNAL_PLAN_SCHEMA_V4,
         planId: 'p-v4',
         revision: 1,
@@ -224,9 +225,9 @@ function createPlan(amSessionOverrides = {}, pmSessionOverrides = {}): ActiveExt
     };
     return {
         header,
-        plan: plan as unknown as ActiveExternalPlan['plan'],
+        plan,
         placement: null,
-        placed: resolvePlacement(plan as unknown as Parameters<typeof resolvePlacement>[0], null, {}),
+        placed: resolvePlacement(plan, null, {}),
     };
 }
 
@@ -793,6 +794,56 @@ describe('adjudicateIntradayBundleMembers', () => {
         expect(result.notices[0]).toContain('maximum 4 additional sessions cap reached');
         expect(result.statuses[0].status).toBe('proceed');
         expect(result.statuses[0].binding).toBeUndefined();
+
+        // Ensure no occurrence or reservation was committed for the capped member
+        const targetOccId = await deterministicExternalPlanOccurrenceId(DATE, {
+            planId: 'p-v4', revision: 1, sessionId: 'pm-strength', contentHash: 'hash-bundle-v4',
+        });
+        expect(store.get(`users/${USER_ID}/session_occurrences/${targetOccId}`)).toBeUndefined();
+    });
+
+    it('admits session at boundary of additional sessions cap (3 existing bindings -> 4th allowed)', async () => {
+        const active = createPlan();
+        const bundlePlacement = createBundlePlacement();
+
+        const amOccId = 'occ-am-1';
+        const amOcc: ExternalPlanSessionOccurrence = {
+            userId: USER_ID,
+            occurrenceId: amOccId,
+            date: DATE,
+            authority: 'external_plan',
+            externalPlanRef: { planId: 'p-v4', revision: 1, sessionId: 'am-run', contentHash: 'hash-bundle-v4' },
+            state: 'completed',
+            placementOrder: 0,
+            createdAt: '2026-09-07T05:00:00.000Z',
+            updatedAt: '2026-09-07T06:00:00.000Z',
+        };
+        const amExec = createMockExecution(amOccId);
+        const amResp = createMockSessionResponse(amOccId);
+
+        vi.spyOn(sessionOccurrenceService, 'getOccurrencesForDate').mockResolvedValue([amOcc]);
+        vi.spyOn(sessionExecutionService, 'getExecutionsInRange').mockResolvedValue({ executions: [amExec], invalidRecords: 0 });
+        vi.spyOn(sessionResponseService, 'getResponseForWindow').mockResolvedValue(amResp);
+
+        // existingAdditionalBindingsCount is 3, allowing the 4th session
+        const result = await adjudicateIntradayBundleMembers({
+            userId: USER_ID,
+            date: DATE,
+            activePlan: active,
+            bundlePlacement,
+            subjective: mockSubjective,
+            objective: mockObjective,
+            userContext: mockUserContext,
+            availability: mockAvailability,
+            ceilings,
+            existingAdditionalBindingsCount: 3,
+            evaluationInstant: '2026-09-07T12:00:00.000Z',
+        });
+
+        expect(result.bindings).toHaveLength(1);
+        expect(result.notices).toHaveLength(0);
+        expect(result.statuses[0].status).toBe('proceed');
+        expect(result.statuses[0].binding).toBeDefined();
     });
 
     it('converges idempotently on ambiguous retry without error', async () => {
@@ -834,10 +885,14 @@ describe('adjudicateIntradayBundleMembers', () => {
         // Run once
         const first = await adjudicateIntradayBundleMembers(params);
         expect(first.statuses[0].status).toBe('proceed');
+        const firstAgg = store.get(`users/${USER_ID}/daily_ledgers/${DATE}`) as DailyLedgerAggregate;
 
         // Run second time with identical inputs (simulates retry)
         const second = await adjudicateIntradayBundleMembers(params);
         expect(second.statuses[0].status).toBe('proceed');
+        expect(second.statuses[0].occurrenceId).toBe(first.statuses[0].occurrenceId);
         expect(second.bindings[0].sessionSource).toEqual(first.bindings[0].sessionSource);
+        const secondAgg = store.get(`users/${USER_ID}/daily_ledgers/${DATE}`) as DailyLedgerAggregate;
+        expect(Object.keys(secondAgg.reservations).length).toBe(Object.keys(firstAgg.reservations).length);
     });
 });

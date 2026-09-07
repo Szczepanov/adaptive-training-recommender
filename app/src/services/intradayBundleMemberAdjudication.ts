@@ -9,6 +9,7 @@
 
 import {
     doc,
+    getDoc,
     runTransaction,
     type Firestore,
 } from 'firebase/firestore';
@@ -313,7 +314,7 @@ export async function adjudicateIntradayBundleMembers(
             // Target already held a reservation from this load or earlier
             const existingDecisionId = aggregate.reservations[targetScheduledOccurrence.occurrenceId].decisionId!;
             const existingDecDoc = doc(db, getIntradayDecisionDocPath(userId, existingDecisionId));
-            const existingDecSnap = await runTransaction(db, async t => t.get(existingDecDoc));
+            const existingDecSnap = await getDoc(existingDecDoc);
             if (existingDecSnap.exists()) {
                 const decData = existingDecSnap.data() as IntradayDecisionRecord;
                 if (decData.postReservationLedgerRevision && String(aggregate.revision) === decData.postReservationLedgerRevision) {
@@ -415,6 +416,16 @@ export async function adjudicateIntradayBundleMembers(
 
                 targetScheduledOccurrence.state = 'skipped';
                 targetScheduledOccurrence.updatedAt = now;
+
+                // The reject transaction removed this occurrence's ledger reservation.
+                // Drop it locally too, so later bundle members are evaluated against the
+                // capacity that was just released.
+                const releasedIndex = currentLedgerInputs.findIndex(
+                    inp => inp.occurrenceId === targetScheduledOccurrence.occurrenceId,
+                );
+                if (releasedIndex >= 0) {
+                    currentLedgerInputs.splice(releasedIndex, 1);
+                }
             }
 
             statuses.push({
@@ -523,6 +534,17 @@ export async function adjudicateIntradayBundleMembers(
                 status: verdict.decision,
                 reason: verdict.reason,
                 occurrenceId: deterministicOccId,
+            });
+            continue;
+        }
+
+        // Enforce 4 additional sessions cap before writing any transaction state
+        if (existingAdditionalBindingsCount + bindings.length >= 4) {
+            notices.push(`Bundle member '${targetSession.id}' omitted: maximum 4 additional sessions cap reached.`);
+            statuses.push({
+                sessionId: targetSession.id,
+                status: 'proceed',
+                reason: 'Maximum 4 additional sessions cap reached',
             });
             continue;
         }
@@ -643,18 +665,6 @@ export async function adjudicateIntradayBundleMembers(
 
             writeProvisionalDecisionInTransaction(transaction, userId, existingDec, decisionRecord);
         });
-
-        // Enforce 4 additional sessions cap
-        if (existingAdditionalBindingsCount + bindings.length >= 4) {
-            notices.push(`Bundle member '${targetSession.id}' omitted: maximum 4 additional sessions cap reached.`);
-            statuses.push({
-                sessionId: targetSession.id,
-                status: 'proceed',
-                reason: 'Maximum 4 additional sessions cap reached',
-                occurrenceId: deterministicOccId,
-            });
-            continue;
-        }
 
         // Prepare launch binding
         const launch = await prepareExternalPlanSessionLaunch(

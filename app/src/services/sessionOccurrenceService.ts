@@ -333,7 +333,9 @@ export class SessionOccurrenceService {
                         occ => isExternalPlanOccurrence(occ)
                             && occ.externalPlanRef.planId === externalPlanRef.planId
                             && occ.externalPlanRef.sessionId === externalPlanRef.sessionId
-                            && occ.occurrenceId === owner,
+                            && occ.occurrenceId === owner
+                            && occ.state !== 'active'
+                            && occ.state !== 'completed',
                     ));
                 if (!isOwnedByPrior) {
                     throw new Error(

@@ -691,7 +691,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               availability,
               ceilings,
               inputRevision: {
-                availabilityRevision: `${input.date}:${availability.maxTimeMinutes}`,
+                availabilityRevision: `${input.date}:${availability.maxTimeMinutes}:${availability.reservedCapacityCost}`,
                 completedFactsRevision: preparedSnapshot.performedTrainingFacts?.revision ?? preparedSnapshot.revision,
                 checkinRevision: (input.sourceStates?.subjectiveCheckin?.status === 'AVAILABLE' && input.sourceStates.subjectiveCheckin.revision)
                   ? input.sourceStates.subjectiveCheckin.revision
