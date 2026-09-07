@@ -25,7 +25,7 @@ export interface ClaimOccurrenceLaunchOptions {
      * Allows callers to read date-level ledger documents, verify ReassessmentInputRevision,
      * or persist capacity reservations atomically before transitioning the occurrence to active.
      */
-    onBeforeClaim?: (transaction: Transaction, occurrence: SessionOccurrence) => Promise<void> | void;
+    onBeforeClaim?: (transaction: Transaction, occurrence: Readonly<SessionOccurrence>) => Promise<void> | void;
 }
 
 export class SessionOccurrenceService {
@@ -178,7 +178,10 @@ export class SessionOccurrenceService {
                 throw new Error(`Occurrence ${occurrenceId} cannot be claimed; state is '${current.state}', expected 'scheduled'.`);
             }
             if (options.onBeforeClaim) {
-                await options.onBeforeClaim(transaction, current);
+                await options.onBeforeClaim(transaction, {
+                    ...current,
+                    definitionRef: { ...current.definitionRef },
+                });
             }
             transitioned = {
                 ...current,

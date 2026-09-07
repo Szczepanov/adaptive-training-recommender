@@ -248,5 +248,40 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
 
             expect(mockTx.set).not.toHaveBeenCalled();
         });
+
+        it('prevents onBeforeClaim from mutating the committed occurrence', async () => {
+            const scheduled = occurrenceDoc({ occurrenceId: 'occ-1', state: 'scheduled', date: '2026-08-18' });
+            const mockTx = {
+                get: vi.fn().mockResolvedValue({
+                    exists: () => true,
+                    data: () => scheduled,
+                }),
+                set: vi.fn(),
+            };
+            firestore.runTransaction.mockImplementation(async (_db, cb) => cb(mockTx));
+
+            const onBeforeClaim = vi.fn().mockImplementation((_tx, occ: unknown) => {
+                // Attempt to mutate the passed occurrence
+                const mutable = occ as { date: string; definitionRef: { definitionId: string } };
+                mutable.date = '2099-01-01';
+                mutable.definitionRef.definitionId = 'hijacked-def';
+            });
+            const service = new SessionOccurrenceService();
+            const result = await service.claimOccurrenceLaunch('u1', 'occ-1', {
+                now: '2026-08-18T10:00:00Z',
+                onBeforeClaim,
+            });
+
+            expect(result.date).toBe('2026-08-18');
+            expect(result.definitionRef.definitionId).toBe('def-1');
+            expect(mockTx.set).toHaveBeenCalledWith(
+                expect.anything(),
+                expect.objectContaining({
+                    date: '2026-08-18',
+                    definitionRef: expect.objectContaining({ definitionId: 'def-1' }),
+                    state: 'active',
+                }),
+            );
+        });
     });
 });
