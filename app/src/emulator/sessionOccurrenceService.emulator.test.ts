@@ -8,37 +8,44 @@
  * mocked unit test still passed, because the mock never evaluates real rules.
  */
 import { readFileSync } from 'node:fs';
-import { afterAll, afterEach, beforeAll, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import type { Firestore } from 'firebase/firestore';
-import { SessionOccurrenceService } from '../services/sessionOccurrenceService';
+import { doc, getDoc, type Firestore } from 'firebase/firestore';
+import { SessionOccurrenceService, windowReservationId } from '../services/sessionOccurrenceService';
 import { isExternalPlanOccurrence } from '../sessions/models';
 
-const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? it : it.skip;
-let testEnvironment: RulesTestEnvironment;
+// Guards the whole suite -- hooks included -- exactly like every sibling
+// `*.emulator.test.ts` file in this directory. Gating only the leaf `it()` (e.g. via
+// `it.skip`) while leaving `beforeAll`/`afterEach`/`afterAll` at module scope would let
+// those hooks attempt `initializeTestEnvironment`/`clearFirestore` against an emulator
+// that may not be running whenever this file is collected outside `firebase
+// emulators:exec` (a plain `npm run check` / `vitest run`, for instance).
+const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 
-beforeAll(async () => {
-    testEnvironment = await initializeTestEnvironment({
-        // A distinct project id from firestoreRules.emulator.test.ts's 'demo-adaptive-training'
-        // -- separate projects are separate namespaces within the same emulator process, so
-        // this file's afterEach(clearFirestore()) can never race with or wipe data a
-        // concurrently-running sibling test file just wrote under the same ownerId.
-        projectId: 'demo-h4-pr3-occurrence-service',
-        firestore: { rules: readFileSync('firestore.rules', 'utf8') },
+emulatorDescribe('getOrCreateExternalPlanOccurrence (real transaction, real rules)', () => {
+    let testEnvironment: RulesTestEnvironment;
+
+    beforeAll(async () => {
+        testEnvironment = await initializeTestEnvironment({
+            // A distinct project id from firestoreRules.emulator.test.ts's
+            // 'demo-adaptive-training' -- separate projects are separate namespaces within
+            // the same emulator process, so this file's afterEach(clearFirestore()) can
+            // never race with or wipe data a concurrently-running sibling test file just
+            // wrote under the same ownerId.
+            projectId: 'demo-h4-pr3-occurrence-service',
+            firestore: { rules: readFileSync('firestore.rules', 'utf8') },
+        });
     });
-});
 
-afterEach(async () => {
-    await testEnvironment.clearFirestore();
-});
+    afterEach(async () => {
+        await testEnvironment.clearFirestore();
+    });
 
-afterAll(async () => {
-    await testEnvironment.cleanup();
-});
+    afterAll(async () => {
+        await testEnvironment.cleanup();
+    });
 
-emulatorDescribe(
-    'getOrCreateExternalPlanOccurrence hands off a shared window on re-import supersession (real transaction, real rules)',
-    async () => {
+    it('hands off a shared window to the successor occurrence on re-import supersession', async () => {
         const ownerId = 'athlete-a';
         // `.firestore()` is declared to return the legacy compat type for interop, but its
         // own doc comment confirms the returned instance actually is the modular Firebase
@@ -69,5 +76,16 @@ emulatorDescribe(
 
         const supersededFirst = await service.getOccurrence(ownerId, first.occurrenceId);
         expect(supersededFirst.status === 'AVAILABLE' && supersededFirst.data.state).toBe('superseded');
-    },
-);
+
+        // Read the actual reservation document, not just the two occurrences' own state.
+        // Both occurrences agreeing the window "belongs" to `second` is necessary but not
+        // sufficient: a regression that left the persisted reservation still pointing at
+        // `first` would pass every assertion above yet incorrectly reject the *next*
+        // same-window re-import as a conflict against an occurrence that no longer governs
+        // anything.
+        const reservationRef = doc(db, 'users', ownerId, 'session_occurrence_windows', windowReservationId('2026-08-18', 'window-1'));
+        const reservationSnap = await getDoc(reservationRef);
+        expect(reservationSnap.exists()).toBe(true);
+        expect(reservationSnap.data()?.occurrenceId).toBe(second.occurrenceId);
+    });
+});
