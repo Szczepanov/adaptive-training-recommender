@@ -16,6 +16,7 @@ vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
 import { SessionOccurrenceService, deterministicExternalPlanOccurrenceId } from './sessionOccurrenceService';
+import { MAX_RECOVERY_GENERATION } from './dailyLedgerAggregateService';
 
 const definitionRef: ManualOccurrenceRef = {
     definitionId: 'def-1', revision: 1, contentHash: 'a'.repeat(64),
@@ -615,6 +616,18 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
             const float = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 1.5 as number);
             expect(neg).toBe(gen0);
             expect(float).toBe(gen0);
+        });
+
+        it('enforces MAX_RECOVERY_GENERATION upper bound', async () => {
+            const ref = { planId: 'plan-1', sessionId: 'session-1', revision: 1, contentHash: 'a'.repeat(64) };
+            const gen0 = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, 0);
+            const atMax = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, MAX_RECOVERY_GENERATION);
+            const aboveMax = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, MAX_RECOVERY_GENERATION + 1);
+            const unsafe = await deterministicExternalPlanOccurrenceId('2026-08-18', ref, Number.MAX_SAFE_INTEGER);
+
+            expect(atMax).not.toBe(gen0);
+            expect(aboveMax).toBe(gen0);
+            expect(unsafe).toBe(gen0);
         });
     });
 

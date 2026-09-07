@@ -23,6 +23,7 @@ import {
     isExternalPlanOccurrence,
 } from '../sessions/models';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
+import { MAX_RECOVERY_GENERATION } from './dailyLedgerAggregateService';
 
 /** ACTIVE_OCCURRENCE_STATES excludes terminal/superseded states from "what governs today". */
 const ACTIVE_OCCURRENCE_STATES: ReadonlySet<SessionOccurrence['state']> = new Set(['scheduled', 'active']);
@@ -79,7 +80,12 @@ export async function deterministicExternalPlanOccurrenceId(
     ref: ExternalPlanOccurrenceRef,
     generation = 0,
 ): Promise<string> {
-    const validGen = typeof generation === 'number' && Number.isInteger(generation) && generation > 0 ? generation : 0;
+    const validGen = typeof generation === 'number'
+        && Number.isInteger(generation)
+        && generation > 0
+        && generation <= MAX_RECOVERY_GENERATION
+        ? generation
+        : 0;
     const raw = JSON.stringify([
         date,
         ref.planId,

@@ -13,6 +13,7 @@ import {
     buildInitialReservations,
     hasSeededAggregate,
     findAggregateDrift,
+    MAX_RECOVERY_GENERATION,
     type DailyLedgerAggregate,
 } from './dailyLedgerAggregateService';
 import type { OccurrenceLedgerInput } from '../engine/intradayLedgerInputs';
@@ -247,6 +248,29 @@ describe('DailyLedgerAggregateService', () => {
             );
             expect(res2.generation).toBe(1);
             expect(res2.aggregate.generations?.['neg-sess']).toBe(1);
+        });
+
+        it('enforces MAX_RECOVERY_GENERATION upper bound on currentGeneration and reject increments', () => {
+            const service = new DailyLedgerAggregateService();
+            const mockTx = { set: vi.fn() };
+
+            const atMax = aggregate({
+                generations: {
+                    'at-max': MAX_RECOVERY_GENERATION,
+                    'above-max': MAX_RECOVERY_GENERATION + 1,
+                    'unsafe': Number.MAX_SAFE_INTEGER,
+                },
+            });
+            expect(service.currentGeneration(atMax, 'at-max')).toBe(MAX_RECOVERY_GENERATION);
+            expect(service.currentGeneration(atMax, 'above-max')).toBe(0);
+            expect(service.currentGeneration(atMax, 'unsafe')).toBe(0);
+
+            // rejectReservationAndIncrementGeneration caps at MAX_RECOVERY_GENERATION
+            const res = service.rejectReservationAndIncrementGeneration(
+                mockTx as never, 'u1', '2026-08-18', atMax, 'occ-1', 'at-max',
+            );
+            expect(res.generation).toBe(MAX_RECOVERY_GENERATION);
+            expect(res.aggregate.generations?.['at-max']).toBe(MAX_RECOVERY_GENERATION);
         });
     });
 });

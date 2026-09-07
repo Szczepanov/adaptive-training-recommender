@@ -49,6 +49,13 @@ export interface DailyLedgerReservation {
     decisionId?: string;
 }
 
+/**
+ * Maximum permitted recovery generation counter. Strictly bounded below
+ * Number.MAX_SAFE_INTEGER so that generation increments always yield distinct,
+ * safe integers and hashing cannot experience precision loss or integer overflow.
+ */
+export const MAX_RECOVERY_GENERATION = 1_000_000;
+
 export interface DailyLedgerAggregate {
     userId: string;
     date: string;
@@ -231,7 +238,7 @@ export class DailyLedgerAggregateService {
     ): { aggregate: DailyLedgerAggregate; generation: number } {
         const reservations = { ...current.reservations };
         delete reservations[occurrenceId];
-        const generation = this.currentGeneration(current, sessionId) + 1;
+        const generation = Math.min(this.currentGeneration(current, sessionId) + 1, MAX_RECOVERY_GENERATION);
         const generations = { ...current.generations, [sessionId]: generation };
         const next: DailyLedgerAggregate = {
             ...current,
@@ -247,11 +254,11 @@ export class DailyLedgerAggregateService {
     /** The current recovery generation for a session -- 0 if it has never been rejected.
      * A `pending`/`proceed` recovery after a `reject` mints its new occurrence identity
      * with this value (already incremented by the `reject` that produced it); it is not
-     * incremented again at recovery time. Non-integer, negative, or invalid values are
-     * sanitized to 0. */
+     * incremented again at recovery time. Non-integer, negative, or invalid values, as well
+     * as values exceeding MAX_RECOVERY_GENERATION, are sanitized to 0. */
     currentGeneration(aggregate: DailyLedgerAggregate, sessionId: string): number {
         const val = aggregate.generations?.[sessionId];
-        return typeof val === 'number' && Number.isInteger(val) && val >= 0 ? val : 0;
+        return typeof val === 'number' && Number.isInteger(val) && val >= 0 && val <= MAX_RECOVERY_GENERATION ? val : 0;
     }
 }
 
