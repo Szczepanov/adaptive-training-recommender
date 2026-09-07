@@ -35,9 +35,11 @@ function formatEventTiming(daysToEvent: number | null): string {
 }
 import {
   activeExternalPlanService,
+  buildIntradayMemberState,
   externalPlanContextForDate,
   externalRestContextForDate,
   type ActiveExternalPlan,
+  type IntradayBundlePlacementContext,
 } from '../services/activeExternalPlanService';
 import { checkinService } from '../services/checkinService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
@@ -430,6 +432,24 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           console.warn(`Schedule windows for today could not be read (${scheduleWindowsState.status}); intraday bundle placement falls back to the legacy single-slot case.`);
         }
         const todaysScheduleWindows = scheduleWindowsState.status === 'AVAILABLE' ? scheduleWindowsState.data : [];
+        // H4 (#434) PR 3 step 7: real per-member started/existingBinding state, so a
+        // member that has already launched keeps its window rather than being silently
+        // re-resolved (D-PLACEMENT). `windowBinding` is only ever set once a caller passes
+        // one into `getOrCreateExternalPlanOccurrence` -- until Phase 3 wires that for
+        // non-primary members, `existingBinding` stays absent here even for a started
+        // member; `started` alone is already real and meaningful today.
+        let todaysExternalPlanMemberState: IntradayBundlePlacementContext['memberState'];
+        try {
+          const todaysExternalPlanOccurrences = await sessionOccurrenceService.getExternalPlanOccurrencesForDate(userId, input.date);
+          if (!isCurrent()) return;
+          todaysExternalPlanMemberState = buildIntradayMemberState(todaysExternalPlanOccurrences);
+        } catch (err) {
+          // A failed read must not silently become "nothing has started" -- that would let
+          // D-PLACEMENT re-resolve a member that has actually already launched. Omit
+          // memberState entirely (the exact pre-wiring fallback, not a worse one).
+          console.warn('Failed to read today\'s external-plan occurrence state for bundle placement:', err);
+          todaysExternalPlanMemberState = undefined;
+        }
         const earlyAvailability = resolveAvailability(input.date, subjective, planWeekActivities, context, input.scheduleOverlays);
         const bundleLedger = computeDailyLedger(
           {
@@ -446,7 +466,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         // `resolveIntradayBundlePlacement` already treats an empty list as the
         // intentional legacy single-slot fallback (D-WINDOW), not a data-loss signal.
         const bundleContext = planWeekActivitiesState.status === 'AVAILABLE'
-          ? { scheduleWindows: todaysScheduleWindows, fixedActivities: planWeekActivities, ledger: bundleLedger }
+          ? {
+              scheduleWindows: todaysScheduleWindows, fixedActivities: planWeekActivities, ledger: bundleLedger,
+              memberState: todaysExternalPlanMemberState,
+            }
           : undefined;
         const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, bundleContext) : null;
         const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;

@@ -5,12 +5,14 @@ import type { ScheduleWindow, ExternalPlanHeader } from '../engine/models';
 import { EXTERNAL_PLAN_SCHEMA_V4 } from '../sessions/externalPlanV4';
 import fixture01 from '../sessions/fixtures/01-full-body-maintenance.json';
 import {
+    buildIntradayMemberState,
     externalPlanContextForDate,
     placedSessionForDate,
     resolveIntradayBundlePlacement,
     type ActiveExternalPlan,
     type IntradayBundlePlacementContext,
 } from './activeExternalPlanService';
+import type { ExternalPlanSessionOccurrence } from '../sessions/models';
 
 const DATE = '2026-08-17'; // the plan's Monday startDate
 
@@ -225,5 +227,79 @@ describe('externalPlanContextForDate with bundleContext', () => {
         expect(externalPlanContextForDate(active, DATE, context)?.session.id).toBe('s-am');
         // Omitting bundleContext keeps the exact pre-D-PLACEMENT priority-based pick.
         expect(externalPlanContextForDate(active, DATE)?.session.id).toBe('s-pm');
+    });
+});
+
+describe('buildIntradayMemberState (H4 #434 PR 3 step 7)', () => {
+    function externalOccurrence(overrides: Partial<ExternalPlanSessionOccurrence> = {}): ExternalPlanSessionOccurrence {
+        return {
+            userId: 'u1', occurrenceId: 'occ-1', date: DATE, authority: 'external_plan',
+            externalPlanRef: { planId: 'v4-bundle-1', revision: 1, sessionId: 's-am', contentHash: 'a'.repeat(64) },
+            state: 'scheduled',
+            createdAt: '2026-08-17T00:00:00Z', updatedAt: '2026-08-17T00:00:00Z',
+            ...overrides,
+        };
+    }
+
+    it('marks a scheduled occurrence as not started', () => {
+        const result = buildIntradayMemberState([externalOccurrence({ state: 'scheduled' })]);
+        expect(result.get('s-am')).toEqual({ started: false });
+    });
+
+    it.each(['active', 'completed', 'abandoned'] as const)('marks a %s occurrence as started', state => {
+        const result = buildIntradayMemberState([externalOccurrence({ state })]);
+        expect(result.get('s-am')?.started).toBe(true);
+    });
+
+    it.each(['missed', 'superseded', 'skipped'] as const)('never marks a %s occurrence as started', state => {
+        const result = buildIntradayMemberState([externalOccurrence({ state })]);
+        expect(result.get('s-am')?.started).toBe(false);
+    });
+
+    it('carries a started member\'s windowBinding through as existingBinding', () => {
+        const windowBinding = {
+            windowId: 'window-1', bundleId: 'double-monday', order: 0,
+            boundStartLocal: '06:00', boundEndLocal: '07:00',
+            startInstant: '2026-08-17T04:00:00Z', endInstant: '2026-08-17T05:00:00Z',
+        };
+        const result = buildIntradayMemberState([externalOccurrence({ state: 'active', windowBinding })]);
+        expect(result.get('s-am')).toEqual({
+            started: true,
+            existingBinding: {
+                sessionId: 's-am', windowId: 'window-1',
+                boundStartLocal: '06:00', boundEndLocal: '07:00',
+                startInstant: '2026-08-17T04:00:00Z', endInstant: '2026-08-17T05:00:00Z',
+            },
+        });
+    });
+
+    it('never carries a windowBinding for an unstarted member, even if one is somehow present', () => {
+        const windowBinding = {
+            windowId: 'window-1', bundleId: 'double-monday', order: 0,
+            boundStartLocal: '06:00', boundEndLocal: '07:00',
+            startInstant: '2026-08-17T04:00:00Z', endInstant: '2026-08-17T05:00:00Z',
+        };
+        const result = buildIntradayMemberState([externalOccurrence({ state: 'scheduled', windowBinding })]);
+        expect(result.get('s-am')).toEqual({ started: false });
+    });
+
+    it('keys by externalPlanRef.sessionId across multiple occurrences', () => {
+        const result = buildIntradayMemberState([
+            externalOccurrence({ occurrenceId: 'occ-am', externalPlanRef: { planId: 'p', revision: 1, sessionId: 's-am', contentHash: 'a'.repeat(64) }, state: 'active' }),
+            externalOccurrence({ occurrenceId: 'occ-pm', externalPlanRef: { planId: 'p', revision: 1, sessionId: 's-pm', contentHash: 'b'.repeat(64) }, state: 'scheduled' }),
+        ]);
+        expect([...result.keys()].sort()).toEqual(['s-am', 's-pm']);
+        expect(result.get('s-am')?.started).toBe(true);
+        expect(result.get('s-pm')?.started).toBe(false);
+    });
+
+    it('ignores manual (non-external-plan) occurrences', () => {
+        const manual = {
+            userId: 'u1', occurrenceId: 'occ-manual', date: DATE, authority: 'schedule' as const,
+            definitionRef: { definitionId: 'def-1', revision: 1, contentHash: 'a'.repeat(64) },
+            state: 'active' as const, createdAt: '2026-08-17T00:00:00Z', updatedAt: '2026-08-17T00:00:00Z',
+        };
+        const result = buildIntradayMemberState([manual]);
+        expect(result.size).toBe(0);
     });
 });

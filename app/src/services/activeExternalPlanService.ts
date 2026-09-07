@@ -17,6 +17,7 @@ import { externalPlanService, type ExternalPlanService } from './externalPlanSer
 // plan-level rest directives in v3, resolved separately below rather than faked as sessions.
 import type { AnyExternalTrainingPlan as ExternalTrainingPlan, AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
 import type { ExternalIntradayPlacement, ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
+import { isExternalPlanOccurrence, type SessionOccurrence } from '../sessions/models';
 
 export interface ActiveExternalPlan {
     header: ExternalPlanHeader;
@@ -83,6 +84,48 @@ export interface IntradayBundlePlacementContext {
      * caller that has not yet wired occurrence lookups keeps working unchanged.
      */
     memberState?: ReadonlyMap<string, { started: boolean; existingBinding?: ResolvedWindowBinding }>;
+}
+
+/**
+ * H4 (#434) PR 3 step 7: maps today's already-fetched external-plan occurrences onto
+ * `IntradayBundlePlacementContext['memberState']`, keyed by the v4 session's own
+ * `sessionId` via `externalPlanRef.sessionId`. Pure and unit-testable on its own --
+ * `Home.tsx` only needs to fetch the occurrences (`sessionOccurrenceService
+ * .getExternalPlanOccurrencesForDate`) and pass the result through.
+ *
+ * `started` is true once the occurrence's execution has actually begun --
+ * `active`/`completed`/`abandoned` -- never for `scheduled` (not launched),
+ * `missed` (never launched), or `superseded`/`skipped` (already excluded by
+ * `getExternalPlanOccurrencesForDate`, but excluded here too for callers that pass an
+ * unfiltered list). `existingBinding` is populated only for a started member that also
+ * carries a persisted `windowBinding` -- until a caller passes `windowBinding` into
+ * `getOrCreateExternalPlanOccurrence` when creating a bundle member's occurrence, this
+ * stays absent even for a started member; `started` alone is still real and meaningful.
+ */
+export function buildIntradayMemberState(
+    occurrences: readonly SessionOccurrence[],
+): NonNullable<IntradayBundlePlacementContext['memberState']> {
+    const memberState = new Map<string, { started: boolean; existingBinding?: ResolvedWindowBinding }>();
+    for (const occurrence of occurrences) {
+        if (!isExternalPlanOccurrence(occurrence)) continue;
+        const started = occurrence.state === 'active' || occurrence.state === 'completed' || occurrence.state === 'abandoned';
+        const windowBinding = occurrence.windowBinding;
+        const sessionId = occurrence.externalPlanRef.sessionId;
+        memberState.set(sessionId, {
+            started,
+            ...(started && windowBinding ? {
+                existingBinding: {
+                    sessionId,
+                    windowId: windowBinding.windowId,
+                    boundStartLocal: windowBinding.boundStartLocal,
+                    boundEndLocal: windowBinding.boundEndLocal,
+                    startInstant: windowBinding.startInstant,
+                    endInstant: windowBinding.endInstant,
+                },
+            } : {}),
+        });
+    }
+    return memberState;
 }
 
 function toMembers(
