@@ -45,6 +45,15 @@ export class ExecutionPrescriptionService {
         return doc(this.db, 'users', userId, 'execution_prescriptions', prescriptionHash);
     }
 
+    /**
+     * Persists an execution prescription using write-once, first-commit semantics (ADR-0023).
+     *
+     * Execution prescriptions are immutable and content-addressed; Firestore security rules
+     * strictly forbid updates (`allow update, delete: if false`). If a record with the same
+     * `prescriptionHash` has already been committed, the transaction validates that the stored
+     * content hash matches and exits without modifying the existing document, preserving the
+     * first committed write (including its `createdAt` timestamp).
+     */
     async savePrescription(userId: string, prescription: ExecutionPrescription): Promise<void> {
         const computedHash = await hashExecutionPrescription(prescription);
         if (prescription.prescriptionHash !== computedHash) {

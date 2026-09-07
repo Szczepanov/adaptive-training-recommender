@@ -138,7 +138,7 @@ describe('ExecutionPrescriptionService', () => {
             expect(stored?.createdAt).toBe('2026-09-06T10:00:00.000Z');
         });
 
-        it('preserves the earliest write when concurrent calls share the same prescriptionHash with different timestamps', async () => {
+        it('preserves the first committed write when concurrent calls share the same prescriptionHash with different timestamps', async () => {
             const raw = makeBasePrescription();
             const prescriptionHash = await hashExecutionPrescription({ ...raw, prescriptionHash: '' });
             const earliestTime = '2026-09-06T08:00:00.000Z';
@@ -163,11 +163,11 @@ describe('ExecutionPrescriptionService', () => {
 
             const stored = docStore.get('users/u1/execution_prescriptions/' + prescriptionHash);
             expect(stored).toBeDefined();
-            // Earliest write remains stored
+            // First-commit write remains stored
             expect(stored?.createdAt).toBe(earliestTime);
         });
 
-        it('preserves earliest write even when concurrent transactions experience contention and retry', async () => {
+        it('preserves first committed write even when concurrent transactions experience contention and retry', async () => {
             const raw = makeBasePrescription();
             const prescriptionHash = await hashExecutionPrescription({ ...raw, prescriptionHash: '' });
             const earliestTime = '2026-09-06T09:00:00.000Z';
@@ -194,6 +194,34 @@ describe('ExecutionPrescriptionService', () => {
 
             const stored = docStore.get('users/u1/execution_prescriptions/' + prescriptionHash);
             expect(stored?.createdAt).toBe(earliestTime);
+        });
+
+        it('enforces first-commit immutability: arrival with earlier timestamp does not overwrite committed record', async () => {
+            const raw = makeBasePrescription();
+            const prescriptionHash = await hashExecutionPrescription({ ...raw, prescriptionHash: '' });
+            const committedTime = '2026-09-06T12:00:00.000Z';
+            const earlierTime = '2026-09-06T10:00:00.000Z';
+
+            const firstPrescription: ExecutionPrescription = {
+                ...raw,
+                prescriptionHash,
+                createdAt: committedTime,
+            };
+            const secondPrescription: ExecutionPrescription = {
+                ...raw,
+                prescriptionHash,
+                createdAt: earlierTime,
+            };
+
+            // First write commits
+            await service.savePrescription('u1', firstPrescription);
+
+            // Second write with earlier timestamp arrives
+            await service.savePrescription('u1', secondPrescription);
+
+            const stored = docStore.get('users/u1/execution_prescriptions/' + prescriptionHash);
+            // Write-once first-commit semantics: the committed record is not updated or overwritten
+            expect(stored?.createdAt).toBe(committedTime);
         });
 
         it('throws an error if existing document has corrupted hash', async () => {

@@ -216,7 +216,7 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         expect(stored?.createdAt).toBe('2026-09-06T10:00:00.000Z');
     });
 
-    it('preserves the earliest write when concurrent launches share a prescriptionHash with different timestamps', async () => {
+    it('preserves the first committed write when concurrent launches share a prescriptionHash with different timestamps', async () => {
         const externalPlan = makeV4ExternalPlan();
         const earliestTime = '2026-09-06T10:00:00.000Z';
         const laterTime = '2026-09-06T10:05:00.000Z';
