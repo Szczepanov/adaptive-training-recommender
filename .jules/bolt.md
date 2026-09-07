@@ -25,3 +25,7 @@
 ## 2026-08-27 - Avoid useMemo for trivial arrays
 **Learning:** Wrapping trivial arrays (e.g., 2-3 elements) in `useMemo` to prevent an inline `.filter()` on render is an anti-pattern. The overhead of the React hook (memory allocation, dependency checking) is heavier than the sub-millisecond cost of filtering a tiny array.
 **Action:** Only apply `useMemo` optimizations to arrays that are meaningfully large or computations that are actually expensive. For UI components, prioritize lists like `savedDefinitions` or `EXERCISES` rather than small arrays like `fidelityIssues`.
+
+## 2026-09-07 - Use Map lookup for Canonical Rest Template
+**Learning:** The `getCanonicalRestTemplate()` function was performing an O(N) lookup across the `ENRICHED_TEMPLATES` and `TEMPLATES` arrays via `.find(t => t.category === 'Rest')` to retrieve the canonical `rest_01` fallback template. Since this function is called extremely frequently (especially during optimization branching and when falling back on constraints), replacing it with an O(1) dictionary lookup via `ENRICHED_TEMPLATES_BY_ID.get('rest_01')` avoids redundant iteration.
+**Action:** When a fallback or canonical item is known by its ID (like `rest_01`), prefer O(1) dictionary lookups via `_BY_ID` maps rather than scanning arrays via `.find()` on category strings.
