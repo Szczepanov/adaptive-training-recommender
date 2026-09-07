@@ -1739,6 +1739,59 @@ emulatorDescribe('Firestore security rules', () => {
         await expect(assertSucceeds(deleteDoc(doc(ownerDb, reservationPath)))).resolves.toBeUndefined();
     });
 
+    it('enforces the daily_ledgers reservation aggregate contract (H4 #434 PR 3, D-LEDGER step 6a)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const aggregatePath = `users/${ownerId}/daily_ledgers/2026-08-18`;
+
+        function validAggregate() {
+            return {
+                userId: ownerId, date: '2026-08-18', revision: 1,
+                ceilings: { dailyMinuteCeiling: 90, dailySystemicCostCeiling: 1 },
+                reservations: { 'occ-1': { minutes: 60, systemicCost: 0.4, state: 'reserved' } },
+                seededAt: '2026-08-18T05:00:00Z',
+                createdAt: '2026-08-18T05:00:00Z', updatedAt: '2026-08-18T05:00:00Z',
+            };
+        }
+
+        // 1. Owner can seed a valid aggregate.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, aggregatePath), validAggregate())))
+            .resolves.toBeUndefined();
+
+        // 2. Cross-user read is denied.
+        await assertFails(getDoc(doc(otherDb, aggregatePath)));
+
+        // 3. A revision jump greater than 1 is rejected -- every mutating transition must
+        // bump revision by exactly one.
+        await assertFails(setDoc(doc(ownerDb, aggregatePath), {
+            ...validAggregate(), revision: 3, updatedAt: '2026-08-18T06:00:00Z',
+        }));
+
+        // 4. A legitimate +1 update (adding a reservation) succeeds.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, aggregatePath), {
+            ...validAggregate(),
+            revision: 2,
+            reservations: { ...validAggregate().reservations, 'occ-2': { minutes: 30, systemicCost: 0.2, state: 'reserved' } },
+            updatedAt: '2026-08-18T06:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 5. ceilings/seededAt/createdAt/date are immutable once seeded.
+        await assertFails(setDoc(doc(ownerDb, aggregatePath), {
+            ...validAggregate(), revision: 3, ceilings: { dailyMinuteCeiling: 999, dailySystemicCostCeiling: 1 },
+        }));
+        await assertFails(setDoc(doc(ownerDb, aggregatePath), {
+            ...validAggregate(), revision: 3, seededAt: '2026-08-18T07:00:00Z',
+        }));
+
+        // 6. Deletes are never allowed -- the aggregate is an append/mutate-only ledger.
+        await assertFails(deleteDoc(doc(ownerDb, aggregatePath)));
+
+        // 7. Rejects a malformed shape (missing a required field).
+        const malformed = validAggregate() as Partial<ReturnType<typeof validAggregate>>;
+        delete malformed.ceilings;
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_ledgers/2026-08-19`), malformed));
+    });
+
     it('allows recommendations with primarySession and additionalSessions bindings', async () => {
         const base = validRecommendation();
         const recWithBindings = {

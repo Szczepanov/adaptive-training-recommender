@@ -1691,6 +1691,51 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
+    // H4 (#434) PR 3 / ADR-0036 D-LEDGER, Phase 2 step 6a: the persisted date-level
+    // reservation aggregate. Firestore's `Transaction.get()` accepts a `DocumentReference`
+    // only -- a transaction cannot query "every occurrence for this date" -- so this one
+    // named document is the serialization authority every reserving/releasing write must
+    // update atomically; `session_occurrences` alone cannot give a claim transaction that
+    // guarantee. `reservations` is keyed by occurrenceId (an unbounded, dynamic keyspace),
+    // which the rules language cannot iterate to validate each entry's shape -- the same
+    // accepted tradeoff this schema already makes elsewhere for dynamic-keyed maps (e.g.
+    // `tissueResponses`); per-entry validation is enforced by
+    // `dailyLedgerAggregateService.ts` and its own tests, not by these rules.
+    function hasValidDailyLedgerAggregate(userId, date) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'date', 'revision', 'ceilings', 'reservations', 'seededAt', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'date', 'revision', 'ceilings', 'reservations', 'seededAt', 'createdAt', 'updatedAt'])
+        && data.date == date
+        && isValidActivityDate(data.date)
+        && data.revision is int && data.revision >= 1
+        && data.ceilings is map
+        && data.ceilings.keys().hasOnly(['dailyMinuteCeiling', 'dailySystemicCostCeiling'])
+        && data.ceilings.keys().hasAll(['dailyMinuteCeiling', 'dailySystemicCostCeiling'])
+        && data.ceilings.dailyMinuteCeiling is number && data.ceilings.dailyMinuteCeiling >= 0
+        && data.ceilings.dailySystemicCostCeiling is number && data.ceilings.dailySystemicCostCeiling >= 0 && data.ceilings.dailySystemicCostCeiling <= 1
+        && data.reservations is map
+        && data.reservations.size() <= 50
+        && data.seededAt is string && data.seededAt.size() > 0
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/daily_ledgers/{date} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidDailyLedgerAggregate(userId, date);
+      allow update: if hasValidDailyLedgerAggregate(userId, date)
+        && keepsOwnership(userId)
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.ceilings == resource.data.ceilings
+        && request.resource.data.seededAt == resource.data.seededAt
+        && request.resource.data.createdAt == resource.data.createdAt
+        // Every mutating transition bumps revision by exactly one (plan step 6a): this is
+        // the same optimistic-sequencing property that makes a concurrent claim conflict
+        // and retry rather than silently overwrite another writer's reservation change.
+        && request.resource.data.revision == resource.data.revision + 1;
+      allow delete: if false;
+    }
+
     function hasKnownOutcomeMetric(metricId) {
       return metricId in [
         'cycling_tt_20m_mean_power_w',
