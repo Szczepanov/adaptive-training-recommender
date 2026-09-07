@@ -1,4 +1,4 @@
-import type { SessionDefinition, ExecutionPrescription, SessionReferenceBinding } from '../sessions/models';
+import { isExternalPlanOccurrence, type SessionDefinition, type ExecutionPrescription, type SessionReferenceBinding } from '../sessions/models';
 import type { PreparedSessionLaunch } from '../sessions/sessionLaunch';
 import type { WorkoutPrescription } from '../workouts/models';
 import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
@@ -159,10 +159,11 @@ export interface PrepareExternalPlanSessionLaunchOptions {
 
 /**
  * Freezes the execution-prescription snapshot for a v4 external-plan session (ADR-0036
- * H4). If a date is supplied (or an occurrenceId), an external-plan occurrence is
- * created/resolved idempotently through sessionOccurrenceService and attached to the
- * launch binding. Target-event sessions are deliberately rejected: rules.ts treats
- * them as fixed-activity/advisory inputs rather than executable primary recommendations.
+ * H4). A supplied date creates/resolves an external-plan occurrence idempotently. A
+ * supplied occurrenceId is read back and verified against the exact external source (and
+ * date when supplied) before it can be attached to the launch binding. Target-event
+ * sessions are deliberately rejected: rules.ts treats them as fixed-activity/advisory
+ * inputs rather than executable primary recommendations.
  *
  * Idempotent and safe to call every time an executable external-plan recommendation is
  * composed: `executionPrescriptionService.savePrescription` no-ops when the same
@@ -210,6 +211,44 @@ export async function prepareExternalPlanSessionLaunch(
         contentHash: externalPlan.contentHash,
     };
 
+    let effectiveOccurrenceId = options.occurrenceId;
+    if (effectiveOccurrenceId) {
+        const occurrence = await sessionOccurrenceService.getOccurrence(userId, effectiveOccurrenceId);
+        if (occurrence.status !== 'AVAILABLE') {
+            throw new Error(`External-plan occurrence ${effectiveOccurrenceId} is not available (${occurrence.status}).`);
+        }
+        const occurrenceData = occurrence.data;
+        if (
+            !isExternalPlanOccurrence(occurrenceData)
+            || occurrenceData.userId !== userId
+            || occurrenceData.externalPlanRef.planId !== sessionSource.planId
+            || occurrenceData.externalPlanRef.revision !== sessionSource.revision
+            || occurrenceData.externalPlanRef.sessionId !== sessionSource.sessionId
+            || occurrenceData.externalPlanRef.contentHash !== sessionSource.contentHash
+        ) {
+            throw new Error(`External-plan occurrence ${effectiveOccurrenceId} does not match the launch source.`);
+        }
+        if (options.date !== undefined && occurrenceData.date !== options.date) {
+            throw new Error(
+                `External-plan occurrence ${effectiveOccurrenceId} is for ${occurrenceData.date}, expected ${options.date}.`,
+            );
+        }
+    } else if (options.date) {
+        const occurrence = await sessionOccurrenceService.getOrCreateExternalPlanOccurrence(
+            userId,
+            options.date,
+            {
+                planId: externalPlan.planId,
+                revision: externalPlan.revision,
+                sessionId: externalPlan.session.id,
+                contentHash: externalPlan.contentHash,
+            },
+            options.placementOrder,
+            now,
+        );
+        effectiveOccurrenceId = occurrence.occurrenceId;
+    }
+
     const effectiveSummary = options.summaryOverride ?? definition.summary;
     const unsignedPrescription: ExecutionPrescription = {
         schemaVersion: 1,
@@ -235,23 +274,6 @@ export async function prepareExternalPlanSessionLaunch(
         ...unsignedPrescription,
         prescriptionHash,
     });
-
-    let effectiveOccurrenceId = options.occurrenceId;
-    if (!effectiveOccurrenceId && options.date) {
-        const occurrence = await sessionOccurrenceService.getOrCreateExternalPlanOccurrence(
-            userId,
-            options.date,
-            {
-                planId: externalPlan.planId,
-                revision: externalPlan.revision,
-                sessionId: externalPlan.session.id,
-                contentHash: externalPlan.contentHash,
-            },
-            options.placementOrder,
-            now,
-        );
-        effectiveOccurrenceId = occurrence.occurrenceId;
-    }
 
     return {
         definition,
