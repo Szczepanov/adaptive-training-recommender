@@ -209,9 +209,11 @@ jobs:
             exit 1
           fi
 
-      # `npm run build` runs the full `npm run check` first (typecheck, lint, unit tests,
-      # workout-catalog validation) -- never deploy a build that hasn't passed those.
-      - name: Build frontend
+      # Compile the production bundle with production environment variables.
+      # Runs typecheck followed by build:bundle (vite build). Full unit test suites,
+      # linting, emulator checks, and simulations are validated by the CI release gate
+      # and must not be re-evaluated against live production credentials during deploy.
+      - name: Build frontend bundle
         if: ${{ inputs.deploy_hosting }}
         env:
           VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
@@ -229,7 +231,7 @@ jobs:
           VITE_HEALTH_ANOMALY_POLICY: ${{ secrets.VITE_HEALTH_ANOMALY_POLICY }}
           VITE_GIT_SHA: ${{ github.sha }}
           VITE_GIT_DIRTY: "false"
-        run: npm run build
+        run: npm run typecheck && npm run build:bundle
 
       # `npm exec --no --` (rather than bare `npx`) refuses to fall back to fetching an
       # unreviewed package version from the registry if firebase-tools somehow isn't already

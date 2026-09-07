@@ -63,7 +63,9 @@ closed to `off` when absent.
 Run **Deploy Frontend & Firestore Rules** when you intentionally need only Hosting, only rules,
 or both. Its inputs are:
 
-- `deploy_hosting` — runs the production frontend build and deploys Firebase Hosting.
+- `deploy_hosting` — compiles the production frontend bundle (`npm run typecheck && npm run build:bundle`)
+  with production Firebase configuration and deploys Firebase Hosting. Full unit test suites are
+  validated by CI and not re-evaluated against live production environment variables during deploy.
 - `deploy_rules` — runs the Firestore rules safety/deployment flow.
 - `confirm_rules_drift` — defaults to `false`; set it only after reviewing an intentional
   production-vs-repository rules mismatch.
