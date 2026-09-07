@@ -57,10 +57,23 @@ specificity plus an anchor-date coverage-ordering fix (H2/H2b), an H3 investigat
 verified existing authored-block/replacement contracts, and explicit rest-day authoring
 under [ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (H3-rest, delivered). H4
 intraday windows/reassessment is accepted in
-[ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md) and H5 block intent
-and controlled progression is accepted in
-[ADR-0037](../adr/0037-block-intent-and-controlled-progression.md); both implementations
-are unstarted. H4 runtime release needs verification of same-day canonical performed
+[ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md) and **In progress**:
+D-TIME (`localInstant.ts`), D-LEDGER's pure engine (`dailyLedger.ts`), D-PLACEMENT's
+bundle-placement engine, D-REASSESS's pure `reassessDependentBundleMember`
+(`intradayReassessment.ts`, #442) and D-AUDIT's decision store (`intradayDecision.ts`,
+#443) are all delivered; #434 PR 1 bound the v4 primary session to the source-neutral
+launch path (#440), PR 2 added external-plan occurrence tracking (#445), and PR 3
+Phases 1-2 (#448) added D-WINDOW's real per-window exclusivity, atomic re-import
+supersession, and D-LEDGER's persisted date-level reservation aggregate. None of
+`claimOccurrenceLaunch`, `reassessDependentBundleMember`, or the decision store yet has a
+live caller: a non-primary bundle member is placed but not launchable, and no runtime path
+exercises reassessment or replay end-to-end. The
+[bundle-launch plan](./h4-434-pr3-bundle-second-member-launch.md) tracks #434 PR 3's
+remaining phases (surfacing `additionalSessions`, the atomic claim, post-AM
+`SessionResponse` capture, and the `POLICY_VERSION` bump) as the path to a live H4 release.
+H5 block intent and controlled progression is accepted in
+[ADR-0037](../adr/0037-block-intent-and-controlled-progression.md); its implementation
+is unstarted. H4 runtime release needs verification of same-day canonical performed
 facts; H5 runtime needs validated intent mappings and linked response evidence. H5
 delivers intent authoring, report-only review, then confirmed bounded revisions. The work
 does not replace the reviewed active persona-judge baseline. The
