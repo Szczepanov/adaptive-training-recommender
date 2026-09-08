@@ -153,7 +153,10 @@ export class SessionResponseService {
         patch: Partial<Pick<SessionResponse, 'sessionRpe' | 'completedFraction' | 'unexpectedFatigue' | 'techniqueNote' | 'note'>>,
         now: string = new Date().toISOString(),
     ): Promise<void> {
-        await updateDoc(this.responseRef(userId, responseId), { ...patch, updatedAt: now });
+        const definedPatch = Object.fromEntries(
+            Object.entries(patch).filter(([, value]) => value !== undefined),
+        );
+        await updateDoc(this.responseRef(userId, responseId), { ...definedPatch, updatedAt: now });
     }
 
     /**

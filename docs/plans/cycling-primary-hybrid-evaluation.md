@@ -8,7 +8,8 @@ decision store (#443)) and issue #434's execution-binding pipeline delivered thr
 Phase 3 (#440, #445, #448, #450, #451, #454) and Phase 4 (#465) -- so a non-primary bundle
 member is now adjudicated, reserved, surfaced as an `additionalSessions` binding, and
 launchable when its verdict has a valid binding. Phase 5 now captures and persists the
-post-AM `SessionResponse` evidence, completion facts, and linked tissue feedback. Only the
+post-AM `SessionResponse` completion facts, while multi-region tissue feedback remains in
+the daily check-in as the canonical tissue authority. Only the
 H4-specific Phase 6 policy work remains; dependent members still require the response and
 separation checks before they become launchable. The broader ledger-based ranking/admission unification
 and persistence of a bundle's resolved placement for display also remain; H5 design is

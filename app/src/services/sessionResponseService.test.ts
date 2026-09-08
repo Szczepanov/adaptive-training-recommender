@@ -112,11 +112,12 @@ describe('SessionResponseService (M5.1)', () => {
 
     it('updateResponseFacts patches only the non-tissue facts and bumps updatedAt, via updateDoc not setDoc', async () => {
         const service = new SessionResponseService();
-        await service.updateResponseFacts('u1', 'resp-1', { sessionRpe: 8, note: 'heavier than expected' }, '2026-08-19T00:00:00.000Z');
+        await service.updateResponseFacts('u1', 'resp-1', { sessionRpe: 8, note: undefined }, '2026-08-19T00:00:00.000Z');
 
         expect(firestore.setDoc).not.toHaveBeenCalled();
         const [, patch] = firestore.updateDoc.mock.calls[0];
-        expect(patch).toEqual({ sessionRpe: 8, note: 'heavier than expected', updatedAt: '2026-08-19T00:00:00.000Z' });
+        expect(patch).toEqual({ sessionRpe: 8, updatedAt: '2026-08-19T00:00:00.000Z' });
+        expect(patch).not.toHaveProperty('note');
     });
 
     it('getResponsesForSource filters by sourceSession.kind client-side after the single-field query', async () => {

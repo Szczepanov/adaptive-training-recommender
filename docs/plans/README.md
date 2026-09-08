@@ -72,7 +72,8 @@ non-primary member is now reassessed, reserved and emitted as an `additionalSess
 binding. PR 3 Phase 4 (#465) now renders that binding and routes eligible starts through
 the atomic occurrence/ledger claim with rollback on launch failure. PR 3 Phase 5 now
 captures the post-AM `immediate` `SessionResponse`, including completion fraction,
-unexpected fatigue, notes, and multi-region tissue feedback. The
+unexpected fatigue, and notes; multi-region tissue feedback remains in the daily
+check-in as the canonical tissue authority. The
 [bundle-launch plan](./h4-434-pr3-bundle-second-member-launch.md) tracks #434 PR 3's
 remaining Phase 6 (the H4-specific `POLICY_VERSION` transition) as the path to a live H4
 release. Beyond PR 3, H4
