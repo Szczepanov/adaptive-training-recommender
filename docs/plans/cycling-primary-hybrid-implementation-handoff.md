@@ -1,7 +1,23 @@
 # Cycling-primary hybrid: implementation handoff
 
-**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as ADR-0036 with D-SCHEMA/D-LEDGER delivered, the same-day canonical performed-fact boundary verified, and the fixed-activity cost-reduce duplication unified (D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT and ledger-based admission unstarted); H5 design accepted as ADR-0037 with H5a (intent contracts, canonical replay) and H5b (report-only progression review) delivered (H5c confirmed revisions and cumulative `external-plan@5` unstarted)
-**Blocked by:** H4's remaining runtime wiring (using `computeDailyLedger`/`admitsCandidate` as an actual ranking/admission input, then D-TIME/D-REASSESS/D-PLACEMENT/D-AUDIT) needs its own decision-affecting PR(s); nothing left blocks starting it. H5c (confirmed bounded revisions, with the athlete-scoped singleton progression claim) and cumulative `external-plan@5` with `intentBlocks` are both ready to start now that H4's v4 artifact has landed. Personal M00/M01 prescription needs current athlete inputs.
+**Scope note:** This document supplies **bounded implementation work orders**; the
+[evaluation plan](./cycling-primary-hybrid-evaluation.md) owns H1-H5 status. For current H4
+implementation work, read [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) --
+the H4 work order below predates issue #434's execution-binding pipeline and is retained for
+its record of what was investigated, not as a task list.
+**Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as
+ADR-0036 with every design slice (D-SCHEMA, D-LEDGER, D-TIME, D-WINDOW, D-PLACEMENT,
+D-REASSESS, D-AUDIT) delivered as code and issue #434's execution-binding pipeline delivered
+through PR 3 Phase 3 -- PR 3 Phases 4-6 (launch affordance and atomic claim, post-AM
+`SessionResponse` capture, `POLICY_VERSION` bump) remain, and ledger-based
+ranking/admission is still not a decision input anywhere; H5 design accepted as ADR-0037
+with H5a (intent contracts, canonical replay) and H5b (report-only progression review)
+delivered (H5c confirmed revisions and cumulative `external-plan@5` unstarted)
+**Blocked by:** Nothing blocks starting any remaining item. H4's live release is gated on
+PR 3 Phases 4-6. H5c (confirmed bounded revisions, with the athlete-scoped singleton
+progression claim) and cumulative `external-plan@5` with `intentBlocks` are both ready to
+start, and are independent of H4's remaining phases. Personal M00/M01 prescription needs
+current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -24,12 +40,11 @@ when an earlier exposure already satisfied that role's weekly minimum. On unclai
 the ordinary coverage ordering is unchanged, so an already-met hard role does not force
 unnecessary repeats.
 
-The current decision policy version is
-`2026-09-fixed-activity-cost-dedup-v1` (bumped mechanically by the fixed-activity
-cost-reduce dedup slice, not by an actual decision-behavior change -- see `app/src/engine/policy.ts`
-for the authoritative current value, since this line will otherwise go stale again).
-See the evaluation plan for the root cause, focused regression tests and required
-PR-head validation.
+The current decision policy version is `2026-09-h4-intraday-reassessment-v1`. This line
+has gone stale before and will again -- read `app/src/engine/policy.ts` for the
+authoritative value rather than trusting it. PR 3 Phase 6 bumps it again when the
+bundle-member launch path lands. See the evaluation plan for the root cause, focused
+regression tests and required PR-head validation.
 
 H3 was investigated and its executable contracts are delivered (see the work orders below
 and the evaluation plan). The unplanned-date fallback, missed-session replacement,
@@ -50,13 +65,13 @@ verdict.
 
 H4's authority/schema design is the accepted ADR-0036 proposal
 (`docs/adr/0036-intraday-training-windows-and-reassessment.md`). Read that artifact rather
-than reconstructing its v4 contract from discussion context. H5 may proceed with
-manual/report-only intent groundwork now, but cumulative `external-plan@5` import
-acceptance must be based on ADR-0036's actual v4 artifact.
+than reconstructing its v4 contract from discussion context. Its v4 artifact has landed, so
+cumulative `external-plan@5` import acceptance now has a real contract to build against.
 
-Suggested next step: start ADR-0036 (H4) schema/pure-ledger implementation work, or start
-ADR-0037 (H5) intent-contract work instead -- both designs are accepted and ready. Keep
-that work separate from personal
+Suggested next step: **H4 PR 3 Phase 4** (the launch affordance and atomic claim), per
+[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) -- this is what turns six
+merged PRs of primitives into something an athlete can start. H5c (ADR-0037 confirmed
+bounded revisions) is independently startable in parallel. Keep both separate from personal
 M00/M01 prescription until current workload/restriction inputs are confirmed.
 
 ## Stable product intent
@@ -227,23 +242,36 @@ Useful synthetic software work can proceed without those personal answers.
 
 ## Work order H4 — Intraday windows and post-AM response
 
+> **Superseded for implementation.** This work order was written before issue #434's
+> execution-binding pipeline existed and its numbered steps below no longer describe the
+> work that remains. Read
+> [`h4-434-pr3-bundle-second-member-launch.md`](./h4-434-pr3-bundle-second-member-launch.md)
+> for the authoritative current spec (Phases 4-6). What is still worth reading here: step 2's
+> **inventory of the three un-unified ad hoc dedup mechanisms**, which remains accurate and
+> is still an open H4 task.
+
 **Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
-By capability (not the numbered sequence below, which tracks a different granularity --
-see the note after the numbered list): D-SCHEMA, D-LEDGER (pure module), D-TIME and
-D-WINDOW are delivered; the same-day canonical performed-fact boundary is verified;
-D-PLACEMENT's bundle-placement engine (`engine/intradayBundlePlacement.ts`) is delivered
-and its placement-correctness is wired into `activeExternalPlanService.ts`'s
-primary-session selection (real `POLICY_VERSION` bump). Still unstarted: unifying
-`planner.ts`'s three ad hoc dedup mechanisms onto the ledger's remainder/admission
-semantics as a real ranking/admission input; building the external-plan
-`SessionReferenceBinding` execution-binding pipeline (discovered missing even for today's
-single primary session -- a separate multi-PR foundational project, required before a
-bundle's second member can be independently launchable or its placement persisted for
-display); and D-REASSESS/D-AUDIT.
+By capability, **every ADR-0036 design slice is now delivered as code**: D-SCHEMA,
+D-LEDGER (pure module), D-TIME, D-WINDOW, D-PLACEMENT's engine
+(`engine/intradayBundlePlacement.ts`) plus its placement-correctness wiring into
+`activeExternalPlanService.ts`'s primary-session selection, D-REASSESS
+(`engine/intradayReassessment.ts`, #442) and D-AUDIT (`engine/intradayDecision.ts`, #443);
+the same-day canonical performed-fact boundary is verified. The external-plan
+`SessionReferenceBinding` execution-binding pipeline -- called out below as a separate
+multi-PR foundational project -- became issue #434 and is delivered through PR 3 Phase 3
+(#440, #445, #448, #450, #451, #454), giving D-REASSESS/D-AUDIT their first live caller in
+`services/intradayBundleMemberAdjudication.ts`.
+
+Still outstanding: **PR 3 Phases 4-6** (the launch affordance and atomic claim, post-AM
+`SessionResponse` capture, and the `POLICY_VERSION` bump) -- the release gate, since a
+non-primary member is currently adjudicated and reserved but has no Start control; unifying
+`planner.ts`'s three ad hoc dedup mechanisms onto the ledger's remainder/admission semantics
+as a real ranking/admission input; and persisting a bundle's resolved placement for display
+(blocked on `firestore.rules`' audit shape already at Firestore's per-request
+rule-evaluation ceiling).
 **Dependencies:** ADR-0035 rest support (delivered). Same-day canonical performed
-identity/revision/timing inputs are now verified (see below), D-TIME's instant resolution
-is delivered, D-WINDOW's availability model is delivered, and D-PLACEMENT's engine and its
-placement-correctness wiring are delivered.
+identity/revision/timing inputs are verified (see below); D-TIME, D-WINDOW, D-PLACEMENT and
+the #434 pipeline through PR 3 Phase 3 are all delivered. Nothing blocks Phase 4.
 **Deliverable:** Authored intraday placement and reassessed execution, followed separately
 by automatic multi-window packing after the initial acceptance bar passes.
 

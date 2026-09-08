@@ -1,8 +1,17 @@
 # H4 #434 PR 3 — Phase 3 handover: the adjudication loop and `Home.tsx` wiring
 
-**Status:** Handover document for the next implementing agent. Not itself part of the plan's
-numbered steps; superseded by whichever PR actually builds the pieces described below (update
-or delete this file once that PR merges).
+**Status:** **Superseded — Phase 3 is delivered.**
+[PR #454](https://github.com/Szczepanov/adaptive-training-recommender/pull/454) (`9f42db1e`)
+built the adjudication loop and its `Home.tsx` wiring as
+`app/src/services/intradayBundleMemberAdjudication.ts`, closing everything this document was
+written to hand over. It is retained as a historical record of the primitives inventory and
+the traps found along the way -- **it is not a task list**, and its "What genuinely remains"
+section below is stale. For the work that actually remains, read
+[`h4-434-pr3-bundle-second-member-launch.md`](./h4-434-pr3-bundle-second-member-launch.md)
+Phases 4-6.
+
+Original status: handover document for the next implementing agent. Not itself part of the
+plan's numbered steps.
 
 **Read first:** [`h4-434-pr3-bundle-second-member-launch.md`](./h4-434-pr3-bundle-second-member-launch.md)
 Phase 3 (steps 8, 8/2a, 9) is the authoritative spec. This document is a map of what already

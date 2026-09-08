@@ -1,13 +1,17 @@
 # H4 / issue #434 PR 3 — Intraday bundle second-member launch & athlete confirmation capture
 
-**Status:** Draft (design not yet agreed).
+**Status:** In progress — **Phases 1-3 delivered and merged** (#448, #450, #451, #454);
+**Phases 4-6 remain** and are the gate on a live H4 release.
 **Tracks:** [GitHub issue #434](https://github.com/Szczepanov/adaptive-training-recommender/issues/434), PR 3.
-**Blocked by:** nothing — [PR #445](https://github.com/Szczepanov/adaptive-training-recommender/pull/445)
-(#434 PR 2, external-plan occurrence tracking) merged to `main` as `99a7638f`. Phase 1
-below is now a short adopt-and-verify pass, not new construction.
-**Unlocks:** live wiring of ADR-0036 D-REASSESS (`reassessDependentBundleMember`, issue #436)
-and D-AUDIT (`intradayDecisionService`, issue #437), both of which currently exist as
-unwired engine/service code.
+**Blocked by:** nothing. Phase 4 is startable now: every primitive it composes
+(`claimOccurrenceLaunch`, the adjudication loop's emitted `additionalSessions` bindings, the
+`daily_ledgers` aggregate, the decision store's transaction-composable writes) is merged and
+tested on `main`.
+**Unlocks:** a launchable non-primary bundle member. ADR-0036 D-REASSESS
+(`reassessDependentBundleMember`, issue #436) and D-AUDIT (`intradayDecisionService`,
+issue #437) already have their first live caller as of Phase 3
+(`services/intradayBundleMemberAdjudication.ts`); Phases 4-5 give the athlete a Start
+control and the post-AM evidence that lets a dependent member leave `pending`.
 **Governs:** [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md)
 D-WINDOW / D-LEDGER / D-REASSESS / D-PLACEMENT.
 **Builds on:** [`h4-external-plan-execution-binding-pipeline.md`](./h4-external-plan-execution-binding-pipeline.md),
@@ -376,10 +380,14 @@ parameter order on `queueOccurrenceTransition`. What remains:
 
 ### Phase 3 — Surface non-primary members as `additionalSessions`
 
-> **Handover:** steps 1-4a-4b-6-6a-7 and step 8's item 2a are delivered and merged on `main` (#448, #450, #451).
-> See [`h4-434-pr3-phase3-handover.md`](./h4-434-pr3-phase3-handover.md) for exactly what
-> remains in steps 8/9, the current signature of every primitive to compose, and the traps
-> already found and fixed along the way.
+> **Delivered.** Steps 8, 8/2a and 9 are merged on `main`: #448, #450 and #451 landed the
+> primitives, and [#454](https://github.com/Szczepanov/adaptive-training-recommender/pull/454)
+> (`9f42db1e`) landed the adjudication loop itself as
+> `app/src/services/intradayBundleMemberAdjudication.ts` plus its `Home.tsx` wiring. A placed
+> bundle's non-primary member is now reassessed, reserved, recorded in the decision store and
+> emitted as an `additionalSessions` binding. The steps below are retained as the delivered
+> contract. [`h4-434-pr3-phase3-handover.md`](./h4-434-pr3-phase3-handover.md) is superseded;
+> **Phase 4 is the next unit of work.**
 
 8. **Adjudicate bundle members** (`app/src/components/Home.tsx`, after `resolveIntradayBundlePlacement`)
    - Action: for a `placed` proposal, take every binding after `bindings[0]` (the primary,

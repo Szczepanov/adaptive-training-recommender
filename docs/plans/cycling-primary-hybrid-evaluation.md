@@ -1,22 +1,27 @@
 # Cycling-primary hybrid evaluation and recommendation improvements
 
 **Status:** In progress — H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design
-accepted as ADR-0036 with D-SCHEMA/D-LEDGER/D-TIME/D-WINDOW delivered, D-PLACEMENT's
-bundle-placement engine delivered as a pure module, and that engine's placement-
-correctness wired into `activeExternalPlanService.ts`'s primary-session selection for v4
-intraday bundles (real `POLICY_VERSION` bump) -- the same-day canonical performed-fact
-boundary is verified and the fixed-activity cost-reduce duplication is unified -- (broader
-ledger-based ranking/admission unification, a bundle's resolved placement surfaced for
-display/persistence, and D-REASSESS/D-AUDIT, unstarted); H5 design accepted as ADR-0037
-with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted)
+accepted as ADR-0036 with every design slice now delivered as code
+(D-SCHEMA/D-LEDGER/D-TIME/D-WINDOW, D-PLACEMENT's engine plus its placement-correctness
+wiring, D-REASSESS's `intradayReassessment.ts` (#442) and D-AUDIT's `intradayDecision.ts`
+decision store (#443)) and issue #434's execution-binding pipeline delivered through PR 3
+Phase 3 (#440, #445, #448, #450, #451, #454) -- so a non-primary bundle member is now
+adjudicated, reserved and surfaced as an `additionalSessions` binding, but is **not yet
+launchable**: PR 3 Phases 4-6 (launch affordance and atomic claim, post-AM
+`SessionResponse` capture, `POLICY_VERSION` bump) remain, as do the broader ledger-based
+ranking/admission unification and persisting a bundle's resolved placement for display;
+H5 design accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative
+`external-plan@5` unstarted)
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
-confirmation; H4's remaining work (unifying `planner.ts`'s three ad hoc dedup mechanisms
-onto the ledger's remainder/admission semantics as a real ranking input; persisting a
-bundle's resolved placement for display, currently blocked on `firestore.rules`' audit
-shape already sitting at Firestore's per-request rule-evaluation ceiling -- see the H4
-section below; then D-REASSESS/D-AUDIT) needs its own decision-affecting PR(s); H5c needs
-the athlete-scoped singleton progression-claim transaction design, and cumulative
-`external-plan@5` acceptance is unblocked now that H4's v4 contract has landed.
+confirmation; H4's live release is gated on PR 3 Phases 4-6, tracked in
+[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md); H4's remaining non-gating
+work (unifying `planner.ts`'s three ad hoc dedup mechanisms onto the ledger's
+remainder/admission semantics as a real ranking input; persisting a bundle's resolved
+placement for display, currently blocked on `firestore.rules`' audit shape already sitting
+at Firestore's per-request rule-evaluation ceiling -- see the H4 section below) needs its
+own decision-affecting PR(s); H5c needs the athlete-scoped singleton progression-claim
+transaction design, and cumulative `external-plan@5` acceptance is unblocked now that H4's
+v4 contract has landed.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -24,6 +29,12 @@ the athlete-scoped singleton progression-claim transaction design, and cumulativ
 For implementation, start with the bounded work orders and ready-to-use task prompt in
 [the implementation handoff](./cycling-primary-hybrid-implementation-handoff.md).
 This document remains the status and evidence record.
+
+**Routing note for H4.** The handoff's H4 work order predates issue #434's execution-binding
+pipeline and is retained for its H2/H2b/H3/H3-rest record and its still-accurate inventory of
+the un-unified dedup mechanisms. For current H4 implementation work, read
+[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) instead -- it is the
+authoritative spec for the remaining Phases 4-6.
 
 Reuse the existing `cycling_primary_hybrid_advanced` persona. Add scenarios that exercise
 distinct decisions and group them into focused judge families. Retain the existing seven
@@ -260,9 +271,16 @@ performed-fact boundary verified**; **D-PLACEMENT's bundle-placement engine deli
 as a pure module, and its **placement-correctness wired** into
 `activeExternalPlanService.ts`'s primary-session selection for v4 intraday bundles (real
 `POLICY_VERSION` bump -- see the "D-PLACEMENT wiring" subsection below for exactly what
-this does and does not activate). Still unstarted: the `dailyLedger.ts` refactor into
-`resolveAvailability`'s existing deductions and `planner.ts`'s three ad hoc dedup
-mechanisms, persisting a bundle's resolved placement for display, and D-REASSESS/D-AUDIT.
+this does and does not activate). **D-REASSESS and D-AUDIT are also delivered** as pure
+modules -- `engine/intradayReassessment.ts`'s `reassessDependentBundleMember` (#442) and
+`engine/intradayDecision.ts`'s append-only decision store (#443) -- and issue #434's
+execution-binding pipeline has since given them a live caller, through PR 3 Phase 3 (see
+"Issue #434 execution-binding pipeline" below).
+
+Still unstarted: the `dailyLedger.ts` refactor into `resolveAvailability`'s existing
+deductions and `planner.ts`'s three ad hoc dedup mechanisms, persisting a bundle's
+resolved placement for display, and PR 3 Phases 4-6 -- the last of which is what actually
+gates a live H4 release.
 **Dependencies:** ADR-0035 rest support (delivered). The `external-plan@4`/`dailyLedger.ts`
 D-SCHEMA/D-LEDGER slice itself left `POLICY_VERSION` unchanged (neither module is
 consumed by any decision path); the fixed-activity cost-reduce dedup slice bumped it
@@ -555,12 +573,46 @@ in `unrepresentedFixedActivityProjection`) are **not yet unified** onto the ledg
 `occurrenceId`/`revision` model, and none of these call sites yet consult
 `computeDailyLedger`'s remainder or `admitsCandidate` when ranking or admitting a
 candidate. D-PLACEMENT's own placement-correctness wiring is delivered (see the
-"D-PLACEMENT wiring" subsection above). The remaining H4 tasks are (1) using the ledger's
-remainder/admission semantics as a real ranking/admission input across these three sites,
-(2) building the external-plan `SessionReferenceBinding` execution-binding pipeline (a
-separate multi-PR foundational project) before a bundle's second member can be
-independently launchable, and (3) D-REASSESS/D-AUDIT -- each decision-affecting and
-scoped as its own PR.
+"D-PLACEMENT wiring" subsection above). Of the three tasks this subsection originally
+listed as remaining, (2) the execution-binding pipeline and (3) D-REASSESS/D-AUDIT have
+since been delivered (see the next subsection); (1) using the ledger's remainder/admission
+semantics as a real ranking/admission input across these three call sites is still
+outstanding and is still decision-affecting, so it remains its own PR.
+
+### Issue #434 execution-binding pipeline (delivered through PR 3 Phase 3)
+
+The external-plan `SessionReferenceBinding` execution-binding pipeline -- identified above
+as a separate multi-PR foundational project -- has been built as
+[issue #434](https://github.com/Szczepanov/adaptive-training-recommender/issues/434):
+
+| PR | Commit | Delivered |
+|---|---|---|
+| [#440](https://github.com/Szczepanov/adaptive-training-recommender/pull/440) | `c9cc402f` | PR 1 -- v4 primary session bound to the source-neutral launch path |
+| [#445](https://github.com/Szczepanov/adaptive-training-recommender/pull/445) | `99a7638f` | PR 2 -- external-plan occurrence tracking |
+| [#448](https://github.com/Szczepanov/adaptive-training-recommender/pull/448) | `ee6d132b` | PR 3 Phases 1-2 -- D-WINDOW per-window exclusivity, atomic re-import supersession, `intradayLedgerInputs.ts`, the persisted `daily_ledgers` reservation aggregate |
+| [#450](https://github.com/Szczepanov/adaptive-training-recommender/pull/450) | `eddacc09` | PR 3 Phase 3 foundations -- unified `ReassessmentInputRevision`, decision-record predecessor identity, transaction-composable decision writes |
+| [#451](https://github.com/Szczepanov/adaptive-training-recommender/pull/451) | `7399ec31` | PR 3 step 8 item 2a -- reject/recovery generation counters |
+| [#454](https://github.com/Szczepanov/adaptive-training-recommender/pull/454) | `9f42db1e` | PR 3 Phase 3 -- `services/intradayBundleMemberAdjudication.ts` and its `Home.tsx` wiring |
+
+**What this activates:** a placed v4 bundle's non-primary member is now reassessed per
+D-REASSESS, has its verdict persisted per D-AUDIT, holds (or releases) a real reservation
+against the day's ledger aggregate, and is emitted as an `additionalSessions` binding from
+`Home.tsx`.
+
+**What it does not yet activate:** the member is still not launchable. No component renders
+`additionalSessions`, and `claimOccurrenceLaunch` still has no production caller, so no
+Start control can appear. Completing the AM session also does not yet write the `immediate`
+`SessionResponse` that a dependent PM member's reassessment reads, so a dependent member
+stays `pending` indefinitely. `POLICY_VERSION` is correspondingly still
+`2026-09-h4-intraday-reassessment-v1`.
+
+**What remains:** PR 3 Phases 4-6 --
+[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) is the authoritative spec.
+Phase 4 adds the `AdditionalSessionsCard` and the atomic claim in `onStartSession`;
+Phase 5 records the post-AM `immediate` `SessionResponse`, extends the completion sheet
+with `completedFraction`/`unexpectedFatigue`, and populates
+`postPredecessorConfirmationRevision`; Phase 6 bumps `POLICY_VERSION` and archives the
+previous value. This is the gate on a live H4 release.
 
 ## H5 — Explicit develop/maintain intent and progression
 
