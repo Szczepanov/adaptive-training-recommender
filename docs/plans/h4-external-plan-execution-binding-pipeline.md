@@ -244,7 +244,7 @@ A future implementation may transform external `SessionDefinition.blocks` accord
 accepted scale verdict, then hash and persist the transformed execution snapshot. Until that
 exists, `scale` remains display/advice only and cannot launch.
 
-## PR-2 lifecycle boundary
+## PR-2 lifecycle boundary (historical)
 
 PR 2 introduces source-appropriate external-plan occurrence identity and the
 `claimOccurrenceLaunch` transaction primitive, but it deliberately does **not** wire the H4
@@ -252,14 +252,14 @@ ledger/reassessment claim into every live occurrence-backed start. Existing M3.3
 occurrences and the new external-plan occurrence path can therefore still be in `scheduled`
 when their execution completes or is abandoned.
 
-Until PR 3 moves launch through the atomic claim/ledger boundary, `scheduled -> completed` and
+Before PR 3 moved launch through the atomic claim/ledger boundary, `scheduled -> completed` and
 `scheduled -> abandoned` remain valid transitions in both service policy and Firestore rules.
 The runner commits the athlete's execution first and performs occurrence completion/abandonment
 as non-blocking bookkeeping afterward; an occurrence-sync failure must not prevent the athlete
 from finishing a recorded session. This is a transitional compatibility rule, not the final
 D-REASSESS launch protocol.
 
-PR 3 should wire the existing claim primitive at the actual launch boundary together with the
+PR 3 Phase 4 wired the existing claim primitive at the actual launch boundary together with the
 ledger/input-revision checks required by ADR-0036. At that point the live path becomes
 `scheduled -> active -> completed/abandoned`, and the temporary direct terminal transitions can
 be reconsidered/tightened in the same change.
@@ -278,12 +278,14 @@ prescription.
    `'external_plan'` authority, `'skipped'` state, deterministic/idempotent occurrence identity,
    replay validation, lifecycle transitions, and the atomic `claimOccurrenceLaunch` primitive.
    Live claim/ledger wiring is intentionally deferred as described above.
-3. **PR 3 — bundle member execution:** use resolved intraday placement to adjudicate and
-   surface non-primary v4 members as independently launchable `additionalSessions` entries,
-   wiring launch through the occurrence claim/ledger boundary.
-4. **PR 4 — D-REASSESS:** before a dependent/later member starts, reconcile real predecessor
-   completion and elapsed separation against execution evidence, then re-adjudicate using
-   current readiness/safety/availability state.
+3. **PR 3 — delivered through Phase 4 in PR #465:** use resolved intraday placement to
+   adjudicate and surface non-primary v4 members as independently launchable
+   `additionalSessions` entries, wiring eligible launch through the occurrence claim/ledger
+   boundary. Phase 5 still needs post-AM `SessionResponse` capture and Phase 6 still needs
+   the H4-specific policy transition.
+4. **Remaining PR 3 work — Phases 5-6:** capture real predecessor completion evidence and
+   confirmation revision, then archive the prior H4 policy version under the new launch
+   contract.
 5. **Optional later work — block scaling:** add a deterministic, testable external-definition
    scaling transform before allowing `scale` verdicts to produce launch bindings.
 

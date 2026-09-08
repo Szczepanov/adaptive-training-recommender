@@ -1,17 +1,19 @@
 # H4 / issue #434 PR 3 — Intraday bundle second-member launch & athlete confirmation capture
 
-**Status:** In progress — **Phases 1-3 delivered and merged** (#448, #450, #451, #454);
-**Phases 4-6 remain** and are the gate on a live H4 release.
+**Status:** In progress — **Phases 1-4 delivered and merged** (#448, #450, #451, #454,
+#465); **Phases 5-6 remain** and are the gate on a live H4 release.
 **Tracks:** [GitHub issue #434](https://github.com/Szczepanov/adaptive-training-recommender/issues/434), PR 3.
-**Blocked by:** nothing. Phase 4 is startable now: every primitive it composes
+**Blocked by:** nothing. Phase 5 is startable now: every primitive it composes
 (`claimOccurrenceLaunch`, the adjudication loop's emitted `additionalSessions` bindings, the
 `daily_ledgers` aggregate, the decision store's transaction-composable writes) is merged and
 tested on `main`.
-**Unlocks:** a launchable non-primary bundle member. ADR-0036 D-REASSESS
+**Unlocks:** dependent non-primary bundle members that can proceed after post-AM evidence.
+ADR-0036 D-REASSESS
 (`reassessDependentBundleMember`, issue #436) and D-AUDIT (`intradayDecisionService`,
 issue #437) already have their first live caller as of Phase 3
-(`services/intradayBundleMemberAdjudication.ts`); Phases 4-5 give the athlete a Start
-control and the post-AM evidence that lets a dependent member leave `pending`.
+(`services/intradayBundleMemberAdjudication.ts`); Phase 4 gives the athlete a Start
+control and Phase 5 supplies the post-AM evidence that lets a dependent member leave
+`pending`.
 **Governs:** [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md)
 D-WINDOW / D-LEDGER / D-REASSESS / D-PLACEMENT.
 **Builds on:** [`h4-external-plan-execution-binding-pipeline.md`](./h4-external-plan-execution-binding-pipeline.md),
@@ -21,19 +23,18 @@ D-WINDOW / D-LEDGER / D-REASSESS / D-PLACEMENT.
 
 ## Overview
 
-A v4 intraday bundle's non-primary member is today correctly *placed* (window, order,
-rest, and both ledger dimensions resolved by `resolveIntradayBundlePlacement`) but it has
-no execution identity, is never attached to `additionalSessions`, and cannot be started.
-This PR turns that placed member into an independently launchable, state-tracked
-occurrence, routes its launch through an atomic capacity claim, and captures the
-post-AM athlete confirmation that D-REASSESS requires before the PM member may proceed.
+A v4 intraday bundle's non-primary member is now correctly placed, state-tracked, surfaced
+as `additionalSessions`, and independently launchable when its verdict is eligible. Phase
+4 routes its launch through an atomic capacity claim. Phase 5 still needs to capture the
+post-AM athlete confirmation that D-REASSESS requires before a dependent PM member may
+proceed.
 
 Three deliverables:
 
 1. **Surface** non-primary bundle members as launchable `additionalSessions` entries on
-   `Home.tsx` (plus the UI that renders them — none exists today).
-2. **Claim** capacity atomically: `App.tsx` launch → `sessionOccurrenceService.claimOccurrenceLaunch`
-   → `useSessionRunner.startSession`, with D-REASSESS re-evaluated inside the transaction.
+   `Home.tsx` (delivered in Phase 4).
+2. **Claim** capacity atomically through the `Home.tsx` start handler and
+   `sessionOccurrenceService.claimOccurrenceLaunch` (delivered in Phase 4).
 3. **Capture** the post-workout `SessionResponse` (`window: 'immediate'`) and
    `tissueResponses` on AM completion, so D-REASSESS reads real athlete evidence instead
    of remaining permanently `pending`.
@@ -43,7 +44,7 @@ Three deliverables:
 ## Verified current state
 
 Every claim below was read from the code, not inferred from the issue text. Re-verified
-against `origin/main` at `99a7638f` (the #445 merge).
+against `origin/main` at `45c18517` (PR #465 plus the subsequent #466/#467 merges).
 
 ### What already exists and is reusable
 
@@ -53,14 +54,14 @@ against `origin/main` at `99a7638f` (the #445 merge).
 | Bundle placement resolution | `app/src/services/activeExternalPlanService.ts:116` `resolveIntradayBundlePlacement` | Delivered, wired into `Home.tsx:432` |
 | Bundle placement engine | `app/src/engine/intradayBundlePlacement.ts` (`proposeBundlePlacement`, `ResolvedWindowBinding`, `LEGACY_SINGLE_SLOT_WINDOW_ID`) | Delivered |
 | Shared daily ledger | `app/src/engine/dailyLedger.ts` (`computeDailyLedger`, `admitsCandidate`, `reconcileEntry`) | Delivered |
-| D-REASSESS pure evaluation | `app/src/engine/intradayReassessment.ts:124` `reassessDependentBundleMember` | Delivered (PR #442), **no production caller** |
-| Atomic launch claim | `app/src/services/sessionOccurrenceService.ts:155` `claimOccurrenceLaunch` (with `onBeforeClaim` in-transaction hook) | Delivered (PR #442), **no production caller** |
-| D-AUDIT record + store | `app/src/engine/intradayDecision.ts`, `app/src/services/intradayDecisionService.ts`, rules `users/{u}/intraday_decisions/{id}` | Delivered (PR #443), **no production writer** |
+| D-REASSESS pure evaluation | `app/src/engine/intradayReassessment.ts` `reassessDependentBundleMember` | Delivered and called by the Phase 3 adjudication loop |
+| Atomic launch claim | `app/src/services/sessionOccurrenceService.ts` `claimOccurrenceLaunch` (with `onBeforeClaim` in-transaction hook) | Delivered and called by the Phase 4 `Home.tsx` launch path |
+| D-AUDIT record + store | `app/src/engine/intradayDecision.ts`, `app/src/services/intradayDecisionService.ts`, rules `users/{u}/intraday_decisions/{id}` | Delivered and written by the Phase 3 adjudication loop |
 | Authored gate reuse | `app/src/engine/authoredSessionGates.ts` `adjudicateAuthoredSession`, `estimateAuthoredSessionSystemicCost` | Delivered, already used for manual additional sessions (`Home.tsx:608`) |
 | Response persistence | `app/src/services/sessionResponseService.ts` (`recordResponse`, deterministic id per `(source, window)`) | Delivered |
 | Occurrence-aware execution start | `app/src/hooks/useSessionRunner.ts:285` `startSession(def, source, { occurrenceId, prescriptionHash })` | Delivered |
 
-### The five real gaps (one now closed)
+### The remaining and resolved gaps
 
 1. **~~`SessionOccurrence` has no external-plan identity~~ — closed by #445 (`99a7638f`).**
    `SessionOccurrence` is now a discriminated union (`ManualSessionOccurrence` |
@@ -72,17 +73,17 @@ against `origin/main` at `99a7638f` (the #445 merge).
    deterministic occurrence id, a transactional `getOrCreateExternalPlanOccurrence`, and
    occurrence completion/abandon transitions in `useSessionRunner`.
 
-2. **`additionalSessions` has no UI at all.** It is produced (`Home.tsx:634`), validated
+2. **Resolved in #465: `additionalSessions` now has a launch UI.** It is produced, validated
    (`engine/validationCore.ts:1268`, max 4 bindings), persisted
-   (`services/recommendationService.ts:106`) and replayed (`engine/replay.ts:87`) — but no
-   component renders it. `MorningDecisionCard` only exposes `recommendation.primarySession`
-   (`MorningDecisionCard.tsx:154`). A launch affordance must be built.
+   (`services/recommendationService.ts`), persisted and replayed. `AdditionalSessionsCard`
+   renders only eligible `proceed` members with valid bindings; pending, scaled, rejected,
+   and unbound members have no Start control.
 
-3. **Nothing calls `claimOccurrenceLaunch`** outside its own test file. `App.tsx:323`
-   `onStartSession` resolves the definition and hands it straight to `SessionRunner`,
-   which calls `runner.startSession` (`SessionRunner.tsx:331`) with no claim.
+3. **Resolved in #465: the production start path claims atomically.** `Home.tsx` composes
+   `claimIntradayMemberLaunch` with `claimOccurrenceLaunch`, validates the decision and
+   ledger revision, and releases the occurrence/ledger claim if execution start fails.
 
-4. **No `SessionResponse` is ever written with `window: 'immediate'`.** `DailyCheckin.tsx:427`
+4. **Still open: no completion-path `SessionResponse` is written with `window: 'immediate'`.** `DailyCheckin.tsx`
    writes `next_morning`; `session/laterDayFollowupAction.ts` writes `later_day`.
    `useSessionRunner.completeSession` writes tissue values into the daily check-in
    (correct per D-MRESP) but creates **no** `SessionResponse` at all. D-REASSESS's
@@ -90,10 +91,9 @@ against `origin/main` at `99a7638f` (the #445 merge).
    satisfied for a same-day predecessor — every dependent PM member would sit at `pending`
    forever.
 
-5. **`toMembers` hardcodes `started: false`** (`activeExternalPlanService.ts:88`), with an
-   explicit comment deferring execution-state reconciliation to D-REASSESS. Once members
-   are launchable this becomes wrong: a started AM member must keep its binding and its
-   consumed window.
+5. **Resolved in #465: started-member state is reconciled.** The adjudication path now
+   preserves the member state needed by placement and the launch claim refuses already
+   active/completed occurrences.
 
 ### What #445 (merged, `99a7638f`) leaves for PR 3
 
@@ -104,11 +104,9 @@ date-wide scan (now a transactional read-by-deterministic-id, so concurrent crea
 atomic), the non-injective id sanitizer (now SHA-256 over the identity tuple), and the
 parameter order on `queueOccurrenceTransition`. What remains:
 
-- **Launch still never claims.** `claimOccurrenceLaunch` — signature and `onBeforeClaim`
-  hook unchanged by the merge — has no production caller. The AM primary now carries
-  `binding.occurrenceId` and transitions `scheduled → completed` directly; `active` is
-  never entered, so the reservation is never in-progress and D-REASSESS cannot see that a
-  member has started. **This is PR 3's step 11.**
+- **Resolved in Phase 4 / #465.** The eligible non-primary launch path now claims the
+  occurrence and ledger atomically, enters `active`, and releases both claims if execution
+  start fails. The primary-session path remains separate and is not unconditionally claimed.
 - **An occurrence now exists for the AM primary on every dashboard load,** created by
   `prepareExternalPlanSessionLaunch(..., { date })` whether or not the athlete launches.
   Phase 2 should treat that `scheduled` occurrence as a *reserved* ledger row — which is
@@ -387,7 +385,7 @@ parameter order on `queueOccurrenceTransition`. What remains:
 > bundle's non-primary member is now reassessed, reserved, recorded in the decision store and
 > emitted as an `additionalSessions` binding. The steps below are retained as the delivered
 > contract. [`h4-434-pr3-phase3-handover.md`](./h4-434-pr3-phase3-handover.md) is superseded;
-> **Phase 4 is the next unit of work.**
+> **Phase 4 is delivered in #465.**
 
 8. **Adjudicate bundle members** (`app/src/components/Home.tsx`, after `resolveIntradayBundlePlacement`)
    - Action: for a `placed` proposal, take every binding after `bindings[0]` (the primary,
@@ -584,7 +582,7 @@ parameter order on `queueOccurrenceTransition`. What remains:
 > Still to come in Phase 5/6: the post-AM `SessionResponse` capture (without it a dependent
 > member stays `pending` and never reaches a launchable verdict) and the `POLICY_VERSION` bump.
 
-10. **`AdditionalSessionsCard`** (`app/src/components/session/AdditionalSessionsCard.tsx`, new + CSS)
+10. **Delivered in #465 — `AdditionalSessionsCard`** (`app/src/components/session/AdditionalSessionsCard.tsx`, new + CSS)
     - Action: render each additional session with its window (`boundStartLocal-boundEndLocal`),
       order label, and one of: a Start button (binding present), a pending explanation
       (e.g. "waiting on your post-session check-in", "needs 180 min after your morning
@@ -595,7 +593,7 @@ parameter order on `queueOccurrenceTransition`. What remains:
     - Risk: Low. Add a component test asserting that a `pending` member exposes no
       Start control.
 
-11. **Claim before start** (`app/src/App.tsx:323`)
+11. **Delivered in #465 — claim before start** (composed from `Home.tsx`, not the primary-only `App.tsx` path)
     - Action: in `onStartSession`, when `binding.occurrenceId` is present:
       ```typescript
       await sessionOccurrenceService.claimOccurrenceLaunch(userId, binding.occurrenceId, {
@@ -709,7 +707,7 @@ parameter order on `queueOccurrenceTransition`. What remains:
       already-`active`/`completed` occurrence → rejected; stale input revision → rejected and
       recomputed; failed start → released back to `scheduled`.
 
-12. **Runner passes the occurrence through** (`app/src/components/session/SessionRunner.tsx:331`)
+12. **Verified in #465 — runner passes the occurrence through** (`app/src/components/session/SessionRunner.tsx`)
     - Action: no signature change needed — `binding.occurrenceId` already flows into
       `runner.startSession`. Verify the restore path (`SessionRunner.tsx:318-327`) does
       **not** re-claim: a resumed in-progress execution preserves its execution identity
@@ -757,21 +755,20 @@ parameter order on `queueOccurrenceTransition`. What remains:
 
 ### Phase 6 — Contract reconciliation, policy, and verification
 
-16. **Unify `ReassessmentInputRevision`** — single exported type in
-    `engine/intradayReassessment.ts`; `engine/intradayDecision.ts` imports it and widens
-    `validateIntradayDecisionRecord` (accept string `ledgerRevision`, optional
-    `postPredecessorConfirmationRevision`, tolerate records written without it).
-    Risk: Medium — it is a persisted, write-once record; keep the reader backward compatible.
+16. **Delivered before Phase 4** — `ReassessmentInputRevision` is now a single exported type
+    in `engine/intradayReassessment.ts`; `intradayDecision.ts` imports it and the validator
+    accepts the current revision shape while remaining backward compatible with older records.
 
-17. **Policy bump** (`app/src/engine/policy.ts`) — this changes persisted decisions, so
+17. **Still open: policy bump** (`app/src/engine/policy.ts`) — the H4 launch contract changes
+    persisted decisions, so
     `POLICY_VERSION` must move (e.g. `2026-09-h4-intraday-bundle-member-launch-v1`) and
     `2026-09-h4-intraday-reassessment-v1` joins `HISTORICAL_POLICY_VERSIONS`. Verify with
     `cd app && node scripts/check-policy-drift.mjs <base-sha>`.
 
-18. **Docs** — update `docs/plans/h4-external-plan-execution-binding-pipeline.md`'s
-    roadmap (PR 2 folded into PR 3; PR 3 delivered), add this plan's row to
-    `docs/plans/README.md`, and record the delivered state in `AGENTS.md`'s package map if
-    new modules land.
+18. **Docs** — this reconciliation updates the evaluation plan, plan index, handoff, and
+    this PR 3 plan. The older execution-binding roadmap still needs its historical PR 3
+    wording reconciled separately; no new package-map entry is required because the modules
+    are already represented in `AGENTS.md`'s architecture map.
 
 ---
 
