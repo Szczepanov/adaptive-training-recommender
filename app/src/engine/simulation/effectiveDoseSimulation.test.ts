@@ -36,4 +36,33 @@ describe('effective-dose simulation evidence', () => {
         expect(trace.selected.projectedCost.systemic).toBeCloseTo(exposure.costProfile.systemic, 6);
         expect(trace.selected.stimulusProfile).toEqual(exposure.stimulusProfile ?? null);
     });
+
+    it('materializes active dose when the forecast day still carries the authored template', () => {
+        const template = ENRICHED_TEMPLATES_BY_ID.get('mob_01');
+        expect(template?.easierDose).toBeDefined();
+        if (!template?.easierDose) throw new Error('mob_01 must expose easierDose for this regression fixture');
+
+        const exposure = toCompletedExposure({
+            date: '2026-08-25',
+            dayOffset: 1,
+            confidence: 'provisional',
+            phaseName: 'Build',
+            template,
+            activeDose: template.easierDose,
+            mode: 'modify',
+            rationale: 'authored template plus active dose',
+            addressesObjectives: [],
+        });
+
+        expect(exposure.templateId).toBe(template.id);
+        expect(exposure.trainingRecordLike.duration_min).toBe(template.easierDose.durationMin);
+        expect(exposure.costProfile.systemic).toBeCloseTo(
+            (template.costProfile?.systemic ?? 0) * template.easierDose.doseRatio,
+            6,
+        );
+        expect(exposure.stimulusProfile?.aerobicEndurance).toBeCloseTo(
+            (template.stimulusProfile?.aerobicEndurance ?? 0) * template.easierDose.doseRatio,
+            6,
+        );
+    });
 });

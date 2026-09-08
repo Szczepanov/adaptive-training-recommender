@@ -7,6 +7,7 @@ describe('packets module', () => {
     changedAxis: 'objective recovery metrics',
     cases: [
       {
+        planSha256: 'a'.repeat(64),
         input: {
           caseId: 'judge_obj_neutral',
           label: 'Objective recovery — neutral',
@@ -86,6 +87,7 @@ describe('packets module', () => {
     expect(v1.cases[0].simulationMode).toBe('rolling_daily');
     expect(v1.cases[0].readinessTrajectory[1].subjective.readiness).toBe(6);
     expect(v1.cases[0].plan14d[0].date).toBe('2026-06-01');
+    expect(v1.cases[0].planId).toBe('a'.repeat(64));
   });
 
   it('buildBlindFamilyPacket strips engine diagnostics while preserving raw temporal evidence', () => {
@@ -96,6 +98,7 @@ describe('packets module', () => {
 
     const blindCase = v2.cases[0];
     expect(blindCase.caseId).toBe('judge_obj_neutral');
+    expect(blindCase.planId).toBe('a'.repeat(64));
 
     // Verify raw athlete context is preserved
     expect(blindCase.inputContext.readiness.objective.hrv_delta).toBe(0);

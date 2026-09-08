@@ -21,6 +21,7 @@ export function compactFamilyForJudge(rawFamily) {
     changedAxis: rawFamily.changedAxis,
     cases: (rawFamily.cases ?? []).map((item) => ({
       caseId: item.input?.caseId,
+      planId: item.planSha256 ?? null,
       label: item.input?.label,
       changedAxis: item.input?.changedAxis,
       simulationMode: item.input?.simulationMode ?? 'weekly_forecast',
@@ -132,6 +133,7 @@ export function buildBlindFamilyPacket(rawFamily) {
 
       return {
         caseId: input.caseId,
+        planId: item.planSha256 ?? null,
         label: input.label,
         changedAxis: input.changedAxis,
         inputContext,

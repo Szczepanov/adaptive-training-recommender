@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { resolve } from 'node:path';
 import { createServer } from 'vite';
+import { createHash } from 'node:crypto';
 
 function gitCommit() {
   try {
@@ -20,6 +21,10 @@ function addDays(date, days) {
 
 function clone(value) {
   return value === undefined ? undefined : JSON.parse(JSON.stringify(value));
+}
+
+function planSha256(plan) {
+  return createHash('sha256').update(JSON.stringify(plan)).digest('hex');
 }
 
 function requireScenario(scenarios, id) {
@@ -288,9 +293,14 @@ function planFromResult(result, templatesById) {
 }
 
 function packetFromResult(definition, result, templatesById) {
+  const plan = planFromResult(result, templatesById);
   return {
     input: serializeInput(definition),
-    plan: planFromResult(result, templatesById),
+    plan,
+    // Stable identity is computed from the engine output before any judge
+    // packet/evaluation work. Judges can therefore compare plans by identity
+    // without regenerating them or trusting display position/labels.
+    planSha256: planSha256(plan),
     engineSummary: {
       categoryDistribution: result.categoryDistribution,
       modalityDistribution: result.modalityDistribution,
