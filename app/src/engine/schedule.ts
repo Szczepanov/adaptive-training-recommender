@@ -174,12 +174,11 @@ export function resolveAvailability(
         ? resolveMaximumSessionMinutes(userContext, checkinMinutes, dateStr)
         : (Number.isFinite(checkinMinutes) ? checkinMinutes : NO_CONTEXT_FALLBACK_MINUTES);
 
-    // D-LEDGER is the occurrence/revision authority for a fixed commitment. Resolve it
-    // before every schedule-side consumer so duplicate query/replay rows cannot subtract
-    // time twice while the planner's ledger charges them once.
-    const daysFixed = dedupeFixedActivitiesByLedgerIdentity(
-        fixedActivities.filter(activity => activity.date === dateStr),
-    );
+    // D-LEDGER occurrence identity spans revisions, including a move to another date.
+    // Reconcile the whole input set first, then select the requested day, so a stale
+    // pre-reschedule row cannot continue consuming capacity on its former date.
+    const daysFixed = dedupeFixedActivitiesByLedgerIdentity(fixedActivities)
+        .filter(activity => activity.date === dateStr);
     const activeOverlays = activeScheduleOverlaysForDate(scheduleOverlays, dateStr);
 
     const fixedOverrides = daysFixed
