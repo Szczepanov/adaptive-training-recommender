@@ -108,8 +108,46 @@ export class SessionExecutionService {
             schemaVersion: 1,
         };
 
-        await setDoc(this.executionRef(userId, executionId), execution);
-        return execution;
+        try {
+            await setDoc(this.executionRef(userId, executionId), execution);
+            return execution;
+        } catch (error) {
+            // H4 (#434) PR 3 Phase 4: an additional bundle member is claimed before
+            // SessionRunner reaches this write. A failure here used to escape back through
+            // useSessionRunner after Home had already unmounted, so Home's rollback catch
+            // could never run and the occurrence/ledger stayed active/in_progress all day.
+            //
+            // Only external-plan executions can arrive through that claim path today. Use a
+            // dynamic import to avoid a static service cycle: intradayLaunchClaim depends on
+            // SessionExecutionService for its "does an execution already reference this
+            // occurrence?" rollback guard. Passing this.db keeps emulator/injected Firestore
+            // instances on the same database rather than falling back to the app singleton.
+            if (params.occurrenceId && params.sessionSource.kind === 'external_plan') {
+                try {
+                    const { releaseIntradayMemberClaim } = await import('./intradayLaunchClaim');
+                    const release = await releaseIntradayMemberClaim({
+                        userId,
+                        date: params.date,
+                        occurrenceId: params.occurrenceId,
+                        db: this.db,
+                    });
+                    if (!release.released) {
+                        console.error(
+                            `Could not release failed launch claim on ${params.occurrenceId}: ${release.reason}`,
+                        );
+                    }
+                } catch (rollbackError) {
+                    // Preserve the execution-start failure as the caller-visible error. A
+                    // rollback failure is still logged because it may leave a visible active
+                    // occurrence that needs the dashboard's reconciliation path.
+                    console.error(
+                        `Failed to roll back occurrence ${params.occurrenceId} after execution start failed:`,
+                        rollbackError,
+                    );
+                }
+            }
+            throw error;
+        }
     }
 
     async getExecution(userId: string, executionId: string): Promise<DataState<SessionExecution>> {

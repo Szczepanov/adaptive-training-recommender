@@ -327,8 +327,13 @@ function App() {
                   binding.prescriptionHash,
                 );
                 if (definitionState.status !== 'AVAILABLE') {
-                  console.error(`Unable to resolve the stored session prescription: ${definitionState.status}`);
-                  return;
+                  // Throw rather than log-and-return: H4's intraday claim (plan step 11)
+                  // commits *before* this runs, so a silent return would strand the
+                  // occurrence `active` with no execution and its minutes debited for the
+                  // rest of the day. Every caller already handles a rejection --
+                  // `MorningDecisionCard` surfaces it as `launchError`, and `Home`'s
+                  // additional-session path releases the claim it just took.
+                  throw new Error(`Unable to resolve the stored session prescription: ${definitionState.status}`);
                 }
                 const launch = { definition: definitionState.data, binding };
                 setSessionLaunch(launch);
