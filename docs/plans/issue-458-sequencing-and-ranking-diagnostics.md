@@ -371,6 +371,15 @@ splitting is preferred for reviewability:
 - [x] Deterministic output for identical scenario input (no `Date.now()`/`Math.random()` in
       any new function). Verified by a dedicated determinism test in
       `sequencingMetrics.test.ts`.
+- [x] `POLICY_VERSION` bumped to `2026-09-sequencing-ranking-diagnostics-v1`. This repo's
+      `check-policy-drift.mjs` CI gate requires a bump whenever `optimizer.ts`/`planner.ts`/
+      `rules.ts` change at all, mechanically, regardless of proven behavioral equivalence --
+      its narrow "dormant change" exceptions are reserved for code with genuinely no live
+      caller, which does not describe this PR (the new diagnostic fields ARE computed on
+      every live decision, they just aren't consumed by selection). Bumping is the correct,
+      convention-following resolution rather than building a new bespoke exception for a
+      shape of guarantee ("computed but unused for selection") the exception mechanism isn't
+      designed to verify mechanically.
 - [x] **Zero behavior change**, verified more rigorously than `npm run simulate:diff` alone:
       `simulate:diff` against the *committed* baseline shows pre-existing drift unrelated to
       this work (reproduced identically on a clean pre-change tree). The falsifiable check is
