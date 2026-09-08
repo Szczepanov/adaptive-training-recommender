@@ -1,7 +1,7 @@
 # H4: external-plan execution-binding pipeline — PR-1/PR-2 implementation and follow-up roadmap
 
 **Status:** PR 1 implemented in [PR #440](https://github.com/Szczepanov/adaptive-training-recommender/pull/440); PR 2 implemented in [PR #445](https://github.com/Szczepanov/adaptive-training-recommender/pull/445).
-PR 3 is delivered through Phase 6; the cumulative H4 policy transition completes the live release.
+PR 3 is delivered through Phase 6, completed by [PR #472](https://github.com/Szczepanov/adaptive-training-recommender/pull/472); the cumulative H4 policy transition completes the live release.
 This document records the original gap, the invariants established by the first two PRs, and the
 remaining follow-up work.
 
@@ -286,12 +286,12 @@ prescription.
    `'external_plan'` authority, `'skipped'` state, deterministic/idempotent occurrence identity,
    replay validation, lifecycle transitions, and the atomic `claimOccurrenceLaunch` primitive.
    Live claim/ledger wiring was intentionally deferred as described above.
-3. **PR 3 — delivered through Phase 6:** use resolved intraday placement to
+3. **PR 3 — delivered through Phase 6, completed by PR #472:** use resolved intraday placement to
    adjudicate and surface non-primary v4 members as independently launchable
    `additionalSessions` entries, wiring eligible launch through the occurrence claim/ledger
    boundary. Phase 5 captures post-AM `SessionResponse` evidence and Phase 6 activates the
    H4 policy transition.
-4. **Phase 6 — delivered:** archived the then-current
+4. **Phase 6 — delivered in PR #472:** archived the then-current
    `2026-09-simulation-sequence-occupational-context-v2` policy and activated
    `2026-09-h4-intraday-bundle-member-launch-v1`.
 5. **Optional later work — block scaling:** add a deterministic, testable external-definition

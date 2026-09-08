@@ -1,7 +1,7 @@
 # H4 / issue #434 PR 3 — Intraday bundle second-member launch & athlete confirmation capture
 
-**Status:** Implemented — **Phases 1-6 delivered** (#448, #450, #451, #454, #465, #470);
-Phase 6 activates the cumulative H4 dependent-member launch policy.
+**Status:** Implemented — **Phases 1-6 delivered** (#448, #450, #451, #454, #465, #470, #472);
+Phase 6 is delivered in #472 and activates the cumulative H4 dependent-member launch policy.
 **Tracks:** [GitHub issue #434](https://github.com/Szczepanov/adaptive-training-recommender/issues/434)
 (historical issue, now closed), PR 3.
 **Blocked by:** none for the delivered H4 release; broader ledger and placement-persistence
@@ -26,7 +26,8 @@ D-WINDOW / D-LEDGER / D-REASSESS / D-PLACEMENT.
 
 `43c7ce74` (PR #469) is the **pre-Phase-5 `main` baseline**, re-verified after
 #465/#466/#467 and the rules-budget follow-up #468. Phase 5 is implemented in PR #470; its
-verification reference is the latest #470 head/check set, not `43c7ce74`.
+verification reference is the latest #470 head/check set, not `43c7ce74`. Phase 6 is
+implemented in PR #472; use the latest #472 head/check set for the cumulative policy transition.
 
 A v4 intraday bundle's non-primary member is now:
 
@@ -63,7 +64,7 @@ under `2026-09-h4-intraday-bundle-member-launch-v1`.
 | Atomic launch claim + rollback | `services/intradayLaunchClaim.ts`, `sessionOccurrenceService.releaseOccurrenceClaim`, `Home.tsx` | Delivered (#465) |
 | Post-AM immediate response | `useSessionRunner.completeSession` records/revises the deterministic response after commit | **Delivered — Phase 5** |
 | Confirmation revision from submitted evidence | Existing reassessment revision consumes response/tissue evidence | **Delivered — Phase 5** |
-| Cumulative H4 policy transition | `engine/policy.ts` | **Delivered — Phase 6** |
+| Cumulative H4 policy transition | `engine/policy.ts` | **Delivered — Phase 6 (#472)** |
 
 ### Phase-4 implementation decisions that supersede older plan text
 
@@ -284,7 +285,7 @@ Add focused tests proving at least:
 
 ---
 
-## Phase 6 — policy and contract reconciliation — delivered
+## Phase 6 — policy and contract reconciliation — delivered in #472
 
 ### 16. Reassessment revision type — already delivered
 
@@ -292,7 +293,7 @@ No work remains here. #450 made `engine/intradayReassessment.ts` the canonical
 `ReassessmentInputRevision` declaration and `intradayDecision.ts` imports it. Do not recreate
 an obsolete schema-unification task.
 
-### 17. Bump the cumulative policy version from the then-current value — delivered
+### 17. Bump the cumulative policy version from the then-current value — delivered in #472
 
 **File:** `app/src/engine/policy.ts`.
 
