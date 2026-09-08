@@ -178,8 +178,8 @@ ownership and constrain availability before candidates are selected.
 | `dose.ts` | Validates and intersects planned dose with the clinical ceiling and athlete adjustment |
 | `planner.ts` / `weeklyAllocation.ts` | Rolling 7-day projection, projected-credit ledger, exact-role reservation evidence and weekly anchor preferences |
 | `provenance.ts` / `replay.ts` | Audit construction and current-policy verification; historical policies are audit-only |
-| `sequenceIntent.ts` | Derives phase-specific soft sequencing intent from canonical `PhaseWeights`; never overrides hard gates or exact-role coverage |
-| `occupationalLoad.ts` | Separates optional adapted occupational baseline from daily acute work and reports physical-work/ambient-step overlap |
+| `sequenceIntent.ts` | Derives phase-specific, bounded ranking multipliers for spacing, density, recovery, and long sessions from canonical `PhaseWeights`; never overrides hard gates or exact-role coverage |
+| `occupationalLoad.ts` | Separates optional adapted occupational baseline from daily acute work using confidence and load-area overlap, and reports physical-work/activity-adjusted-ambient-step overlap |
 
 ### Wearable-free composition boundary
 

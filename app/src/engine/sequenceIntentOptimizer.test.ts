@@ -47,7 +47,7 @@ const QUALITY_LIKE_SUPPORTING_SESSION: SessionTemplate = {
     title: 'Quality-like supporting ride',
     description: 'Synthetic candidate used to isolate sequencing preference behavior.',
     requiredEquipment: [],
-    environment: 'Either',
+    environment: 'either',
     safetyTags: [],
     systemicCost: 0.55,
     costProfile: { systemic: 0.55, cardiovascular: 0.55, lowerBody: 0.3, upperBody: 0, impactTissue: 0, neuromuscular: 0.2 },
