@@ -125,7 +125,7 @@ emulatorDescribe('ScheduleWindow manifest persistence boundary (#430)', () => {
 
         await assertFails(setDoc(manifestRef, manifest([window('bad-time', '07:00', '07:00')])));
         await assertFails(setDoc(manifestRef, manifest([
-            { ...window('bad-environment', '06:00', '07:00'), environment: 'space' },
+            { ...window('bad-environment', '06:00', '07:00'), environment: 'space' } as ReturnType<typeof window>,
         ])));
         await assertFails(setDoc(manifestRef, manifest([
             window('duplicate', '06:00', '07:00'),
