@@ -333,10 +333,19 @@ into the completion-response PR merely because they are nearby.
 
 ### Ledger remainder/admission in the broader planner
 
-`planner.ts` / `rules.ts` still have separate dedup/accounting mechanisms outside the intraday
-bundle path. Unifying those onto D-LEDGER's occurrence/revision identity and using
-`computeDailyLedger` remainder / `admitsCandidate` as a real ranking/admission input remains a
-separate decision-affecting change.
+**Delivered in the follow-up D-LEDGER planner-admission change.** The rolling projection now
+adapts pending `FixedActivity` commitments to D-LEDGER occurrence/revision entries before
+ranking. `resolveAvailability` and the projection share the newest-revision identity, so a
+replayed fixed activity cannot consume time twice in one path and once in the other; an
+equal-revision disagreement fails closed. `computeDailyLedger` supplies the date remainder and
+`admitsCandidate` excludes a projected training candidate that cannot fit both the remaining
+minutes and systemic-cost capacity. Canonical Rest remains available as the non-training
+fallback.
+
+This does not make the pure rolling forecast a Firestore reader or replace the persisted
+`daily_ledgers/{date}` transaction used by intraday launch. Direct same-day readiness selection
+also remains on its existing authority path; wiring a persisted intraday aggregate into that
+separate entry point needs its own input/replay contract.
 
 ### Persist resolved bundle placement for display
 
