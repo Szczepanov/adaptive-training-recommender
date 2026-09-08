@@ -162,6 +162,27 @@ emulatorDescribe('ScheduleWindow manifest persistence boundary (#430)', () => {
         ));
     });
 
+    it('fails closed when an authoritative manifest and retired sibling rows coexist', async () => {
+        const db = environment.authenticatedContext(USER_ID).firestore();
+        await environment.withSecurityRulesDisabled(async context => {
+            await setDoc(
+                doc(context.firestore(), 'users', USER_ID, 'schedule_window_manifests', DATE),
+                manifest([window('manifest-window', '06:00', '07:00')]),
+            );
+            await setDoc(
+                doc(context.firestore(), 'users', USER_ID, 'schedule_windows', 'retired-window'),
+                window('retired-window', '08:00', '09:00'),
+            );
+        });
+
+        const state = await service(db as unknown as Firestore, 'unused').getWindowsForDateState(USER_ID, DATE);
+
+        expect(state).toMatchObject({
+            status: 'INVALID',
+            issues: [expect.objectContaining({ code: 'retired-schedule-window-representation' })],
+        });
+    });
+
     it('keeps stable window identity and monotonic revisions through update and delete', async () => {
         const db = environment.authenticatedContext(USER_ID).firestore();
         const windows = service(db as unknown as Firestore, 'unused');
