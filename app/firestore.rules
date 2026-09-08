@@ -850,6 +850,36 @@ service cloud.firestore {
         && scheduleWindowManifestPairIsValid(windows, 6, 7);
     }
 
+    // Preserve per-window identity/revision semantics inside the date manifest.
+    // Same-size edits keep stable ids/createdAt and advance changed entries exactly
+    // once. Add/remove transitions retain every existing/surviving map verbatim;
+    // this also supports cross-date moves whose target entry carries an advanced rev.
+    function scheduleWindowManifestEntryTransitionIsValid(previousWindow, nextWindow) {
+      return nextWindow == previousWindow || (
+        nextWindow.id == previousWindow.id
+        && nextWindow.createdAt == previousWindow.createdAt
+        && nextWindow.revision == previousWindow.revision + 1
+      );
+    }
+
+    function hasValidSameSizeScheduleWindowManifestUpdate(previousWindows, nextWindows) {
+      return previousWindows.size() == nextWindows.size()
+        && (nextWindows.size() < 1 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[0], nextWindows[0]))
+        && (nextWindows.size() < 2 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[1], nextWindows[1]))
+        && (nextWindows.size() < 3 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[2], nextWindows[2]))
+        && (nextWindows.size() < 4 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[3], nextWindows[3]))
+        && (nextWindows.size() < 5 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[4], nextWindows[4]))
+        && (nextWindows.size() < 6 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[5], nextWindows[5]))
+        && (nextWindows.size() < 7 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[6], nextWindows[6]))
+        && (nextWindows.size() < 8 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[7], nextWindows[7]));
+    }
+
+    function hasValidScheduleWindowManifestTransition(previousWindows, nextWindows) {
+      return hasValidSameSizeScheduleWindowManifestUpdate(previousWindows, nextWindows)
+        || (nextWindows.size() == previousWindows.size() + 1 && nextWindows.hasAll(previousWindows))
+        || (nextWindows.size() + 1 == previousWindows.size() && previousWindows.hasAll(nextWindows));
+    }
+
     function hasValidScheduleWindowManifest(userId, date) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
@@ -868,7 +898,8 @@ service cloud.firestore {
         && request.resource.data.revision == 1;
       allow update: if hasValidScheduleWindowManifest(userId, date)
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.revision == resource.data.revision + 1;
+        && request.resource.data.revision == resource.data.revision + 1
+        && hasValidScheduleWindowManifestTransition(resource.data.windows, request.resource.data.windows);
       allow delete: if false;
     }
 
