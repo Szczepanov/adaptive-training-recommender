@@ -185,11 +185,15 @@ export class SessionResponseService {
     }
 
     /**
-     * Records a completion-sheet answer or revises the existing answer for the deterministic
-     * `(sourceSession, window)` pair. The query-first read preserves compatibility with any
-     * already-stored response found by the canonical reader. If no answer exists, the final
-     * deterministic read/write happens transactionally so concurrent retries cannot race into
-     * two blind `set` operations or overwrite `createdAt`.
+     * Records submitted completion evidence or revises the existing answer for the
+     * deterministic `(sourceSession, window)` pair. An empty fact set is deliberately a
+     * no-op: callers such as `completeSession()` may have no submitted completion payload,
+     * and D-MRESP requires that absence to remain distinguishable from answered-normal.
+     *
+     * The query-first read preserves compatibility with any already-stored response found by
+     * the canonical reader. If no answer exists, the final deterministic read/write happens
+     * transactionally so concurrent retries cannot race into two blind `set` operations or
+     * overwrite `createdAt`.
      */
     async recordOrUpdateResponse(
         userId: string,
@@ -201,9 +205,12 @@ export class SessionResponseService {
         occurrenceId?: string,
         now: string = new Date().toISOString(),
     ): Promise<void> {
+        const definedFacts = definedResponseFacts(facts);
+        if (Object.keys(definedFacts).length === 0) return;
+
         const existing = await this.getResponseForWindow(userId, sourceSession, window);
         if (existing) {
-            await this.updateResponseFacts(userId, existing.responseId, facts, now);
+            await this.updateResponseFacts(userId, existing.responseId, definedFacts, now);
             return;
         }
 
@@ -216,16 +223,15 @@ export class SessionResponseService {
             window,
             date,
             checkinDate,
-            facts,
+            definedFacts,
             occurrenceId,
             now,
         );
-        const definedPatch = definedResponseFacts(facts);
 
         await runTransaction(this.db, async transaction => {
             const raced = await transaction.get(responseRef);
             if (raced.exists()) {
-                transaction.update(responseRef, { ...definedPatch, updatedAt: now });
+                transaction.update(responseRef, { ...definedFacts, updatedAt: now });
                 return;
             }
             transaction.set(responseRef, response);
