@@ -10,6 +10,7 @@ import { resolvePlanningContext, type PlanningContext } from './planningMode';
 import { applyPlanningOverlays } from './planningOverlays';
 import type { PerformedTrainingFactsSnapshot } from './performedTrainingFacts';
 import { coverageSetFor, EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
+import { resolveSequenceIntent, type SequenceIntentPolicy } from './sequenceIntent';
 
 export type PlannedRecoveryReason =
   | 'scheduled_recovery'   // Prescribed microcycle rest day
@@ -49,6 +50,7 @@ export interface TrainingIntent {
         priority: number;
     } | null;
     executionModifier?: ExecutionModifier | null;
+    sequenceIntent: SequenceIntentPolicy;
 }
 
 const MAX_PLANNED_VOLUME = 1;
@@ -247,5 +249,6 @@ export async function resolveTrainingIntent(
     return {
         planningContext, periodization, unresolvedObjectives, plannedDose, fatigue, history, performedTrainingFacts, historySnapshot, microcycle,
         droppedContributorObjectives: multiEventResolution.droppedContributorObjectives,
+        sequenceIntent: resolveSequenceIntent(periodization.phase),
     };
 }

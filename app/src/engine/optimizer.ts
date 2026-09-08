@@ -19,6 +19,7 @@ import type {
     WorkoutCostProfile,
     WorkoutStimulusProfile,
 } from './models';
+import { resolveSequenceIntent, type SequenceIntentPolicy } from './sequenceIntent';
 import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
@@ -193,6 +194,8 @@ export interface OptimizationOptions {
     recoveryPlacementState?: RecoveryPlacementState | null;
     /** ADR-0038: Optional recovery history snapshot used to resolve recovery placement state. */
     recoveryHistorySnapshot?: RecoveryHistorySnapshot | null;
+    /** Phase-derived soft sequencing preference; never a hard safety override. */
+    sequenceIntent?: SequenceIntentPolicy;
 }
 
 export interface OptimizationContext {
@@ -683,7 +686,7 @@ export function buildOptimizationContext(
     intent: {
         unresolvedObjectives: WeeklyObjective[];
         fatigue: FatigueState;
-        periodization?: { focusEvent?: UserEvent | null } | null;
+        periodization?: { focusEvent?: UserEvent | null; phase?: { phaseName: import('./periodization').PhaseWeights['phaseName'] } } | null;
         history?: (RecentHistoryEntry | SessionHistoryEntry)[];
         performedTrainingFacts?: { exposures: readonly StrengthExposureLike[] } | null;
         plannedDose?: PlannedDose;
@@ -723,6 +726,8 @@ export function buildOptimizationContext(
     };
 
     const availability = options.resolvedAvailability ?? resolveAvailability(date, null, fixedActivities, context);
+    const sequenceIntent: SequenceIntentPolicy | undefined = options.sequenceIntent
+        ?? (intent.periodization?.phase ? resolveSequenceIntent(intent.periodization.phase) : undefined);
     const injuries = context.trainingSettings?.injuries
         ?? (context.constraints as { injuries?: InjuryConstraint[] })?.injuries
         ?? (context as { injuries?: InjuryConstraint[] })?.injuries
@@ -814,6 +819,7 @@ export function buildOptimizationContext(
             fatigueTier: options.fatigueTier ?? 'train',
             guardrails,
             recoveryPlacementState,
+            ...(sequenceIntent ? { sequenceIntent } : {}),
             ...(options.recoveryHistorySnapshot ? { recoveryHistorySnapshot: options.recoveryHistorySnapshot } : {}),
             ...(recentPerformedExposures !== undefined ? { recentPerformedExposures } : {}),
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
@@ -846,6 +852,7 @@ export function rankCandidates(
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
     const coverageState = options.coverageState;
     const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';
+    const sequenceIntent = options.sequenceIntent;
 
     const recoveryPreferenceTierFor = (template: SessionTemplate): 0 | 1 => {
         if ((options.fatigueTier ?? 'train') !== 'recover') return 0;
@@ -1027,6 +1034,13 @@ export function rankCandidates(
 
         const candidateIsHighIntensity = template.systemicCost >= INTENSITY_STACK_THRESHOLD;
         if (summary.lastWasHighIntensity && candidateIsHighIntensity) prefMultiplier *= INTENSITY_STACK_PENALTY;
+        if (summary.lastWasHighIntensity && candidateIsHighIntensity && sequenceIntent) {
+            if (sequenceIntent.qualityDensityMode === 'cluster_allowed') prefMultiplier *= 1.75;
+            if (sequenceIntent.qualityDensityMode === 'density_emphasis') prefMultiplier *= 2.15;
+        }
+        if (sequenceIntent && (template.durationMin ?? 0) >= 60) {
+            prefMultiplier *= 1 + (sequenceIntent.longSessionPriority * 0.15);
+        }
 
         const streak = summary.consecutiveHardStreak;
         const isAerobicDefault = template.category === 'Easy Endurance' || (template.title ?? '').toLowerCase().includes('zone 2');
