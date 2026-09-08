@@ -184,7 +184,6 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
         });
 
         it('replaces bootstrap reference when a real qualifying recovery occurs', () => {
-            // Suppose a recovery occurred on 2026-09-04 before the bootstrap deadline of 2026-09-08.
             const state = resolveRecoveryPlacementState({
                 asOfDate: '2026-09-05',
                 bootstrapDate: '2026-09-01',
@@ -194,7 +193,7 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
             expect(state.historicalState).toBe('known');
             expect(state.referenceKind).toBe('qualifying_recovery');
             expect(state.referenceDate).toBe('2026-09-04');
-            expect(state.dueByDate).toBe('2026-09-11'); // 2026-09-04 + 7
+            expect(state.dueByDate).toBe('2026-09-11');
             expect(state.daysUntilDue).toBe(6);
         });
 
@@ -273,12 +272,9 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
         });
 
         it('preserves tier 0 programming authority under composeCoverageNeedTier', () => {
-            // If authored coverage has a tier 0 programming requirement, recovery urgency (tier 1) never overrides it.
             expect(composeCoverageNeedTier(0, 1)).toBe(0);
-            // Tier 1 recovery beats tier 2 and tier 3 discretionary work.
             expect(composeCoverageNeedTier(2, 1)).toBe(1);
             expect(composeCoverageNeedTier(3, 1)).toBe(1);
-            // Slack tier 2 recovery beats tier 3 work.
             expect(composeCoverageNeedTier(3, 2)).toBe(2);
         });
     });
@@ -291,7 +287,6 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
                 '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12',
                 '2026-09-13', '2026-09-14',
             ];
-            // Recoveries placed on days 07 and 14.
             const recoveryDates = new Set(['2026-09-07', '2026-09-14']);
             const result = checkRollingRecoveryInvariant(dates, recoveryDates);
             expect(result.compliant).toBe(true);
@@ -304,7 +299,6 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
                 '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04',
                 '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08',
             ];
-            // Only day 01 was recovery; 7 consecutive non-recovery days follow (02-08).
             const recoveryDates = new Set(['2026-09-01']);
             const result = checkRollingRecoveryInvariant(dates, recoveryDates);
             expect(result.compliant).toBe(false);
@@ -328,6 +322,18 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
             expect(result.violations).toHaveLength(0);
         });
 
+        it('does not manufacture a seven-day non-recovery streak across an unknown calendar date', () => {
+            const dates = [
+                '2026-09-01',
+                '2026-09-03', '2026-09-04', '2026-09-05',
+                '2026-09-06', '2026-09-07', '2026-09-08',
+            ];
+            const result = checkRollingRecoveryInvariant(dates, new Set());
+            expect(result.compliant).toBe(true);
+            expect(result.maxConsecutiveNonRecoveryDays).toBe(6);
+            expect(result.violations).toHaveLength(0);
+        });
+
         it('excludes pre-bootstrap dates and the bootstrap reference date from evaluation', () => {
             const dates = [
                 '2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28',
@@ -335,7 +341,6 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
                 '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05',
                 '2026-09-06', '2026-09-07',
             ];
-            // Bootstrap is 2026-09-01. Prior dates and B itself are excluded; recovery occurs on B + 6.
             const recoveryDates = new Set(['2026-09-07']);
             const result = checkRollingRecoveryInvariant(dates, recoveryDates, '2026-09-01');
             expect(result.compliant).toBe(true);
