@@ -1,23 +1,42 @@
-﻿import { describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import {
     CANONICAL_RECOVERY_WORKOUT_IDS,
     isQualifyingRecoveryIdentity,
     resolveRecoveryAuthority,
 } from '../engine/recoveryPlacement';
 import {
+    EVERGREEN_RECOVERY_WORKOUT_IDS,
     EVERGREEN_SESSION_COVERAGE,
     SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE,
 } from './event-plan';
 import { workoutForTemplate } from './prescription';
 
 describe('recovery identity alignment (ADR-0038 RP0 / RP1)', () => {
-    it('recognizes all four canonical recovery identities under product policy authority', () => {
+    it('keeps product-policy recovery identity owned by the Evergreen descriptor', () => {
         const productAuthority = resolveRecoveryAuthority(null);
-        expect(productAuthority.authority).toBe('product_policy');
+        const evergreenRecovery = EVERGREEN_SESSION_COVERAGE.find(item => item.key === 'recovery_or_rest');
 
-        for (const workoutId of CANONICAL_RECOVERY_WORKOUT_IDS) {
+        expect(productAuthority.authority).toBe('product_policy');
+        expect(evergreenRecovery).toBeDefined();
+        expect(evergreenRecovery?.workoutIds).toEqual([...EVERGREEN_RECOVERY_WORKOUT_IDS]);
+        expect([...CANONICAL_RECOVERY_WORKOUT_IDS]).toEqual([...EVERGREEN_RECOVERY_WORKOUT_IDS]);
+
+        for (const workoutId of EVERGREEN_RECOVERY_WORKOUT_IDS) {
             expect(isQualifyingRecoveryIdentity(workoutId, productAuthority)).toBe(true);
         }
+    });
+
+    it('documents the frozen September descriptor breathwork exception exactly', () => {
+        const eventRecovery = SEPTEMBER_CYCLING_EVENT_SESSION_COVERAGE.find(item => item.key === 'recovery_or_rest');
+        const evergreenRecovery = EVERGREEN_SESSION_COVERAGE.find(item => item.key === 'recovery_or_rest');
+        expect(eventRecovery).toBeDefined();
+        expect(evergreenRecovery).toBeDefined();
+
+        const eventOnly = eventRecovery?.workoutIds.filter(id => !evergreenRecovery?.workoutIds.includes(id)) ?? [];
+        const evergreenOnly = evergreenRecovery?.workoutIds.filter(id => !eventRecovery?.workoutIds.includes(id)) ?? [];
+
+        expect(eventOnly).toEqual([]);
+        expect(evergreenOnly).toEqual(['recovery_breathwork_01']);
     });
 
     it('recognizes authored recovery identities under September cycling event coverage', () => {
@@ -40,7 +59,8 @@ describe('recovery identity alignment (ADR-0038 RP0 / RP1)', () => {
         expect(isQualifyingRecoveryIdentity('cycling_recovery_spin_01', authoredAuthority)).toBe(true);
         expect(isQualifyingRecoveryIdentity('rest_complete_01', authoredAuthority)).toBe(true);
 
-        // Breathwork is in general canonical product policy, but omitted from the frozen cycling event descriptor
+        // Breathwork belongs to baseline product policy but is intentionally absent from
+        // the ADR-0016-frozen September cycling descriptor.
         expect(isQualifyingRecoveryIdentity('recovery_breathwork_01', authoredAuthority)).toBe(false);
     });
 
