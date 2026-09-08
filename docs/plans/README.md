@@ -62,7 +62,7 @@ specificity plus an anchor-date coverage-ordering fix (H2/H2b), an H3 investigat
 verified existing authored-block/replacement contracts, and explicit rest-day authoring
 under [ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (H3-rest, delivered). H4
 intraday windows/reassessment is accepted in
-[ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md) and **In progress**:
+[ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md) and **Implemented**:
 D-TIME (`localInstant.ts`), D-LEDGER's pure engine (`dailyLedger.ts`), D-PLACEMENT's
 bundle-placement engine, D-REASSESS's pure `reassessDependentBundleMember`
 (`intradayReassessment.ts`, #442) and D-AUDIT's decision store (`intradayDecision.ts`,
@@ -78,10 +78,10 @@ binding. PR 3 Phase 4 (#465) now renders that binding and routes eligible starts
 the atomic occurrence/ledger claim with rollback on launch failure. PR 3 Phase 5 now
 captures the post-AM `immediate` `SessionResponse`, including completion fraction,
 unexpected fatigue, and notes; multi-region tissue feedback remains in the daily
-check-in as the canonical tissue authority. The
-[bundle-launch plan](./h4-434-pr3-bundle-second-member-launch.md) tracks #434 PR 3's
-remaining Phase 6 (the H4-specific `POLICY_VERSION` transition) as the path to a live H4
-release. Beyond PR 3, H4
+check-in as the canonical tissue authority. PR 3 Phase 6 applies the cumulative
+`2026-09-h4-intraday-bundle-member-launch-v1` policy contract, completing the live H4
+release. The [bundle-launch plan](./h4-434-pr3-bundle-second-member-launch.md) records the
+delivered phases. Beyond PR 3, H4
 also still needs ledger remainder/admission as a real ranking input in `planner.ts`, and a
 bundle's resolved placement persisted for display. The latter was previously blocked by
 Firestore's per-request rule-evaluation ceiling, but #468 reduced recommendation-audit
