@@ -52,7 +52,17 @@ export function buildRecommendationAudit(
         knowledgeLineage: snapshotKnowledgeLineage(recommendation.knowledgeRefs ?? []),
         ...(recommendation.plannedDose ? { plannedDose: recommendation.plannedDose } : {}),
         ...(recommendation.executionDose ? { executionDose: recommendation.executionDose } : {}),
-        candidateScores: trace.candidateScores,
+        // Issue #458: explicit field whitelist, not a direct reference. `trace.candidateScores`
+        // entries already carry diagnostic-only fields (benefitScore, costPenalty, and now the
+        // ranking-tier fields added for the sequencing/ranking audit) that RecommendationAudit's
+        // type intentionally omits. A bare reference would silently persist whatever the engine
+        // trace happens to carry; mapping explicitly keeps the persisted audit shape stable
+        // regardless of how much diagnostic detail the in-memory decision trace grows.
+        candidateScores: trace.candidateScores.map(candidate => ({
+            templateId: candidate.templateId,
+            utilityScore: candidate.utilityScore,
+            excludedReasons: candidate.excludedReasons,
+        })),
         droppedContributorObjectives: trace.droppedContributorObjectives,
         // Carried verbatim: the audit must name the revision bytes, not re-derive them.
         ...(trace.externalPlan ? { externalPlan: trace.externalPlan } : {}),

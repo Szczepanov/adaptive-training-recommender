@@ -21,6 +21,7 @@
     "simulate:plan-judge": "node scripts/build-plan-judge-corpus.mjs && node scripts/check-plan-judge-invariants.mjs",
     "simulate:blind-ab": "node scripts/simulate-blind-ab.mjs",
     "analyze:plan-judge": "node scripts/analyze-plan-judge.mjs",
+    "report:sequencing": "node scripts/report-sequencing-diagnostics.mjs",
     "judge:invariants": "node scripts/check-plan-judge-invariants.mjs",
     "judge:run": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --fresh",
     "judge:resume": "npm run simulate:plan-judge && node scripts/run-ai-judge.mjs --resume",

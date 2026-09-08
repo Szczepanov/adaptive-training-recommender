@@ -300,6 +300,9 @@ function packetFromResult(definition, result, templatesById) {
       constraintViolations: result.constraintViolations,
       qualityWarnings: (result.qualityWarnings ?? []).map(normalizeWarning),
       anchorWeeks: result.anchorWeeks,
+      // Issue #458: deterministic sequencing/ranking diagnostics, exposed to the judge
+      // packet without changing `plan` (the judge-visible session-by-session content).
+      sequencingDiagnostics: result.sequencingDiagnostics,
     },
   };
 }
@@ -366,6 +369,9 @@ async function runRollingDailyScenario(definition, rulesModule, analyzeModule) {
     qualityWarnings: [],
     anchorWeeks: [],
     decisionTraces,
+    // Issue #458: the standard scenario-corpus path gets this from computeMetrics(); the
+    // rolling-daily path builds its result object by hand, so it needs the same call here.
+    sequencingDiagnostics: analyzeModule.computeSequencingDiagnostics(decisionTraces),
   };
 }
 
