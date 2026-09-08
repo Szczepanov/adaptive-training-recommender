@@ -19,7 +19,7 @@ import type {
     WorkoutCostProfile,
     WorkoutStimulusProfile,
 } from './models';
-import { resolveSequenceIntent, type SequenceIntentPolicy } from './sequenceIntent';
+import { resolveSequenceIntent, resolveSequenceIntentPreference, type SequenceIntentPolicy } from './sequenceIntent';
 import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
@@ -853,6 +853,15 @@ export function rankCandidates(
     const coverageState = options.coverageState;
     const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';
     const sequenceIntent = options.sequenceIntent;
+    const daysSinceLastKeySession = history.reduce<number | null>((closest, entry) => {
+        const diff = getDayDiff(targetDate, entry.date);
+        if (diff < 1) return closest;
+        const isKey = entry.role === 'anchor'
+            || entry.systemicCost >= INTENSITY_STACK_THRESHOLD
+            || Boolean(entry.category && ANCHOR_HISTORY_CATEGORIES.includes(entry.category));
+        if (!isKey) return closest;
+        return closest === null || diff < closest ? diff : closest;
+    }, null);
 
     const recoveryPreferenceTierFor = (template: SessionTemplate): 0 | 1 => {
         if ((options.fatigueTier ?? 'train') !== 'recover') return 0;
@@ -1033,7 +1042,23 @@ export function rankCandidates(
         }
 
         const candidateIsHighIntensity = template.systemicCost >= INTENSITY_STACK_THRESHOLD;
-        if (summary.lastWasHighIntensity && candidateIsHighIntensity) prefMultiplier *= INTENSITY_STACK_PENALTY;
+        const candidateIsKey = candidateIsHighIntensity || ANCHOR_HISTORY_CATEGORIES.includes(template.category);
+        const candidateIsRecovery = template.category === 'Rest' || template.category === 'Mobility/Recovery';
+        const candidateIsLongEndurance = ['Easy Endurance', 'Moderate Endurance', 'Hard Endurance', 'Race-Specific Endurance'].includes(template.category)
+            && (template.durationMin ?? 0) >= 75;
+        const sequencePreference = sequenceIntent
+            ? resolveSequenceIntentPreference(sequenceIntent, {
+                candidateIsKey,
+                candidateIsRecovery,
+                candidateIsLongEndurance,
+                daysSinceLastKeySession,
+                lastWasHighIntensity: summary.lastWasHighIntensity,
+            })
+            : {
+                multiplier: summary.lastWasHighIntensity && candidateIsHighIntensity ? INTENSITY_STACK_PENALTY : 1,
+                reasons: [] as string[],
+            };
+        prefMultiplier *= sequencePreference.multiplier;
 
         const streak = summary.consecutiveHardStreak;
         const isAerobicDefault = template.category === 'Easy Endurance' || (template.title ?? '').toLowerCase().includes('zone 2');
@@ -1069,6 +1094,9 @@ export function rankCandidates(
         }
         if (sequenceIntent) {
             rationale += ` (Sequence intent: ${sequenceIntent.progressionMode}/${sequenceIntent.qualityDensityMode}, preferred key gap ${sequenceIntent.minimumPreferredKeyGapDays}d.)`;
+            if (sequencePreference.reasons.length > 0) {
+                rationale += ` (Sequence soft preference x${sequencePreference.multiplier.toFixed(2)}: ${sequencePreference.reasons.join('; ')}.)`;
+            }
         }
 
         const item: RankedCandidate = {
