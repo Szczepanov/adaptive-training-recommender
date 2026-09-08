@@ -268,6 +268,35 @@ describe('computeSequencingDiagnostics (issue #458)', () => {
             expect(out.opportunityCost.utilityWinnerDifferentCount).toBe(0);
             expect(out.opportunityCost.utilityWinnerBlockedCount).toBe(0);
         });
+
+        it('does not count an equal-utility alternative as a disagreement (zero gap)', () => {
+            const t = trace({
+                date: '2026-01-01', weekIndex: 0, category: 'Easy Endurance',
+                rankingAudit: rankingAudit({
+                    selectedTemplateId: 'selected', bestUtilityTemplateId: 'tied-alternative',
+                    selectedVsBestUtilityGap: 0,
+                }),
+            });
+            const out = computeSequencingDiagnostics([t]);
+            expect(out.opportunityCost.utilityWinnerDifferentCount).toBe(0);
+            expect(out.opportunityCost.utilityWinnerBlockedCount).toBe(0);
+            expect(out.opportunityCost.utilityWinnerDifferentWithoutTierBlockCount).toBe(0);
+            expect(out.opportunityCost.perDay).toEqual([]);
+        });
+
+        it('does not count a day with a null bestUtilityTemplateId as a disagreement', () => {
+            const t = trace({
+                date: '2026-01-01', weekIndex: 0, category: 'Easy Endurance',
+                rankingAudit: rankingAudit({
+                    selectedTemplateId: 'selected', bestUtilityTemplateId: null,
+                    selectedVsBestUtilityGap: null,
+                }),
+            });
+            const out = computeSequencingDiagnostics([t]);
+            expect(out.opportunityCost.utilityWinnerDifferentCount).toBe(0);
+            expect(out.opportunityCost.utilityWinnerBlockedCount).toBe(0);
+            expect(out.opportunityCost.perDay).toEqual([]);
+        });
     });
 
     it('produces deterministic output for identical input', () => {

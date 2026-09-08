@@ -300,7 +300,17 @@ function computeHardDayConcentration(
 function computeOpportunityCost(traces: readonly ScenarioDecisionTrace[]): OpportunityCostDiagnostics {
     const auditedTraces = traces.filter((trace): trace is ScenarioDecisionTrace & { rankingAudit: NonNullable<ScenarioDecisionTrace['rankingAudit']> } =>
         trace.rankingAudit !== null && trace.rankingAudit !== undefined);
-    const disagreements = auditedTraces.filter(trace => trace.rankingAudit.bestUtilityTemplateId !== trace.rankingAudit.selectedTemplateId);
+    // A disagreement requires a real, strictly-higher-utility winner: an equal-utility
+    // alternative or a missing winner must not inflate these counts. In the current
+    // computeRankingCounterfactual construction this is already implied (bestUtility only
+    // replaces the running candidate on a strict `>`, so a differing id always carries a
+    // positive gap) -- the explicit check makes that invariant a property of this function
+    // rather than an assumption borrowed from optimizer.ts, and stays correct if that
+    // upstream construction ever changes.
+    const disagreements = auditedTraces.filter(trace =>
+        trace.rankingAudit.bestUtilityTemplateId !== null
+        && trace.rankingAudit.bestUtilityTemplateId !== trace.rankingAudit.selectedTemplateId
+        && (trace.rankingAudit.selectedVsBestUtilityGap ?? 0) > 0);
     const tierBlocked = disagreements.filter(trace =>
         trace.rankingAudit.utilityWinnerBlockedByCoverageTier
         || trace.rankingAudit.utilityWinnerBlockedByRecoveryTier
