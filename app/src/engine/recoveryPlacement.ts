@@ -1,4 +1,4 @@
-import {
+﻿import {
     COVERAGE_SETS,
     EVERGREEN_GENERAL_COVERAGE_SET,
     type CoverageSetDescriptor,
@@ -94,13 +94,12 @@ export function resolveRecoveryAuthority(coverageState?: CoverageState | null): 
 
 /**
  * Checks whether an exposure or candidate matches an exact qualifying recovery identity
- * under the resolved authority descriptor and phase. Refuses category-only or unmapped
- * fallback.
+ * under the resolved authority. Refuses category-only or unmapped fallback.
+ * Under product_policy, uses CANONICAL_RECOVERY_WORKOUT_IDS decided by ADR-0038.
  */
 export function isQualifyingRecoveryIdentity(
     identifier: { templateId?: string; workoutId?: string; id?: string } | string,
-    descriptor: CoverageSetDescriptor = EVERGREEN_GENERAL_COVERAGE_SET,
-    phase: PlanPhase = 'general',
+    authority: RecoveryAuthorityResolution = resolveRecoveryAuthority(null),
 ): boolean {
     let candidateWorkoutId: string | undefined;
 
@@ -117,13 +116,17 @@ export function isQualifyingRecoveryIdentity(
         return false;
     }
 
-    const recoveryRole = descriptor.coverage.find(item => item.key === 'recovery_or_rest');
+    if (authority.authority === 'product_policy') {
+        return (CANONICAL_RECOVERY_WORKOUT_IDS as readonly string[]).includes(candidateWorkoutId);
+    }
+
+    const recoveryRole = authority.descriptor.coverage.find(item => item.key === 'recovery_or_rest');
     if (!recoveryRole) {
         return false;
     }
 
     // Role must be active in the current phase and include the exact canonical workout ID
-    const phaseMatches = recoveryRole.phases.includes(phase);
+    const phaseMatches = recoveryRole.phases.includes(authority.phase);
     const workoutMatches = recoveryRole.workoutIds.includes(candidateWorkoutId);
 
     return phaseMatches && workoutMatches;
@@ -220,10 +223,15 @@ export function resolveRecoveryPlacementState(input: ResolveRecoveryPlacementInp
 export function recoveryNeedTierForCandidate(
     candidate: { id: string } | SessionTemplate,
     state: RecoveryPlacementState,
-    descriptor?: CoverageSetDescriptor,
+    authority?: RecoveryAuthorityResolution,
 ): 1 | 2 | 3 {
-    const activeDescriptor = descriptor ?? COVERAGE_SETS[state.coverageSetId] ?? EVERGREEN_GENERAL_COVERAGE_SET;
-    const qualifies = isQualifyingRecoveryIdentity(candidate.id, activeDescriptor, state.phase);
+    const activeAuthority = authority ?? {
+        authority: state.authority,
+        coverageSetId: state.coverageSetId,
+        phase: state.phase,
+        descriptor: COVERAGE_SETS[state.coverageSetId] ?? EVERGREEN_GENERAL_COVERAGE_SET,
+    };
+    const qualifies = isQualifyingRecoveryIdentity(candidate.id, activeAuthority);
 
     if (!qualifies) {
         return 3;
