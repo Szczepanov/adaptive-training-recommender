@@ -60,8 +60,10 @@ function decisionFingerprint(activity: FixedActivity): string {
 /**
  * Keeps the newest revision of each fixed-activity occurrence. Equal revisions must
  * describe the same decision-bearing activity; otherwise planning fails closed instead of
- * depending on Firestore/query order. This mirrors `computeDailyLedger`'s identity rule
- * while retaining the full activity for schedule and stimulus consumers.
+ * depending on Firestore/query order. The output is canonicalized by occurrence id so
+ * downstream stimulus/diagnostic consumers are deterministic even when query order varies.
+ * This mirrors `computeDailyLedger`'s identity rule while retaining the full activity for
+ * schedule and stimulus consumers.
  */
 export function dedupeFixedActivitiesByLedgerIdentity(
     activities: readonly FixedActivity[],
@@ -85,7 +87,9 @@ export function dedupeFixedActivitiesByLedgerIdentity(
             throw new Error(`Conflicting fixed-activity revisions for occurrence '${entry.occurrenceId}' at revision ${entry.revision}`);
         }
     }
-    return [...latest.values()];
+    return [...latest.entries()]
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([, activity]) => activity);
 }
 
 /** Entries for the planner's still-pending fixed commitments. Completed activities are
