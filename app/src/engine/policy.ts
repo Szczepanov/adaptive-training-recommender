@@ -1,11 +1,13 @@
 /** Increment whenever a change can alter a persisted recommendation decision. (Refactoring does not require a bump) */
 
-export const POLICY_VERSION = '2026-09-recommender-recovery-calibration-v1';
+export const POLICY_VERSION = '2026-09-simulation-sequence-occupational-context-v2';
 
 /** Historical versions are intentionally not re-executed by this build. Their compact
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-09-simulation-sequence-occupational-context-v1',
+    '2026-09-recommender-recovery-calibration-v1',
     '2026-09-sequencing-ranking-diagnostics-v1',
     '2026-09-adr-0038-recovery-identity-v1',
     '2026-09-week-ahead-effective-dose-projection-v1',

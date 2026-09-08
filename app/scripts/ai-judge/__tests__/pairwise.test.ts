@@ -12,6 +12,7 @@ import {
 describe('pairwise module', () => {
   const dummyCaseA = {
     caseId: 'judge_obj_neutral',
+    planId: 'a'.repeat(64),
     label: 'Objective Neutral',
     inputContext: { readiness: { objective: { hrv_delta: 0 } } },
     plan14d: [{ day: 1, session: { title: 'Tempo Ride', systemicCost: 0.7 } }],
@@ -20,6 +21,7 @@ describe('pairwise module', () => {
 
   const dummyCaseB = {
     caseId: 'judge_obj_hrv_2sd',
+    planId: 'b'.repeat(64),
     label: 'Objective HRV Down 2SD',
     inputContext: { readiness: { objective: { hrv_delta: -17 } } },
     plan14d: [{ day: 1, session: { title: 'Recovery Spin', systemicCost: 0.2 } }],
@@ -64,7 +66,7 @@ describe('pairwise module', () => {
     expect(tenPoint.properties.sensitivityScore).toEqual({ type: 'number', minimum: 0, maximum: 10 });
   });
 
-  it('keeps canonical comparison roles stable when display order is swapped', () => {
+  it('keeps canonical comparison roles and plan identities stable when display order is swapped', () => {
     const forward = formatPairwiseComparisonPacket({
       familyId: 'objective_recovery',
       edge: dummyEdge,
@@ -81,18 +83,26 @@ describe('pairwise module', () => {
     });
 
     expect(forward.caseA.caseId).toBe('judge_obj_neutral');
-    expect(forward.caseB.caseId).toBe('judge_obj_hrv_2sd');
+    expect(forward.caseA.planId).toBe('a'.repeat(64));
+    expect(forward.caseB.planId).toBe('b'.repeat(64));
     expect(reversed.caseA.caseId).toBe('judge_obj_hrv_2sd');
+    expect(reversed.caseA.planId).toBe('b'.repeat(64));
     expect(reversed.caseB.caseId).toBe('judge_obj_neutral');
+    expect(reversed.caseB.planId).toBe('a'.repeat(64));
     expect(reversed.comparisonRoles).toEqual(forward.comparisonRoles);
     expect(reversed.comparisonRoles).toEqual({
       baselineCaseId: 'judge_obj_neutral',
       perturbedCaseId: 'judge_obj_hrv_2sd',
     });
+    expect(reversed.planIdentities).toEqual(forward.planIdentities);
+    expect(reversed.planIdentities).toEqual({
+      baselinePlanId: 'a'.repeat(64),
+      perturbedPlanId: 'b'.repeat(64),
+    });
     expect(reversed.expectedDirection).toBe('less_load');
   });
 
-  it('strictly validates pairwise evidence after provider parsing', () => {
+  it('strictly validates pairwise evidence after provider parsing and binds it to displayed plan IDs', () => {
     const packet = formatPairwiseComparisonPacket({
       familyId: 'objective_recovery',
       edge: dummyEdge,
@@ -107,6 +117,8 @@ describe('pairwise module', () => {
       scale: '0-4',
     });
     expect(validated.actualDirection).toBe('less_load');
+    expect(validated.planAId).toBe('a'.repeat(64));
+    expect(validated.planBId).toBe('b'.repeat(64));
 
     expect(() => validateAndNormalizePairwiseResponse(responseFor(packet, { caseA: 'wrong' }), {
       familyId: 'objective_recovery',
@@ -259,6 +271,10 @@ describe('pairwise module', () => {
     expect(mockCallProvider).toHaveBeenCalledTimes(3);
     expect(outcome.pairwiseResults).toHaveLength(1);
     expect(outcome.pairwiseResults[0].isSymmetric).toBe(true);
+    expect(outcome.pairwiseResults[0].planIdentities).toEqual({
+      baselinePlanId: 'a'.repeat(64),
+      perturbedPlanId: 'b'.repeat(64),
+    });
     expect(outcome.pairwiseResults[0].telemetry.forward).toEqual({ promptTokens: 10 });
     expect(outcome.positionBias.positionBiasIndex).toBe(0);
     expect(outcome.positionBias.orderInstabilityIndex).toBe(0);

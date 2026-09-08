@@ -19,6 +19,7 @@ import type {
     WorkoutCostProfile,
     WorkoutStimulusProfile,
 } from './models';
+import { resolveSequenceIntent, resolveSequenceIntentPreference, type SequenceIntentPolicy } from './sequenceIntent';
 import type { ResolvedAvailability } from './schedule';
 import { resolveAvailability } from './schedule';
 import { addDaysToLocalDateString, getDayDiff, getLocalDateString } from '../utils/localDate';
@@ -193,6 +194,8 @@ export interface OptimizationOptions {
     recoveryPlacementState?: RecoveryPlacementState | null;
     /** ADR-0038: Optional recovery history snapshot used to resolve recovery placement state. */
     recoveryHistorySnapshot?: RecoveryHistorySnapshot | null;
+    /** Phase-derived soft sequencing preference; never a hard safety override. */
+    sequenceIntent?: SequenceIntentPolicy;
 }
 
 export interface OptimizationContext {
@@ -683,7 +686,7 @@ export function buildOptimizationContext(
     intent: {
         unresolvedObjectives: WeeklyObjective[];
         fatigue: FatigueState;
-        periodization?: { focusEvent?: UserEvent | null } | null;
+        periodization?: { focusEvent?: UserEvent | null; phase?: { phaseName: import('./periodization').PhaseWeights['phaseName'] } } | null;
         history?: (RecentHistoryEntry | SessionHistoryEntry)[];
         performedTrainingFacts?: { exposures: readonly StrengthExposureLike[] } | null;
         plannedDose?: PlannedDose;
@@ -723,6 +726,8 @@ export function buildOptimizationContext(
     };
 
     const availability = options.resolvedAvailability ?? resolveAvailability(date, null, fixedActivities, context);
+    const sequenceIntent: SequenceIntentPolicy | undefined = options.sequenceIntent
+        ?? (intent.periodization?.phase ? resolveSequenceIntent(intent.periodization.phase) : undefined);
     const injuries = context.trainingSettings?.injuries
         ?? (context.constraints as { injuries?: InjuryConstraint[] })?.injuries
         ?? (context as { injuries?: InjuryConstraint[] })?.injuries
@@ -814,6 +819,7 @@ export function buildOptimizationContext(
             fatigueTier: options.fatigueTier ?? 'train',
             guardrails,
             recoveryPlacementState,
+            ...(sequenceIntent ? { sequenceIntent } : {}),
             ...(options.recoveryHistorySnapshot ? { recoveryHistorySnapshot: options.recoveryHistorySnapshot } : {}),
             ...(recentPerformedExposures !== undefined ? { recentPerformedExposures } : {}),
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
@@ -846,6 +852,16 @@ export function rankCandidates(
     const isStrengthResolved = !unresolvedObjectives.some(o => o.key === 'strength_maintenance' || o.key === 'strength_development');
     const coverageState = options.coverageState;
     const recoveryStyle = preferences.preferredRecoveryStyle ?? 'mixed';
+    const sequenceIntent = options.sequenceIntent;
+    const daysSinceLastKeySession = history.reduce<number | null>((closest, entry) => {
+        const diff = getDayDiff(targetDate, entry.date);
+        if (diff < 1) return closest;
+        const isKey = entry.role === 'anchor'
+            || entry.systemicCost >= INTENSITY_STACK_THRESHOLD
+            || Boolean(entry.category && ANCHOR_HISTORY_CATEGORIES.includes(entry.category));
+        if (!isKey) return closest;
+        return closest === null || diff < closest ? diff : closest;
+    }, null);
 
     const recoveryPreferenceTierFor = (template: SessionTemplate): 0 | 1 => {
         if ((options.fatigueTier ?? 'train') !== 'recover') return 0;
@@ -1026,7 +1042,23 @@ export function rankCandidates(
         }
 
         const candidateIsHighIntensity = template.systemicCost >= INTENSITY_STACK_THRESHOLD;
-        if (summary.lastWasHighIntensity && candidateIsHighIntensity) prefMultiplier *= INTENSITY_STACK_PENALTY;
+        const candidateIsKey = candidateIsHighIntensity || ANCHOR_HISTORY_CATEGORIES.includes(template.category);
+        const candidateIsRecovery = template.category === 'Rest' || template.category === 'Mobility/Recovery';
+        const candidateIsLongEndurance = ['Easy Endurance', 'Moderate Endurance', 'Hard Endurance', 'Race-Specific Endurance'].includes(template.category)
+            && (template.durationMin ?? 0) >= 75;
+        const sequencePreference = sequenceIntent
+            ? resolveSequenceIntentPreference(sequenceIntent, {
+                candidateIsKey,
+                candidateIsRecovery,
+                candidateIsLongEndurance,
+                daysSinceLastKeySession,
+                lastWasHighIntensity: summary.lastWasHighIntensity,
+            })
+            : {
+                multiplier: summary.lastWasHighIntensity && candidateIsHighIntensity ? INTENSITY_STACK_PENALTY : 1,
+                reasons: [] as string[],
+            };
+        prefMultiplier *= sequencePreference.multiplier;
 
         const streak = summary.consecutiveHardStreak;
         const isAerobicDefault = template.category === 'Easy Endurance' || (template.title ?? '').toLowerCase().includes('zone 2');
@@ -1059,6 +1091,12 @@ export function rankCandidates(
         if (isDisliked(template)) rationale += ` (Soft penalty applied: modality '${template.modality}' is marked as avoided/disliked).`;
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate, summary)) {
             rationale += ` (Event-modality coverage: ${template.modality} has no exposure in the rolling 6-day history.)`;
+        }
+        if (sequenceIntent) {
+            rationale += ` (Sequence intent: ${sequenceIntent.progressionMode}/${sequenceIntent.qualityDensityMode}, preferred key gap ${sequenceIntent.minimumPreferredKeyGapDays}d.)`;
+            if (sequencePreference.reasons.length > 0) {
+                rationale += ` (Sequence soft preference x${sequencePreference.multiplier.toFixed(2)}: ${sequencePreference.reasons.join('; ')}.)`;
+            }
         }
 
         const item: RankedCandidate = {

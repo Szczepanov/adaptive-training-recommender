@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { computeDerivedPlanFeatures } from './derivedFeatures.mjs';
+import { sha256CanonicalJson } from './identity.mjs';
 
 function compactReadinessTrajectory(input) {
   if (!Array.isArray(input?.readinessTrajectory)) return null;
@@ -11,6 +12,16 @@ function compactReadinessTrajectory(input) {
   }));
 }
 
+function identitiesForItem(item) {
+  return {
+    inputId: sha256CanonicalJson(item?.input ?? {}),
+    planId: sha256CanonicalJson(item?.plan ?? []),
+    // The corpus builder historically stored a JSON.stringify-based hash. Retain it as
+    // artifact provenance while judge-facing identity uses canonical JSON above.
+    artifactPlanId: item?.planSha256 ?? null,
+  };
+}
+
 export function compactFamilyForJudge(rawFamily) {
   if (!rawFamily || typeof rawFamily !== 'object') {
     throw new Error('compactFamilyForJudge requires an object rawFamily');
@@ -19,37 +30,41 @@ export function compactFamilyForJudge(rawFamily) {
   return {
     familyId: rawFamily.familyId,
     changedAxis: rawFamily.changedAxis,
-    cases: (rawFamily.cases ?? []).map((item) => ({
-      caseId: item.input?.caseId,
-      label: item.input?.label,
-      changedAxis: item.input?.changedAxis,
-      simulationMode: item.input?.simulationMode ?? 'weekly_forecast',
-      readinessTrajectory: compactReadinessTrajectory(item.input),
-      day1: {
-        tier: item.plan?.[0]?.readinessTier,
-        mode: item.plan?.[0]?.mode,
-        session: item.plan?.[0]?.session?.title,
-        category: item.plan?.[0]?.session?.category,
-        durationMin: item.plan?.[0]?.session?.durationMin,
-        durationMax: item.plan?.[0]?.session?.durationMax,
-        systemicCost: item.plan?.[0]?.session?.systemicCost,
-      },
-      plan14d: (item.plan ?? []).map((day, index) => ({
-        day: index + 1,
-        date: day?.date,
-        mode: day?.mode,
-        session: day?.session?.title,
-        category: day?.session?.category,
-        cost: day?.session?.systemicCost,
-      })),
-      engineSummary: {
-        restDays: item.engineSummary?.restOrRecoveryDayCount,
-        tierCounts: item.engineSummary?.fatigueTierDayCounts,
-        categories: item.engineSummary?.categoryDistribution,
-        warnings: item.engineSummary?.qualityWarnings,
-        violations: item.engineSummary?.constraintViolations,
-      },
-    })),
+    cases: (rawFamily.cases ?? []).map((item) => {
+      const identities = identitiesForItem(item);
+      return {
+        caseId: item.input?.caseId,
+        ...identities,
+        label: item.input?.label,
+        changedAxis: item.input?.changedAxis,
+        simulationMode: item.input?.simulationMode ?? 'weekly_forecast',
+        readinessTrajectory: compactReadinessTrajectory(item.input),
+        day1: {
+          tier: item.plan?.[0]?.readinessTier,
+          mode: item.plan?.[0]?.mode,
+          session: item.plan?.[0]?.session?.title,
+          category: item.plan?.[0]?.session?.category,
+          durationMin: item.plan?.[0]?.session?.durationMin,
+          durationMax: item.plan?.[0]?.session?.durationMax,
+          systemicCost: item.plan?.[0]?.session?.systemicCost,
+        },
+        plan14d: (item.plan ?? []).map((day, index) => ({
+          day: index + 1,
+          date: day?.date,
+          mode: day?.mode,
+          session: day?.session?.title,
+          category: day?.session?.category,
+          cost: day?.session?.systemicCost,
+        })),
+        engineSummary: {
+          restDays: item.engineSummary?.restOrRecoveryDayCount,
+          tierCounts: item.engineSummary?.fatigueTierDayCounts,
+          categories: item.engineSummary?.categoryDistribution,
+          warnings: item.engineSummary?.qualityWarnings,
+          violations: item.engineSummary?.constraintViolations,
+        },
+      };
+    }),
   };
 }
 
@@ -66,6 +81,7 @@ export function buildBlindFamilyPacket(rawFamily) {
     cases: (rawFamily.cases ?? []).map((item) => {
       const input = item.input ?? {};
       const context = input.context ?? {};
+      const identities = identitiesForItem(item);
 
       const inputContext = {
         simulationMode: input.simulationMode ?? 'weekly_forecast',
@@ -132,6 +148,7 @@ export function buildBlindFamilyPacket(rawFamily) {
 
       return {
         caseId: input.caseId,
+        ...identities,
         label: input.label,
         changedAxis: input.changedAxis,
         inputContext,

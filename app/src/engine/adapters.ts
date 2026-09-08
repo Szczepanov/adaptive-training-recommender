@@ -375,6 +375,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         painOrInjuryRegionFamilies: resolvePainOrInjuryRegionFamilies(checkin),
         alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
         physicalWork: checkin.physicalWork,
+        occupationalBaseline: checkin.occupationalBaseline,
         preferredModalityToday: checkin.availability?.preferredModalityToday ?? null,
     };
 }

@@ -216,20 +216,25 @@ function traceFromForecastDay(weekIndex: number, day: WeekAheadDay): ScenarioDec
 }
 
 export function toCompletedExposure(day: WeekAheadDay): CompletedExposure {
-    const workoutId = workoutForTemplate(day.template.id)?.id;
+    // A forecast day keeps the authored catalog identity for coverage, but the
+    // completed-history replay must represent the dose we actually prescribed.
+    // Otherwise a reduced forecast silently becomes a full-load exposure on the
+    // next simulated day.
+    const effectiveTemplate = materializeEffectiveSimulationTemplate(day.template, day.activeDose);
+    const workoutId = workoutForTemplate(effectiveTemplate.id)?.id;
     return {
         occurrenceKey: `recommendation:${day.date}`,
         date: day.date,
-        costProfile: day.template.costProfile ?? ZERO_COST,
-        stimulusProfile: day.template.stimulusProfile,
+        costProfile: effectiveTemplate.costProfile ?? ZERO_COST,
+        stimulusProfile: effectiveTemplate.stimulusProfile,
         stimulusConfidence: 'exact',
-        templateId: day.template.id,
+        templateId: effectiveTemplate.id,
         ...(workoutId ? { workoutId } : {}),
-        modality: day.template.modality,
-        category: day.template.category,
+        modality: effectiveTemplate.modality,
+        category: effectiveTemplate.category,
         trainingRecordLike: {
-            type: `${day.template.modality} ${day.template.category}`,
-            duration_min: day.template.durationMin,
+            type: `${effectiveTemplate.modality} ${effectiveTemplate.category}`,
+            duration_min: effectiveTemplate.durationMin,
             training_effect: 0,
             intensity_tag: '',
         },

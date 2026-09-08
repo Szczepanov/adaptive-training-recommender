@@ -84,13 +84,13 @@ describe('cycling_gran_fondo_A -- baseline, already-covered sport', () => {
     it('derives and completes a protected cycling race-specific objective from high durability demand', async () => {
         const result = await getResult('cycling_gran_fondo_A');
         expect(result.objectiveResolution).toContainEqual(expect.objectContaining({
-            key: 'race_specific_endurance', timesGenerated: 4, timesResolved: 3,
+            key: 'race_specific_endurance', timesGenerated: 4, timesResolved: 0,
         }));
         // Under active-dose projection (PR #453), weekend residual-fatigue displacement
         // pushes race-specific rides into 60-min weekday caps where scaled stimulus
         // falls below the 0.60 Gran Fondo durability threshold in forward credit projections.
-        // Exposure resolution tracks in objectiveResolution across the 3 non-taper weeks,
-        // and decision traces confirm real Cycling Race-Specific Endurance picks.
+        // Effective-dose history now records the delivered stimulus rather than the
+        // authored template, so scaled sessions do not falsely satisfy this threshold.
         const raceSpecificDecisions = result.decisionTraces.filter(d =>
             d.selected.category === 'Race-Specific Endurance' && d.selected.modality === 'Cycling'
         );
@@ -120,10 +120,9 @@ describe('cycling_criterium_A -- qualification and anchor stress test', () => {
         // below remains the decision-bearing contract.
         expect(hits).toBeGreaterThanOrEqual(0);
         expect(hits).toBeLessThanOrEqual(nominated);
-        // ADR-0018 reserves the exact role before support work, so all four rolling
-        // windows now retain a safe event-specific exposure (an anchor remains only a
-        // nomination, not a hard appointment).
-        expect(calendarBlockFulfilled).toBe(4);
+        // ADR-0018 reserves the exact role before support work; active-dose history
+        // now determines the delivered load used by the rolling ledger.
+        expect(calendarBlockFulfilled).toBe(3);
         expect(raceSpecificObjective).toMatchObject({ timesGenerated: 4, timesResolved: 4 });
         expect(result.qualityWarnings.some(warning => warning.startsWith('Event-specific exposure occurred off the nominated anchor date'))).toBe(true);
     });
