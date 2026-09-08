@@ -228,7 +228,7 @@ describe('ADR-0038 historical recovery truth (RP2)', () => {
         const baseRecommendation = {
             date: '2026-09-08',
             category: 'Rest' as const,
-            templateId: 'rest_day',
+            templateId: 'rest_01',
             recommendationAudit: {
                 policyVersion: POLICY_VERSION,
                 decisionContextRevision: 'history-v1:2026-09-08:7:none:none',

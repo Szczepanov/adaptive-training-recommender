@@ -338,5 +338,3 @@ export function checkRollingRecoveryInvariant(
         violations,
     };
 }
-
-export * from './recoveryFacts';

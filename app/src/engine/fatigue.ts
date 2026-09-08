@@ -117,7 +117,11 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
     // Objective strain signals
     const hrvDrop = objective.hrv_delta !== null && objective.hrv_delta < 0 ? Math.min(1, Math.abs(objective.hrv_delta) / 15) : 0;
     const rhrElevated = objective.rhr_delta !== null && objective.rhr_delta > 0 ? Math.min(1, objective.rhr_delta / 10) : 0;
-    const sleepDeficit = objective.sleep_score !== null && objective.sleep_score < 75 ? (75 - objective.sleep_score) / 50 : 0;
+    const sleepScoreDeficit = objective.sleep_score !== null && objective.sleep_score < 75 ? (75 - objective.sleep_score) / 50 : 0;
+    const sleepDurationDeficit = (objective.sleep_duration_min !== null && objective.sleep_duration_min !== undefined && objective.sleep_duration_min < 420)
+        ? Math.min(1, (420 - objective.sleep_duration_min) / 180)
+        : 0;
+    const sleepDeficit = Math.max(sleepScoreDeficit, sleepDurationDeficit);
 
     // Acute ambulatory surge (unlogged high-volume walking/hiking)
     // Evaluates net ambient steps (totalSteps - estimatedActivitySteps) against the 7-day baseline.
@@ -148,6 +152,14 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
     const bbDepletion = objective.body_battery_wake !== null && objective.body_battery_wake < 50
         ? Math.min(1, Math.max(0, (50 - objective.body_battery_wake) / 30))
         : 0;
+
+    // Severe acute recovery debt: critically low body battery (<=25) or severe sleep truncation
+    // (duration <= 330 min / 5.5h with sleep score <= 55). Enforces an acute systemic floor
+    // so that the athlete is not left in 'train' tier with negligible fatigue.
+    const isCriticalBodyBattery = objective.body_battery_wake !== null && objective.body_battery_wake <= 25;
+    const isSevereSleepDeficit = (objective.sleep_score !== null && objective.sleep_score <= 55) &&
+        (objective.sleep_duration_min !== null && objective.sleep_duration_min !== undefined && objective.sleep_duration_min <= 330);
+    const acuteRecoveryDebtFloor = isCriticalBodyBattery ? 0.60 : (isSevereSleepDeficit ? 0.60 : 0);
 
     // Conservative non-diluted product floors. Athlete self-report and longitudinal
     // autonomic signals are useful monitoring inputs, but the exact 8/9/10 cut-points and
@@ -202,7 +214,7 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
         : 0;
 
     const baseSystemic = 0.3 * subFatigue + 0.25 * hrvDrop + 0.25 * sleepDeficit + 0.2 * bbDepletion;
-    const systemic = Math.min(1, Math.max(baseSystemic, acuteSubjectiveFatigueFloor, acuteSubjectiveStressFloor, acuteBiometricFloor, workSystemic));
+    const systemic = Math.min(1, Math.max(baseSystemic, acuteSubjectiveFatigueFloor, acuteSubjectiveStressFloor, acuteBiometricFloor, acuteRecoveryDebtFloor, workSystemic));
 
     const baseCardiovascular = 0.5 * rhrElevated + 0.5 * hrvDrop;
     const cardiovascular = Math.min(1, Math.max(baseCardiovascular, acuteBiometricFloor));

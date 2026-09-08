@@ -28,6 +28,13 @@ import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { resolveInjuryRestrictions } from './injuryPolicy';
 import { evaluateStrengthSpacingStatus, type StrengthExposureLike } from './strengthSpacingPolicy';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
+import {
+    composeCoverageNeedTier,
+    recoveryNeedTierForCandidate,
+    resolveRecoveryPlacementState,
+    type RecoveryPlacementState,
+} from './recoveryPlacement';
+import type { RecoveryHistorySnapshot } from './recoveryFacts';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
@@ -118,6 +125,8 @@ export interface RankedCandidate {
     /** Phase 6.2c / ADR-0016: ordinal weekly-role urgency. Hard gates have already
      * rejected inadmissible candidates before this tier participates in sorting. */
     coverageNeedTier: 0 | 1 | 2 | 3;
+    /** ADR-0038: Recovery placement urgency tier for qualifying recovery candidates. */
+    recoveryPlacementTier?: 1 | 2 | 3;
     /** W3 / macrocycle-v5: deterministic recovery ordering on recover-tier days. */
     recoveryPreferenceTier: 0 | 1;
     /** Issue #458: ordinal benefit-tie-band bucket assigned during ranking (see
@@ -180,6 +189,10 @@ export interface OptimizationOptions {
     authoredPlanBlocks?: readonly AuthoredPlanBlock[];
     /** Resolved safety guardrails, including structured injury-derived guardrails. */
     guardrails?: GuardrailKey[];
+    /** ADR-0038: Resolved recovery placement state for weekly rest/recovery placement. */
+    recoveryPlacementState?: RecoveryPlacementState | null;
+    /** ADR-0038: Optional recovery history snapshot used to resolve recovery placement state. */
+    recoveryHistorySnapshot?: RecoveryHistorySnapshot | null;
 }
 
 export interface OptimizationContext {
@@ -772,6 +785,16 @@ export function buildOptimizationContext(
         coverageHistory,
     );
     const recentPerformedExposures = options.recentPerformedExposures ?? intent.performedTrainingFacts?.exposures;
+    const recoveryPlacementState = options.recoveryPlacementState !== undefined
+        ? options.recoveryPlacementState
+        : (options.recoveryHistorySnapshot
+            ? resolveRecoveryPlacementState({
+                asOfDate: date,
+                coverageState,
+                latestQualifyingRecoveryDate: options.recoveryHistorySnapshot.latestQualifyingRecoveryDate,
+                bootstrapDate: options.recoveryHistorySnapshot.bootstrapDate,
+            })
+            : null);
 
     return {
         unresolvedObjectives: intent.unresolvedObjectives ?? [],
@@ -790,6 +813,8 @@ export function buildOptimizationContext(
             coverageState,
             fatigueTier: options.fatigueTier ?? 'train',
             guardrails,
+            recoveryPlacementState,
+            ...(options.recoveryHistorySnapshot ? { recoveryHistorySnapshot: options.recoveryHistorySnapshot } : {}),
             ...(recentPerformedExposures !== undefined ? { recentPerformedExposures } : {}),
             ...(intent.plannedDose ? { plannedDose: intent.plannedDose } : {}),
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
@@ -860,9 +885,15 @@ export function rankCandidates(
 
         let benefit = calculateStimulusBenefit(template, unresolvedObjectives);
         const fulfilsNominatedAnchor = candidateMatchesAnchorRole(template, options.anchorRole);
-        const coverageNeedTier = coverageState
+        const authoredCoverageNeedTier = coverageState
             ? coverageNeedTierForTemplate(coverageState, template, options.anchorRole ?? null)
             : 3;
+        const recoveryPlacementTier = options.recoveryPlacementState
+            ? recoveryNeedTierForCandidate(template, options.recoveryPlacementState)
+            : undefined;
+        const coverageNeedTier = recoveryPlacementTier !== undefined
+            ? composeCoverageNeedTier(authoredCoverageNeedTier, recoveryPlacementTier)
+            : authoredCoverageNeedTier;
         const recoveryPreferenceTier = recoveryPreferenceTierFor(template);
 
         const satisfiesUnresolvedObjective = unresolvedObjectives.some(obj =>
@@ -921,6 +952,7 @@ export function rankCandidates(
         if (excludedReasons.length > 0) {
             const item: RankedCandidate = {
                 template, benefitScore: benefit, costPenalty, utilityScore: 0, coverageNeedTier, recoveryPreferenceTier,
+                ...(recoveryPlacementTier !== undefined ? { recoveryPlacementTier } : {}),
                 rationale: `Excluded by hard constraint(s): ${excludedReasons.join(', ')}.`, excludedReasons,
             };
             rejected.push(item);
@@ -956,6 +988,17 @@ export function rankCandidates(
         if (usedYesterday) prefMultiplier *= 0.2;
 
         const isStrengthCategory = STRENGTH_CATEGORIES.includes(template.category);
+        if (isStrengthCategory && focusEvent) {
+            const eventCat = (focusEvent.category ?? '').toLowerCase();
+            const isEnduranceEvent = eventCat.includes('cycling') || eventCat.includes('running') || eventCat.includes('triathlon');
+            const hasAutonomicStress = (fatigueState.internalResponseStrain?.cardiovascular ?? 0) >= 0.35 ||
+                (fatigueState.combinedFatigue?.cardiovascular ?? 0) >= 0.40;
+            if (isEnduranceEvent && hasAutonomicStress && !fulfilsNominatedAnchor) {
+                // Autonomic stress calls for easy active recovery in primary modality,
+                // not escalating resistance/strength training before an endurance event.
+                prefMultiplier *= 0.25;
+            }
+        }
         if (isStrengthResolved && isStrengthCategory) {
             if (focusEvent) {
                 prefMultiplier *= 0.20;
@@ -1006,13 +1049,29 @@ export function rankCandidates(
 
         const utility = (benefit / (1 + costPenalty)) * prefMultiplier;
         let rationale = `Coverage tier: ${coverageNeedTier}. Benefit score: ${benefit.toFixed(2)}, Fatigue cost penalty: ${costPenalty.toFixed(2)}.`;
-        if (coverageNeedTier <= 1) rationale += ' (Advances an explicit required weekly programming role.)';
+        if (recoveryPlacementTier === 1) {
+            rationale += ' (Advances mandatory weekly recovery placement.)';
+        } else if (recoveryPlacementTier === 2) {
+            rationale += ' (Eligible for proactive weekly recovery placement.)';
+        } else if (coverageNeedTier <= 1) {
+            rationale += ' (Advances an explicit required weekly programming role.)';
+        }
         if (isDisliked(template)) rationale += ` (Soft penalty applied: modality '${template.modality}' is marked as avoided/disliked).`;
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate, summary)) {
             rationale += ` (Event-modality coverage: ${template.modality} has no exposure in the rolling 6-day history.)`;
         }
 
-        const item: RankedCandidate = { template, benefitScore: benefit, costPenalty, utilityScore: utility, coverageNeedTier, recoveryPreferenceTier, rationale, excludedReasons: [] };
+        const item: RankedCandidate = {
+            template,
+            benefitScore: benefit,
+            costPenalty,
+            utilityScore: utility,
+            coverageNeedTier,
+            ...(recoveryPlacementTier !== undefined ? { recoveryPlacementTier } : {}),
+            recoveryPreferenceTier,
+            rationale,
+            excludedReasons: [],
+        };
         accepted.push(item);
         all.push(item);
     });
