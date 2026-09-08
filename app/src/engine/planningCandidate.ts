@@ -9,7 +9,6 @@ import type {
 } from './models';
 import { WORKOUTS } from '../workouts/catalog';
 import { ENRICHED_TEMPLATES_BY_ID } from './templates';
-import { ANCHOR_HISTORY_CATEGORIES } from './optimizer';
 
 /**
  * Phase 5.2: moves the planner/workout-library boundary.
@@ -54,6 +53,18 @@ const ZERO_COST: WorkoutCostProfile = {
     systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0,
 };
 
+/**
+ * Static anchor categories used while the planning-candidate index is built at module load.
+ * Keep this module independent of optimizer.ts: optimizer now depends on recovery-placement
+ * code which reaches the workout catalog through prescription.ts. Importing optimizer back
+ * from here therefore creates an ESM initialization cycle and can observe its exported
+ * constants before initialization. The optimizer owns dynamic/date-aware anchor policy;
+ * this local set is only the static catalog-role classification used by this index.
+ */
+const STATIC_ANCHOR_HISTORY_CATEGORIES: readonly SessionTemplate['category'][] = [
+    'Hard Endurance', 'Race-Specific Endurance', 'Full-body Strength',
+];
+
 /** `WorkoutEnvironment` (catalog-level: trainer/field/closed_road/low_traffic_road) is
  *  finer-grained than the engine's own `TrainingEnvironment` (indoor/outdoor/either) --
  *  this is the one, explicit mapping between the two vocabularies. */
@@ -61,14 +72,12 @@ function toTrainingEnvironment(environment: WorkoutEnvironment): TrainingEnviron
     return environment === 'trainer' ? 'indoor' : 'outdoor';
 }
 
-/** Static, date-independent role classification -- reuses optimizer.ts's own
- *  `ANCHOR_HISTORY_CATEGORIES` rather than inventing a second anchor definition.
- *  `realizedSessionRole` (planner.ts) is the date/anchor-aware sibling of this; that one
- *  answers "what did this pick become on this specific day", this one answers "what kind
- *  of session is this, independent of any day". */
+/** Static, date-independent role classification. `realizedSessionRole` (planner.ts) is the
+ *  date/anchor-aware sibling of this; that one answers "what did this pick become on this
+ *  specific day", this one answers "what kind of session is this, independent of any day". */
 function staticSessionRole(category: SessionTemplate['category']): SessionRole {
     if (category === 'Rest' || category === 'Mobility/Recovery') return 'recovery';
-    return ANCHOR_HISTORY_CATEGORIES.includes(category) ? 'anchor' : 'supporting';
+    return STATIC_ANCHOR_HISTORY_CATEGORIES.includes(category) ? 'anchor' : 'supporting';
 }
 
 /**
