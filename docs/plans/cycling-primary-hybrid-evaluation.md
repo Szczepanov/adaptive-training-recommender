@@ -7,14 +7,14 @@ wiring, D-REASSESS's `intradayReassessment.ts` (#442) and D-AUDIT's `intradayDec
 decision store (#443)) and issue #434's execution-binding pipeline delivered through PR 3
 Phase 3 (#440, #445, #448, #450, #451, #454) and Phase 4 (#465) -- so a non-primary bundle
 member is now adjudicated, reserved, surfaced as an `additionalSessions` binding, and
-launchable when its verdict has a valid binding. Phase 5 and the H4-specific Phase 6 policy
-work remain: post-AM `SessionResponse` capture, completion evidence fields, confirmation
-revision wiring, and the H4 policy-version transition. Dependent members remain `pending`
-until the Phase 5 evidence exists. The broader ledger-based ranking/admission unification
+launchable when its verdict has a valid binding. Phase 5 now captures and persists the
+post-AM `SessionResponse` evidence, completion facts, and linked tissue feedback. Only the
+H4-specific Phase 6 policy work remains; dependent members still require the response and
+separation checks before they become launchable. The broader ledger-based ranking/admission unification
 and persistence of a bundle's resolved placement for display also remain; H5 design is
 accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted).
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
-confirmation; H4's live release is gated on PR 3 Phases 5-6, tracked in
+confirmation; H4's live release is gated on PR 3 Phase 6, tracked in
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's remaining non-gating
 work also needs its own decision-affecting PR(s): unifying `planner.ts`'s three ad hoc dedup
 mechanisms onto the ledger's remainder/admission semantics as a real ranking input, and
@@ -35,7 +35,7 @@ This document remains the status and evidence record.
 pipeline and is retained for its H2/H2b/H3/H3-rest record and its still-accurate inventory of
 the un-unified dedup mechanisms. For current H4 implementation work, read
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) instead -- it is the
-authoritative spec for the remaining Phases 5-6.
+authoritative spec for the remaining Phase 6 policy transition.
 
 Reuse the existing `cycling_primary_hybrid_advanced` persona. Add scenarios that exercise
 distinct decisions and group them into focused judge families. Retain the existing seven
@@ -280,8 +280,8 @@ execution-binding pipeline has since given them a live caller, through PR 3 Phas
 
 Still unstarted: the `dailyLedger.ts` refactor into `resolveAvailability`'s existing
 deductions and `planner.ts`'s three ad hoc dedup mechanisms, recommendation-audit
-persistence of a bundle's resolved placement for display, and PR 3 Phases 5-6 -- the last
-of which is what actually gates a live H4 release. Placement persistence was previously
+persistence of a bundle's resolved placement for display, and the H4-specific Phase 6 policy
+transition -- the last of which is what actually gates a live H4 release. Placement persistence was previously
 blocked by the recommendation-audit rules-expression ceiling; #468 closed #435 by reducing
 that evaluation cost, so it is now unblocked but not implemented.
 **Dependencies:** ADR-0035 rest support (delivered). The `external-plan@4`/`dailyLedger.ts`
@@ -537,17 +537,16 @@ against the day's ledger aggregate, is emitted as an `additionalSessions` bindin
 launch path atomically validates the persisted decision and ledger state, claims the
 occurrence, and rolls both claims back if execution start fails.
 
-**What it does not yet activate:** completing the AM session still does not write the
-`immediate` `SessionResponse` that a dependent PM member's reassessment reads, so dependent
-members remain `pending`. The H4-specific Phase 6 policy transition is also still open;
+**What it does not yet activate:** the H4-specific Phase 6 policy transition is still open;
 the current global policy version has since advanced for ADR-0038/recovery-calibration work,
 but that does not constitute the H4 launch-policy bump.
 
-**What remains:** PR 3 Phases 5-6 --
+**What remains:** PR 3 Phase 6 --
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) is the authoritative spec.
-Phase 4 is delivered in #465. Phase 5 records the post-AM `immediate` `SessionResponse`,
-extends the completion sheet with `completedFraction`/`unexpectedFatigue`, and populates
-`postPredecessorConfirmationRevision`; Phase 6 bumps `POLICY_VERSION` from the then-current
+Phase 4 is delivered in #465 and Phase 5 in #470. Phase 5 records the post-AM
+`immediate` `SessionResponse`, extends the completion sheet with
+`completedFraction`/`unexpectedFatigue`, and preserves the confirmation evidence linkage;
+Phase 6 bumps `POLICY_VERSION` from the then-current
 global value and archives that value. This is the gate on a live H4 release.
 
 ## H5 — Explicit develop/maintain intent and progression

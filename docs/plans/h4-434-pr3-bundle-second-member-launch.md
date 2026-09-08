@@ -1,10 +1,10 @@
 # H4 / issue #434 PR 3 — Intraday bundle second-member launch & athlete confirmation capture
 
-**Status:** In progress — **Phases 1-4 delivered and merged** (#448, #450, #451, #454,
-#465); **Phases 5-6 remain** and are the gate on a live dependent-member H4 release.
+**Status:** In progress — **Phases 1-5 delivered** (#448, #450, #451, #454, #465, #470);
+**Phase 6 remains** and is the final gate on a live dependent-member H4 release.
 **Tracks:** [GitHub issue #434](https://github.com/Szczepanov/adaptive-training-recommender/issues/434)
 (historical issue, now closed), PR 3.
-**Blocked by:** nothing. Phase 5 can start from current `main`.
+**Blocked by:** nothing. Phase 6 can start from current `main`.
 **Unlocks:** dependent non-primary bundle members that can move from `pending` to a fresh
 launchable verdict after real post-predecessor evidence, followed by the cumulative H4
 policy transition.
@@ -16,13 +16,13 @@ D-WINDOW / D-LEDGER / D-REASSESS / D-PLACEMENT.
 
 > This is a mutable implementation plan. Delivered phases are summarized as outcomes rather
 > than left as a live work list; the merged PRs remain the detailed historical implementation
-> record. The executable work in this document is Phase 5 and Phase 6.
+> record. The executable work in this document is Phase 6.
 
 ---
 
 ## Current verified state
 
-Re-verified against `main` at `78a2e11` (PR #468), after #465/#466/#467 and the rules-budget
+Re-verified against `main` at `43c7ce74` (PR #469), after #465/#466/#467 and the rules-budget
 follow-up #468.
 
 A v4 intraday bundle's non-primary member is now:
@@ -37,10 +37,10 @@ A v4 intraday bundle's non-primary member is now:
 8. atomically claimed against the occurrence/ledger state before execution starts, with
    rollback if definition resolution or runner start fails.
 
-The remaining release gap is narrower: **`useSessionRunner.completeSession` does not write an
-`immediate` `SessionResponse`.** It persists completion and tissue feedback, but no response
-record exists for D-REASSESS's post-predecessor confirmation gate. A dependent PM member
-therefore stays `pending` even after a successful AM completion.
+The remaining release gap is narrower: **the H4-specific Phase 6 policy transition is not yet
+applied.** Phase 5 now persists an `immediate` `SessionResponse` after completion, alongside
+completion facts and tissue feedback, so a dependent PM member has the evidence needed for a
+fresh reassessment rather than remaining pending solely because the response record is absent.
 
 ### Current authoritative implementation map
 
@@ -58,8 +58,8 @@ therefore stays `pending` even after a successful AM completion.
 | Non-primary member adjudication | `services/intradayBundleMemberAdjudication.ts` + `Home.tsx` | Delivered (#454) |
 | Additional-session launch UI | `components/session/AdditionalSessionsCard.tsx` | Delivered (#465) |
 | Atomic launch claim + rollback | `services/intradayLaunchClaim.ts`, `sessionOccurrenceService.releaseOccurrenceClaim`, `Home.tsx` | Delivered (#465) |
-| Post-AM immediate response | `services/sessionResponseService.ts` is reusable, but completion has no caller | **Open — Phase 5** |
-| Confirmation revision from submitted evidence | `postPredecessorConfirmationRevision` exists in the revision contract | **Open — Phase 5** |
+| Post-AM immediate response | `useSessionRunner.completeSession` records/revises the deterministic response after commit | **Delivered — Phase 5** |
+| Confirmation revision from submitted evidence | Existing reassessment revision consumes response/tissue evidence | **Delivered — Phase 5** |
 | Cumulative H4 policy transition | `engine/policy.ts` | **Open — Phase 6** |
 
 ### Phase-4 implementation decisions that supersede older plan text
@@ -155,17 +155,18 @@ question and must not be re-versioned just to solve a problem already closed in 
 
 ## Remaining release gap
 
-D-REASSESS invariant 3 needs an **actually submitted post-predecessor confirmation**. The
-current completion path has the raw ingredients but stops short of creating that record:
+D-REASSESS invariant 3 needs an **actually submitted post-predecessor confirmation**. Phase 5
+closed the completion-path gap:
 
-- `SessionCompletionSheet` submits `sessionRpe`, optional notes and at most one selected tissue
-  region through a `tissueFeedback[]` payload;
+- `SessionCompletionSheet` submits `sessionRpe`, optional notes and selected tissue regions
+  through a `tissueFeedback[]` payload;
 - `useSessionRunner.completeSession` writes tissue feedback into the canonical daily check-in,
   commits the execution as `completed`, then best-effort transitions the linked occurrence;
 - `sessionResponseService` already supports deterministic `(sourceSession, window)` ids,
   `recordResponse`, `getResponseForWindow`, `updateResponseFacts`, and the fields
   `sessionRpe`, `completedFraction`, `unexpectedFatigue`, `note`;
-- no production completion caller currently records `window: 'immediate'`.
+- `useSessionRunner.completeSession` now records or updates `window: 'immediate'` after the
+  execution commit, while response-write failures remain fail-closed and non-blocking.
 
 Per ADR-0023 D-MRESP, **missing must stay distinct from answered-normal**. Do not fabricate an
 immediate response on abandon, restore, provider sync, or a completion path that did not
@@ -173,7 +174,14 @@ actually submit the completion sheet.
 
 ---
 
-## Phase 5 — post-AM confirmation capture
+## Phase 5 — post-AM confirmation capture — delivered in #470
+
+The completion sheet now captures bounded completion fraction, unexpected fatigue, notes, and
+multiple tissue regions. After the execution completion batch commits, the runner records or
+revises the deterministic immediate response. Focused completion and response-service tests
+cover the mapping and idempotent update behavior.
+
+### Historical implementation contract
 
 ### 13. Capture the immediate response from a submitted completion
 
@@ -227,11 +235,8 @@ Do not infer either silently from set count or elapsed time. The completion shee
 that required steps may be incomplete, but that is not the same evidence as the athlete's
 whole-session completion fraction, and `unexpectedFatigue` is explicitly subjective.
 
-The payload type already permits an array of tissue responses, while the current UI emits at
-most one selected region. **Phase 5 does not need a multi-region UI redesign to satisfy the
-H4 release contract.** Keep the current single-region control unless that UX change is taken as
-a separate explicit scope item; D-REASSESS must still fingerprint every canonical tissue
-response linked to the predecessor that actually exists.
+The payload type and current UI both support multiple selected regions. D-REASSESS must still
+fingerprint every canonical tissue response linked to the predecessor that actually exists.
 
 ### 15. Populate `postPredecessorConfirmationRevision`
 
@@ -309,14 +314,14 @@ This PR (#469) already reconciles the plan index, evaluation, implementation han
 3 plan, and the older execution-binding roadmap. There is **no separate outstanding task** to
 reconcile that roadmap's historical PR-3 wording after #469.
 
-When Phase 5/6 lands, update these documents again from the implementation that actually
+When Phase 6 lands, update these documents again from the implementation that actually
 merged rather than pre-declaring the final status.
 
 ---
 
 ## Non-gating H4 follow-ups outside PR 3
 
-These are real H4 work, but they are **not** blockers for Phase 5/6 and should not be folded
+These are real H4 work, but they are **not** blockers for Phase 6 and should not be folded
 into the completion-response PR merely because they are nearby.
 
 ### Ledger remainder/admission in the broader planner
@@ -351,7 +356,7 @@ Do not describe this work as “blocked on the Firestore ceiling” after #468, 
 For this docs reconciliation PR, use the latest PR-head CI run as the authoritative result.
 It is docs-only and should not change simulations or policy.
 
-For Phase 5/6 implementation, the required validation set is:
+For the remaining Phase 6 implementation, the required validation set is:
 
 ```bash
 cd app && npm run check
@@ -396,10 +401,8 @@ Do not regenerate a committed scenario baseline to hide an unexplained decision 
 ## Open question that genuinely remains
 
 1. **Completion-sheet multi-region tissue UX.** The data contract already supports multiple
-   `tissueFeedback` entries, but the current UI emits one selected region. H4 can ship Phase 5
-   with that existing limitation because tissue truth remains canonical and fail-closed; a
-   multi-region UI is a separate UX/product decision unless there is an explicit requirement
-   to expand it now.
+   `tissueFeedback` entries, and the Phase 5 UI now supports adding/removing multiple regions.
+   Tissue truth remains canonical and fail-closed.
 
 The previous questions about the date-level lock document, `ReassessmentInputRevision`
 unification, window-identity mechanism, provisional D-AUDIT persistence, and re-import
@@ -421,13 +424,13 @@ semantics are all settled by merged Phases 1-3 and must not be presented as open
       and failed execution start rolls the claim back when safe.
 - [x] The shared intraday ledger reflects reserved/in-progress/completed/unresolved work and
       serializes hard launch claims through `daily_ledgers/{date}`.
-- [ ] Completing the predecessor from a submitted completion sheet records one `immediate`
+- [x] Completing the predecessor from a submitted completion sheet records one `immediate`
       `SessionResponse` with the missing completion facts and correct provenance.
-- [ ] Post-predecessor response/tissue edits change the confirmation revision and invalidate a
+- [x] Post-predecessor response/tissue edits change the confirmation revision and invalidate a
       stale approval.
 - [ ] A dependent member can leave `pending` after valid evidence and required separation,
       while adverse/missing evidence remains fail-closed.
 - [ ] The cumulative H4 policy version is bumped from the **then-current** global policy and
       that prior value is archived exactly once.
-- [ ] Full checks/rules/simulations/policy-drift verification pass on the Phase 5/6
+- [ ] Full checks/rules/simulations/policy-drift verification pass on the Phase 6
       implementation head.
