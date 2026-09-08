@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultTrainingSettings, migrateLegacyConstraints, parseTrainingSettings } from './trainingSettingsService';
+import { createDefaultTrainingSettings, mergeSettings, migrateLegacyConstraints, parseTrainingSettings } from './trainingSettingsService';
 import type { UserConstraint } from '../engine/models';
 
 function legacy(key: string, value: UserConstraint['value'], isActive = true): UserConstraint {
@@ -67,5 +67,18 @@ describe('training settings storage parsing', () => {
         const base = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
         expect(parseTrainingSettings({ ...base, recoveryBootstrapDate: 'invalid-date' }, 'athlete')).toBeNull();
         expect(parseTrainingSettings({ ...base, recoveryBootstrapDate: 12345 }, 'athlete')).toBeNull();
+    });
+
+    it('ensures recoveryBootstrapDate is preserved and cannot be cleared by ordinary settings update', () => {
+        const base = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const withBootstrap = { ...base, recoveryBootstrapDate: '2026-09-01' };
+        // Even if an update object attempts to inject recoveryBootstrapDate (e.g. from untyped caller)
+        const untypedUpdate = { defaults: { weekdayMaxMinutes: 45 }, recoveryBootstrapDate: '2026-09-05' } as unknown as Parameters<typeof mergeSettings>[1];
+        const updated = mergeSettings(withBootstrap, untypedUpdate);
+        expect(updated.recoveryBootstrapDate).toBe('2026-09-01');
+
+        const clearingUpdate = { defaults: { weekdayMaxMinutes: 30 }, recoveryBootstrapDate: null } as unknown as Parameters<typeof mergeSettings>[1];
+        const clearedAttempt = mergeSettings(withBootstrap, clearingUpdate);
+        expect(clearedAttempt.recoveryBootstrapDate).toBe('2026-09-01');
     });
 });

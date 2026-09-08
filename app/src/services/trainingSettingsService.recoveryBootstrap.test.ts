@@ -68,4 +68,37 @@ describe('ADR-0038 recovery bootstrap persistence', () => {
         expect(firestore.getDoc).not.toHaveBeenCalled();
         expect(firestore.runTransaction).not.toHaveBeenCalled();
     });
+
+    it('initializes missing profile and bootstrap date atomically within the transaction', async () => {
+        firestore.transactionGet.mockResolvedValue({ exists: () => false, data: () => null });
+
+        const result = await new TrainingSettingsService().ensureRecoveryBootstrapDate('athlete', '2026-09-03');
+
+        expect(result).toBe('2026-09-03');
+        expect(firestore.transactionSet).toHaveBeenCalledTimes(1);
+        expect(firestore.transactionSet.mock.calls[0]?.[1]).toMatchObject({
+            userId: 'athlete',
+            recoveryBootstrapDate: '2026-09-03',
+        });
+    });
+
+    it('preserves recoveryBootstrapDate in updateTrainingSettings even when settings update starts before bootstrap commits', async () => {
+        const initial = createDefaultTrainingSettings('athlete', '2026-09-01T00:00:00.000Z');
+        const concurrentlyBootstrapped = { ...initial, recoveryBootstrapDate: '2026-09-02' };
+        // Transaction reads the latest committed state which includes recoveryBootstrapDate
+        firestore.transactionGet.mockResolvedValue(snapshot(concurrentlyBootstrapped));
+
+        const updated = await new TrainingSettingsService().updateTrainingSettings('athlete', {
+            defaults: { weekdayMaxMinutes: 45 },
+        });
+
+        expect(updated.recoveryBootstrapDate).toBe('2026-09-02');
+        expect(updated.defaults.weekdayMaxMinutes).toBe(45);
+        expect(firestore.transactionSet).toHaveBeenCalledTimes(1);
+        expect(firestore.transactionSet.mock.calls[0]?.[1]).toMatchObject({
+            userId: 'athlete',
+            recoveryBootstrapDate: '2026-09-02',
+            defaults: expect.objectContaining({ weekdayMaxMinutes: 45 }),
+        });
+    });
 });

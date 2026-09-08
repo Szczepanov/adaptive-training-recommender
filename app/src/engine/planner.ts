@@ -74,11 +74,6 @@ import { resolveEvergreenPlan } from './evergreenPlanning';
 import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { applyPlanningOverlays } from './planningOverlays';
 import {
-    isQualifyingRecoveryIdentity,
-    resolveRecoveryPlacementState,
-} from './recoveryPlacement';
-import type { RecoveryHistorySnapshot } from './recoveryFacts';
-import {
     allocationSurvives,
     attachExactEligibleIdentities,
     deriveRequiredRoleOccurrences,
@@ -162,8 +157,6 @@ export interface WeekAheadPlanSeed {
      * future recommendations never reclassify completed occurrences through legacy lookup. */
     completedCoverageHistory?: CoverageHistoryEntry[];
     droppedContributorObjectives?: DroppedContributorObjective[];
-    /** ADR-0038: Authoritative historical recovery facts snapshot. */
-    recoveryHistorySnapshot?: RecoveryHistorySnapshot | null;
 }
 
 export interface WeekAheadOptions {
@@ -505,8 +498,6 @@ export interface ProjectedDatePlanningContext {
     fatigueFusionPolicy?: FatigueFusionPolicy;
     planDefinition?: PlanDefinition | null;
     todayDate?: string;
-    /** ADR-0038: Authoritative historical recovery facts snapshot. */
-    recoveryHistorySnapshot?: RecoveryHistorySnapshot | null;
 }
 
 export interface ProjectedDateState {
@@ -572,35 +563,6 @@ export function evaluateProjectedDate(
 
     const unresolved = getUnresolvedObjectives(state.microcycle, true);
     const planDefinition = shared.planDefinition ?? resolvePlanDefinitionForEvent(periodization.focusEvent, shared.authoredPlanBlocks);
-    const coverageState = planDefinition ? buildCoverageState(
-        planDefinition,
-        date,
-        state.coverageHistory ?? resolveCoverageHistory(undefined, state.projectedHistory),
-    ) : undefined;
-
-    const findLatestRecoveryDate = (): string | null => {
-        for (let i = state.projectedHistory.length - 1; i >= 0; i--) {
-            const entry = state.projectedHistory[i];
-            const identity = 'templateId' in entry && entry.templateId
-                ? entry.templateId
-                : ('type' in entry && typeof (entry as { type?: unknown }).type === 'string' ? (entry as { type?: string }).type : '');
-            if (entry.date && identity && isQualifyingRecoveryIdentity(identity)) {
-                return entry.date;
-            }
-        }
-        return shared.recoveryHistorySnapshot?.latestQualifyingRecoveryDate ?? null;
-    };
-
-    const latestRecoveryDate = findLatestRecoveryDate();
-    const recoveryPlacementState = shared.recoveryHistorySnapshot
-        ? resolveRecoveryPlacementState({
-            asOfDate: date,
-            coverageState,
-            latestQualifyingRecoveryDate: latestRecoveryDate,
-            bootstrapDate: shared.recoveryHistorySnapshot.bootstrapDate ?? null,
-        })
-        : null;
-
     const optimizationContext = buildOptimizationContext(
         {
             unresolvedObjectives: unresolved,
@@ -621,8 +583,13 @@ export function evaluateProjectedDate(
         {
             anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier,
             authoredPlanBlocks: shared.authoredPlanBlocks,
-            ...(coverageState ? { coverageState } : {}),
-            ...(recoveryPlacementState ? { recoveryPlacementState } : {}),
+            ...(planDefinition ? {
+                coverageState: buildCoverageState(
+                    planDefinition,
+                    date,
+                    state.coverageHistory ?? resolveCoverageHistory(undefined, state.projectedHistory),
+                ),
+            } : {}),
         },
         shared.fixedActivities,
     );
@@ -1226,7 +1193,6 @@ export function generateWeekAheadPlan(
         fatigueFusionPolicy,
         planDefinition: suppliedPlanDefinition,
         todayDate,
-        recoveryHistorySnapshot: seed.recoveryHistorySnapshot ?? null,
     };
 
     type ProjectedHistoryEntry = RecentHistoryEntry & { source: 'projected' };
@@ -1446,7 +1412,7 @@ export function generateWeekAheadPlan(
             );
             return !after.budgetExhausted && after.fulfilledCount + selfFulfils >= allocation.fulfilledCount;
         };
-        const viabilityApplies = fatigueTier !== 'recover' && allocation.fulfilledCount > 0 && ranked.length > 0;
+        const viabilityApplies = fatigueTier !== 'recover' && allocation.fulfilledCount > 0 && ranked.length > 1;
         const pick = (viabilityApplies
             ? ranked.slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence)
                 .find(candidate => preservesAllocation(candidate.template))

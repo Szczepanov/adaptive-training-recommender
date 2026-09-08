@@ -235,8 +235,6 @@ export interface UserContext {
     /** Runtime-only facts explaining which injury/symptom policy families were evaluated.
      * The trace is translated into versioned claim references and is never persisted itself. */
     injuryPolicyTrace?: InjuryPolicyTrace;
-    /** Optional focus event informing modality preservation during autonomic stress */
-    focusEvent?: UserEvent | null;
     /** Optional only for legacy engine callers; composed recommendations always provide it. */
     trainingSettings?: TrainingSettings;
 }

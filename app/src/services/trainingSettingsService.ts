@@ -14,7 +14,6 @@ export type TrainingSettingsUpdate = {
     defaults?: Partial<TrainingSettings['defaults']>;
     preferences?: Partial<TrainingSettings['preferences']>;
     migration?: Partial<TrainingSettings['migration']>;
-    recoveryBootstrapDate?: string | null;
 };
 
 const COLLECTION = 'trainingSettings';
@@ -125,7 +124,7 @@ export function migrateLegacyConstraints(userId: string, constraints: UserConstr
     return result;
 }
 
-function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate): TrainingSettings {
+export function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate): TrainingSettings {
     const next: TrainingSettings = {
         ...current,
         schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
@@ -135,11 +134,7 @@ function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate
         defaults: { ...current.defaults, ...update.defaults },
         preferences: { ...current.preferences, ...update.preferences },
         migration: { ...current.migration, ...update.migration },
-        ...(update.recoveryBootstrapDate !== undefined
-            ? { recoveryBootstrapDate: update.recoveryBootstrapDate }
-            : current.recoveryBootstrapDate !== undefined
-                ? { recoveryBootstrapDate: current.recoveryBootstrapDate }
-                : {}),
+        ...(current.recoveryBootstrapDate !== undefined ? { recoveryBootstrapDate: current.recoveryBootstrapDate } : {}),
         updatedAt: timestamp(),
     };
     if (!parseTrainingSettings(next, current.userId)) throw new Error('Invalid training settings update');
@@ -201,41 +196,67 @@ export class TrainingSettingsService {
     }
 
     async updateTrainingSettings(userId: string, update: TrainingSettingsUpdate): Promise<TrainingSettings> {
-        const updated = mergeSettings(await this.getTrainingSettings(userId), update);
-        await setDoc(this.ref(userId), updated);
-        return updated;
+        const ref = this.ref(userId);
+        return runTransaction(getDb(), async transaction => {
+            const snapshot = await transaction.get(ref);
+            let current: TrainingSettings;
+            if (!snapshot.exists()) {
+                const legacy = await constraintService.listConstraints(userId);
+                current = migrateLegacyConstraints(userId, legacy);
+            } else {
+                const parsed = parseTrainingSettings(snapshot.data(), userId);
+                if (!parsed) {
+                    throw new Error('Training settings are invalid. Please review and save them again.');
+                }
+                current = parsed;
+            }
+
+            const updated = mergeSettings(current, update);
+            transaction.set(ref, updated);
+            return updated;
+        });
     }
 
     /**
      * Reads existing recovery-policy bootstrap date B or initializes it once to `asOfDate`.
      * The transaction re-reads the latest profile and makes initialization first-writer-wins,
      * so two devices/sessions cannot race and slide the durable epoch (ADR-0038 Work D).
+     * Missing profile migration/creation is also handled within the transaction so a delayed
+     * initial migration write cannot clobber a committed bootstrap epoch.
      */
     async ensureRecoveryBootstrapDate(userId: string, asOfDate: string): Promise<string> {
         if (!isValidDate(asOfDate)) {
             throw new Error('Cannot initialize recovery bootstrap date: asOfDate is invalid.');
         }
 
-        // Preserve the documented first-run settings migration before entering the transaction.
-        await this.getTrainingSettings(userId);
         const ref = this.ref(userId);
 
         return runTransaction(getDb(), async transaction => {
             const snapshot = await transaction.get(ref);
+            let current: TrainingSettings;
+
             if (!snapshot.exists()) {
-                throw new Error('Training settings disappeared while initializing recovery bootstrap date.');
+                const legacy = await constraintService.listConstraints(userId);
+                current = migrateLegacyConstraints(userId, legacy);
+            } else {
+                const parsed = parseTrainingSettings(snapshot.data(), userId);
+                if (!parsed) {
+                    throw new Error('Training settings are invalid. Please review and save them again.');
+                }
+                current = parsed;
             }
-            const current = parseTrainingSettings(snapshot.data(), userId);
-            if (!current) {
-                throw new Error('Training settings are invalid. Please review and save them again.');
-            }
+
             if (current.recoveryBootstrapDate) {
                 return current.recoveryBootstrapDate;
             }
 
-            const updated = mergeSettings(current, { recoveryBootstrapDate: asOfDate });
+            const updated: TrainingSettings = {
+                ...current,
+                recoveryBootstrapDate: asOfDate,
+                updatedAt: timestamp(),
+            };
             transaction.set(ref, updated);
-            return updated.recoveryBootstrapDate ?? asOfDate;
+            return asOfDate;
         });
     }
 }

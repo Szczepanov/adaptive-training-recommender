@@ -302,8 +302,6 @@ export function evaluateReadinessAndSafetyEnvelope(
     multiDayDriftIsDecisionRelevant: boolean;
     subjectiveDriftIsDecisionRelevant: boolean;
     postRecoverBufferApplied: boolean;
-    acuteBiometricStrainFloor: boolean;
-    acuteRecoveryDebtModify: boolean;
     knowledgeRefs: string[];
 } {
     const { subjective, objective } = readiness;
@@ -341,9 +339,6 @@ export function evaluateReadinessAndSafetyEnvelope(
 
     const sleepFloorPenalty = objective.sleep_score !== null && objective.sleep_score < SLEEP_SCORE_ABSOLUTE_FLOOR
         ? SLEEP_SCORE_ABSOLUTE_FLOOR_STRAIN : 0;
-    const sleepDurationPenalty = objective.sleep_duration_min !== null && objective.sleep_duration_min < 360
-        ? Math.min(1, (360 - objective.sleep_duration_min) / 120) * 0.5
-        : 0;
     let bodyBatteryDeficit = 0;
     if (objective.body_battery_wake !== null) {
         const deficit = BODY_BATTERY_LOW_ANCHOR - objective.body_battery_wake;
@@ -363,13 +358,6 @@ export function evaluateReadinessAndSafetyEnvelope(
     const acuteBiometricStrainFloor = (rhrStrain.acuteDeviation >= 0.6 && objective.rhr_delta !== null && objective.rhr_delta >= 6) ||
         (hrvStrain.acuteDeviation >= 1.0 && objective.hrv_delta !== null && objective.hrv_delta <= -15);
     const acuteSubjectiveModify = subjective.fatigue >= 8 || subjective.readiness <= 3 || subjective.stress >= 9 || (subjective.readiness <= 4 && subjective.fatigue >= 6);
-    const acuteRecoveryDebtModify =
-        (objective.body_battery_wake !== null && objective.body_battery_wake <= 25 && (
-            (objective.sleep_duration_min !== null && objective.sleep_duration_min <= 360) ||
-            (objective.sleep_score !== null && objective.sleep_score <= 60) ||
-            subjective.fatigue >= 5
-        )) ||
-        (objective.sleep_score !== null && objective.sleep_score <= 55 && objective.sleep_duration_min !== null && objective.sleep_duration_min <= 360);
 
     const pw = subjective.physicalWork;
     let physicalWorkModify = false;
@@ -384,7 +372,7 @@ export function evaluateReadinessAndSafetyEnvelope(
 
     const recentHardSessionsCount = objective.last_3_days_hard_sessions_count || 0;
     const recentHardSessionsPenalty = recentHardSessionsCount >= 2 ? RECENT_HARD_SESSIONS_STRAIN : 0;
-    const objectiveStrain = totalMetricStrain + sleepFloorPenalty + sleepDurationPenalty + bodyBatteryDeficit + conservativeBias + recentHardSessionsPenalty;
+    const objectiveStrain = totalMetricStrain + sleepFloorPenalty + bodyBatteryDeficit + conservativeBias + recentHardSessionsPenalty;
 
     // Phase 9.3 (D-SUBJADD): a separate, structurally non-negative contribution -- see
     // subjectiveDriftStrain's own doc comment for why no baseline/weight can subtract from
@@ -403,11 +391,11 @@ export function evaluateReadinessAndSafetyEnvelope(
     const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || physicalWorkRecover || strainForThresholds >= STRAIN_RECOVER_THRESHOLD;
     let mode: 'train' | 'modify' | 'recover' = fatigueTriggeredRecover
         ? 'recover'
-        : (overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || physicalWorkModify || acuteBiometricStrainFloor || acuteRecoveryDebtModify || strainForThresholds >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
+        : (overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || physicalWorkModify || acuteBiometricStrainFloor || strainForThresholds >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
 
     const strainWithoutDrift = objectiveStrain - totalMultiDayDrift;
     const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || physicalWorkRecover || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
-    const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || physicalWorkModify || acuteBiometricStrainFloor || acuteRecoveryDebtModify || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
+    const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || physicalWorkModify || acuteBiometricStrainFloor || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
     const counterfactualModeWithoutDrift = counterfactualRecover ? 'recover' : (counterfactualModify ? 'modify' : 'train');
     const multiDayDriftIsDecisionRelevant = (mode !== 'train') && (mode !== counterfactualModeWithoutDrift);
 
@@ -417,7 +405,7 @@ export function evaluateReadinessAndSafetyEnvelope(
     // whether subjective drift specifically changed the mode. Inert under 'off' (subjectiveDrift
     // is always 0 there, so modeWithoutSubjectiveDrift always equals mode).
     const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || physicalWorkRecover || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
-    const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || physicalWorkModify || acuteBiometricStrainFloor || acuteRecoveryDebtModify || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
+    const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || physicalWorkModify || acuteBiometricStrainFloor || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
     const modeWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift ? 'recover' : (modifyWithoutSubjectiveDrift ? 'modify' : 'train');
     const subjectiveDriftIsDecisionRelevant = (mode !== 'train') && (mode !== modeWithoutSubjectiveDrift);
 
@@ -463,8 +451,6 @@ export function evaluateReadinessAndSafetyEnvelope(
         multiDayDriftIsDecisionRelevant,
         subjectiveDriftIsDecisionRelevant,
         postRecoverBufferApplied,
-        acuteBiometricStrainFloor,
-        acuteRecoveryDebtModify,
         knowledgeRefs,
     };
 }
@@ -502,7 +488,7 @@ export function evaluateTraining(
 ): Recommendation {
     const { subjective, objective } = readiness;
     const state = precomputedEnvelopeState ?? evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode);
-    const { mode, envelopes, telemetry, alreadyTrainedOverride, fatigueTriggeredRecover, multiDayDriftIsDecisionRelevant, subjectiveDriftIsDecisionRelevant, postRecoverBufferApplied, acuteBiometricStrainFloor, acuteRecoveryDebtModify } = state;
+    const { mode, envelopes, telemetry, alreadyTrainedOverride, fatigueTriggeredRecover, multiDayDriftIsDecisionRelevant, subjectiveDriftIsDecisionRelevant, postRecoverBufferApplied } = state;
 
     const availableTemplates = eligibleTemplates(TEMPLATES, context, subjective.timeAvailable, date).filter(t => {
         if (context.preferences.avoidedModalities.some(m => modalityMatches(t.modality, m))) return false;
@@ -550,34 +536,11 @@ export function evaluateTraining(
         const modifyOptions = availableTemplates.filter(t => t.category !== 'Rest' && t.systemicCost <= MODIFY_MAX_SYSTEMIC_COST);
         const preferenceResult = applyModalityPreference(modifyOptions, modifyOptions, subjective.preferredModalityToday);
         modalityNote = preferenceResult.note;
-        let rankedModifyOptions = rankByModalityPreference(preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities);
-
-        // Modality preservation: If athlete is preparing for an endurance event (cycling/running/triathlon),
-        // and modify is driven by autonomic/systemic stress or recovery debt rather than local tissue soreness,
-        // do not pivot to gym strength sessions. Prefer endurance options in the event's primary modality.
-        if (context.focusEvent && rankedModifyOptions.length > 0 && !subjective.preferredModalityToday) {
-            const eventCat = (context.focusEvent.category ?? '').toLowerCase();
-            const isEnduranceEvent = eventCat.includes('cycling') || eventCat.includes('running') || eventCat.includes('triathlon');
-            const hasAutonomicOrDebtStress = acuteBiometricStrainFloor || acuteRecoveryDebtModify || (telemetry.metricStrain.acuteDeviation >= 0.5);
-            if (isEnduranceEvent && hasAutonomicOrDebtStress && (subjective.soreness < 7)) {
-                const primaryEventOptions = rankedModifyOptions.filter(t => {
-                    const mod = (t.modality ?? '').toLowerCase();
-                    return (eventCat.includes('cycling') && mod === 'cycling') ||
-                           (eventCat.includes('running') && mod === 'running') ||
-                           (eventCat.includes('triathlon') && (mod === 'cycling' || mod === 'running'));
-                });
-                if (primaryEventOptions.length > 0) {
-                    rankedModifyOptions = primaryEventOptions;
-                }
-            }
-        }
-
+        const rankedModifyOptions = rankByModalityPreference(preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities);
         selectedTemplate = rankedModifyOptions.length > 0 ? pickTemplate(rankedModifyOptions, date)! : (availableTemplates.find(t => t.category === 'Rest') ?? getCanonicalRestTemplate());
         rationale = !hasWearableObjectiveData(objective)
             ? "You're showing moderate soreness or elevated fatigue in your morning check-in. We're capping today's systemic load rather than ruling out a whole modality."
-            : acuteRecoveryDebtModify
-                ? "Substantial recovery debt from sleep deficit or low body battery is capping today's systemic training load."
-                : "You're showing moderate soreness or slight downward trends in Garmin baselines. We're capping today's systemic/autonomic load rather than ruling out a whole modality.";
+            : "You're showing moderate soreness or slight downward trends in Garmin baselines. We're capping today's systemic/autonomic load rather than ruling out a whole modality.";
         if (selectedTemplate.category === 'Upper-body Strength') rationale += " Upper-body strength is included: it's a low-systemic-load, muscle-local stimulus, so softer HRV/RHR readings are a better reason to skip legs or intervals than to skip push/pull work.";
     } else {
         const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Moderate Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength' || t.category === 'Power Maintenance');
