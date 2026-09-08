@@ -69,16 +69,17 @@ supersession, and D-LEDGER's persisted date-level reservation aggregate, and PR 
 (`services/intradayBundleMemberAdjudication.ts`) and its `Home.tsx` wiring -- giving
 `reassessDependentBundleMember` and the decision store their first live caller, so a
 non-primary member is now reassessed, reserved and emitted as an `additionalSessions`
-binding. It is still **not launchable**: no component renders `additionalSessions`,
-`claimOccurrenceLaunch` still has no production caller, and completing the AM session does
-not yet write the `immediate` `SessionResponse` a dependent PM member reads, so such a
-member stays `pending`. The
+binding. PR 3 Phase 4 (#465) now renders that binding and routes eligible starts through
+the atomic occurrence/ledger claim with rollback on launch failure. Dependent members
+still stay `pending` until the post-AM `immediate` `SessionResponse` is captured. The
 [bundle-launch plan](./h4-434-pr3-bundle-second-member-launch.md) tracks #434 PR 3's
-remaining Phases 4-6 (the launch affordance and atomic claim, post-AM `SessionResponse`
-capture, and the `POLICY_VERSION` bump) as the path to a live H4 release. Beyond PR 3, H4
+remaining Phases 5-6 (post-AM `SessionResponse` capture and the H4-specific
+`POLICY_VERSION` transition) as the path to a live H4 release. Beyond PR 3, H4
 also still needs ledger remainder/admission as a real ranking input in `planner.ts`, and a
-bundle's resolved placement persisted for display (blocked on `firestore.rules`' audit
-shape at Firestore's per-request rule-evaluation ceiling).
+bundle's resolved placement persisted for display. The latter was previously blocked by
+Firestore's per-request rule-evaluation ceiling, but #468 reduced recommendation-audit
+validation cost and closed #435; persistence is therefore unblocked but still unimplemented
+and still requires its own schema/rules/replay review.
 H5 block intent and controlled progression is accepted in
 [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md) and is **In progress**:
 H5a intent contracts and canonical replay (`engine/blockIntent.ts`,

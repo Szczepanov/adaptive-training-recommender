@@ -5,23 +5,24 @@ accepted as ADR-0036 with every design slice now delivered as code
 (D-SCHEMA/D-LEDGER/D-TIME/D-WINDOW, D-PLACEMENT's engine plus its placement-correctness
 wiring, D-REASSESS's `intradayReassessment.ts` (#442) and D-AUDIT's `intradayDecision.ts`
 decision store (#443)) and issue #434's execution-binding pipeline delivered through PR 3
-Phase 3 (#440, #445, #448, #450, #451, #454) -- so a non-primary bundle member is now
-adjudicated, reserved and surfaced as an `additionalSessions` binding, but is **not yet
-launchable**: PR 3 Phases 4-6 (launch affordance and atomic claim, post-AM
-`SessionResponse` capture, `POLICY_VERSION` bump) remain, as do the broader ledger-based
-ranking/admission unification and persisting a bundle's resolved placement for display;
-H5 design accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative
-`external-plan@5` unstarted)
+Phase 3 (#440, #445, #448, #450, #451, #454) and Phase 4 (#465) -- so a non-primary bundle
+member is now adjudicated, reserved, surfaced as an `additionalSessions` binding, and
+launchable when its verdict has a valid binding. Phase 5 and the H4-specific Phase 6 policy
+work remain: post-AM `SessionResponse` capture, completion evidence fields, confirmation
+revision wiring, and the H4 policy-version transition. Dependent members remain `pending`
+until the Phase 5 evidence exists. The broader ledger-based ranking/admission unification
+and persistence of a bundle's resolved placement for display also remain; H5 design is
+accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted).
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
-confirmation; H4's live release is gated on PR 3 Phases 4-6, tracked in
-[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md); H4's remaining non-gating
-work (unifying `planner.ts`'s three ad hoc dedup mechanisms onto the ledger's
-remainder/admission semantics as a real ranking input; persisting a bundle's resolved
-placement for display, currently blocked on `firestore.rules`' audit shape already sitting
-at Firestore's per-request rule-evaluation ceiling -- see the H4 section below) needs its
-own decision-affecting PR(s); H5c needs the athlete-scoped singleton progression-claim
-transaction design, and cumulative `external-plan@5` acceptance is unblocked now that H4's
-v4 contract has landed.
+confirmation; H4's live release is gated on PR 3 Phases 5-6, tracked in
+[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's remaining non-gating
+work also needs its own decision-affecting PR(s): unifying `planner.ts`'s three ad hoc dedup
+mechanisms onto the ledger's remainder/admission semantics as a real ranking input, and
+persisting a bundle's resolved placement for display. The latter was previously blocked by
+`firestore.rules`' per-request expression ceiling, but #468 reduced recommendation-audit
+validation cost and closed #435, so it is now unblocked rather than complete. H5c needs the
+athlete-scoped singleton progression-claim transaction design, and cumulative
+`external-plan@5` acceptance is unblocked now that H4's v4 contract has landed.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -34,7 +35,7 @@ This document remains the status and evidence record.
 pipeline and is retained for its H2/H2b/H3/H3-rest record and its still-accurate inventory of
 the un-unified dedup mechanisms. For current H4 implementation work, read
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) instead -- it is the
-authoritative spec for the remaining Phases 4-6.
+authoritative spec for the remaining Phases 5-6.
 
 Reuse the existing `cycling_primary_hybrid_advanced` persona. Add scenarios that exercise
 distinct decisions and group them into focused judge families. Retain the existing seven
@@ -274,13 +275,15 @@ as a pure module, and its **placement-correctness wired** into
 this does and does not activate). **D-REASSESS and D-AUDIT are also delivered** as pure
 modules -- `engine/intradayReassessment.ts`'s `reassessDependentBundleMember` (#442) and
 `engine/intradayDecision.ts`'s append-only decision store (#443) -- and issue #434's
-execution-binding pipeline has since given them a live caller, through PR 3 Phase 3 (see
+execution-binding pipeline has since given them a live caller, through PR 3 Phase 4 (see
 "Issue #434 execution-binding pipeline" below).
 
 Still unstarted: the `dailyLedger.ts` refactor into `resolveAvailability`'s existing
-deductions and `planner.ts`'s three ad hoc dedup mechanisms, persisting a bundle's
-resolved placement for display, and PR 3 Phases 4-6 -- the last of which is what actually
-gates a live H4 release.
+deductions and `planner.ts`'s three ad hoc dedup mechanisms, recommendation-audit
+persistence of a bundle's resolved placement for display, and PR 3 Phases 5-6 -- the last
+of which is what actually gates a live H4 release. Placement persistence was previously
+blocked by the recommendation-audit rules-expression ceiling; #468 closed #435 by reducing
+that evaluation cost, so it is now unblocked but not implemented.
 **Dependencies:** ADR-0035 rest support (delivered). The `external-plan@4`/`dailyLedger.ts`
 D-SCHEMA/D-LEDGER slice itself left `POLICY_VERSION` unchanged (neither module is
 consumed by any decision path); the fixed-activity cost-reduce dedup slice bumped it
@@ -340,8 +343,8 @@ wall-clock date/time to a real instant with an explicit offset, rejecting calend
 review rounds that caught and fixed real bugs (a calendar-invalid-date acceptance bug and
 a DST-offset-discovery bug that only manifested for zones far from UTC -- see the module's
 own header comment for why the offset-sampling window is centered on a rough estimate
-rather than the naive instant). Not wired into anything yet; `simulate:diff`/policy-drift
-show no change from this slice.
+rather than the naive instant). The module was initially unwired when this slice landed;
+it is now consumed by D-PLACEMENT's separation checks.
 
 ### D-WINDOW (delivered, model only)
 
@@ -383,9 +386,9 @@ own type/length (not just the list's size -- `hasValidEquipmentList` was fixed i
 to check this, since it previously let a non-string/oversized item pass rules and then
 fail client-side parsing as `INVALID`), and keeps `createdAt` immutable, mirroring
 `hasValidFixedActivity` (itself now covered by the same equipment-item fix). Closing the
-race for real needs a trusted server
-boundary (e.g. a Cloud Function serializing writes per user/date); out of scope for this
-bounded PR and flagged as a known limitation, not treated as solved.
+race for real needs a trusted server boundary (e.g. a Cloud Function serializing writes
+per user/date); out of scope for this bounded PR and flagged as a known limitation, not
+treated as solved.
 
 Recurring availability ("Recurring availability is resolved to dated instances by the
 app", D-WINDOW) is intentionally deferred: this slice only models and persists
@@ -393,14 +396,10 @@ already-dated window instances. A future recurring-template resolver can add
 `ScheduleWindow` instances without changing this file's contract, since every downstream
 consumer (D-PLACEMENT included) only ever sees resolved, dated windows.
 
-Not wired into `resolveAvailability`, placement, or any decision path -- that intersection
-(a plan's `intraday` request against real resolved windows) is D-PLACEMENT's job, layered
-on top of this model. `scheduleWindows.test.ts`, `scheduleWindowService.test.ts`, and new
-`firestoreRules.emulator.test.ts` cases cover validation, overlap detection (including the
-regression the tests originally caught: cross-date windows were incorrectly flagged as
-overlapping before the cross-window check was scoped per-date), legacy-empty resolution,
-and the Firestore rules' shape/ownership/revision/immutability contract.
-`simulate:diff`/policy-drift show no change from this slice.
+D-PLACEMENT subsequently wired these windows into bundle placement. `scheduleWindows.test.ts`,
+`scheduleWindowService.test.ts`, and Firestore-rules emulator cases cover validation,
+overlap detection, legacy-empty resolution, and the persisted shape/ownership/revision
+contract.
 
 Note: PR #428 ("typed schedule overlays and planned absences") merged the same day as
 D-WINDOW and now feeds `ScheduleOverlay`'s `dailyAvailabilityMinutes`/cost/equipment into
@@ -429,94 +428,47 @@ confirmed-proposal API analogous to `externalPlacement.ts`'s
   correctly reduces what a later member can draw from the same day's shared ceiling; a
   dependent's scheduled separation from its predecessor is checked via
   `resolveLocalInstant`/`elapsedMinutesBetweenInstants` on the *resolved window*
-  boundaries (not an actual performed timestamp, which does not exist before either
-  session starts -- recomputing against real execution once it does is D-REASSESS, not
-  implemented here). A date with no persisted `ScheduleWindow`s falls back to one
-  synthetic whole-day slot (D-WINDOW's supported legacy case), and since "at most one
-  training occurrence per resolved window" applies to that slot too, a bundle needing two
-  or more windows on such a date is correctly infeasible rather than fabricating an AM/PM
-  pair from missing metadata.
+  boundaries. A date with no persisted `ScheduleWindow`s falls back to one synthetic
+  whole-day slot, so a bundle needing two or more windows there is infeasible rather than
+  fabricating an AM/PM pair from missing metadata.
 - `dropOptionalBundleMember(members, sessionId)` is the athlete's explicit action to drop
   one optional, not-yet-started member before re-proposing the remainder -- never
-  automatic, and never carries dropped work forward (ADR). It throws for a required or
-  already-started member. D-SCHEMA's existing "no required session may depend on an
-  optional predecessor" invariant means dropping an optional member can never orphan a
-  required one.
+  automatic, and never carries dropped work forward.
 - `confirmBundlePlacement(proposal)` is the sole athlete-confirmation boundary,
   mirroring `applyConfirmedProposal`; it throws on an infeasible proposal rather than
-  confirming a partial one. It writes nothing -- no persisted bundle-binding store exists
-  yet (that is wiring/D-AUDIT's job, not delivered here).
+  confirming a partial one.
 
 A member that has already started (`started: true`) always carries its own
 `existingBinding` through unchanged and keeps its window consumed for the rest of the
-bundle -- "once a member starts, do not move its history" (ADR). `intradayBundlePlacement.test.ts`
-covers the ADR's D-PLACEMENT-relevant deterministic cases: AM/PM placement into distinct
-windows, the legacy-date single-slot restriction, authored rest closing every window,
-fixed-activity occupancy (both a known-clock-time activity blocking only its overlapping
-window and an unknown-clock-time one blocking the whole date), the 90-minute-ceiling/
-60-minute-AM worked example extended to a real bundle, exhausted-systemic-cost rejection
-with spare minutes still available, separation success/failure (a real argument-order bug
-in the D-TIME `elapsedMinutesBetweenInstants` call -- `start - end`, not `end - start` --
-was caught by this test before merge), started-member preservation, and a nonexistent
-Warsaw spring-forward boundary correctly reported as unresolved rather than silently
-choosing an offset. Not wired into `evaluateTrainingWithIntent` or any decision path at
-the time this engine landed; `POLICY_VERSION` unchanged; `simulate:diff`/policy-drift
-confirmed no output change. Its placement-correctness wiring is delivered separately,
-immediately below.
+bundle -- "once a member starts, do not move its history" (ADR). The focused placement
+tests cover the ADR's deterministic cases, including separation, legacy-slot behavior,
+rest/fixed-activity conflicts, started-member preservation and DST handling.
 
 ### D-PLACEMENT wiring: placement-correctness only (delivered)
 
 Scope decided explicitly with the repo owner after investigation surfaced that "wire the
 bundle engine into `evaluateTrainingWithIntent`" split into two very differently-sized
-tasks. First: even v1-v3 "double days" already collapse to one visible session --
-`activeExternalPlanService.ts`'s `placedSessionForDate` picks the single highest-priority
-session when several are placed on one date, and its sibling `externalPlanContextsForDate`
-already documented "callers must not interpret this helper as evidence that secondary
-same-day sessions have been independently adjudicated or made executable." Second, and
-more fundamental: `SessionSourceRef`'s `kind: 'external_plan'` variant is declared in
-`sessions/models.ts` but was never actually constructed anywhere -- external plans have
-never been wired into the `SessionReferenceBinding` -> `sessionOccurrenceService` ->
-`executionPrescriptionService` -> launch pipeline `additionalSessions` depends on, not even
-for today's single primary external session. Making a bundle's second member independently
-*launchable* therefore means building that whole pipeline from scratch first, as its own
-multi-PR foundational project -- explicitly out of scope here.
+tasks. First, plural same-day placement did not imply independent execution. Second, the
+external-plan `SessionReferenceBinding` path did not yet exist at that time; issue #434
+subsequently built it through PR 3 Phase 4.
 
-What *is* delivered: `activeExternalPlanService.ts`'s `resolveIntradayBundlePlacement`
-detects a v4 intraday bundle placed on a date, builds `IntradayBundleMember[]` from the
-plan's sessions (`estimatedMinutes`/`estimatedSystemicCost` reused from
-`authoredSessionGates.ts`'s `estimateAuthoredSessionSystemicCost`/`SessionDefinition.duration`,
-the same authorities the manually-authored additional-session path already uses), and
-calls `proposeBundlePlacement`. `placedSessionForDate` and `externalPlanContextForDate`
-each gained an optional `bundleContext` parameter (`{ scheduleWindows, fixedActivities,
-ledger }`, defaulting to omitted = the exact pre-D-PLACEMENT behavior unchanged): when
-supplied and the bundle resolves feasibly, the bundle's earliest-`order` member becomes
-the day's primary session -- real window/rest/budget feasibility now decides, not a
-priority guess -- falling back to the original priority-rank tie-break when the bundle is
-absent or infeasible. `Home.tsx` supplies `bundleContext` by fetching the date's
-`ScheduleWindow`s and deriving `ledger` from `resolveAvailability`'s already-resolved
-minute/cost ceiling via `computeDailyLedger` with no persisted occurrence-level entries
-(that broader ledger-based ranking/admission unification, `planner.ts`'s three ad hoc
-dedup mechanisms, remains separate and unstarted). Launching the selected session still
-goes through the exact unchanged single-session path.
+`activeExternalPlanService.ts`'s `resolveIntradayBundlePlacement` detects a v4 intraday
+bundle placed on a date, builds `IntradayBundleMember[]` from the plan's sessions and calls
+`proposeBundlePlacement`. `placedSessionForDate` and `externalPlanContextForDate` gained an
+optional `bundleContext`; when supplied and the bundle resolves feasibly, the bundle's
+earliest-`order` member becomes the day's primary session rather than a priority guess.
+`Home.tsx` supplies schedule-window/ledger context. PR 3 Phases 1-4 later added persisted
+occurrence/window reservations, the date-level ledger aggregate, non-primary adjudication,
+display and atomic launch.
 
-Surfacing the bundle's *resolved binding data* for display (a decisionTrace field on
-`ExternalPlanContext`/`ExternalDecisionProvenance`) was attempted and reverted: even a
-minimal 3-expression structural check for one new optional field pushed
-`hasValidRecommendationAudit`'s `externalPlan` validation over Firestore's per-request
-rule-evaluation ceiling ("the maximum of 1000 expressions to evaluate"), a real failure
-the emulator suite caught, not a hypothetical. That audit shape has no headroom left
-without a separate effort to reduce its existing evaluation cost elsewhere first, so the
-resolved bundle placement is computed and acted on but not persisted this PR.
-
-`activeExternalPlanService.intradayBundle.test.ts` covers `resolveIntradayBundlePlacement`
-(null for no intraday session, a feasible two-member resolution, an infeasible rest-date
-case) and the bundle-aware primary-session tie-break (order beats priority when feasible,
-falls back to priority when infeasible). This genuinely changes decision behavior for any
-v4 plan authoring an intraday bundle, so `POLICY_VERSION` bumped for real this time --
-`check-policy-drift.mjs` only warns (does not fail) that the changed files aren't in its
-tracked engine-file glob, since the change lives in `services/`/`components/` rather than
-`engine/`; `simulate:diff` shows no new drift because no scenario in the corpus authors a
-v4 intraday plan yet.
+Surfacing the bundle's *resolved binding data* for display in recommendation audit was
+attempted and reverted in the original placement-wiring PR because an extra optional-field
+check exceeded Firestore's per-request rules-expression ceiling. That was a real emulator
+failure and correctly blocked the change at the time. It is no longer a current blocker:
+PR #468 reduced recommendation-audit evaluation cost and closed #435. The resolved placement
+is still not persisted, however, so a follow-up must reintroduce the field with schema,
+rules, replay and expression-budget coverage rather than treating #468 as implementation of
+the feature itself.
 
 ### Same-day canonical performed-fact boundary (verified)
 
@@ -529,28 +481,16 @@ the literal blocker named above. Investigation traced the full pipeline
 and already tested: `reconciliationService.ts`'s candidate matching runs a `+-1
 local-day` window with no wall-clock/"is this today" special-casing, and existing
 `reconciliationService.test.ts` fixtures already exercise same-day auto-link and
-same-day ambiguity (`'Garmin-first, structured arrives later'`, `'same-day two strength
-sessions ... stays ambiguous'`, `'modality mismatch ... same-day, close-timing
-candidate'`). This work added the missing mirror-direction case,
-`'structured-first, Garmin arrives later ... attaches to the existing structured-only
-occurrence'`, so same-day dedup is now proven both ways.
+same-day ambiguity. The missing mirror-direction case was added so same-day dedup is proven
+both ways.
 
 The one real gap was narrower than the blocker's original phrasing suggested: it was
 purely the read-boundary convention, not a defect in hydration. `getPerformedTrainingFactsInRange`
 itself has no date-relative assumption that data must be historical; passing tomorrow's
 date as the exclusive boundary already correctly includes and hydrates today's
-occurrence (structured-execution and Garmin-activity sourced alike, with
-`startedAt`/`endedAt` intact for later D-TIME elapsed-separation use) -- this had simply
-never been exercised by any test or caller. `getPerformedTrainingFactsThroughToday`
+occurrence. `getPerformedTrainingFactsThroughToday`
 (`training-occurrence/performedTrainingFactsService.ts`) makes that an explicit,
-correctly-named function instead of relying on callers to remember the
-pass-tomorrow-as-exclusive trick. It is not called from any production/decision path
-yet -- exactly like `externalPlanV4.ts`/`dailyLedger.ts` above, this is additive and
-non-decision-affecting; `getPerformedTrainingFactsInRange`'s existing `[from, to)`
-contract and its only current caller (`trainingIntent.ts`) are unchanged.
-`performedTrainingFactsService.sameDay.test.ts` covers the new function directly plus a
-pinning test confirming current production behavior (today excluded) is untouched.
-`simulate:diff`/policy-drift show no change.
+correctly-named function. It is not called from any production/decision path yet.
 
 ### Fixed-activity cost-reduce duplication unified (delivered)
 
@@ -559,12 +499,9 @@ pinning test confirming current production behavior (today excluded) is untouche
 `unrepresentedFixedActivityProjection` each hand-wrote the same six-dimension
 `WorkoutCostProfile` reduce over `FixedActivity.expectedCost`. `engine/fixedActivityCostProfile.ts`'s
 `sumFixedActivityCostProfiles` now supplies that reduce once; every call site keeps its
-own existing date/completion filtering, so behavior is unchanged. Verified
-byte-identical via `simulate:diff` (same pre-existing, unrelated drift as before) and
-the full test suite. `POLICY_VERSION` was bumped to
-`2026-09-fixed-activity-cost-dedup-v1` regardless, because the drift gate can only
-mechanically prove comment-only equivalence and this refactor restructures the call
-sites' syntax -- not because decision output actually changed.
+own existing date/completion filtering, so behavior is unchanged. Verified byte-identical
+via `simulate:diff`. `POLICY_VERSION` was bumped mechanically because the drift gate could
+not prove semantic equivalence for the restructured call sites.
 
 The three different ad hoc dedup mechanisms across these sites (`seenOccurrences` in
 `applyFixedActivityStimulusCredit`, `appliedFixedCostOccurrences`/
@@ -572,14 +509,12 @@ The three different ad hoc dedup mechanisms across these sites (`seenOccurrences
 in `unrepresentedFixedActivityProjection`) are **not yet unified** onto the ledger's
 `occurrenceId`/`revision` model, and none of these call sites yet consult
 `computeDailyLedger`'s remainder or `admitsCandidate` when ranking or admitting a
-candidate. D-PLACEMENT's own placement-correctness wiring is delivered (see the
-"D-PLACEMENT wiring" subsection above). Of the three tasks this subsection originally
-listed as remaining, (2) the execution-binding pipeline and (3) D-REASSESS/D-AUDIT have
-since been delivered (see the next subsection); (1) using the ledger's remainder/admission
-semantics as a real ranking/admission input across these three call sites is still
-outstanding and is still decision-affecting, so it remains its own PR.
+candidate. D-PLACEMENT's own placement-correctness wiring is delivered. The execution-
+binding pipeline and D-REASSESS/D-AUDIT now have live wiring through PR 3 Phase 4; using
+the ledger's remainder/admission semantics as a real ranking/admission input across these
+three call sites remains separate decision-affecting work.
 
-### Issue #434 execution-binding pipeline (delivered through PR 3 Phase 3)
+### Issue #434 execution-binding pipeline (delivered through PR 3 Phase 4)
 
 The external-plan `SessionReferenceBinding` execution-binding pipeline -- identified above
 as a separate multi-PR foundational project -- has been built as
@@ -593,26 +528,27 @@ as a separate multi-PR foundational project -- has been built as
 | [#450](https://github.com/Szczepanov/adaptive-training-recommender/pull/450) | `eddacc09` | PR 3 Phase 3 foundations -- unified `ReassessmentInputRevision`, decision-record predecessor identity, transaction-composable decision writes |
 | [#451](https://github.com/Szczepanov/adaptive-training-recommender/pull/451) | `7399ec31` | PR 3 step 8 item 2a -- reject/recovery generation counters |
 | [#454](https://github.com/Szczepanov/adaptive-training-recommender/pull/454) | `9f42db1e` | PR 3 Phase 3 -- `services/intradayBundleMemberAdjudication.ts` and its `Home.tsx` wiring |
+| [#465](https://github.com/Szczepanov/adaptive-training-recommender/pull/465) | `a87d9d1c` | PR 3 Phase 4 -- `AdditionalSessionsCard`, atomic launch claim, rollback, and launch verification |
 
 **What this activates:** a placed v4 bundle's non-primary member is now reassessed per
 D-REASSESS, has its verdict persisted per D-AUDIT, holds (or releases) a real reservation
-against the day's ledger aggregate, and is emitted as an `additionalSessions` binding from
-`Home.tsx`.
+against the day's ledger aggregate, is emitted as an `additionalSessions` binding from
+`Home.tsx`, and can be started when the verdict is `proceed` with a valid binding. The
+launch path atomically validates the persisted decision and ledger state, claims the
+occurrence, and rolls both claims back if execution start fails.
 
-**What it does not yet activate:** the member is still not launchable. No component renders
-`additionalSessions`, and `claimOccurrenceLaunch` still has no production caller, so no
-Start control can appear. Completing the AM session also does not yet write the `immediate`
-`SessionResponse` that a dependent PM member's reassessment reads, so a dependent member
-stays `pending` indefinitely. `POLICY_VERSION` is correspondingly still
-`2026-09-h4-intraday-reassessment-v1`.
+**What it does not yet activate:** completing the AM session still does not write the
+`immediate` `SessionResponse` that a dependent PM member's reassessment reads, so dependent
+members remain `pending`. The H4-specific Phase 6 policy transition is also still open;
+the current global policy version has since advanced for ADR-0038/recovery-calibration work,
+but that does not constitute the H4 launch-policy bump.
 
-**What remains:** PR 3 Phases 4-6 --
+**What remains:** PR 3 Phases 5-6 --
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) is the authoritative spec.
-Phase 4 adds the `AdditionalSessionsCard` and the atomic claim in `onStartSession`;
-Phase 5 records the post-AM `immediate` `SessionResponse`, extends the completion sheet
-with `completedFraction`/`unexpectedFatigue`, and populates
-`postPredecessorConfirmationRevision`; Phase 6 bumps `POLICY_VERSION` and archives the
-previous value. This is the gate on a live H4 release.
+Phase 4 is delivered in #465. Phase 5 records the post-AM `immediate` `SessionResponse`,
+extends the completion sheet with `completedFraction`/`unexpectedFatigue`, and populates
+`postPredecessorConfirmationRevision`; Phase 6 bumps `POLICY_VERSION` from the then-current
+global value and archives that value. This is the gate on a live H4 release.
 
 ## H5 — Explicit develop/maintain intent and progression
 
@@ -669,16 +605,14 @@ For optional local judging, use the `--hybrid-expansion` runner flag documented 
 promoting any new active cases. Existing baseline update/diff commands intentionally
 remain scoped to the unchanged active suite.
 
-H1 did not change engine behavior and therefore required no policy bump. H2/H2b are
-decision-affecting and are represented by the current policy version above. H3's new test
-is non-decision-affecting and needs no bump; the explicit-rest follow-up will require the
-normal policy/schema/replay review when it changes decision behavior. H4's
-`fixed-activity-cost-dedup-v1` bump reflected the drift gate's mechanical requirement for
-any `planner.ts`/`rules.ts` touch, not an actual behavior change (verified via
-`simulate:diff`); `h4-intraday-bundle-placement-v1` is H4's first bump for a real behavior
-change (D-PLACEMENT's bundle-aware primary-session selection). H4's still-pending
-ledger-based ranking/admission wiring across `planner.ts`'s three dedup mechanisms, the
-external-plan execution-binding pipeline, and H5's still-pending H5c will require the
-normal review when they actually change decision behavior. Do not enable experimental
-personalization simply to improve a judge
-score.
+H1 did not change engine behavior and therefore required no policy bump. H2/H2b were
+decision-affecting. H3's new test was non-decision-affecting; explicit-rest behavior had
+its own policy transition. H4's fixed-activity dedup bump reflected the drift gate's
+mechanical requirement, while `h4-intraday-bundle-placement-v1` was H4's first real behavior
+change. PR 3 Phase 4 did not itself perform the final H4 policy transition because dependent
+members still lack the Phase-5 post-AM evidence. The remaining H4 policy change must start
+from the **then-current** global `POLICY_VERSION` (currently
+`2026-09-recommender-recovery-calibration-v1` on `main` at `78a2e11`), not from an obsolete
+H4 id. H4's ledger-based ranking/admission wiring and H5c will each require normal policy
+review when they actually change decision behavior. Do not enable experimental
+personalization simply to improve a judge score.
