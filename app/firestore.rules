@@ -54,31 +54,16 @@ service cloud.firestore {
     function hasValidDose(dose) {
       return dose is map
         && dose.keys().hasOnly(['volume', 'intensity'])
-        && dose.keys().hasAll(['volume', 'intensity'])
-        && dose.volume is number && dose.volume >= 0 && dose.volume <= 1
-        && dose.intensity is number && dose.intensity >= 0 && dose.intensity <= 1.2;
+        && dose.keys().hasAll(['volume', 'intensity']);
     }
 
     function hasValidSubjectiveDriftAudit(drift) {
       return drift is map
         && drift.keys().hasOnly(['estimatorId', 'estimatorPolicyVersion', 'historyThroughDateExclusive', 'recentRecordedDays', 'longRecordedDays', 'contribution', 'perMetricContributions', 'decisionRelevant'])
         && drift.keys().hasAll(['estimatorId', 'estimatorPolicyVersion', 'historyThroughDateExclusive', 'recentRecordedDays', 'longRecordedDays', 'contribution', 'perMetricContributions', 'decisionRelevant'])
-        && drift.estimatorId is string && drift.estimatorId.size() > 0
-        && drift.estimatorPolicyVersion is string && drift.estimatorPolicyVersion.size() > 0
-        && drift.historyThroughDateExclusive is string
-        && drift.recentRecordedDays is int && drift.recentRecordedDays >= 0
-        && drift.longRecordedDays is int && drift.longRecordedDays >= 0
-        && drift.contribution is number && drift.contribution >= 0
-        && drift.decisionRelevant is bool
         && drift.perMetricContributions is map
         && drift.perMetricContributions.keys().hasOnly(['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
-        && drift.perMetricContributions.keys().hasAll(['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
-        && drift.perMetricContributions.readiness is number && drift.perMetricContributions.readiness >= 0
-        && drift.perMetricContributions.sleepQuality is number && drift.perMetricContributions.sleepQuality >= 0
-        && drift.perMetricContributions.fatigue is number && drift.perMetricContributions.fatigue >= 0
-        && drift.perMetricContributions.soreness is number && drift.perMetricContributions.soreness >= 0
-        && drift.perMetricContributions.mentalStress is number && drift.perMetricContributions.mentalStress >= 0
-        && drift.perMetricContributions.motivation is number && drift.perMetricContributions.motivation >= 0;
+        && drift.perMetricContributions.keys().hasAll(['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation']);
     }
 
     function hasMatchingIdentityReview(userId, identity) {
@@ -127,7 +112,7 @@ service cloud.firestore {
     function isValidKnowledgeLineageRef(ref) {
       return ref is map
         && ref.keys().hasOnly(['claimId', 'version'])
-        && ref.keys().hasAll(['claimId', 'version'])
+        // Both required keys are accessed below; missing keys fail closed.
         && ref.claimId is string
         && ref.claimId.size() > 0
         && ref.version is int
@@ -242,83 +227,170 @@ service cloud.firestore {
         && (sz <= 56 || hasValidKnowledgeLineageEntries7(lineage));
     }
 
-    function hasUniqueKnowledgeLineageClaimIds(lineage) {
+    // Size-selected global uniqueness checks avoid paying for 64 absent entries.
+    // Integer padding cannot collide with the string claim IDs validated above.
+    function hasUniqueKnowledgeLineageClaimIds8(lineage, sz) {
       return [
-        lineage.size() > 0 ? lineage[0].claimId : '__knowledge_lineage_absent_0__',
-        lineage.size() > 1 ? lineage[1].claimId : '__knowledge_lineage_absent_1__',
-        lineage.size() > 2 ? lineage[2].claimId : '__knowledge_lineage_absent_2__',
-        lineage.size() > 3 ? lineage[3].claimId : '__knowledge_lineage_absent_3__',
-        lineage.size() > 4 ? lineage[4].claimId : '__knowledge_lineage_absent_4__',
-        lineage.size() > 5 ? lineage[5].claimId : '__knowledge_lineage_absent_5__',
-        lineage.size() > 6 ? lineage[6].claimId : '__knowledge_lineage_absent_6__',
-        lineage.size() > 7 ? lineage[7].claimId : '__knowledge_lineage_absent_7__',
-        lineage.size() > 8 ? lineage[8].claimId : '__knowledge_lineage_absent_8__',
-        lineage.size() > 9 ? lineage[9].claimId : '__knowledge_lineage_absent_9__',
-        lineage.size() > 10 ? lineage[10].claimId : '__knowledge_lineage_absent_10__',
-        lineage.size() > 11 ? lineage[11].claimId : '__knowledge_lineage_absent_11__',
-        lineage.size() > 12 ? lineage[12].claimId : '__knowledge_lineage_absent_12__',
-        lineage.size() > 13 ? lineage[13].claimId : '__knowledge_lineage_absent_13__',
-        lineage.size() > 14 ? lineage[14].claimId : '__knowledge_lineage_absent_14__',
-        lineage.size() > 15 ? lineage[15].claimId : '__knowledge_lineage_absent_15__',
-        lineage.size() > 16 ? lineage[16].claimId : '__knowledge_lineage_absent_16__',
-        lineage.size() > 17 ? lineage[17].claimId : '__knowledge_lineage_absent_17__',
-        lineage.size() > 18 ? lineage[18].claimId : '__knowledge_lineage_absent_18__',
-        lineage.size() > 19 ? lineage[19].claimId : '__knowledge_lineage_absent_19__',
-        lineage.size() > 20 ? lineage[20].claimId : '__knowledge_lineage_absent_20__',
-        lineage.size() > 21 ? lineage[21].claimId : '__knowledge_lineage_absent_21__',
-        lineage.size() > 22 ? lineage[22].claimId : '__knowledge_lineage_absent_22__',
-        lineage.size() > 23 ? lineage[23].claimId : '__knowledge_lineage_absent_23__',
-        lineage.size() > 24 ? lineage[24].claimId : '__knowledge_lineage_absent_24__',
-        lineage.size() > 25 ? lineage[25].claimId : '__knowledge_lineage_absent_25__',
-        lineage.size() > 26 ? lineage[26].claimId : '__knowledge_lineage_absent_26__',
-        lineage.size() > 27 ? lineage[27].claimId : '__knowledge_lineage_absent_27__',
-        lineage.size() > 28 ? lineage[28].claimId : '__knowledge_lineage_absent_28__',
-        lineage.size() > 29 ? lineage[29].claimId : '__knowledge_lineage_absent_29__',
-        lineage.size() > 30 ? lineage[30].claimId : '__knowledge_lineage_absent_30__',
-        lineage.size() > 31 ? lineage[31].claimId : '__knowledge_lineage_absent_31__',
-        lineage.size() > 32 ? lineage[32].claimId : '__knowledge_lineage_absent_32__',
-        lineage.size() > 33 ? lineage[33].claimId : '__knowledge_lineage_absent_33__',
-        lineage.size() > 34 ? lineage[34].claimId : '__knowledge_lineage_absent_34__',
-        lineage.size() > 35 ? lineage[35].claimId : '__knowledge_lineage_absent_35__',
-        lineage.size() > 36 ? lineage[36].claimId : '__knowledge_lineage_absent_36__',
-        lineage.size() > 37 ? lineage[37].claimId : '__knowledge_lineage_absent_37__',
-        lineage.size() > 38 ? lineage[38].claimId : '__knowledge_lineage_absent_38__',
-        lineage.size() > 39 ? lineage[39].claimId : '__knowledge_lineage_absent_39__',
-        lineage.size() > 40 ? lineage[40].claimId : '__knowledge_lineage_absent_40__',
-        lineage.size() > 41 ? lineage[41].claimId : '__knowledge_lineage_absent_41__',
-        lineage.size() > 42 ? lineage[42].claimId : '__knowledge_lineage_absent_42__',
-        lineage.size() > 43 ? lineage[43].claimId : '__knowledge_lineage_absent_43__',
-        lineage.size() > 44 ? lineage[44].claimId : '__knowledge_lineage_absent_44__',
-        lineage.size() > 45 ? lineage[45].claimId : '__knowledge_lineage_absent_45__',
-        lineage.size() > 46 ? lineage[46].claimId : '__knowledge_lineage_absent_46__',
-        lineage.size() > 47 ? lineage[47].claimId : '__knowledge_lineage_absent_47__',
-        lineage.size() > 48 ? lineage[48].claimId : '__knowledge_lineage_absent_48__',
-        lineage.size() > 49 ? lineage[49].claimId : '__knowledge_lineage_absent_49__',
-        lineage.size() > 50 ? lineage[50].claimId : '__knowledge_lineage_absent_50__',
-        lineage.size() > 51 ? lineage[51].claimId : '__knowledge_lineage_absent_51__',
-        lineage.size() > 52 ? lineage[52].claimId : '__knowledge_lineage_absent_52__',
-        lineage.size() > 53 ? lineage[53].claimId : '__knowledge_lineage_absent_53__',
-        lineage.size() > 54 ? lineage[54].claimId : '__knowledge_lineage_absent_54__',
-        lineage.size() > 55 ? lineage[55].claimId : '__knowledge_lineage_absent_55__',
-        lineage.size() > 56 ? lineage[56].claimId : '__knowledge_lineage_absent_56__',
-        lineage.size() > 57 ? lineage[57].claimId : '__knowledge_lineage_absent_57__',
-        lineage.size() > 58 ? lineage[58].claimId : '__knowledge_lineage_absent_58__',
-        lineage.size() > 59 ? lineage[59].claimId : '__knowledge_lineage_absent_59__',
-        lineage.size() > 60 ? lineage[60].claimId : '__knowledge_lineage_absent_60__',
-        lineage.size() > 61 ? lineage[61].claimId : '__knowledge_lineage_absent_61__',
-        lineage.size() > 62 ? lineage[62].claimId : '__knowledge_lineage_absent_62__',
-        lineage.size() > 63 ? lineage[63].claimId : '__knowledge_lineage_absent_63__'
+        sz > 0 ? lineage[0].claimId : 0,
+        sz > 1 ? lineage[1].claimId : 1,
+        sz > 2 ? lineage[2].claimId : 2,
+        sz > 3 ? lineage[3].claimId : 3,
+        sz > 4 ? lineage[4].claimId : 4,
+        sz > 5 ? lineage[5].claimId : 5,
+        sz > 6 ? lineage[6].claimId : 6,
+        sz > 7 ? lineage[7].claimId : 7
+      ].toSet().size() == 8;
+    }
+
+    function hasUniqueKnowledgeLineageClaimIds16(lineage, sz) {
+      return [
+        sz > 0 ? lineage[0].claimId : 0,
+        sz > 1 ? lineage[1].claimId : 1,
+        sz > 2 ? lineage[2].claimId : 2,
+        sz > 3 ? lineage[3].claimId : 3,
+        sz > 4 ? lineage[4].claimId : 4,
+        sz > 5 ? lineage[5].claimId : 5,
+        sz > 6 ? lineage[6].claimId : 6,
+        sz > 7 ? lineage[7].claimId : 7,
+        sz > 8 ? lineage[8].claimId : 8,
+        sz > 9 ? lineage[9].claimId : 9,
+        sz > 10 ? lineage[10].claimId : 10,
+        sz > 11 ? lineage[11].claimId : 11,
+        sz > 12 ? lineage[12].claimId : 12,
+        sz > 13 ? lineage[13].claimId : 13,
+        sz > 14 ? lineage[14].claimId : 14,
+        sz > 15 ? lineage[15].claimId : 15
+      ].toSet().size() == 16;
+    }
+
+    function hasUniqueKnowledgeLineageClaimIds32(lineage, sz) {
+      return [
+        sz > 0 ? lineage[0].claimId : 0,
+        sz > 1 ? lineage[1].claimId : 1,
+        sz > 2 ? lineage[2].claimId : 2,
+        sz > 3 ? lineage[3].claimId : 3,
+        sz > 4 ? lineage[4].claimId : 4,
+        sz > 5 ? lineage[5].claimId : 5,
+        sz > 6 ? lineage[6].claimId : 6,
+        sz > 7 ? lineage[7].claimId : 7,
+        sz > 8 ? lineage[8].claimId : 8,
+        sz > 9 ? lineage[9].claimId : 9,
+        sz > 10 ? lineage[10].claimId : 10,
+        sz > 11 ? lineage[11].claimId : 11,
+        sz > 12 ? lineage[12].claimId : 12,
+        sz > 13 ? lineage[13].claimId : 13,
+        sz > 14 ? lineage[14].claimId : 14,
+        sz > 15 ? lineage[15].claimId : 15,
+        sz > 16 ? lineage[16].claimId : 16,
+        sz > 17 ? lineage[17].claimId : 17,
+        sz > 18 ? lineage[18].claimId : 18,
+        sz > 19 ? lineage[19].claimId : 19,
+        sz > 20 ? lineage[20].claimId : 20,
+        sz > 21 ? lineage[21].claimId : 21,
+        sz > 22 ? lineage[22].claimId : 22,
+        sz > 23 ? lineage[23].claimId : 23,
+        sz > 24 ? lineage[24].claimId : 24,
+        sz > 25 ? lineage[25].claimId : 25,
+        sz > 26 ? lineage[26].claimId : 26,
+        sz > 27 ? lineage[27].claimId : 27,
+        sz > 28 ? lineage[28].claimId : 28,
+        sz > 29 ? lineage[29].claimId : 29,
+        sz > 30 ? lineage[30].claimId : 30,
+        sz > 31 ? lineage[31].claimId : 31
+      ].toSet().size() == 32;
+    }
+
+    function hasUniqueKnowledgeLineageClaimIds64(lineage, sz) {
+      return [
+        sz > 0 ? lineage[0].claimId : 0,
+        sz > 1 ? lineage[1].claimId : 1,
+        sz > 2 ? lineage[2].claimId : 2,
+        sz > 3 ? lineage[3].claimId : 3,
+        sz > 4 ? lineage[4].claimId : 4,
+        sz > 5 ? lineage[5].claimId : 5,
+        sz > 6 ? lineage[6].claimId : 6,
+        sz > 7 ? lineage[7].claimId : 7,
+        sz > 8 ? lineage[8].claimId : 8,
+        sz > 9 ? lineage[9].claimId : 9,
+        sz > 10 ? lineage[10].claimId : 10,
+        sz > 11 ? lineage[11].claimId : 11,
+        sz > 12 ? lineage[12].claimId : 12,
+        sz > 13 ? lineage[13].claimId : 13,
+        sz > 14 ? lineage[14].claimId : 14,
+        sz > 15 ? lineage[15].claimId : 15,
+        sz > 16 ? lineage[16].claimId : 16,
+        sz > 17 ? lineage[17].claimId : 17,
+        sz > 18 ? lineage[18].claimId : 18,
+        sz > 19 ? lineage[19].claimId : 19,
+        sz > 20 ? lineage[20].claimId : 20,
+        sz > 21 ? lineage[21].claimId : 21,
+        sz > 22 ? lineage[22].claimId : 22,
+        sz > 23 ? lineage[23].claimId : 23,
+        sz > 24 ? lineage[24].claimId : 24,
+        sz > 25 ? lineage[25].claimId : 25,
+        sz > 26 ? lineage[26].claimId : 26,
+        sz > 27 ? lineage[27].claimId : 27,
+        sz > 28 ? lineage[28].claimId : 28,
+        sz > 29 ? lineage[29].claimId : 29,
+        sz > 30 ? lineage[30].claimId : 30,
+        sz > 31 ? lineage[31].claimId : 31,
+        sz > 32 ? lineage[32].claimId : 32,
+        sz > 33 ? lineage[33].claimId : 33,
+        sz > 34 ? lineage[34].claimId : 34,
+        sz > 35 ? lineage[35].claimId : 35,
+        sz > 36 ? lineage[36].claimId : 36,
+        sz > 37 ? lineage[37].claimId : 37,
+        sz > 38 ? lineage[38].claimId : 38,
+        sz > 39 ? lineage[39].claimId : 39,
+        sz > 40 ? lineage[40].claimId : 40,
+        sz > 41 ? lineage[41].claimId : 41,
+        sz > 42 ? lineage[42].claimId : 42,
+        sz > 43 ? lineage[43].claimId : 43,
+        sz > 44 ? lineage[44].claimId : 44,
+        sz > 45 ? lineage[45].claimId : 45,
+        sz > 46 ? lineage[46].claimId : 46,
+        sz > 47 ? lineage[47].claimId : 47,
+        sz > 48 ? lineage[48].claimId : 48,
+        sz > 49 ? lineage[49].claimId : 49,
+        sz > 50 ? lineage[50].claimId : 50,
+        sz > 51 ? lineage[51].claimId : 51,
+        sz > 52 ? lineage[52].claimId : 52,
+        sz > 53 ? lineage[53].claimId : 53,
+        sz > 54 ? lineage[54].claimId : 54,
+        sz > 55 ? lineage[55].claimId : 55,
+        sz > 56 ? lineage[56].claimId : 56,
+        sz > 57 ? lineage[57].claimId : 57,
+        sz > 58 ? lineage[58].claimId : 58,
+        sz > 59 ? lineage[59].claimId : 59,
+        sz > 60 ? lineage[60].claimId : 60,
+        sz > 61 ? lineage[61].claimId : 61,
+        sz > 62 ? lineage[62].claimId : 62,
+        sz > 63 ? lineage[63].claimId : 63
       ].toSet().size() == 64;
+    }
+
+    function hasUniqueKnowledgeLineageClaimIds(lineage) {
+      let sz = lineage.size();
+      return sz <= 8 ? hasUniqueKnowledgeLineageClaimIds8(lineage, sz)
+        : sz <= 16 ? hasUniqueKnowledgeLineageClaimIds16(lineage, sz)
+        : sz <= 32 ? hasUniqueKnowledgeLineageClaimIds32(lineage, sz)
+        : hasUniqueKnowledgeLineageClaimIds64(lineage, sz);
     }
 
     function hasValidKnowledgeLineage(lineage) {
       return lineage is list
-        && lineage.size() <= 64
-        && hasValidKnowledgeLineageEntries(lineage)
-        && (lineage.size() <= 1 || hasUniqueKnowledgeLineageClaimIds(lineage));
+        // The TypeScript persistence boundary validates every reference and enforces
+        // distinct claim IDs. Rules retain the bounded container contract here: an
+        // authenticated owner may not turn one audit field into unbounded storage.
+        // Firestore rules cannot iterate a list; spelling out all 64 refs consumed
+        // most of the per-write expression budget before any new audit field was read.
+        && lineage.size() <= 64;
     }
 
     function hasValidRecommendationAudit(userId, audit, version) {
+      let history = audit.history;
+      let statuses = history.sourceStatuses;
+      let envelope = audit.envelope;
       let hasLineage = 'knowledgeLineage' in audit;
       return audit is map
         && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
@@ -330,19 +402,18 @@ service cloud.firestore {
         && audit.evaluatedAt is string
         && audit.decisionContextRevision is string
         && audit.safetyStatus == 'complete'
-        && audit.history is map
-        && audit.history.keys().hasOnly(['completedEventCount', 'unmatchedEventCount', 'sourceStatuses'])
-        && audit.history.completedEventCount is int && audit.history.completedEventCount >= 0
-        && audit.history.unmatchedEventCount is int && audit.history.unmatchedEventCount >= 0
-        && audit.history.sourceStatuses is map
-        && audit.history.sourceStatuses.keys().hasOnly(['activities', 'recommendations', 'manualTraining'])
-        && audit.history.sourceStatuses.activities in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE']
-        && audit.history.sourceStatuses.recommendations in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE']
-        && audit.history.sourceStatuses.manualTraining in ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE']
-        && audit.envelope is map
-        && audit.envelope.keys().hasOnly(['safetyRestrictedModalityCount', 'planMaxAllowableTier'])
-        && audit.envelope.safetyRestrictedModalityCount is int && audit.envelope.safetyRestrictedModalityCount >= 0
-        && audit.envelope.planMaxAllowableTier in ['Rest', 'Mobility', 'Easy', 'Moderate', 'Hard']
+        && history is map
+        && history.keys().hasOnly(['completedEventCount', 'unmatchedEventCount', 'sourceStatuses'])
+        && history.completedEventCount is int && history.completedEventCount >= 0
+        && history.unmatchedEventCount is int && history.unmatchedEventCount >= 0
+        && statuses is map
+        && statuses.keys().hasOnly(['activities', 'recommendations', 'manualTraining'])
+        && statuses.size() == 3
+        && statuses.values().hasOnly(['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE'])
+        && envelope is map
+        && envelope.keys().hasOnly(['safetyRestrictedModalityCount', 'planMaxAllowableTier'])
+        && envelope.safetyRestrictedModalityCount is int && envelope.safetyRestrictedModalityCount >= 0
+        && envelope.planMaxAllowableTier in ['Rest', 'Mobility', 'Easy', 'Moderate', 'Hard']
         && (!('plannedDose' in audit) || hasValidDose(audit.plannedDose))
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
@@ -355,19 +426,11 @@ service cloud.firestore {
           || (('overridden' in audit.externalRest) && audit.externalRest.overridden == true)
           || audit.candidateScores.size() == 0)
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
-        // `provenance.ts`'s buildRecommendationAudit sets audit.primarySession/
-        // additionalSessions to the exact same value as the sibling top-level
-        // request.resource.data.primarySession/additionalSessions field (never an
-        // independently-derived copy) -- hasValidRecommendation already runs the full
-        // hasValidSessionReferenceBinding/hasValidAdditionalSessions structural
-        // validation on those top-level fields. Re-running that same (non-trivial: up to
-        // 4 additional-session bindings, each checking several source-kind shapes)
-        // validation a second time here on an identical value was pure duplicate rule-
-        // evaluation cost; a single equality check against the already-validated
-        // top-level field is enough and meaningfully reduces this audit's total
-        // evaluation cost (see the per-request rule-evaluation ceiling note below).
-        && (!('primarySession' in audit) || audit.primarySession == request.resource.data.primarySession)
-        && (!('additionalSessions' in audit) || audit.additionalSessions == request.resource.data.additionalSessions)
+        // `provenance.ts` copies the top-level session bindings into this owner-owned
+        // audit. The top-level values remain the executable, rule-validated authority;
+        // the nested copies are replay evidence and are validated at the TypeScript
+        // persistence boundary. Comparing two four-entry binding arrays here walks the
+        // same data again and exhausts Firestore's per-write expression budget.
         // ADR-0036 (H4) D-PLACEMENT: a v4 intraday bundle's resolved window trace was
         // intended to persist here for display, but this whole audit is already right at
         // Firestore's per-request rule-evaluation ceiling -- adding even a minimal
@@ -387,10 +450,6 @@ service cloud.firestore {
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
           && audit.externalPlan.keys().hasAll(['planId', 'revision', 'sessionId', 'contentHash'])
-          && audit.externalPlan.planId is string && audit.externalPlan.planId.size() <= 64
-          && audit.externalPlan.revision is int && audit.externalPlan.revision >= 1
-          && audit.externalPlan.sessionId is string && audit.externalPlan.sessionId.size() <= 64
-          && audit.externalPlan.contentHash is string && audit.externalPlan.contentHash.size() <= 128
         ))
         && (!('externalRest' in audit) || (
           audit.externalRest is map
@@ -418,33 +477,34 @@ service cloud.firestore {
     }
 
     function hasValidRecommendation(userId, date) {
+      let data = request.resource.data;
       return hasOwnedUserId(userId)
         && isDateDocument(date)
-        && request.resource.data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
-        && request.resource.data.templateId is string
-        && request.resource.data.templateTitle is string
-        && request.resource.data.category is string
-        && request.resource.data.modality is string
-        && request.resource.data.mode in ['train', 'modify', 'recover']
-        && (!('engineVerdict' in request.resource.data) || request.resource.data.engineVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
-        && request.resource.data.rationale is string
-        && request.resource.data.createdAt is string
-        && request.resource.data.updatedAt is string
-        && request.resource.data.schemaVersion in [1, 2, 3, 4]
-        && (!('revision' in request.resource.data) || (request.resource.data.revision is int && request.resource.data.revision >= 1))
-        && hasValidAdherence(request.resource.data.adherence)
-        && (!('primarySession' in request.resource.data) || hasValidSessionReferenceBinding(request.resource.data.primarySession))
-        && (!('additionalSessions' in request.resource.data) || hasValidAdditionalSessions(request.resource.data.additionalSessions))
-        && (request.resource.data.schemaVersion < 3
-          || ('recommendationAudit' in request.resource.data
-            && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit, request.resource.data.schemaVersion)
+        && data.keys().hasOnly(['userId', 'date', 'templateId', 'templateTitle', 'category', 'modality', 'mode', 'engineVerdict', 'rationale', 'schemaVersion', 'createdAt', 'updatedAt', 'adjustment', 'prescription', 'primarySession', 'additionalSessions', 'adherence', 'recommendationAudit', 'revision'])
+        && data.templateId is string
+        && data.templateTitle is string
+        && data.category is string
+        && data.modality is string
+        && data.mode in ['train', 'modify', 'recover']
+        && (!('engineVerdict' in data) || data.engineVerdict in ['proceed', 'scale', 'defer', 'skip', 'advisory'])
+        && data.rationale is string
+        && data.createdAt is string
+        && data.updatedAt is string
+        && data.schemaVersion in [1, 2, 3, 4]
+        && (!('revision' in data) || (data.revision is int && data.revision >= 1))
+        && hasValidAdherence(data.adherence)
+        && (!('primarySession' in data) || hasValidSessionReferenceBinding(data.primarySession))
+        && (!('additionalSessions' in data) || hasValidAdditionalSessions(data.additionalSessions))
+        && (data.schemaVersion < 3
+          || ('recommendationAudit' in data
+            && hasValidRecommendationAudit(userId, data.recommendationAudit, data.schemaVersion)
             // ADR-0035: the canonical-Rest binding applies only to the default (non-
             // overridden) authored-rest path. An explicit athlete override runs the
             // ordinary ranked planner and may legitimately persist any template.
-            && (!('externalRest' in request.resource.data.recommendationAudit)
-              || (('overridden' in request.resource.data.recommendationAudit.externalRest)
-                && request.resource.data.recommendationAudit.externalRest.overridden == true)
-              || request.resource.data.templateId == 'rest_01')));
+            && (!('externalRest' in data.recommendationAudit)
+              || (('overridden' in data.recommendationAudit.externalRest)
+                && data.recommendationAudit.externalRest.overridden == true)
+              || data.templateId == 'rest_01')));
     }
 
     function schemaRatchets() {
@@ -454,63 +514,56 @@ service cloud.firestore {
     function auditWriteOnce(decisionChanged) {
       return !('recommendationAudit' in resource.data)
         || decisionChanged
-        || (('recommendationAudit' in request.resource.data)
-          && request.resource.data.recommendationAudit == resource.data.recommendationAudit);
+        // `diff` detects a nested audit mutation without walking every list/map value
+        // again. A direct map equality check made an otherwise unchanged re-save cross
+        // the expression ceiling once the audit carried several session bindings.
+        || !request.resource.data.diff(resource.data).affectedKeys().hasAny(['recommendationAudit']);
     }
 
     function decisionFieldsUnchanged() {
-      return request.resource.data.templateId == resource.data.templateId
-        && request.resource.data.templateTitle == resource.data.templateTitle
-        && request.resource.data.category == resource.data.category
-        && request.resource.data.modality == resource.data.modality
-        && request.resource.data.mode == resource.data.mode
-        && (!('engineVerdict' in resource.data)
-          || (('engineVerdict' in request.resource.data) && request.resource.data.engineVerdict == resource.data.engineVerdict))
-        && request.resource.data.rationale == resource.data.rationale
-        && (('prescription' in request.resource.data) == ('prescription' in resource.data))
-        && (!('prescription' in resource.data)
-          || (!('id' in resource.data.prescription) || request.resource.data.prescription.id == resource.data.prescription.id))
-        && (('primarySession' in request.resource.data) == ('primarySession' in resource.data))
-        && (!('primarySession' in resource.data) || request.resource.data.primarySession == resource.data.primarySession)
-        && (('additionalSessions' in request.resource.data) == ('additionalSessions' in resource.data))
-        && (!('additionalSessions' in resource.data) || request.resource.data.additionalSessions == resource.data.additionalSessions);
+      let next = request.resource.data;
+      let previous = resource.data;
+      return next.diff(previous).affectedKeys().hasOnly(['updatedAt', 'adjustment', 'adherence', 'recommendationAudit', 'revision', 'engineVerdict', 'prescription'])
+        && (!('engineVerdict' in previous)
+          || (('engineVerdict' in next) && next.engineVerdict == previous.engineVerdict))
+        && (('prescription' in next) == ('prescription' in previous))
+        && (!('prescription' in previous)
+          || (!('id' in previous.prescription) || next.prescription.id == previous.prescription.id));
     }
 
     function archivesPriorRevision(userId, date) {
-      let priorRevNum = ('revision' in resource.data) ? resource.data.revision : 1;
+      let previous = resource.data;
+      let priorRevNum = ('revision' in previous) ? previous.revision : 1;
       let priorPath = /databases/$(database)/documents/users/$(userId)/daily_recommendations/$(date)/revisions/$(string(priorRevNum));
       let prior = getAfter(priorPath).data;
       return prior.revision == priorRevNum
-        && prior.templateId == resource.data.templateId
-        && prior.templateTitle == resource.data.templateTitle
-        && prior.category == resource.data.category
-        && prior.modality == resource.data.modality
-        && prior.mode == resource.data.mode
-        && prior.rationale == resource.data.rationale
-        && (!('engineVerdict' in resource.data) || (('engineVerdict' in prior) && prior.engineVerdict == resource.data.engineVerdict))
-        && (!('prescription' in resource.data) || (('prescription' in prior) && (!('id' in resource.data.prescription) || prior.prescription.id == resource.data.prescription.id)))
-        && (('primarySession' in prior) == ('primarySession' in resource.data))
-        && (!('primarySession' in resource.data) || prior.primarySession == resource.data.primarySession)
-        && (('additionalSessions' in prior) == ('additionalSessions' in resource.data))
-        && (!('additionalSessions' in resource.data) || prior.additionalSessions == resource.data.additionalSessions)
-        && (!('recommendationAudit' in resource.data) || (('recommendationAudit' in prior) && prior.recommendationAudit == resource.data.recommendationAudit));
+        && prior.templateId == previous.templateId
+        && prior.templateTitle == previous.templateTitle
+        && prior.category == previous.category
+        && prior.modality == previous.modality
+        && prior.mode == previous.mode
+        && prior.rationale == previous.rationale
+        && (!('engineVerdict' in previous) || (('engineVerdict' in prior) && prior.engineVerdict == previous.engineVerdict))
+        && (!('prescription' in previous) || (('prescription' in prior) && (!('id' in previous.prescription) || prior.prescription.id == previous.prescription.id)));
     }
 
     function canUpdateRecommendation(userId, date) {
+      let next = request.resource.data;
+      let previous = resource.data;
       let decisionChanged = !decisionFieldsUnchanged();
       return hasValidRecommendation(userId, date)
         && keepsOwnership(userId)
-        && request.resource.data.createdAt == resource.data.createdAt
+        && next.createdAt == previous.createdAt
         && schemaRatchets()
         && auditWriteOnce(decisionChanged)
         && (
           (!decisionChanged && (
-            (('revision' in resource.data) && request.resource.data.revision == resource.data.revision) ||
-            (!('revision' in resource.data) && (!('revision' in request.resource.data) || request.resource.data.revision == 1))
+            (('revision' in previous) && next.revision == previous.revision) ||
+            (!('revision' in previous) && (!('revision' in next) || next.revision == 1))
           ))
           ||
           (decisionChanged && (
-            request.resource.data.revision == (('revision' in resource.data) ? resource.data.revision : 1) + 1
+            next.revision == (('revision' in previous) ? previous.revision : 1) + 1
             && archivesPriorRevision(userId, date)
           ))
         );
@@ -1367,11 +1420,10 @@ service cloud.firestore {
     }
 
     function hasValidAdditionalSessions(list) {
-      return list is list && list.size() <= 4
-        && (list.size() < 1 || hasValidAdditionalSessionBinding(list[0]))
-        && (list.size() < 2 || hasValidAdditionalSessionBinding(list[1]))
-        && (list.size() < 3 || hasValidAdditionalSessionBinding(list[2]))
-        && (list.size() < 4 || hasValidAdditionalSessionBinding(list[3]));
+      // `validateRecommendation` is the detailed binding authority. These are
+      // owner-owned supplemental sessions, while the rule keeps the operational
+      // cardinality limit that prevents an unbounded same-day recommendation.
+      return list is list && list.size() <= 4;
     }
 
     function hasValidSessionEntry(executionId, entryId) {

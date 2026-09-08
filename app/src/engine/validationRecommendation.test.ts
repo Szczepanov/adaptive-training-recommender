@@ -87,4 +87,48 @@ describe('recommendation validation boundary', () => {
         expect(result.isValid).toBe(false);
         expect(result.errors.some(error => error.field === 'recommendationAudit')).toBe(true);
     });
+
+    it('rejects malformed audit provenance retained as a bounded Firestore container', () => {
+        const cases = [
+            {
+                name: 'a lineage reference with an extra field',
+                apply: (audit: Record<string, unknown>) => {
+                    audit.knowledgeLineage = [{ claimId: 'readiness.objective_mode_thresholds', version: 1, extra: true }];
+                },
+            },
+            {
+                name: 'an invalid planned dose',
+                apply: (audit: Record<string, unknown>) => {
+                    audit.plannedDose = { volume: -1, intensity: 1 };
+                },
+            },
+            {
+                name: 'an invalid external-plan revision',
+                apply: (audit: Record<string, unknown>) => {
+                    audit.externalPlan = { planId: 'autumn-block', revision: 0, sessionId: 'w1-threshold', contentHash: 'a'.repeat(64) };
+                },
+            },
+            {
+                name: 'an incomplete subjective-drift metric map',
+                apply: (audit: Record<string, unknown>) => {
+                    audit.subjectiveDrift = {
+                        estimatorId: 'subjective-baseline-v1',
+                        estimatorPolicyVersion: 'subjective-drift-v1',
+                        historyThroughDateExclusive: '2026-08-31',
+                        recentRecordedDays: 7,
+                        longRecordedDays: 28,
+                        contribution: 1,
+                        decisionRelevant: true,
+                        perMetricContributions: { readiness: 1 },
+                    };
+                },
+            },
+        ];
+
+        for (const { name, apply } of cases) {
+            const raw = validV4Recommendation();
+            apply(raw.recommendationAudit as Record<string, unknown>);
+            expect(validateRecommendation(raw).isValid, name).toBe(false);
+        }
+    });
 });

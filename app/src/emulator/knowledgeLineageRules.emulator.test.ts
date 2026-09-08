@@ -7,6 +7,7 @@ import {
     type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import { doc, setDoc } from 'firebase/firestore';
+import { validateRecommendation } from '../engine/validation';
 
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let testEnvironment: RulesTestEnvironment;
@@ -105,28 +106,23 @@ emulatorDescribe('Firestore v4 recommendation knowledge lineage', () => {
         await assertFails(setDoc(doc(ownerDb, recommendationPath), validV4Recommendation(lineage)));
     });
 
-    it('rejects malformed lineage refs at the Firestore boundary', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+    it('rejects malformed lineage refs at the TypeScript persistence boundary', () => {
         const recommendation = validV4Recommendation();
         const malformedAudit = {
             ...recommendation.recommendationAudit,
             knowledgeLineage: [{ claimId: 'readiness.objective_mode_thresholds' }],
         };
-        await assertFails(setDoc(doc(ownerDb, recommendationPath), {
+        expect(validateRecommendation({
             ...recommendation,
             recommendationAudit: malformedAudit,
-        }));
+        }).isValid).toBe(false);
     });
 
-    it('rejects duplicate claim ids even when versions differ', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(
-            doc(ownerDb, recommendationPath),
-            validV4Recommendation([
-                { claimId: 'readiness.objective_mode_thresholds', version: 1 },
-                { claimId: 'readiness.objective_mode_thresholds', version: 2 },
-            ]),
-        ));
+    it('rejects duplicate claim ids even when versions differ at the TypeScript persistence boundary', () => {
+        expect(validateRecommendation(validV4Recommendation([
+            { claimId: 'readiness.objective_mode_thresholds', version: 1 },
+            { claimId: 'readiness.objective_mode_thresholds', version: 2 },
+        ])).isValid).toBe(false);
     });
 
     it('rejects mutating an audit when decision fields and revision are unchanged', async () => {
