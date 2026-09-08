@@ -15,8 +15,38 @@ import {
     EVERGREEN_GENERAL_COVERAGE_SET,
     SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
 } from '../workouts/event-plan';
-import type { CoverageState } from './coverage';
+import type { CoverageState, WeeklyCoverageRequirement } from './coverage';
 import type { SessionTemplate } from './models';
+
+function recoveryRequirement(): WeeklyCoverageRequirement {
+    return {
+        id: 'coverage_block_build_1_recovery_or_rest_0',
+        key: 'recovery_or_rest',
+        label: 'Mobility, easy recovery or complete rest',
+        requirement: 'required',
+        minimumSessions: 1,
+        targetSessions: 1,
+        completedSessions: 0,
+        projectedSessions: 0,
+        priority: 'must_have',
+        rollingWindowDays: 7,
+        windowStart: '2026-09-01',
+        windowEnd: '2026-09-14',
+        credits: [],
+    };
+}
+
+function septemberCoverageState(overrides: Partial<CoverageState> = {}): CoverageState {
+    return {
+        asOfDate: '2026-09-08',
+        phase: 'build',
+        activeBlockId: 'block_build_1',
+        coverageSetId: 'september_cycling_event',
+        descriptor: SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
+        requirements: [recoveryRequirement()],
+        ...overrides,
+    };
+}
 
 describe('ADR-0038 recovery placement state and identity (RP0)', () => {
     describe('policy constants', () => {
@@ -36,17 +66,22 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
             expect(res.descriptor.id).toBe(EVERGREEN_GENERAL_COVERAGE_SET.id);
         });
 
-        it('uses authored_coverage authority when active coverage has recovery_or_rest', () => {
-            const authoredCoverageState: CoverageState = {
-                asOfDate: '2026-09-08',
-                phase: 'build',
-                activeBlockId: 'block_build_1',
-                coverageSetId: 'september_cycling_event',
-                descriptor: SEPTEMBER_CYCLING_EVENT_COVERAGE_SET,
-                requirements: [],
-            };
+        it('does not treat descriptor presence alone as active authored recovery authority', () => {
+            const res = resolveRecoveryAuthority(septemberCoverageState({ requirements: [] }));
+            expect(res.authority).toBe('product_policy');
+            expect(res.coverageSetId).toBe('evergreen_general');
+            expect(res.phase).toBe('general');
+        });
 
-            const res = resolveRecoveryAuthority(authoredCoverageState);
+        it('does not use a stale authored recovery requirement when the role is inactive in the phase', () => {
+            const res = resolveRecoveryAuthority(septemberCoverageState({ phase: 'race' }));
+            expect(res.authority).toBe('product_policy');
+            expect(res.coverageSetId).toBe('evergreen_general');
+            expect(res.phase).toBe('general');
+        });
+
+        it('uses authored_coverage authority when active coverage has a recovery_or_rest requirement', () => {
+            const res = resolveRecoveryAuthority(septemberCoverageState());
             expect(res.authority).toBe('authored_coverage');
             expect(res.coverageSetId).toBe('september_cycling_event');
             expect(res.phase).toBe('build');
@@ -143,13 +178,13 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
                 bootstrapDate: '2026-09-01',
             });
 
-            // On B + 7 with no recovery since bootstrap, state is due
+            // On B + 7 with no recovery since bootstrap, state is due.
             expect(state.isDueToday).toBe(true);
             expect(state.latestQualifyingRecoveryDate).toBeNull();
         });
 
         it('replaces bootstrap reference when a real qualifying recovery occurs', () => {
-            // Suppose a recovery occurred on 2026-09-04 before the bootstrap deadline of 2026-09-08
+            // Suppose a recovery occurred on 2026-09-04 before the bootstrap deadline of 2026-09-08.
             const state = resolveRecoveryPlacementState({
                 asOfDate: '2026-09-05',
                 bootstrapDate: '2026-09-01',
@@ -221,6 +256,12 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
             expect(recoveryNeedTierForCandidate(workCandidate as SessionTemplate, dueState)).toBe(3);
         });
 
+        it('does not promote recovery before durable history or bootstrap authority exists', () => {
+            const unknownState = resolveRecoveryPlacementState({ asOfDate: '2026-09-08' });
+            expect(unknownState.reason).toBe('no_authoritative_history');
+            expect(recoveryNeedTierForCandidate(restCandidate as SessionTemplate, unknownState)).toBe(3);
+        });
+
         it('never returns tier 0', () => {
             const overdueState = resolveRecoveryPlacementState({
                 asOfDate: '2026-09-15',
@@ -232,12 +273,12 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
         });
 
         it('preserves tier 0 programming authority under composeCoverageNeedTier', () => {
-            // If authored coverage has a tier 0 programming requirement, recovery urgency (tier 1) never overrides it:
+            // If authored coverage has a tier 0 programming requirement, recovery urgency (tier 1) never overrides it.
             expect(composeCoverageNeedTier(0, 1)).toBe(0);
-            // Tier 1 recovery beats tier 2 and tier 3 discretionary work:
+            // Tier 1 recovery beats tier 2 and tier 3 discretionary work.
             expect(composeCoverageNeedTier(2, 1)).toBe(1);
             expect(composeCoverageNeedTier(3, 1)).toBe(1);
-            // Slack tier 2 recovery beats tier 3 work:
+            // Slack tier 2 recovery beats tier 3 work.
             expect(composeCoverageNeedTier(3, 2)).toBe(2);
         });
     });
@@ -248,9 +289,9 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
                 '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04',
                 '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08',
                 '2026-09-09', '2026-09-10', '2026-09-11', '2026-09-12',
-                '2026-09-13', '2026-09-14'
+                '2026-09-13', '2026-09-14',
             ];
-            // Recoveries placed on days 07 and 14:
+            // Recoveries placed on days 07 and 14.
             const recoveryDates = new Set(['2026-09-07', '2026-09-14']);
             const result = checkRollingRecoveryInvariant(dates, recoveryDates);
             expect(result.compliant).toBe(true);
@@ -261,9 +302,9 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
         it('fails with violation when 7 consecutive days pass without recovery', () => {
             const dates = [
                 '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04',
-                '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08'
+                '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08',
             ];
-            // Only day 01 was recovery; 7 consecutive non-recovery days follow (02-08)
+            // Only day 01 was recovery; 7 consecutive non-recovery days follow (02-08).
             const recoveryDates = new Set(['2026-09-01']);
             const result = checkRollingRecoveryInvariant(dates, recoveryDates);
             expect(result.compliant).toBe(false);
@@ -276,19 +317,44 @@ describe('ADR-0038 recovery placement state and identity (RP0)', () => {
             });
         });
 
-        it('excludes pre-bootstrap dates from evaluation', () => {
+        it('counts each local date once even when multiple exposures exist on one date', () => {
+            const dates = [
+                '2026-09-01', '2026-09-02', '2026-09-03',
+                '2026-09-04', '2026-09-05', '2026-09-06', '2026-09-06',
+            ];
+            const result = checkRollingRecoveryInvariant(dates, new Set());
+            expect(result.compliant).toBe(true);
+            expect(result.maxConsecutiveNonRecoveryDays).toBe(6);
+            expect(result.violations).toHaveLength(0);
+        });
+
+        it('excludes pre-bootstrap dates and the bootstrap reference date from evaluation', () => {
             const dates = [
                 '2026-08-25', '2026-08-26', '2026-08-27', '2026-08-28',
                 '2026-08-29', '2026-08-30', '2026-08-31', '2026-09-01',
                 '2026-09-02', '2026-09-03', '2026-09-04', '2026-09-05',
-                '2026-09-06', '2026-09-07'
+                '2026-09-06', '2026-09-07',
             ];
-            // Bootstrap is 2026-09-01. Prior dates have no recovery, but should be excluded.
-            // Recovery happens on 2026-09-07.
+            // Bootstrap is 2026-09-01. Prior dates and B itself are excluded; recovery occurs on B + 6.
             const recoveryDates = new Set(['2026-09-07']);
             const result = checkRollingRecoveryInvariant(dates, recoveryDates, '2026-09-01');
             expect(result.compliant).toBe(true);
             expect(result.violations).toHaveLength(0);
+        });
+
+        it('evaluates the first bootstrap window exactly as B + 1 through B + 7', () => {
+            const dates = [
+                '2026-09-01', '2026-09-02', '2026-09-03', '2026-09-04',
+                '2026-09-05', '2026-09-06', '2026-09-07', '2026-09-08',
+            ];
+            const result = checkRollingRecoveryInvariant(dates, new Set(), '2026-09-01');
+            expect(result.compliant).toBe(false);
+            expect(result.maxConsecutiveNonRecoveryDays).toBe(7);
+            expect(result.violations).toEqual([{
+                windowStart: '2026-09-02',
+                windowEnd: '2026-09-08',
+                nonRecoveryCount: 7,
+            }]);
         });
     });
 });
