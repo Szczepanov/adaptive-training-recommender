@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { rankCandidates } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
 import type { FatigueState, UserEvent, UserPreferences, WeeklyObjective } from './models';
+import type { ResolvedAvailability } from './schedule';
 
 function cyclingEvent(): UserEvent {
     return {
@@ -79,7 +80,7 @@ function autonomicFatigue(internalCardiovascular = 0.50): FatigueState {
     };
 }
 
-const availability = {
+const availability: ResolvedAvailability = {
     date: '2026-09-08',
     maxTimeMinutes: 90,
     availableEquipment: ['indoor_bike', 'free_weights'],
@@ -94,7 +95,7 @@ const availability = {
         neuromuscular: 0,
     },
     environmentOverride: null,
-} as const;
+};
 
 const mixedObjectives: WeeklyObjective[] = [
     {
