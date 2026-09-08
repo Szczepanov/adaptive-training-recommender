@@ -212,7 +212,9 @@ describe('ADR-0038 historical recovery truth (RP2)', () => {
         it('suppresses explicit override and contradictory canonical training', async () => {
             const plan = restPlan();
             const overridden = await authoredRestRecommendation(plan);
-            (overridden.recommendationAudit!.externalRest as typeof overridden.recommendationAudit.externalRest & { overridden?: true }).overridden = true;
+            const externalRest = overridden.recommendationAudit!.externalRest;
+            expect(externalRest).toBeDefined();
+            (externalRest as { overridden?: true }).overridden = true;
             expect((await deriveRecoveryFactFromAuthoredRest(overridden, plan)).reason).toBe('overridden');
 
             const recommendation = await authoredRestRecommendation(plan);

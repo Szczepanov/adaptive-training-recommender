@@ -402,14 +402,17 @@ export function reconcileGeneratedRestOutcome(input: ReconcileGeneratedRestInput
         return { fact: null, status: 'contradicted' };
     }
 
+    let reconciliationStatus: 'adherence_confirmed' | 'authoritative_clean_closure' | null = null;
     let reconciliationEvidenceAt: string | null = null;
     if (closureState.status === 'adherence_confirmed') {
+        reconciliationStatus = 'adherence_confirmed';
         reconciliationEvidenceAt = positiveRestAdherenceEvidence(recommendation.adherence);
     } else if (closureState.status === 'authoritative_clean_closure') {
+        reconciliationStatus = 'authoritative_clean_closure';
         reconciliationEvidenceAt = isValidInstant(closureState.closedAt) ? closureState.closedAt : null;
     }
 
-    if (!reconciliationEvidenceAt) {
+    if (!reconciliationStatus || !reconciliationEvidenceAt) {
         return { fact: null, status: 'unreconciled' };
     }
 
@@ -420,7 +423,7 @@ export function reconcileGeneratedRestOutcome(input: ReconcileGeneratedRestInput
                 kind: 'engine_rest_day_outcome',
                 decisionContextRevision,
                 policyVersion,
-                reconciliationStatus: closureState.status,
+                reconciliationStatus,
                 reconciliationEvidenceAt,
             },
         },
