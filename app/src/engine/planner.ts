@@ -92,7 +92,7 @@ import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { resolveFixedActivityIdentity } from './fixedActivityIdentity';
 import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 import { admitsCandidate, computeDailyLedger, type DailyLedgerResult } from './dailyLedger';
-import { pendingFixedActivityLedgerEntries } from './fixedActivityLedger';
+import { dedupeFixedActivitiesByLedgerIdentity, pendingFixedActivityLedgerEntries } from './fixedActivityLedger';
 
 export interface WeekAheadDay {
     date: string;
@@ -672,6 +672,7 @@ export function projectedDateOutcomeFrom(evaluation: ProjectedDateEvaluation): P
     const ranking = evaluation.rank(evaluation.fatigueGated);
     const eligibleIds = new Set(evaluation.eligible.map(template => template.id));
     const gatedIds = new Set(evaluation.fatigueGated.map(template => template.id));
+    const ledgerExcludedIds = new Set(evaluation.ledgerExcludedTemplateIds);
     const exclusionReasons = new Map<string, readonly string[]>();
     ranking.rejected.forEach(candidate => exclusionReasons.set(candidate.template.id, candidate.excludedReasons));
     evaluation.ledgerExcludedTemplateIds.forEach(templateId => exclusionReasons.set(templateId, [DAILY_LEDGER_CAPACITY]));
@@ -683,7 +684,7 @@ export function projectedDateOutcomeFrom(evaluation: ProjectedDateEvaluation): P
         fatigueTier: evaluation.fatigueTier,
         acceptedTemplateIds: ranking.accepted.map(candidate => candidate.template.id),
         fatigueExcludedTemplateIds: evaluation.eligible
-            .filter(template => !gatedIds.has(template.id))
+            .filter(template => !ledgerExcludedIds.has(template.id) && !gatedIds.has(template.id))
             .map(template => template.id),
         exclusionReasons,
     };
@@ -1051,7 +1052,11 @@ export function generateWeekAheadPlan(
 
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
-    const fixedActivities = options.fixedActivities ?? [];
+    // Reconcile revisions once at the planner boundary so every downstream consumer --
+    // date grouping, stimulus credit, fatigue carry-forward and diagnostics -- sees the
+    // same newest occurrence fact. A stale pre-reschedule revision cannot claim the id
+    // before the current revision's date is evaluated.
+    const fixedActivities = dedupeFixedActivitiesByLedgerIdentity(options.fixedActivities ?? []);
     const fixedActivitiesByDate = groupFixedActivitiesByDate(fixedActivities);
     const unsetDateFixedActivities = fixedActivities.filter(a => !a.date);
     const getFixedActivitiesForDate = (targetDate: string): FixedActivity[] => {
