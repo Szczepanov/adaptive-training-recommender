@@ -3,6 +3,7 @@ import type { SessionResponse } from '../responses/models';
 
 const firestore = vi.hoisted(() => ({
     doc: vi.fn(),
+    setDoc: vi.fn(),
     updateDoc: vi.fn(),
     getDoc: vi.fn(),
     collection: vi.fn(),
@@ -17,6 +18,7 @@ const firestore = vi.hoisted(() => ({
 
 vi.mock('firebase/firestore', () => ({
     doc: firestore.doc,
+    setDoc: firestore.setDoc,
     updateDoc: firestore.updateDoc,
     getDoc: firestore.getDoc,
     collection: firestore.collection,
@@ -47,6 +49,7 @@ describe('SessionResponseService (M5.1)', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         firestore.doc.mockReturnValue({ path: 'session_responses/x' });
+        firestore.setDoc.mockResolvedValue(undefined);
         firestore.updateDoc.mockResolvedValue(undefined);
         firestore.collection.mockReturnValue({ path: 'session_responses' });
         firestore.query.mockReturnValue({});
@@ -77,7 +80,7 @@ describe('SessionResponseService (M5.1)', () => {
         expect(result.completedFraction).toBeUndefined();
         expect(result.createdAt).toBe(result.updatedAt);
 
-        const [, payload] = firestore.transactionSet.mock.calls[0];
+        const [, payload] = firestore.setDoc.mock.calls[0];
         expect(payload).not.toHaveProperty('completedFraction');
         expect(payload).not.toHaveProperty('unexpectedFatigue');
     });
@@ -105,20 +108,20 @@ describe('SessionResponseService (M5.1)', () => {
         expect(a.responseId).not.toBe(b.responseId);
     });
 
-    it('recordResponse rejects a concurrent second create for the same (sourceSession, window)', async () => {
-        firestore.transactionGet.mockResolvedValue({ exists: () => true });
+    it('recordResponse rejects a second observed create for the same (sourceSession, window)', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => true });
         const service = new SessionResponseService();
         await expect(service.recordResponse(
             'u1', { kind: 'execution', id: 'exec-1', date: '2026-08-18' }, 'immediate', '2026-08-18', '2026-08-18', {},
         )).rejects.toThrow(/already exists/);
-        expect(firestore.transactionSet).not.toHaveBeenCalled();
+        expect(firestore.setDoc).not.toHaveBeenCalled();
     });
 
     it('recordResponse derives a deterministic id from (sourceSession, window) so a retry targets the same document', async () => {
         const service = new SessionResponseService();
         const source = { kind: 'execution' as const, id: 'exec-1', date: '2026-08-18' };
         const a = await service.recordResponse('u1', source, 'immediate', '2026-08-18', '2026-08-18', {});
-        firestore.transactionGet.mockResolvedValueOnce({ exists: () => true });
+        firestore.getDoc.mockResolvedValueOnce({ exists: () => true });
         await expect(service.recordResponse('u1', source, 'immediate', '2026-08-18', '2026-08-18', {})).rejects.toThrow();
         expect(a.responseId).toBe(`resp-${source.kind}-${source.id}-immediate`);
     });
