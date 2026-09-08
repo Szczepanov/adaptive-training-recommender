@@ -616,6 +616,7 @@ export function evaluateProjectedDate(
         {
             anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier,
             authoredPlanBlocks: shared.authoredPlanBlocks,
+            resolvedAvailability: availability,
             ...(planDefinition ? {
                 coverageState: buildCoverageState(
                     planDefinition,
