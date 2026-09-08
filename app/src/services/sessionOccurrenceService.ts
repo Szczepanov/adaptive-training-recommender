@@ -498,6 +498,56 @@ export class SessionOccurrenceService {
     }
 
     /**
+     * ADR-0036 (H4) D-REASSESS, plan step 11's rollback path: return a claimed occurrence
+     * to `scheduled` after a launch failed *after* the claim committed (e.g.
+     * `resolveSessionDefinition` or `startSession` threw), which would otherwise strand it
+     * in `active` with no execution and leave its ledger row stuck at `in_progress`.
+     *
+     * Deliberately not routed through `transitionOccurrenceState`: `active -> scheduled` is
+     * absent from `VALID_OCCURRENCE_TRANSITIONS` on purpose, and widening that table would
+     * let any caller un-claim a genuinely running session. This method is the only way back,
+     * and it is guarded by the one condition that makes the reversal safe -- no execution
+     * references the occurrence, checked by `onBeforeRelease` inside the transaction so a
+     * concurrent `startExecution` cannot slip in between the check and the write.
+     *
+     * A non-`active` occurrence is returned unchanged rather than thrown on: the rollback
+     * path runs in a `catch`, and a release that races a legitimate completion must not
+     * mask the original failure with a second error.
+     */
+    async releaseOccurrenceClaim(
+        userId: string,
+        occurrenceId: string,
+        options: {
+            now?: string;
+            /** Runs inside the release transaction, before any write. Must throw to abort
+             * the release (e.g. an execution already references this occurrence), and may
+             * stage its own writes -- the ledger row's `in_progress -> reserved` reversal. */
+            onBeforeRelease?: (transaction: Transaction, occurrence: Readonly<SessionOccurrence>) => Promise<void> | void;
+        } = {},
+    ): Promise<SessionOccurrence | null> {
+        const now = options.now ?? new Date().toISOString();
+        const ref = this.occurrenceRef(userId, occurrenceId);
+        let released: SessionOccurrence | null = null;
+        await runTransaction(this.db, async transaction => {
+            const snap = await transaction.get(ref);
+            if (!snap.exists()) return;
+            const parsed = parseSessionOccurrenceDocument(snap.data(), ref.path);
+            if (parsed.status !== 'AVAILABLE') return;
+            const current = parsed.data;
+            if (current.state !== 'active') {
+                released = current;
+                return;
+            }
+            if (options.onBeforeRelease) {
+                await options.onBeforeRelease(transaction, current);
+            }
+            released = { ...current, state: 'scheduled', updatedAt: now } as SessionOccurrence;
+            transaction.set(ref, released);
+        });
+        return released;
+    }
+
+    /**
      * Transitions an occurrence state across its lifecycle (e.g. scheduled -> completed, active -> completed, active -> abandoned, scheduled -> skipped).
      * Prevents invalid transitions using the explicit occurrence lifecycle table.
      */

@@ -1201,7 +1201,20 @@ service cloud.firestore {
     function isValidOccurrenceStateTransition(fromState, toState) {
       return fromState == toState
         || (fromState == 'scheduled' && toState in ['active', 'completed', 'abandoned', 'skipped', 'superseded', 'missed'])
-        || (fromState == 'active' && toState in ['completed', 'abandoned', 'superseded']);
+        // H4 (#434) PR 3 Phase 4 step 11: `active -> scheduled` is the launch-claim rollback.
+        // A claim commits before the session definition is resolved and the runner starts; if
+        // that fails afterwards, the occurrence would otherwise be stranded `active` with no
+        // execution and its minutes debited for the rest of the day.
+        //
+        // The rules cannot express the condition that makes this safe -- "no execution
+        // references this occurrence" needs a query, which rules cannot run -- so it is
+        // enforced in `releaseOccurrenceClaim`/`releaseIntradayMemberClaim`, which check for a
+        // referencing execution and refuse to reverse a ledger row that has already been
+        // reconciled by one. This clause is therefore deliberately wider than the guarded path
+        // that uses it, and is the reason `VALID_OCCURRENCE_TRANSITIONS` in
+        // `sessionOccurrenceService.ts` still omits it: the general
+        // `transitionOccurrenceState` must not be able to un-claim a genuinely running session.
+        || (fromState == 'active' && toState in ['completed', 'abandoned', 'superseded', 'scheduled']);
     }
 
     match /users/{userId}/session_occurrences/{occurrenceId} {

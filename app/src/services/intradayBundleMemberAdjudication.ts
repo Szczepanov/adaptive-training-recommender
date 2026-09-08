@@ -81,6 +81,19 @@ export interface IntradayBundleMemberStatus {
     reason: string;
     occurrenceId?: string;
     binding?: SessionReferenceBinding;
+    /**
+     * Presentation-only fields for `AdditionalSessionsCard` (plan step 10). They are not
+     * decision inputs and nothing reads them back: `SessionReferenceBinding` carries only
+     * `sessionSource`/`occurrenceId`/`prescriptionHash`, so without these the card could
+     * name a member but not say *when* it is, which is the one thing an intraday member's
+     * whole existence is about. Present for every adjudicated member, including rejected
+     * ones, so a refusal can still be shown against its intended window.
+     */
+    title?: string;
+    windowId?: string;
+    boundStartLocal?: string;
+    boundEndLocal?: string;
+    orderInBundle?: number;
 }
 
 export interface IntradayBundleMemberAdjudicationResult {
@@ -213,9 +226,20 @@ export async function adjudicateIntradayBundleMembers(
             continue;
         }
 
+        /** Spread into every status this iteration emits, so the card can render a window
+         * and an order label for a rejected member exactly as for a launchable one. */
+        const presentation = {
+            title: targetSession.definition.title,
+            windowId: binding.windowId,
+            boundStartLocal: binding.boundStartLocal,
+            boundEndLocal: binding.boundEndLocal,
+            ...(targetSession.intraday ? { orderInBundle: targetSession.intraday.order } : {}),
+        };
+
         // Guard rails
         if (targetSession.isEvent) {
             statuses.push({
+                ...presentation,
                 sessionId: targetSession.id,
                 status: 'reject',
                 reason: 'Target event cannot be an executable intraday bundle session.',
@@ -224,6 +248,7 @@ export async function adjudicateIntradayBundleMembers(
         }
         if (targetSession.definition.id === 'rest_01') {
             statuses.push({
+                ...presentation,
                 sessionId: targetSession.id,
                 status: 'reject',
                 reason: 'Rest sessions cannot be bound as intraday bundle members.',
@@ -232,6 +257,7 @@ export async function adjudicateIntradayBundleMembers(
         }
         if (!targetSession.intraday) {
             statuses.push({
+                ...presentation,
                 sessionId: targetSession.id,
                 status: 'reject',
                 reason: 'Session lacks intraday specification.',
@@ -473,6 +499,7 @@ export async function adjudicateIntradayBundleMembers(
             }
 
             statuses.push({
+                ...presentation,
                 sessionId: targetSession.id,
                 status: 'reject',
                 reason: verdict.reason,
@@ -569,6 +596,7 @@ export async function adjudicateIntradayBundleMembers(
             });
 
             statuses.push({
+                ...presentation,
                 sessionId: targetSession.id,
                 status: verdict.decision,
                 reason: verdict.reason,
@@ -581,6 +609,7 @@ export async function adjudicateIntradayBundleMembers(
         if (existingAdditionalBindingsCount + bindings.length >= 4) {
             notices.push(`Bundle member '${targetSession.id}' omitted: maximum 4 additional sessions cap reached.`);
             statuses.push({
+                ...presentation,
                 sessionId: targetSession.id,
                 status: 'proceed',
                 reason: 'Maximum 4 additional sessions cap reached',
@@ -725,6 +754,7 @@ export async function adjudicateIntradayBundleMembers(
 
         bindings.push(launch.binding);
         statuses.push({
+            ...presentation,
             sessionId: targetSession.id,
             status: 'proceed',
             reason: verdict.reason,

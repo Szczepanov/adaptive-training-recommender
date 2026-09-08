@@ -549,6 +549,41 @@ parameter order on `queueOccurrenceTransition`. What remains:
 
 ### Phase 4 — Launch affordance and the atomic claim
 
+> **Delivered.** Steps 10, 11 and 12 are implemented: `AdditionalSessionsCard.tsx` (+ CSS,
+> + `additionalSessionLaunchability.ts`), `services/intradayLaunchClaim.ts`
+> (`claimIntradayMemberLaunch`, `releaseIntradayMemberClaim`, `StaleDecisionError`),
+> `sessionOccurrenceService.releaseOccurrenceClaim`, and the `Home.tsx` handler that composes
+> them. Covered by `src/emulator/intradayLaunchClaim.emulator.test.ts` (real transactions,
+> real rules) and `AdditionalSessionsCard.test.tsx`.
+>
+> Three things the implementation settled differently from the text below, each for a reason
+> the text did not anticipate:
+>
+> 1. **The claim is invoked from `Home.tsx`, not `App.tsx:323`.** `onStartSession` is also the
+>    primary session's launch path, and a v4 primary occurrence has no ledger reservation or
+>    decision record -- claiming unconditionally there would have refused every primary launch.
+>    `Home` is also where the freshly computed `ReassessmentInputRevision` lives, which step 11
+>    requires. `App.tsx` changed only in that an unresolvable definition now throws instead of
+>    logging and returning, so the rollback path can actually observe the failure.
+> 2. **The claim does not re-run `reassessDependentBundleMember`.** The
+>    `ReassessmentInputRevision` fingerprints every input the verdict consumed, so an unchanged
+>    fingerprint means an unchanged verdict by construction; a changed one fails closed and the
+>    dashboard recomputes. Re-deriving the verdict inside the transaction would add a large
+>    parameter surface whose only outcomes are "same answer" or "the fingerprint lied".
+> 3. **Sibling `reserved` rows do not count against the claim's capacity check.** A reservation
+>    is a soft hold; a claim is the hard spend. Counting sibling holds denied *both* members of
+>    a pair two tabs had over-admitted, leaving the athlete unable to start anything; counting
+>    only committed consumption (`in_progress` and terminal) makes the first claim win and the
+>    second refuse -- the "exactly one" the plan asks for.
+>
+> The emulator run also surfaced a real gap the plan did not list: `firestore.rules`'
+> `isValidOccurrenceStateTransition` forbade `active -> scheduled`, so the step 11 rollback was
+> impossible to commit. The rules now permit it, with the "no execution references it" guard
+> enforced in the service layer (rules cannot query).
+>
+> Still to come in Phase 5/6: the post-AM `SessionResponse` capture (without it a dependent
+> member stays `pending` and never reaches a launchable verdict) and the `POLICY_VERSION` bump.
+
 10. **`AdditionalSessionsCard`** (`app/src/components/session/AdditionalSessionsCard.tsx`, new + CSS)
     - Action: render each additional session with its window (`boundStartLocal-boundEndLocal`),
       order label, and one of: a Start button (binding present), a pending explanation

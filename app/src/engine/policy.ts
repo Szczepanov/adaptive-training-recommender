@@ -6,6 +6,7 @@ export const POLICY_VERSION = '2026-09-sequencing-ranking-diagnostics-v1';
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-09-adr-0038-recovery-identity-v1',
     '2026-09-week-ahead-effective-dose-projection-v1',
     '2026-09-h4-intraday-reassessment-v1',
     '2026-09-h4-intraday-bundle-placement-v1',
