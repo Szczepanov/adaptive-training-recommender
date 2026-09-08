@@ -6,6 +6,7 @@ import type {
     FatigueState,
     FixedActivity,
     MicrocycleState,
+    RankingCounterfactual,
     Recommendation,
     ScheduleOverlay,
     SessionAdjustment,
@@ -57,6 +58,7 @@ import {
     ANCHOR_HISTORY_CATEGORIES,
     buildOptimizationContext,
     candidateMatchesAnchorRole,
+    computeRankingCounterfactual,
     materializeEffectiveDose,
     rankCandidates,
     resolveRecoveryStyle,
@@ -113,6 +115,10 @@ export interface WeekAheadDay {
         selectedCostPenalty: number;
         bestBenefitTemplateId: string;
         bestBenefitScore: number;
+        /** Issue #458: deterministic ranking-tier counterfactual, mirroring
+         *  Recommendation.decisionTrace.rankingAudit for today/tomorrow. Null when no
+         *  candidate was accepted (fallback rest day). */
+        rankingAudit?: RankingCounterfactual | null;
         fatigue?: FatigueState;
         activeObjectives?: Array<{
             key: WeeklyObjective['key'];
@@ -1475,6 +1481,7 @@ export function generateWeekAheadPlan(
                 selectedCostPenalty: pick.costPenalty,
                 bestBenefitTemplateId: bestBenefit.template.id,
                 bestBenefitScore: bestBenefit.benefitScore,
+                rankingAudit: computeRankingCounterfactual(rankingResult, pick.template.id),
                 fatigue: rankingFatigue,
                 activeObjectives: microcycle.objectives.map(objective => ({
                     key: objective.key,

@@ -150,6 +150,52 @@ describe('recommendation provenance', () => {
         expect(JSON.stringify(audit)).not.toContain('clinicalEnvelopeSources');
     });
 
+    it('strips diagnostic-only candidateScores fields (issue #458): the persisted audit never gains benefitScore/costPenalty/rankingAudit', () => {
+        const template = TEMPLATES.find(item => item.category === 'Easy Endurance');
+        if (!template) throw new Error('Test fixture requires an easy template');
+        const recommendation: Recommendation = {
+            template,
+            mode: 'train',
+            rationale: 'Diagnostic leak regression test.',
+            envelopes: {
+                safety: { clinicalFlagActive: false, restrictedModalities: [] },
+                plan: { maxAllowableTier: 'Easy', taperActive: false },
+            },
+            decisionTrace: {
+                policyVersion: POLICY_VERSION,
+                candidateScores: [{
+                    templateId: template.id, utilityScore: 1.25, excludedReasons: [],
+                    // Diagnostic-only fields that already exist on the in-memory trace type,
+                    // plus the sequencing/ranking-audit fields this issue adds -- none of
+                    // these belong in the persisted RecommendationAudit shape.
+                    benefitScore: 4.2, costPenalty: 0.1,
+                }],
+                droppedContributorObjectives: [],
+                rankingAudit: {
+                    selectedTemplateId: template.id, coverageNeedTier: 2, recoveryPreferenceTier: 0,
+                    benefitTier: 0, utilityScore: 1.25, bestUtilityTemplateId: template.id,
+                    bestUtilityScore: 1.25, selectedVsBestUtilityGap: 0,
+                    utilityWinnerBlockedByCoverageTier: false, utilityWinnerBlockedByRecoveryTier: false,
+                    utilityWinnerBlockedByBenefitTier: false, selectedAdvancesRequiredRole: false,
+                },
+            },
+        };
+        const snapshot = buildTrainingHistorySnapshot(
+            '2026-08-07', 7,
+            { status: 'AVAILABLE', revision: 'activities-r1', data: [] },
+            { status: 'AVAILABLE', revision: 'recommendations-r1', data: [] },
+            '2026-08-07T08:00:00Z',
+        );
+
+        const audit = buildRecommendationAudit(recommendation, snapshot, '2026-08-07T09:00:00Z');
+        expect(audit!.candidateScores).toEqual([{ templateId: template.id, utilityScore: 1.25, excludedReasons: [] }]);
+        expect(Object.keys(audit!)).not.toContain('rankingAudit');
+        const serialized = JSON.stringify(audit);
+        expect(serialized).not.toContain('benefitScore');
+        expect(serialized).not.toContain('costPenalty');
+        expect(serialized).not.toContain('rankingAudit');
+    });
+
     it('carries compact identity evidence into the recommendation audit verbatim', () => {
         const template = TEMPLATES.find(item => item.category === 'Rest');
         if (!template) throw new Error('Test fixture requires a rest template');

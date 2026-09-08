@@ -45,6 +45,7 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 - Dev Server: `cd app && npm run dev` (automatically runs `npm run check` first via `predev`)
 - Engine Simulation: `cd app && npm run simulate:scenarios`
 - Simulation Diff: `cd app && npm run simulate:diff`
+- Sequencing/Ranking Diagnostics Report: `cd app && npm run build:plan-judge-corpus && npm run report:sequencing` (issue #458 — deterministic sequencing collision/spacing/opportunity-cost metrics; report only, no gate)
 - Policy Version Guard: `cd app && node scripts/check-policy-drift.mjs <base-sha>`
 - Replay Decision Audit: `cd app && npm run replay:recommendation -- <audit.json>`
 - Visual Review Harness: `cd app && npm run visual:refresh` (captures screenshots to `artifacts/visual-review/latest/`)

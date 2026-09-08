@@ -667,6 +667,31 @@ export interface MicrocycleState {
     objectives: WeeklyObjective[];
 }
 
+// Issue #458 / docs/analysis/2026-09-07-recommender-optimization-opportunities.md §6 -- a
+// deterministic, read-only counterfactual over an already-completed candidate ranking.
+// Canonical location here (not optimizer.ts) so decisionTrace/WeekAheadDay.diagnostics below
+// can reference it without importing back from optimizer.ts (optimizer.ts already imports
+// from models.ts). Simulation/analysis-only: provenance.ts never persists this into
+// RecommendationAudit.
+export interface RankingCounterfactual {
+    selectedTemplateId: string;
+    coverageNeedTier: 0 | 1 | 2 | 3;
+    recoveryPreferenceTier: 0 | 1;
+    benefitTier: number;
+    utilityScore: number;
+    bestUtilityTemplateId: string | null;
+    bestUtilityScore: number | null;
+    selectedVsBestUtilityGap: number | null;
+    utilityWinnerBlockedByCoverageTier: boolean;
+    utilityWinnerBlockedByRecoveryTier: boolean;
+    utilityWinnerBlockedByBenefitTier: boolean;
+    /** Cheap proxy for "the selection advances an explicit required weekly programming
+     * role" (coverageNeedTier <= 1, matching the rationale-string convention already used in
+     * optimizer.ts). A precise weekly-role-allocation feasibility cross-check is deferred --
+     * see docs/plans/issue-458-sequencing-and-ranking-diagnostics.md. */
+    selectedAdvancesRequiredRole: boolean;
+}
+
 export interface WorkoutStimulusProfile {
     aerobicEndurance: number;     // 0.0 - 1.0 (canonical)
     thresholdPower: number;       // 0.0 - 1.0 (canonical)
@@ -932,6 +957,11 @@ export interface Recommendation {
          *  periodization.ts resolveMultiEventObjectives. Empty in the overwhelmingly
          *  common single-or-no-event case. */
         droppedContributorObjectives: DroppedContributorObjective[];
+        /** Issue #458: deterministic ranking-tier counterfactual for this decision, or null
+         *  when no candidate was accepted (e.g. the safe-recovery fallback). A new sibling
+         *  key, deliberately not folded into candidateScores -- see provenance.ts, which
+         *  must never persist this into RecommendationAudit. */
+        rankingAudit?: RankingCounterfactual | null;
         /** Present exactly when an imported session was adjudicated. Carried to the
          * persisted audit unchanged so replay can name the revision it must verify. */
         externalPlan?: ExternalDecisionProvenance;

@@ -1,4 +1,4 @@
-import type { DimensionalFatigue, EquipmentKey, Recommendation, SessionTemplate, UserContext, WorkoutCostProfile, WorkoutStimulusProfile } from '../models';
+import type { DimensionalFatigue, EquipmentKey, RankingCounterfactual, Recommendation, SessionTemplate, UserContext, WorkoutCostProfile, WorkoutStimulusProfile } from '../models';
 import { evaluateNextDayPlanWithIntent, evaluateTrainingWithIntent } from '../rules';
 import { generateWeekAheadPlanWithIntent, resolveWeeklyAnchors, type WeekAheadDay } from '../planner';
 import { materializeEffectiveDose } from '../optimizer';
@@ -26,6 +26,13 @@ import {
 } from '../subjectiveBaseline';
 import { SUBJECTIVE_DRIFT_SENSITIVITY_CONFIGS, type SubjectiveDriftSensitivityConfig } from './subjectiveDriftComparison';
 import { subjectiveProfileDay, subjectiveProfileReadiness, SUBJECTIVE_PROFILE_KINDS, type SubjectiveProfileKind } from './subjectiveProfiles';
+import { computeSequencingDiagnostics, type SequencingDiagnostics } from './sequencingMetrics';
+
+/** Re-exported so callers that already hold an ssr-loaded `analyze.ts` module (e.g. the
+ * rolling-daily judge-corpus builder, which does not call computeMetrics()) can compute the
+ * same diagnostics without a second module load. */
+export { computeSequencingDiagnostics };
+export type { SequencingDiagnostics };
 
 const ZERO_COST: WorkoutCostProfile = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
 const ZERO_STIMULUS: WorkoutStimulusProfile = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
@@ -70,6 +77,10 @@ export interface ScenarioDecisionTrace {
         selectedBenefitScore: number | null;
         selectedVsBestBenefitGap: number | null;
     };
+    /** Issue #458: deterministic ranking-tier counterfactual for this day's selection, or
+     *  null when no candidate was accepted. Sourced from Recommendation.decisionTrace
+     *  .rankingAudit (today/tomorrow) or WeekAheadDay.diagnostics.rankingAudit (forecast). */
+    rankingAudit: RankingCounterfactual | null;
 }
 export interface ScenarioResult {
     scenarioId: string; label: string; description: string; weeksSimulated: number; totalDays: number;
@@ -83,6 +94,9 @@ export interface ScenarioResult {
     fatigueTierDayCounts: { train: number; modify: number; recover: number }; constraintViolations: string[];
     allocationReports: Array<{ weekIndex: number; report: WeeklyRoleAllocationReport }>;
     decisionTraces: ScenarioDecisionTrace[];
+    /** Issue #458: deterministic sequencing/ranking diagnostics derived purely from
+     *  decisionTraces above. Diagnostic only -- never influences recommendation output. */
+    sequencingDiagnostics: SequencingDiagnostics;
     weekSummaries: Array<{
         weekIndex: number;
         fatigueTierDayCounts: { train: number; modify: number; recover: number };
@@ -164,6 +178,7 @@ export function traceFromRecommendation(weekIndex: number, date: string, recomme
             selectedBenefitScore,
             selectedVsBestBenefitGap: bestBenefitScore === null || selectedBenefitScore === null ? null : bestBenefitScore - selectedBenefitScore,
         },
+        rankingAudit: recommendation.decisionTrace?.rankingAudit ?? null,
     };
 }
 
@@ -196,6 +211,7 @@ function traceFromForecastDay(weekIndex: number, day: WeekAheadDay): ScenarioDec
             selectedBenefitScore: diagnostics.selectedBenefitScore,
             selectedVsBestBenefitGap: diagnostics.bestBenefitScore - diagnostics.selectedBenefitScore,
         },
+        rankingAudit: diagnostics.rankingAudit ?? null,
     };
 }
 
@@ -326,7 +342,9 @@ function computeMetrics(
         maxConsecutiveSameTemplateStreakWithinCall, maxConsecutiveSameTemplateStreakAcrossWeeks,
         objectiveResolution, objectiveCredits,
         utilityDiagnostics: { fragileSelectionCount, lowerBenefitSelectionCount, trainTierRestOrRecoveryCount },
-        qualityWarnings, anchorWeeks, anchorScopeNote, fatigueTierDayCounts, constraintViolations, allocationReports, decisionTraces, weekSummaries,
+        qualityWarnings, anchorWeeks, anchorScopeNote, fatigueTierDayCounts, constraintViolations, allocationReports, decisionTraces,
+        sequencingDiagnostics: computeSequencingDiagnostics(decisionTraces),
+        weekSummaries,
     };
 }
 

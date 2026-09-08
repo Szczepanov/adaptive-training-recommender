@@ -7,6 +7,7 @@ import type {
     InjuryConstraint,
     IntensityClass,
     PlannedDose,
+    RankingCounterfactual,
     SessionAdjustment,
     SessionHistoryEntry,
     SessionRole,
@@ -119,6 +120,11 @@ export interface RankedCandidate {
     coverageNeedTier: 0 | 1 | 2 | 3;
     /** W3 / macrocycle-v5: deterministic recovery ordering on recover-tier days. */
     recoveryPreferenceTier: 0 | 1;
+    /** Issue #458: ordinal benefit-tie-band bucket assigned during ranking (see
+     * BENEFIT_TIE_BAND). Present on accepted candidates only -- a rejected candidate was
+     * excluded by a hard constraint before benefit tiering is meaningful. Diagnostic only;
+     * does not change selection. */
+    benefitTier?: number;
     rationale: string;
     excludedReasons: string[];
 }
@@ -1019,6 +1025,7 @@ export function rankCandidates(
         benefitTierByCandidate.set(c, startsNewTier ? prevTier + 1 : prevTier);
     });
     const getBenefitTier = (candidate: RankedCandidate) => benefitTierByCandidate.get(candidate)!;
+    accepted.forEach(candidate => { candidate.benefitTier = getBenefitTier(candidate); });
 
     accepted.sort((a, b) => {
         const coverageDiff = a.coverageNeedTier - b.coverageNeedTier;
@@ -1080,6 +1087,42 @@ export function rankCandidates(
     }
 
     return { accepted, rejected, all };
+}
+
+/** Issue #458 / analysis §6: a deterministic, read-only counterfactual over an already-
+ * completed ranking. Reports whether a strictly-higher-utility candidate existed and, if so,
+ * which lexicographic tier(s) blocked it from winning. Pure diagnostic -- computed from
+ * `rankCandidates`'s own output and never fed back into selection. See RankingCounterfactual
+ * in models.ts for why the type itself is defined there rather than here. */
+export function computeRankingCounterfactual(
+    result: RankCandidatesResult,
+    selectedTemplateId: string,
+): RankingCounterfactual | null {
+    const selected = result.accepted.find(c => c.template.id === selectedTemplateId);
+    if (!selected) return null;
+
+    let bestUtility = selected;
+    for (const candidate of result.accepted) {
+        if (candidate.utilityScore > bestUtility.utilityScore) bestUtility = candidate;
+    }
+
+    const isSameCandidate = bestUtility.template.id === selected.template.id;
+    const selectedVsBestUtilityGap = isSameCandidate ? 0 : bestUtility.utilityScore - selected.utilityScore;
+
+    return {
+        selectedTemplateId: selected.template.id,
+        coverageNeedTier: selected.coverageNeedTier,
+        recoveryPreferenceTier: selected.recoveryPreferenceTier,
+        benefitTier: selected.benefitTier ?? 0,
+        utilityScore: selected.utilityScore,
+        bestUtilityTemplateId: bestUtility.template.id,
+        bestUtilityScore: bestUtility.utilityScore,
+        selectedVsBestUtilityGap,
+        utilityWinnerBlockedByCoverageTier: !isSameCandidate && bestUtility.coverageNeedTier !== selected.coverageNeedTier,
+        utilityWinnerBlockedByRecoveryTier: !isSameCandidate && bestUtility.recoveryPreferenceTier !== selected.recoveryPreferenceTier,
+        utilityWinnerBlockedByBenefitTier: !isSameCandidate && (bestUtility.benefitTier ?? 0) !== (selected.benefitTier ?? 0),
+        selectedAdvancesRequiredRole: selected.coverageNeedTier <= 1,
+    };
 }
 
 export function rankCandidatesByUtility(

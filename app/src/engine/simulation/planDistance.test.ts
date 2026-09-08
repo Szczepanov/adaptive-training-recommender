@@ -35,6 +35,7 @@ function makeMockTrace(
         fixedActivity: { count: 0, cost: ZERO_COST, stimulus: ZERO_STIMULUS },
         rejectionCounts: {},
         utility: { top: 1, runnerUp: null, bestBenefitTemplateId: null, bestBenefitScore: null, selectedBenefitScore: null, selectedVsBestBenefitGap: null },
+        rankingAudit: null,
     };
 }
 

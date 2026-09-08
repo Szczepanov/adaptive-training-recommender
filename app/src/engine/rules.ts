@@ -26,7 +26,7 @@ import type {
 import type { ExternalRestDecisionProvenance } from './externalRestProvenance';
 import { TEMPLATES, ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID, TEMPLATES_BY_ID } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
-import { buildOptimizationContext, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
+import { buildOptimizationContext, computeRankingCounterfactual, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -932,6 +932,10 @@ export async function evaluateTrainingWithIntent(
                 policyVersion: POLICY_VERSION,
                 candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
                 droppedContributorObjectives: intent.droppedContributorObjectives,
+                // No candidate survived the hard constraints (rankingResult.accepted is
+                // empty in this branch -- see `if (!pick)` above), so there is no
+                // counterfactual to report.
+                rankingAudit: null,
                 calibration,
                 ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
                 ...(overriddenExternalRest ? { externalRest: overriddenExternalRest } : {}),
@@ -959,6 +963,7 @@ export async function evaluateTrainingWithIntent(
             policyVersion: POLICY_VERSION,
             candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
             droppedContributorObjectives: intent.droppedContributorObjectives,
+            rankingAudit: computeRankingCounterfactual(rankingResult, pick.template.id),
             calibration,
             ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
             ...(overriddenExternalRest ? { externalRest: overriddenExternalRest } : {}),
