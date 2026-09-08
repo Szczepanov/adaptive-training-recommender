@@ -32,7 +32,7 @@ function preferences(): UserPreferences {
         preferredTimeOfDay: 'flexible',
         avoidedModalities: [],
         deprioritizedModalities: [],
-        preferredModalities: ['Cycling'],
+        preferredModalities: [],
         explanationVerbosity: 'brief',
         conservativeBias: false,
         preferredUnits: {
@@ -46,7 +46,7 @@ function preferences(): UserPreferences {
     };
 }
 
-function autonomicFatigue(): FatigueState {
+function autonomicFatigue(internalCardiovascular = 0.50): FatigueState {
     return {
         lastUpdatedDate: '2026-09-08',
         externalLoadFatigue: {
@@ -59,15 +59,18 @@ function autonomicFatigue(): FatigueState {
         },
         internalResponseStrain: {
             systemic: 0.45,
-            cardiovascular: 0.50,
+            cardiovascular: internalCardiovascular,
             lowerBody: 0.1,
             upperBody: 0.1,
             impactTissue: 0.1,
             neuromuscular: 0.1,
         },
+        // Keep combined fatigue fixed below the cardiovascular branch threshold so the
+        // paired test below changes exactly one decision input: internal cardiovascular
+        // strain crossing 0.35. This also keeps the generic fatigue cost identical.
         combinedFatigue: {
             systemic: 0.45,
-            cardiovascular: 0.50,
+            cardiovascular: 0.30,
             lowerBody: 0.1,
             upperBody: 0.1,
             impactTissue: 0.1,
@@ -76,54 +79,74 @@ function autonomicFatigue(): FatigueState {
     };
 }
 
-describe('autonomic stress modality preservation', () => {
-    it('keeps an endurance-event modify day in the event modality instead of drifting to discretionary strength', () => {
-        const unresolvedObjectives: WeeklyObjective[] = [
-            {
-                id: 'obj_1',
-                key: 'zone2_aerobic',
-                title: 'Zone 2 Aerobic',
-                targetExposures: 2,
-                completedExposures: 1,
-                targetStimulus: { aerobicEndurance: 0.8 },
-            },
-            {
-                id: 'obj_2',
-                key: 'strength_maintenance',
-                title: 'Strength Maintenance',
-                targetExposures: 1,
-                completedExposures: 0,
-                targetStimulus: { maxStrength: 0.5 },
-            },
-        ];
+const availability = {
+    date: '2026-09-08',
+    maxTimeMinutes: 90,
+    availableEquipment: ['indoor_bike', 'free_weights'],
+    fixedActivities: [],
+    reservedCapacityCost: 0,
+    reservedCapacityCostProfile: {
+        systemic: 0,
+        cardiovascular: 0,
+        lowerBody: 0,
+        upperBody: 0,
+        impactTissue: 0,
+        neuromuscular: 0,
+    },
+    environmentOverride: null,
+} as const;
 
-        const ranked = rankCandidates(
+const mixedObjectives: WeeklyObjective[] = [
+    {
+        id: 'obj_1',
+        key: 'zone2_aerobic',
+        title: 'Zone 2 Aerobic',
+        targetExposures: 2,
+        completedExposures: 1,
+        targetStimulus: { aerobicEndurance: 0.8 },
+    },
+    {
+        id: 'obj_2',
+        key: 'strength_maintenance',
+        title: 'Strength Maintenance',
+        targetExposures: 1,
+        completedExposures: 0,
+        targetStimulus: { maxStrength: 0.5 },
+    },
+];
+
+describe('autonomic stress modality preservation', () => {
+    it('applies the endurance-event strength penalty only when internal cardiovascular strain crosses its threshold', () => {
+        const belowThreshold = rankCandidates(
             ENRICHED_TEMPLATES,
-            unresolvedObjectives,
-            autonomicFatigue(),
-            {
-                date: '2026-09-08',
-                maxTimeMinutes: 90,
-                availableEquipment: ['indoor_bike', 'free_weights'],
-                fixedActivities: [],
-                reservedCapacityCost: 0,
-                reservedCapacityCostProfile: {
-                    systemic: 0,
-                    cardiovascular: 0,
-                    lowerBody: 0,
-                    upperBody: 0,
-                    impactTissue: 0,
-                    neuromuscular: 0,
-                },
-                environmentOverride: null,
-            },
+            mixedObjectives,
+            autonomicFatigue(0.34),
+            availability,
+            [],
+            preferences(),
+            { focusEvent: cyclingEvent(), date: '2026-09-08', fatigueTier: 'modify' },
+        );
+        const atThreshold = rankCandidates(
+            ENRICHED_TEMPLATES,
+            mixedObjectives,
+            autonomicFatigue(0.35),
+            availability,
             [],
             preferences(),
             { focusEvent: cyclingEvent(), date: '2026-09-08', fatigueTier: 'modify' },
         );
 
-        expect(ranked.accepted.length).toBeGreaterThan(0);
-        expect(ranked.accepted[0].template.modality).toBe('Cycling');
+        const controlStrength = belowThreshold.accepted.find(candidate => candidate.template.modality === 'Strength');
+        expect(controlStrength).toBeDefined();
+        const suppressedStrength = atThreshold.accepted.find(
+            candidate => candidate.template.id === controlStrength!.template.id,
+        );
+        expect(suppressedStrength).toBeDefined();
+
+        // The only changed decision input is internal cardiovascular strain 0.34 -> 0.35.
+        // The endurance-event branch therefore accounts for the full 0.25x utility change.
+        expect(suppressedStrength!.utilityScore).toBeCloseTo(controlStrength!.utilityScore * 0.25, 10);
+        expect(atThreshold.accepted[0].template.modality).toBe('Cycling');
     });
 
     it('does not suppress strength when there is no endurance focus event', () => {
@@ -139,23 +162,11 @@ describe('autonomic stress modality preservation', () => {
             }],
             autonomicFatigue(),
             {
-                date: '2026-09-08',
-                maxTimeMinutes: 90,
+                ...availability,
                 availableEquipment: ['free_weights'],
-                fixedActivities: [],
-                reservedCapacityCost: 0,
-                reservedCapacityCostProfile: {
-                    systemic: 0,
-                    cardiovascular: 0,
-                    lowerBody: 0,
-                    upperBody: 0,
-                    impactTissue: 0,
-                    neuromuscular: 0,
-                },
-                environmentOverride: null,
             },
             [],
-            { ...preferences(), preferredModalities: [] },
+            preferences(),
             { date: '2026-09-08', fatigueTier: 'modify' },
         );
 
