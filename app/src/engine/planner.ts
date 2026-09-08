@@ -227,11 +227,22 @@ export function projectFatigueForRankingDate(
 ): FatigueState {
     const externalHours = Math.max(0, getDayDiff(date, externalFatigue.lastUpdatedDate) * 24);
     const internalHours = Math.max(0, getDayDiff(date, internalStrainAsOf) * 24);
-    const decayedExternal = decayFatigue(externalFatigue.externalLoadFatigue, externalHours);
+    const decayedRawExternal = externalFatigue.rawExternalLoadFatigue
+        ? decayFatigue(externalFatigue.rawExternalLoadFatigue, externalHours)
+        : decayFatigue(externalFatigue.externalLoadFatigue, externalHours);
+    const decayedExternal: DimensionalFatigue = {
+        systemic: Math.min(1, decayedRawExternal.systemic),
+        cardiovascular: Math.min(1, decayedRawExternal.cardiovascular),
+        lowerBody: Math.min(1, decayedRawExternal.lowerBody),
+        upperBody: Math.min(1, decayedRawExternal.upperBody),
+        impactTissue: Math.min(1, decayedRawExternal.impactTissue),
+        neuromuscular: Math.min(1, decayedRawExternal.neuromuscular),
+    };
     const decayedInternal = decayFatigue(internalStrain, internalHours);
     return {
         lastUpdatedDate: date,
         externalLoadFatigue: decayedExternal,
+        rawExternalLoadFatigue: decayedRawExternal,
         internalResponseStrain: decayedInternal,
         combinedFatigue: combineFatigue(decayedExternal, decayedInternal, fatigueFusionPolicy),
     };
@@ -1394,7 +1405,7 @@ export function generateWeekAheadPlan(
             );
             return !after.budgetExhausted && after.fulfilledCount + selfFulfils >= allocation.fulfilledCount;
         };
-        const viabilityApplies = !reservation && fatigueTier !== 'recover' && allocation.fulfilledCount > 0 && ranked.length > 1;
+        const viabilityApplies = fatigueTier !== 'recover' && allocation.fulfilledCount > 0 && ranked.length > 1;
         const pick = (viabilityApplies
             ? ranked.slice(0, WEEKLY_ALLOCATION_SEARCH_BUDGET.maxCandidatesPerOccurrence)
                 .find(candidate => preservesAllocation(candidate.template))
