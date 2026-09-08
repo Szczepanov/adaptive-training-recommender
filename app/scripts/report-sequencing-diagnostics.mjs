@@ -68,6 +68,12 @@ function fmt(n, digits = 3) {
   return typeof n === 'number' ? n.toFixed(digits) : String(n);
 }
 
+function peakCollisionDay(diagnostics) {
+  const days = diagnostics.residualFatigueCollision.perDay ?? [];
+  if (days.length === 0) return null;
+  return days.reduce((best, day) => day.collision > best.collision ? day : best, days[0]);
+}
+
 // -- Worst residual-fatigue collision ---------------------------------------------------
 const byMaxCollision = [...cases].sort(
   (a, b) => b.diagnostics.residualFatigueCollision.maxCollision - a.diagnostics.residualFatigueCollision.maxCollision,
@@ -75,7 +81,9 @@ const byMaxCollision = [...cases].sort(
 console.log('=== Top 20 cases by worst residual-fatigue collision (§4.1) ===');
 for (const c of byMaxCollision.slice(0, 20)) {
   const judgeNote = c.judgeSequencingScore !== null ? `judge sequencing=${fmt(c.judgeSequencingScore, 1)}` : 'judge sequencing=(not in baseline weakest/strongest set)';
-  console.log(`${c.caseId} (${c.familyId}, ${c.simulationMode}): maxCollision=${fmt(c.diagnostics.residualFatigueCollision.maxCollision)} meanCollision=${fmt(c.diagnostics.residualFatigueCollision.meanCollision)} -- ${judgeNote}`);
+  const peak = peakCollisionDay(c.diagnostics);
+  const peakNote = peak ? ` peak=${peak.date} costMagnitude=${fmt(peak.costMagnitude)}` : '';
+  console.log(`${c.caseId} (${c.familyId}, ${c.simulationMode}): maxCollision=${fmt(c.diagnostics.residualFatigueCollision.maxCollision)} meanCollision=${fmt(c.diagnostics.residualFatigueCollision.meanCollision)}${peakNote} -- ${judgeNote}`);
 }
 
 const overlap = byMaxCollision
@@ -86,31 +94,38 @@ console.log(`Cases both high-collision (top 20) and judge-scored poorly on seque
 overlap.forEach(c => console.log(`  ${c.caseId}: maxCollision=${fmt(c.diagnostics.residualFatigueCollision.maxCollision)} judgeSequencing=${fmt(c.judgeSequencingScore, 1)}`));
 
 // -- Top 20 largest ordinal-vs-utility ranking disagreements (§6) -----------------------
-// engineSummary carries the case-level opportunityCost aggregate (from §4.5), not a
-// per-day breakdown -- per-day rankingAudit detail lives on decisionTraces in the raw
-// simulation report (see analyze.ts::ScenarioResult) for anyone drilling into one case.
+// Opportunity-cost diagnostics retain compact per-day disagreement detail so this report can
+// name the exact selected/counterfactual templates and blocking tiers, not only case aggregates.
 const dayLevelDisagreements = [];
+let nonTierDifferenceCount = 0;
 for (const c of cases) {
   const oc = c.diagnostics.opportunityCost;
-  if (oc.utilityWinnerBlockedCount > 0) {
+  nonTierDifferenceCount += oc.utilityWinnerDifferentWithoutTierBlockCount ?? 0;
+  for (const day of oc.perDay ?? []) {
+    if (!day.tierBlocked) continue;
     dayLevelDisagreements.push({
-      caseId: c.caseId, familyId: c.familyId,
-      utilityWinnerBlockedCount: oc.utilityWinnerBlockedCount,
-      maxBlockedUtilityGap: oc.maxBlockedUtilityGap,
-      meanBlockedUtilityGap: oc.meanBlockedUtilityGap,
-      blockedByTier: oc.blockedByTier,
+      caseId: c.caseId,
+      familyId: c.familyId,
+      date: day.date,
+      selectedTemplateId: day.selectedTemplateId,
+      bestUtilityTemplateId: day.bestUtilityTemplateId,
+      selectedVsBestUtilityGap: day.selectedVsBestUtilityGap,
+      blockedByTier: day.blockedByTier,
+      selectedAdvancesRequiredRole: day.selectedAdvancesRequiredRole,
     });
   }
 }
-dayLevelDisagreements.sort((a, b) => b.maxBlockedUtilityGap - a.maxBlockedUtilityGap);
+dayLevelDisagreements.sort((a, b) => b.selectedVsBestUtilityGap - a.selectedVsBestUtilityGap);
 
 console.log('');
-console.log('=== Top 20 cases by largest ordinal-vs-utility ranking disagreement (§6) ===');
-for (const c of dayLevelDisagreements.slice(0, 20)) {
-  console.log(`${c.caseId} (${c.familyId}): maxBlockedUtilityGap=${fmt(c.maxBlockedUtilityGap)} meanBlockedUtilityGap=${fmt(c.meanBlockedUtilityGap)} blockedDays=${c.utilityWinnerBlockedCount} blockedByTier=${JSON.stringify(c.blockedByTier)}`);
+console.log('=== Top 20 days by largest ordinal-vs-utility ranking disagreement (§6) ===');
+for (const d of dayLevelDisagreements.slice(0, 20)) {
+  const blockers = Object.entries(d.blockedByTier).filter(([, blocked]) => blocked).map(([tier]) => tier).join(',');
+  console.log(`${d.caseId} (${d.familyId}) ${d.date}: selected=${d.selectedTemplateId} utilityWinner=${d.bestUtilityTemplateId} gap=${fmt(d.selectedVsBestUtilityGap)} blockedBy=${blockers || '(none)'} selectedAdvancesRequiredRole=${d.selectedAdvancesRequiredRole}`);
 }
 
 console.log('');
+console.log(`Tier-blocked disagreement days: ${dayLevelDisagreements.length}. Same-tier utility-winner differences kept separate: ${nonTierDifferenceCount}.`);
 console.log(`Cases analyzed: ${cases.length}. Corpus captured at: ${corpus.capturedAt ?? 'unknown'}, commit: ${corpus.commit ?? 'unknown'}.`);
 console.log('Note: judge sequencing scores are only available for cases present in the committed');
 console.log('weakest/strongest-case baseline subsets, not the full corpus -- absence does not mean');
