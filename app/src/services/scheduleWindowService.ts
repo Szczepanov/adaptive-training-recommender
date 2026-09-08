@@ -9,6 +9,9 @@ type ScheduleWindowWithId = ScheduleWindow & { id: string };
 type NewScheduleWindowInput = Omit<ScheduleWindow, 'id' | 'userId' | 'revision' | 'createdAt' | 'updatedAt'>;
 type ScheduleWindowUpdates = Partial<Omit<ScheduleWindow, 'id' | 'userId' | 'revision' | 'createdAt' | 'updatedAt'>>;
 
+class InvalidScheduleWindowManifestError extends Error {}
+class RetiredScheduleWindowRepresentationError extends Error {}
+
 /**
  * Persists all of a Warsaw-local date's windows in one authoritative manifest at
  * `users/{userId}/schedule_window_manifests/{YYYY-MM-DD}`.
@@ -40,7 +43,7 @@ export class ScheduleWindowService {
         if (!raw) return null;
         const result = validateScheduleWindowManifest(raw);
         if (!result.isValid || !result.data || result.data.userId !== userId || result.data.date !== date) {
-            throw new Error(`Schedule window manifest for ${date} is invalid`);
+            throw new InvalidScheduleWindowManifestError(`Schedule window manifest for ${date} is invalid`);
         }
         return result.data;
     }
@@ -70,7 +73,9 @@ export class ScheduleWindowService {
             collection(this.db, 'users', userId, this.retiredCollectionPath),
             where('date', '==', date),
         ));
-        if (!retired.empty) throw new Error(`Retired schedule window documents exist for ${date}`);
+        if (!retired.empty) {
+            throw new RetiredScheduleWindowRepresentationError(`Retired schedule window documents exist for ${date}`);
+        }
     }
 
     /** Reads a complete same-date set. A missing manifest is the intentional legacy
@@ -78,24 +83,20 @@ export class ScheduleWindowService {
      * never collapsed into it. */
     async getWindowsForDateState(userId: string, date: string): Promise<DataState<ScheduleWindowWithId[]>> {
         try {
-            try {
-                // Check even when a manifest exists. Coexisting authoritative and retired
-                // representations are ambiguous (for example during a partial admin
-                // migration) and must fail closed rather than silently preferring one.
-                await this.assertNoRetiredWindows(userId, date);
-            } catch (error: unknown) {
-                if (error instanceof Error && error.message.startsWith('Retired schedule window documents')) {
-                    return { status: 'INVALID', issues: [{ code: 'retired-schedule-window-representation', documentPath: `users/${userId}/${this.retiredCollectionPath}` }] };
-                }
-                throw error;
-            }
+            // Check even when a manifest exists. Coexisting authoritative and retired
+            // representations are ambiguous (for example during a partial admin
+            // migration) and must fail closed rather than silently preferring one.
+            await this.assertNoRetiredWindows(userId, date);
             const snapshot = await getDoc(this.ref(userId, date));
             if (!snapshot.exists()) return { status: 'AVAILABLE', data: [], revision: null };
             const manifest = this.manifestFromSnapshot(userId, date, snapshot.data());
             if (!manifest) return { status: 'AVAILABLE', data: [], revision: null };
             return { status: 'AVAILABLE', data: manifest.windows, revision: `manifest:${manifest.revision}` };
         } catch (error: unknown) {
-            if (error instanceof Error && error.message.includes('is invalid')) {
+            if (error instanceof RetiredScheduleWindowRepresentationError) {
+                return { status: 'INVALID', issues: [{ code: 'retired-schedule-window-representation', documentPath: `users/${userId}/${this.retiredCollectionPath}` }] };
+            }
+            if (error instanceof InvalidScheduleWindowManifestError) {
                 const issues: DataIssue[] = [{ code: 'schema-validation-failed', documentPath: `users/${userId}/${this.collectionPath}/${date}` }];
                 return { status: 'INVALID', issues };
             }
