@@ -20,6 +20,20 @@ import { parseSessionResponseDocument } from '../persistence/parsers/sessionResp
 const RESPONSE_WINDOW_ORDER: Record<ResponseWindow, number> = { immediate: 0, later_day: 1, next_morning: 2 };
 
 /**
+ * The same deterministic id `SessionResponseService` writes under, exposed because H4's
+ * launch claim (`intradayLaunchClaim.ts`) must read the predecessor's `immediate` response
+ * *inside* a Firestore transaction, and `Transaction.get` takes a `DocumentReference` -- it
+ * cannot run the `getResponsesForSource` query the service's own readers use. Exported here
+ * rather than restated at the call site so the two can never drift apart.
+ */
+export function sessionResponseDocId(
+    sourceSession: Pick<SessionResponseSourceRef, 'kind' | 'id'>,
+    window: ResponseWindow,
+): string {
+    return `resp-${sourceSession.kind}-${encodeURIComponent(sourceSession.id)}-${window}`;
+}
+
+/**
  * M5.1: user-scoped persistence for `SessionResponse` records. Per D-MRESP, this service
  * never writes a tissue value -- only linkage and the non-tissue session facts
  * (`responses/models.ts`'s doc comment). No record is ever fabricated here for a prompt the
@@ -43,7 +57,7 @@ export class SessionResponseService {
      * double-tap/retry race silently produce two documents, only one of which any later read
      * would ever find. */
     private responseIdFor(sourceSession: SessionResponseSourceRef, window: ResponseWindow): string {
-        return `resp-${sourceSession.kind}-${encodeURIComponent(sourceSession.id)}-${window}`;
+        return sessionResponseDocId(sourceSession, window);
     }
 
     async getResponse(userId: string, responseId: string): Promise<DataState<SessionResponse>> {

@@ -60,6 +60,13 @@ import { LaterDayFollowupCard, type LaterDayFollowupTarget } from './session/Lat
 import { GarminSyncNowButton } from './GarminSyncNowButton';
 import { DataConfidenceIndicator } from './DataConfidenceIndicator';
 import { MorningDecisionCard } from './MorningDecisionCard';
+import { AdditionalSessionsCard } from './session/AdditionalSessionsCard';
+import {
+  claimIntradayMemberLaunch,
+  releaseIntradayMemberClaim,
+  StaleDecisionError,
+  type DashboardInputRevision,
+} from '../services/intradayLaunchClaim';
 import { ActivityReclassificationModal } from './ActivityReclassificationModal';
 import { assembleMorningDecisionEvidence } from '../engine/decisionEvidence';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
@@ -120,7 +127,12 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
   const [recentActivities, setRecentActivities] = useState<NormalizedGarminActivity[]>([]);
   const [, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
-  const [, setBundleMemberStatuses] = useState<IntradayBundleMemberStatus[]>([]);
+  const [bundleMemberStatuses, setBundleMemberStatuses] = useState<IntradayBundleMemberStatus[]>([]);
+  /** The four dashboard-owned fingerprint fields from the evaluation that produced
+   * `bundleMemberStatuses`. Kept so the launch claim can prove nothing they cover moved
+   * between that evaluation and the tap (plan step 11); cleared alongside the statuses. */
+  const [bundleMemberInputRevision, setBundleMemberInputRevision] = useState<DashboardInputRevision | null>(null);
+  const [additionalSessionNotice, setAdditionalSessionNotice] = useState<string | null>(null);
   const [hasPendingSessionResponse, setHasPendingSessionResponse] = useState(false);
   const pendingAdherenceRef = useRef(pendingAdherence);
   useEffect(() => { pendingAdherenceRef.current = pendingAdherence; }, [pendingAdherence]);
@@ -270,6 +282,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
 
   const clearExternalPlanState = useCallback(() => {
     setActiveExternalPlan(null);
+    // The member statuses and their fingerprint describe a plan that is no longer active;
+    // leaving them would keep a Start control on screen for a placement that is gone.
+    setBundleMemberStatuses([]);
+    setBundleMemberInputRevision(null);
   }, []);
 
   const loadDashboardData = useCallback(async () => {
@@ -679,6 +695,14 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               dailyMinuteCeiling: availability.maxTimeMinutes,
               dailySystemicCostCeiling: Math.max(0, 1 - availability.reservedCapacityCost),
             };
+            const memberInputRevision: DashboardInputRevision = {
+              availabilityRevision: `${input.date}:${availability.maxTimeMinutes}:${availability.reservedCapacityCost}`,
+              completedFactsRevision: preparedSnapshot.performedTrainingFacts?.revision ?? preparedSnapshot.revision,
+              checkinRevision: (input.sourceStates?.subjectiveCheckin?.status === 'AVAILABLE' && input.sourceStates.subjectiveCheckin.revision)
+                ? input.sourceStates.subjectiveCheckin.revision
+                : (input.subjectiveCheckin ? 'checkin-present' : 'checkin-missing'),
+              placementRevision: `${activeExternal.plan.planId}:${activeExternal.plan.revision}`,
+            };
             const memberResult = await adjudicateIntradayBundleMembers({
               userId,
               date: input.date,
@@ -690,22 +714,17 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               userContext: context,
               availability,
               ceilings,
-              inputRevision: {
-                availabilityRevision: `${input.date}:${availability.maxTimeMinutes}:${availability.reservedCapacityCost}`,
-                completedFactsRevision: preparedSnapshot.performedTrainingFacts?.revision ?? preparedSnapshot.revision,
-                checkinRevision: (input.sourceStates?.subjectiveCheckin?.status === 'AVAILABLE' && input.sourceStates.subjectiveCheckin.revision)
-                  ? input.sourceStates.subjectiveCheckin.revision
-                  : (input.subjectiveCheckin ? 'checkin-present' : 'checkin-missing'),
-                placementRevision: `${activeExternal.plan.planId}:${activeExternal.plan.revision}`,
-              },
+              inputRevision: memberInputRevision,
               existingAdditionalBindingsCount: additionalBindings.length,
             });
             if (!isCurrent()) return;
             setBundleMemberStatuses(memberResult.statuses);
+            setBundleMemberInputRevision(memberInputRevision);
             additionalBindings.push(...memberResult.bindings);
             additionalNotices.push(...memberResult.notices);
           } else {
             setBundleMemberStatuses([]);
+            setBundleMemberInputRevision(null);
           }
 
           if (additionalBindings.length > 0 || additionalNotices.length > 0) {
@@ -758,6 +777,56 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       if (isCurrent()) setLoading(false);
     }
   }, [userId, clearExternalPlanState]);
+
+  /**
+   * ADR-0036 (H4) plan step 11: claim capacity atomically, then launch. The claim is the
+   * gate -- not the Start button -- so a verdict that has gone stale between this dashboard
+   * evaluation and the tap refuses here rather than launching on it.
+   *
+   * Three distinct outcomes, deliberately handled differently:
+   * - `StaleDecisionError`: expected. Show the athlete-facing reason and reload, which is
+   *   the only path that can write a fresh decision record. Nothing to roll back: a refused
+   *   claim aborts its whole transaction.
+   * - launch failure *after* a committed claim: release the claim, or the occurrence is
+   *   stranded `active` with no execution and its minutes stay debited all day.
+   * - success: `onStartSession` has already navigated to the runner.
+   */
+  const handleStartAdditionalSession = useCallback(async (
+    binding: SessionReferenceBinding,
+    member: IntradayBundleMemberStatus,
+  ) => {
+    const date = decisionInput?.date;
+    if (!date || !binding.occurrenceId) return;
+    setAdditionalSessionNotice(null);
+
+    let claimed = false;
+    try {
+      await claimIntradayMemberLaunch({
+        userId,
+        date,
+        occurrenceId: binding.occurrenceId,
+        ...(bundleMemberInputRevision ? { dashboardInputRevision: bundleMemberInputRevision } : {}),
+      });
+      claimed = true;
+      await onStartSession?.(binding);
+    } catch (err) {
+      if (err instanceof StaleDecisionError) {
+        setAdditionalSessionNotice(err.athleteMessage);
+        console.info(`Intraday launch refused for '${member.sessionId}':`, err.message);
+        await loadDashboardData();
+        return;
+      }
+      setAdditionalSessionNotice('Could not start this session. Nothing was launched.');
+      console.error(`Failed to launch bundle member '${member.sessionId}':`, err);
+      if (claimed) {
+        const release = await releaseIntradayMemberClaim({ userId, date, occurrenceId: binding.occurrenceId });
+        if (!release.released) {
+          console.error(`Could not release the claim on ${binding.occurrenceId}: ${release.reason}`);
+        }
+      }
+      await loadDashboardData();
+    }
+  }, [userId, decisionInput?.date, bundleMemberInputRevision, onStartSession, loadDashboardData]);
 
   useEffect(() => {
     loadDashboardData();
@@ -1234,6 +1303,18 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                   : 'Unable to compute a recommendation yet.'}
               </p>
             </div>
+          )}
+
+          {bundleMemberStatuses.length > 0 && (
+            <>
+              {additionalSessionNotice && (
+                <p className="additional-session-notice" role="status">{additionalSessionNotice}</p>
+              )}
+              <AdditionalSessionsCard
+                members={bundleMemberStatuses}
+                onStartMember={handleStartAdditionalSession}
+              />
+            </>
           )}
 
           {!canGenerateNormalPlan && (
