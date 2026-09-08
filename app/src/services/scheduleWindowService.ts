@@ -74,21 +74,23 @@ export class ScheduleWindowService {
     }
 
     /** Reads a complete same-date set. A missing manifest is the intentional legacy
-     * no-window case; malformed or unavailable persisted state is never collapsed into it. */
+     * no-window case; malformed, mixed-representation, or unavailable persisted state is
+     * never collapsed into it. */
     async getWindowsForDateState(userId: string, date: string): Promise<DataState<ScheduleWindowWithId[]>> {
         try {
-            const snapshot = await getDoc(this.ref(userId, date));
-            if (!snapshot.exists()) {
-                try {
-                    await this.assertNoRetiredWindows(userId, date);
-                } catch (error: unknown) {
-                    if (error instanceof Error && error.message.startsWith('Retired schedule window documents')) {
-                        return { status: 'INVALID', issues: [{ code: 'retired-schedule-window-representation', documentPath: `users/${userId}/${this.retiredCollectionPath}` }] };
-                    }
-                    throw error;
+            try {
+                // Check even when a manifest exists. Coexisting authoritative and retired
+                // representations are ambiguous (for example during a partial admin
+                // migration) and must fail closed rather than silently preferring one.
+                await this.assertNoRetiredWindows(userId, date);
+            } catch (error: unknown) {
+                if (error instanceof Error && error.message.startsWith('Retired schedule window documents')) {
+                    return { status: 'INVALID', issues: [{ code: 'retired-schedule-window-representation', documentPath: `users/${userId}/${this.retiredCollectionPath}` }] };
                 }
-                return { status: 'AVAILABLE', data: [], revision: null };
+                throw error;
             }
+            const snapshot = await getDoc(this.ref(userId, date));
+            if (!snapshot.exists()) return { status: 'AVAILABLE', data: [], revision: null };
             const manifest = this.manifestFromSnapshot(userId, date, snapshot.data());
             if (!manifest) return { status: 'AVAILABLE', data: [], revision: null };
             return { status: 'AVAILABLE', data: manifest.windows, revision: `manifest:${manifest.revision}` };
