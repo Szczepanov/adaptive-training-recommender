@@ -166,7 +166,26 @@ describe('SessionResponseService (M5.1)', () => {
         expect(result?.responseId).toBe('r2');
     });
 
-    it('recordOrUpdateResponse creates the immediate response when no answer exists', async () => {
+    it('recordOrUpdateResponse is a no-op for an empty evidence set so missing stays missing', async () => {
+        const service = new SessionResponseService();
+
+        await service.recordOrUpdateResponse(
+            'u1',
+            { kind: 'execution', id: 'exec-1', date: '2026-08-18' },
+            'immediate',
+            '2026-08-18',
+            '2026-08-18',
+            { sessionRpe: undefined, completedFraction: undefined, unexpectedFatigue: undefined, note: undefined },
+            'occ-1',
+            '2026-08-18T11:00:00.000Z',
+        );
+
+        expect(firestore.getDocs).not.toHaveBeenCalled();
+        expect(firestore.runTransaction).not.toHaveBeenCalled();
+        expect(firestore.updateDoc).not.toHaveBeenCalled();
+    });
+
+    it('recordOrUpdateResponse creates the immediate response when evidence exists and no answer exists', async () => {
         firestore.getDocs.mockResolvedValue({ docs: [] });
         const service = new SessionResponseService();
 
