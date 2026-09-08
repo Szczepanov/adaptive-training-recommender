@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SessionCompletionSheet, resolveSubmittedTissueFeedback } from './SessionCompletionSheet';
-import { COMPLETION_TISSUE_LEVEL_OPTIONS } from './sessionCompletionOptions';
+import { SessionCompletionSheet } from './SessionCompletionSheet';
+import { COMPLETION_TISSUE_LEVEL_OPTIONS, resolveSubmittedTissueFeedback } from './sessionCompletionOptions';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 
 describe('SessionCompletionSheet', () => {
