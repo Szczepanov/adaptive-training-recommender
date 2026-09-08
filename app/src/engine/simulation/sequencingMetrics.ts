@@ -37,12 +37,18 @@ export interface ResidualFatigueCollisionDay {
     date: string;
     weekIndex: number;
     collision: number;
+    /** Sum of the selected session's six cost dimensions. Collision is deliberately
+     * scale-invariant, so consumers should inspect this alongside the normalized alignment
+     * score when distinguishing a tiny session from a large one. */
+    costMagnitude: number;
     topDimensions: string[];
 }
 
 export interface AdjacentCostOverlapPair {
     date: string;
     previousDate: string;
+    /** Weighted-Jaccard/Ruzicka similarity of the decayed previous and current non-negative
+     * cost vectors: sum(min) / sum(max), bounded to [0, 1]. */
     overlap: number;
     lowerBodyOverlap: number;
     impactTissueOverlap: number;
@@ -67,12 +73,31 @@ export interface WeeklyHardDayConcentration {
     recoveryWhileFatigueLowAndWorkFeasibleCount: number;
 }
 
+export interface OpportunityCostDay {
+    date: string;
+    weekIndex: number;
+    selectedTemplateId: string;
+    bestUtilityTemplateId: string | null;
+    selectedVsBestUtilityGap: number;
+    tierBlocked: boolean;
+    blockedByTier: { coverage: boolean; recovery: boolean; benefit: boolean };
+    selectedAdvancesRequiredRole: boolean;
+}
+
 export interface OpportunityCostDiagnostics {
     daysWithRankingAudit: number;
+    /** Any day where a strictly higher-utility accepted candidate existed. */
+    utilityWinnerDifferentCount: number;
+    /** Subset of differences attributable to at least one earlier lexicographic tier. */
     utilityWinnerBlockedCount: number;
+    /** Differences with no tier change (for example the existing variety/recency tie-break).
+     * Keeping these separate prevents the tier audit from mislabeling a deliberate same-tier
+     * reorder as ordinal blocking. */
+    utilityWinnerDifferentWithoutTierBlockCount: number;
     meanBlockedUtilityGap: number;
     maxBlockedUtilityGap: number;
     blockedByTier: { coverage: number; recovery: number; benefit: number };
+    perDay: OpportunityCostDay[];
 }
 
 export interface SequencingDiagnostics {
@@ -97,7 +122,12 @@ function costMagnitude(cost: WorkoutCostProfile): number {
     return FATIGUE_DIMENSIONS.reduce((sum, dim) => sum + cost[dim], 0);
 }
 
-/** §4.1: collision_t = sum_d(F_t[d] * C_t[d]) / max(epsilon, sum_d(C_t[d])). */
+/** §4.1: collision_t = sum_d(F_t[d] * C_t[d]) / max(epsilon, sum_d(C_t[d])).
+ *
+ * This is an alignment score, not an absolute-load score: scaling the entire cost vector down
+ * leaves collision unchanged. `costMagnitude` is emitted alongside it so downstream analysis
+ * can distinguish "small work aimed at a fatigued system" from "large work aimed at the same
+ * fatigued system" without changing the source analysis's specified formula. */
 function computeResidualFatigueCollision(traces: readonly ScenarioDecisionTrace[]): SequencingDiagnostics['residualFatigueCollision'] {
     const perDay: ResidualFatigueCollisionDay[] = traces.map(trace => {
         const cost = trace.selected.projectedCost;
@@ -115,7 +145,7 @@ function computeResidualFatigueCollision(traces: readonly ScenarioDecisionTrace[
                 .slice(0, 2)
                 .map(entry => entry.dim);
 
-        return { date: trace.date, weekIndex: trace.weekIndex, collision, topDimensions };
+        return { date: trace.date, weekIndex: trace.weekIndex, collision, costMagnitude: totalCost, topDimensions };
     });
 
     const collisions = perDay.map(d => d.collision);
@@ -128,7 +158,11 @@ function computeResidualFatigueCollision(traces: readonly ScenarioDecisionTrace[
 
 /** §4.2: compares each day's selected cost vector against the previous non-recovery
  * session's cost vector, decayed to the current date using the same per-dimension half-lives
- * fatigue.ts already uses for live decay (no new decay constants invented here). */
+ * fatigue.ts already uses for live decay (no new decay constants invented here).
+ *
+ * The aggregate is the weighted-Jaccard/Ruzicka similarity for non-negative vectors,
+ * sum(min(previous, current)) / sum(max(previous, current)), so the advertised overlap score
+ * is normalized to [0, 1] rather than growing with the number of cost dimensions. */
 function computeAdjacentCostOverlap(traces: readonly ScenarioDecisionTrace[]): SequencingDiagnostics['adjacentCostOverlap'] {
     const perPair: AdjacentCostOverlapPair[] = [];
     let previous: ScenarioDecisionTrace | null = null;
@@ -139,7 +173,9 @@ function computeAdjacentCostOverlap(traces: readonly ScenarioDecisionTrace[]): S
             const elapsedHours = Math.max(0, getDayDiff(trace.date, previous.date)) * 24;
             const decayedPrevious = decayFatigue(previous.selected.projectedCost, elapsedHours);
             const currentCost = trace.selected.projectedCost;
-            const overlap = FATIGUE_DIMENSIONS.reduce((sum, dim) => sum + Math.min(decayedPrevious[dim], currentCost[dim]), 0);
+            const sharedCost = FATIGUE_DIMENSIONS.reduce((sum, dim) => sum + Math.min(decayedPrevious[dim], currentCost[dim]), 0);
+            const unionCost = FATIGUE_DIMENSIONS.reduce((sum, dim) => sum + Math.max(decayedPrevious[dim], currentCost[dim]), 0);
+            const overlap = unionCost <= COLLISION_EPSILON ? 0 : sharedCost / unionCost;
 
             perPair.push({
                 date: trace.date,
@@ -208,10 +244,13 @@ function computeQualitySpacing(traces: readonly ScenarioDecisionTrace[]): Qualit
 
 /** §4.4: per-week hard-day count/streak plus a rough split between "unsafe density" and
  * "unnecessarily conservative recovery" using the residual-fatigue collision score already
- * computed above and each day's activeObjectives feasibility. */
+ * computed above and each day's activeObjectives feasibility. Recovery placement deliberately
+ * looks at the preceding trace across week boundaries; otherwise Monday recovery after a
+ * high-collision Sunday would disappear from the diagnostic simply because weekIndex changed. */
 function computeHardDayConcentration(
     traces: readonly ScenarioDecisionTrace[],
     collisionByDate: Map<string, number>,
+    previousTraceByDate: Map<string, ScenarioDecisionTrace>,
 ): WeeklyHardDayConcentration[] {
     const byWeek = new Map<number, ScenarioDecisionTrace[]>();
     traces.forEach(trace => {
@@ -227,7 +266,7 @@ function computeHardDayConcentration(
         let recoveryAfterHighCollisionCount = 0;
         let recoveryWhileFatigueLowAndWorkFeasibleCount = 0;
 
-        weekTraces.forEach((trace, i) => {
+        weekTraces.forEach(trace => {
             const isHard = QUALITY_CATEGORIES.has(trace.selected.category);
             const isRecovery = RECOVERY_CATEGORIES.has(trace.selected.category);
             if (isHard) {
@@ -239,7 +278,7 @@ function computeHardDayConcentration(
             }
 
             if (isRecovery) {
-                const previous = i > 0 ? weekTraces[i - 1] : undefined;
+                const previous = previousTraceByDate.get(trace.date);
                 if (previous && (collisionByDate.get(previous.date) ?? 0) >= HIGH_COLLISION_THRESHOLD) {
                     recoveryAfterHighCollisionCount += 1;
                 }
@@ -255,34 +294,63 @@ function computeHardDayConcentration(
 }
 
 /** §4.5: pure aggregation over the rankingAudit already attached to each trace -- no new
- * ranking computation here. */
+ * ranking computation here. A higher-utility candidate can differ for two reasons in the
+ * current pipeline: an earlier lexicographic tier, or the existing same-tier variety/recency
+ * tie-break. Only the former is counted as "blocked" by this ordinal audit. */
 function computeOpportunityCost(traces: readonly ScenarioDecisionTrace[]): OpportunityCostDiagnostics {
-    const audits = traces.map(t => t.rankingAudit).filter((a): a is NonNullable<typeof a> => a !== null && a !== undefined);
-    const blocked = audits.filter(a => a.bestUtilityTemplateId !== a.selectedTemplateId);
-    const gaps = blocked.map(a => a.selectedVsBestUtilityGap ?? 0);
+    const auditedTraces = traces.filter((trace): trace is ScenarioDecisionTrace & { rankingAudit: NonNullable<ScenarioDecisionTrace['rankingAudit']> } =>
+        trace.rankingAudit !== null && trace.rankingAudit !== undefined);
+    const disagreements = auditedTraces.filter(trace => trace.rankingAudit.bestUtilityTemplateId !== trace.rankingAudit.selectedTemplateId);
+    const tierBlocked = disagreements.filter(trace =>
+        trace.rankingAudit.utilityWinnerBlockedByCoverageTier
+        || trace.rankingAudit.utilityWinnerBlockedByRecoveryTier
+        || trace.rankingAudit.utilityWinnerBlockedByBenefitTier);
+    const blockedGaps = tierBlocked.map(trace => trace.rankingAudit.selectedVsBestUtilityGap ?? 0);
+
+    const perDay: OpportunityCostDay[] = disagreements.map(trace => ({
+        date: trace.date,
+        weekIndex: trace.weekIndex,
+        selectedTemplateId: trace.rankingAudit.selectedTemplateId,
+        bestUtilityTemplateId: trace.rankingAudit.bestUtilityTemplateId,
+        selectedVsBestUtilityGap: trace.rankingAudit.selectedVsBestUtilityGap ?? 0,
+        tierBlocked: trace.rankingAudit.utilityWinnerBlockedByCoverageTier
+            || trace.rankingAudit.utilityWinnerBlockedByRecoveryTier
+            || trace.rankingAudit.utilityWinnerBlockedByBenefitTier,
+        blockedByTier: {
+            coverage: trace.rankingAudit.utilityWinnerBlockedByCoverageTier,
+            recovery: trace.rankingAudit.utilityWinnerBlockedByRecoveryTier,
+            benefit: trace.rankingAudit.utilityWinnerBlockedByBenefitTier,
+        },
+        selectedAdvancesRequiredRole: trace.rankingAudit.selectedAdvancesRequiredRole,
+    }));
 
     return {
-        daysWithRankingAudit: audits.length,
-        utilityWinnerBlockedCount: blocked.length,
-        meanBlockedUtilityGap: mean(gaps),
-        maxBlockedUtilityGap: gaps.length > 0 ? Math.max(...gaps) : 0,
+        daysWithRankingAudit: auditedTraces.length,
+        utilityWinnerDifferentCount: disagreements.length,
+        utilityWinnerBlockedCount: tierBlocked.length,
+        utilityWinnerDifferentWithoutTierBlockCount: disagreements.length - tierBlocked.length,
+        meanBlockedUtilityGap: mean(blockedGaps),
+        maxBlockedUtilityGap: blockedGaps.length > 0 ? Math.max(...blockedGaps) : 0,
         blockedByTier: {
-            coverage: blocked.filter(a => a.utilityWinnerBlockedByCoverageTier).length,
-            recovery: blocked.filter(a => a.utilityWinnerBlockedByRecoveryTier).length,
-            benefit: blocked.filter(a => a.utilityWinnerBlockedByBenefitTier).length,
+            coverage: tierBlocked.filter(trace => trace.rankingAudit.utilityWinnerBlockedByCoverageTier).length,
+            recovery: tierBlocked.filter(trace => trace.rankingAudit.utilityWinnerBlockedByRecoveryTier).length,
+            benefit: tierBlocked.filter(trace => trace.rankingAudit.utilityWinnerBlockedByBenefitTier).length,
         },
+        perDay,
     };
 }
 
 export function computeSequencingDiagnostics(traces: readonly ScenarioDecisionTrace[]): SequencingDiagnostics {
     const residualFatigueCollision = computeResidualFatigueCollision(traces);
     const collisionByDate = new Map(residualFatigueCollision.perDay.map(d => [d.date, d.collision]));
+    const previousTraceByDate = new Map<string, ScenarioDecisionTrace>();
+    for (let i = 1; i < traces.length; i += 1) previousTraceByDate.set(traces[i].date, traces[i - 1]);
 
     return {
         residualFatigueCollision,
         adjacentCostOverlap: computeAdjacentCostOverlap(traces),
         qualitySpacing: computeQualitySpacing(traces),
-        hardDayConcentration: { weekly: computeHardDayConcentration(traces, collisionByDate) },
+        hardDayConcentration: { weekly: computeHardDayConcentration(traces, collisionByDate, previousTraceByDate) },
         opportunityCost: computeOpportunityCost(traces),
     };
 }
