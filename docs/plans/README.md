@@ -62,23 +62,36 @@ D-TIME (`localInstant.ts`), D-LEDGER's pure engine (`dailyLedger.ts`), D-PLACEME
 bundle-placement engine, D-REASSESS's pure `reassessDependentBundleMember`
 (`intradayReassessment.ts`, #442) and D-AUDIT's decision store (`intradayDecision.ts`,
 #443) are all delivered; #434 PR 1 bound the v4 primary session to the source-neutral
-launch path (#440), PR 2 added external-plan occurrence tracking (#445), and PR 3
+launch path (#440), PR 2 added external-plan occurrence tracking (#445), PR 3
 Phases 1-2 (#448) added D-WINDOW's real per-window exclusivity, atomic re-import
-supersession, and D-LEDGER's persisted date-level reservation aggregate. None of
-`claimOccurrenceLaunch`, `reassessDependentBundleMember`, or the decision store yet has a
-live caller: a non-primary bundle member is placed but not launchable, and no runtime path
-exercises reassessment or replay end-to-end. The
+supersession, and D-LEDGER's persisted date-level reservation aggregate, and PR 3 Phase 3
+(#450, #451, #454) added the bundle-member adjudication loop
+(`services/intradayBundleMemberAdjudication.ts`) and its `Home.tsx` wiring -- giving
+`reassessDependentBundleMember` and the decision store their first live caller, so a
+non-primary member is now reassessed, reserved and emitted as an `additionalSessions`
+binding. It is still **not launchable**: no component renders `additionalSessions`,
+`claimOccurrenceLaunch` still has no production caller, and completing the AM session does
+not yet write the `immediate` `SessionResponse` a dependent PM member reads, so such a
+member stays `pending`. The
 [bundle-launch plan](./h4-434-pr3-bundle-second-member-launch.md) tracks #434 PR 3's
-remaining phases (surfacing `additionalSessions`, the atomic claim, post-AM
-`SessionResponse` capture, and the `POLICY_VERSION` bump) as the path to a live H4 release.
+remaining Phases 4-6 (the launch affordance and atomic claim, post-AM `SessionResponse`
+capture, and the `POLICY_VERSION` bump) as the path to a live H4 release. Beyond PR 3, H4
+also still needs ledger remainder/admission as a real ranking input in `planner.ts`, and a
+bundle's resolved placement persisted for display (blocked on `firestore.rules`' audit
+shape at Firestore's per-request rule-evaluation ceiling).
 H5 block intent and controlled progression is accepted in
-[ADR-0037](../adr/0037-block-intent-and-controlled-progression.md); its implementation
-is unstarted. H4 runtime release needs verification of same-day canonical performed
-facts; H5 runtime needs validated intent mappings and linked response evidence. H5
+[ADR-0037](../adr/0037-block-intent-and-controlled-progression.md) and is **In progress**:
+H5a intent contracts and canonical replay (`engine/blockIntent.ts`,
+`engine/blockIntentReplay.ts`) and H5b report-only progression review
+(`engine/progressionReview.ts`) are delivered, neither wired into daily recommendation
+selection; H5c confirmed bounded revisions and cumulative `external-plan@5` are unstarted
+and independently startable. H4's same-day canonical performed-fact boundary is verified;
+H5 runtime needs validated intent mappings and linked response evidence. H5
 delivers intent authoring, report-only review, then confirmed bounded revisions. The work
 does not replace the reviewed active persona-judge baseline. The
-[implementation handoff](./cycling-primary-hybrid-implementation-handoff.md) provides
-sequenced work orders, dependency gates and acceptance requirements.
+[implementation handoff](./cycling-primary-hybrid-implementation-handoff.md) supplies
+work orders for H2/H2b/H3/H3-rest and the H5 sequence; **its H4 work order is superseded**
+by the bundle-launch plan linked above.
 
 These implement the way forward in
 [`docs/analysis/2026-08-08-architecture-review.md`](../analysis/2026-08-08-architecture-review.md)
