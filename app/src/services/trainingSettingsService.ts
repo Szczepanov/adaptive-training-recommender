@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, setDoc } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { BodyRegion, SessionTemplate, TrainingSettings, UserConstraint } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -208,15 +208,35 @@ export class TrainingSettingsService {
 
     /**
      * Reads existing recovery-policy bootstrap date B or initializes it once to `asOfDate`.
-     * Never slides on subsequent calls once established (ADR-0038 Work D).
+     * The transaction re-reads the latest profile and makes initialization first-writer-wins,
+     * so two devices/sessions cannot race and slide the durable epoch (ADR-0038 Work D).
      */
     async ensureRecoveryBootstrapDate(userId: string, asOfDate: string): Promise<string> {
-        const current = await this.getTrainingSettings(userId);
-        if (current.recoveryBootstrapDate) {
-            return current.recoveryBootstrapDate;
+        if (!isValidDate(asOfDate)) {
+            throw new Error('Cannot initialize recovery bootstrap date: asOfDate is invalid.');
         }
-        const updated = await this.updateTrainingSettings(userId, { recoveryBootstrapDate: asOfDate });
-        return updated.recoveryBootstrapDate ?? asOfDate;
+
+        // Preserve the documented first-run settings migration before entering the transaction.
+        await this.getTrainingSettings(userId);
+        const ref = this.ref(userId);
+
+        return runTransaction(getDb(), async transaction => {
+            const snapshot = await transaction.get(ref);
+            if (!snapshot.exists()) {
+                throw new Error('Training settings disappeared while initializing recovery bootstrap date.');
+            }
+            const current = parseTrainingSettings(snapshot.data(), userId);
+            if (!current) {
+                throw new Error('Training settings are invalid. Please review and save them again.');
+            }
+            if (current.recoveryBootstrapDate) {
+                return current.recoveryBootstrapDate;
+            }
+
+            const updated = mergeSettings(current, { recoveryBootstrapDate: asOfDate });
+            transaction.set(ref, updated);
+            return updated.recoveryBootstrapDate ?? asOfDate;
+        });
     }
 }
 
