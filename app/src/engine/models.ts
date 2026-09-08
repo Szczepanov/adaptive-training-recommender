@@ -1503,6 +1503,8 @@ export interface TrainingSettings {
         legacyReviewed: boolean;
         migratedAt: string | null;
     };
+    /** ADR-0038: durable recovery-policy enrollment epoch B. Never slides once established. */
+    recoveryBootstrapDate?: string | null;
     createdAt: string;
     updatedAt: string;
 }

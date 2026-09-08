@@ -53,4 +53,19 @@ describe('training settings storage parsing', () => {
         }, 'athlete');
         expect(parsed?.injuries?.[0].restrictedModalities).toEqual(['Walking', 'Swimming']);
     });
+
+    it('accepts valid recoveryBootstrapDate and preserves it', () => {
+        const base = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const parsed = parseTrainingSettings({
+            ...base,
+            recoveryBootstrapDate: '2026-09-01',
+        }, 'athlete');
+        expect(parsed?.recoveryBootstrapDate).toBe('2026-09-01');
+    });
+
+    it('rejects malformed recoveryBootstrapDate', () => {
+        const base = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        expect(parseTrainingSettings({ ...base, recoveryBootstrapDate: 'invalid-date' }, 'athlete')).toBeNull();
+        expect(parseTrainingSettings({ ...base, recoveryBootstrapDate: 12345 }, 'athlete')).toBeNull();
+    });
 });

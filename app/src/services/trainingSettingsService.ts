@@ -14,6 +14,7 @@ export type TrainingSettingsUpdate = {
     defaults?: Partial<TrainingSettings['defaults']>;
     preferences?: Partial<TrainingSettings['preferences']>;
     migration?: Partial<TrainingSettings['migration']>;
+    recoveryBootstrapDate?: string | null;
 };
 
 const COLLECTION = 'trainingSettings';
@@ -82,6 +83,10 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
         }
     }
 
+    if (data.recoveryBootstrapDate !== undefined && data.recoveryBootstrapDate !== null) {
+        if (typeof data.recoveryBootstrapDate !== 'string' || !isValidDate(data.recoveryBootstrapDate)) return null;
+    }
+
     return {
         ...(data as unknown as TrainingSettings),
         schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
@@ -97,6 +102,7 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
             swim_access: typeof equipment.swim_access === 'boolean' ? equipment.swim_access : false,
         },
         injuries: (data.injuries as TrainingSettings['injuries']) ?? [],
+        ...(data.recoveryBootstrapDate !== undefined ? { recoveryBootstrapDate: data.recoveryBootstrapDate as string | null } : {}),
     };
 }
 
@@ -129,6 +135,11 @@ function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate
         defaults: { ...current.defaults, ...update.defaults },
         preferences: { ...current.preferences, ...update.preferences },
         migration: { ...current.migration, ...update.migration },
+        ...(update.recoveryBootstrapDate !== undefined
+            ? { recoveryBootstrapDate: update.recoveryBootstrapDate }
+            : current.recoveryBootstrapDate !== undefined
+                ? { recoveryBootstrapDate: current.recoveryBootstrapDate }
+                : {}),
         updatedAt: timestamp(),
     };
     if (!parseTrainingSettings(next, current.userId)) throw new Error('Invalid training settings update');
@@ -193,6 +204,19 @@ export class TrainingSettingsService {
         const updated = mergeSettings(await this.getTrainingSettings(userId), update);
         await setDoc(this.ref(userId), updated);
         return updated;
+    }
+
+    /**
+     * Reads existing recovery-policy bootstrap date B or initializes it once to `asOfDate`.
+     * Never slides on subsequent calls once established (ADR-0038 Work D).
+     */
+    async ensureRecoveryBootstrapDate(userId: string, asOfDate: string): Promise<string> {
+        const current = await this.getTrainingSettings(userId);
+        if (current.recoveryBootstrapDate) {
+            return current.recoveryBootstrapDate;
+        }
+        const updated = await this.updateTrainingSettings(userId, { recoveryBootstrapDate: asOfDate });
+        return updated.recoveryBootstrapDate ?? asOfDate;
     }
 }
 
