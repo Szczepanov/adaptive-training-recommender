@@ -1,7 +1,7 @@
 # H4: external-plan execution-binding pipeline — PR-1/PR-2 implementation and follow-up roadmap
 
 **Status:** PR 1 implemented in [PR #440](https://github.com/Szczepanov/adaptive-training-recommender/pull/440); PR 2 implemented in [PR #445](https://github.com/Szczepanov/adaptive-training-recommender/pull/445).
-PR 3 is delivered through Phase 4 in [PR #465](https://github.com/Szczepanov/adaptive-training-recommender/pull/465); Phases 5-6 remain.
+PR 3 is delivered through Phase 5 in [PR #470](https://github.com/Szczepanov/adaptive-training-recommender/pull/470); Phase 6 remains.
 This document records the original gap, the invariants established by the first two PRs, and the
 remaining follow-up work.
 
@@ -286,13 +286,12 @@ prescription.
    `'external_plan'` authority, `'skipped'` state, deterministic/idempotent occurrence identity,
    replay validation, lifecycle transitions, and the atomic `claimOccurrenceLaunch` primitive.
    Live claim/ledger wiring was intentionally deferred as described above.
-3. **PR 3 — delivered through Phase 4 in PR #465:** use resolved intraday placement to
+3. **PR 3 — delivered through Phase 5 in PR #470:** use resolved intraday placement to
    adjudicate and surface non-primary v4 members as independently launchable
    `additionalSessions` entries, wiring eligible launch through the occurrence claim/ledger
-   boundary. Phase 5 still needs post-AM `SessionResponse` capture and Phase 6 still needs
+   boundary. Phase 5 now captures post-AM `SessionResponse` evidence; Phase 6 still needs
    the H4-specific policy transition.
-4. **Remaining PR 3 work — Phases 5-6:** capture real predecessor completion evidence and
-   confirmation revision, then bump the cumulative policy version while archiving the
+4. **Remaining PR 3 work — Phase 6:** bump the cumulative policy version while archiving the
    **then-current** `POLICY_VERSION` (not a hard-coded earlier H4 value).
 5. **Optional later work — block scaling:** add a deterministic, testable external-definition
    scaling transform before allowing `scale` verdicts to produce launch bindings.

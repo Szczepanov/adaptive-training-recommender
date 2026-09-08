@@ -7,6 +7,7 @@ import {
     query,
     where,
     getDocs,
+    runTransaction,
     type Firestore,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
@@ -18,6 +19,14 @@ import { parseSessionResponseDocument } from '../persistence/parsers/sessionResp
 // coincidence (they currently do, alphabetically, but nothing enforces that: a future added
 // or renamed window would silently break an localeCompare-based sort with no test to catch it).
 const RESPONSE_WINDOW_ORDER: Record<ResponseWindow, number> = { immediate: 0, later_day: 1, next_morning: 2 };
+
+type ResponseFacts = Partial<Pick<SessionResponse, 'sessionRpe' | 'completedFraction' | 'unexpectedFatigue' | 'techniqueNote' | 'note'>>;
+
+function definedResponseFacts(facts: ResponseFacts): ResponseFacts {
+    return Object.fromEntries(
+        Object.entries(facts).filter(([, value]) => value !== undefined),
+    );
+}
 
 /**
  * The same deterministic id `SessionResponseService` writes under, exposed because H4's
@@ -51,13 +60,37 @@ export class SessionResponseService {
         return doc(this.db, 'users', userId, 'session_responses', responseId);
     }
 
-    /** Deterministic, not random: a `(sourceSession, window)` pair has at most one answer
-     * (D-MRESP), so the id doubles as an idempotency key -- `recordResponse` can then detect
-     * (and reject) a second create for the same pair instead of a random id letting a
-     * double-tap/retry race silently produce two documents, only one of which any later read
-     * would ever find. */
+    /** Deterministic, not random: a `(sourceSession, window)` pair maps to one document id,
+     * so retries cannot append duplicate documents. `recordResponse` retains its historical
+     * get-then-create behavior; callers that require concurrency-safe create-or-update use
+     * `recordOrUpdateResponse`, which serializes the deterministic race edge transactionally. */
     private responseIdFor(sourceSession: SessionResponseSourceRef, window: ResponseWindow): string {
         return sessionResponseDocId(sourceSession, window);
+    }
+
+    private buildResponse(
+        userId: string,
+        responseId: string,
+        sourceSession: SessionResponseSourceRef,
+        window: ResponseWindow,
+        date: string,
+        checkinDate: string,
+        facts: ResponseFacts,
+        occurrenceId: string | undefined,
+        now: string,
+    ): SessionResponse {
+        return {
+            userId,
+            responseId,
+            sourceSession,
+            ...(occurrenceId ? { occurrenceId } : {}),
+            window,
+            date,
+            checkinRef: { date: checkinDate },
+            ...definedResponseFacts(facts),
+            createdAt: now,
+            updatedAt: now,
+        };
     }
 
     async getResponse(userId: string, responseId: string): Promise<DataState<SessionResponse>> {
@@ -104,43 +137,38 @@ export class SessionResponseService {
     }
 
     /** Creates a new response for a `(sourceSession, window)` pair that has never been
-     * answered before. Callers should still check `getResponseForWindow` first and call
-     * `updateResponseFacts` instead when one already exists -- but the deterministic id
-     * backs that up: a second `recordResponse` for the same pair (e.g. a double-tap/retry
-     * race) throws rather than silently overwriting an existing answer's `createdAt`/facts
-     * or leaving two documents behind. */
+     * answered before. The deterministic id prevents duplicate documents, while the
+     * historical get-then-create behavior remains available to non-H4 response flows. This
+     * method is not a concurrency primitive; use `recordOrUpdateResponse` for retry-safe H4
+     * completion upserts. */
     async recordResponse(
         userId: string,
         sourceSession: SessionResponseSourceRef,
         window: ResponseWindow,
         date: string,
         checkinDate: string,
-        facts: Partial<Pick<SessionResponse, 'sessionRpe' | 'completedFraction' | 'unexpectedFatigue' | 'techniqueNote' | 'note'>>,
+        facts: ResponseFacts,
         occurrenceId?: string,
         now: string = new Date().toISOString(),
     ): Promise<SessionResponse> {
         const responseId = this.responseIdFor(sourceSession, window);
-        const existing = await getDoc(this.responseRef(userId, responseId));
+        const responseRef = this.responseRef(userId, responseId);
+        const existing = await getDoc(responseRef);
         if (existing.exists()) {
             throw new Error(`A response already exists for this session's ${window} window; call updateResponseFacts instead.`);
         }
-        const response: SessionResponse = {
+        const response = this.buildResponse(
             userId,
             responseId,
             sourceSession,
-            ...(occurrenceId ? { occurrenceId } : {}),
             window,
             date,
-            checkinRef: { date: checkinDate },
-            ...(facts.sessionRpe !== undefined ? { sessionRpe: facts.sessionRpe } : {}),
-            ...(facts.completedFraction !== undefined ? { completedFraction: facts.completedFraction } : {}),
-            ...(facts.unexpectedFatigue !== undefined ? { unexpectedFatigue: facts.unexpectedFatigue } : {}),
-            ...(facts.techniqueNote !== undefined ? { techniqueNote: facts.techniqueNote } : {}),
-            ...(facts.note !== undefined ? { note: facts.note } : {}),
-            createdAt: now,
-            updatedAt: now,
-        };
-        await setDoc(this.responseRef(userId, response.responseId), response);
+            checkinDate,
+            facts,
+            occurrenceId,
+            now,
+        );
+        await setDoc(responseRef, response);
         return response;
     }
 
@@ -150,10 +178,65 @@ export class SessionResponseService {
     async updateResponseFacts(
         userId: string,
         responseId: string,
-        patch: Partial<Pick<SessionResponse, 'sessionRpe' | 'completedFraction' | 'unexpectedFatigue' | 'techniqueNote' | 'note'>>,
+        patch: ResponseFacts,
         now: string = new Date().toISOString(),
     ): Promise<void> {
-        await updateDoc(this.responseRef(userId, responseId), { ...patch, updatedAt: now });
+        await updateDoc(this.responseRef(userId, responseId), { ...definedResponseFacts(patch), updatedAt: now });
+    }
+
+    /**
+     * Records submitted completion evidence or revises the existing answer for the
+     * deterministic `(sourceSession, window)` pair. An empty fact set is deliberately a
+     * no-op: callers such as `completeSession()` may have no submitted completion payload,
+     * and D-MRESP requires that absence to remain distinguishable from answered-normal.
+     *
+     * The query-first read preserves compatibility with any already-stored response found by
+     * the canonical reader. If no answer exists, the final deterministic read/write happens
+     * transactionally so concurrent retries cannot race into two blind `set` operations or
+     * overwrite `createdAt`. This transaction is intentionally scoped to the H4 completion
+     * upsert rather than changing the offline behavior of the older generic create API.
+     */
+    async recordOrUpdateResponse(
+        userId: string,
+        sourceSession: SessionResponseSourceRef,
+        window: ResponseWindow,
+        date: string,
+        checkinDate: string,
+        facts: ResponseFacts,
+        occurrenceId?: string,
+        now: string = new Date().toISOString(),
+    ): Promise<void> {
+        const definedFacts = definedResponseFacts(facts);
+        if (Object.keys(definedFacts).length === 0) return;
+
+        const existing = await this.getResponseForWindow(userId, sourceSession, window);
+        if (existing) {
+            await this.updateResponseFacts(userId, existing.responseId, definedFacts, now);
+            return;
+        }
+
+        const responseId = this.responseIdFor(sourceSession, window);
+        const responseRef = this.responseRef(userId, responseId);
+        const response = this.buildResponse(
+            userId,
+            responseId,
+            sourceSession,
+            window,
+            date,
+            checkinDate,
+            definedFacts,
+            occurrenceId,
+            now,
+        );
+
+        await runTransaction(this.db, async transaction => {
+            const raced = await transaction.get(responseRef);
+            if (raced.exists()) {
+                transaction.update(responseRef, { ...definedFacts, updatedAt: now });
+                return;
+            }
+            transaction.set(responseRef, response);
+        });
     }
 }
 

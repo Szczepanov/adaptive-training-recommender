@@ -1,12 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SessionCompletionSheet } from './SessionCompletionSheet';
-import { COMPLETION_TISSUE_LEVEL_OPTIONS } from './sessionCompletionOptions';
+import { COMPLETION_TISSUE_LEVEL_OPTIONS, resolveSubmittedTissueFeedback } from './sessionCompletionOptions';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 
 describe('SessionCompletionSheet', () => {
     it('uses the canonical tissue-response vocabulary for completion feedback', () => {
         expect(COMPLETION_TISSUE_LEVEL_OPTIONS.map(option => option.value)).toEqual(['mild', 'moderate', 'severe']);
+    });
+
+    it('includes the currently selected tissue region when Finish is used before Add region', () => {
+        expect(resolveSubmittedTissueFeedback([], 'knee', 'moderate')).toEqual([
+            { region: 'knee', painDuringTraining: 'moderate', afterTrainingState: 'moderate' },
+        ]);
+    });
+
+    it('does not duplicate a tissue region that was already added', () => {
+        const existing = [{ region: 'knee' as const, painDuringTraining: 'mild' as const, afterTrainingState: 'mild' as const }];
+        expect(resolveSubmittedTissueFeedback(existing, 'knee', 'severe')).toBe(existing);
     });
 
     it('renders summary metrics correctly including duration, total sets, and completed exercises count', () => {
@@ -55,6 +66,8 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('3');
         expect(html).toContain('Exercises');
         expect(html).toContain('1'); // Only 1 exercise has loggedSetsCount > 0
+        expect(html).toContain('How much of the planned session did you complete?');
+        expect(html).toContain('Unexpected fatigue during or after this session');
     });
 
     it('renders warning box when there are incomplete required steps', () => {

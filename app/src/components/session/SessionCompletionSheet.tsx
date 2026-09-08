@@ -1,7 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import type { BodyRegion, TissueResponseLevel } from '../../engine/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
-import { COMPLETION_TISSUE_LEVEL_OPTIONS } from './sessionCompletionOptions';
+import {
+    COMPLETION_TISSUE_LEVEL_OPTIONS,
+    resolveSubmittedTissueFeedback,
+    type CompletionTissueFeedback,
+} from './sessionCompletionOptions';
 
 const COMMON_REGIONS: Array<{ id: BodyRegion; label: string }> = [
     { id: 'knee', label: 'Knee' },
@@ -20,12 +24,12 @@ const COMMON_REGIONS: Array<{ id: BodyRegion; label: string }> = [
 
 export interface SessionCompletionPayload {
     sessionRpe?: number;
+    /** Fraction of the prescribed session completed, expressed from 0 to 1. */
+    completedFraction?: number;
+    /** Athlete-reported fatigue that was unexpected for this session. */
+    unexpectedFatigue?: boolean;
     notes?: string;
-    tissueFeedback?: Array<{
-        region: BodyRegion;
-        painDuringTraining: TissueResponseLevel;
-        afterTrainingState?: TissueResponseLevel;
-    }>;
+    tissueFeedback?: CompletionTissueFeedback[];
 }
 
 interface SessionCompletionSheetProps {
@@ -52,9 +56,12 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     error = null,
 }) => {
     const [sessionRpe, setSessionRpe] = useState<number | undefined>(7);
+    const [completedFraction, setCompletedFraction] = useState(1);
+    const [unexpectedFatigue, setUnexpectedFatigue] = useState(false);
     const [notes, setNotes] = useState('');
     const [selectedRegion, setSelectedRegion] = useState<BodyRegion | ''>('');
     const [reportedPain, setReportedPain] = useState<TissueResponseLevel>('mild');
+    const [tissueFeedback, setTissueFeedback] = useState<CompletionTissueFeedback[]>([]);
     const [showAbandonConfirm, setShowAbandonConfirm] = useState(openAbandonConfirmation);
     const [elapsedMinutes] = useState(() => Math.max(1, Math.round((Date.now() - Date.parse(startedAt)) / 60000)));
 
@@ -63,14 +70,25 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     const completedExercisesCount = useMemo(() => steps.filter(s => s.loggedSetsCount > 0).length, [steps]);
 
     const handleConfirmComplete = async () => {
+        const submittedTissueFeedback = resolveSubmittedTissueFeedback(tissueFeedback, selectedRegion, reportedPain);
         const payload: SessionCompletionPayload = {
             sessionRpe,
+            completedFraction,
+            unexpectedFatigue,
             notes: notes.trim() || undefined,
-            tissueFeedback: selectedRegion
-                ? [{ region: selectedRegion, painDuringTraining: reportedPain, afterTrainingState: reportedPain }]
-                : undefined,
+            tissueFeedback: submittedTissueFeedback.length > 0 ? submittedTissueFeedback : undefined,
         };
         await onComplete(payload);
+    };
+
+    const addTissueFeedback = () => {
+        if (!selectedRegion || tissueFeedback.some(item => item.region === selectedRegion)) return;
+        setTissueFeedback(previous => [
+            ...previous,
+            { region: selectedRegion, painDuringTraining: reportedPain, afterTrainingState: reportedPain },
+        ]);
+        setSelectedRegion('');
+        setReportedPain('mild');
     };
 
     return (
@@ -168,7 +186,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                     className="select-input"
                                 >
                                     <option value="">No joint/tissue issues</option>
-                                    {COMMON_REGIONS.map(r => (
+                                    {COMMON_REGIONS.filter(r => !tissueFeedback.some(item => item.region === r.id)).map(r => (
                                         <option key={r.id} value={r.id}>{r.label}</option>
                                     ))}
                                 </select>
@@ -185,8 +203,60 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                         ))}
                                     </select>
                                 )}
+                                {selectedRegion && (
+                                    <button type="button" className="btn-secondary" onClick={addTissueFeedback}>
+                                        Add region
+                                    </button>
+                                )}
                             </div>
+                            {tissueFeedback.length > 0 && (
+                                <ul className="tissue-feedback-list">
+                                    {tissueFeedback.map(item => (
+                                        <li key={item.region}>
+                                            <span>
+                                                {COMMON_REGIONS.find(region => region.id === item.region)?.label ?? item.region}
+                                                {` — ${item.painDuringTraining}`}
+                                            </span>
+                                            <button
+                                                type="button"
+                                                className="btn-link-danger"
+                                                onClick={() => setTissueFeedback(previous => previous.filter(entry => entry.region !== item.region))}
+                                            >
+                                                Remove
+                                            </button>
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
+
+                        <div className="form-group completion-evidence-group">
+                            <label htmlFor="completed-fraction-input">
+                                <strong>How much of the planned session did you complete?</strong>
+                            </label>
+                            <select
+                                id="completed-fraction-input"
+                                value={completedFraction}
+                                onChange={e => setCompletedFraction(Number(e.target.value))}
+                                className="select-input"
+                            >
+                                <option value={1}>All of it (100%)</option>
+                                <option value={0.75}>Most of it (75%)</option>
+                                <option value={0.5}>About half (50%)</option>
+                                <option value={0.25}>Only a little (25%)</option>
+                                <option value={0}>None (0%)</option>
+                            </select>
+                        </div>
+
+                        <label className="checkbox-label" htmlFor="unexpected-fatigue-input">
+                            <input
+                                id="unexpected-fatigue-input"
+                                type="checkbox"
+                                checked={unexpectedFatigue}
+                                onChange={e => setUnexpectedFatigue(e.target.checked)}
+                            />
+                            <span>Unexpected fatigue during or after this session</span>
+                        </label>
 
                         <div className="form-group">
                             <label htmlFor="session-notes-input">
