@@ -82,6 +82,36 @@ describe('ScheduleWindowService manifest persistence', () => {
         expect(stored).toMatchObject({ revision: 2, windows: [expect.objectContaining({ id: 'window-1', revision: 2 })] });
     });
 
+    it('moves a window across dates atomically while preserving identity and advancing both manifests', async () => {
+        const targetDate = '2026-09-11';
+        const sourcePath = `users/u1/schedule_window_manifests/${DATE}`;
+        const targetPath = `users/u1/schedule_window_manifests/${targetDate}`;
+        const manifests = new Map<string, ScheduleWindowManifest>([
+            [sourcePath, manifest([window()], 3)],
+            [targetPath, {
+                userId: 'u1', date: targetDate, revision: 4, windows: [], createdAt: NOW, updatedAt: NOW,
+            }],
+        ]);
+        firestore.runTransaction.mockImplementationOnce(async (_db: unknown, callback: (transaction: {
+            get: (ref: { path: string }) => Promise<ReturnType<typeof snapshot>>;
+            set: (ref: { path: string }, data: ScheduleWindowManifest) => void;
+        }) => Promise<void>) => {
+            await callback({
+                get: async ref => snapshot(manifests.get(ref.path)),
+                set: (ref, data) => { manifests.set(ref.path, data); },
+            });
+        });
+
+        const result = await service().updateWindow('u1', DATE, 'window-1', { date: targetDate, startLocal: '08:00', endLocal: '09:00' });
+
+        expect(result).toMatchObject({ id: 'window-1', date: targetDate, revision: 2, createdAt: NOW });
+        expect(manifests.get(sourcePath)).toMatchObject({ revision: 4, windows: [] });
+        expect(manifests.get(targetPath)).toMatchObject({
+            revision: 5,
+            windows: [expect.objectContaining({ id: 'window-1', date: targetDate, revision: 2, createdAt: NOW })],
+        });
+    });
+
     it('keeps an empty manifest after deleting the final window so revision history remains monotonic', async () => {
         stored = manifest([window()]);
 
