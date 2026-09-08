@@ -154,12 +154,51 @@ emulatorDescribe('ScheduleWindow manifest persistence boundary (#430)', () => {
         }));
     });
 
+    it('rejects a direct SDK interval edit without the nested window revision bump', async () => {
+        const db = environment.authenticatedContext(USER_ID).firestore();
+        const manifestRef = doc(db, 'users', USER_ID, 'schedule_window_manifests', DATE);
+        await setDoc(manifestRef, manifest([window('stable', '06:00', '07:00')]));
+
+        await assertFails(setDoc(manifestRef, {
+            ...manifest([window('stable', '06:00', '07:30')], 2),
+            updatedAt: '2026-09-01T01:00:00.000Z',
+        }));
+    });
+
+    it('rejects a direct SDK same-size update that replaces a stable window id', async () => {
+        const db = environment.authenticatedContext(USER_ID).firestore();
+        const manifestRef = doc(db, 'users', USER_ID, 'schedule_window_manifests', DATE);
+        await setDoc(manifestRef, manifest([window('stable', '06:00', '07:00')]));
+
+        await assertFails(setDoc(manifestRef, {
+            ...manifest([window('replacement', '06:00', '07:00', { revision: 2 })], 2),
+            updatedAt: '2026-09-01T01:00:00.000Z',
+        }));
+    });
+
     it('rejects every direct SDK write to the retired sibling collection', async () => {
         const db = environment.authenticatedContext(USER_ID).firestore();
         await assertFails(setDoc(
             doc(db, 'users', USER_ID, 'schedule_windows', 'bypass'),
             window('bypass', '06:00', '07:00'),
         ));
+    });
+
+    it('lets the owner detect a retired-only representation and fails the service read closed', async () => {
+        const db = environment.authenticatedContext(USER_ID).firestore();
+        await environment.withSecurityRulesDisabled(async context => {
+            await setDoc(
+                doc(context.firestore(), 'users', USER_ID, 'schedule_windows', 'retired-window'),
+                window('retired-window', '08:00', '09:00'),
+            );
+        });
+
+        const state = await service(db as unknown as Firestore, 'unused').getWindowsForDateState(USER_ID, DATE);
+
+        expect(state).toMatchObject({
+            status: 'INVALID',
+            issues: [expect.objectContaining({ code: 'retired-schedule-window-representation' })],
+        });
     });
 
     it('fails closed when an authoritative manifest and retired sibling rows coexist', async () => {
