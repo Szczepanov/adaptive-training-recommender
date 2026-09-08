@@ -1,6 +1,7 @@
 import {
     doc,
     getDoc,
+    setDoc,
     updateDoc,
     collection,
     query,
@@ -59,9 +60,10 @@ export class SessionResponseService {
         return doc(this.db, 'users', userId, 'session_responses', responseId);
     }
 
-    /** Deterministic, not random: a `(sourceSession, window)` pair has at most one answer
-     * (D-MRESP), so the id doubles as an idempotency key. Creation uses a transaction so two
-     * concurrent callers cannot both observe a missing document and overwrite one another. */
+    /** Deterministic, not random: a `(sourceSession, window)` pair maps to one document id,
+     * so retries cannot append duplicate documents. `recordResponse` retains its historical
+     * get-then-create behavior; callers that require concurrency-safe create-or-update use
+     * `recordOrUpdateResponse`, which serializes the deterministic race edge transactionally. */
     private responseIdFor(sourceSession: SessionResponseSourceRef, window: ResponseWindow): string {
         return sessionResponseDocId(sourceSession, window);
     }
@@ -135,9 +137,10 @@ export class SessionResponseService {
     }
 
     /** Creates a new response for a `(sourceSession, window)` pair that has never been
-     * answered before. The deterministic document is read and created in one transaction,
-     * so a concurrent second create retries against the committed first write and rejects
-     * instead of overwriting its `createdAt`/facts. */
+     * answered before. The deterministic id prevents duplicate documents, while the
+     * historical get-then-create behavior remains available to non-H4 response flows. This
+     * method is not a concurrency primitive; use `recordOrUpdateResponse` for retry-safe H4
+     * completion upserts. */
     async recordResponse(
         userId: string,
         sourceSession: SessionResponseSourceRef,
@@ -150,6 +153,10 @@ export class SessionResponseService {
     ): Promise<SessionResponse> {
         const responseId = this.responseIdFor(sourceSession, window);
         const responseRef = this.responseRef(userId, responseId);
+        const existing = await getDoc(responseRef);
+        if (existing.exists()) {
+            throw new Error(`A response already exists for this session's ${window} window; call updateResponseFacts instead.`);
+        }
         const response = this.buildResponse(
             userId,
             responseId,
@@ -161,15 +168,8 @@ export class SessionResponseService {
             occurrenceId,
             now,
         );
-
-        return runTransaction(this.db, async transaction => {
-            const existing = await transaction.get(responseRef);
-            if (existing.exists()) {
-                throw new Error(`A response already exists for this session's ${window} window; call updateResponseFacts instead.`);
-            }
-            transaction.set(responseRef, response);
-            return response;
-        });
+        await setDoc(responseRef, response);
+        return response;
     }
 
     /** Revises the non-tissue facts on an existing response. `sourceSession`, `occurrenceId`,
@@ -193,7 +193,8 @@ export class SessionResponseService {
      * The query-first read preserves compatibility with any already-stored response found by
      * the canonical reader. If no answer exists, the final deterministic read/write happens
      * transactionally so concurrent retries cannot race into two blind `set` operations or
-     * overwrite `createdAt`.
+     * overwrite `createdAt`. This transaction is intentionally scoped to the H4 completion
+     * upsert rather than changing the offline behavior of the older generic create API.
      */
     async recordOrUpdateResponse(
         userId: string,
