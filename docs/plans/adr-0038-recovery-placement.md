@@ -294,7 +294,7 @@ Exact identity is deterministic and complete enough for ADR-0038. No broad categ
 
 ## RP2 — Historical recovery facts, authored-rest bridge and bootstrap persistence
 
-**Status:** planned
+**Status:** implemented (PR B)
 **Depends on:** RP0, RP1
 **Behavior change:** historical recovery state becomes available, but ranking activation remains off
 

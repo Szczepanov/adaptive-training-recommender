@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, setDoc } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { BodyRegion, SessionTemplate, TrainingSettings, UserConstraint } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -82,6 +82,10 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
         }
     }
 
+    if (data.recoveryBootstrapDate !== undefined && data.recoveryBootstrapDate !== null) {
+        if (typeof data.recoveryBootstrapDate !== 'string' || !isValidDate(data.recoveryBootstrapDate)) return null;
+    }
+
     return {
         ...(data as unknown as TrainingSettings),
         schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
@@ -97,6 +101,7 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
             swim_access: typeof equipment.swim_access === 'boolean' ? equipment.swim_access : false,
         },
         injuries: (data.injuries as TrainingSettings['injuries']) ?? [],
+        ...(data.recoveryBootstrapDate !== undefined ? { recoveryBootstrapDate: data.recoveryBootstrapDate as string | null } : {}),
     };
 }
 
@@ -119,7 +124,7 @@ export function migrateLegacyConstraints(userId: string, constraints: UserConstr
     return result;
 }
 
-function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate): TrainingSettings {
+export function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate): TrainingSettings {
     const next: TrainingSettings = {
         ...current,
         schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
@@ -129,6 +134,7 @@ function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate
         defaults: { ...current.defaults, ...update.defaults },
         preferences: { ...current.preferences, ...update.preferences },
         migration: { ...current.migration, ...update.migration },
+        ...(current.recoveryBootstrapDate !== undefined ? { recoveryBootstrapDate: current.recoveryBootstrapDate } : {}),
         updatedAt: timestamp(),
     };
     if (!parseTrainingSettings(next, current.userId)) throw new Error('Invalid training settings update');
@@ -190,9 +196,68 @@ export class TrainingSettingsService {
     }
 
     async updateTrainingSettings(userId: string, update: TrainingSettingsUpdate): Promise<TrainingSettings> {
-        const updated = mergeSettings(await this.getTrainingSettings(userId), update);
-        await setDoc(this.ref(userId), updated);
-        return updated;
+        const ref = this.ref(userId);
+        return runTransaction(getDb(), async transaction => {
+            const snapshot = await transaction.get(ref);
+            let current: TrainingSettings;
+            if (!snapshot.exists()) {
+                const legacy = await constraintService.listConstraints(userId);
+                current = migrateLegacyConstraints(userId, legacy);
+            } else {
+                const parsed = parseTrainingSettings(snapshot.data(), userId);
+                if (!parsed) {
+                    throw new Error('Training settings are invalid. Please review and save them again.');
+                }
+                current = parsed;
+            }
+
+            const updated = mergeSettings(current, update);
+            transaction.set(ref, updated);
+            return updated;
+        });
+    }
+
+    /**
+     * Reads existing recovery-policy bootstrap date B or initializes it once to `asOfDate`.
+     * The transaction re-reads the latest profile and makes initialization first-writer-wins,
+     * so two devices/sessions cannot race and slide the durable epoch (ADR-0038 Work D).
+     * Missing profile migration/creation is also handled within the transaction so a delayed
+     * initial migration write cannot clobber a committed bootstrap epoch.
+     */
+    async ensureRecoveryBootstrapDate(userId: string, asOfDate: string): Promise<string> {
+        if (!isValidDate(asOfDate)) {
+            throw new Error('Cannot initialize recovery bootstrap date: asOfDate is invalid.');
+        }
+
+        const ref = this.ref(userId);
+
+        return runTransaction(getDb(), async transaction => {
+            const snapshot = await transaction.get(ref);
+            let current: TrainingSettings;
+
+            if (!snapshot.exists()) {
+                const legacy = await constraintService.listConstraints(userId);
+                current = migrateLegacyConstraints(userId, legacy);
+            } else {
+                const parsed = parseTrainingSettings(snapshot.data(), userId);
+                if (!parsed) {
+                    throw new Error('Training settings are invalid. Please review and save them again.');
+                }
+                current = parsed;
+            }
+
+            if (current.recoveryBootstrapDate) {
+                return current.recoveryBootstrapDate;
+            }
+
+            const updated: TrainingSettings = {
+                ...current,
+                recoveryBootstrapDate: asOfDate,
+                updatedAt: timestamp(),
+            };
+            transaction.set(ref, updated);
+            return asOfDate;
+        });
     }
 }
 
