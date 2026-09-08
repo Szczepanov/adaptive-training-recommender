@@ -6,6 +6,7 @@ import type {
 } from './models';
 import type { CompletedExposure } from './microcycleHistory';
 import { getDayDiff } from '../utils/localDate';
+import { resolveOccupationalLoadContext } from './occupationalLoad';
 
 export const DECAY_HALF_LIVES_HOURS: Record<keyof DimensionalFatigue, number> = {
     systemic: 36,
@@ -180,11 +181,10 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
     // 5. Unlogged non-exercise physical activity / manual labor (D-1)
     let physicalWorkStrain = 0;
     const pw = subjective.physicalWork;
+    const occupational = resolveOccupationalLoadContext(pw, subjective.occupationalBaseline, totalSteps ?? null, steps7dAvg ?? null);
     const pwAreas = new Set(pw?.loadAreas ?? []);
     if (pw?.performed) {
-        const baseIntensity = pw.intensity === 'exhausting' ? 0.88 : pw.intensity === 'hard' ? 0.70 : 0.45;
-        const durationFactor = pw.duration === 'extended' ? 1.25 : pw.duration === 'short' ? 0.65 : 1.0;
-        physicalWorkStrain = Math.min(1, baseIntensity * durationFactor);
+        physicalWorkStrain = occupational.acuteDeviation;
     }
     const hasSpecificAreas = pwAreas.size > 0;
     const workSystemic = physicalWorkStrain * 0.60;

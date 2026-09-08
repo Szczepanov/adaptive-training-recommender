@@ -21,6 +21,15 @@ export type PhysicalWorkLoadArea =
     | 'lower_back_spine'
     | 'legs_carrying';
 
+export type OccupationalBaselineSource = 'user_authored' | 'history_inferred' | 'unknown';
+export interface OccupationalLoadBaseline {
+    typicalDuration: PhysicalWorkDuration;
+    typicalIntensity: PhysicalWorkIntensity;
+    typicalLoadAreas: PhysicalWorkLoadArea[];
+    source: OccupationalBaselineSource;
+    confidence: number;
+}
+
 export interface PhysicalWorkCheckin {
     performed: boolean;
     duration?: PhysicalWorkDuration;
@@ -56,6 +65,8 @@ export interface SubjectiveInput {
     alreadyTrainedToday: boolean; // User-reported: a session was already completed today
     /** Unlogged non-exercise physical activity / manual labor completed on the preceding day (D-1). */
     physicalWork?: PhysicalWorkCheckin;
+    /** Persisted usual-work context; absent preserves the legacy acute-only behavior. */
+    occupationalBaseline?: OccupationalLoadBaseline;
     /** Today's explicit modality ask from the check-in (e.g. 'Running', 'Strength',
      *  'Mobility'), or null for no preference. Compared case-insensitively against
      *  SessionTemplate.modality -- see rules.ts applyModalityPreference. A value with no
@@ -1291,6 +1302,8 @@ export interface DailySubjectiveCheckin {
     tissueResponses?: Partial<Record<BodyRegion, RegionTissueResponse>>;
     /** Optional unlogged non-exercise physical activity / heavy manual labor completed yesterday (D-1). */
     physicalWork?: PhysicalWorkCheckin;
+    /** Athlete-authored or conservatively inferred usual occupational load context. */
+    occupationalBaseline?: OccupationalLoadBaseline;
     // Availability block
     availability: {
         timeAvailableMin: number | null;

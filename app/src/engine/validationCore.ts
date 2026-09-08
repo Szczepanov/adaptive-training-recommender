@@ -33,6 +33,7 @@ import type {
     BodyRegion,
     RegionTissueResponse,
     TissueResponseLevel,
+    OccupationalLoadBaseline,
     AuthoredPlanBlock,
     ScheduleOverlay,
     ScheduleOverlayCategory,
@@ -181,6 +182,24 @@ export const PHYSICAL_WORK_LOAD_AREAS: readonly PhysicalWorkLoadArea[] = [
     'legs_carrying',
 ];
 export const PHYSICAL_WORK_NOTES_MAX_CHARS = 200;
+const OCCUPATIONAL_BASELINE_SOURCES = ['user_authored', 'history_inferred', 'unknown'] as const;
+
+function validateOccupationalBaseline(raw: any, errors: ValidationError[]): OccupationalLoadBaseline | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push({ field: 'occupationalBaseline', message: 'occupationalBaseline must be an object' });
+        return undefined;
+    }
+    if (!PHYSICAL_WORK_DURATIONS.includes(raw.typicalDuration)) errors.push({ field: 'occupationalBaseline.typicalDuration', message: 'Invalid typical duration' });
+    if (!PHYSICAL_WORK_INTENSITIES.includes(raw.typicalIntensity)) errors.push({ field: 'occupationalBaseline.typicalIntensity', message: 'Invalid typical intensity' });
+    if (!Array.isArray(raw.typicalLoadAreas) || raw.typicalLoadAreas.length === 0 || raw.typicalLoadAreas.some((area: unknown) => !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea))) {
+        errors.push({ field: 'occupationalBaseline.typicalLoadAreas', message: 'Typical load areas must be a non-empty recognized array' });
+    }
+    if (!OCCUPATIONAL_BASELINE_SOURCES.includes(raw.source)) errors.push({ field: 'occupationalBaseline.source', message: 'Invalid baseline source' });
+    if (typeof raw.confidence !== 'number' || !Number.isFinite(raw.confidence) || raw.confidence < 0 || raw.confidence > 1) errors.push({ field: 'occupationalBaseline.confidence', message: 'Confidence must be in [0, 1]' });
+    if (errors.some(e => e.field.startsWith('occupationalBaseline'))) return undefined;
+    return { typicalDuration: raw.typicalDuration, typicalIntensity: raw.typicalIntensity, typicalLoadAreas: Array.from(new Set(raw.typicalLoadAreas)), source: raw.source, confidence: raw.confidence };
+}
 
 /**
  * Validates untyped physical work / manual labor payload from morning check-in.
@@ -347,6 +366,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
     // Per-region tissue response (Phase 5.4)
     const tissueResponses = validateTissueResponses(raw.tissueResponses, errors);
     const physicalWork = validatePhysicalWork(raw.physicalWork, errors);
+    const occupationalBaseline = validateOccupationalBaseline(raw.occupationalBaseline, errors);
 
     if (errors.length > 0) {
         return { isValid: false, errors };
@@ -368,6 +388,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         alreadyTrainedToday: raw.alreadyTrainedToday ?? false,
         ...(tissueResponses && Object.keys(tissueResponses).length > 0 ? { tissueResponses } : {}),
         ...(physicalWork ? { physicalWork } : {}),
+        ...(occupationalBaseline ? { occupationalBaseline } : {}),
         availability: {
             timeAvailableMin: normalizeEmptyToNull(raw.availability?.timeAvailableMin),
             preferredModalityToday: normalizeEmptyToNull(raw.availability?.preferredModalityToday),

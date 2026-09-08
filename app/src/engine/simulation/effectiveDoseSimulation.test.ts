@@ -49,7 +49,7 @@ describe('effective-dose simulation evidence', () => {
             phaseName: 'Build',
             template,
             activeDose: template.easierDose,
-            mode: 'modify',
+            mode: 'train',
             rationale: 'authored template plus active dose',
             addressesObjectives: [],
         });
