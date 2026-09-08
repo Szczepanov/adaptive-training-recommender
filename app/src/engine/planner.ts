@@ -269,7 +269,7 @@ export interface ProjectedFatigueThresholds {
 export function projectedFatigueThresholds(conservativeBias = false): ProjectedFatigueThresholds {
     return conservativeBias
         ? { recover: PROJECTED_FATIGUE_RECOVER_THRESHOLD * 0.88, modify: PROJECTED_FATIGUE_MODIFY_THRESHOLD * 0.88, modifyMaxSystemicCost: PROJECTED_MODIFY_MAX_SYSTEMIC_COST * 0.85 }
-        : { recover: PROJECTED_FATIGUE_RECOVER_THRESHOLD, modify: PROJECTED_FATIGUE_MODIFY_THRESHOLD, modifyMaxSystemicCost: PROJECTED_MODIFY_MAX_SYSTEMIC_COST };
+        : { recover: PROJECTED_FATIGUE_RECOVER_THRESHOLD, modify: PROJECTED_MODIFY_MAX_SYSTEMIC_COST, modifyMaxSystemicCost: PROJECTED_MODIFY_MAX_SYSTEMIC_COST };
 }
 
 export function maxFatigueDimension(fatigue: DimensionalFatigue): number {
@@ -365,7 +365,7 @@ export function applyProjectedObjectiveCredits(
         allocations.push({ objectiveId: objective.id, earnedCredit: allocated });
         const nextProjectedCredit = projectedCredit + allocated;
         return {
-            ...definition,
+            ...objective,
             completedCredit,
             projectedCredit: nextProjectedCredit,
             completedExposures: projectCompatibilityExposures(
