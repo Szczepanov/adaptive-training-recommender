@@ -5,7 +5,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import { assertFails, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
+import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, type Firestore } from 'firebase/firestore';
 import { ScheduleWindowService } from '../services/scheduleWindowService';
 
@@ -42,7 +42,14 @@ function service(db: Firestore, id: string) {
 emulatorDescribe('ScheduleWindow manifest persistence boundary (#430)', () => {
     beforeAll(async () => {
         environment = await initializeTestEnvironment({
-            projectId: 'demo-adaptive-training',
+            // A project id of this file's own, not the bare 'demo-adaptive-training' that
+            // `firestoreRules.emulator.test.ts` uses. Separate projects are separate
+            // namespaces within the same emulator process, and that sibling clears the
+            // whole project in `afterEach` (and twice mid-test) -- sharing the id would let
+            // it wipe a manifest this file's own concurrency tests just seeded, under the
+            // parallel runner. Every other `*.emulator.test.ts` in this directory already
+            // carries a distinct id for exactly this reason; this file had not caught up.
+            projectId: 'demo-adaptive-training-schedule-window-manifest',
             firestore: { rules: readFileSync('firestore.rules', 'utf8') },
         });
     });
@@ -154,24 +161,59 @@ emulatorDescribe('ScheduleWindow manifest persistence boundary (#430)', () => {
         }));
     });
 
-    it('rejects a direct SDK interval edit without the nested window revision bump', async () => {
+    // Per-window transition validation (stable id/createdAt, revision advanced exactly once)
+    // was dropped from the `update` rule: at the 8-window cap it pushed rules evaluation over
+    // Firestore's 1000-expression-per-request ceiling under concurrent writers, which denied
+    // BOTH racing `updateWindow` calls outright instead of the intended one-winner outcome --
+    // see the removal's comment in `firestore.rules` above `hasNonOverlappingScheduleWindowManifestEntries`.
+    // These two cases are the direct consequence: a raw SDK write skipping the nested
+    // revision bump, or replacing a window's id, is no longer blocked at the rules layer.
+    //
+    // This is a real, deliberate narrowing, not an oversight papered over -- recorded here
+    // rather than silently dropped so it stays visible to review. It is scoped to `isOwner`:
+    // a client exploiting it can only corrupt metadata on its OWN schedule, never another
+    // athlete's, and never create an overlap (`hasNonOverlappingScheduleWindowManifestEntries`
+    // still runs on every create and update, and the test above still proves it holds under
+    // a direct SDK bypass). Every legitimate path still gets a correct revision/id, and that
+    // is covered independently in `scheduleWindowService.test.ts`, without depending on the
+    // rules layer at all.
+    it('no longer rejects a direct SDK interval edit that skips the nested window revision bump', async () => {
         const db = environment.authenticatedContext(USER_ID).firestore();
         const manifestRef = doc(db, 'users', USER_ID, 'schedule_window_manifests', DATE);
         await setDoc(manifestRef, manifest([window('stable', '06:00', '07:00')]));
 
-        await assertFails(setDoc(manifestRef, {
+        await assertSucceeds(setDoc(manifestRef, {
             ...manifest([window('stable', '06:00', '07:30')], 2),
             updatedAt: '2026-09-01T01:00:00.000Z',
         }));
     });
 
-    it('rejects a direct SDK same-size update that replaces a stable window id', async () => {
+    it('no longer rejects a direct SDK same-size update that replaces a stable window id', async () => {
         const db = environment.authenticatedContext(USER_ID).firestore();
         const manifestRef = doc(db, 'users', USER_ID, 'schedule_window_manifests', DATE);
         await setDoc(manifestRef, manifest([window('stable', '06:00', '07:00')]));
 
-        await assertFails(setDoc(manifestRef, {
+        await assertSucceeds(setDoc(manifestRef, {
             ...manifest([window('replacement', '06:00', '07:00', { revision: 2 })], 2),
+            updatedAt: '2026-09-01T01:00:00.000Z',
+        }));
+    });
+
+    // The invariant that must survive the narrowing above: even without per-window
+    // transition validation, an update that introduces an overlap is still rejected.
+    it('still rejects a direct SDK update that introduces an overlap via a same-size edit', async () => {
+        const db = environment.authenticatedContext(USER_ID).firestore();
+        const manifestRef = doc(db, 'users', USER_ID, 'schedule_window_manifests', DATE);
+        await setDoc(manifestRef, manifest([
+            window('first', '06:00', '07:00'),
+            window('second', '08:00', '09:00'),
+        ]));
+
+        await assertFails(setDoc(manifestRef, {
+            ...manifest([
+                window('first', '06:00', '08:30'),
+                window('second', '08:00', '09:00'),
+            ], 2),
             updatedAt: '2026-09-01T01:00:00.000Z',
         }));
     });

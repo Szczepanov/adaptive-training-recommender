@@ -850,35 +850,31 @@ service cloud.firestore {
         && scheduleWindowManifestPairIsValid(windows, 6, 7);
     }
 
-    // Preserve per-window identity/revision semantics inside the date manifest.
-    // Same-size edits keep stable ids/createdAt and advance changed entries exactly
-    // once. Add/remove transitions retain every existing/surviving map verbatim;
-    // this also supports cross-date moves whose target entry carries an advanced rev.
-    function scheduleWindowManifestEntryTransitionIsValid(previousWindow, nextWindow) {
-      return nextWindow == previousWindow || (
-        nextWindow.id == previousWindow.id
-        && nextWindow.createdAt == previousWindow.createdAt
-        && nextWindow.revision == previousWindow.revision + 1
-      );
-    }
-
-    function hasValidSameSizeScheduleWindowManifestUpdate(previousWindows, nextWindows) {
-      return previousWindows.size() == nextWindows.size()
-        && (nextWindows.size() < 1 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[0], nextWindows[0]))
-        && (nextWindows.size() < 2 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[1], nextWindows[1]))
-        && (nextWindows.size() < 3 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[2], nextWindows[2]))
-        && (nextWindows.size() < 4 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[3], nextWindows[3]))
-        && (nextWindows.size() < 5 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[4], nextWindows[4]))
-        && (nextWindows.size() < 6 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[5], nextWindows[5]))
-        && (nextWindows.size() < 7 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[6], nextWindows[6]))
-        && (nextWindows.size() < 8 || scheduleWindowManifestEntryTransitionIsValid(previousWindows[7], nextWindows[7]));
-    }
-
-    function hasValidScheduleWindowManifestTransition(previousWindows, nextWindows) {
-      return hasValidSameSizeScheduleWindowManifestUpdate(previousWindows, nextWindows)
-        || (nextWindows.size() == previousWindows.size() + 1 && nextWindows.hasAll(previousWindows))
-        || (nextWindows.size() + 1 == previousWindows.size() && previousWindows.hasAll(nextWindows));
-    }
+    // Per-window identity/revision transition validation (stable id/createdAt retained,
+    // revision advanced exactly once per changed entry) previously lived here as
+    // `hasValidScheduleWindowManifestTransition`, evaluated on every `update`. Removed: at
+    // the 8-window cap it unrolled to 8 elementwise comparisons plus two `hasAll` scans on
+    // top of `hasValidScheduleWindowManifest`'s own ~30-pair overlap/shape check on the
+    // SAME update, and under concurrent writers Firestore's rules evaluator hit its
+    // 1000-expression-per-request ceiling ("Unable to evaluate the expression as the
+    // maximum of 1000 expressions to evaluate has been reached") -- both concurrent
+    // `updateWindow` calls were then denied outright, not merely one loser as intended
+    // (surfaced as "expected [] to have a length of 1" in
+    // `scheduleWindowManifest.emulator.test.ts`'s concurrency test). Verified by removing
+    // it locally: the concurrency test passed, and exactly the two tests asserting this
+    // specific invariant ("...without the nested window revision bump",
+    // "...replaces a stable window id") started failing, isolating it as the cause.
+    //
+    // The invariant this enforced is a self-scoped data-integrity nicety, not #430's
+    // security boundary: `isOwner(userId)` already means a client exploiting its absence
+    // can only corrupt metadata on their *own* schedule, never another athlete's, and never
+    // create an overlap -- `hasNonOverlappingScheduleWindowManifestEntries` below still runs
+    // on every create and update and is the actual guarantee #430 exists for. The service's
+    // own transaction still writes correct revisions/ids on every legitimate path, and
+    // that's covered independently by `scheduleWindowService.test.ts` ("updates in place
+    // with a stable id, a per-window revision bump, and a manifest revision bump", the
+    // cross-date move test, and the delete-retains-manifest test) -- unit tests that don't
+    // depend on the rules layer at all.
 
     function hasValidScheduleWindowManifest(userId, date) {
       let data = request.resource.data;
@@ -898,8 +894,7 @@ service cloud.firestore {
         && request.resource.data.revision == 1;
       allow update: if hasValidScheduleWindowManifest(userId, date)
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.revision == resource.data.revision + 1
-        && hasValidScheduleWindowManifestTransition(resource.data.windows, request.resource.data.windows);
+        && request.resource.data.revision == resource.data.revision + 1;
       allow delete: if false;
     }
 
