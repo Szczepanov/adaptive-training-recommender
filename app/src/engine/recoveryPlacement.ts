@@ -1,6 +1,7 @@
-﻿import {
+import {
     COVERAGE_SETS,
     EVERGREEN_GENERAL_COVERAGE_SET,
+    EVERGREEN_RECOVERY_WORKOUT_IDS,
     type CoverageSetDescriptor,
     type CoverageSetId,
     type PlanPhase,
@@ -14,12 +15,11 @@ export const RECOVERY_POLICY_ID = 'policy.load_recovery.weekly_recovery_placemen
 export const RECOVERY_INTERVAL_DAYS = 7;
 export const MAX_CONSECUTIVE_NON_RECOVERY_DAYS = 6;
 
-export const CANONICAL_RECOVERY_WORKOUT_IDS = [
-    'recovery_mobility_tissue_01',
-    'recovery_breathwork_01',
-    'cycling_recovery_spin_01',
-    'rest_complete_01',
-] as const;
+/**
+ * Public ADR-0038 identity set. The Evergreen recovery descriptor owns the baseline
+ * product-policy mapping; this alias keeps consumers/tests on the same source of truth.
+ */
+export const CANONICAL_RECOVERY_WORKOUT_IDS = EVERGREEN_RECOVERY_WORKOUT_IDS;
 
 export type RecoveryPlacementAuthority = 'product_policy' | 'authored_coverage';
 export type RecoveryHistoricalState = 'known' | 'unknown';
@@ -66,21 +66,31 @@ export interface RecoveryAuthorityResolution {
 }
 
 /**
- * Resolves whether exact recovery identity comes from active authored coverage or
- * falls back to baseline product policy (Evergreen general). Does NOT manufacture
- * fake plan or block IDs when no authored plan exists.
+ * Resolves whether exact recovery identity comes from an active authored recovery
+ * requirement or falls back to baseline product policy (Evergreen general). Merely
+ * carrying a descriptor that contains `recovery_or_rest` is not enough: the role must be
+ * active in the current phase and represented by the current authored requirements.
+ * Does NOT manufacture fake plan or block IDs when no authored recovery authority exists.
  */
 export function resolveRecoveryAuthority(coverageState?: CoverageState | null): RecoveryAuthorityResolution {
-    const hasAuthoredRecovery =
-        Boolean(coverageState?.coverageSetId) &&
-        Boolean(coverageState?.descriptor?.coverage.some(item => item.key === 'recovery_or_rest'));
+    const coverageSetId = coverageState?.coverageSetId ?? null;
+    const descriptor = coverageState?.descriptor ?? null;
+    const phase = coverageState?.phase ?? null;
+    const hasActiveRecoveryRequirement = coverageState?.requirements.some(
+        requirement => requirement.key === 'recovery_or_rest',
+    ) ?? false;
+    const recoveryRoleActiveInPhase = Boolean(
+        phase && descriptor?.coverage.some(
+            item => item.key === 'recovery_or_rest' && item.phases.includes(phase),
+        ),
+    );
 
-    if (hasAuthoredRecovery && coverageState?.coverageSetId && coverageState.descriptor) {
+    if (coverageSetId && descriptor && phase && hasActiveRecoveryRequirement && recoveryRoleActiveInPhase) {
         return {
             authority: 'authored_coverage',
-            coverageSetId: coverageState.coverageSetId,
-            phase: coverageState.phase ?? 'general',
-            descriptor: coverageState.descriptor,
+            coverageSetId,
+            phase,
+            descriptor,
         };
     }
 
@@ -94,42 +104,39 @@ export function resolveRecoveryAuthority(coverageState?: CoverageState | null): 
 
 /**
  * Checks whether an exposure or candidate matches an exact qualifying recovery identity
- * under the resolved authority. Refuses category-only or unmapped fallback.
- * Under product_policy, uses CANONICAL_RECOVERY_WORKOUT_IDS decided by ADR-0038.
+ * under the resolved authority. Refuses category-only or unmapped fallback. Product policy
+ * is descriptor-driven through `EVERGREEN_GENERAL_COVERAGE_SET`, so the descriptor cannot
+ * silently drift away from the exported canonical identity set.
  */
 export function isQualifyingRecoveryIdentity(
     identifier: { templateId?: string; workoutId?: string; id?: string } | string,
     authority: RecoveryAuthorityResolution = resolveRecoveryAuthority(null),
 ): boolean {
+    const recoveryRole = authority.descriptor.coverage.find(item => item.key === 'recovery_or_rest');
+    if (!recoveryRole || !recoveryRole.phases.includes(authority.phase)) {
+        return false;
+    }
+
     let candidateWorkoutId: string | undefined;
 
     if (typeof identifier === 'string') {
-        candidateWorkoutId = workoutForTemplate(identifier)?.id ?? identifier;
+        // Prefer an exact canonical workout id before interpreting the string as an engine
+        // template id. This avoids a future template alias shadowing an exact workout id.
+        candidateWorkoutId = recoveryRole.workoutIds.includes(identifier)
+            ? identifier
+            : workoutForTemplate(identifier)?.id ?? identifier;
     } else {
         candidateWorkoutId =
             identifier.workoutId ??
             (identifier.templateId ? workoutForTemplate(identifier.templateId)?.id : undefined) ??
-            (identifier.id ? workoutForTemplate(identifier.id)?.id ?? identifier.id : undefined);
+            (identifier.id
+                ? recoveryRole.workoutIds.includes(identifier.id)
+                    ? identifier.id
+                    : workoutForTemplate(identifier.id)?.id ?? identifier.id
+                : undefined);
     }
 
-    if (!candidateWorkoutId) {
-        return false;
-    }
-
-    if (authority.authority === 'product_policy') {
-        return (CANONICAL_RECOVERY_WORKOUT_IDS as readonly string[]).includes(candidateWorkoutId);
-    }
-
-    const recoveryRole = authority.descriptor.coverage.find(item => item.key === 'recovery_or_rest');
-    if (!recoveryRole) {
-        return false;
-    }
-
-    // Role must be active in the current phase and include the exact canonical workout ID
-    const phaseMatches = recoveryRole.phases.includes(authority.phase);
-    const workoutMatches = recoveryRole.workoutIds.includes(candidateWorkoutId);
-
-    return phaseMatches && workoutMatches;
+    return Boolean(candidateWorkoutId && recoveryRole.workoutIds.includes(candidateWorkoutId));
 }
 
 /**
@@ -180,8 +187,8 @@ export function resolveRecoveryPlacementState(input: ResolveRecoveryPlacementInp
     }
 
     const daysUntilDue = getDayDiff(dueByDate, asOfDate);
-    const isDueToday = asOfDate === dueByDate;
-    const isOverdue = asOfDate > dueByDate;
+    const isDueToday = daysUntilDue === 0;
+    const isOverdue = daysUntilDue < 0;
 
     let reason: RecoveryPlacementReason;
     if (isOverdue) {
@@ -216,8 +223,8 @@ export function resolveRecoveryPlacementState(input: ResolveRecoveryPlacementInp
 /**
  * Computes the ADR-0038 recovery urgency tier for a candidate session:
  * - Qualifying recovery candidate on due date or overdue -> tier 1
- * - Qualifying recovery candidate with slack -> tier 2
- * - Any non-recovery candidate -> tier 3
+ * - Qualifying recovery candidate with an authoritative deadline and slack -> tier 2
+ * - Any non-recovery candidate, or any candidate before history/bootstrap authority exists -> tier 3
  * Never returns tier 0 (tier 0 is strictly reserved for programming authority).
  */
 export function recoveryNeedTierForCandidate(
@@ -233,7 +240,7 @@ export function recoveryNeedTierForCandidate(
     };
     const qualifies = isQualifyingRecoveryIdentity(candidate.id, activeAuthority);
 
-    if (!qualifies) {
+    if (!qualifies || state.dueByDate === null) {
         return 3;
     }
 
@@ -257,7 +264,8 @@ export function composeCoverageNeedTier(
 
 /**
  * Deterministic rolling seven-date window invariant checker.
- * Excludes dates strictly before bootstrapDate (if provided).
+ * Excludes dates through bootstrapDate (if provided). The input is normalized to unique
+ * local dates because ADR-0038's credit/counting unit is a calendar date, not an exposure.
  * Note: bootstrapDate is a deadline reference only and is never credited as recovery.
  */
 export function checkRollingRecoveryInvariant(
@@ -269,7 +277,7 @@ export function checkRollingRecoveryInvariant(
     maxConsecutiveNonRecoveryDays: number;
     violations: Array<{ windowStart: string; windowEnd: string; nonRecoveryCount: number }>;
 } {
-    const sortedDates = [...dates].sort();
+    const sortedDates = [...new Set(dates)].sort();
     const evaluatedDates = bootstrapDate
         ? sortedDates.filter(date => date > bootstrapDate)
         : sortedDates;
@@ -289,11 +297,12 @@ export function checkRollingRecoveryInvariant(
             }
         }
 
-        // Check each complete 7-date window ending at date
+        // Check each complete 7-date window ending at date.
         if (i >= RECOVERY_INTERVAL_DAYS - 1) {
             const windowStart = evaluatedDates[i - (RECOVERY_INTERVAL_DAYS - 1)];
             const windowEnd = date;
-            // Verify window is strictly 7 consecutive calendar dates
+            // Only a complete contiguous calendar window is enforceable. Missing dates are
+            // not silently converted into known non-recovery history.
             const spanDays = getDayDiff(windowEnd, windowStart) + 1;
             if (spanDays === RECOVERY_INTERVAL_DAYS) {
                 let recoveryInWindow = 0;
