@@ -257,7 +257,7 @@ export function applyCompletedSessionLoad(
 
     const newExternal: DimensionalFatigue = {
         systemic: Math.min(1, rawExternal.systemic),
-        cardiovascular: Math.min(1, rawExternal.cardiiovascular),
+        cardiovascular: Math.min(1, rawExternal.cardiovascular),
         lowerBody: Math.min(1, rawExternal.lowerBody),
         upperBody: Math.min(1, rawExternal.upperBody),
         impactTissue: Math.min(1, rawExternal.impactTissue),
