@@ -25,7 +25,9 @@ emulatorDescribe('SessionExecutionService intraday claim rollback', () => {
             projectId: 'demo-h4-pr3-execution-start-rollback',
             firestore: { rules: readFileSync('firestore.rules', 'utf8') },
         });
-        db = testEnvironment.authenticatedContext(USER_ID).firestore();
+        // `.firestore()` is declared as the legacy compat type for interop but returns the
+        // modular SDK instance -- this is the same bridge used by the launch-claim emulator suite.
+        db = testEnvironment.authenticatedContext(USER_ID).firestore() as unknown as Firestore;
     });
 
     afterEach(async () => {
