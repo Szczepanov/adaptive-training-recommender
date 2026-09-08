@@ -1,10 +1,11 @@
 # H4 / issue #434 PR 3 — Intraday bundle second-member launch & athlete confirmation capture
 
-**Status:** In progress — **Phases 1-5 delivered** (#448, #450, #451, #454, #465, #470);
-**Phase 6 remains** and is the final gate on a live dependent-member H4 release.
+**Status:** Implemented — **Phases 1-6 delivered** (#448, #450, #451, #454, #465, #470);
+Phase 6 activates the cumulative H4 dependent-member launch policy.
 **Tracks:** [GitHub issue #434](https://github.com/Szczepanov/adaptive-training-recommender/issues/434)
 (historical issue, now closed), PR 3.
-**Blocked by:** Phase 6 should branch only after #470 merges; no additional architecture blocker remains.
+**Blocked by:** none for the delivered H4 release; broader ledger and placement-persistence
+follow-ups remain separately scoped.
 **Unlocks:** dependent non-primary bundle members that can move from `pending` to a fresh
 launchable verdict after real post-predecessor evidence, followed by the cumulative H4
 policy transition.
@@ -16,7 +17,8 @@ D-WINDOW / D-LEDGER / D-REASSESS / D-PLACEMENT.
 
 > This is a mutable implementation plan. Delivered phases are summarized as outcomes rather
 > than left as a live work list; the merged PRs remain the detailed historical implementation
-> record. The executable work in this document is Phase 6.
+> record. No executable work remains in this document; the non-gating H4 follow-ups below
+> remain separately scoped.
 
 ---
 
@@ -38,10 +40,10 @@ A v4 intraday bundle's non-primary member is now:
 8. atomically claimed against the occurrence/ledger state before execution starts, with
    rollback if definition resolution or runner start fails.
 
-The remaining release gap is narrower: **the H4-specific Phase 6 policy transition is not yet
-applied.** Phase 5 now persists an `immediate` `SessionResponse` after completion, alongside
-completion facts and tissue feedback, so a dependent PM member has the evidence needed for a
-fresh reassessment rather than remaining pending solely because the response record is absent.
+The H4 release is complete. Phase 5 persists an `immediate` `SessionResponse` after
+completion, alongside completion facts and tissue feedback, so a dependent PM member has the
+evidence needed for a fresh reassessment. Phase 6 makes that complete H4 contract current
+under `2026-09-h4-intraday-bundle-member-launch-v1`.
 
 ### Current authoritative implementation map
 
@@ -61,7 +63,7 @@ fresh reassessment rather than remaining pending solely because the response rec
 | Atomic launch claim + rollback | `services/intradayLaunchClaim.ts`, `sessionOccurrenceService.releaseOccurrenceClaim`, `Home.tsx` | Delivered (#465) |
 | Post-AM immediate response | `useSessionRunner.completeSession` records/revises the deterministic response after commit | **Delivered — Phase 5** |
 | Confirmation revision from submitted evidence | Existing reassessment revision consumes response/tissue evidence | **Delivered — Phase 5** |
-| Cumulative H4 policy transition | `engine/policy.ts` | **Open — Phase 6** |
+| Cumulative H4 policy transition | `engine/policy.ts` | **Delivered — Phase 6** |
 
 ### Phase-4 implementation decisions that supersede older plan text
 
@@ -282,7 +284,7 @@ Add focused tests proving at least:
 
 ---
 
-## Phase 6 — policy and contract reconciliation
+## Phase 6 — policy and contract reconciliation — delivered
 
 ### 16. Reassessment revision type — already delivered
 
@@ -290,39 +292,36 @@ No work remains here. #450 made `engine/intradayReassessment.ts` the canonical
 `ReassessmentInputRevision` declaration and `intradayDecision.ts` imports it. Do not recreate
 an obsolete schema-unification task.
 
-### 17. Bump the cumulative policy version from the then-current value
+### 17. Bump the cumulative policy version from the then-current value — delivered
 
 **File:** `app/src/engine/policy.ts`.
 
 The old draft assumed `2026-09-h4-intraday-reassessment-v1` would still be active when Phase 6
-landed. That is false: as of `main` at `78a2e11`, the current value is
-`2026-09-recommender-recovery-calibration-v1`, and
-`2026-09-h4-intraday-reassessment-v1` is already present in
-`HISTORICAL_POLICY_VERSIONS`.
+landed. That was already false before Phase 5, and further decision work advanced the active
+version again. On the Phase 6 base, the current value was
+`2026-09-simulation-sequence-occupational-context-v2`; Phase 6 archives that value and
+activates `2026-09-h4-intraday-bundle-member-launch-v1`.
 
-When Phase 6 is implemented:
+Delivered contract:
 
 1. read the actual `POLICY_VERSION` on the Phase-6 base commit;
-2. append **that then-current value** to `HISTORICAL_POLICY_VERSIONS` if it is not already
-   present;
-3. set a new cumulative policy id representing the now-live H4 post-predecessor launch
-   contract;
-4. preserve every existing historical id; do not duplicate the already-historical H4
-   reassessment id;
+2. append that then-current value exactly once to `HISTORICAL_POLICY_VERSIONS`;
+3. set the cumulative H4 launch policy id;
+4. preserve every existing historical id, including the already-historical H4 reassessment
+   id; and
 5. run `node scripts/check-policy-drift.mjs <actual-phase6-base-sha>` plus the normal
    simulation/replay checks.
 
 The exact new string is an implementation naming choice, not an unresolved architecture
 decision. The required invariant is the ancestry/history transition above.
 
-### 18. Reconcile docs in the same change
+### 18. Reconcile docs in the same change — delivered
 
 PR #469 already reconciled the plan index, evaluation, implementation handoff, this PR 3 plan,
 and the older execution-binding roadmap. There is **no separate outstanding task** to reconcile
 that roadmap's historical PR-3 wording after #469.
 
-When Phase 6 lands, update these documents again from the implementation that actually
-merged rather than pre-declaring the final status.
+This change updates the current status from the implementation that delivered Phase 6.
 
 ---
 
@@ -364,7 +363,7 @@ For Phase 5 / PR #470, use the latest PR-head CI run as the authoritative reposi
 result. Unlike #469, this PR changes runtime completion/persistence behavior, so the focused
 completion-sheet and response-service tests must pass alongside the normal application checks.
 
-For the remaining Phase 6 implementation, the required validation set is:
+The Phase 6 implementation validation set is:
 
 ```bash
 cd app && npm run check
@@ -440,9 +439,9 @@ choices.
       `SessionResponse` with the missing completion facts and correct provenance.
 - [x] Post-predecessor response/tissue edits change the confirmation revision and invalidate a
       stale approval.
-- [ ] A dependent member can leave `pending` after valid evidence and required separation,
+- [x] A dependent member can leave `pending` after valid evidence and required separation,
       while adverse/missing evidence remains fail-closed.
-- [ ] The cumulative H4 policy version is bumped from the **then-current** global policy and
+- [x] The cumulative H4 policy version is bumped from the **then-current** global policy and
       that prior value is archived exactly once.
-- [ ] Full checks/rules/simulations/policy-drift verification pass on the Phase 6
+- [x] Full checks/rules/simulations/policy-drift verification pass on the Phase 6
       implementation head.

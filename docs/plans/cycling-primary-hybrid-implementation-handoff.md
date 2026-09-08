@@ -8,13 +8,12 @@ its record of what was investigated, not as a task list.
 **Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as
 ADR-0036 with every design slice (D-SCHEMA, D-LEDGER, D-TIME, D-WINDOW, D-PLACEMENT,
 D-REASSESS, D-AUDIT) delivered as code and issue #434's execution-binding pipeline delivered
-through PR 3 Phase 5 -- only the H4-specific `POLICY_VERSION` transition remains, and
-ledger-based
+through PR 3 Phase 6, including the cumulative H4 `POLICY_VERSION` transition; ledger-based
 ranking/admission is still not a decision input anywhere; H5 design accepted as ADR-0037
 with H5a (intent contracts, canonical replay) and H5b (report-only progression review)
 delivered (H5c confirmed revisions and cumulative `external-plan@5` unstarted)
-**Blocked by:** Nothing blocks starting any remaining item. H4's live release is gated on
-PR 3 Phase 6. H5c (confirmed bounded revisions, with the athlete-scoped singleton
+**Blocked by:** Nothing blocks starting any remaining item. H4's live release is delivered.
+H5c (confirmed bounded revisions, with the athlete-scoped singleton
 progression claim) and cumulative `external-plan@5` with `intentBlocks` are both ready to
 start, and are independent of H4's remaining phases. Personal M00/M01 prescription needs
 current athlete inputs.
@@ -40,12 +39,11 @@ when an earlier exposure already satisfied that role's weekly minimum. On unclai
 the ordinary coverage ordering is unchanged, so an already-met hard role does not force
 unnecessary repeats.
 
-As of `main` at `78a2e11` (#468), the current decision policy version is
-`2026-09-recommender-recovery-calibration-v1`. This line can go stale -- always read
-`app/src/engine/policy.ts` before changing policy. PR 3 Phase 6 must archive whatever value
-is **then current** before bumping to the cumulative H4 launch contract; it must not assume
-that an earlier H4 policy id is still the active one. See the evaluation plan for the root
-cause, focused regression tests and required PR-head validation.
+Phase 6 archived the then-current
+`2026-09-simulation-sequence-occupational-context-v2` policy and activated
+`2026-09-h4-intraday-bundle-member-launch-v1`. Future policy work must still read
+`app/src/engine/policy.ts` rather than assuming this value remains current. See the
+evaluation plan for the root cause, focused regression tests and required PR-head validation.
 
 H3 was investigated and its executable contracts are delivered (see the work orders below
 and the evaluation plan). The unplanned-date fallback, missed-session replacement,
@@ -266,16 +264,15 @@ multi-PR foundational project -- became issue #434 and is delivered through PR 3
 (#440, #445, #448, #450, #451, #454, #465), giving D-REASSESS/D-AUDIT a launchable
 non-primary member and post-AM response evidence through the source-neutral execution path.
 
-Still outstanding: **PR 3 Phase 6** (the H4-specific `POLICY_VERSION` transition) -- the
-release gate; unifying
-`planner.ts`'s three ad hoc dedup mechanisms onto the ledger's remainder/admission semantics
+Still outstanding: unifying `planner.ts`'s three ad hoc dedup mechanisms onto the ledger's
+remainder/admission semantics
 as a real ranking/admission input; and persisting a bundle's resolved placement for display.
 The placement-display work was previously blocked by Firestore's per-request rules-expression
 ceiling; #468 reduced recommendation-audit evaluation cost and closed #435, so that work is
 now unblocked but remains unimplemented and non-gating for PR 3.
 **Dependencies:** ADR-0035 rest support (delivered). Same-day canonical performed
 identity/revision/timing inputs are verified (see below); D-TIME, D-WINDOW, D-PLACEMENT and
-the #434 pipeline through PR 3 Phase 5 are all delivered. Nothing blocks Phase 6.
+the #434 pipeline through PR 3 Phase 6 are all delivered.
 **Deliverable:** Authored intraday placement and reassessed execution, followed separately
 by automatic multi-window packing after the initial acceptance bar passes.
 
