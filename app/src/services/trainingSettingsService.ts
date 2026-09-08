@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, setDoc } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { BodyRegion, SessionTemplate, TrainingSettings, UserConstraint } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -14,6 +14,7 @@ export type TrainingSettingsUpdate = {
     defaults?: Partial<TrainingSettings['defaults']>;
     preferences?: Partial<TrainingSettings['preferences']>;
     migration?: Partial<TrainingSettings['migration']>;
+    recoveryBootstrapDate?: string | null;
 };
 
 const COLLECTION = 'trainingSettings';
@@ -82,6 +83,10 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
         }
     }
 
+    if (data.recoveryBootstrapDate !== undefined && data.recoveryBootstrapDate !== null) {
+        if (typeof data.recoveryBootstrapDate !== 'string' || !isValidDate(data.recoveryBootstrapDate)) return null;
+    }
+
     return {
         ...(data as unknown as TrainingSettings),
         schemaVersion: CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION,
@@ -97,6 +102,7 @@ export function parseTrainingSettings(raw: unknown, userId: string): TrainingSet
             swim_access: typeof equipment.swim_access === 'boolean' ? equipment.swim_access : false,
         },
         injuries: (data.injuries as TrainingSettings['injuries']) ?? [],
+        ...(data.recoveryBootstrapDate !== undefined ? { recoveryBootstrapDate: data.recoveryBootstrapDate as string | null } : {}),
     };
 }
 
@@ -129,6 +135,11 @@ function mergeSettings(current: TrainingSettings, update: TrainingSettingsUpdate
         defaults: { ...current.defaults, ...update.defaults },
         preferences: { ...current.preferences, ...update.preferences },
         migration: { ...current.migration, ...update.migration },
+        ...(update.recoveryBootstrapDate !== undefined
+            ? { recoveryBootstrapDate: update.recoveryBootstrapDate }
+            : current.recoveryBootstrapDate !== undefined
+                ? { recoveryBootstrapDate: current.recoveryBootstrapDate }
+                : {}),
         updatedAt: timestamp(),
     };
     if (!parseTrainingSettings(next, current.userId)) throw new Error('Invalid training settings update');
@@ -193,6 +204,39 @@ export class TrainingSettingsService {
         const updated = mergeSettings(await this.getTrainingSettings(userId), update);
         await setDoc(this.ref(userId), updated);
         return updated;
+    }
+
+    /**
+     * Reads existing recovery-policy bootstrap date B or initializes it once to `asOfDate`.
+     * The transaction re-reads the latest profile and makes initialization first-writer-wins,
+     * so two devices/sessions cannot race and slide the durable epoch (ADR-0038 Work D).
+     */
+    async ensureRecoveryBootstrapDate(userId: string, asOfDate: string): Promise<string> {
+        if (!isValidDate(asOfDate)) {
+            throw new Error('Cannot initialize recovery bootstrap date: asOfDate is invalid.');
+        }
+
+        // Preserve the documented first-run settings migration before entering the transaction.
+        await this.getTrainingSettings(userId);
+        const ref = this.ref(userId);
+
+        return runTransaction(getDb(), async transaction => {
+            const snapshot = await transaction.get(ref);
+            if (!snapshot.exists()) {
+                throw new Error('Training settings disappeared while initializing recovery bootstrap date.');
+            }
+            const current = parseTrainingSettings(snapshot.data(), userId);
+            if (!current) {
+                throw new Error('Training settings are invalid. Please review and save them again.');
+            }
+            if (current.recoveryBootstrapDate) {
+                return current.recoveryBootstrapDate;
+            }
+
+            const updated = mergeSettings(current, { recoveryBootstrapDate: asOfDate });
+            transaction.set(ref, updated);
+            return updated.recoveryBootstrapDate ?? asOfDate;
+        });
     }
 }
 
