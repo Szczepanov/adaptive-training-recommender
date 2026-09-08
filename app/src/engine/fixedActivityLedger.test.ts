@@ -32,9 +32,28 @@ describe('fixed activity D-LEDGER adapter', () => {
         expect(resolveAvailability('2026-09-10', null, [stale, current], context).maxTimeMinutes).toBe(60);
     });
 
+    it('reconciles an occurrence before date filtering when a newer revision moves it', () => {
+        const stale = activity({
+            id: 'football', date: '2026-09-10', durationMin: 30,
+            expectedCost: { systemic: 0.2 }, updatedAt: '2026-09-01T00:00:00Z',
+        });
+        const current = activity({
+            id: 'football', date: '2026-09-11', durationMin: 30,
+            expectedCost: { systemic: 0.2 }, updatedAt: '2026-09-02T00:00:00Z',
+        });
+
+        const oldDate = resolveAvailability('2026-09-10', null, [stale, current], context);
+        const newDate = resolveAvailability('2026-09-11', null, [stale, current], context);
+
+        expect(oldDate.fixedActivities).toEqual([]);
+        expect(oldDate.maxTimeMinutes).toBe(90);
+        expect(newDate.fixedActivities).toEqual([current]);
+        expect(newDate.maxTimeMinutes).toBe(60);
+    });
+
     it('fails closed when equal revisions disagree on decision-bearing fields', () => {
-        const left = activity({ id: 'football', durationMin: 30, expectedCost: { systemic: 0.2 } });
-        const right = activity({ id: 'football', durationMin: 45, expectedCost: { systemic: 0.2 } });
+        const left = activity({ id: 'football', startTime: '08:00', durationMin: 30, expectedCost: { systemic: 0.2 } });
+        const right = activity({ id: 'football', startTime: '18:00', durationMin: 30, expectedCost: { systemic: 0.2 } });
 
         expect(() => dedupeFixedActivitiesByLedgerIdentity([left, right]))
             .toThrow("Conflicting fixed-activity revisions for occurrence 'fixed:football'");
