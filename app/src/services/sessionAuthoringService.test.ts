@@ -425,20 +425,23 @@ describe('prepareExternalPlanSessionLaunch (ADR-0036 H4)', () => {
         expect(stored?.createdAt).toBe('2026-09-06T10:00:00.000Z');
     });
 
-    it('preserves the first committed write when concurrent launches share a prescriptionHash with different timestamps', async () => {
+    it('produces the same content-addressed binding for concurrent launches with different timestamps', async () => {
         const externalPlan = makeV4ExternalPlan();
-        const earliestTime = '2026-09-06T10:00:00.000Z';
-        const laterTime = '2026-09-06T10:05:00.000Z';
+        const firstTime = '2026-09-06T10:00:00.000Z';
+        const secondTime = '2026-09-06T10:05:00.000Z';
 
         const [first, second] = await Promise.all([
-            prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, earliestTime),
-            prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, laterTime),
+            prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, firstTime),
+            prepareExternalPlanSessionLaunch('u1', externalPlan, undefined, secondTime),
         ]);
 
         expect(first.binding.prescriptionHash).toBe(second.binding.prescriptionHash);
-        const stored = services.store.get(first.binding.prescriptionHash);
-        expect(stored).toBeDefined();
-        expect(stored?.createdAt).toBe(earliestTime);
+        expect(services.prescription.savePrescription).toHaveBeenCalledTimes(2);
+
+        // Content hashing is asynchronous, so concurrent callers have no invocation-order
+        // guarantee. First-commit persistence is covered by ExecutionPrescriptionService's
+        // transaction tests; this launch-layer test only owns binding determinism.
+        expect(services.store.size).toBe(1);
     });
 
     it('omits volatile createdAt from the prescription hash payload', async () => {
