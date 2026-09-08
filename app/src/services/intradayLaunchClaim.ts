@@ -36,6 +36,7 @@
 import { doc, type Firestore } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { SessionOccurrence } from '../sessions/models';
+import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 import { parseSessionOccurrenceDocument } from '../persistence/parsers/sessionDefinition';
 import { parseSessionResponseDocument } from '../persistence/parsers/sessionResponse';
 import type { LedgerEntry } from '../engine/dailyLedger';
@@ -101,8 +102,9 @@ function stale(code: StaleDecisionCode, detail: string, athleteMessage = RECOMPU
     throw new StaleDecisionError(code, detail, athleteMessage);
 }
 
-/** The subset of the input fingerprint the *dashboard* owns. The ledger fields are owned by
- * the transaction itself and are validated separately, via the reservation row. */
+/** The subset of the input fingerprint the dashboard carries to the tap. The check-in is
+ * also re-read by document id inside the claim transaction; the remaining fields currently
+ * have no single transaction-addressable source document and therefore use this fingerprint. */
 export type DashboardInputRevision = Pick<
     ReassessmentInputRevision,
     'availabilityRevision' | 'completedFactsRevision' | 'checkinRevision' | 'placementRevision'
@@ -113,16 +115,15 @@ export interface ClaimIntradayMemberLaunchParams {
     date: string;
     occurrenceId: string;
     /**
-     * The dashboard's freshly computed fingerprint for the four inputs Firestore cannot
-     * address as a single document inside a transaction (availability, performed facts,
-     * check-in, placement). Compared field-by-field against the decision record's stored
-     * fingerprint; any difference refuses the launch.
+     * The dashboard's freshly computed fingerprint. The date-keyed subjective check-in is
+     * independently re-read inside the transaction below; availability, performed facts and
+     * placement still use this dashboard-carried comparison because they are not represented
+     * by one document the claim can address without a query.
      *
-     * This closes the gap between the last dashboard evaluation and the tap, not between
-     * the tap and the commit: a change landing inside that final window is only detectable
-     * once each of those writers bumps the aggregate's `revision` in the same transaction
-     * as its own source change (plan step 11's "not addressable" bullet). Until then this
-     * comparison is the honest bound, and it is stated here rather than implied.
+     * For those non-addressable inputs this closes the gap between the last dashboard
+     * evaluation and the tap, not between the tap and the commit: a change landing inside
+     * that final window is detectable only once its writer bumps the aggregate revision in
+     * the same atomic write (plan step 11's "not addressable" contract).
      */
     dashboardInputRevision?: DashboardInputRevision;
     now?: string;
@@ -281,6 +282,33 @@ export async function claimIntradayMemberLaunch(
                 stale('reservation-changed', `reservation revision '${reservation.postReservationLedgerRevision}' != decision's '${decision.postReservationLedgerRevision}'`);
             }
 
+            // Unlike availability/placement/performed facts, today's subjective check-in has
+            // a deterministic document id. Read it *inside this transaction* so an edit from
+            // another tab after Home rendered cannot pass by comparing the cached fingerprint
+            // to the decision that was created from that same cached fingerprint.
+            const expectedCheckinRevision = decision.reassessmentInputRevision.checkinRevision;
+            const checkinRef = doc(db, 'users', userId, 'daily_subjective_checkins', date);
+            const checkinSnap = await transaction.get(checkinRef);
+            let actualCheckinRevision = 'checkin-missing';
+            if (checkinSnap.exists()) {
+                const parsedCheckin = parseSubjectiveCheckin(checkinSnap.data(), checkinRef.path, userId, date);
+                if (parsedCheckin.status !== 'AVAILABLE') {
+                    stale('input-revision-changed', `current check-in could not be parsed (${parsedCheckin.status})`);
+                }
+                // `checkin-present` is the intentionally coarse fallback used when the
+                // dashboard had a check-in value but no source revision. Preserve that
+                // contract instead of spuriously comparing it to a now-visible timestamp.
+                actualCheckinRevision = expectedCheckinRevision === 'checkin-present'
+                    ? 'checkin-present'
+                    : (parsedCheckin.revision ?? 'checkin-present');
+            }
+            if (actualCheckinRevision !== expectedCheckinRevision) {
+                stale(
+                    'input-revision-changed',
+                    `checkinRevision changed since the verdict ('${expectedCheckinRevision}' -> '${actualCheckinRevision}')`,
+                );
+            }
+
             if (dashboardInputRevision) {
                 const expected = decision.reassessmentInputRevision;
                 for (const field of ['availabilityRevision', 'completedFactsRevision', 'checkinRevision', 'placementRevision'] as const) {
@@ -412,10 +440,11 @@ export async function releaseIntradayMemberClaim(
         ?? (params.db ? new SessionExecutionService(params.db) : sessionExecutionService);
 
     try {
-        // Plan step 11: release only when no execution references the occurrence. This has
-        // to be a query, and `Transaction.get` cannot run one -- so it is checked here and
-        // then backstopped inside the transaction by the reservation-state guard below, which
-        // refuses to reverse a row that has already been reconciled by a real execution.
+        // Plan step 11: release only when no execution references the occurrence. The Web
+        // transaction API can only read documents by reference, not run this query, so this
+        // is necessarily a preflight. The transaction below independently requires the exact
+        // ledger row to still be `in_progress`; it will now abort rather than scheduling the
+        // occurrence when that paired rollback cannot also be committed.
         const existingExecution = await executionService.findExecutionByOccurrenceId(userId, occurrenceId);
         if (existingExecution) {
             return { released: false, reason: `execution ${existingExecution.executionId} already references this occurrence` };
@@ -427,12 +456,20 @@ export async function releaseIntradayMemberClaim(
                 const aggRef = aggregateService.ref(userId, date);
                 const aggSnap = await transaction.get(aggRef);
                 const aggregate = aggSnap.exists() ? (aggSnap.data() as DailyLedgerAggregate) : null;
-                if (!hasSeededAggregate(aggregate)) return;
+                if (!hasSeededAggregate(aggregate)) {
+                    throw new Error(`cannot release ${occurrenceId}: no seeded daily ledger for ${date}`);
+                }
                 const reservation = aggregate.reservations?.[occurrenceId];
                 // Only an `in_progress` row is ours to reverse. A row already reconciled to
                 // `completed`/`partial`/`abandoned` means the session really ran; re-reserving
-                // it would double-charge the day.
-                if (!reservation || reservation.state !== 'in_progress') return;
+                // it would double-charge the day. Missing/wrong state must abort the *whole*
+                // transaction -- returning here would otherwise still write active->scheduled
+                // and split occurrence truth from ledger truth.
+                if (!reservation || reservation.state !== 'in_progress') {
+                    throw new Error(
+                        `cannot release ${occurrenceId}: reservation is ${reservation ? `'${reservation.state}'` : 'missing'}, expected 'in_progress'`,
+                    );
+                }
                 aggregateService.applyReservation(
                     transaction,
                     userId,
