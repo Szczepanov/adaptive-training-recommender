@@ -19,18 +19,41 @@ export function fixedActivityLedgerEntry(activity: FixedActivity): LedgerEntry {
     };
 }
 
+function sortedRecordEntries(record: object | undefined): [string, unknown][] | null {
+    return record
+        ? Object.entries(record).sort(([left], [right]) => left.localeCompare(right))
+        : null;
+}
+
 function decisionFingerprint(activity: FixedActivity): string {
     return JSON.stringify({
         date: activity.date,
+        startTime: activity.startTime ?? null,
         durationMin: activity.durationMin,
-        expectedCost: activity.expectedCost ?? null,
-        expectedStimulus: activity.expectedStimulus ?? null,
+        expectedCost: sortedRecordEntries(activity.expectedCost),
+        expectedStimulus: sortedRecordEntries(activity.expectedStimulus),
         fixed: activity.fixed,
         environment: activity.environment,
-        equipment: activity.equipment,
+        equipment: [...activity.equipment].sort(),
         availabilityOverride: activity.availabilityOverride ?? null,
-        availabilityContextOverride: activity.availabilityContextOverride ?? null,
+        availabilityContextOverride: activity.availabilityContextOverride
+            ? {
+                environment: activity.availabilityContextOverride.environment ?? null,
+                equipment: activity.availabilityContextOverride.equipment
+                    ? [...activity.availabilityContextOverride.equipment].sort()
+                    : null,
+            }
+            : null,
         isCompleted: activity.isCompleted,
+        templateId: activity.templateId ?? null,
+        workoutId: activity.workoutId ?? null,
+        externalAuthoredIdentity: activity.externalAuthoredIdentity
+            ? {
+                modality: activity.externalAuthoredIdentity.modality,
+                category: activity.externalAuthoredIdentity.category,
+                stimulusConfidence: activity.externalAuthoredIdentity.stimulusConfidence,
+            }
+            : null,
     });
 }
 
