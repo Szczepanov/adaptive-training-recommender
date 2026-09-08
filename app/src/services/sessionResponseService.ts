@@ -155,6 +155,30 @@ export class SessionResponseService {
     ): Promise<void> {
         await updateDoc(this.responseRef(userId, responseId), { ...patch, updatedAt: now });
     }
+
+    /**
+     * Records a completion-sheet answer exactly once, or revises the existing answer
+     * for the deterministic `(sourceSession, window)` pair. This is intentionally
+     * non-transactional: callers use it after the execution completion commit and
+     * must fail closed if the response write is unavailable.
+     */
+    async recordOrUpdateResponse(
+        userId: string,
+        sourceSession: SessionResponseSourceRef,
+        window: ResponseWindow,
+        date: string,
+        checkinDate: string,
+        facts: Partial<Pick<SessionResponse, 'sessionRpe' | 'completedFraction' | 'unexpectedFatigue' | 'techniqueNote' | 'note'>>,
+        occurrenceId?: string,
+        now: string = new Date().toISOString(),
+    ): Promise<void> {
+        const existing = await this.getResponseForWindow(userId, sourceSession, window);
+        if (existing) {
+            await this.updateResponseFacts(userId, existing.responseId, facts, now);
+            return;
+        }
+        await this.recordResponse(userId, sourceSession, window, date, checkinDate, facts, occurrenceId, now);
+    }
 }
 
 export const sessionResponseService = new SessionResponseService();

@@ -55,6 +55,8 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('3');
         expect(html).toContain('Exercises');
         expect(html).toContain('1'); // Only 1 exercise has loggedSetsCount > 0
+        expect(html).toContain('How much of the planned session did you complete?');
+        expect(html).toContain('Unexpected fatigue during or after this session');
     });
 
     it('renders warning box when there are incomplete required steps', () => {

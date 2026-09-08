@@ -154,4 +154,47 @@ describe('SessionResponseService (M5.1)', () => {
         const result = await service.getResponseForWindow('u1', { kind: 'execution', id: 'exec-1' }, 'next_morning');
         expect(result?.responseId).toBe('r2');
     });
+
+    it('recordOrUpdateResponse creates the immediate response when no answer exists', async () => {
+        firestore.getDocs.mockResolvedValue({ docs: [] });
+        const service = new SessionResponseService();
+
+        await service.recordOrUpdateResponse(
+            'u1',
+            { kind: 'execution', id: 'exec-1', date: '2026-08-18' },
+            'immediate',
+            '2026-08-18',
+            '2026-08-18',
+            { sessionRpe: 8, completedFraction: 0.75, unexpectedFatigue: true, note: 'heavy' },
+            'occ-1',
+            '2026-08-18T11:00:00.000Z',
+        );
+
+        expect(firestore.setDoc).toHaveBeenCalledOnce();
+        expect(firestore.updateDoc).not.toHaveBeenCalled();
+    });
+
+    it('recordOrUpdateResponse revises the existing deterministic response instead of creating a duplicate', async () => {
+        firestore.getDocs.mockResolvedValue({
+            docs: [{ data: () => responseDoc({ responseId: 'resp-existing' }), ref: { path: 'x' } }],
+        });
+        const service = new SessionResponseService();
+
+        await service.recordOrUpdateResponse(
+            'u1',
+            { kind: 'execution', id: 'exec-1', date: '2026-08-18' },
+            'immediate',
+            '2026-08-18',
+            '2026-08-18',
+            { completedFraction: 0.5, unexpectedFatigue: false },
+            undefined,
+            '2026-08-18T11:05:00.000Z',
+        );
+
+        expect(firestore.setDoc).not.toHaveBeenCalled();
+        expect(firestore.updateDoc).toHaveBeenCalledWith(
+            expect.anything(),
+            { completedFraction: 0.5, unexpectedFatigue: false, updatedAt: '2026-08-18T11:05:00.000Z' },
+        );
+    });
 });

@@ -12,6 +12,7 @@ import type {
 import { getDb } from '../firebase';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
+import { sessionResponseService } from '../services/sessionResponseService';
 import { checkinService } from '../services/checkinService';
 import { preferencesService } from '../services/preferencesService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
@@ -641,6 +642,31 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         }, batch);
         await batch.commit();
         setExecution(completedExecution);
+
+        // H4 Phase 5 / ADR-0036 D-REASSESS: persist the submitted completion-sheet
+        // evidence only after the execution is durably completed. A missing response
+        // must remain legible as missing, so a response-write failure is fail-closed:
+        // completion succeeds and a dependent PM member remains pending until the
+        // evidence is available.
+        try {
+            await sessionResponseService.recordOrUpdateResponse(
+                userId,
+                { kind: 'execution', id: completedExecution.executionId, date: completedExecution.date },
+                'immediate',
+                completedExecution.date,
+                completedExecution.date,
+                {
+                    sessionRpe: payload?.sessionRpe,
+                    completedFraction: payload?.completedFraction,
+                    unexpectedFatigue: payload?.unexpectedFatigue,
+                    note: payload?.notes,
+                },
+                completedExecution.occurrenceId,
+                now,
+            );
+        } catch (err) {
+            console.warn('[useSessionRunner] Failed to persist immediate session response:', err);
+        }
 
         if (execution.occurrenceId) {
             try {
