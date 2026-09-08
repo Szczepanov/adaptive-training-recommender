@@ -32,6 +32,27 @@ export interface SessionCompletionPayload {
     }>;
 }
 
+type TissueFeedback = NonNullable<SessionCompletionPayload['tissueFeedback']>;
+
+/**
+ * The region/severity selectors are a pending draft until the athlete presses "Add region".
+ * Finishing the session is also an explicit submit action, so it must not silently discard
+ * that draft. Keep this pure so the submit-edge behavior is covered without DOM interaction.
+ */
+export function resolveSubmittedTissueFeedback(
+    tissueFeedback: TissueFeedback,
+    selectedRegion: BodyRegion | '',
+    reportedPain: TissueResponseLevel,
+): TissueFeedback {
+    if (!selectedRegion || tissueFeedback.some(item => item.region === selectedRegion)) {
+        return tissueFeedback;
+    }
+    return [
+        ...tissueFeedback,
+        { region: selectedRegion, painDuringTraining: reportedPain, afterTrainingState: reportedPain },
+    ];
+}
+
 interface SessionCompletionSheetProps {
     startedAt: string;
     totalSets: number;
@@ -61,7 +82,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     const [notes, setNotes] = useState('');
     const [selectedRegion, setSelectedRegion] = useState<BodyRegion | ''>('');
     const [reportedPain, setReportedPain] = useState<TissueResponseLevel>('mild');
-    const [tissueFeedback, setTissueFeedback] = useState<NonNullable<SessionCompletionPayload['tissueFeedback']>>([]);
+    const [tissueFeedback, setTissueFeedback] = useState<TissueFeedback>([]);
     const [showAbandonConfirm, setShowAbandonConfirm] = useState(openAbandonConfirmation);
     const [elapsedMinutes] = useState(() => Math.max(1, Math.round((Date.now() - Date.parse(startedAt)) / 60000)));
 
@@ -70,12 +91,13 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     const completedExercisesCount = useMemo(() => steps.filter(s => s.loggedSetsCount > 0).length, [steps]);
 
     const handleConfirmComplete = async () => {
+        const submittedTissueFeedback = resolveSubmittedTissueFeedback(tissueFeedback, selectedRegion, reportedPain);
         const payload: SessionCompletionPayload = {
             sessionRpe,
             completedFraction,
             unexpectedFatigue,
             notes: notes.trim() || undefined,
-            tissueFeedback: tissueFeedback.length > 0 ? tissueFeedback : undefined,
+            tissueFeedback: submittedTissueFeedback.length > 0 ? submittedTissueFeedback : undefined,
         };
         await onComplete(payload);
     };
