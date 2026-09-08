@@ -1034,13 +1034,6 @@ export function rankCandidates(
 
         const candidateIsHighIntensity = template.systemicCost >= INTENSITY_STACK_THRESHOLD;
         if (summary.lastWasHighIntensity && candidateIsHighIntensity) prefMultiplier *= INTENSITY_STACK_PENALTY;
-        if (summary.lastWasHighIntensity && candidateIsHighIntensity && sequenceIntent) {
-            if (sequenceIntent.qualityDensityMode === 'cluster_allowed') prefMultiplier *= 1.75;
-            if (sequenceIntent.qualityDensityMode === 'density_emphasis') prefMultiplier *= 2.15;
-        }
-        if (sequenceIntent && (template.durationMin ?? 0) >= 60) {
-            prefMultiplier *= 1 + (sequenceIntent.longSessionPriority * 0.15);
-        }
 
         const streak = summary.consecutiveHardStreak;
         const isAerobicDefault = template.category === 'Easy Endurance' || (template.title ?? '').toLowerCase().includes('zone 2');
@@ -1073,6 +1066,9 @@ export function rankCandidates(
         if (isDisliked(template)) rationale += ` (Soft penalty applied: modality '${template.modality}' is marked as avoided/disliked).`;
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate, summary)) {
             rationale += ` (Event-modality coverage: ${template.modality} has no exposure in the rolling 6-day history.)`;
+        }
+        if (sequenceIntent) {
+            rationale += ` (Sequence intent: ${sequenceIntent.progressionMode}/${sequenceIntent.qualityDensityMode}, preferred key gap ${sequenceIntent.minimumPreferredKeyGapDays}d.)`;
         }
 
         const item: RankedCandidate = {

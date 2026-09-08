@@ -12,7 +12,7 @@ describe('effective-dose simulation evidence', () => {
         const recommendation = {
             template,
             activeDose: template.easierDose,
-            mode: 'train',
+            mode: 'modify',
             rationale: 'modify-tier regression fixture',
         } as Recommendation;
 

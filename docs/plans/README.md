@@ -51,6 +51,11 @@ a delivery queue.
 
 ## Current plans
 
+The combined delivery record for GitHub issues [#459](https://github.com/Szczepanov/adaptive-training-recommender/issues/459),
+[#460](https://github.com/Szczepanov/adaptive-training-recommender/issues/460), and
+[#461](https://github.com/Szczepanov/adaptive-training-recommender/issues/461) is
+[`2026-09-08-issues-459-461-sequencing-and-occupational-context.md`](./2026-09-08-issues-459-461-sequencing-and-occupational-context.md).
+
 The [cycling-primary hybrid evaluation plan](./cycling-primary-hybrid-evaluation.md) has
 delivered opt-in deterministic persona scenarios (H1), outdoor easy-cycling equipment
 specificity plus an anchor-date coverage-ordering fix (H2/H2b), an H3 investigation that
