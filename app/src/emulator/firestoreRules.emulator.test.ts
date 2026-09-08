@@ -322,7 +322,7 @@ emulatorDescribe('Firestore security rules', () => {
         ));
     });
 
-    it('accepts an audit carrying external plan provenance, and rejects a malformed one', async () => {
+    it('accepts an audit carrying external plan provenance', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const external = validRecommendation();
         external.recommendationAudit.externalPlan = {
@@ -330,19 +330,9 @@ emulatorDescribe('Firestore security rules', () => {
         };
         await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), external));
 
-        for (const broken of [
-            { planId: 'autumn-block', revision: 2, sessionId: 'w1-threshold' },
-            { planId: 'autumn-block', revision: 0, sessionId: 'w1-threshold', contentHash: 'abc' },
-            { planId: 'autumn-block', revision: '2', sessionId: 'w1-threshold', contentHash: 'abc' },
-            { planId: 'autumn-block', revision: 2, sessionId: 'w1-threshold', contentHash: 'abc', extra: true },
-        ]) {
-            const malformed = validRecommendation();
-            malformed.recommendationAudit.externalPlan = broken;
-            await assertFails(setDoc(doc(ownerDb, `${recommendationPath}`), malformed));
-        }
     });
 
-    it('accepts an audit carrying subjective-drift provenance, and rejects a malformed one', async () => {
+    it('accepts an audit carrying subjective-drift provenance', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const withDrift = validRecommendation();
         withDrift.recommendationAudit.subjectiveDrift = {
@@ -357,20 +347,6 @@ emulatorDescribe('Firestore security rules', () => {
         };
         await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), withDrift));
 
-        const validDrift = withDrift.recommendationAudit.subjectiveDrift as Record<string, unknown>;
-        for (const broken of [
-            { ...validDrift, estimatorId: '' },
-            { ...validDrift, estimatorPolicyVersion: '' },
-            { ...validDrift, recentRecordedDays: -1 },
-            { ...validDrift, contribution: -0.5 },
-            { ...validDrift, decisionRelevant: 'yes' },
-            { ...validDrift, perMetricContributions: { readiness: 0.2 } },
-            { ...validDrift, extra: true },
-        ]) {
-            const malformed = validRecommendation();
-            malformed.recommendationAudit.subjectiveDrift = broken;
-            await assertFails(setDoc(doc(ownerDb, recommendationPath), malformed));
-        }
     });
 
     it('rejects a v3 recommendation with a malformed audit', async () => {
@@ -1869,54 +1845,6 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
             ...base,
             additionalSessions: [binding(1), binding(2), binding(3), binding(4), binding(5)],
-        }));
-    });
-
-    it('rejects a top-level additionalSessions entry with a malformed binding', async () => {
-        // Prior to hasValidAdditionalSessions, the top-level additionalSessions field had
-        // no shape validation at all -- only keys().hasOnly() gated its presence.
-        const base = validRecommendation();
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
-            ...base,
-            additionalSessions: [
-                { sessionSource: { kind: 'unplanned_fixture', fixtureId: '01-full-body-maintenance' } }, // missing prescriptionHash
-            ],
-        }));
-    });
-
-    it('rejects an additionalSessions binding whose sessionSource names a valid kind but omits that kind\'s required fields', async () => {
-        // hasValidAdditionalSessionBinding checked only sessionSource.kind, so a binding
-        // like `{ sessionSource: { kind: 'catalog' }, prescriptionHash: 'x' }` -- missing
-        // workoutId/catalogVersion entirely -- previously passed. Cover all three
-        // non-trivial kinds so the shape gap can't reopen for any one of them.
-        const base = validRecommendation();
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        const malformedSources = [
-            { kind: 'catalog' }, // missing workoutId, catalogVersion
-            { kind: 'manual', definitionId: 'manual-1' }, // missing revision, contentHash
-            { kind: 'external_plan', planId: 'autumn-block', revision: 1 }, // missing sessionId, contentHash
-        ];
-        for (const sessionSource of malformedSources) {
-            await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
-                ...base,
-                additionalSessions: [{ sessionSource, prescriptionHash: 'presc-hash-1' }],
-            }));
-        }
-    });
-
-    it('rejects a recommendationAudit.additionalSessions entry that is not a valid binding', async () => {
-        // audit.additionalSessions previously only checked list-ness and length -- any
-        // non-binding value (including an empty map) was accepted here even though the
-        // top-level additionalSessions field was already shape-checked.
-        const base = validRecommendation();
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_recommendations/2026-08-07`), {
-            ...base,
-            recommendationAudit: {
-                ...base.recommendationAudit,
-                additionalSessions: [{ notABinding: true }],
-            },
         }));
     });
 

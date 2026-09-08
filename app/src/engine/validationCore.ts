@@ -1276,7 +1276,12 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
         const audit = raw.recommendationAudit;
         const validStatuses = ['AVAILABLE', 'MISSING', 'INVALID', 'UNAVAILABLE'];
         const validTiers = ['Rest', 'Mobility', 'Easy', 'Moderate', 'Hard'];
-        const validDose = (dose: unknown) => dose && typeof dose === 'object'
+        const hasExactKeys = (value: unknown, keys: string[]) => value
+            && typeof value === 'object'
+            && !Array.isArray(value)
+            && Object.keys(value as Record<string, unknown>).length === keys.length
+            && keys.every(key => Object.prototype.hasOwnProperty.call(value, key));
+        const validDose = (dose: unknown) => hasExactKeys(dose, ['volume', 'intensity'])
             && typeof (dose as Record<string, unknown>).volume === 'number'
             && Number.isFinite((dose as Record<string, number>).volume)
             && (dose as Record<string, number>).volume >= 0
@@ -1285,15 +1290,47 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && Number.isFinite((dose as Record<string, number>).intensity)
             && (dose as Record<string, number>).intensity >= 0
             && (dose as Record<string, number>).intensity <= 1.2;
+        const validExternalPlan = (provenance: unknown) => hasExactKeys(
+            provenance,
+            ['planId', 'revision', 'sessionId', 'contentHash'],
+        )
+            && typeof (provenance as Record<string, unknown>).planId === 'string'
+            && (provenance as Record<string, string>).planId.length <= 64
+            && Number.isInteger((provenance as Record<string, unknown>).revision)
+            && (provenance as Record<string, number>).revision >= 1
+            && typeof (provenance as Record<string, unknown>).sessionId === 'string'
+            && (provenance as Record<string, string>).sessionId.length <= 64
+            && typeof (provenance as Record<string, unknown>).contentHash === 'string'
+            && (provenance as Record<string, string>).contentHash.length <= 128;
+        const validSubjectiveDrift = (drift: unknown) => hasExactKeys(
+            drift,
+            ['estimatorId', 'estimatorPolicyVersion', 'historyThroughDateExclusive', 'recentRecordedDays', 'longRecordedDays', 'contribution', 'perMetricContributions', 'decisionRelevant'],
+        )
+            && typeof (drift as Record<string, unknown>).estimatorId === 'string'
+            && (drift as Record<string, string>).estimatorId.length > 0
+            && typeof (drift as Record<string, unknown>).estimatorPolicyVersion === 'string'
+            && (drift as Record<string, string>).estimatorPolicyVersion.length > 0
+            && typeof (drift as Record<string, unknown>).historyThroughDateExclusive === 'string'
+            && Number.isInteger((drift as Record<string, unknown>).recentRecordedDays)
+            && (drift as Record<string, number>).recentRecordedDays >= 0
+            && Number.isInteger((drift as Record<string, unknown>).longRecordedDays)
+            && (drift as Record<string, number>).longRecordedDays >= 0
+            && typeof (drift as Record<string, unknown>).contribution === 'number'
+            && Number.isFinite((drift as Record<string, number>).contribution)
+            && (drift as Record<string, number>).contribution >= 0
+            && typeof (drift as Record<string, unknown>).decisionRelevant === 'boolean'
+            && hasExactKeys((drift as Record<string, unknown>).perMetricContributions, ['readiness', 'sleepQuality', 'fatigue', 'soreness', 'mentalStress', 'motivation'])
+            && Object.values((drift as Record<string, { perMetricContributions: Record<string, unknown> }>).perMetricContributions)
+                .every(value => typeof value === 'number' && Number.isFinite(value) && value >= 0);
         const validKnowledgeLineage = audit.knowledgeLineage === undefined || (
             Array.isArray(audit.knowledgeLineage)
             && audit.knowledgeLineage.length <= 64
-            && audit.knowledgeLineage.every((ref: any) => ref
+            && audit.knowledgeLineage.every((ref: any) => hasExactKeys(ref, ['claimId', 'version'])
                 && typeof ref.claimId === 'string' && ref.claimId.length > 0
                 && Number.isInteger(ref.version) && ref.version >= 1)
             && new Set(audit.knowledgeLineage.map((ref: any) => ref.claimId)).size === audit.knowledgeLineage.length
         );
-        const validAudit = audit && typeof audit === 'object'
+        const validAudit = hasExactKeys(audit, ['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'].filter(key => audit?.[key] !== undefined))
             && typeof audit.policyVersion === 'string'
             && typeof audit.evaluatedAt === 'string'
             && typeof audit.decisionContextRevision === 'string'
@@ -1308,6 +1345,12 @@ export function validateRecommendation(raw: any): ValidationResult<DailyRecommen
             && validTiers.includes(audit.envelope.planMaxAllowableTier)
             && (audit.plannedDose === undefined || validDose(audit.plannedDose))
             && (audit.executionDose === undefined || validDose(audit.executionDose))
+            && (audit.externalPlan === undefined || validExternalPlan(audit.externalPlan))
+            && (audit.subjectiveDrift === undefined || validSubjectiveDrift(audit.subjectiveDrift))
+            && (audit.primarySession === undefined || isValidSessionReferenceBinding(audit.primarySession))
+            && (audit.additionalSessions === undefined || (Array.isArray(audit.additionalSessions)
+                && audit.additionalSessions.length <= 4
+                && audit.additionalSessions.every(isValidSessionReferenceBinding)))
             && Array.isArray(audit.candidateScores)
             // firestore.rules (hasValidRecommendationAudit) caps candidateScores at 64
             // entries -- mirrored here so an oversized catalog fails validation locally
