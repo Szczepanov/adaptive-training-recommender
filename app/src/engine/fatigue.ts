@@ -126,15 +126,16 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
     let ambulatoryTissueStrain = 0;
     const steps7dAvg = objective.steps_7d_avg;
     const totalSteps = objective.total_steps;
+    const activitySteps = estimateActivitySteps(objective.yesterday_training);
+    const ambientSteps = totalSteps !== null && totalSteps !== undefined
+        ? Math.max(0, totalSteps - activitySteps)
+        : null;
     if (
-        totalSteps !== null &&
-        totalSteps !== undefined &&
+        ambientSteps !== null &&
         steps7dAvg !== null &&
         steps7dAvg !== undefined &&
         steps7dAvg > 0
     ) {
-        const activitySteps = estimateActivitySteps(objective.yesterday_training);
-        const ambientSteps = Math.max(0, totalSteps - activitySteps);
         const excessAmbientSteps = ambientSteps - steps7dAvg;
         const surgeRatio = ambientSteps / steps7dAvg;
         if (surgeRatio >= 1.8 && excessAmbientSteps >= 6000) {
@@ -181,7 +182,7 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
     // 5. Unlogged non-exercise physical activity / manual labor (D-1)
     let physicalWorkStrain = 0;
     const pw = subjective.physicalWork;
-    const occupational = resolveOccupationalLoadContext(pw, subjective.occupationalBaseline, totalSteps ?? null, steps7dAvg ?? null);
+    const occupational = resolveOccupationalLoadContext(pw, subjective.occupationalBaseline, ambientSteps, steps7dAvg ?? null);
     const pwAreas = new Set(pw?.loadAreas ?? []);
     if (pw?.performed) {
         physicalWorkStrain = occupational.acuteDeviation;
@@ -197,7 +198,8 @@ export function computeInternalResponseStrain(readiness: DailyReadiness): Dimens
     const workNeuromuscular = (!hasSpecificAreas || pwAreas.has('grip_forearms') || pwAreas.has('lower_back_spine'))
         ? physicalWorkStrain * 0.75
         : physicalWorkStrain * 0.40;
-    const workImpact = (pwAreas.has('legs_carrying') && pw?.intensity !== 'moderate')
+    const effectiveWorkIntensity = pw?.intensity ?? 'moderate';
+    const workImpact = (pwAreas.has('legs_carrying') && effectiveWorkIntensity !== 'moderate')
         ? physicalWorkStrain * 0.40
         : 0;
 
@@ -255,7 +257,7 @@ export function applyCompletedSessionLoad(
 
     const newExternal: DimensionalFatigue = {
         systemic: Math.min(1, rawExternal.systemic),
-        cardiovascular: Math.min(1, rawExternal.cardiovascular),
+        cardiovascular: Math.min(1, rawExternal.cardiiovascular),
         lowerBody: Math.min(1, rawExternal.lowerBody),
         upperBody: Math.min(1, rawExternal.upperBody),
         impactTissue: Math.min(1, rawExternal.impactTissue),
