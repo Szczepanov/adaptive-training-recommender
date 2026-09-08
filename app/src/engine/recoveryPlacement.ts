@@ -266,7 +266,9 @@ export function composeCoverageNeedTier(
  * Deterministic rolling seven-date window invariant checker.
  * Excludes dates through bootstrapDate (if provided). The input is normalized to unique
  * local dates because ADR-0038's credit/counting unit is a calendar date, not an exposure.
- * Note: bootstrapDate is a deadline reference only and is never credited as recovery.
+ * Missing calendar dates remain unknown; they neither count as recovery nor extend a
+ * known non-recovery streak. BootstrapDate is a deadline reference only and is never
+ * credited as recovery.
  */
 export function checkRollingRecoveryInvariant(
     dates: string[],
@@ -284,10 +286,17 @@ export function checkRollingRecoveryInvariant(
 
     let maxConsecutive = 0;
     let currentConsecutive = 0;
+    let previousDate: string | null = null;
     const violations: Array<{ windowStart: string; windowEnd: string; nonRecoveryCount: number }> = [];
 
     for (let i = 0; i < evaluatedDates.length; i++) {
         const date = evaluatedDates[i];
+        if (previousDate && getDayDiff(date, previousDate) !== 1) {
+            // Unknown/missing dates break an authoritative non-recovery streak; do not
+            // manufacture non-recovery evidence across a hole in the evaluated calendar.
+            currentConsecutive = 0;
+        }
+
         if (qualifyingRecoveryDates.has(date)) {
             currentConsecutive = 0;
         } else {
@@ -296,13 +305,14 @@ export function checkRollingRecoveryInvariant(
                 maxConsecutive = currentConsecutive;
             }
         }
+        previousDate = date;
 
         // Check each complete 7-date window ending at date.
         if (i >= RECOVERY_INTERVAL_DAYS - 1) {
             const windowStart = evaluatedDates[i - (RECOVERY_INTERVAL_DAYS - 1)];
             const windowEnd = date;
-            // Only a complete contiguous calendar window is enforceable. Missing dates are
-            // not silently converted into known non-recovery history.
+            // Seven unique evaluated dates spanning seven calendar days are necessarily
+            // contiguous. A wider span contains an unknown date and is not enforceable.
             const spanDays = getDayDiff(windowEnd, windowStart) + 1;
             if (spanDays === RECOVERY_INTERVAL_DAYS) {
                 let recoveryInWindow = 0;
