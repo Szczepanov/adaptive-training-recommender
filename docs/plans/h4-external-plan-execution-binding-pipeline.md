@@ -1,6 +1,7 @@
 # H4: external-plan execution-binding pipeline — PR-1/PR-2 implementation and follow-up roadmap
 
 **Status:** PR 1 implemented in [PR #440](https://github.com/Szczepanov/adaptive-training-recommender/pull/440); PR 2 implemented in [PR #445](https://github.com/Szczepanov/adaptive-training-recommender/pull/445).
+PR 3 is delivered through Phase 4 in [PR #465](https://github.com/Szczepanov/adaptive-training-recommender/pull/465); Phases 5-6 remain.
 This document records the original gap, the invariants established by the first two PRs, and the
 remaining follow-up work.
 
@@ -212,8 +213,11 @@ validation. PR 1 does not need a new source schema in rules.
 The original analysis identified rule-expression-budget risk when both `externalPlan` audit
 metadata and `primarySession` are present. [PR #441](https://github.com/Szczepanov/adaptive-training-recommender/pull/441)
 was subsequently merged to `main` to deduplicate `primarySession`/`additionalSessions`
-validation in `hasValidRecommendationAudit`. PR #440 must therefore continue to validate
-cleanly against current `main`, not only against its original base commit.
+validation in `hasValidRecommendationAudit`. [PR #468](https://github.com/Szczepanov/adaptive-training-recommender/pull/468)
+later reduced recommendation-audit evaluation cost further and closed issue #435, so the
+earlier expression-budget blocker for persisting `decisionTrace.externalPlan.intradayBundle`
+is no longer current. The placement-display field is still unimplemented and still requires
+its own reviewed schema/rules/replay change; it is simply no longer blocked on rule headroom.
 
 ## Deliberately out of scope for PR 1
 
@@ -246,23 +250,27 @@ exists, `scale` remains display/advice only and cannot launch.
 
 ## PR-2 lifecycle boundary (historical)
 
-PR 2 introduces source-appropriate external-plan occurrence identity and the
-`claimOccurrenceLaunch` transaction primitive, but it deliberately does **not** wire the H4
+PR 2 introduced source-appropriate external-plan occurrence identity and the
+`claimOccurrenceLaunch` transaction primitive, but deliberately did **not** wire the H4
 ledger/reassessment claim into every live occurrence-backed start. Existing M3.3 manual
-occurrences and the new external-plan occurrence path can therefore still be in `scheduled`
-when their execution completes or is abandoned.
+occurrences and the new external-plan occurrence path could therefore still be in `scheduled`
+when their execution completed or was abandoned.
 
-Before PR 3 moved launch through the atomic claim/ledger boundary, `scheduled -> completed` and
-`scheduled -> abandoned` remain valid transitions in both service policy and Firestore rules.
-The runner commits the athlete's execution first and performs occurrence completion/abandonment
-as non-blocking bookkeeping afterward; an occurrence-sync failure must not prevent the athlete
-from finishing a recorded session. This is a transitional compatibility rule, not the final
-D-REASSESS launch protocol.
+Before PR 3 Phase 4, `scheduled -> completed` and `scheduled -> abandoned` remained valid
+transitions in both service policy and Firestore rules. The runner commits the athlete's
+execution first and performs occurrence completion/abandonment as non-blocking bookkeeping
+afterward; an occurrence-sync failure must not prevent the athlete from finishing a recorded
+session. That compatibility rule still matters for launch paths that do not use the H4 claim.
 
-PR 3 Phase 4 wired the existing claim primitive at the actual launch boundary together with the
-ledger/input-revision checks required by ADR-0036. At that point the live path becomes
-`scheduled -> active -> completed/abandoned`, and the temporary direct terminal transitions can
-be reconsidered/tightened in the same change.
+PR 3 Phase 4 now routes **eligible non-primary intraday bundle-member starts** through
+`claimIntradayMemberLaunch`/`claimOccurrenceLaunch`, so that path normally follows
+`scheduled -> active -> completed/abandoned` and has an `active -> scheduled` rollback when
+execution start fails. It did **not** make the claim unconditional for the v4 primary session
+or every other occurrence-backed launch path. Consequently the direct
+`scheduled -> completed/abandoned` transitions remain valid after #465 and were not tightened
+there. Reconsider them only after every live occurrence-backed launch path that needs the
+stronger lifecycle has an equivalent atomic claim/rollback contract; tightening them earlier
+would regress compatibility paths rather than strengthen H4.
 
 PR 2 also treats an explicitly supplied occurrence id as evidence, not as a trusted string:
 `prepareExternalPlanSessionLaunch` resolves it and verifies user/date (when supplied) plus the
@@ -277,15 +285,15 @@ prescription.
    tracking for `external_plan`, including a statically discriminated `externalPlanRef` branch,
    `'external_plan'` authority, `'skipped'` state, deterministic/idempotent occurrence identity,
    replay validation, lifecycle transitions, and the atomic `claimOccurrenceLaunch` primitive.
-   Live claim/ledger wiring is intentionally deferred as described above.
+   Live claim/ledger wiring was intentionally deferred as described above.
 3. **PR 3 — delivered through Phase 4 in PR #465:** use resolved intraday placement to
    adjudicate and surface non-primary v4 members as independently launchable
    `additionalSessions` entries, wiring eligible launch through the occurrence claim/ledger
    boundary. Phase 5 still needs post-AM `SessionResponse` capture and Phase 6 still needs
    the H4-specific policy transition.
 4. **Remaining PR 3 work — Phases 5-6:** capture real predecessor completion evidence and
-   confirmation revision, then archive the prior H4 policy version under the new launch
-   contract.
+   confirmation revision, then bump the cumulative policy version while archiving the
+   **then-current** `POLICY_VERSION` (not a hard-coded earlier H4 value).
 5. **Optional later work — block scaling:** add a deterministic, testable external-definition
    scaling transform before allowing `scale` verdicts to produce launch bindings.
 

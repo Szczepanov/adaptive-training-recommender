@@ -76,8 +76,10 @@ still stay `pending` until the post-AM `immediate` `SessionResponse` is captured
 remaining Phases 5-6 (post-AM `SessionResponse` capture and the H4-specific
 `POLICY_VERSION` transition) as the path to a live H4 release. Beyond PR 3, H4
 also still needs ledger remainder/admission as a real ranking input in `planner.ts`, and a
-bundle's resolved placement persisted for display (blocked on `firestore.rules`' audit
-shape at Firestore's per-request rule-evaluation ceiling).
+bundle's resolved placement persisted for display. The latter was previously blocked by
+Firestore's per-request rule-evaluation ceiling, but #468 reduced recommendation-audit
+validation cost and closed #435; persistence is therefore unblocked but still unimplemented
+and still requires its own schema/rules/replay review.
 H5 block intent and controlled progression is accepted in
 [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md) and is **In progress**:
 H5a intent contracts and canonical replay (`engine/blockIntent.ts`,
