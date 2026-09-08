@@ -51,6 +51,23 @@ describe('fixed activity D-LEDGER adapter', () => {
         expect(newDate.maxTimeMinutes).toBe(60);
     });
 
+    it('canonicalizes occurrence order and ignores representation-only ordering differences', () => {
+        const zeta = activity({ id: 'zeta', equipment: ['bike', 'trainer'] });
+        const alpha = activity({
+            id: 'alpha', equipment: ['trainer', 'bike'],
+            expectedCost: { lowerBody: 0.3, systemic: 0.2 },
+        });
+        const alphaEquivalent = activity({
+            id: 'alpha', equipment: ['bike', 'trainer'],
+            expectedCost: { systemic: 0.2, lowerBody: 0.3 },
+        });
+
+        expect(dedupeFixedActivitiesByLedgerIdentity([zeta, alphaEquivalent, alpha]))
+            .toEqual([alphaEquivalent, zeta]);
+        expect(dedupeFixedActivitiesByLedgerIdentity([alpha, zeta, alphaEquivalent]))
+            .toEqual([alpha, zeta]);
+    });
+
     it('fails closed when equal revisions disagree on decision-bearing fields', () => {
         const left = activity({ id: 'football', startTime: '08:00', durationMin: 30, expectedCost: { systemic: 0.2 } });
         const right = activity({ id: 'football', startTime: '18:00', durationMin: 30, expectedCost: { systemic: 0.2 } });
