@@ -102,6 +102,12 @@ function stale(code: StaleDecisionCode, detail: string, athleteMessage = RECOMPU
     throw new StaleDecisionError(code, detail, athleteMessage);
 }
 
+function usesCurrentCheckinRevisionEncoding(revision: string): boolean {
+    return revision === 'checkin-missing'
+        || revision === 'checkin-present'
+        || /^\d{4}-\d{2}-\d{2}T/.test(revision);
+}
+
 /** The subset of the input fingerprint the dashboard carries to the tap. The check-in is
  * also re-read by document id inside the claim transaction; the remaining fields currently
  * have no single transaction-addressable source document and therefore use this fingerprint. */
@@ -289,7 +295,6 @@ export async function claimIntradayMemberLaunch(
             const expectedCheckinRevision = decision.reassessmentInputRevision.checkinRevision;
             const checkinRef = doc(db, 'users', userId, 'daily_subjective_checkins', date);
             const checkinSnap = await transaction.get(checkinRef);
-            let actualCheckinRevision = 'checkin-missing';
             if (checkinSnap.exists()) {
                 const parsedCheckin = parseSubjectiveCheckin(checkinSnap.data(), checkinRef.path, userId, date);
                 if (parsedCheckin.status !== 'AVAILABLE') {
@@ -298,14 +303,24 @@ export async function claimIntradayMemberLaunch(
                 // `checkin-present` is the intentionally coarse fallback used when the
                 // dashboard had a check-in value but no source revision. Preserve that
                 // contract instead of spuriously comparing it to a now-visible timestamp.
-                actualCheckinRevision = expectedCheckinRevision === 'checkin-present'
+                const actualCheckinRevision = expectedCheckinRevision === 'checkin-present'
                     ? 'checkin-present'
                     : (parsedCheckin.revision ?? 'checkin-present');
-            }
-            if (actualCheckinRevision !== expectedCheckinRevision) {
+                if (actualCheckinRevision !== expectedCheckinRevision) {
+                    stale(
+                        'input-revision-changed',
+                        `checkinRevision changed since the verdict ('${expectedCheckinRevision}' -> '${actualCheckinRevision}')`,
+                    );
+                }
+            } else if (usesCurrentCheckinRevisionEncoding(expectedCheckinRevision) && expectedCheckinRevision !== 'checkin-missing') {
+                // Current decisions explicitly encode absence as `checkin-missing`; a
+                // timestamp or `checkin-present` therefore proves a document existed when
+                // the verdict was made and its disappearance must invalidate the launch.
+                // Opaque legacy fingerprints pre-dating this encoding cannot prove prior
+                // presence, so absence alone is not enough to reinterpret them.
                 stale(
                     'input-revision-changed',
-                    `checkinRevision changed since the verdict ('${expectedCheckinRevision}' -> '${actualCheckinRevision}')`,
+                    `checkinRevision changed since the verdict ('${expectedCheckinRevision}' -> 'checkin-missing')`,
                 );
             }
 
