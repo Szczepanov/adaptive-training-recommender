@@ -9,13 +9,14 @@ Phase 3 (#440, #445, #448, #450, #451, #454) and Phase 4 (#465) -- so a non-prim
 member is now adjudicated, reserved, surfaced as an `additionalSessions` binding, and
 launchable when its verdict has a valid binding. Phase 5 now captures and persists the
 post-AM `SessionResponse` completion facts, while multi-region tissue feedback remains in
-the daily check-in as the canonical tissue authority. Only the
-H4-specific Phase 6 policy work remains; dependent members still require the response and
-separation checks before they become launchable. The broader ledger-based ranking/admission unification
+the daily check-in as the canonical tissue authority. Phase 6 applies the cumulative
+`2026-09-h4-intraday-bundle-member-launch-v1` policy transition, completing the H4 release;
+dependent members still require the response and separation checks before they become
+launchable. The broader ledger-based ranking/admission unification
 and persistence of a bundle's resolved placement for display also remain; H5 design is
 accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted).
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
-confirmation; H4's live release is gated on PR 3 Phase 6, tracked in
+confirmation; H4's live release is delivered through PR 3 Phase 6, recorded in
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's remaining non-gating
 work also needs its own decision-affecting PR(s): unifying `planner.ts`'s three ad hoc dedup
 mechanisms onto the ledger's remainder/admission semantics as a real ranking input, and
@@ -36,7 +37,7 @@ This document remains the status and evidence record.
 pipeline and is retained for its H2/H2b/H3/H3-rest record and its still-accurate inventory of
 the un-unified dedup mechanisms. For current H4 implementation work, read
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) instead -- it is the
-authoritative spec for the remaining Phase 6 policy transition.
+historical implementation record for the delivered H4 release.
 
 Reuse the existing `cycling_primary_hybrid_advanced` persona. Add scenarios that exercise
 distinct decisions and group them into focused judge families. Retain the existing seven
@@ -533,17 +534,14 @@ against the day's ledger aggregate, is emitted as an `additionalSessions` bindin
 launch path atomically validates the persisted decision and ledger state, claims the
 occurrence, and rolls both claims back if execution start fails.
 
-**What it does not yet activate:** the H4-specific Phase 6 policy transition is still open;
-the current global policy version has since advanced for ADR-0038/recovery-calibration work,
-but that does not constitute the H4 launch-policy bump.
+**Release activation:** Phase 6 sets `POLICY_VERSION` to
+`2026-09-h4-intraday-bundle-member-launch-v1` and archives the immediately preceding
+`2026-09-simulation-sequence-occupational-context-v2`, making the complete H4 launch
+contract the current decision policy.
 
-**What remains:** PR 3 Phase 6 --
-[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) is the authoritative spec.
-Phase 4 is delivered in #465 and Phase 5 in #470. Phase 5 records the post-AM
-`immediate` `SessionResponse`, extends the completion sheet with
-`completedFraction`/`unexpectedFatigue`, and preserves the confirmation evidence linkage;
-Phase 6 bumps `POLICY_VERSION` from the then-current
-global value and archives that value. This is the gate on a live H4 release.
+**What remains:** no PR 3 release-gating work. Phases 4-5 provide the launch and post-AM
+evidence path; Phase 6 activates their cumulative policy contract. The broader ledger
+ranking/admission and placement-persistence follow-ups remain separate H4 work.
 
 ## H5 — Explicit develop/maintain intent and progression
 
@@ -604,10 +602,10 @@ H1 did not change engine behavior and therefore required no policy bump. H2/H2b 
 decision-affecting. H3's new test was non-decision-affecting; explicit-rest behavior had
 its own policy transition. H4's fixed-activity dedup bump reflected the drift gate's
 mechanical requirement, while `h4-intraday-bundle-placement-v1` was H4's first real behavior
-change. PR 3 Phase 4 did not itself perform the final H4 policy transition because dependent
-members still lack the Phase-5 post-AM evidence. The remaining H4 policy change must start
-from the **then-current** global `POLICY_VERSION` (currently
-`2026-09-recommender-recovery-calibration-v1` on `main` at `78a2e11`), not from an obsolete
-H4 id. H4's ledger-based ranking/admission wiring and H5c will each require normal policy
+change. PR 3 Phase 5 added the post-AM evidence path, and Phase 6 completed the cumulative
+H4 transition by archiving the then-current
+`2026-09-simulation-sequence-occupational-context-v2` policy and activating
+`2026-09-h4-intraday-bundle-member-launch-v1`. H4's ledger-based ranking/admission wiring
+and H5c will each require normal policy
 review when they actually change decision behavior. Do not enable experimental
 personalization simply to improve a judge score.

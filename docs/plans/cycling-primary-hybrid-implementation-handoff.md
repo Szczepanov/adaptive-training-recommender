@@ -1,22 +1,21 @@
 # Cycling-primary hybrid: implementation handoff
 
 **Scope note:** This document supplies **bounded implementation work orders**; the
-[evaluation plan](./cycling-primary-hybrid-evaluation.md) owns H1-H5 status. For current H4
-implementation work, read [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) --
+[evaluation plan](./cycling-primary-hybrid-evaluation.md) owns H1-H5 status. For H4 release
+history and current follow-ups, read [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) --
 the H4 work order below predates issue #434's execution-binding pipeline and is retained for
 its record of what was investigated, not as a task list.
 **Status:** H1, H2, H2b, H3 and H3-rest (ADR-0035) all delivered; H4 design accepted as
 ADR-0036 with every design slice (D-SCHEMA, D-LEDGER, D-TIME, D-WINDOW, D-PLACEMENT,
 D-REASSESS, D-AUDIT) delivered as code and issue #434's execution-binding pipeline delivered
-through PR 3 Phase 5 -- only the H4-specific `POLICY_VERSION` transition remains, and
-ledger-based
+through PR 3 Phase 6, including the cumulative H4 `POLICY_VERSION` transition; ledger-based
 ranking/admission is still not a decision input anywhere; H5 design accepted as ADR-0037
 with H5a (intent contracts, canonical replay) and H5b (report-only progression review)
 delivered (H5c confirmed revisions and cumulative `external-plan@5` unstarted)
-**Blocked by:** Nothing blocks starting any remaining item. H4's live release is gated on
-PR 3 Phase 6. H5c (confirmed bounded revisions, with the athlete-scoped singleton
+**Blocked by:** Nothing blocks starting any remaining item. H4's live release is delivered.
+H5c (confirmed bounded revisions, with the athlete-scoped singleton
 progression claim) and cumulative `external-plan@5` with `intentBlocks` are both ready to
-start, and are independent of H4's remaining phases. Personal M00/M01 prescription needs
+start, and are independent of H4's non-gating follow-ups. Personal M00/M01 prescription needs
 current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
@@ -40,12 +39,11 @@ when an earlier exposure already satisfied that role's weekly minimum. On unclai
 the ordinary coverage ordering is unchanged, so an already-met hard role does not force
 unnecessary repeats.
 
-As of `main` at `78a2e11` (#468), the current decision policy version is
-`2026-09-recommender-recovery-calibration-v1`. This line can go stale -- always read
-`app/src/engine/policy.ts` before changing policy. PR 3 Phase 6 must archive whatever value
-is **then current** before bumping to the cumulative H4 launch contract; it must not assume
-that an earlier H4 policy id is still the active one. See the evaluation plan for the root
-cause, focused regression tests and required PR-head validation.
+Phase 6 archived the then-current
+`2026-09-simulation-sequence-occupational-context-v2` policy and activated
+`2026-09-h4-intraday-bundle-member-launch-v1`. Future policy work must still read
+`app/src/engine/policy.ts` rather than assuming this value remains current. See the
+evaluation plan for the root cause, focused regression tests and required PR-head validation.
 
 H3 was investigated and its executable contracts are delivered (see the work orders below
 and the evaluation plan). The unplanned-date fallback, missed-session replacement,
@@ -69,13 +67,12 @@ H4's authority/schema design is the accepted ADR-0036 proposal
 than reconstructing its v4 contract from discussion context. Its v4 artifact has landed, so
 cumulative `external-plan@5` import acceptance now has a real contract to build against.
 
-Suggested next step: **H4 PR 3 Phase 5** (post-AM confirmation capture), per
-[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). Phase 4 already made eligible
-non-primary bundle members independently startable via the atomic claim path; Phase 5 supplies
-the real post-predecessor evidence required for a dependent member to leave `pending`.
-H5c (ADR-0037 confirmed bounded revisions) is independently startable in parallel. Keep both
-separate from personal M00/M01 prescription until current workload/restriction inputs are
-confirmed.
+H4 PR 3 is complete through Phase 6; see
+[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). The remaining H4 work is
+non-gating follow-up: planner-wide ledger remainder/admission unification and persistence of
+resolved bundle placement for display/audit. H5c (ADR-0037 confirmed bounded revisions) is
+independently startable. Keep all of those separate from personal M00/M01 prescription until
+current workload/restriction inputs are confirmed.
 
 ## Stable product intent
 
@@ -262,20 +259,20 @@ D-LEDGER (pure module), D-TIME, D-WINDOW, D-PLACEMENT's engine
 (`engine/intradayReassessment.ts`, #442) and D-AUDIT (`engine/intradayDecision.ts`, #443);
 the same-day canonical performed-fact boundary is verified. The external-plan
 `SessionReferenceBinding` execution-binding pipeline -- called out below as a separate
-multi-PR foundational project -- became issue #434 and is delivered through PR 3 Phase 5
-(#440, #445, #448, #450, #451, #454, #465), giving D-REASSESS/D-AUDIT a launchable
-non-primary member and post-AM response evidence through the source-neutral execution path.
+multi-PR foundational project -- became issue #434 and is delivered through PR 3 Phase 6
+(#440, #445, #448, #450, #451, #454, #465, #470, #472), giving D-REASSESS/D-AUDIT a
+launchable non-primary member, post-AM response evidence, and the cumulative H4 policy
+transition through the source-neutral execution path.
 
-Still outstanding: **PR 3 Phase 6** (the H4-specific `POLICY_VERSION` transition) -- the
-release gate; unifying
-`planner.ts`'s three ad hoc dedup mechanisms onto the ledger's remainder/admission semantics
+Still outstanding: unifying `planner.ts`'s three ad hoc dedup mechanisms onto the ledger's
+remainder/admission semantics
 as a real ranking/admission input; and persisting a bundle's resolved placement for display.
 The placement-display work was previously blocked by Firestore's per-request rules-expression
 ceiling; #468 reduced recommendation-audit evaluation cost and closed #435, so that work is
 now unblocked but remains unimplemented and non-gating for PR 3.
 **Dependencies:** ADR-0035 rest support (delivered). Same-day canonical performed
 identity/revision/timing inputs are verified (see below); D-TIME, D-WINDOW, D-PLACEMENT and
-the #434 pipeline through PR 3 Phase 5 are all delivered. Nothing blocks Phase 6.
+the #434 pipeline through PR 3 Phase 6 are all delivered.
 **Deliverable:** Authored intraday placement and reassessed execution, followed separately
 by automatic multi-window packing after the initial acceptance bar passes.
 
@@ -400,16 +397,16 @@ its description has actually shipped.
 4. At PM launch, capture current symptoms/response, same-day work and availability, rerun
    common gates, and atomically validate the input/ledger revision before reserving.
    A morning PM approval is provisional; missing prerequisite evidence remains pending.
-   The launch/claim portion is delivered in PR 3 Phase 4; post-predecessor confirmation
-   capture remains Phase 5.
+   The launch/claim portion was delivered in PR 3 Phase 4; post-predecessor confirmation
+   capture was delivered in Phase 5 (#470).
 5. Persist independent immutable intraday decisions and replay snapshots, show provisional,
    pending, dropped and completed states, and implement the ADR's deterministic test matrix.
    D-AUDIT persistence and the Phase-4 launch snapshot are delivered; completion-response
-   evidence remains part of Phase 5.
+   evidence was delivered in Phase 5 (#470).
 6. Run focused tests, full frontend checks/build, Firestore rules, simulations/diff and
-   policy drift validation. Phase 6 must bump `POLICY_VERSION` from the then-current global
-   value when the remaining H4 behavior is activated. Introduce an execution scenario family
-   only when it can represent the required inputs and outputs.
+   policy drift validation. Phase 6 completed the required `POLICY_VERSION` transition from
+   the then-current global value in #472. Introduce an execution scenario family only when
+   it can represent the required inputs and outputs.
 
 Read ADR-0036 for the binding contract and full acceptance bar. This work does not add a
 universal recovery-hour threshold, automatically increase weekly dose, or authorize H5
@@ -437,10 +434,9 @@ pinning test confirming `getPerformedTrainingFactsInRange`'s existing behavior a
 `trainingIntent.ts`'s call site are unchanged.
 
 D-PLACEMENT's placement-correctness wiring and issue #434's execution-binding pipeline
-through Phase 4 are delivered. Current H4 work therefore separates into three independent
-tracks: (a) PR 3 Phases 5-6 for post-AM evidence and the cumulative policy transition (the
-live dependent-member release gate); (b) unifying `planner.ts`'s remaining ad hoc dedup /
-remainder-admission paths onto D-LEDGER as a real ranking input; and (c) recommendation-audit
+through Phase 6 are delivered. Remaining H4 work therefore separates into two independent,
+non-gating tracks: (a) unifying `planner.ts`'s remaining ad hoc dedup /
+remainder-admission paths onto D-LEDGER as a real ranking input; and (b) recommendation-audit
 persistence of resolved bundle placement for display, now unblocked by #468/#435 but still
 unimplemented. Do not resurrect the older roadmap that placed the execution-binding pipeline
 or D-REASSESS/D-AUDIT after D-PLACEMENT; those have already landed.
