@@ -13,7 +13,7 @@
  * resolves to `ScheduleWindow` instances without changing this file's contract, since
  * every downstream consumer only ever sees resolved, dated windows.
  */
-import type { ScheduleWindow, TrainingEnvironment } from './models';
+import type { ScheduleWindow, ScheduleWindowManifest, TrainingEnvironment } from './models';
 import { isValidDate, type ValidationError, type ValidationResult } from './validationCore';
 
 const TRAINING_ENVIRONMENTS: TrainingEnvironment[] = ['indoor', 'outdoor', 'either'];
@@ -21,6 +21,7 @@ const HHMM_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 const MAX_LABEL_LENGTH = 100;
 const MAX_EQUIPMENT_ITEMS = 20;
 const MAX_EQUIPMENT_ITEM_LENGTH = 50;
+export const MAX_SCHEDULE_WINDOWS_PER_DATE = 8;
 
 /** Minutes since midnight for an already-pattern-validated `HH:mm` string. */
 function minutesFromHHmm(value: string): number {
@@ -125,7 +126,46 @@ export function validateScheduleWindowSet(windows: readonly ScheduleWindow[]): V
             }
         }
     }
+    const ids = new Set<string>();
+    for (const window of windows) {
+        if (ids.has(window.id)) {
+            errors.push({ field: `windows[${window.id}]`, message: `Duplicate schedule window id: ${window.id}` });
+        }
+        ids.add(window.id);
+    }
     return errors;
+}
+
+/** Validates the persisted, per-date serialization boundary for schedule windows. */
+export function validateScheduleWindowManifest(raw: any): ValidationResult<ScheduleWindowManifest> {
+    const errors: ValidationError[] = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { isValid: false, errors: [{ field: 'manifest', message: 'Schedule window manifest must be an object' }] };
+    }
+    if (!raw.userId || typeof raw.userId !== 'string') errors.push({ field: 'userId', message: 'User ID is required' });
+    if (!raw.date || typeof raw.date !== 'string' || !isValidDate(raw.date)) errors.push({ field: 'date', message: 'Date must be a valid date (YYYY-MM-DD)' });
+    if (!Number.isInteger(raw.revision) || raw.revision < 1) errors.push({ field: 'revision', message: 'revision must be a positive integer' });
+    if (!raw.createdAt || typeof raw.createdAt !== 'string') errors.push({ field: 'createdAt', message: 'createdAt is required' });
+    if (!raw.updatedAt || typeof raw.updatedAt !== 'string') errors.push({ field: 'updatedAt', message: 'updatedAt is required' });
+    if (!Array.isArray(raw.windows) || raw.windows.length > MAX_SCHEDULE_WINDOWS_PER_DATE) {
+        errors.push({ field: 'windows', message: `windows must be a list of at most ${MAX_SCHEDULE_WINDOWS_PER_DATE} entries` });
+    } else {
+        for (const [index, window] of raw.windows.entries()) {
+            const result = validateScheduleWindow(window);
+            if (!result.isValid || !result.data) {
+                errors.push(...result.errors.map(error => ({ field: `windows[${index}].${error.field}`, message: error.message })));
+                continue;
+            }
+            if (result.data.userId !== raw.userId) errors.push({ field: `windows[${index}].userId`, message: 'Window userId must match manifest' });
+            if (result.data.date !== raw.date) errors.push({ field: `windows[${index}].date`, message: 'Window date must match manifest' });
+            if (!result.data.id || typeof result.data.id !== 'string' || result.data.id.length > 128) {
+                errors.push({ field: `windows[${index}].id`, message: 'Window id must be a non-empty string of at most 128 characters' });
+            }
+        }
+        if (errors.length === 0) errors.push(...validateScheduleWindowSet(raw.windows));
+    }
+    if (errors.length > 0) return { isValid: false, errors };
+    return { isValid: true, errors: [], data: raw as ScheduleWindowManifest };
 }
 
 /**

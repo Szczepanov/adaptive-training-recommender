@@ -1,166 +1,116 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ScheduleWindow } from '../engine/models';
+import type { ScheduleWindow, ScheduleWindowManifest } from '../engine/models';
 
-const firestore = vi.hoisted(() => {
-    return {
-        addDoc: vi.fn(),
-        collection: vi.fn(),
-        deleteDoc: vi.fn(),
-        doc: vi.fn(),
-        getDoc: vi.fn(),
-        getDocs: vi.fn(),
-        query: vi.fn(),
-        setDoc: vi.fn(),
-        where: vi.fn(),
-    };
-});
+const firestore = vi.hoisted(() => ({
+    collection: vi.fn(),
+    doc: vi.fn(),
+    getDoc: vi.fn(),
+    getDocs: vi.fn(),
+    query: vi.fn(),
+    runTransaction: vi.fn(),
+    where: vi.fn(),
+}));
 
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
 import { ScheduleWindowService } from './scheduleWindowService';
 
+const DATE = '2026-09-10';
+const NOW = '2026-09-01T00:00:00.000Z';
 const validInput: Omit<ScheduleWindow, 'id' | 'userId' | 'revision' | 'createdAt' | 'updatedAt'> = {
-    date: '2026-09-10',
-    startLocal: '06:00',
-    endLocal: '07:00',
-    label: 'AM',
+    date: DATE, startLocal: '06:00', endLocal: '07:00', label: 'AM',
 };
 
-function docSnapshot(id: string, data: Record<string, unknown>) {
-    return { id, exists: () => true, data: () => data };
+function snapshot(data?: object) {
+    return { exists: () => data !== undefined, data: () => data };
 }
 
-describe('ScheduleWindowService persistence shape', () => {
+function manifest(windows: ScheduleWindow[], revision = 1): ScheduleWindowManifest {
+    return { userId: 'u1', date: DATE, revision, windows, createdAt: NOW, updatedAt: NOW };
+}
+
+function window(overrides: Partial<ScheduleWindow> = {}): ScheduleWindow {
+    return { id: 'window-1', userId: 'u1', date: DATE, startLocal: '06:00', endLocal: '07:00', revision: 1, createdAt: NOW, updatedAt: NOW, ...overrides };
+}
+
+describe('ScheduleWindowService manifest persistence', () => {
+    let stored: ScheduleWindowManifest | undefined;
+
     beforeEach(() => {
         vi.clearAllMocks();
-        firestore.collection.mockReturnValue({ path: 'schedule_windows' });
-        firestore.doc.mockReturnValue({ path: 'schedule_windows/window-1' });
-        firestore.addDoc.mockResolvedValue({ id: 'window-1' });
-        firestore.setDoc.mockResolvedValue(undefined);
-        firestore.getDocs.mockResolvedValue({ docs: [] });
-    });
-
-    it('creates a valid window and returns it with the generated document id and revision 1', async () => {
-        const service = new ScheduleWindowService();
-        const result = await service.createWindow('u1', validInput);
-
-        expect(result.id).toBe('window-1');
-        const payload = firestore.addDoc.mock.calls[0][1] as Record<string, unknown>;
-        expect(payload).not.toHaveProperty('id');
-        expect(payload.userId).toBe('u1');
-        expect(payload.revision).toBe(1);
-        expect(payload.startLocal).toBe('06:00');
-    });
-
-    it('keeps ownership, revision, and timestamps service-owned even if runtime input carries extra fields', async () => {
-        const service = new ScheduleWindowService();
-        const injectedInput = {
-            ...validInput,
-            userId: 'other-user',
-            revision: 99,
-            createdAt: '2000-01-01T00:00:00.000Z',
-            updatedAt: '2000-01-01T00:00:00.000Z',
-        } as unknown as typeof validInput;
-
-        const result = await service.createWindow('u1', injectedInput);
-        const payload = firestore.addDoc.mock.calls[0][1] as Record<string, unknown>;
-
-        expect(result.userId).toBe('u1');
-        expect(result.revision).toBe(1);
-        expect(payload.userId).toBe('u1');
-        expect(payload.revision).toBe(1);
-        expect(payload.createdAt).not.toBe('2000-01-01T00:00:00.000Z');
-        expect(payload.updatedAt).not.toBe('2000-01-01T00:00:00.000Z');
-    });
-
-    it('rejects a cross-midnight window (startLocal after endLocal)', async () => {
-        const service = new ScheduleWindowService();
-        await expect(service.createWindow('u1', { ...validInput, startLocal: '22:00', endLocal: '02:00' }))
-            .rejects.toThrow(/Validation failed/);
-        expect(firestore.addDoc).not.toHaveBeenCalled();
-    });
-
-    it('rejects creating a window that overlaps an existing same-date window', async () => {
-        firestore.getDocs.mockResolvedValue({
-            docs: [docSnapshot('existing', {
-                userId: 'u1', date: '2026-09-10', startLocal: '06:30', endLocal: '07:30',
-                revision: 1, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
-            })],
+        stored = undefined;
+        firestore.doc.mockImplementation((_db: unknown, ...path: string[]) => ({ path: path.join('/') }));
+        firestore.collection.mockImplementation((_db: unknown, ...path: string[]) => ({ path: path.join('/') }));
+        firestore.getDoc.mockImplementation(async () => snapshot(stored));
+        firestore.getDocs.mockResolvedValue({ docs: [], empty: true });
+        firestore.runTransaction.mockImplementation(async (_db: unknown, callback: (transaction: { get: (ref: unknown) => Promise<ReturnType<typeof snapshot>>; set: (_ref: unknown, data: ScheduleWindowManifest) => void }) => Promise<void>) => {
+            await callback({
+                get: async () => snapshot(stored),
+                set: (_ref, data) => { stored = data; },
+            });
         });
-        const service = new ScheduleWindowService();
-        await expect(service.createWindow('u1', validInput)).rejects.toThrow(/overlaps/);
-        expect(firestore.addDoc).not.toHaveBeenCalled();
     });
 
-    it('allows creating a non-overlapping second same-date window (AM/PM)', async () => {
-        firestore.getDocs.mockResolvedValue({
-            docs: [docSnapshot('am', {
-                userId: 'u1', date: '2026-09-10', startLocal: '06:00', endLocal: '07:00',
-                revision: 1, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
-            })],
-        });
-        const service = new ScheduleWindowService();
-        const result = await service.createWindow('u1', { ...validInput, startLocal: '17:00', endLocal: '18:00', label: 'PM' });
-        expect(result.startLocal).toBe('17:00');
-        expect(firestore.addDoc).toHaveBeenCalled();
+    function service(ids = ['window-1', 'window-2']): ScheduleWindowService {
+        let index = 0;
+        return new ScheduleWindowService({} as never, () => NOW, () => ids[index++] ?? `window-${index}`);
+    }
+
+    it('creates a versioned date manifest instead of a sibling window document', async () => {
+        const result = await service().createWindow('u1', validInput);
+
+        expect(result).toMatchObject({ id: 'window-1', userId: 'u1', revision: 1 });
+        expect(stored).toMatchObject({ date: DATE, revision: 1, windows: [expect.objectContaining({ id: 'window-1' })] });
+        expect(firestore.doc).toHaveBeenCalledWith(expect.anything(), 'users', 'u1', 'schedule_window_manifests', DATE);
     });
 
-    it('fails closed when persisted same-date data is invalid instead of treating it as an empty date', async () => {
-        firestore.getDocs.mockResolvedValue({
-            docs: [docSnapshot('invalid', {
-                userId: 'u1', date: '2026-09-10', startLocal: 'not-a-time', endLocal: '07:30',
-                revision: 1, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
-            })],
-        });
-        const service = new ScheduleWindowService();
+    it('rejects an overlapping create after reading the complete current manifest', async () => {
+        stored = manifest([window({ endLocal: '08:00' })]);
 
-        await expect(service.createWindow('u1', validInput)).rejects.toThrow(/persisted data is invalid/);
-        expect(firestore.addDoc).not.toHaveBeenCalled();
+        await expect(service(['window-2']).createWindow('u1', { ...validInput, startLocal: '07:00', endLocal: '09:00' }))
+            .rejects.toThrow(/Overlapping schedule windows/);
+        expect(stored.revision).toBe(1);
     });
 
-    it('fails closed when same-date windows are unavailable instead of treating the read as empty', async () => {
-        firestore.getDocs.mockRejectedValueOnce(new Error('offline'));
-        const service = new ScheduleWindowService();
+    it('updates in place with a stable id, a per-window revision bump, and a manifest revision bump', async () => {
+        stored = manifest([window()]);
 
-        await expect(service.createWindow('u1', validInput)).rejects.toThrow(/data is unavailable/);
-        expect(firestore.addDoc).not.toHaveBeenCalled();
+        const result = await service().updateWindow('u1', DATE, 'window-1', { endLocal: '07:30' });
+
+        expect(result).toMatchObject({ id: 'window-1', revision: 2, createdAt: NOW, endLocal: '07:30' });
+        expect(stored).toMatchObject({ revision: 2, windows: [expect.objectContaining({ id: 'window-1', revision: 2 })] });
     });
 
-    it('updateWindow bumps revision and preserves createdAt', async () => {
-        firestore.getDoc.mockResolvedValue(docSnapshot('window-1', {
-            userId: 'u1', date: '2026-09-10', startLocal: '06:00', endLocal: '07:00',
-            revision: 1, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
-        }));
-        firestore.getDocs.mockResolvedValue({ docs: [] });
-        const service = new ScheduleWindowService();
-        const result = await service.updateWindow('u1', 'window-1', { endLocal: '07:30' });
-        expect(result.revision).toBe(2);
-        expect(result.endLocal).toBe('07:30');
-        const payload = firestore.setDoc.mock.calls[0][1] as Record<string, unknown>;
-        expect(payload.createdAt).toBe('2026-09-01T00:00:00.000Z');
+    it('keeps an empty manifest after deleting the final window so revision history remains monotonic', async () => {
+        stored = manifest([window()]);
+
+        await service().deleteWindow('u1', DATE, 'window-1');
+
+        expect(stored).toMatchObject({ revision: 2, windows: [] });
     });
 
-    it('does not update when the destination date contains invalid persisted schedule data', async () => {
-        firestore.getDoc.mockResolvedValue(docSnapshot('window-1', {
-            userId: 'u1', date: '2026-09-09', startLocal: '06:00', endLocal: '07:00',
-            revision: 1, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
-        }));
-        firestore.getDocs.mockResolvedValue({
-            docs: [docSnapshot('invalid', {
-                userId: 'u1', date: '2026-09-10', startLocal: '06:30', endLocal: 'bad',
-                revision: 1, createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z',
-            })],
-        });
-        const service = new ScheduleWindowService();
+    it('fails closed when a persisted manifest is malformed', async () => {
+        stored = { ...manifest([window()]), windows: [{ ...window(), endLocal: 'bad' }] } as unknown as ScheduleWindowManifest;
 
-        await expect(service.updateWindow('u1', 'window-1', { date: '2026-09-10' })).rejects.toThrow(/persisted data is invalid/);
-        expect(firestore.setDoc).not.toHaveBeenCalled();
+        const state = await service().getWindowsForDateState('u1', DATE);
+
+        expect(state.status).toBe('INVALID');
     });
 
-    it('deleteWindow calls deleteDoc on the resolved document reference', async () => {
-        const service = new ScheduleWindowService();
-        await service.deleteWindow('u1', 'window-1');
-        expect(firestore.deleteDoc).toHaveBeenCalled();
+    it('does not treat an unavailable manifest read as an empty legacy date', async () => {
+        firestore.getDoc.mockRejectedValueOnce(new Error('offline'));
+
+        const state = await service().getWindowsForDateState('u1', DATE);
+
+        expect(state.status).toBe('UNAVAILABLE');
+    });
+
+    it('fails closed rather than treating retired sibling documents as a legacy empty date', async () => {
+        firestore.getDocs.mockResolvedValueOnce({ docs: [{}], empty: false });
+
+        const state = await service().getWindowsForDateState('u1', DATE);
+
+        expect(state.status).toBe('INVALID');
     });
 });

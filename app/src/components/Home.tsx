@@ -452,7 +452,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         const scheduleWindowsState = await scheduleWindowService.getWindowsForDateState(userId, input.date);
         if (!isCurrent()) return;
         if (scheduleWindowsState.status === 'INVALID' || scheduleWindowsState.status === 'UNAVAILABLE') {
-          console.warn(`Schedule windows for today could not be read (${scheduleWindowsState.status}); intraday bundle placement falls back to the legacy single-slot case.`);
+          console.warn(`Schedule windows for today could not be read (${scheduleWindowsState.status}); intraday bundle placement is withheld.`);
         }
         const todaysScheduleWindows = scheduleWindowsState.status === 'AVAILABLE' ? scheduleWindowsState.data : [];
         // H4 (#434) PR 3 step 7: real per-member started/existingBinding state, so a
@@ -494,12 +494,11 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         );
         // An unreadable fixed-activities read must not silently become "no fixed
         // commitments today": bundle placement would then be free to bind a window a
-        // real (but unreadable) fixed activity actually occupies. Omit bundleContext
-        // entirely in that case, falling back to the exact pre-D-PLACEMENT priority-based
-        // primary selection. An unreadable schedule-windows read is safe to keep --
-        // `resolveIntradayBundlePlacement` already treats an empty list as the
-        // intentional legacy single-slot fallback (D-WINDOW), not a data-loss signal.
-        const bundleContext = planWeekActivitiesState.status === 'AVAILABLE'
+        // real (but unreadable) fixed activity actually occupies. Schedule-window state
+        // follows the same fail-closed rule: only an AVAILABLE empty manifest denotes the
+        // supported legacy single slot; INVALID/UNAVAILABLE data must not be reinterpreted
+        // as absent metadata. Omit bundleContext entirely in either failure case.
+        const bundleContext = planWeekActivitiesState.status === 'AVAILABLE' && scheduleWindowsState.status === 'AVAILABLE'
           ? {
               scheduleWindows: todaysScheduleWindows, fixedActivities: planWeekActivities, ledger: bundleLedger,
               memberState: todaysExternalPlanMemberState,

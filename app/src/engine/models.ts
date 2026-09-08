@@ -327,6 +327,28 @@ export interface ScheduleWindow {
     updatedAt: string;
 }
 
+/**
+ * The authoritative, atomic representation of one Warsaw-local day's availability.
+ *
+ * Keeping all of a date's windows in this one versioned document means every mutation
+ * reads and writes the same Firestore document. Firestore's optimistic transaction
+ * protocol can therefore serialize concurrent creates and moves; unlike the retired
+ * sibling-document representation, two writers cannot each validate a different stale
+ * sibling set and both commit. The eight-window bound is deliberate: Firestore Rules
+ * cannot iterate arbitrary lists, so bounded storage lets the rules inspect every entry
+ * and pairwise interval before accepting a direct SDK write.
+ */
+export interface ScheduleWindowManifest {
+    userId: string;
+    date: string; // YYYY-MM-DD, Warsaw-local (ADR-0003)
+    /** Monotonic document revision. Each create, update, move, or delete increments it. */
+    revision: number;
+    /** At most eight individually versioned, non-overlapping windows for this date. */
+    windows: ScheduleWindow[];
+    createdAt: string;
+    updatedAt: string;
+}
+
 export type EventPriority = 'A' | 'B' | 'C';
 export type EventLifecycle = 'scheduled' | 'completed' | 'cancelled' | 'DNS' | 'DNF' | 'rescheduled';
 
