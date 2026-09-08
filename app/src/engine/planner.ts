@@ -1385,6 +1385,7 @@ export function generateWeekAheadPlan(
         };
 
         const incumbentAssignments = [...allocation.reservationsByDate.entries()]
+            .filter(([reservedDate]) => reservedDate !== date)
             .map(([reservedDate, item]) => ({ date: reservedDate, templateId: item.templateId }));
         const preservesAllocation = (template: SessionTemplate): boolean => {
             const candidateDose = resolveTimeCapDoseAdjustment(
