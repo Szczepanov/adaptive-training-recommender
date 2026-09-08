@@ -158,36 +158,56 @@
     color: #38bdf8;
 }
 
-.days-selector-row {
-    display: flex;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-}
-
-.days-pill {
-    flex: 1;
-    min-width: 100px;
+.days-slider-group {
     background: var(--bg-surface-elevated, #18181b);
     border: 1px solid var(--border-subtle, #27272a);
-    border-radius: 8px;
-    padding: 0.6rem 0.75rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: var(--text-main, #f4f4f5);
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.15s ease;
+    border-radius: 12px;
+    padding: 1.15rem 1.25rem;
+    gap: 0.75rem;
 }
 
-.days-pill:hover {
-    border-color: var(--border-subtle, #3f3f46);
+.days-slider-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 0.75rem;
 }
 
-.days-pill.active {
-    background: var(--primary, #38bdf8);
-    color: #09090b;
-    border-color: var(--primary, #38bdf8);
+.days-slider-badge {
+    background: rgba(56, 189, 248, 0.15);
+    border: 1px solid rgba(56, 189, 248, 0.4);
+    color: #38bdf8;
+    padding: 0.25rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.88rem;
     font-weight: 700;
+    letter-spacing: 0.01em;
+    white-space: nowrap;
+}
+
+.days-range-slider {
+    width: 100%;
+    height: 8px;
+    border-radius: 6px;
+    background: #27272a;
+    outline: none;
+    cursor: pointer;
+    accent-color: #38bdf8;
+    margin: 0.35rem 0 0.15rem;
+}
+
+.days-range-slider:focus-visible {
+    outline: 2px solid #38bdf8;
+    outline-offset: 2px;
+}
+
+.days-slider-labels {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-muted, #a1a1aa);
+    padding: 0 2px;
 }
 
 .onboarding-action-row {

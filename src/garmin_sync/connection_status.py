@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from typing import Any
 
 from google.cloud import firestore as google_firestore

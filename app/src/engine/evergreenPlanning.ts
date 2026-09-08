@@ -1,5 +1,5 @@
 import { addDaysToLocalDateString } from '../utils/localDate';
-import type { FixedActivity, MicrocycleState, UserContext, UserPreferences } from './models';
+import type { FixedActivity, MicrocycleState, ScheduleOverlay, UserContext, UserPreferences } from './models';
 import type { PlanningContext } from './planningMode';
 import type { CompletedExposure } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -31,19 +31,21 @@ export function resolveEvergreenPlan(
     date: string,
     fixedActivities: readonly FixedActivity[],
     days: number = 7,
+    isAdverseRecovery: boolean = false,
+    scheduleOverlays: readonly ScheduleOverlay[] = [],
 ): ResolvedEvergreenPlan | null {
     if (planningContext.mode !== 'evergreen' || !preferences) return null;
     const availability = Array.from({ length: Math.max(1, days) }, (_, index) => {
         const windowDate = addDaysToLocalDateString(date, index);
         return {
             date: windowDate,
-            maxTimeMinutes: resolveAvailability(windowDate, null, [...fixedActivities], context).maxTimeMinutes,
+            maxTimeMinutes: resolveAvailability(windowDate, null, [...fixedActivities], context, scheduleOverlays).maxTimeMinutes,
         };
     });
     const capacity = resolveTrainingCapacity(planningContext.profile.weeklyCommitment, preferences, availability);
     const stateEvidence = historySnapshot?.athleteStateEvidence;
     const strategy = resolveEvidenceBackedStrategy(
-        { priorities: planningContext.profile.priorities },
+        { priorities: planningContext.profile.priorities, isAdverseRecovery },
         inferAthleteTrainingState(
             stateEvidence?.exposures ?? history,
             stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0,

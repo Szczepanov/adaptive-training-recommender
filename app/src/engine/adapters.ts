@@ -15,6 +15,7 @@ import type {
     UserGoal,
     UserPreferences,
     TrainingSettings,
+    GuardrailKey,
 } from './models';
 import { injuryRegionMappingFamily, resolveInjuryPolicy } from './injuryPolicy';
 import { goalToUserEvent } from './periodization';
@@ -146,14 +147,70 @@ function mapTrainingRecord(raw: RawActivitySummary | null | undefined): Training
 export type RespirationStrainPolicy = 'off' | 'median-mad-v1';
 
 /**
+ * Creates an empty objective input for subjective-only / wearable-free recommendation mode.
+ * Wearable measurements and delta strains are unavailable (`null`). The required recent-hard
+ * count uses its neutral numeric value; revisioned training history remains the authority for
+ * completed load rather than this absent wearable summary.
+ */
+export function createSubjectiveOnlyObjectiveInput(): EngineObjectiveInput {
+    return {
+        total_steps: null,
+        sleep_score: null,
+        sleep_duration_min: null,
+        rhr: null,
+        rhr_7d_avg: null,
+        rhr_delta: null,
+        hrv_weekly_avg: null,
+        hrv_last_night: null,
+        hrv_delta: null,
+        respiration: null,
+        respiration_delta: null,
+        respiration_delta_28d: null,
+        respiration_mad_28d: null,
+        body_battery_wake: null,
+        last_3_days_hard_sessions_count: 0,
+        yesterday_training: null,
+        today_training: null,
+        sleep_score_delta_7d: null,
+        rhr_delta_28d: null,
+        hrv_delta_28d: null,
+        sleep_score_delta_28d: null,
+        steps_7d_avg: null,
+        steps_28d_avg: null,
+        steps_delta_7d: null,
+        steps_delta_28d: null,
+        hrv_stdev_28d: null,
+        rhr_stdev_28d: null,
+        sleep_score_stdev_28d: null,
+        steps_stdev_28d: null,
+        sleep_duration_delta_7d_min: null,
+        sleep_duration_delta_28d_min: null,
+        sleep_duration_accumulated_2d_deficit_min: null,
+        sleep_duration_accumulated_3d_deficit_min: null,
+        bedtime_deviation_7d_min: null,
+        bedtime_deviation_28d_min: null,
+        wake_time_deviation_7d_min: null,
+        wake_time_deviation_28d_min: null,
+        sleep_midpoint_deviation_7d_min: null,
+        sleep_midpoint_deviation_28d_min: null,
+    };
+}
+
+/**
  * Maps the Firestore canonical model (DailyRecoverySnapshot) to the internal engine
  * input model (EngineObjectiveInput) expected by the rules engine.
  * This decouples the rules engine from the Firestore schema.
+ * When snapshot is null or undefined (wearable-free / subjective-only), returns an objective
+ * input with unavailable wearable telemetry and no wearable-derived strain.
  */
 export function mapSnapshotToEngineInput(
-    snapshot: DailyRecoverySnapshot,
+    snapshot: DailyRecoverySnapshot | null | undefined,
     respirationStrainPolicy: RespirationStrainPolicy = 'off',
 ): EngineObjectiveInput {
+    if (!snapshot) {
+        return createSubjectiveOnlyObjectiveInput();
+    }
+
     // Determine the sleep_min: convert from seconds
     const sleepDurationMin = snapshot.raw.sleepDurationSec
         ? Math.round(snapshot.raw.sleepDurationSec / 60)
@@ -317,6 +374,7 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
         redFlagFindings,
         painOrInjuryRegionFamilies: resolvePainOrInjuryRegionFamilies(checkin),
         alreadyTrainedToday: checkin.alreadyTrainedToday ?? false,
+        physicalWork: checkin.physicalWork,
         preferredModalityToday: checkin.availability?.preferredModalityToday ?? null,
     };
 }
@@ -358,6 +416,23 @@ export function mapContextFromGoalsAndTrainingSettings(
         ...(preferences?.unavailableModalities ?? []),
     ]));
 
+    const physicalWorkGuardrails: GuardrailKey[] = [];
+    if (todaysCheckin?.physicalWork?.performed) {
+        const areas = todaysCheckin.physicalWork.loadAreas ?? [];
+        const intensity = todaysCheckin.physicalWork.intensity;
+        if (areas.includes('lower_back_spine') && (intensity === 'hard' || intensity === 'exhausting')) {
+            physicalWorkGuardrails.push('avoid_heavy_spinal_loading');
+        }
+        if ((areas.includes('upper_body') || areas.includes('grip_forearms')) && intensity === 'exhausting') {
+            physicalWorkGuardrails.push('avoid_overhead_pressing');
+        }
+    }
+
+    const impliedGuardrails = Array.from(new Set([
+        ...injuryPolicy.restrictions.impliedGuardrails,
+        ...physicalWorkGuardrails,
+    ]));
+
     return {
         goals: {
             shortTerm: topGoalTitle('short-term'),
@@ -370,7 +445,7 @@ export function mapContextFromGoalsAndTrainingSettings(
             hasTreadmill: trainingSettings.equipment.treadmill,
             hasIndoorBike: trainingSettings.equipment.indoor_bike,
             restrictedModalities,
-            impliedGuardrails: injuryPolicy.restrictions.impliedGuardrails,
+            impliedGuardrails,
             restrictedCategories: injuryPolicy.restrictions.restrictedCategories,
             maxTimeMinutes: trainingSettings.defaults.weekdayMaxMinutes ?? trainingSettings.defaults.weekendMaxMinutes ?? DEFAULT_MAX_TIME_MINUTES,
         },

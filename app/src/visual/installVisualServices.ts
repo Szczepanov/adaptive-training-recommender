@@ -9,6 +9,7 @@ import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { activityOverrideService } from '../services/activityOverrideService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
+import { scheduleOverlayService } from '../services/scheduleOverlayService';
 import { strengthSessionService } from '../services/strengthSessionService';
 import { strengthHistoryReadService } from '../services/strengthHistoryReadService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
@@ -30,12 +31,29 @@ import type { VisualFixture } from './fixtures';
  */
 export function installVisualServices(fixture: VisualFixture): void {
   let journalEntry: DecisionJournalEntry | null = fixture.decisionJournalEntry ?? null;
+  const visualScheduleOverlays = [...(fixture.input.scheduleOverlays ?? [])];
 
   // Phase 9.4: visual fixtures model canonical DailyDecisionInput, while the composer now
   // returns a composition-only extension carrying normalized/compact history evidence.
   // Visual review has no Firestore history source, so represent that honestly as missing.
+  // Schedule overlays are decision-affecting and therefore need an explicit AVAILABLE
+  // source state even when the fixture intentionally contains none.
   decisionComposer.composeDailyDecisionInput = async () => ({
     ...fixture.input,
+    scheduleOverlays: visualScheduleOverlays,
+    sourceStates: {
+      recoverySnapshot: fixture.input.sourceStates?.recoverySnapshot
+        ?? (fixture.input.recoverySnapshot ? { status: 'AVAILABLE', revision: null } : { status: 'MISSING' }),
+      subjectiveCheckin: fixture.input.sourceStates?.subjectiveCheckin
+        ?? (fixture.input.subjectiveCheckin ? { status: 'AVAILABLE', revision: null } : { status: 'MISSING' }),
+      activeGoals: fixture.input.sourceStates?.activeGoals ?? { status: 'AVAILABLE', revision: null },
+      trainingSettings: fixture.input.sourceStates?.trainingSettings ?? { status: 'AVAILABLE', revision: null },
+      preferences: fixture.input.sourceStates?.preferences
+        ?? (fixture.input.preferences ? { status: 'AVAILABLE', revision: null } : { status: 'MISSING' }),
+      trainingIntentProfile: fixture.input.sourceStates?.trainingIntentProfile
+        ?? (fixture.input.trainingIntentProfile ? { status: 'AVAILABLE', revision: null } : { status: 'MISSING' }),
+      scheduleOverlays: { status: 'AVAILABLE', revision: null },
+    },
     subjectiveBaseline: null,
     subjectiveHistoryState: { status: 'MISSING' },
     subjectiveHistoryIssues: [],
@@ -90,6 +108,13 @@ export function installVisualServices(fixture: VisualFixture): void {
     updatedAt: fixture.input.date,
   });
 
+  scheduleOverlayService.getOverlaysInRangeState = async () => ({
+    status: 'AVAILABLE', data: visualScheduleOverlays, revision: null,
+  });
+  scheduleOverlayService.listOverlays = async () => visualScheduleOverlays.map((overlay, index) => ({
+    ...overlay,
+    id: overlay.id ?? `visual-overlay-${index + 1}`,
+  }));
   fixedActivityService.getActivitiesInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   planBlockService.getBlocksInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   const plan = fixture.externalPlan;

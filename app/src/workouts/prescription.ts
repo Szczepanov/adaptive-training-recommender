@@ -22,6 +22,7 @@ const FALLBACK_TEMPLATE_TO_WORKOUT: Record<string, string> = {
   mob_02: 'recovery_mobility_tissue_01',
   mob_travel_flow_01: 'recovery_mobility_tissue_01',
   end_easy_01: 'cycling_zone2_standard_01',
+  end_easy_04: 'cycling_zone2_standard_01',
   end_easy_02: 'running_easy_continuous_01',
   end_easy_03: 'running_walk_run_01',
   str_upper_01: 'strength_upper_body_trunk_01',

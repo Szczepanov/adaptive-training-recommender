@@ -19,7 +19,7 @@ import { isNearFailureGauge } from './oneRepMax';
  * of that one budget's flat `lowerBody`/`upperBody` split, weighted by which exercises were
  * actually logged (`exercises.ts` `primaryMuscles`, weighted by working-set count) -- it does
  * not sum a full session-sized budget once per exercise, which would make a single hard
- * exercise indistinguishable from five (a real defect caught by this module's own tests
+ * exercise indistinguishable from five (a real issue caught by this module's own tests
  * before it shipped, not a hypothetical). This is a deliberately small, legible change over
  * the existing calibration, not a new formula -- and per D-STRCOST, even this remains a
  * **measured candidate**, not an assertion that the redistribution is correct.

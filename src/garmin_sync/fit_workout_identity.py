@@ -13,8 +13,6 @@ additive evidence for a future correlation source and is intentionally not wired
 reconciliation scoring yet.
 """
 
-from __future__ import annotations
-
 import hashlib
 import json
 import math

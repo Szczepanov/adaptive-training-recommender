@@ -11,14 +11,17 @@ import { resolvePlanningContext } from '../engine/planningMode';
 import { resolveExecutionDose } from '../engine/dose';
 import { resolveAvailability } from '../engine/schedule';
 import { adjudicateAuthoredSession, createAuthoredSessionTemplate, estimateAuthoredSessionSystemicCost } from '../engine/authoredSessionGates';
-import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { AuthoredPlanBlock, BodyRegion, DailyDecisionInput, Recommendation, NextDayPotentialPlan, DailyRecommendation, DecisionJournalEntry, FixedActivity, ShadowVerdict } from '../engine/models';
-import type { SessionReferenceBinding } from '../sessions/models';
+import { isManualOccurrence, type SessionReferenceBinding } from '../sessions/models';
+import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
 import type { DataState } from '../engine/dataState';
 import { recommendationService } from '../services/recommendationService';
-import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
+import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from '../services/sessionAuthoringService';
+import { isV4Plan, type ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver';
 import { fixedActivityService } from '../services/fixedActivityService';
+import { scheduleWindowService } from '../services/scheduleWindowService';
+import { computeDailyLedger } from '../engine/dailyLedger';
 import { planBlockService } from '../services/planBlockService';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
@@ -32,9 +35,18 @@ function formatEventTiming(daysToEvent: number | null): string {
 }
 import {
   activeExternalPlanService,
+  buildIntradayMemberState,
   externalPlanContextForDate,
+  externalRestContextForDate,
+  resolveIntradayBundlePlacement,
   type ActiveExternalPlan,
+  type IntradayBundlePlacementContext,
 } from '../services/activeExternalPlanService';
+import {
+  adjudicateIntradayBundleMembers,
+  type IntradayBundleMemberStatus,
+} from '../services/intradayBundleMemberAdjudication';
+import type { LedgerCeilings } from '../engine/dailyLedger';
 import { checkinService } from '../services/checkinService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
@@ -51,6 +63,7 @@ import { MorningDecisionCard } from './MorningDecisionCard';
 import { ActivityReclassificationModal } from './ActivityReclassificationModal';
 import { assembleMorningDecisionEvidence } from '../engine/decisionEvidence';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
+import { garminConnectionService } from '../services/garminConnectionService';
 import { activityOverrideService } from '../services/activityOverrideService';
 import { activityService } from '../services/activityService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
@@ -58,6 +71,7 @@ import { TEMPLATES, TEMPLATES_BY_ID } from '../engine/templates';
 import type { ActivityOverride, DailyRecoverySnapshot, NormalizedGarminActivity } from '../engine/models';
 import type { ErrorRepairAction } from './errorRepairAction';
 import { useAutoGarminSync } from '../hooks/useAutoGarminSync';
+import { resolveWearablePlanningMode } from '../utils/wearablePlanningGate';
 import {
   canGenerateNormalRecommendation,
   createProvisionalSafetyRecommendation,
@@ -106,6 +120,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
   const [recentActivities, setRecentActivities] = useState<NormalizedGarminActivity[]>([]);
   const [, setActiveExternalPlan] = useState<ActiveExternalPlan | null>(null);
+  const [, setBundleMemberStatuses] = useState<IntradayBundleMemberStatus[]>([]);
   const [hasPendingSessionResponse, setHasPendingSessionResponse] = useState(false);
   const pendingAdherenceRef = useRef(pendingAdherence);
   useEffect(() => { pendingAdherenceRef.current = pendingAdherence; }, [pendingAdherence]);
@@ -284,6 +299,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           : 'Recovery data needs repair before generating a plan.');
         return;
       }
+
       const decisionSourceFailure = input.sourceStates
         && [input.sourceStates.activeGoals, input.sourceStates.preferences, input.sourceStates.trainingSettings]
           .find(state => state.status === 'INVALID' || state.status === 'UNAVAILABLE');
@@ -305,6 +321,27 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           ? 'Decision inputs are temporarily unavailable. Please retry before generating a plan.'
           : 'Decision inputs need repair before generating a plan.');
         return;
+      }
+
+      if (!input.recoverySnapshot) {
+        const connection = await garminConnectionService.getConnectionState(userId);
+        if (!isCurrent()) return;
+        const wearableMode = resolveWearablePlanningMode(false, connection.state);
+        if (wearableMode === 'sync_required') {
+          setRecommendation(null);
+          setNextDayPlan(null);
+          clearExternalPlanState();
+          setErrorRepairTargets([{ kind: 'resync' }]);
+          setError('Garmin is connected, but today\'s recovery data is missing. Sync before generating a plan.');
+          return;
+        }
+        if (wearableMode === 'unavailable') {
+          setRecommendation(null);
+          setNextDayPlan(null);
+          clearExternalPlanState();
+          setError('Garmin connection status could not be verified. Retry before using wearable-free mode.');
+          return;
+        }
       }
 
       const yesterday = getPreviousLocalDateString(input.date);
@@ -358,7 +395,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       );
 
       const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
-      if (input.recoverySnapshot && canGenerateNormalRecommendation(safetyStatus)) {
+      if (canGenerateNormalRecommendation(safetyStatus)) {
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const context = mapContextFromGoalsAndTrainingSettings(input.activeGoals, input.trainingSettings, input.preferences, input.date, input.subjectiveCheckin);
@@ -389,12 +426,79 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         if (activeExternalState.status === 'INVALID' || activeExternalState.status === 'UNAVAILABLE') {
           console.warn(`External plan could not be read (${activeExternalState.status}); today falls back to the ranked path.`);
         }
-        const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date) : null;
+
+        // ADR-0036 (H4) D-PLACEMENT: only relevant when the active plan is v4 with an
+        // intraday bundle placed today; resolveIntradayBundlePlacement returns null
+        // otherwise and externalPlanContextForDate falls back to its exact pre-D-PLACEMENT
+        // behavior. Ledger ceilings are derived from today's already-resolved availability
+        // (no persisted occurrence-level ledger entries are wired in yet -- that broader
+        // ledger-based ranking/admission unification is a separate, later H4 task).
+        const scheduleWindowsState = await scheduleWindowService.getWindowsForDateState(userId, input.date);
+        if (!isCurrent()) return;
+        if (scheduleWindowsState.status === 'INVALID' || scheduleWindowsState.status === 'UNAVAILABLE') {
+          console.warn(`Schedule windows for today could not be read (${scheduleWindowsState.status}); intraday bundle placement falls back to the legacy single-slot case.`);
+        }
+        const todaysScheduleWindows = scheduleWindowsState.status === 'AVAILABLE' ? scheduleWindowsState.data : [];
+        // H4 (#434) PR 3 step 7: real per-member started/existingBinding state, so a
+        // member that has already launched keeps its window rather than being silently
+        // re-resolved (D-PLACEMENT). `windowBinding` is only ever set once a caller passes
+        // one into `getOrCreateExternalPlanOccurrence` -- until Phase 3 wires that for
+        // non-primary members, `existingBinding` stays absent here even for a started
+        // member; `started` alone is already real and meaningful today.
+        let todaysExternalPlanMemberState: IntradayBundlePlacementContext['memberState'];
+        try {
+          // `getExternalPlanOccurrencesForDate` returns every external-plan occurrence for
+          // the date regardless of plan/revision, and a v4 session's `sessionId` is
+          // plan-internal, not globally unique -- `buildIntradayMemberState` requires the
+          // active plan's identity so a stale or unrelated occurrence sharing a session id
+          // can never silently apply its started/existingBinding to the current plan's
+          // member. No active plan means no bundle to place against, so memberState stays
+          // unset entirely rather than built from an identity that doesn't exist.
+          const todaysExternalPlanOccurrences = activeExternal
+            ? await sessionOccurrenceService.getExternalPlanOccurrencesForDate(userId, input.date)
+            : [];
+          if (!isCurrent()) return;
+          todaysExternalPlanMemberState = activeExternal
+            ? buildIntradayMemberState(todaysExternalPlanOccurrences, { planId: activeExternal.plan.planId, revision: activeExternal.plan.revision })
+            : undefined;
+        } catch (err) {
+          // A failed read must not silently become "nothing has started" -- that would let
+          // D-PLACEMENT re-resolve a member that has actually already launched. Omit
+          // memberState entirely (the exact pre-wiring fallback, not a worse one).
+          console.warn('Failed to read today\'s external-plan occurrence state for bundle placement:', err);
+          todaysExternalPlanMemberState = undefined;
+        }
+        const earlyAvailability = resolveAvailability(input.date, subjective, planWeekActivities, context, input.scheduleOverlays);
+        const bundleLedger = computeDailyLedger(
+          {
+            dailyMinuteCeiling: earlyAvailability.maxTimeMinutes,
+            dailySystemicCostCeiling: Math.max(0, 1 - earlyAvailability.reservedCapacityCost),
+          },
+          [],
+        );
+        // An unreadable fixed-activities read must not silently become "no fixed
+        // commitments today": bundle placement would then be free to bind a window a
+        // real (but unreadable) fixed activity actually occupies. Omit bundleContext
+        // entirely in that case, falling back to the exact pre-D-PLACEMENT priority-based
+        // primary selection. An unreadable schedule-windows read is safe to keep --
+        // `resolveIntradayBundlePlacement` already treats an empty list as the
+        // intentional legacy single-slot fallback (D-WINDOW), not a data-loss signal.
+        const bundleContext = planWeekActivitiesState.status === 'AVAILABLE'
+          ? {
+              scheduleWindows: todaysScheduleWindows, fixedActivities: planWeekActivities, ledger: bundleLedger,
+              memberState: todaysExternalPlanMemberState,
+            }
+          : undefined;
+        const bundlePlacement = (activeExternal && bundleContext && isV4Plan(activeExternal.plan))
+          ? resolveIntradayBundlePlacement(activeExternal, input.date, bundleContext)
+          : null;
+        const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, bundleContext) : null;
+        const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;
 
         const baseRecommendation = await evaluateTrainingWithIntent(
           userId, { subjective, objective, subjectiveBaseline: input.subjectiveBaseline }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
-          'max', externalContext,
+          'max', externalContext, undefined, undefined, externalRestContext, false, input.scheduleOverlays,
         );
         if (!isCurrent()) return;
         const recommendationWithPrescription = {
@@ -413,6 +517,30 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           } catch (err) {
             console.warn('Failed to prepare the catalog session binding for today\'s recommendation:', err);
           }
+        } else if (
+          activeExternal &&
+          isV4Plan(activeExternal.plan) &&
+          recommendationWithPrescription.externalVerdict?.decision === 'proceed' &&
+          recommendationWithPrescription.template.id !== 'rest_01' &&
+          externalContext &&
+          'definition' in externalContext.session
+        ) {
+          try {
+            const launch = await prepareExternalPlanSessionLaunch(
+              userId,
+              {
+                planId: externalContext.planId,
+                revision: externalContext.revision,
+                contentHash: externalContext.contentHash,
+                session: externalContext.session as ExternalPlanSessionV4,
+              },
+              { date: input.date },
+            );
+            if (!isCurrent()) return;
+            primarySession = launch.binding;
+          } catch (err) {
+            console.warn('Failed to prepare the external-plan session binding for today\'s recommendation:', err);
+          }
         }
 
         let recommendationWithSession = { ...recommendationWithPrescription, primarySession };
@@ -427,11 +555,17 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             input.date,
             yesterdayRec?.mode,
           );
-          const availability = resolveAvailability(input.date, subjective, todayAndTomorrowFixedActivities, context);
+          const availability = resolveAvailability(
+            input.date,
+            subjective,
+            todayAndTomorrowFixedActivities,
+            context,
+            input.scheduleOverlays,
+          );
           let acceptedSameDaySystemicCost = baseRecommendation.template.systemicCost;
           let acceptedSameDayMinutes = baseRecommendation.template.durationMin;
 
-          if (replaceOccurrence) {
+          if (replaceOccurrence && isManualOccurrence(replaceOccurrence)) {
             const source = {
               kind: 'manual' as const,
               definitionId: replaceOccurrence.definitionRef.definitionId,
@@ -502,6 +636,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           const additionalBindings: SessionReferenceBinding[] = [];
           const additionalNotices: string[] = [];
           for (const occurrence of additionalOccurrences) {
+            if (!isManualOccurrence(occurrence)) continue;
             const source = {
               kind: 'manual' as const,
               definitionId: occurrence.definitionRef.definitionId,
@@ -539,6 +674,40 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             acceptedSameDayMinutes += targetDef.duration?.min ?? 45;
           }
 
+          if (activeExternal && isV4Plan(activeExternal.plan) && bundlePlacement?.outcome === 'placed') {
+            const ceilings: LedgerCeilings = {
+              dailyMinuteCeiling: availability.maxTimeMinutes,
+              dailySystemicCostCeiling: Math.max(0, 1 - availability.reservedCapacityCost),
+            };
+            const memberResult = await adjudicateIntradayBundleMembers({
+              userId,
+              date: input.date,
+              activePlan: activeExternal,
+              bundlePlacement,
+              subjective,
+              objective,
+              subjectiveBaseline: input.subjectiveBaseline,
+              userContext: context,
+              availability,
+              ceilings,
+              inputRevision: {
+                availabilityRevision: `${input.date}:${availability.maxTimeMinutes}:${availability.reservedCapacityCost}`,
+                completedFactsRevision: preparedSnapshot.performedTrainingFacts?.revision ?? preparedSnapshot.revision,
+                checkinRevision: (input.sourceStates?.subjectiveCheckin?.status === 'AVAILABLE' && input.sourceStates.subjectiveCheckin.revision)
+                  ? input.sourceStates.subjectiveCheckin.revision
+                  : (input.subjectiveCheckin ? 'checkin-present' : 'checkin-missing'),
+                placementRevision: `${activeExternal.plan.planId}:${activeExternal.plan.revision}`,
+              },
+              existingAdditionalBindingsCount: additionalBindings.length,
+            });
+            if (!isCurrent()) return;
+            setBundleMemberStatuses(memberResult.statuses);
+            additionalBindings.push(...memberResult.bindings);
+            additionalNotices.push(...memberResult.notices);
+          } else {
+            setBundleMemberStatuses([]);
+          }
+
           if (additionalBindings.length > 0 || additionalNotices.length > 0) {
             recommendationWithSession = {
               ...recommendationWithSession,
@@ -561,6 +730,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
+          'max', undefined, undefined, input.scheduleOverlays,
         );
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
@@ -613,16 +783,15 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     if (!decisionInput) return 0;
     const { dataQuality } = decisionInput;
     const items = [
-      dataQuality.hasRecoverySnapshot,
-      dataQuality.hasSubjectiveCheckin,
-      dataQuality.profileReady
+      dataQuality.subjectiveCheckinComplete,
+      dataQuality.profileReady,
     ];
     const completed = items.filter(Boolean).length;
     return Math.round((completed / items.length) * 100);
   };
 
   const engineInputs = useMemo(() => {
-    if (!decisionInput || !decisionInput.recoverySnapshot) return null;
+    if (!decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
     const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, decisionInput.subjectiveCheckin);
@@ -630,7 +799,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   }, [decisionInput]);
 
   const forecastEngineInputs = useMemo(() => {
-    if (!decisionInput || !decisionInput.recoverySnapshot) return null;
+    if (!decisionInput || (!decisionInput.recoverySnapshot && !decisionInput.subjectiveCheckin)) return null;
     const subjective = mapCheckinToSubjectiveInput(decisionInput.subjectiveCheckin);
     const objective = mapSnapshotToEngineInput(decisionInput.recoverySnapshot);
     const context = mapContextFromGoalsAndTrainingSettings(decisionInput.activeGoals, decisionInput.trainingSettings, decisionInput.preferences, decisionInput.date, null);
@@ -895,7 +1064,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       decisionInput.date,
       activeRec,
       tomorrowRec,
-      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks },
+      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks, scheduleOverlays: decisionInput.scheduleOverlays },
       undefined,
       historySnapshot,
       decisionInput.trainingIntentProfile,
@@ -982,7 +1151,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           <div className="gate-content">
             <div className="gate-text">
               <h3>Good morning</h3>
-              <p>Complete your morning check-in (~10 sec) to generate today&apos;s plan.</p>
+              <p>Complete your morning check-in (~10 sec) to generate today's plan.</p>
             </div>
             <button
               type="button"
@@ -1058,8 +1227,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           ) : (
             <div className="dashboard-card empty-recommendation-card">
               <p className="card-empty">
-                {!decisionInput?.dataQuality.hasRecoverySnapshot
-                  ? "No Garmin recovery data synced today yet — that's required to generate a recommendation."
+                {!decisionInput?.dataQuality.hasSubjectiveCheckin
+                  ? "Complete your morning check-in to generate today's recommendation."
                   : decisionInput.subjectiveCheckin && !decisionInput.dataQuality.subjectiveCheckinComplete
                   ? "Today's check-in is only partially filled in — finish it to get a recommendation."
                   : 'Unable to compute a recommendation yet.'}
@@ -1103,6 +1272,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               selectedTier={selectedNextDayTier}
               onSelectTier={setSelectedNextDayTier}
               trainingIntentProfile={decisionInput?.trainingIntentProfile}
+              scheduleOverlays={decisionInput?.scheduleOverlays}
               planningMode={resolvedPlanningMode}
             />
           </div>
@@ -1154,7 +1324,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                     Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
                   </span>
                 ) : (
-                  <span className="status-badge warning">No Data</span>
+                  <span className="status-badge status-neutral">Wearable Optional</span>
                 )}
               </div>
 
@@ -1188,7 +1358,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                   </>
                 </div>
               ) : (
-                <p className="card-empty">No Garmin data synced today</p>
+                <p className="card-empty">No wearable synced. Training readiness is guided by your daily check-in.</p>
               )}
             </div>
 

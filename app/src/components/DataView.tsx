@@ -864,15 +864,14 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   const visibleBriefError = briefError && briefError.date === briefDate ? briefError.message : null;
 
   const renderContextBrief = () => {
-    const windowDays = brief?.windowDays ?? briefWindowDaysFor(briefPreset);
     const approxTokens = brief ? Math.ceil(brief.text.length / 4) : null;
     return (
       <div className="data-section">
         <h3>Context brief</h3>
         <p className="brief-intro">
           {briefPreset === 'daily'
-            ? 'Today and yesterday only — constraints, current readiness, and recent trend — for the everyday paste-into-chat loop with an external planning agent.'
-            : `A summary of the last ${windowDays} days — constraints, recovery trend, completed training, subjective scores, and adherence — for designing a new block with an external planner.`}
+            ? "High-signal briefing for your daily chat with an external AI coach — includes yesterday's closed loop, today's recovery, and today's full session prescription."
+            : `Comprehensive 14-day retrospective — constraints, baselines, full training history, and 1-click plan import schema for designing a new block.`}
           {' '}Read-only: generating it changes nothing.
         </p>
         <div className="brief-preset-toggle" role="group" aria-label="Context brief window">
@@ -881,14 +880,14 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
             className={briefPreset === 'daily' ? 'active' : ''}
             onClick={() => selectBriefPreset('daily')}
           >
-            Daily (today + D-1)
+            ☀️ Morning Coach (Daily)
           </button>
           <button
             type="button"
             className={briefPreset === 'full' ? 'active' : ''}
             onClick={() => selectBriefPreset('full')}
           >
-            Full ({briefWindowDaysFor('full')} days)
+            📋 Block Planning ({briefWindowDaysFor('full')} days)
           </button>
         </div>
         {visibleBriefError && <p className="data-state-notice">{visibleBriefError}</p>}

@@ -360,7 +360,7 @@ def run_multisource_audit(
 
         # Timing coverage per source, only over nights that source actually has sleep
         # data for -- a source with no sleep record that night is a coverage gap
-        # (garminOnlyDays/eightSleepOnlyDays/neitherDays above), not a missing-timestamp bug.
+        # (garminOnlyDays/eightSleepOnlyDays/neitherDays above), not a missing-timestamp defect.
         garmin_timing_ok = _garmin_sleep_timing_available(snap)
         if garmin_sleep is not None:
             if garmin_timing_ok:

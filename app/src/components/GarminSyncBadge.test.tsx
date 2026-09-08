@@ -1,12 +1,17 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { GarminSyncBadge } from './GarminSyncBadge';
 import * as syncHook from '../hooks/useGarminSyncStatus';
+import * as connectionHook from '../hooks/useGarminConnectionState';
 import type { CanonicalWorkoutExport } from '../utils/workoutJsonExport';
 
 const dummyPayload = {} as CanonicalWorkoutExport;
 
 describe('GarminSyncBadge', () => {
+    beforeEach(() => {
+        vi.spyOn(connectionHook, 'useGarminConnectionState').mockReturnValue('connected');
+    });
+
     it('renders idle "Garmin: Sync now" button when status is idle', () => {
         vi.spyOn(syncHook, 'useGarminSyncStatus').mockReturnValue({
             status: 'idle',
@@ -108,5 +113,29 @@ describe('GarminSyncBadge', () => {
         expect(html).toContain('Garmin: Error (Retry)');
         expect(html).toContain('Garmin API 500 error');
         expect(html).not.toContain('disabled');
+    });
+
+    it('does not expose a sync action for a disconnected account', () => {
+        vi.spyOn(connectionHook, 'useGarminConnectionState').mockReturnValue('disconnected');
+        vi.spyOn(syncHook, 'useGarminSyncStatus').mockReturnValue({
+            status: 'idle', queuedWorkout: null, isPending: false, isBusy: false,
+            isStale: false, pendingCount: 0, error: null, latestSyncedAt: null,
+            latestGetSyncedAt: null, latestPostSyncedAt: null, triggerSync: vi.fn(),
+        });
+
+        expect(renderToStaticMarkup(<GarminSyncBadge userId="u1" />)).toBe('');
+    });
+
+    it('renders unknown status without pretending the account is disconnected', () => {
+        vi.spyOn(connectionHook, 'useGarminConnectionState').mockReturnValue('unknown');
+        vi.spyOn(syncHook, 'useGarminSyncStatus').mockReturnValue({
+            status: 'idle', queuedWorkout: null, isPending: false, isBusy: false,
+            isStale: false, pendingCount: 0, error: null, latestSyncedAt: null,
+            latestGetSyncedAt: null, latestPostSyncedAt: null, triggerSync: vi.fn(),
+        });
+
+        const html = renderToStaticMarkup(<GarminSyncBadge userId="u1" />);
+        expect(html).toContain('Garmin: Status unavailable');
+        expect(html).toContain('disabled');
     });
 });

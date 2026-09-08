@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { applyConfirmedProposal, impliedDate, proposeReplacement, resolvePlacement } from './externalPlacement';
+import { applyConfirmedProposal, impliedDate, proposeReplacement, resolvePlacement, resolveRestDate, resolveRestDatesByDate } from './externalPlacement';
 import { EXTERNAL_PLAN_SCHEMA } from './models';
-import type { ExternalPlanPlacement, ExternalPlanSession, ExternalTrainingPlan, FixedActivity } from './models';
+import type { ExternalPlanPlacement, ExternalPlanSession, ExternalRestDirective, ExternalTrainingPlan, FixedActivity } from './models';
 
 const MONDAY = '2026-08-17';
 
@@ -26,6 +26,14 @@ function plan(sessions: ExternalPlanSession[], weekCount = 2): ExternalTrainingP
 
 function overlay(assignments: ExternalPlanPlacement['assignments']): ExternalPlanPlacement {
     return { userId: 'u1', planId: 'block', revision: 1, assignments, updatedAt: '2026-08-17T06:00:00Z' };
+}
+
+/** ADR-0035: a v3 plan is structurally an `ExternalTrainingPlan` plus `restDays` --
+ * `resolvePlacement`/`proposeReplacement` are typed against `AnyExternalTrainingPlan`
+ * (which includes v3), so this fixture is enough to exercise them without importing the
+ * real v3 schema module. */
+function planV3(sessions: ExternalPlanSession[], restDays: ExternalRestDirective[], weekCount = 2): ExternalTrainingPlan & { restDays: ExternalRestDirective[] } {
+    return { ...plan(sessions, weekCount), restDays };
 }
 
 function fixedActivity(date: string): FixedActivity {
@@ -140,6 +148,81 @@ describe('resolvePlacement', () => {
     });
 });
 
+describe('resolveRestDate / resolveRestDatesByDate (ADR-0035)', () => {
+    it('resolves a rest directive relative to the plan start date, same as impliedDate does for a session', () => {
+        const directive: ExternalRestDirective = { id: 'w1-fri', week: 1, day: 'friday' };
+        expect(resolveRestDate(plan([]), directive)).toBe('2026-08-21');
+    });
+
+    it('resolves every directive on a v3 plan, keyed by date', () => {
+        const restDays: ExternalRestDirective[] = [
+            { id: 'w1-fri', week: 1, day: 'friday' },
+            { id: 'w2-sun', week: 2, day: 'sunday' },
+        ];
+        const resolved = resolveRestDatesByDate(planV3([], restDays));
+        expect([...resolved.keys()].sort()).toEqual(['2026-08-21', '2026-08-30']);
+        expect(resolved.get('2026-08-21')).toEqual(restDays[0]);
+    });
+
+    it('returns an empty map for a v1/v2 plan with no restDays field at all', () => {
+        expect(resolveRestDatesByDate(plan([])).size).toBe(0);
+    });
+});
+
+describe('resolvePlacement with an authored rest date (ADR-0035)', () => {
+    it('spreads a floating any_day session off a date a rest directive owns', () => {
+        const s = session('s1', { placement: { week: 1, flexibility: 'any_day', ifMissed: 'reschedule_within_week' } });
+        // s1 has no preferredDay, so its implied date is the week's Monday (2026-08-17) --
+        // exactly the date the rest directive below closes.
+        const restDays: ExternalRestDirective[] = [{ id: 'w1-mon-rest', week: 1, day: 'monday' }];
+        const placed = resolvePlacement(planV3([s], restDays), null);
+        expect(placed[0].date).not.toBe('2026-08-17');
+        expect(placed[0].moved).toBe(true);
+    });
+
+    it('moves a preferred bundle off its wanted date when a rest directive owns it', () => {
+        const s = session('s1', { placement: { week: 1, preferredDay: 'friday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' } });
+        const restDays: ExternalRestDirective[] = [{ id: 'w1-fri-rest', week: 1, day: 'friday' }];
+        const placed = resolvePlacement(planV3([s], restDays), null);
+        expect(placed[0].date).not.toBe('2026-08-21');
+    });
+
+    it('leaves movable work unplaced when every legal date is blocked instead of violating protected rest', () => {
+        const preferredA = session('preferred-a', {
+            placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+        });
+        const preferredB = session('preferred-b', {
+            placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+        });
+        const floating = session('floating', { placement: { week: 1, flexibility: 'any_day', ifMissed: 'reschedule_within_week' } });
+        const restDays: ExternalRestDirective[] = [{ id: 'w1-mon-rest', week: 1, day: 'monday' }];
+        const occupied = ['2026-08-18', '2026-08-19', '2026-08-20', '2026-08-21', '2026-08-22', '2026-08-23']
+            .map(fixedActivity);
+
+        const placed = resolvePlacement(planV3([preferredA, preferredB, floating], restDays, 1), null, { fixedActivities: occupied });
+
+        expect(placed).toEqual([]);
+        expect(placed.some(item => item.date === MONDAY)).toBe(false);
+    });
+
+    it('does not block a fixed session -- a fixed/rest conflict is rejected at import, not resolved here', () => {
+        const s = session('s1', { placement: { week: 1, preferredDay: 'friday', flexibility: 'fixed', ifMissed: 'drop' } });
+        const restDays: ExternalRestDirective[] = [{ id: 'w1-fri-rest', week: 1, day: 'friday' }];
+        const placed = resolvePlacement(planV3([s], restDays), null);
+        expect(placed[0].date).toBe('2026-08-21');
+    });
+
+    it('does not block an explicit overlay assignment -- a confirmed athlete override wins', () => {
+        const s = session('s1', { placement: { week: 1, flexibility: 'any_day', ifMissed: 'reschedule_within_week' } });
+        const restDays: ExternalRestDirective[] = [{ id: 'w1-fri-rest', week: 1, day: 'friday' }];
+        const placed = resolvePlacement(
+            planV3([s], restDays),
+            overlay([{ sessionId: 's1', date: '2026-08-21', status: 'planned' }]),
+        );
+        expect(placed[0].date).toBe('2026-08-21');
+    });
+});
+
 describe('proposeReplacement', () => {
     it('drops a session whose plan says to let it go', () => {
         const s1 = session('s1', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' } });
@@ -198,6 +281,14 @@ describe('proposeReplacement', () => {
 
     it('reports an unknown session id rather than inventing a placement', () => {
         expect(proposeReplacement(plan([session('s1')]), null, 'ghost', MONDAY).outcome).toBe('unresolved');
+    });
+
+    it('does not propose a day an authored rest directive already owns (ADR-0035)', () => {
+        const missed = session('missed', { placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' } });
+        const restDays: ExternalRestDirective[] = [{ id: 'w1-tue-rest', week: 1, day: 'tuesday' }];
+        const proposal = proposeReplacement(planV3([missed], restDays), null, 'missed', MONDAY);
+
+        expect(proposal.date).not.toBe('2026-08-18');
     });
 });
 

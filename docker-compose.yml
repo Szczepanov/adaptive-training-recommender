@@ -1,0 +1,116 @@
+x-firebase-credentials: &firebase-credentials
+  type: bind
+  source: ${FIREBASE_CREDENTIALS_HOST_PATH:-./firebase-service-account.json}
+  target: /app/firebase-service-account.json
+  read_only: true
+  bind:
+    # Short bind syntax silently creates a directory when the source file is absent.
+    # Fail fast instead so Firebase never receives a directory as a credentials path.
+    create_host_path: false
+
+services:
+  # Token-only HTTP API used by the frontend to establish per-user Garmin OAuth tokens
+  # (garmin_sync.account_link_api). The same image also backs the Cloud Run Jobs
+  # (sync-all, push-pending-workouts-all, poll-manual-sync-all) in production; locally we
+  # only need the HTTP service running continuously for the frontend to talk to.
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: adaptive-training-recommender-backend:local
+    entrypoint: ["python"]
+    command: ["-m", "garmin_sync.account_link_api"]
+    ports:
+      - "${COMPOSE_BIND_ADDRESS:-127.0.0.1}:8081:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "8080"
+      APP_TIMEZONE: ${APP_TIMEZONE:-Europe/Warsaw}
+      GARMIN_TOKEN_STORE: ${GARMIN_TOKEN_STORE:-local}
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-adaptive-training-recommender}
+      GARMIN_TOKEN_BUCKET: ${GARMIN_TOKEN_BUCKET:-adaptive-training-garmin-tokens}
+      GOOGLE_APPLICATION_CREDENTIALS: /app/firebase-service-account.json
+      FIREBASE_CREDENTIALS_PATH: /app/firebase-service-account.json
+    volumes:
+      - garmin_tokens:/app/.garmin_tokens
+      - *firebase-credentials
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Google Health linking intentionally runs as its own HTTP service in production and
+  # locally. Keeping it separate preserves Cloud Run topology and prevents accidental
+  # coupling to Garmin's MFA/session constraints.
+  google-health-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: adaptive-training-recommender-google-health-backend:local
+    entrypoint: ["python"]
+    command: ["-m", "garmin_sync.google_health_account_link_api"]
+    ports:
+      - "${COMPOSE_BIND_ADDRESS:-127.0.0.1}:8082:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "8080"
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-adaptive-training-recommender}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      GOOGLE_APPLICATION_CREDENTIALS: /app/firebase-service-account.json
+      FIREBASE_CREDENTIALS_PATH: /app/firebase-service-account.json
+    volumes:
+      - *firebase-credentials
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  # Production build of the React/Vite app, served by nginx. The reverse proxies mirror
+  # Firebase Hosting's two Cloud Run rewrites: Garmin -> backend, Google Health -> the
+  # distinct google-health-backend service. Browser traffic stays same-origin on :8080.
+  frontend:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        VITE_FIREBASE_API_KEY: ${VITE_FIREBASE_API_KEY:-}
+        VITE_FIREBASE_AUTH_DOMAIN: ${VITE_FIREBASE_AUTH_DOMAIN:-}
+        VITE_FIREBASE_PROJECT_ID: ${VITE_FIREBASE_PROJECT_ID:-}
+        VITE_FIREBASE_STORAGE_BUCKET: ${VITE_FIREBASE_STORAGE_BUCKET:-}
+        VITE_FIREBASE_MESSAGING_SENDER_ID: ${VITE_FIREBASE_MESSAGING_SENDER_ID:-}
+        VITE_FIREBASE_APP_ID: ${VITE_FIREBASE_APP_ID:-}
+        VITE_FIREBASE_MEASUREMENT_ID: ${VITE_FIREBASE_MEASUREMENT_ID:-}
+        VITE_HEALTH_ANOMALY_POLICY: ${VITE_HEALTH_ANOMALY_POLICY:-off}
+        VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY: ${VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY:-off}
+    image: adaptive-training-recommender-frontend:local
+    ports:
+      - "${COMPOSE_BIND_ADDRESS:-127.0.0.1}:8080:80"
+    environment:
+      BACKEND_HOST: backend
+      BACKEND_PORT: "8080"
+      GOOGLE_HEALTH_BACKEND_HOST: google-health-backend
+    depends_on:
+      backend:
+        condition: service_healthy
+      google-health-backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  garmin_tokens:

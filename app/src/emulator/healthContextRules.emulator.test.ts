@@ -182,4 +182,25 @@ emulatorDescribe('Daily subjective check-in health-context rules (HA1)', () => {
             healthContext: { unknownHealthField: true },
         }));
     });
+
+    it('rejects an invalid sibling field even when symptoms alone is valid', async () => {
+        // hasValidSubjectiveHealthFields must require the whole healthContext map to be
+        // valid, not just a valid symptoms sub-object -- otherwise a valid symptoms block
+        // could carry an arbitrary/malformed sibling field past the check.
+        const db = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(db, checkinPath), {
+            ...contextOnlyCheckin(),
+            healthContext: {
+                symptoms: { present: true, onset: 'today', severity: 'mild' },
+                closeSickContact: 'yes',
+            },
+        }));
+        await assertFails(setDoc(doc(db, checkinPath), {
+            ...contextOnlyCheckin(),
+            healthContext: {
+                symptoms: { present: true, onset: 'today', severity: 'mild' },
+                unknownHealthField: true,
+            },
+        }));
+    });
 });

@@ -13,6 +13,22 @@ export type SubjectiveDimensionKey =
     | 'stress'
     | 'motivation';
 
+export type PhysicalWorkDuration = 'short' | 'medium' | 'extended'; // <1h, 1-3h, 3h+
+export type PhysicalWorkIntensity = 'moderate' | 'hard' | 'exhausting';
+export type PhysicalWorkLoadArea =
+    | 'grip_forearms'
+    | 'upper_body'
+    | 'lower_back_spine'
+    | 'legs_carrying';
+
+export interface PhysicalWorkCheckin {
+    performed: boolean;
+    duration?: PhysicalWorkDuration;
+    intensity?: PhysicalWorkIntensity;
+    loadAreas?: PhysicalWorkLoadArea[];
+    notes?: string | null;
+}
+
 // --- Engine Input Models ---
 export interface SubjectiveInput {
     readiness: number; // 1-10
@@ -38,6 +54,8 @@ export interface SubjectiveInput {
      */
     painOrInjuryRegionFamilies?: InjuryRegionMappingFamily[];
     alreadyTrainedToday: boolean; // User-reported: a session was already completed today
+    /** Unlogged non-exercise physical activity / manual labor completed on the preceding day (D-1). */
+    physicalWork?: PhysicalWorkCheckin;
     /** Today's explicit modality ask from the check-in (e.g. 'Running', 'Strength',
      *  'Mobility'), or null for no preference. Compared case-insensitively against
      *  SessionTemplate.modality -- see rules.ts applyModalityPreference. A value with no
@@ -264,6 +282,40 @@ export interface FixedActivity {
     updatedAt: string;
 }
 
+/**
+ * ADR-0036 D-WINDOW: the athlete's versioned schedule -- the sole owner of actual
+ * same-date training availability. A plan's `intraday` request (ADR-0036 D-SCHEMA,
+ * `sessions/externalPlanV4.ts`) is intersected against these at placement time; it can
+ * never create or broaden one. Windows are same-date, positive-duration and
+ * non-overlapping -- an overnight opening must be split into two windows at midnight
+ * (`scheduleWindows.ts` enforces this). Missing windows for a date is the supported
+ * legacy case: `resolveScheduleWindowsForDate` returns `[]`, and callers keep today's
+ * single-slot, untimed availability behavior -- absence never fabricates an AM/PM pair.
+ * First release supports at most one training occurrence per resolved window (D-WINDOW).
+ */
+export interface ScheduleWindow {
+    id: string;
+    userId: string;
+    date: string; // YYYY-MM-DD, Warsaw-local (ADR-0003)
+    startLocal: string; // HH:mm
+    endLocal: string; // HH:mm, strictly after startLocal (same day)
+    /** Display only -- AM/PM style labels are never implicit clock ranges or
+     *  physiological categories (D-WINDOW). */
+    label?: string;
+    /** Equipment actually available during this window. Absent = the athlete's standing
+     *  profile equipment applies unchanged, mirroring `FixedActivity.equipment`'s override
+     *  semantics rather than meaning "no equipment". */
+    equipment?: string[];
+    /** A true window-wide restriction (e.g. a hotel gym slot). Absent = no additional
+     *  restriction beyond the athlete's general context. */
+    environment?: TrainingEnvironment;
+    /** Monotonically increasing per window id; bumped on every update so a stale reader
+     *  (mid-placement) can detect it is looking at superseded availability. */
+    revision: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
 export type EventPriority = 'A' | 'B' | 'C';
 export type EventLifecycle = 'scheduled' | 'completed' | 'cancelled' | 'DNS' | 'DNF' | 'rescheduled';
 
@@ -341,6 +393,31 @@ export interface AuthoredPlanBlock {
     endDate: string;
     volumeScale: number;
     intensityScale: number;
+    createdAt: string;
+    updatedAt: string;
+}
+
+export type ScheduleOverlayCategory = 'active_sport' | 'sedentary_rest' | 'high_step_walking' | 'limited_availability';
+
+export type ScheduleOverlaySport = 'skiing' | 'volleyball' | 'hiking' | 'court_sport' | 'field_sport' | 'general';
+
+/** A user-authored schedule overlay representing planned absences, active sport trips,
+ * sedentary holidays, or high-step walking breaks across arbitrary calendar dates. */
+export interface ScheduleOverlay {
+    id: string;
+    userId: string;
+    title: string;
+    category: ScheduleOverlayCategory;
+    sport?: ScheduleOverlaySport;
+    startDate: string; // YYYY-MM-DD
+    endDate: string;   // YYYY-MM-DD
+    dailyAvailabilityMinutes: number; // in [0, 1440]
+    volumeScale: number; // in [0, 1]
+    intensityScale: number; // in [0, 1]
+    expectedCost: WorkoutCostProfile; // 6D dimensional fatigue
+    equipment?: string[];
+    environment?: TrainingEnvironment;
+    notes?: string;
     createdAt: string;
     updatedAt: string;
 }
@@ -438,6 +515,22 @@ export interface ExternalPlanSession {
      * `preferredDay`. Reconciled onto the FixedActivity contract and adjudicated for
      * advice only — it can never be told to skip. */
     isEvent?: boolean;
+}
+
+/**
+ * ADR-0035: a plan-level directive closing one relative date to discretionary planning.
+ * Deliberately not a session -- no duration, equipment, stimulus, execution dose or
+ * adherence occurrence -- and deliberately relative (`week`/`day`, not an absolute date),
+ * preserving the "one absolute `startDate`; the app owns calendar arithmetic" contract
+ * `ExternalSessionPlacement` already follows. Introduced only in `external-plan@3`
+ * (`sessions/externalPlanV3.ts`); `external-plan@1`/`@2` do not carry this field.
+ */
+export interface ExternalRestDirective {
+    /** Unique within the plan. Durable source identity for audit/replay -- rest has no
+     * session occurrence to identify it by, so this is the only stable handle. */
+    id: string;
+    week: number;
+    day: ExternalWeekday;
 }
 
 /** The imported artifact. Never edited in place once stored (D-IMMUT). */
@@ -872,6 +965,9 @@ export interface Recommendation {
         /** Present exactly when an imported session was adjudicated. Carried to the
          * persisted audit unchanged so replay can name the revision it must verify. */
         externalPlan?: ExternalDecisionProvenance;
+        /** Present exactly when an authored rest directive resolved this date (ADR-0035).
+         * Carried to the persisted audit unchanged, same as `externalPlan`. */
+        externalRest?: ExternalRestProvenance;
         /** An athlete-selected replacement was adjudicated instead of being selected by
          * catalog ranking. Its occurrence ID binds that authority to the primary session. */
         authoredOccurrence?: AuthoredOccurrenceProvenance;
@@ -1193,6 +1289,8 @@ export interface DailySubjectiveCheckin {
      *  BodyRegion; see injuryPolicy.ts resolveEffectiveInjuryConstraints for how this
      *  combines with the athlete's standing InjuryConstraint[]. */
     tissueResponses?: Partial<Record<BodyRegion, RegionTissueResponse>>;
+    /** Optional unlogged non-exercise physical activity / heavy manual labor completed yesterday (D-1). */
+    physicalWork?: PhysicalWorkCheckin;
     // Availability block
     availability: {
         timeAvailableMin: number | null;
@@ -1472,6 +1570,8 @@ export interface DailyDecisionInput {
     preferences: UserPreferences | null;
     /** Absent is a supported legacy-compatible input; mode resolution supplies defaults. */
     trainingIntentProfile: TrainingIntentProfile | null;
+    /** User-authored schedule overlays governing availability and dose around this date. */
+    scheduleOverlays?: readonly ScheduleOverlay[];
     /** Statuses keep unavailable/corrupt data distinct from a genuinely absent record. */
     sourceStates?: {
         recoverySnapshot: DataStateSummary;
@@ -1785,6 +1885,18 @@ export interface KnowledgeLineageRef {
     version: number;
 }
 
+/**
+ * Compact, replayable record of an athlete-specific evidence record materially
+ * applied as a policy refinement in this recommendation decision (SKR4).
+ */
+export interface AthleteEvidenceLineageRef {
+    recordId: string;
+    version: number;
+    domain: string;
+    refinementType: string;
+    baseKnowledgeClaimId: string;
+}
+
 export interface RecommendationAudit {
     policyVersion: string;
     evaluatedAt: string;
@@ -1814,6 +1926,10 @@ export interface RecommendationAudit {
     droppedContributorObjectives: DroppedContributorObjective[];
     /** Present exactly when the decision adjudicated an imported session (ADR-0019). */
     externalPlan?: ExternalDecisionProvenance;
+    /** Present exactly when an authored rest directive closed this date to discretionary
+     * planning (ADR-0035). Mutually exclusive with `externalPlan`: a date cannot carry
+     * both a placed session and a rest directive (validated at import). */
+    externalRest?: ExternalRestProvenance;
     /** Present exactly when an active replacement occurrence owned the primary session. */
     authoredOccurrence?: AuthoredOccurrenceProvenance;
     /** Multidomain session bindings (M3.2 / ADR-0023 D-MSNAP). */
@@ -1823,6 +1939,8 @@ export interface RecommendationAudit {
     identityDecision?: IdentityDecisionProvenance;
     /** Exact reviewed knowledge versions materially consumed by this historical decision. */
     knowledgeLineage?: KnowledgeLineageRef[];
+    /** Exact athlete-specific evidence records materially applied as policy refinements (SKR4). */
+    athleteEvidenceLineage?: AthleteEvidenceLineageRef[];
 }
 
 /** A compact, replayable record that a replacement occurrence, not catalog ranking,
@@ -1844,6 +1962,22 @@ export interface ExternalDecisionProvenance {
     revision: number;
     sessionId: string;
     contentHash: string;
+}
+
+/**
+ * ADR-0035: identifies the authored rest directive that closed a date to discretionary
+ * planning, so a persisted decision can be replayed against the exact directive and
+ * resolved date it applied -- not just "some rest directive from this plan revision".
+ * Mirrors `ExternalDecisionProvenance`'s shape/purpose for the rest case.
+ */
+export interface ExternalRestProvenance {
+    planId: string;
+    revision: number;
+    contentHash: string;
+    restDirectiveId: string;
+    /** The plan-local date the directive resolved to. Replay recomputes this from the
+     * directive and the loaded plan's `startDate` and must match exactly. */
+    date: string;
 }
 
 // --- Type Utilities ---

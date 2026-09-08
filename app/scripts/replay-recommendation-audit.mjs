@@ -40,12 +40,26 @@ const server = await createServer({
 });
 
 try {
-  const { replayRecommendationAuditAgainstRevision } = await server.ssrLoadModule('/src/engine/replay.ts');
-  // Always the hashing wrapper: the hash must be recomputed from the supplied bytes, never
-  // read back out of the audit that is being checked.
-  const result = await replayRecommendationAuditAgainstRevision(recommendation, plan);
-  console.log(JSON.stringify(result, null, 2));
-  if (!result.reproducible) process.exitCode = 1;
+  if (recommendation && typeof recommendation === 'object' && 'orderInBundle' in recommendation && 'bundlePlacement' in recommendation) {
+    const { intradayDecisionReplayErrors } = await server.ssrLoadModule('/src/engine/intradayDecision.ts');
+    const { computeContentHash } = await server.ssrLoadModule('/src/engine/externalPlanHash.ts');
+    const externalRevision = plan ? { plan, contentHash: await computeContentHash(plan) } : null;
+    const errors = intradayDecisionReplayErrors(recommendation, externalRevision);
+    const result = {
+      reproducible: errors.length === 0,
+      policyMatchesCurrent: !errors.some(e => e.includes('Policy version')),
+      errors,
+    };
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.reproducible) process.exitCode = 1;
+  } else {
+    const { replayRecommendationAuditAgainstRevision } = await server.ssrLoadModule('/src/engine/replay.ts');
+    // Always the hashing wrapper: the hash must be recomputed from the supplied bytes, never
+    // read back out of the audit that is being checked.
+    const result = await replayRecommendationAuditAgainstRevision(recommendation, plan);
+    console.log(JSON.stringify(result, null, 2));
+    if (!result.reproducible) process.exitCode = 1;
+  }
 } finally {
   await server.close();
 }

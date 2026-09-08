@@ -68,7 +68,7 @@ describe('deriveStrengthExposure', () => {
     });
 
     it('does not compound a full session-level budget per exercise -- one hard exercise and five hard exercises stay distinguishable', () => {
-        // This is the exact defect an earlier draft had: summing a full session-sized
+        // This is the exact issue an earlier draft had: summing a full session-sized
         // budget once per exercise made a single hard exercise indistinguishable from five,
         // because both saturated lowerBody at a cap. Guards the fix -- both exercises here
         // are the same 100% lower-body exercise, so both correctly land on the same

@@ -6,7 +6,7 @@ import threading
 import time
 from collections import defaultdict, deque
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from typing import Any
 
 from firebase_admin import auth as firebase_auth
@@ -19,8 +19,9 @@ from .account_link import (
     GarminLinkConfigurationError,
     GarminLinkConflictError,
 )
+from .base_api import BaseJSONRequestHandler
 from .connection_status import reconcile_garmin_connection_status
-from .error_reporting import log_exception, sanitize_text
+from .error_reporting import log_exception
 
 logging.basicConfig(
     level=logging.INFO,
@@ -78,25 +79,45 @@ def _service() -> GarminAccountLinkService:
         return _SERVICE
 
 
-def _verified_uid(authorization: str | None) -> str | None:
+def _verified_uid(
+    authorization: str | None,
+    *,
+    require_verified_email: bool = True,
+) -> str | None:
+    """Return the UID from a valid, unrevoked app token.
+
+    Password-provider sessions require verified email ownership by default. Callers may
+    opt out only when the operation is safe for an authenticated-but-unverified account;
+    Garmin status reconciliation is one such case because it is scoped solely by the UID
+    from the validated token and cannot bind external credentials to that UID.
+    """
     if not authorization:
         return None
     scheme, _, token = authorization.partition(" ")
     if scheme.lower() != "bearer" or not token.strip():
         raise GarminConnectAuthenticationError("Invalid app authorization header.")
     try:
-        decoded = firebase_auth.verify_id_token(token.strip())
+        decoded = firebase_auth.verify_id_token(token.strip(), check_revoked=True)
     except Exception as exc:
         raise GarminConnectAuthenticationError("App session is invalid or expired.") from exc
     uid = decoded.get("uid")
     if not uid:
         raise GarminConnectAuthenticationError("App session has no user identity.")
+    firebase_claim = decoded.get("firebase")
+    sign_in_provider = (
+        firebase_claim.get("sign_in_provider") if isinstance(firebase_claim, dict) else None
+    )
+    if (
+        require_verified_email
+        and sign_in_provider == "password"
+        and decoded.get("email_verified") is not True
+    ):
+        raise GarminConnectAuthenticationError("Verify your email before linking Garmin.")
     return str(uid)
 
 
-class GarminAccountLinkHandler(BaseHTTPRequestHandler):
+class GarminAccountLinkHandler(BaseJSONRequestHandler):
     server_version = "GarminAccountLink/1"
-    request_id: str | None = None
 
     def log_message(self, format: str, *args: Any) -> None:
         # BaseHTTPRequestHandler includes the path but never request bodies. Keep logs
@@ -106,35 +127,6 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
             sanitized_path = self.path.split("?", 1)[0]
             message = message.replace(self.path, sanitized_path)
         logger.info("%s - %s", self.address_string(), message)
-
-    def _json_response(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
-        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        self.send_response(status.value)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        if self.request_id:
-            self.send_header("X-Request-ID", self.request_id)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _error_response(
-        self,
-        status: HTTPStatus,
-        *,
-        message: str,
-        error_code: str,
-        retryable: bool,
-    ) -> None:
-        payload: dict[str, Any] = {
-            "error": sanitize_text(message),
-            "errorCode": error_code,
-            "retryable": retryable,
-        }
-        if self.request_id:
-            payload["requestId"] = self.request_id
-        self._json_response(status, payload)
 
     def _read_json(self) -> dict[str, Any]:
         raw_length = self.headers.get("Content-Length", "0")
@@ -274,7 +266,10 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
             )
 
     def _handle_status(self) -> None:
-        uid = _verified_uid(self.headers.get("Authorization"))
+        uid = _verified_uid(
+            self.headers.get("Authorization"),
+            require_verified_email=False,
+        )
         if not uid:
             raise GarminConnectAuthenticationError("App authentication is required.")
         result = reconcile_garmin_connection_status(uid)
@@ -304,7 +299,10 @@ class GarminAccountLinkHandler(BaseHTTPRequestHandler):
                 retryable=True,
             )
             return
-        requested_uid = _verified_uid(self.headers.get("Authorization"))
+        requested_uid = _verified_uid(
+            self.headers.get("Authorization"),
+            require_verified_email=True,
+        )
         result = _service().start_login(email, password, requested_uid=requested_uid)
         self._json_response(HTTPStatus.OK, result)
 

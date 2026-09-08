@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { mapCheckinToSubjectiveInput, mapContextFromGoalsAndTrainingSettings, mapSnapshotToEngineInput, resolveClinicalEnvelopeSources, resolveRedFlagFindings } from './adapters';
+import {
+    createSubjectiveOnlyObjectiveInput,
+    mapCheckinToSubjectiveInput,
+    mapContextFromGoalsAndTrainingSettings,
+    mapSnapshotToEngineInput,
+    resolveClinicalEnvelopeSources,
+    resolveRedFlagFindings,
+} from './adapters';
 import type {
     DailyRecoverySnapshot,
     DailySubjectiveCheckin,
@@ -251,7 +258,7 @@ describe('mapContextFromGoalsAndTrainingSettings (Phase 5.4 tissue response wiri
         expect(context.constraints.impliedGuardrails).toContain('avoid_overhead_pressing');
     });
 
-    // Regression coverage for the Home.tsx forecast-leak bug: a today-only tissue-derived
+    // Regression coverage for the Home.tsx forecast-leak issue: a today-only tissue-derived
     // restriction (no standing InjuryConstraint at all) must restrict a decision built WITH
     // today's checkin, but must NOT restrict a decision built without one -- which is
     // exactly the distinction Home.tsx's `context` (today) vs `forecastContext`
@@ -517,6 +524,98 @@ describe('mapCheckinToSubjectiveInput painFlag (allergy-aware illness gating)', 
             });
             expect(resolveRedFlagFindings(checkin)).toEqual([]);
             expect(resolveClinicalEnvelopeSources(checkin)).not.toContain('red_flag');
+        });
+    });
+
+    describe('createSubjectiveOnlyObjectiveInput and wearable-free snapshot mapping', () => {
+        it('returns zeroed and null objective telemetry from createSubjectiveOnlyObjectiveInput', () => {
+            const input = createSubjectiveOnlyObjectiveInput();
+            expect(input.rhr).toBeNull();
+            expect(input.hrv_weekly_avg).toBeNull();
+            expect(input.hrv_delta).toBeNull();
+            expect(input.rhr_delta).toBeNull();
+            expect(input.sleep_score).toBeNull();
+            expect(input.body_battery_wake).toBeNull();
+            expect(input.last_3_days_hard_sessions_count).toBe(0);
+            expect(input.yesterday_training).toBeNull();
+            expect(input.today_training).toBeNull();
+            expect(input.sleep_score_delta_7d).toBeNull();
+            expect(input.respiration_delta).toBeNull();
+        });
+
+        it('mapSnapshotToEngineInput delegates to createSubjectiveOnlyObjectiveInput when snapshot is null or undefined', () => {
+            const fromNull = mapSnapshotToEngineInput(null);
+            const fromUndefined = mapSnapshotToEngineInput(undefined);
+            expect(fromNull).toEqual(createSubjectiveOnlyObjectiveInput());
+            expect(fromUndefined).toEqual(createSubjectiveOnlyObjectiveInput());
+        });
+    });
+
+    describe('mapCheckinToSubjectiveInput: physicalWork', () => {
+        it('forwards physicalWork from DailySubjectiveCheckin to SubjectiveInput', () => {
+            const checkin = testCheckin({
+                physicalWork: {
+                    performed: true,
+                    duration: 'extended',
+                    intensity: 'hard',
+                    loadAreas: ['grip_forearms', 'lower_back_spine'],
+                    notes: 'firewood split and stack',
+                },
+            });
+            const subjective = mapCheckinToSubjectiveInput(checkin);
+            expect(subjective.physicalWork).toEqual({
+                performed: true,
+                duration: 'extended',
+                intensity: 'hard',
+                loadAreas: ['grip_forearms', 'lower_back_spine'],
+                notes: 'firewood split and stack',
+            });
+        });
+    });
+
+    describe('mapContextFromGoalsAndTrainingSettings: physicalWork implied guardrails', () => {
+        const baseSettings = testTrainingSettings();
+
+        it('injects avoid_heavy_spinal_loading when hard/exhausting lower back work is reported', () => {
+            const checkin = testCheckin({
+                physicalWork: {
+                    performed: true,
+                    duration: 'medium',
+                    intensity: 'hard',
+                    loadAreas: ['lower_back_spine'],
+                },
+            });
+            const context = mapContextFromGoalsAndTrainingSettings([], baseSettings, null, '2026-08-08', checkin);
+            expect(context.constraints.impliedGuardrails).toContain('avoid_heavy_spinal_loading');
+            expect(context.constraints.impliedGuardrails).not.toContain('avoid_overhead_pressing');
+        });
+
+        it('injects avoid_overhead_pressing when exhausting upper body or grip work is reported', () => {
+            const checkin = testCheckin({
+                physicalWork: {
+                    performed: true,
+                    duration: 'extended',
+                    intensity: 'exhausting',
+                    loadAreas: ['grip_forearms', 'upper_body'],
+                },
+            });
+            const context = mapContextFromGoalsAndTrainingSettings([], baseSettings, null, '2026-08-08', checkin);
+            expect(context.constraints.impliedGuardrails).toContain('avoid_overhead_pressing');
+            expect(context.constraints.impliedGuardrails).not.toContain('avoid_heavy_spinal_loading');
+        });
+
+        it('does not inject guardrails when physical work intensity is moderate', () => {
+            const checkin = testCheckin({
+                physicalWork: {
+                    performed: true,
+                    duration: 'short',
+                    intensity: 'moderate',
+                    loadAreas: ['lower_back_spine', 'upper_body'],
+                },
+            });
+            const context = mapContextFromGoalsAndTrainingSettings([], baseSettings, null, '2026-08-08', checkin);
+            expect(context.constraints.impliedGuardrails).not.toContain('avoid_heavy_spinal_loading');
+            expect(context.constraints.impliedGuardrails).not.toContain('avoid_overhead_pressing');
         });
     });
 });

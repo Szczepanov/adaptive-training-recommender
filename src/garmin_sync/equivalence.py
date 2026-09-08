@@ -410,6 +410,18 @@ def bundle_to_canonical_observations(
     return obs_list
 
 
+def classify_overall_equivalence(daily_results: list[DateEquivalenceResult]) -> str:
+    """Classify the overall equivalence based on daily results."""
+    classifications = [r.classification for r in daily_results]
+    if not daily_results:
+        return "INCOMPLETE"
+    if classifications.count("INCOMPLETE") > len(daily_results) // 2:
+        return "INCOMPLETE"
+    if classifications.count("TRANSFORMING") > 0:
+        return "TRANSFORMING"
+    return "EQUIVALENT"
+
+
 def build_metric_summaries(
     metric_counts: dict[str, int],
     metric_matches: dict[str, int],
@@ -561,16 +573,7 @@ def run_equivalence_analysis(
         elif bundle:
             google_only_count += 1
 
-    # Classify overall
-    classifications = [r.classification for r in daily_results]
-    if not daily_results:
-        overall = "INCOMPLETE"
-    elif classifications.count("INCOMPLETE") > len(daily_results) // 2:
-        overall = "INCOMPLETE"
-    elif classifications.count("TRANSFORMING") > 0:
-        overall = "TRANSFORMING"
-    else:
-        overall = "EQUIVALENT"
+    overall = classify_overall_equivalence(daily_results)
 
     metric_summaries = build_metric_summaries(
         metric_counts, metric_matches, metric_diffs, metric_paired_counts, ambiguous_date_counts

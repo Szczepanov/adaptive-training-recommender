@@ -84,8 +84,11 @@ describe('strength and concurrent training evidence pack', () => {
             researchPriority: 'p1',
         });
         expect(coverageById('optimizer.stimulus_benefit_weights')).toMatchObject({
-            coverage: 'uncovered',
-            researchPriority: 'p2',
+            coverage: 'covered',
+            researchPriority: 'none',
         });
+        expect(coverageById('optimizer.stimulus_benefit_weights')?.knowledgeRefs).not.toContain(
+            KNOWLEDGE_CLAIM_IDS.enduranceStrengthPerformanceSupport
+        );
     });
 });

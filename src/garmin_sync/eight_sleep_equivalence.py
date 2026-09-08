@@ -12,14 +12,15 @@ Eight Sleep has no `daily_recovery_snapshots` side -- so this module only needs 
 converter, not the snapshot converter `equivalence.py` also carries for Garmin.
 """
 
-from dataclasses import dataclass
 from typing import Any
 
 from .equivalence import (
     DateEquivalenceResult,
     TransportEquivalenceAnalyzer,
+    TransportEquivalenceReport,
     build_metric_summaries,
     bundle_to_canonical_observations,
+    classify_overall_equivalence,
 )
 
 EIGHT_SLEEP_PROVIDER = "eight_sleep"
@@ -27,35 +28,11 @@ EIGHT_SLEEP_DIRECT_TRANSPORT = "eight_sleep_direct"
 EIGHT_SLEEP_GOOGLE_TRANSPORT = "google_health"
 
 
-@dataclass
-class EightSleepTransportEquivalenceReport:
-    startDate: str
-    endDate: str
-    totalOverlapDays: int
-    directOnlyDays: int
-    googleOnlyDays: int
-    overallClassification: str
-    metricSummaries: dict[str, dict[str, Any]]
-    dailyResults: list[DateEquivalenceResult]
-
-    def to_dict(self) -> dict[str, Any]:
-        return {
-            "startDate": self.startDate,
-            "endDate": self.endDate,
-            "totalOverlapDays": self.totalOverlapDays,
-            "directOnlyDays": self.directOnlyDays,
-            "googleOnlyDays": self.googleOnlyDays,
-            "overallClassification": self.overallClassification,
-            "metricSummaries": self.metricSummaries,
-            "dailyResults": [d.to_dict() for d in self.dailyResults],
-        }
-
-
 def run_eight_sleep_equivalence_analysis(
     repository: Any,
     start_date_iso: str,
     end_date_iso: str,
-) -> EightSleepTransportEquivalenceReport:
+) -> TransportEquivalenceReport:
     """Compare direct-Eight-Sleep vs Google-Health-transported Eight Sleep observations
     over a historical date range in Firestore (ES9). Fails closed to an empty/INCOMPLETE
     report when one or both sides have no data yet -- it never invents a comparison."""
@@ -118,21 +95,13 @@ def run_eight_sleep_equivalence_analysis(
         elif google_bundle:
             google_only_count += 1
 
-    classifications = [r.classification for r in daily_results]
-    if not daily_results:
-        overall = "INCOMPLETE"
-    elif classifications.count("INCOMPLETE") > len(daily_results) // 2:
-        overall = "INCOMPLETE"
-    elif classifications.count("TRANSFORMING") > 0:
-        overall = "TRANSFORMING"
-    else:
-        overall = "EQUIVALENT"
+    overall = classify_overall_equivalence(daily_results)
 
     metric_summaries = build_metric_summaries(
         metric_counts, metric_matches, metric_diffs, metric_paired_counts, ambiguous_date_counts
     )
 
-    return EightSleepTransportEquivalenceReport(
+    return TransportEquivalenceReport(
         startDate=start_date_iso,
         endDate=end_date_iso,
         totalOverlapDays=overlap_count,

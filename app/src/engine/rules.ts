@@ -18,8 +18,13 @@ import type {
     WorkoutCostProfile,
     WorkoutStimulusProfile,
     FatigueState,
+    EngineObjectiveInput,
+    ExternalRestDirective,
+    ExternalRestProvenance,
+    ScheduleOverlay,
 } from './models';
-import { TEMPLATES, ENRICHED_TEMPLATES } from './templates';
+import type { ExternalRestDecisionProvenance } from './externalRestProvenance';
+import { TEMPLATES, ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID, TEMPLATES_BY_ID } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { buildOptimizationContext, computeRankingCounterfactual, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
 import { addDaysToLocalDateString } from '../utils/localDate';
@@ -39,12 +44,14 @@ import { applyFixedActivityStimulusCredit } from './planner';
 import { getUnresolvedObjectives } from './microcycle';
 import { applyCompletedSessionLoad, type FatigueFusionPolicy } from './fatigue';
 import { SUBJECTIVE_BASELINE_METRICS, type SubjectiveBaseline, type SubjectiveBaselineMetric } from './subjectiveBaseline';
-import { resolveAvailability } from './schedule';
+import { resolveAvailability, scheduleOverlayCostProfileForDate } from './schedule';
 import { workoutForTemplate } from '../workouts/prescription';
 import { resolveEvergreenPlan } from './evergreenPlanning';
+import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
 import { mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
+import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -55,8 +62,8 @@ function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemp
 }
 
 export function getCanonicalRestTemplate(): SessionTemplate {
-    return ENRICHED_TEMPLATES.find(template => template.category === 'Rest')
-        ?? TEMPLATES.find(template => template.category === 'Rest')
+    return ENRICHED_TEMPLATES_BY_ID.get('rest_01')
+        ?? TEMPLATES_BY_ID.get('rest_01')
         ?? {
             id: 'rest_01',
             category: 'Rest',
@@ -267,6 +274,13 @@ function metricStrain(
     return { acuteDeviation, multiDayDrift, total: acuteDeviation + multiDayDrift };
 }
 
+export interface EvaluateReadinessOptions {
+    /** ADR-0036 (H4) D-LEDGER/D-REASSESS: an intraday bundle member whose predecessor
+     * completed as planned accounts for its same-day load via the shared daily ledger debit,
+     * rather than tripping the single-session-per-day alreadyTrainedOverride fail-stop. */
+    ignoreAlreadyTrainedOverride?: boolean;
+}
+
 export function evaluateReadinessAndSafetyEnvelope(
     readiness: DailyReadiness,
     context: UserContext,
@@ -277,7 +291,8 @@ export function evaluateReadinessAndSafetyEnvelope(
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     /** Phase 9.3/D-SUBJCAL: experimental, not yet tuned. Only reachable by explicitly
      *  passing a non-default value -- no production call site does. */
-    subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS
+    subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+    options?: EvaluateReadinessOptions,
 ): {
     mode: 'train' | 'modify' | 'recover';
     envelopes: { safety: SafetyEnvelope; plan: PlanEnvelope };
@@ -344,6 +359,17 @@ export function evaluateReadinessAndSafetyEnvelope(
         (hrvStrain.acuteDeviation >= 1.0 && objective.hrv_delta !== null && objective.hrv_delta <= -15);
     const acuteSubjectiveModify = subjective.fatigue >= 8 || subjective.readiness <= 3 || subjective.stress >= 9 || (subjective.readiness <= 4 && subjective.fatigue >= 6);
 
+    const pw = subjective.physicalWork;
+    let physicalWorkModify = false;
+    let physicalWorkRecover = false;
+    if (pw?.performed) {
+        const baseIntensity = pw.intensity === 'exhausting' ? 0.88 : pw.intensity === 'hard' ? 0.70 : 0.45;
+        const durationFactor = pw.duration === 'extended' ? 1.25 : pw.duration === 'short' ? 0.65 : 1.0;
+        const workStrain = Math.min(1, baseIntensity * durationFactor);
+        if (workStrain >= 0.65) physicalWorkModify = true;
+        if (workStrain >= 0.85 && (subjective.fatigue >= 6 || subjective.soreness >= 6)) physicalWorkRecover = true;
+    }
+
     const recentHardSessionsCount = objective.last_3_days_hard_sessions_count || 0;
     const recentHardSessionsPenalty = recentHardSessionsCount >= 2 ? RECENT_HARD_SESSIONS_STRAIN : 0;
     const objectiveStrain = totalMetricStrain + sleepFloorPenalty + bodyBatteryDeficit + conservativeBias + recentHardSessionsPenalty;
@@ -362,14 +388,14 @@ export function evaluateReadinessAndSafetyEnvelope(
         objective.hrv_delta !== null && objective.hrv_delta <= -10 &&
         objective.rhr_delta !== null && objective.rhr_delta >= 5 &&
         objective.body_battery_wake !== null && objective.body_battery_wake <= 35;
-    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || strainForThresholds >= STRAIN_RECOVER_THRESHOLD;
+    const fatigueTriggeredRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || physicalWorkRecover || strainForThresholds >= STRAIN_RECOVER_THRESHOLD;
     let mode: 'train' | 'modify' | 'recover' = fatigueTriggeredRecover
         ? 'recover'
-        : (overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || strainForThresholds >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
+        : (overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || physicalWorkModify || acuteBiometricStrainFloor || strainForThresholds >= STRAIN_MODIFY_THRESHOLD) ? 'modify' : 'train';
 
     const strainWithoutDrift = objectiveStrain - totalMultiDayDrift;
-    const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
-    const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
+    const counterfactualRecover = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || physicalWorkRecover || strainWithoutDrift >= STRAIN_RECOVER_THRESHOLD;
+    const counterfactualModify = counterfactualRecover || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || physicalWorkModify || acuteBiometricStrainFloor || strainWithoutDrift >= STRAIN_MODIFY_THRESHOLD;
     const counterfactualModeWithoutDrift = counterfactualRecover ? 'recover' : (counterfactualModify ? 'modify' : 'train');
     const multiDayDriftIsDecisionRelevant = (mode !== 'train') && (mode !== counterfactualModeWithoutDrift);
 
@@ -378,14 +404,16 @@ export function evaluateReadinessAndSafetyEnvelope(
     // objective multi-day-drift axis) through the same threshold logic, so a caller can tell
     // whether subjective drift specifically changed the mode. Inert under 'off' (subjectiveDrift
     // is always 0 there, so modeWithoutSubjectiveDrift always equals mode).
-    const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
-    const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || acuteBiometricStrainFloor || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
+    const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || physicalWorkRecover || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
+    const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || physicalWorkModify || acuteBiometricStrainFloor || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
     const modeWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift ? 'recover' : (modifyWithoutSubjectiveDrift ? 'modify' : 'train');
     const subjectiveDriftIsDecisionRelevant = (mode !== 'train') && (mode !== modeWithoutSubjectiveDrift);
 
     const postRecoverBufferApplied = mode === 'train' && previousMode === 'recover';
     if (postRecoverBufferApplied) mode = 'modify';
-    const alreadyTrainedOverride = subjective.alreadyTrainedToday === true || objective.today_training !== null;
+    const alreadyTrainedOverride = options?.ignoreAlreadyTrainedOverride === true
+        ? false
+        : (subjective.alreadyTrainedToday === true || objective.today_training !== null);
     // Mirror evaluateEnvelopes' red-flag predicate: a disclosed red flag that resolved to
     // no findings still surfaces as clinicalEnvelopeSources: ['red_flag'] and must force
     // recover, not just a non-empty redFlagFindings list.
@@ -416,7 +444,7 @@ export function evaluateReadinessAndSafetyEnvelope(
 
     return {
         mode,
-        envelopes: evaluateEnvelopes(readiness, context),
+        envelopes: evaluateEnvelopes(readiness, context, options),
         telemetry,
         alreadyTrainedOverride,
         fatigueTriggeredRecover,
@@ -425,6 +453,30 @@ export function evaluateReadinessAndSafetyEnvelope(
         postRecoverBufferApplied,
         knowledgeRefs,
     };
+}
+
+function hasWearableObjectiveData(objective: EngineObjectiveInput): boolean {
+    return [
+        objective.total_steps,
+        objective.sleep_score,
+        objective.sleep_duration_min,
+        objective.rhr,
+        objective.rhr_7d_avg,
+        objective.rhr_delta,
+        objective.hrv_weekly_avg,
+        objective.hrv_last_night,
+        objective.hrv_delta,
+        objective.respiration,
+        objective.respiration_delta,
+        objective.body_battery_wake,
+        objective.yesterday_training,
+        objective.today_training,
+        // sleep_score_delta_7d, not sleep_score itself: metricStrain() short-circuits to
+        // zero strain whenever deltaVs7d is null (see metricStrain above), so a delta-only
+        // snapshot with sleep_score already null can still move the mode via sleepStrain.
+        objective.sleep_score_delta_7d,
+    ].some(value => value !== null && value !== undefined)
+        || objective.last_3_days_hard_sessions_count > 0;
 }
 
 export function evaluateTraining(
@@ -476,7 +528,9 @@ export function evaluateTraining(
                     : "Your fatigue markers are also elevated today, so prioritize recovery (hydration, nutrition, sleep) rather than adding anything further.";
             rationale = fatigueTriggeredRecover ? `${sessionDescription} ${cautionNote}` : `${sessionDescription} Nice work -- no further training is needed. Focus on recovery (hydration, nutrition, sleep) for the rest of the day.`;
         } else {
-            rationale = 'Your overall fatigue markers are high today (combining subjective feel with drops in objective baselines). Pushing hard could be counter-productive; focus on active or passive recovery.';
+            rationale = !hasWearableObjectiveData(objective)
+                ? 'Your overall fatigue markers are elevated today based on your morning check-in. Pushing hard could be counter-productive; focus on active or passive recovery.'
+                : 'Your overall fatigue markers are high today (combining subjective feel with drops in objective baselines). Pushing hard could be counter-productive; focus on active or passive recovery.';
         }
     } else if (mode === 'modify') {
         const modifyOptions = availableTemplates.filter(t => t.category !== 'Rest' && t.systemicCost <= MODIFY_MAX_SYSTEMIC_COST);
@@ -484,7 +538,9 @@ export function evaluateTraining(
         modalityNote = preferenceResult.note;
         const rankedModifyOptions = rankByModalityPreference(preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities);
         selectedTemplate = rankedModifyOptions.length > 0 ? pickTemplate(rankedModifyOptions, date)! : (availableTemplates.find(t => t.category === 'Rest') ?? getCanonicalRestTemplate());
-        rationale = "You're showing moderate soreness or slight downward trends in Garmin baselines. We're capping today's systemic/autonomic load rather than ruling out a whole modality.";
+        rationale = !hasWearableObjectiveData(objective)
+            ? "You're showing moderate soreness or elevated fatigue in your morning check-in. We're capping today's systemic load rather than ruling out a whole modality."
+            : "You're showing moderate soreness or slight downward trends in Garmin baselines. We're capping today's systemic/autonomic load rather than ruling out a whole modality.";
         if (selectedTemplate.category === 'Upper-body Strength') rationale += " Upper-body strength is included: it's a low-systemic-load, muscle-local stimulus, so softer HRV/RHR readings are a better reason to skip legs or intervals than to skip push/pull work.";
     } else {
         const trainOptions = availableTemplates.filter(t => t.category === 'Hard Endurance' || t.category === 'Moderate Endurance' || t.category === 'Full-body Strength' || t.category === 'Upper-body Strength' || t.category === 'Lower-body Strength' || t.category === 'Power Maintenance');
@@ -494,7 +550,9 @@ export function evaluateTraining(
         if (rankedTrainOptions.length > 0) selectedTemplate = pickTemplate(rankedTrainOptions, date)!;
         rationale = !trainOptions.some(t => t.id === selectedTemplate!.id)
             ? `Readiness is solid -- you'd be fine pushing harder -- but you asked for ${selectedTemplate.modality.toLowerCase()} today, so going with that instead.`
-            : 'Readiness is solid across both subjective feelings and Garmin baselines. Great day for a hard session aligned with your primary goals!';
+            : !hasWearableObjectiveData(objective)
+                ? 'Readiness is solid based on your morning check-in. Great day for a session aligned with your primary goals!'
+                : 'Readiness is solid across both subjective feelings and Garmin baselines. Great day for a hard session aligned with your primary goals!';
     }
 
     if (modalityNote) rationale += ` ${modalityNote}`;
@@ -516,6 +574,21 @@ export interface ExternalPlanContext {
     session: ExternalPlanSession;
     /** SHA-256 of the stored revision this session was read from (ADR-0019 D-IMMUT).
      * Recorded on the decision audit so replay verifies against the same bytes. */
+    contentHash: string;
+}
+
+/** ADR-0035: identifies the authored rest directive resolved for the evaluation date.
+ * Resolved by the caller through `externalPlacement.ts`'s `resolveRestDatesByDate`, the
+ * same way `externalPlan` above is resolved through placement -- this function performs
+ * no placement/resolution itself. Mutually exclusive with `externalPlan` by construction:
+ * a date cannot carry both a placed session and a rest directive (validated at import). */
+export interface ExternalRestContext {
+    planId: string;
+    revision: number;
+    directive: ExternalRestDirective;
+    date: string;
+    /** SHA-256 of the stored revision this directive was read from, same role as
+     * `ExternalPlanContext.contentHash`. */
     contentHash: string;
 }
 
@@ -562,9 +635,20 @@ function adjudicatedExternalRecommendation(
     intent: Awaited<ReturnType<typeof resolveTrainingIntent>>,
     date: string,
     fixedActivities: FixedActivity[],
+    scheduleOverlays: readonly ScheduleOverlay[] = [],
 ): Recommendation {
     const { session, planId, revision, contentHash } = externalPlan;
-    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
+    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context, scheduleOverlays);
+    // Keep the adjudicator responsible for validating the raw authored dose before it can
+    // be reduced by an overlay. The recommendation surface still records the same adjusted
+    // planned dose that catalog planning would expose for this date.
+    const adjustedPlannedDose = applyPlanningOverlays(
+        intent.plannedDose,
+        date,
+        [],
+        undefined,
+        scheduleOverlays,
+    );
     const verdict = adjudicateExternalSession(session, readiness, context, envelopeState, intent.plannedDose, date, availability);
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale';
 
@@ -572,7 +656,7 @@ function adjudicatedExternalRecommendation(
 
     return {
         template: actionable ? toSyntheticTemplate(session, planId, revision) : restTemplate,
-        plannedDose: intent.plannedDose,
+        plannedDose: adjustedPlannedDose,
         ...(verdict.executionDose ? { executionDose: verdict.executionDose } : {}),
         rationale: verdict.rationale,
         mode: actionable ? envelopeState.mode : 'recover',
@@ -589,6 +673,50 @@ function adjudicatedExternalRecommendation(
             candidateScores: [],
             droppedContributorObjectives: intent.droppedContributorObjectives,
             externalPlan: { planId, revision, sessionId: session.id, contentHash },
+        },
+    };
+}
+
+/**
+ * ADR-0035: builds the recommendation for a date an authored rest directive closed to
+ * discretionary planning. Deliberately does **not** run eligibility/ranking -- there is
+ * nothing to rank against; the plan's own instruction is the decision.
+ *
+ * `mode` is set to the genuine `envelopeState.mode` (the readiness/safety envelope's own
+ * train/modify/recover classification), not forced to `'recover'`, even though the
+ * recommended template is Rest. The ADR is explicit that authored rest must not fabricate
+ * a physiological `recover` verdict: `previousMode` is threaded into tomorrow's evaluation
+ * (see the `evaluateNextDayPlanWithIntent` call site) and drives things like
+ * `postRecoverBufferApplied` -- reporting `'recover'` here when readiness was actually
+ * `'train'` would falsely trigger tomorrow's "ease back in after a mandated recovery day"
+ * behavior for an athlete whose own readiness never called for it.
+ */
+function authoredRestRecommendation(
+    externalRest: ExternalRestContext,
+    envelopeState: ReturnType<typeof evaluateReadinessAndSafetyEnvelope>,
+    intent: Awaited<ReturnType<typeof resolveTrainingIntent>>,
+): Recommendation {
+    const { planId, revision, contentHash, directive, date } = externalRest;
+    const clinicalNote = envelopeState.envelopes.safety.redFlagActive
+        ? ` ${envelopeState.envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'}`
+        : '';
+    return {
+        template: getCanonicalRestTemplate(),
+        plannedDose: intent.plannedDose,
+        rationale: `Your plan places a protected rest day here, regardless of today's readiness. `
+            + `No training is recommended today; choose a preferred modality in today's check-in if you explicitly want the normal planner to consider a session anyway.${clinicalNote}`,
+        mode: envelopeState.mode,
+        envelopes: envelopeState.envelopes,
+        telemetry: envelopeState.telemetry,
+        knowledgeRefs: mergeKnowledgeRefs(
+            envelopeState.knowledgeRefs,
+            trainingIntentKnowledgeRefs(intent),
+        ),
+        decisionTrace: {
+            policyVersion: POLICY_VERSION,
+            candidateScores: [],
+            droppedContributorObjectives: intent.droppedContributorObjectives,
+            externalRest: { planId, revision, contentHash, restDirectiveId: directive.id, date } satisfies ExternalRestProvenance,
         },
     };
 }
@@ -612,6 +740,16 @@ export async function evaluateTrainingWithIntent(
      *  entry point uses the default 'off', mirroring `fatigueFusionPolicy` above. */
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+    /** ADR-0035: the rest directive resolved for `date` by the caller (mirrors how
+     *  `externalPlan` above is resolved through placement), or null when none applies. */
+    externalRest: ExternalRestContext | null = null,
+    /** ADR-0035: an explicit, athlete-initiated request to train despite an authored rest
+     *  directive. Never inferred from favorable readiness. Production also treats a non-empty
+     *  same-day `preferredModalityToday` check-in answer as an explicit workout request.
+     *  Either route still passes every normal safety/clinical/availability/equipment/readiness
+     *  gate below and is retained in provenance as an explicit override. */
+    athleteOverridesAuthoredRest: boolean = false,
+    scheduleOverlays: readonly ScheduleOverlay[] = [],
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode, subjectiveDriftPolicy, subjectiveDriftWeights);
     const { mode, envelopes, telemetry } = envelopeState;
@@ -623,12 +761,30 @@ export async function evaluateTrainingWithIntent(
         provenance: { planId: string; revision: number; sessionId: string; contentHash: string };
     } | null = null;
 
+    const athleteRequestedWorkoutOnRest = athleteOverridesAuthoredRest
+        || Boolean(externalRest && readiness.subjective.preferredModalityToday?.trim());
+
+    if (externalRest && !externalPlan && !athleteRequestedWorkoutOnRest) {
+        return authoredRestRecommendation(externalRest, envelopeState, intent);
+    }
+
+    const overriddenExternalRest: ExternalRestDecisionProvenance | null = externalRest && !externalPlan && athleteRequestedWorkoutOnRest
+        ? {
+            planId: externalRest.planId,
+            revision: externalRest.revision,
+            contentHash: externalRest.contentHash,
+            restDirectiveId: externalRest.directive.id,
+            date: externalRest.date,
+            overridden: true,
+        }
+        : null;
+
     if (externalPlan && intent.planningContext.externalFallback) {
         if (!externalPlan.session.isEvent) {
-            return adjudicatedExternalRecommendation(externalPlan, readiness, context, envelopeState, intent, date, fixedActivities);
+            return adjudicatedExternalRecommendation(externalPlan, readiness, context, envelopeState, intent, date, fixedActivities, scheduleOverlays);
         }
 
-        const eventAvailability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
+        const eventAvailability = resolveAvailability(date, readiness.subjective, fixedActivities, context, scheduleOverlays);
         let eventVerdict = adjudicateExternalSession(
             externalPlan.session, readiness, context, envelopeState, intent.plannedDose, date, eventAvailability,
         );
@@ -657,9 +813,10 @@ export async function evaluateTrainingWithIntent(
         };
     }
 
+    const isAdverseRecovery = isSevereAdverseRecoveryReadiness(readiness, mode);
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
-        preferences, context, date, fixedActivities,
+        preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,
     );
     if (evergreen) {
         const unresolvedObjectives = getUnresolvedObjectives(evergreen.microcycle);
@@ -672,6 +829,7 @@ export async function evaluateTrainingWithIntent(
                 date,
                 authoredPlanBlocks,
                 evergreen.planDefinition,
+                scheduleOverlays,
             ),
         };
     }
@@ -692,7 +850,7 @@ export async function evaluateTrainingWithIntent(
         evergreen?.knowledgeRefs,
     );
 
-    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context);
+    const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context, scheduleOverlays);
     const maxCost = PLAN_TIER_SYSTEMIC_COST_CEILING[envelopes.plan.maxAllowableTier];
     const candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, availability.maxTimeMinutes, date)
         .filter(template => !envelopes.safety.restrictedModalities.includes(template.modality))
@@ -737,6 +895,9 @@ export async function evaluateTrainingWithIntent(
     const externalFallbackPrefix = !externalPlan && intent.planningContext.externalFallback
         ? 'External plan fallback: no imported session is placed today, so the built-in planner is choosing this session. '
         : '';
+    const authoredRestOverridePrefix = overriddenExternalRest
+        ? 'You explicitly overrode a protected rest day; normal safety, availability, readiness, and ranking still apply. '
+        : '';
     const pick = rankingResult.accepted[0];
     // A 'modify' mode whose top-ranked candidate is already low-cost enough to survive
     // the modify ceiling unchanged (a bad subjective checkin on an already-easy day, most
@@ -756,8 +917,8 @@ export async function evaluateTrainingWithIntent(
         const safeRecovery = candidates.find(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
             ?? getCanonicalRestTemplate();
         const fallbackRationale = envelopes.safety.redFlagActive
-            ? `${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
-            : `${externalFallbackPrefix}${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`;
+            ? `${authoredRestOverridePrefix}${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
+            : `${authoredRestOverridePrefix}${externalFallbackPrefix}${phaseContext} No candidate survived the active hard constraints; defaulting to recovery rather than bypassing those constraints.`;
         return {
             template: safeRecovery,
             rationale: fallbackRationale,
@@ -777,12 +938,15 @@ export async function evaluateTrainingWithIntent(
                 rankingAudit: null,
                 calibration,
                 ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
+                ...(overriddenExternalRest ? { externalRest: overriddenExternalRest } : {}),
             },
         };
     }
     const finalRationale = envelopes.safety.redFlagActive
-        ? `${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
-        : doseAdjustment ? `${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${doseAdjustment.adjustment.rationale}` : `${externalFallbackPrefix}${phaseContext} ${pick.rationale}`;
+        ? `${authoredRestOverridePrefix}${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
+        : doseAdjustment
+            ? `${authoredRestOverridePrefix}${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${doseAdjustment.adjustment.rationale}`
+            : `${authoredRestOverridePrefix}${externalFallbackPrefix}${phaseContext} ${pick.rationale}`;
     return {
         template: pick.template,
         plannedDose: intent.plannedDose,
@@ -802,11 +966,16 @@ export async function evaluateTrainingWithIntent(
             rankingAudit: computeRankingCounterfactual(rankingResult, pick.template.id),
             calibration,
             ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
+            ...(overriddenExternalRest ? { externalRest: overriddenExternalRest } : {}),
         },
     };
 }
 
-export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContext): { safety: SafetyEnvelope; plan: PlanEnvelope } {
+export function evaluateEnvelopes(
+    readiness: DailyReadiness,
+    context: UserContext,
+    options?: EvaluateReadinessOptions,
+): { safety: SafetyEnvelope; plan: PlanEnvelope } {
     const legacyClinicalFlag = readiness.subjective.painFlag;
     const restrictedModalities = [...(context.constraints.restrictedModalities ?? [])];
     const hasActiveInjury = restrictedModalities.length > 0 || (context.constraints.impliedGuardrails ?? []).length > 0 || (context.constraints.restrictedCategories ?? []).length > 0;
@@ -840,7 +1009,10 @@ export function evaluateEnvelopes(readiness: DailyReadiness, context: UserContex
 
     const clinicalFlagActive = hasCurrentClinicalSymptoms || hasActiveInjury;
     let maxAllowableTier: 'Rest' | 'Mobility' | 'Easy' | 'Moderate' | 'Hard' = 'Hard';
-    if (readiness.subjective.alreadyTrainedToday || redFlagActive) maxAllowableTier = 'Rest';
+    const alreadyTrained = options?.ignoreAlreadyTrainedOverride === true
+        ? false
+        : readiness.subjective.alreadyTrainedToday;
+    if (alreadyTrained || redFlagActive) maxAllowableTier = 'Rest';
     else if (hasCurrentClinicalSymptoms) maxAllowableTier = 'Mobility';
     else if (
         (readiness.objective.body_battery_wake !== null && readiness.objective.body_battery_wake < 30) ||
@@ -1112,14 +1284,7 @@ function unrepresentedFixedActivityProjection(
     const represented = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
     if (trace.count <= represented.length) return null;
 
-    const representedCost = represented.reduce<WorkoutCostProfile>((sum, activity) => ({
-        systemic: sum.systemic + (activity.expectedCost?.systemic ?? 0),
-        cardiovascular: sum.cardiovascular + (activity.expectedCost?.cardiovascular ?? 0),
-        lowerBody: sum.lowerBody + (activity.expectedCost?.lowerBody ?? 0),
-        upperBody: sum.upperBody + (activity.expectedCost?.upperBody ?? 0),
-        impactTissue: sum.impactTissue + (activity.expectedCost?.impactTissue ?? 0),
-        neuromuscular: sum.neuromuscular + (activity.expectedCost?.neuromuscular ?? 0),
-    }), ZERO_COST);
+    const representedCost = sumFixedActivityCostProfiles(represented);
     const representedStimulus = represented.reduce<WorkoutStimulusProfile>((sum, activity) => ({
         aerobicEndurance: sum.aerobicEndurance + (activity.expectedStimulus?.aerobicEndurance ?? 0),
         thresholdPower: sum.thresholdPower + (activity.expectedStimulus?.thresholdPower ?? 0),
@@ -1157,12 +1322,36 @@ function unrepresentedFixedActivityProjection(
     };
 }
 
+/** Carries the non-training load reserved by schedule overlays on a completed forecast
+ * date into the next date's history. Same-day availability already reserves this cost, so
+ * the projection is added only after that date has passed and never to the current-day
+ * availability ledger itself. */
+function scheduleOverlayProjection(
+    date: string,
+    scheduleOverlays: readonly ScheduleOverlay[],
+): CompletedExposure | null {
+    const costProfile = scheduleOverlayCostProfileForDate(scheduleOverlays, date);
+    if (!Object.values(costProfile).some(value => value > 0)) return null;
+    return {
+        occurrenceKey: `schedule-overlays:${date}`,
+        date,
+        costProfile,
+        trainingRecordLike: {
+            type: 'Scheduled non-training load',
+            duration_min: 0,
+            training_effect: 0,
+            intensity_tag: '',
+        },
+    };
+}
+
 async function projectedProviderForTomorrow(
     userId: string,
     tomorrowDate: string,
     todayDate: string,
     todayRec: Recommendation,
     fixedActivities: FixedActivity[],
+    scheduleOverlays: readonly ScheduleOverlay[],
     historyProvider?: TrainingHistoryProvider,
     preparedHistorySnapshot?: TrainingHistorySnapshot | null,
 ): Promise<TrainingHistoryProvider> {
@@ -1175,6 +1364,7 @@ async function projectedProviderForTomorrow(
         prior = await baseProvider.reconstruct(userId, tomorrowDate, 7);
     }
     const unrepresentedFixed = unrepresentedFixedActivityProjection(todayDate, todayRec, fixedActivities);
+    const overlayProjection = scheduleOverlayProjection(todayDate, scheduleOverlays);
     const projected = [
         ...prior.filter(exposure => exposure.date >= windowStart && exposure.date < tomorrowDate),
         recommendationProjection(todayDate, todayRec),
@@ -1183,6 +1373,7 @@ async function projectedProviderForTomorrow(
             return exposure ? [exposure] : [];
         }),
         ...(unrepresentedFixed ? [unrepresentedFixed] : []),
+        ...(overlayProjection ? [overlayProjection] : []),
     ].sort((a, b) => a.date.localeCompare(b.date));
 
     return {
@@ -1210,17 +1401,25 @@ export async function evaluateNextDayPlanWithIntent(
     /** Phase 9.6: only the simulation comparison harness overrides this. */
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
+    scheduleOverlays: readonly ScheduleOverlay[] = [],
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const projectedProvider = await projectedProviderForTomorrow(
-        userId, scenarios.date, todayDate, todayRec, fixedActivities, historyProvider, preparedHistorySnapshot,
+        userId,
+        scenarios.date,
+        todayDate,
+        todayRec,
+        fixedActivities,
+        scheduleOverlays,
+        historyProvider,
+        preparedHistorySnapshot,
     );
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
         await evaluateTrainingWithIntent(
             userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null,
             fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences, fatigueFusionPolicy, null,
-            subjectiveDriftPolicy, subjectiveDriftWeights,
+            subjectiveDriftPolicy, subjectiveDriftWeights, null, false, scheduleOverlays,
         ),
     );
     const [green, yellow, red] = await Promise.all([

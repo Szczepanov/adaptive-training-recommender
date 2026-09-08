@@ -1,4 +1,4 @@
-import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, TrainingIntentProfile, TrainingSettings, UserGoal, UserPreferences } from './models';
+import type { DailyDecisionInput, DailyRecoverySnapshot, DailySubjectiveCheckin, ScheduleOverlay, TrainingIntentProfile, TrainingSettings, UserGoal, UserPreferences } from './models';
 import type { DataIssue, DataState, DataStateSummary } from './dataState';
 import { summarizeDataState } from './dataState';
 import { isSupportedTrainingSettingsSchemaVersion } from './trainingSettingsSchema';
@@ -10,13 +10,19 @@ import { trainingSettingsService } from '../services/trainingSettingsService';
 import { preferencesService } from '../services/preferencesService';
 import { recoverySnapshotService } from '../services/recoverySnapshotService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
+import { scheduleOverlayService } from '../services/scheduleOverlayService';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 
 /** Composition-only extension. Subjective history is intentionally not part of the
  * persisted DailyDecisionInput contract; raw historical check-ins remain local to this
  * function and only normalized baseline evidence plus compact status/issues escape the
- * composition boundary (ADR-0020/D-SUBJPURE/D-SUBJAUDIT). */
+ * composition boundary (ADR-0020/D-SUBJPURE/D-SUBJAUDIT).
+ *
+ * Schedule overlays are decision-affecting constraints, so the composed input also retains
+ * their source-state evidence. Unlike optional context such as preferences, an unavailable
+ * or invalid overlay source fails closed before a recommendation can be produced. */
 export interface ComposedDailyDecisionInput extends DailyDecisionInput {
+    sourceStates: DailyDecisionInput['sourceStates'] & { scheduleOverlays: DataStateSummary };
     subjectiveBaseline: SubjectiveBaseline | null;
     subjectiveHistoryState: DataStateSummary;
     subjectiveHistoryIssues: DataIssue[];
@@ -47,6 +53,7 @@ export class DecisionComposer {
                 preferencesService.getPreferencesState(userId),
                 trainingIntentProfileService.getProfileState(userId),
                 checkinService.getCheckinsInRangeState(userId, subjectiveHistoryStart, targetDate),
+                scheduleOverlayService.getOverlaysInRangeState(userId, targetDate, addDaysToLocalDateString(targetDate, 7)),
             ] as const);
 
             const unavailable = <T>(operation: string): DataState<T> => ({ status: 'UNAVAILABLE', operation, retryable: true });
@@ -87,6 +94,15 @@ export class DecisionComposer {
                     ? [...subjectiveHistoryRawState.issues]
                     : [];
             const subjectiveHistoryState = summarizeDataState(subjectiveHistoryRawState);
+            const overlaysState: DataState<ScheduleOverlay[]> = results[7].status === 'fulfilled'
+                ? results[7].value
+                : unavailable<ScheduleOverlay[]>('read schedule overlays');
+            if (overlaysState.status !== 'AVAILABLE') {
+                throw new Error(overlaysState.status === 'INVALID'
+                    ? 'Schedule overlays are invalid. Please review or remove the affected schedule block.'
+                    : 'Schedule overlays are temporarily unavailable. Please retry.');
+            }
+            const scheduleOverlays = overlaysState.data;
 
             const sourceStates = {
                 recoverySnapshot: recoveryState.status === 'AVAILABLE' ? { status: 'AVAILABLE' as const, revision: recoveryState.revision } : recoveryState,
@@ -99,11 +115,12 @@ export class DecisionComposer {
                 trainingIntentProfile: trainingIntentProfileState.status === 'AVAILABLE'
                     ? { status: 'AVAILABLE' as const, revision: trainingIntentProfileState.revision }
                     : trainingIntentProfileState,
+                scheduleOverlays: summarizeDataState(overlaysState),
             };
 
             results.forEach((result, index) => {
                 if (result.status === 'rejected') {
-                    const serviceNames = ['recoverySnapshot', 'checkinService', 'goalService', 'trainingSettingsService', 'preferencesService', 'trainingIntentProfileService', 'subjectiveHistory'];
+                    const serviceNames = ['recoverySnapshot', 'checkinService', 'goalService', 'trainingSettingsService', 'preferencesService', 'trainingIntentProfileService', 'subjectiveHistory', 'scheduleOverlayService'];
                     console.warn(`${serviceNames[index]} failed:`, result.reason);
                     if (result.reason instanceof Error && result.reason.message.includes('Missing or insufficient permissions')) {
                         console.warn(`Permission denied for ${serviceNames[index]}. This may be due to missing Firebase security rules.`);
@@ -123,7 +140,9 @@ export class DecisionComposer {
                 profileReady: preferences !== null
             };
 
-            const baseInput: DailyDecisionInput = {
+            // `satisfies` verifies the persisted decision contract without erasing the
+            // composition-only scheduleOverlays source state needed for audit/debugging.
+            const baseInput = {
                 userId,
                 date: targetDate,
                 recoverySnapshot,
@@ -132,9 +151,10 @@ export class DecisionComposer {
                 trainingSettings,
                 preferences,
                 trainingIntentProfile,
+                scheduleOverlays,
                 sourceStates,
                 dataQuality,
-            };
+            } satisfies DailyDecisionInput;
 
             // Keep wall-clock evaluation at the composition boundary. The pure evaluator
             // accepts this timestamp explicitly so tests and historical inspection remain

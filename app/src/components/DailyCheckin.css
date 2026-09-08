@@ -227,6 +227,14 @@
   line-height: 1.4;
 }
 
+.availability-hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+
 /* Preset Quick-Fill Bar */
 .checkin-preset-bar {
   margin-bottom: 1rem;
@@ -847,4 +855,106 @@
   font-size: 0.72rem;
   color: #94a3b8;
   line-height: 1.25;
+}
+
+/* Unlogged Physical Work / Manual Labor Card */
+.physical-work-card {
+  margin-top: 1rem;
+  border: 1px solid rgba(251, 146, 60, 0.25);
+  border-radius: var(--radius-control, 10px);
+  background: rgba(251, 146, 60, 0.03);
+  overflow: hidden;
+}
+
+.physical-work-card .boolean-toggle-card {
+  margin: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+}
+
+.physical-work-card .boolean-toggle-card.is-active {
+  background: rgba(251, 146, 60, 0.12);
+}
+
+.physical-work-card .boolean-toggle-card strong {
+  color: #fdba74;
+}
+
+.physical-work-details {
+  border-top: 1px solid rgba(251, 146, 60, 0.15);
+  padding: 0.9rem;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.physical-work-helper-text {
+  margin: 0;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #94a3b8);
+  line-height: 1.4;
+}
+
+.physical-work-row {
+  display: grid;
+  gap: 0.4rem;
+}
+
+.physical-work-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #fdba74;
+}
+
+.physical-work-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.physical-work-chip {
+  min-height: var(--touch-target-min, 40px);
+  border: 1px solid #334155;
+  border-radius: var(--radius-control, 8px);
+  background: rgba(15, 23, 42, 0.6);
+  color: #cbd5e1;
+  padding: 0.45rem 0.8rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s ease-in-out;
+}
+
+.physical-work-chip:hover {
+  border-color: #64748b;
+  color: #f8fafc;
+}
+
+.physical-work-chip.is-selected {
+  background: #f97316;
+  border-color: #ea580c;
+  color: #ffffff;
+  font-weight: 700;
+}
+
+.physical-work-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary, #94a3b8);
+}
+
+.physical-work-notes input {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid #334155;
+  border-radius: var(--radius-control, 6px);
+  padding: 0.5rem 0.75rem;
+  color: #f8fafc;
+  font-size: 0.85rem;
+}
+
+.physical-work-notes input:focus {
+  outline: none;
+  border-color: #f97316;
 }

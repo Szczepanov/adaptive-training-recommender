@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from http import HTTPStatus
 from typing import Any
 
@@ -52,17 +50,36 @@ def test_verified_uid_requires_bearer_scheme() -> None:
 
 
 def test_verified_uid_returns_uid_on_valid_token(monkeypatch: Any) -> None:
-    monkeypatch.setattr(api_module.firebase_auth, "verify_id_token", lambda token: {"uid": "uid-1"})
+    def verify(token: str, *, check_revoked: bool) -> dict[str, Any]:
+        assert check_revoked is True
+        return {"uid": "uid-1"}
+
+    monkeypatch.setattr(api_module.firebase_auth, "verify_id_token", verify)
     assert _verified_uid("Bearer some-token") == "uid-1"
 
 
 def test_verified_uid_wraps_verification_failure(monkeypatch: Any) -> None:
-    def _raise(token: str) -> Any:
+    def _raise(token: str, *, check_revoked: bool) -> Any:
+        assert check_revoked is True
         raise ValueError("bad token")
 
     monkeypatch.setattr(api_module.firebase_auth, "verify_id_token", _raise)
     with pytest.raises(GoogleHealthLinkError):
         _verified_uid("Bearer bad-token")
+
+
+def test_verified_uid_rejects_unverified_password_user(monkeypatch: Any) -> None:
+    monkeypatch.setattr(
+        api_module.firebase_auth,
+        "verify_id_token",
+        lambda token, *, check_revoked: {
+            "uid": "uid-1",
+            "email_verified": False,
+            "firebase": {"sign_in_provider": "password"},
+        },
+    )
+    with pytest.raises(GoogleHealthLinkError, match="Verify your email"):
+        _verified_uid("Bearer valid-token")
 
 
 # --- _app_redirect ---
@@ -104,13 +121,17 @@ def test_app_redirect_falls_back_to_relative_path_without_app_base_url(monkeypat
 
 def test_handle_start_link_requires_auth(monkeypatch: Any) -> None:
     handler = _handler()
-    handler.headers = {}
+    handler.headers = {}  # type: ignore[assignment]
     with pytest.raises(GoogleHealthLinkError):
         handler._handle_start_link()
 
 
 def test_handle_start_link_returns_authorize_url(monkeypatch: Any) -> None:
-    monkeypatch.setattr(api_module.firebase_auth, "verify_id_token", lambda token: {"uid": "uid-1"})
+    monkeypatch.setattr(
+        api_module.firebase_auth,
+        "verify_id_token",
+        lambda token, *, check_revoked: {"uid": "uid-1"},
+    )
     monkeypatch.setenv("GOOGLE_HEALTH_CLIENT_ID", "cid")
     monkeypatch.setenv("GOOGLE_HEALTH_REDIRECT_URI", "https://x/callback")
 
@@ -129,7 +150,7 @@ def test_handle_start_link_returns_authorize_url(monkeypatch: Any) -> None:
     )
 
     handler = _handler()
-    handler.headers = {"Authorization": "Bearer token"}
+    handler.headers = {"Authorization": "Bearer token"}  # type: ignore[assignment]
     captured = _capture_json(handler)
 
     handler._handle_start_link()

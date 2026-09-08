@@ -5,6 +5,7 @@ import {
     summarizeKnowledgeCoverage,
     validateKnowledgeCoverageInventory,
 } from './knowledgeCoverage';
+import { KNOWLEDGE_CLAIM_IDS } from './sportsKnowledgeRegistry';
 
 const byId = (id: string) => ENGINE_KNOWLEDGE_COVERAGE.find(item => item.id === id);
 
@@ -91,12 +92,55 @@ describe('engine knowledge coverage inventory', () => {
         expect(byId('data_trust.identity_gated_source_fail_closed')).toMatchObject({ classification: 'safety_invariant', coverage: 'not_applicable' });
     });
 
-    it('reports the post-SKR3-W1 coverage and risk debt exactly', () => {
+    it('keeps optimizer scoring heuristics covered with the intended product-policy claims (SKR3 W2a)', () => {
+        const expectedClaims = {
+            'optimizer.fatigue_cost_weights': KNOWLEDGE_CLAIM_IDS.fatigueCostWeightsPolicy,
+            'optimizer.stimulus_benefit_weights': KNOWLEDGE_CLAIM_IDS.stimulusBenefitWeightsPolicy,
+            'optimizer.event_priority_multipliers': KNOWLEDGE_CLAIM_IDS.eventPriorityMultipliersPolicy,
+            'optimizer.recovery_streak_heuristics': KNOWLEDGE_CLAIM_IDS.recoveryStreakHeuristicsPolicy,
+        } as const;
+
+        Object.entries(expectedClaims).forEach(([id, claimId]) => {
+            expect(byId(id)).toMatchObject({
+                coverage: 'covered',
+                classification: 'product_heuristic',
+                researchPriority: 'none',
+            });
+            expect(byId(id)?.knowledgeRefs).toContain(claimId);
+        });
+    });
+
+    it('keeps W2b families covered with their intended product-policy claims', () => {
+        const expectedClaims = {
+            'stimulus.objective_credit_confidence': KNOWLEDGE_CLAIM_IDS.objectiveCreditConfidencePolicy,
+            'stimulus.legacy_keyword_credit': KNOWLEDGE_CLAIM_IDS.legacyKeywordCreditPolicy,
+            'stimulus.race_specific_credit_formula': KNOWLEDGE_CLAIM_IDS.raceSpecificCreditFormulaPolicy,
+            'stimulus.coverage_threshold': KNOWLEDGE_CLAIM_IDS.coverageThresholdPolicy,
+            'fatigue.ambient_step_surge': KNOWLEDGE_CLAIM_IDS.ambientStepSurgePolicy,
+            'fatigue.max_fusion_policy': KNOWLEDGE_CLAIM_IDS.maxFusionPolicy,
+            'readiness.post_recover_buffer': KNOWLEDGE_CLAIM_IDS.postRecoverBufferPolicy,
+            'readiness.plan_tier_cost_ceilings': KNOWLEDGE_CLAIM_IDS.planTierCostCeilingsPolicy,
+            'evergreen.default_weekly_commitment': KNOWLEDGE_CLAIM_IDS.defaultWeeklyCommitmentPolicy,
+            'evergreen.training_history_qualification': KNOWLEDGE_CLAIM_IDS.trainingHistoryQualificationPolicy,
+            'packing.legacy_session_spacing_tiebreak': KNOWLEDGE_CLAIM_IDS.legacySessionSpacingTiebreakPolicy,
+        } as const;
+
+        Object.entries(expectedClaims).forEach(([id, claimId]) => {
+            expect(byId(id)).toMatchObject({
+                coverage: 'covered',
+                classification: 'product_heuristic',
+                researchPriority: 'none',
+            });
+            expect(byId(id)?.knowledgeRefs).toContain(claimId);
+        });
+    });
+
+    it('reports the post-SKR3-W2b coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
         const summary = summarizeKnowledgeCoverage();
         expect(summary.total).toBe(54);
-        expect(summary.byCoverage).toEqual({ covered: 18, partial: 14, uncovered: 16, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 7, p1: 13, p2: 8, p3: 2, none: 24 });
-        expect(summary.highImpactUncovered).toBe(4);
+        expect(summary.byCoverage).toEqual({ covered: 33, partial: 14, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 7, p1: 6, p2: 2, p3: 0, none: 39 });
+        expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });
 

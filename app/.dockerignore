@@ -1,0 +1,16 @@
+node_modules
+dist
+artifacts
+.firebase
+tests
+scripts
+playwright-report
+test-results
+*.log
+.env
+.env.*
+!.env.example
+.git
+.vscode
+.idea
+coverage

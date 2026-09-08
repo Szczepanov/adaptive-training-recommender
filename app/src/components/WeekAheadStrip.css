@@ -215,3 +215,37 @@
     flex-basis: 68px;
   }
 }
+
+.tile-overlay-icon {
+  font-size: 1.4rem;
+  line-height: 1;
+}
+
+.detail-overlay-callout {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  background: rgba(59, 130, 246, 0.08);
+  border: 1px solid rgba(59, 130, 246, 0.25);
+  border-radius: 8px;
+  margin: 0.5rem 0;
+  font-size: 0.82rem;
+  flex-wrap: wrap;
+}
+
+.detail-overlay-badge {
+  font-weight: 700;
+  color: #60a5fa;
+}
+
+.detail-overlay-title {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.detail-overlay-hint {
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  margin-left: auto;
+}

@@ -380,6 +380,7 @@ export class ContextBriefService {
             upcomingPlanBlocks,
             upcomingExternalSessions,
             unavailableSources,
+            preset,
         });
 
         return {

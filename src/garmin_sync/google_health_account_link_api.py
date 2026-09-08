@@ -5,21 +5,21 @@ pinned to --max-instances=1 for its in-memory MFA session continuity, a constrai
 OAuth-redirect flow doesn't need and shouldn't inherit. See
 docs/plans/2026-08-27-real-google-health-ingestion.md for why CASA/Restricted Scope
 verification being unresolved means every linked user will see Google's "unverified app"
-warning -- that's a known, accepted limitation of this phase, not a bug in this service.
+warning -- that's a known, accepted limitation of this phase, not a flaw in this service.
 """
 
-import json
 import logging
 import os
 import secrets
 import urllib.parse
 from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import ThreadingHTTPServer
 from typing import Any
 
 from firebase_admin import auth as firebase_auth
 
-from .error_reporting import log_exception, sanitize_text
+from .base_api import BaseJSONRequestHandler
+from .error_reporting import log_exception
 from .firestore_repository import init_firestore_client
 from .google_health_account_link import (
     GoogleHealthConnectionRepository,
@@ -58,12 +58,18 @@ def _verified_uid(authorization: str | None) -> str:
     if scheme.lower() != "bearer" or not token.strip():
         raise GoogleHealthLinkError("Invalid app authorization header.")
     try:
-        decoded = firebase_auth.verify_id_token(token.strip())
+        decoded = firebase_auth.verify_id_token(token.strip(), check_revoked=True)
     except Exception as exc:
         raise GoogleHealthLinkError("App session is invalid or expired.") from exc
     uid = decoded.get("uid")
     if not uid:
         raise GoogleHealthLinkError("App session has no user identity.")
+    firebase_claim = decoded.get("firebase")
+    sign_in_provider = (
+        firebase_claim.get("sign_in_provider") if isinstance(firebase_claim, dict) else None
+    )
+    if sign_in_provider == "password" and decoded.get("email_verified") is not True:
+        raise GoogleHealthLinkError("Verify your email before linking Google Health.")
     return str(uid)
 
 
@@ -74,38 +80,13 @@ def _env(name: str) -> str:
     return value
 
 
-class GoogleHealthAccountLinkHandler(BaseHTTPRequestHandler):
+class GoogleHealthAccountLinkHandler(BaseJSONRequestHandler):
     server_version = "GoogleHealthAccountLink/1"
-    request_id: str | None = None
 
     def log_message(self, format: str, *args: Any) -> None:
         # Never log query strings here -- the callback URL carries `code`/`state`, both of
         # which are effectively bearer credentials for this flow.
         logger.info("%s - %s %s", self.address_string(), self.command, self.path.split("?")[0])
-
-    def _json_response(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
-        body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
-        self.send_response(status.value)
-        self.send_header("Content-Type", "application/json; charset=utf-8")
-        self.send_header("Cache-Control", "no-store")
-        self.send_header("X-Content-Type-Options", "nosniff")
-        if self.request_id:
-            self.send_header("X-Request-ID", self.request_id)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
-
-    def _error_response(
-        self, status: HTTPStatus, *, message: str, error_code: str, retryable: bool
-    ) -> None:
-        payload: dict[str, Any] = {
-            "error": sanitize_text(message),
-            "errorCode": error_code,
-            "retryable": retryable,
-        }
-        if self.request_id:
-            payload["requestId"] = self.request_id
-        self._json_response(status, payload)
 
     def _redirect(self, location: str) -> None:
         self.send_response(HTTPStatus.FOUND.value)
@@ -216,7 +197,7 @@ class GoogleHealthAccountLinkHandler(BaseHTTPRequestHandler):
 
         try:
             if google_error:
-                # The user declined consent, or Google itself errored -- not a bug here.
+                # The user declined consent, or Google itself errored -- not an issue here.
                 logger.info("Google Health OAuth callback carried an error: %s", google_error)
                 self._app_redirect(success=False, reason="google_declined")
                 return

@@ -34,6 +34,9 @@ import type {
     RegionTissueResponse,
     TissueResponseLevel,
     AuthoredPlanBlock,
+    ScheduleOverlay,
+    ScheduleOverlayCategory,
+    ScheduleOverlaySport,
     TrainingIntentProfile,
     PlanningMode,
     TrainingPriority,
@@ -50,6 +53,10 @@ import type {
     ExternalPlacementStatus,
     DecisionJournalEntry,
     ShadowVerdict,
+    PhysicalWorkCheckin,
+    PhysicalWorkDuration,
+    PhysicalWorkIntensity,
+    PhysicalWorkLoadArea,
 } from './models';
 import { EXTERNAL_PLAN_SCHEMA, SHADOW_VERDICTS } from './models';
 import { validateEventTiming, BODY_REGIONS, TISSUE_LEVELS } from './models';
@@ -165,6 +172,97 @@ function validateTissueResponses(raw: any, errors: ValidationError[]): Partial<R
     return result;
 }
 
+export const PHYSICAL_WORK_DURATIONS: readonly PhysicalWorkDuration[] = ['short', 'medium', 'extended'];
+export const PHYSICAL_WORK_INTENSITIES: readonly PhysicalWorkIntensity[] = ['moderate', 'hard', 'exhausting'];
+export const PHYSICAL_WORK_LOAD_AREAS: readonly PhysicalWorkLoadArea[] = [
+    'grip_forearms',
+    'upper_body',
+    'lower_back_spine',
+    'legs_carrying',
+];
+export const PHYSICAL_WORK_NOTES_MAX_CHARS = 200;
+
+/**
+ * Validates untyped physical work / manual labor payload from morning check-in.
+ * When performed is true, requires duration, intensity, and non-empty loadAreas.
+ */
+function validatePhysicalWork(raw: any, errors: ValidationError[]): PhysicalWorkCheckin | undefined {
+    if (raw === undefined || raw === null) return undefined;
+    if (typeof raw !== 'object' || Array.isArray(raw)) {
+        errors.push({ field: 'physicalWork', message: 'physicalWork must be an object' });
+        return undefined;
+    }
+    if (typeof raw.performed !== 'boolean') {
+        errors.push({ field: 'physicalWork.performed', message: 'performed must be a boolean', value: raw.performed });
+    }
+
+    if (raw.performed === true) {
+        if (raw.duration === undefined || raw.duration === null) {
+            errors.push({ field: 'physicalWork.duration', message: 'duration is required when performed is true' });
+        } else if (typeof raw.duration !== 'string' || !PHYSICAL_WORK_DURATIONS.includes(raw.duration as PhysicalWorkDuration)) {
+            errors.push({ field: 'physicalWork.duration', message: `duration must be one of: ${PHYSICAL_WORK_DURATIONS.join(', ')}`, value: raw.duration });
+        }
+
+        if (raw.intensity === undefined || raw.intensity === null) {
+            errors.push({ field: 'physicalWork.intensity', message: 'intensity is required when performed is true' });
+        } else if (typeof raw.intensity !== 'string' || !PHYSICAL_WORK_INTENSITIES.includes(raw.intensity as PhysicalWorkIntensity)) {
+            errors.push({ field: 'physicalWork.intensity', message: `intensity must be one of: ${PHYSICAL_WORK_INTENSITIES.join(', ')}`, value: raw.intensity });
+        }
+
+        if (raw.loadAreas === undefined || raw.loadAreas === null) {
+            errors.push({ field: 'physicalWork.loadAreas', message: 'loadAreas is required when performed is true' });
+        } else if (!Array.isArray(raw.loadAreas) || raw.loadAreas.length === 0) {
+            errors.push({ field: 'physicalWork.loadAreas', message: 'loadAreas must be a non-empty array', value: raw.loadAreas });
+        } else {
+            for (const area of raw.loadAreas) {
+                if (typeof area !== 'string' || !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea)) {
+                    errors.push({ field: 'physicalWork.loadAreas', message: `loadAreas contains unrecognized area: ${area}`, value: area });
+                }
+            }
+        }
+    } else {
+        if (raw.duration !== undefined && raw.duration !== null) {
+            if (typeof raw.duration !== 'string' || !PHYSICAL_WORK_DURATIONS.includes(raw.duration as PhysicalWorkDuration)) {
+                errors.push({ field: 'physicalWork.duration', message: `duration must be one of: ${PHYSICAL_WORK_DURATIONS.join(', ')}`, value: raw.duration });
+            }
+        }
+        if (raw.intensity !== undefined && raw.intensity !== null) {
+            if (typeof raw.intensity !== 'string' || !PHYSICAL_WORK_INTENSITIES.includes(raw.intensity as PhysicalWorkIntensity)) {
+                errors.push({ field: 'physicalWork.intensity', message: `intensity must be one of: ${PHYSICAL_WORK_INTENSITIES.join(', ')}`, value: raw.intensity });
+            }
+        }
+        if (raw.loadAreas !== undefined && raw.loadAreas !== null) {
+            if (!Array.isArray(raw.loadAreas) || raw.loadAreas.length === 0) {
+                errors.push({ field: 'physicalWork.loadAreas', message: 'loadAreas must be a non-empty array', value: raw.loadAreas });
+            } else {
+                for (const area of raw.loadAreas) {
+                    if (typeof area !== 'string' || !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea)) {
+                        errors.push({ field: 'physicalWork.loadAreas', message: `loadAreas contains unrecognized area: ${area}`, value: area });
+                    }
+                }
+            }
+        }
+    }
+
+    if (raw.notes !== undefined && raw.notes !== null) {
+        if (typeof raw.notes !== 'string' || raw.notes.length > PHYSICAL_WORK_NOTES_MAX_CHARS) {
+            errors.push({ field: 'physicalWork.notes', message: `notes must be a string up to ${PHYSICAL_WORK_NOTES_MAX_CHARS} characters`, value: raw.notes });
+        }
+    }
+
+    if (errors.some(e => e.field.startsWith('physicalWork'))) {
+        return undefined;
+    }
+
+    return {
+        performed: Boolean(raw.performed),
+        ...(raw.duration ? { duration: raw.duration as PhysicalWorkDuration } : {}),
+        ...(raw.intensity ? { intensity: raw.intensity as PhysicalWorkIntensity } : {}),
+        ...(Array.isArray(raw.loadAreas) && raw.loadAreas.length > 0 ? { loadAreas: Array.from(new Set(raw.loadAreas as PhysicalWorkLoadArea[])) } : {}),
+        ...(typeof raw.notes === 'string' && raw.notes.trim() ? { notes: raw.notes.trim() } : {}),
+    };
+}
+
 export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheckin> {
     const errors: ValidationError[] = [];
 
@@ -248,6 +346,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
 
     // Per-region tissue response (Phase 5.4)
     const tissueResponses = validateTissueResponses(raw.tissueResponses, errors);
+    const physicalWork = validatePhysicalWork(raw.physicalWork, errors);
 
     if (errors.length > 0) {
         return { isValid: false, errors };
@@ -268,6 +367,7 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         unusuallyLimitedTime: raw.unusuallyLimitedTime ?? false,
         alreadyTrainedToday: raw.alreadyTrainedToday ?? false,
         ...(tissueResponses && Object.keys(tissueResponses).length > 0 ? { tissueResponses } : {}),
+        ...(physicalWork ? { physicalWork } : {}),
         availability: {
             timeAvailableMin: normalizeEmptyToNull(raw.availability?.timeAvailableMin),
             preferredModalityToday: normalizeEmptyToNull(raw.availability?.preferredModalityToday),
@@ -1357,6 +1457,102 @@ export function validateAuthoredPlanBlock(raw: any): ValidationResult<AuthoredPl
     } };
 }
 
+const SCHEDULE_OVERLAY_CATEGORIES: ScheduleOverlayCategory[] = [
+    'active_sport', 'sedentary_rest', 'high_step_walking', 'limited_availability',
+];
+const SCHEDULE_OVERLAY_SPORTS: ScheduleOverlaySport[] = [
+    'skiing', 'volleyball', 'hiking', 'court_sport', 'field_sport', 'general',
+];
+
+export function validateScheduleOverlay(raw: any): ValidationResult<ScheduleOverlay> {
+    const errors: ValidationError[] = [];
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+        return { isValid: false, errors: [{ field: 'scheduleOverlay', message: 'Overlay must be an object' }] };
+    }
+    if (!raw.userId || typeof raw.userId !== 'string') {
+        errors.push({ field: 'userId', message: 'User ID is required' });
+    }
+    if (!raw.title || typeof raw.title !== 'string' || raw.title.trim().length === 0 || raw.title.length > 200) {
+        errors.push({ field: 'title', message: 'Title must be a non-empty string up to 200 characters' });
+    }
+    if (!SCHEDULE_OVERLAY_CATEGORIES.includes(raw.category)) {
+        errors.push({ field: 'category', message: `Invalid category: ${raw.category}` });
+    }
+    if (raw.sport !== undefined && raw.sport !== null && !SCHEDULE_OVERLAY_SPORTS.includes(raw.sport)) {
+        errors.push({ field: 'sport', message: `Invalid sport: ${raw.sport}` });
+    }
+    if (!isValidDate(raw.startDate) || !isValidDate(raw.endDate) || raw.startDate > raw.endDate) {
+        errors.push({ field: 'dates', message: 'Overlay dates must be valid and start date must not be after end date' });
+    }
+    if (typeof raw.dailyAvailabilityMinutes !== 'number' || !Number.isFinite(raw.dailyAvailabilityMinutes) || raw.dailyAvailabilityMinutes < 0 || raw.dailyAvailabilityMinutes > 1440) {
+        errors.push({ field: 'dailyAvailabilityMinutes', message: 'Daily availability minutes must be in [0, 1440]' });
+    }
+    if (typeof raw.volumeScale !== 'number' || !Number.isFinite(raw.volumeScale) || raw.volumeScale < 0 || raw.volumeScale > 1) {
+        errors.push({ field: 'volumeScale', message: 'Volume scale must be between 0 and 1' });
+    }
+    if (typeof raw.intensityScale !== 'number' || !Number.isFinite(raw.intensityScale) || raw.intensityScale < 0 || raw.intensityScale > 1) {
+        errors.push({ field: 'intensityScale', message: 'Intensity scale must be between 0 and 1' });
+    }
+
+    const expectedCost = raw.expectedCost;
+    if (!expectedCost || typeof expectedCost !== 'object' || Array.isArray(expectedCost)) {
+        errors.push({ field: 'expectedCost', message: 'expectedCost must be a WorkoutCostProfile object' });
+    } else {
+        const costAxes = ['systemic', 'cardiovascular', 'lowerBody', 'upperBody', 'impactTissue', 'neuromuscular'] as const;
+        for (const axis of costAxes) {
+            const val = expectedCost[axis];
+            if (val !== undefined && (typeof val !== 'number' || !Number.isFinite(val) || val < 0 || val > 1)) {
+                errors.push({ field: `expectedCost.${axis}`, message: `${axis} cost must be in [0, 1]` });
+            }
+        }
+    }
+
+    if (raw.equipment !== undefined && raw.equipment !== null) {
+        if (!Array.isArray(raw.equipment) || raw.equipment.some((item: unknown) => typeof item !== 'string' || item.length > 50)) {
+            errors.push({ field: 'equipment', message: 'Equipment must be an array of strings' });
+        }
+    }
+
+    if (raw.environment !== undefined && raw.environment !== null && !['indoor', 'outdoor', 'either'].includes(raw.environment)) {
+        errors.push({ field: 'environment', message: 'Environment must be indoor, outdoor, or either' });
+    }
+
+    if (errors.length > 0) return { isValid: false, errors };
+
+    const now = new Date().toISOString();
+    const cleanCost: WorkoutCostProfile = {
+        systemic: expectedCost.systemic ?? 0,
+        cardiovascular: expectedCost.cardiovascular ?? 0,
+        lowerBody: expectedCost.lowerBody ?? 0,
+        upperBody: expectedCost.upperBody ?? 0,
+        impactTissue: expectedCost.impactTissue ?? 0,
+        neuromuscular: expectedCost.neuromuscular ?? 0,
+    };
+
+    return {
+        isValid: true,
+        errors: [],
+        data: {
+            id: typeof raw.id === 'string' ? raw.id : '',
+            userId: raw.userId,
+            title: raw.title.trim(),
+            category: raw.category,
+            ...(raw.sport ? { sport: raw.sport } : {}),
+            startDate: raw.startDate,
+            endDate: raw.endDate,
+            dailyAvailabilityMinutes: raw.dailyAvailabilityMinutes,
+            volumeScale: raw.volumeScale,
+            intensityScale: raw.intensityScale,
+            expectedCost: cleanCost,
+            ...(Array.isArray(raw.equipment) ? { equipment: raw.equipment } : {}),
+            ...(raw.environment ? { environment: raw.environment } : {}),
+            ...(typeof raw.notes === 'string' && raw.notes.trim().length > 0 ? { notes: raw.notes.trim() } : {}),
+            createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : now,
+            updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : now,
+        },
+    };
+}
+
 const TRAINING_INTENT_PROFILE_KEYS = [
     'userId', 'planningMode', 'priorities', 'weeklyCommitment', 'organizationPreference',
     'schemaVersion', 'createdAt', 'updatedAt',
@@ -1408,7 +1604,9 @@ const EXTERNAL_INTENSITIES: ExternalSessionIntensity[] = ['recovery', 'easy', 'm
 const EXTERNAL_PRIORITIES: ExternalSessionPriority[] = ['key', 'supporting', 'optional'];
 const EXTERNAL_FLEXIBILITY: ExternalPlacementFlexibility[] = ['fixed', 'preferred', 'any_day'];
 const EXTERNAL_IF_MISSED: ExternalIfMissed[] = ['drop', 'reschedule_within_week', 'carry_forward'];
-const EXTERNAL_WEEKDAYS: ExternalWeekday[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+/** Exported for `sessions/externalPlanV3.ts`'s `restDays` validator, which reuses the same
+ * weekday vocabulary as session placement (ADR-0035). */
+export const EXTERNAL_WEEKDAYS: ExternalWeekday[] = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 const EXTERNAL_EQUIPMENT: EquipmentKey[] = ['free_weights', 'cable_machine', 'treadmill', 'indoor_bike', 'pullup_bar', 'outdoor_bike', 'swim_access'];
 const EXTERNAL_ENVIRONMENTS: TrainingEnvironment[] = ['indoor', 'outdoor', 'either'];
 const EXTERNAL_OBJECTIVES: ObjectiveKey[] = [
@@ -1428,11 +1626,13 @@ const GATING_KEYS = ['modality', 'intensity', 'durationMin', 'durationMax', 'env
 const SCALING_KEYS = ['reducible', 'reducedSummary', 'reducedDurationMin', 'minimumUsefulDurationMin', 'fallback'];
 const STEP_KEYS = ['name', 'target', 'durationMin', 'durationSec', 'repeat', 'recoveryMin', 'recoverySec', 'sets', 'setRecoveryMin', 'setRecoverySec', 'notes'];
 
-function unknownKeys(raw: Record<string, unknown>, allowed: string[]): string[] {
+/** Exported for `sessions/externalPlanV3.ts`'s `restDays` validator (ADR-0035). */
+export function unknownKeys(raw: Record<string, unknown>, allowed: string[]): string[] {
     return Object.keys(raw).filter(key => !allowed.includes(key));
 }
 
-function isPositiveInt(value: unknown, min: number, max: number): boolean {
+/** Exported for `sessions/externalPlanV3.ts`'s `restDays` validator (ADR-0035). */
+export function isPositiveInt(value: unknown, min: number, max: number): boolean {
     return typeof value === 'number' && Number.isInteger(value) && value >= min && value <= max;
 }
 

@@ -2,6 +2,7 @@ import {
   assertPersonaFixtureIntegrity as assertCatalogIntegrity,
   buildPersonaFamilies as buildCatalogFamilies,
 } from './personaScenarios.mjs';
+import { assertHybridScenarioIntegrity, buildHybridScenarioFamilies } from './hybridScenarioFamilies.mjs';
 
 const ACTIVE_TRIATHLON_FAMILY_ID = 'persona_triathlon_established_olympic';
 const ACTIVE_TRIATHLON_PERSONA_ID = 'triathlon_established_olympic';
@@ -351,15 +352,17 @@ function buildCyclingPrimaryHybridFamily(catalogFamilies) {
 }
 
 /** Build the active judge suite from the larger reusable persona catalog. */
-export function buildPersonaFamilies() {
+export function buildPersonaFamilies({ includeHybridExpansion = false } = {}) {
   const catalogFamilies = buildCatalogFamilies();
   assertCatalogIntegrity(catalogFamilies);
 
   const nonTriathlonFamilies = catalogFamilies.filter((family) => !family.familyId.startsWith('persona_triathlon_'));
+  const hybridFamily = buildCyclingPrimaryHybridFamily(catalogFamilies);
   return [
     ...nonTriathlonFamilies,
-    buildCyclingPrimaryHybridFamily(catalogFamilies),
+    hybridFamily,
     buildActiveTriathlonFamily(catalogFamilies),
+    ...(includeHybridExpansion ? buildHybridScenarioFamilies(hybridFamily) : []),
   ];
 }
 
@@ -400,6 +403,7 @@ export function assertPersonaFixtureIntegrity(families) {
   if (taper?.scenario.event?.date !== '2026-09-14') failures.push('Active triathlon taper case must place the A-event at the 14-day boundary.');
 
   const cyclingHybrid = families.find((family) => family.familyId === CYCLING_HYBRID_FAMILY_ID);
+  assertHybridScenarioIntegrity(families, cyclingHybrid);
   if (!cyclingHybrid) failures.push('Active suite is missing the cycling-primary hybrid persona.');
   if (cyclingHybrid?.cases.length !== 5) failures.push(`Cycling-primary hybrid persona must have exactly 5 state cases, found ${cyclingHybrid?.cases.length ?? 0}.`);
   for (const definition of cyclingHybrid?.cases ?? []) {

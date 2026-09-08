@@ -27,11 +27,12 @@ export function getLocalDateString(dateInput: Date = new Date(), timezone: strin
  * for a date that's already a correct local calendar date. `days` may be negative.
  */
 export function addDaysToLocalDateString(dateStr: string, days: number): string {
-    const d = new Date(dateStr + 'T00:00:00');
-    d.setDate(d.getDate() + days);
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, '0');
-    const day = String(d.getDate()).padStart(2, '0');
+    const [yearPart, monthPart, dayPart] = dateStr.split('-').map(Number);
+    const d = new Date(Date.UTC(yearPart, monthPart - 1, dayPart));
+    d.setUTCDate(d.getUTCDate() + days);
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
 }
 
@@ -63,4 +64,14 @@ export function getDayDiff(dateStrA: string, dateStrB: string): number {
     const utcA = toUtcMidnight(dateStrA);
     const utcB = toUtcMidnight(dateStrB);
     return Math.round((utcA - utcB) / (24 * 60 * 60 * 1000));
+}
+
+/**
+ * Determines whether a Warsaw-local YYYY-MM-DD calendar date is a weekend (Saturday or Sunday).
+ * Uses UTC date components so timezone transitions or local runtime offsets cannot shift the day.
+ */
+export function isWeekendLocalDateString(dateStr: string): boolean {
+    const [yearPart, monthPart, dayPart] = dateStr.split('-').map(Number);
+    const day = new Date(Date.UTC(yearPart, monthPart - 1, dayPart)).getUTCDay();
+    return day === 0 || day === 6;
 }

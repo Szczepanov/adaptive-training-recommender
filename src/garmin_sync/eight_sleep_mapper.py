@@ -1,7 +1,5 @@
 """Map Eight Sleep trend payloads into ADR-0027 source-aware observations."""
 
-from __future__ import annotations
-
 import hashlib
 import json
 from datetime import datetime, timedelta
@@ -102,8 +100,9 @@ ORIGIN_APPLICATION = "eight_sleep_private_api"
 # Eight Sleep's own day-level deepDuration/remDuration/lightDuration are themselves summed
 # across all sessions, e.g. a two-session night with a nap, so wasoDuration is summed the
 # same way for consistency). A real cross-device check against Garmin's true within-session
-# awakeSleepSec (34 duration-agreement nights) found r=0.461, mean abs delta 9min --
-# comparable to REM's r=0.44 (real disagreement, not a units bug), unlike the removed
+# awakeSleepSec (34 duration-agreement nights) found wasoDuration correlates with Garmin's
+# true within-session awakeSleepSec at r=0.461 (mean abs delta 9min, means 524s vs 881s) --
+# comparable to REM's r=0.44 (real disagreement, not a units issue), nothing like the removed
 # presence-minus-sleep proxy's r=0.17/~115min mismatch. See the ES-EXT-4 removal comment
 # above and this metric's emission site further down for the full history.
 NORMALIZER_VERSION: int = 7
@@ -121,6 +120,45 @@ def map_trends_to_observation_batch(
             source_payload_hash=_hash({"logicalDate": logical_date, "status": "no-record"}),
             normalizer_version=NORMALIZER_VERSION,
         )
+
+    score = selected.get("sleepQualityScore")
+    score = score if isinstance(score, dict) else {}
+
+    core = _extract_core_metrics(selected, score)
+    session, waso_total = _extract_session_info(selected)
+
+    source = ObservationSource(
+        provider=PROVIDER,
+        transport=TRANSPORT,
+        origin_application=ORIGIN_APPLICATION,
+        source_record_id=_source_id(selected, logical_date, core["start"]),
+    )
+    quality: dict[str, float | int | str | bool] = {"privateApi": True}
+    if isinstance(selected.get("processing"), bool):
+        quality["processing"] = selected["processing"]
+    if isinstance(selected.get("incomplete"), bool):
+        quality["incomplete"] = selected["incomplete"]
+
+    observations = _collect_observations(
+        selected=selected,
+        score=score,
+        core=core,
+        session=session,
+        waso_total=waso_total,
+        source=source,
+        logical_date=logical_date,
+        quality=quality,
+    )
+
+    return ObservationBatch(
+        logical_date=logical_date,
+        observations=observations,
+        source_payload_hash=_hash(selected),
+        normalizer_version=NORMALIZER_VERSION,
+    )
+
+
+def _extract_core_metrics(selected: dict[str, Any], score: dict[str, Any]) -> dict[str, Any]:
     presence_start = _dt(_first(selected, "presenceStart", "presence_start"))
     presence = _num(
         _first(selected, "presenceDurationSeconds", "presenceDuration", "presence_duration")
@@ -134,6 +172,7 @@ def map_trends_to_observation_batch(
     light = _num(_first(selected, "lightDurationSeconds", "lightDuration", "light_duration"))
     deep = _num(_first(selected, "deepDurationSeconds", "deepDuration", "deep_duration"))
     rem = _num(_first(selected, "remDurationSeconds", "remDuration", "rem_duration"))
+
     # Prefer the real sleepStart/sleepEnd (time actually asleep) over presence bounds (time
     # in bed, a strictly wider window -- the gap is exactly the latency-asleep/latency-out
     # durations already captured separately). Falls back to presence bounds only when the
@@ -143,8 +182,7 @@ def map_trends_to_observation_batch(
     sleep_end = _dt(_first(selected, "sleepEnd", "sleep_end"))
     start = sleep_start or presence_start
     end = sleep_end or presence_end
-    quality_score = selected.get("sleepQualityScore")
-    score = quality_score if isinstance(quality_score, dict) else {}
+
     hrv = _num(_current(score, "hrv"))
     hr = _num(_first(selected, "heartRate", "heart_rate") or _current(score, "heartRate"))
     resp = _num(
@@ -152,85 +190,27 @@ def map_trends_to_observation_batch(
         or _current(score, "respiratoryRate")
     )
 
-    # Extended fields (ES-EXT): sleepQualityScore.sleepDebt, sleepRoutineScore's
-    # latency/consistency sub-objects, and performanceWindows' social-jetlag/chronotype --
-    # all already computed server-side by the private API but not previously extracted.
-    # None of these count toward the "did this record contain anything recognized" check
-    # below: a day with only these fields and no core sleep/recovery data would be a
-    # malformed record, not a legitimately extended one.
-    #
-    # sleepQualityScore.waso.current is deliberately NOT extracted despite being numeric and
-    # named for a real clinical metric (Wake After Sleep Onset, normally a duration): a real
-    # probe (2026-08-28) found it's a small fraction (e.g. 0.0193), not seconds -- and its
-    # sibling range fields (lowerRange/upperRange/lowerBound/upperBound/average) were all 0,
-    # suggesting this particular score isn't reliably calibrated for this account. Rather
-    # than guess an unknown scale factor (inventing evidence this repo's own discipline
-    # forbids), this metric is skipped entirely. This is a DIFFERENT field from
-    # sessions[].stageSummary.wasoDuration, which IS extracted -- see
-    # METRIC_SLEEP_STAGE_AWAKE_SECONDS further down in this function.
-    debt_obj = score.get("sleepDebt")
-    debt_obj = debt_obj if isinstance(debt_obj, dict) else {}
-    sleep_debt = _signed_num(debt_obj.get("dailySleepDebtSeconds"))
-    sleep_baseline = _num(debt_obj.get("baselineSleepDurationSeconds"))
+    if not any(v is not None for v in (start, presence, sleep, light, deep, rem, hrv, hr, resp)):
+        raise EightSleepSchemaError(
+            "Eight Sleep target-day record did not contain any recognized sleep/recovery fields."
+        )
 
-    routine_score = selected.get("sleepRoutineScore")
-    routine = routine_score if isinstance(routine_score, dict) else {}
-    latency_asleep = _num(_current(routine, "latencyAsleepSeconds"))
-    latency_out = _num(_current(routine, "latencyOutSeconds"))
-    wakeup_consistency = _time_of_day(_current(routine, "wakeupConsistency"))
-    sleep_start_consistency = _time_of_day(_current(routine, "sleepStartConsistency"))
-    bedtime_consistency = _time_of_day(_current(routine, "bedtimeConsistency"))
+    return {
+        "start": start,
+        "end": end,
+        "sleep": sleep,
+        "light": light,
+        "deep": deep,
+        "rem": rem,
+        "hrv": hrv,
+        "hr": hr,
+        "resp": resp,
+    }
 
-    snore_sec = _num(_first(selected, "snoreDuration", "snore_duration"))
-    heavy_snore_sec = _num(_first(selected, "heavySnoreDuration", "heavy_snore_duration"))
-    snore_pct = _num(_first(selected, "snorePercent", "snore_percent"))
-    heavy_snore_pct = _num(_first(selected, "heavySnorePercent", "heavy_snore_percent"))
-    mitigation_events = _num(_first(selected, "mitigationEvents", "mitigation_events"))
-    tnt = _num(_first(selected, "tnt"))
 
-    perf_windows = selected.get("performanceWindows")
-    perf_windows = perf_windows if isinstance(perf_windows, dict) else {}
-    social_jetlag_obj = perf_windows.get("socialJetlag")
-    social_jetlag_obj = social_jetlag_obj if isinstance(social_jetlag_obj, dict) else {}
-    # Signed, not _num(): a real probe found negative values (-139) -- direction of the
-    # weekday/weekend sleep-timing misalignment is meaningful, not an invalid reading. _num()
-    # was silently dropping roughly half of all real nights' values before this fix (any
-    # night the misalignment ran the other direction).
-    social_jetlag = _signed_num(social_jetlag_obj.get("socialJetlagSeconds"))
-    chronotype_obj = perf_windows.get("chronotype")
-    chronotype_obj = chronotype_obj if isinstance(chronotype_obj, dict) else {}
-    chronotype_class = _str(chronotype_obj.get("chronoClass"))
-
-    # Extended fields batch 2 (ES-EXT-2): performanceWindowStats' personal baselines (not
-    # tonight's own reading -- its "current*" fields duplicate day.sleepStart/sleepEnd/
-    # sleepDuration in a different string shape and are deliberately not re-extracted) and
-    # per-metric inclusive7DayAverage rolling baselines. Both only present when
-    # performanceWindows.isAvailable -- checked implicitly by field presence, not the flag
-    # itself, since an individual field being absent is the more precise signal.
-    pw_stats_obj = perf_windows.get("performanceWindowStats")
-    pw_stats = pw_stats_obj if isinstance(pw_stats_obj, dict) else {}
-    bedtime_baseline = _time_of_day(pw_stats.get("bedtimeBaseline"))
-    sleep_start_baseline = _time_of_day(pw_stats.get("sleepStartBaseline"))
-    sleep_end_baseline = _time_of_day(pw_stats.get("sleepEndBaseline"))
-    sleep_midpoint_baseline = _time_of_day(pw_stats.get("sleepMidpointBaseline"))
-    # wasoBaseline skipped -- same fraction-not-seconds issue as sleepQualityScore.waso
-    # above (real probe: 0.0616, not a plausible seconds value); see that comment.
-    total_sleep_time_baseline = _num(pw_stats.get("totalSleepTimeSecondsBaseline"))
-    deep_sleep_baseline = _num(pw_stats.get("deepSleepSecondsBaseline"))
-
-    hrv_7day_avg = _num(_avg7(score, "hrv"))
-    resp_7day_avg = _num(_avg7(score, "respiratoryRate"))
-    hr_7day_avg = _num(_avg7(score, "heartRate"))
-    # waso's 7-day average skipped for the same reason as its .current value above.
-    sleep_duration_7day_avg = _num(_avg7(score, "sleepDurationSeconds"))
-    deep_7day_avg = _num(_avg7(score, "deep"))
-    rem_7day_avg = _num(_avg7(score, "rem"))
-    snore_7day_avg = _num(_avg7(score, "snoringDurationSeconds"))
-    heavy_snore_7day_avg = _num(_avg7(score, "heavySnoringDurationSeconds"))
-
-    tags_val = selected.get("tags")
-    tags = tags_val if isinstance(tags_val, list) and tags_val else None
-
+def _extract_session_info(
+    selected: dict[str, Any],
+) -> tuple[dict[str, Any] | None, float | None]:
     # ES-EXT-4: selected.sessions[] carries per-session detail (algorithm versions here;
     # a real per-segment stage timeline and event-level timeseries also live here but are
     # deliberately not extracted yet -- see docs/plans/eight-sleep-direct-recovery-ingestion.md).
@@ -255,30 +235,195 @@ def map_trends_to_observation_batch(
     if session is None and len(sessions_list) == 1 and isinstance(sessions_list[0], dict):
         session = sessions_list[0]
 
-    sleep_algorithm_version = _str(session.get("sleepAlgorithmVersion")) if session else None
-    presence_algorithm_version = _str(session.get("presenceAlgorithmVersion")) if session else None
-    hrv_algorithm_version = _str(session.get("hrvAlgorithmVersion")) if session else None
+    # METRIC_SLEEP_STAGE_AWAKE_SECONDS (ES-EXT-6, 2026-08-29): re-added, now sourced from
+    # sessions[].stageSummary.wasoDuration, summed across ALL sessions that day (not just
+    # the single resolved `session` used for algorithm versions below). This corrects the
+    # ES-EXT-4 removal, which was right to distrust presence-minus-sleep (~115min/night,
+    # r=0.17 vs Garmin) but didn't yet know a real per-session WASO field existed. Confirmed
+    # via a real probe (2025-10-28, a two-session night) that Eight Sleep's own day-level
+    # deepDuration/remDuration/lightDuration are themselves the sum of each session's
+    # stageSummary across all sessions -- summing wasoDuration the same way is consistent
+    # with that, not a new assumption.
+    waso_total = 0.0
+    has_waso = False
+    for s in sessions_list:
+        if not isinstance(s, dict):
+            continue
+        stage_summary = s.get("stageSummary")
+        if not isinstance(stage_summary, dict):
+            continue
+        waso_val = _num(stage_summary.get("wasoDuration"))
+        if waso_val is not None:
+            waso_total += waso_val
+            has_waso = True
 
-    if not any(v is not None for v in (start, presence, sleep, light, deep, rem, hrv, hr, resp)):
-        raise EightSleepSchemaError(
-            "Eight Sleep target-day record did not contain any recognized sleep/recovery fields."
-        )
-    source = ObservationSource(
-        provider=PROVIDER,
-        transport=TRANSPORT,
-        origin_application=ORIGIN_APPLICATION,
-        source_record_id=_source_id(selected, logical_date, start),
-    )
-    quality: dict[str, float | int | str | bool] = {"privateApi": True}
-    if isinstance(selected.get("processing"), bool):
-        quality["processing"] = selected["processing"]
-    if isinstance(selected.get("incomplete"), bool):
-        quality["incomplete"] = selected["incomplete"]
+    return session, (waso_total if has_waso else None)
+
+
+def _extract_routine_metrics(
+    selected: dict[str, Any], score: dict[str, Any]
+) -> list[tuple[str, Any, str | None]]:
+    debt_obj = score.get("sleepDebt")
+    debt_obj = debt_obj if isinstance(debt_obj, dict) else {}
+    sleep_debt = _signed_num(debt_obj.get("dailySleepDebtSeconds"))
+    sleep_baseline = _num(debt_obj.get("baselineSleepDurationSeconds"))
+
+    routine_score = selected.get("sleepRoutineScore")
+    routine = routine_score if isinstance(routine_score, dict) else {}
+    latency_asleep = _num(_current(routine, "latencyAsleepSeconds"))
+    latency_out = _num(_current(routine, "latencyOutSeconds"))
+    wakeup_consistency = _time_of_day(_current(routine, "wakeupConsistency"))
+    sleep_start_consistency = _time_of_day(_current(routine, "sleepStartConsistency"))
+    bedtime_consistency = _time_of_day(_current(routine, "bedtimeConsistency"))
+
+    return [
+        (METRIC_SLEEP_DEBT_SECONDS, _whole(sleep_debt), "s"),
+        (METRIC_SLEEP_BASELINE_DURATION_SECONDS, _whole(sleep_baseline), "s"),
+        (METRIC_SLEEP_LATENCY_ASLEEP_SECONDS, _whole(latency_asleep), "s"),
+        (METRIC_SLEEP_LATENCY_OUT_SECONDS, _whole(latency_out), "s"),
+        (METRIC_WAKEUP_TIME_CONSISTENCY, wakeup_consistency, "HH:MM:SS"),
+        (METRIC_SLEEP_START_TIME_CONSISTENCY, sleep_start_consistency, "HH:MM:SS"),
+        (METRIC_BEDTIME_CONSISTENCY, bedtime_consistency, "HH:MM:SS"),
+    ]
+
+
+def _extract_snore_movement_metrics(
+    selected: dict[str, Any],
+) -> list[tuple[str, Any, str | None]]:
+    snore_sec = _num(_first(selected, "snoreDuration", "snore_duration"))
+    heavy_snore_sec = _num(_first(selected, "heavySnoreDuration", "heavy_snore_duration"))
+    snore_pct = _num(_first(selected, "snorePercent", "snore_percent"))
+    heavy_snore_pct = _num(_first(selected, "heavySnorePercent", "heavy_snore_percent"))
+    mitigation_events = _num(_first(selected, "mitigationEvents", "mitigation_events"))
+    tnt = _num(_first(selected, "tnt"))
+
+    return [
+        (METRIC_SNORE_DURATION_SECONDS, _whole(snore_sec), "s"),
+        (METRIC_HEAVY_SNORE_DURATION_SECONDS, _whole(heavy_snore_sec), "s"),
+        (METRIC_SNORE_PERCENT, _whole(snore_pct), "percent"),
+        (METRIC_HEAVY_SNORE_PERCENT, _whole(heavy_snore_pct), "percent"),
+        (METRIC_SNORE_MITIGATION_EVENTS_COUNT, _whole(mitigation_events), "count"),
+        (METRIC_TOSS_AND_TURN_COUNT, _whole(tnt), "count"),
+    ]
+
+
+def _extract_perf_window_metrics(
+    selected: dict[str, Any],
+) -> list[tuple[str, Any, str | None]]:
+    perf_windows = selected.get("performanceWindows")
+    perf_windows = perf_windows if isinstance(perf_windows, dict) else {}
+
+    social_jetlag_obj = perf_windows.get("socialJetlag")
+    social_jetlag_obj = social_jetlag_obj if isinstance(social_jetlag_obj, dict) else {}
+    # Signed, not _num(): a real probe found negative values (-139) -- direction of the
+    # weekday/weekend sleep-timing misalignment is meaningful, not an invalid reading.
+    social_jetlag = _signed_num(social_jetlag_obj.get("socialJetlagSeconds"))
+
+    chronotype_obj = perf_windows.get("chronotype")
+    chronotype_obj = chronotype_obj if isinstance(chronotype_obj, dict) else {}
+    chronotype_class = _str(chronotype_obj.get("chronoClass"))
+
+    pw_stats_obj = perf_windows.get("performanceWindowStats")
+    pw_stats = pw_stats_obj if isinstance(pw_stats_obj, dict) else {}
+    bedtime_baseline = _time_of_day(pw_stats.get("bedtimeBaseline"))
+    sleep_start_baseline = _time_of_day(pw_stats.get("sleepStartBaseline"))
+    sleep_end_baseline = _time_of_day(pw_stats.get("sleepEndBaseline"))
+    sleep_midpoint_baseline = _time_of_day(pw_stats.get("sleepMidpointBaseline"))
+    total_sleep_time_baseline = _num(pw_stats.get("totalSleepTimeSecondsBaseline"))
+    deep_sleep_baseline = _num(pw_stats.get("deepSleepSecondsBaseline"))
+
+    return [
+        (METRIC_SOCIAL_JETLAG_SECONDS, _whole(social_jetlag), "s"),
+        (METRIC_CHRONOTYPE_CLASS, chronotype_class, None),
+        (METRIC_BEDTIME_BASELINE_TIME, bedtime_baseline, "HH:MM:SS"),
+        (METRIC_SLEEP_START_BASELINE_TIME, sleep_start_baseline, "HH:MM:SS"),
+        (METRIC_SLEEP_END_BASELINE_TIME, sleep_end_baseline, "HH:MM:SS"),
+        (METRIC_SLEEP_MIDPOINT_BASELINE_TIME, sleep_midpoint_baseline, "HH:MM:SS"),
+        (METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS, _whole(total_sleep_time_baseline), "s"),
+        (METRIC_DEEP_SLEEP_BASELINE_SECONDS, _whole(deep_sleep_baseline), "s"),
+    ]
+
+
+def _extract_rolling_averages(score: dict[str, Any]) -> list[tuple[str, Any, str | None]]:
+    hrv_7day_avg = _num(_avg7(score, "hrv"))
+    resp_7day_avg = _num(_avg7(score, "respiratoryRate"))
+    hr_7day_avg = _num(_avg7(score, "heartRate"))
+    sleep_duration_7day_avg = _num(_avg7(score, "sleepDurationSeconds"))
+    deep_7day_avg = _num(_avg7(score, "deep"))
+    rem_7day_avg = _num(_avg7(score, "rem"))
+    snore_7day_avg = _num(_avg7(score, "snoringDurationSeconds"))
+    heavy_snore_7day_avg = _num(_avg7(score, "heavySnoringDurationSeconds"))
+
+    return [
+        (METRIC_HRV_7DAY_AVG_MS, hrv_7day_avg, "ms"),
+        (METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM, resp_7day_avg, "brpm"),
+        (METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM, hr_7day_avg, "bpm"),
+        (METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS, _whole(sleep_duration_7day_avg), "s"),
+        (METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS, _whole(deep_7day_avg), "s"),
+        (METRIC_SLEEP_STAGE_REM_7DAY_AVG_SECONDS, _whole(rem_7day_avg), "s"),
+        (METRIC_SNORE_DURATION_7DAY_AVG_SECONDS, _whole(snore_7day_avg), "s"),
+        (METRIC_HEAVY_SNORE_DURATION_7DAY_AVG_SECONDS, _whole(heavy_snore_7day_avg), "s"),
+    ]
+
+
+def _extract_algorithm_versions(
+    session: dict[str, Any] | None,
+) -> list[tuple[str, Any, str | None]]:
+    if not session:
+        return [
+            (METRIC_SLEEP_ALGORITHM_VERSION, None, None),
+            (METRIC_PRESENCE_ALGORITHM_VERSION, None, None),
+            (METRIC_HRV_ALGORITHM_VERSION, None, None),
+        ]
+    return [
+        (METRIC_SLEEP_ALGORITHM_VERSION, _str(session.get("sleepAlgorithmVersion")), None),
+        (METRIC_PRESENCE_ALGORITHM_VERSION, _str(session.get("presenceAlgorithmVersion")), None),
+        (METRIC_HRV_ALGORITHM_VERSION, _str(session.get("hrvAlgorithmVersion")), None),
+    ]
+
+
+def _collect_observations(
+    *,
+    selected: dict[str, Any],
+    score: dict[str, Any],
+    core: dict[str, Any],
+    session: dict[str, Any] | None,
+    waso_total: float | None,
+    source: ObservationSource,
+    logical_date: str,
+    quality: dict[str, float | int | str | bool],
+) -> list[CanonicalHealthObservation]:
+    raw_metrics: list[tuple[str, Any, str | None]] = [
+        (METRIC_SLEEP_SESSION, "sleep", None),
+        (METRIC_SLEEP_DURATION_SECONDS, _whole(core["sleep"]), "s"),
+        (METRIC_SLEEP_STAGE_LIGHT_SECONDS, _whole(core["light"]), "s"),
+        (METRIC_SLEEP_STAGE_DEEP_SECONDS, _whole(core["deep"]), "s"),
+        (METRIC_SLEEP_STAGE_REM_SECONDS, _whole(core["rem"]), "s"),
+        (METRIC_SLEEP_STAGE_AWAKE_SECONDS, _whole(waso_total), "s"),
+        (METRIC_HRV_RMSSD_MS, core["hrv"], "ms"),
+        (METRIC_SLEEPING_HEART_RATE_BPM, core["hr"], "bpm"),
+        (
+            METRIC_SLEEP_RESPIRATION_SUMMARY,
+            {"breathsPerMinute": core["resp"]} if core["resp"] is not None else None,
+            "brpm",
+        ),
+    ]
+
+    raw_metrics.extend(_extract_routine_metrics(selected, score))
+    raw_metrics.extend(_extract_snore_movement_metrics(selected))
+    raw_metrics.extend(_extract_perf_window_metrics(selected))
+    raw_metrics.extend(_extract_rolling_averages(score))
+
+    tags_val = selected.get("tags")
+    tags = tags_val if isinstance(tags_val, list) and tags_val else None
+    if tags is not None:
+        raw_metrics.append((METRIC_SLEEP_TAGS, {"tags": tags}, None))
+
+    raw_metrics.extend(_extract_algorithm_versions(session))
+
+    start, end = core["start"], core["end"]
     observations: list[CanonicalHealthObservation] = []
-
-    def add(
-        metric: str, value: float | int | str | dict[str, Any] | None, unit: str | None
-    ) -> None:
+    for metric, value, unit in raw_metrics:
         if value is not None:
             observations.append(
                 CanonicalHealthObservation(
@@ -293,88 +438,7 @@ def map_trends_to_observation_batch(
                 )
             )
 
-    add(METRIC_SLEEP_SESSION, "sleep", None)
-    add(METRIC_SLEEP_DURATION_SECONDS, _whole(sleep), "s")
-    add(METRIC_SLEEP_STAGE_LIGHT_SECONDS, _whole(light), "s")
-    add(METRIC_SLEEP_STAGE_DEEP_SECONDS, _whole(deep), "s")
-    add(METRIC_SLEEP_STAGE_REM_SECONDS, _whole(rem), "s")
-    # METRIC_SLEEP_STAGE_AWAKE_SECONDS (ES-EXT-6, 2026-08-29): re-added, now sourced from
-    # sessions[].stageSummary.wasoDuration, summed across ALL sessions that day (not just
-    # the single resolved `session` used for algorithm versions below). This corrects the
-    # ES-EXT-4 removal, which was right to distrust presence-minus-sleep (~115min/night,
-    # r=0.17 vs Garmin) but didn't yet know a real per-session WASO field existed. Confirmed
-    # via a real probe (2025-10-28, a two-session night) that Eight Sleep's own day-level
-    # deepDuration/remDuration/lightDuration are themselves the sum of each session's
-    # stageSummary across all sessions -- summing wasoDuration the same way is consistent
-    # with that, not a new assumption. A real cross-device check (34 duration-agreement
-    # nights) found wasoDuration correlates with Garmin's true within-session awakeSleepSec
-    # at r=0.461 (mean abs delta 9min, means 524s vs 881s) -- comparable to REM's r=0.44
-    # (real device disagreement, not a units/definition bug), nothing like the removed
-    # proxy's r=0.17/~115min mismatch. sleepQualityScore.waso.current is still a fraction
-    # with no documented conversion (unrelated field) and remains unextracted.
-    waso_total = 0.0
-    has_waso = False
-    for s in sessions_list:
-        if not isinstance(s, dict):
-            continue
-        stage_summary = s.get("stageSummary")
-        if not isinstance(stage_summary, dict):
-            continue
-        waso_val = stage_summary.get("wasoDuration")
-        if isinstance(waso_val, (int, float)) and not isinstance(waso_val, bool):
-            waso_total += waso_val
-            has_waso = True
-    add(METRIC_SLEEP_STAGE_AWAKE_SECONDS, _whole(waso_total) if has_waso else None, "s")
-    add(METRIC_HRV_RMSSD_MS, hrv, "ms")
-    add(METRIC_SLEEPING_HEART_RATE_BPM, hr, "bpm")
-    if resp is not None:
-        add(METRIC_SLEEP_RESPIRATION_SUMMARY, {"breathsPerMinute": resp}, "brpm")
-
-    add(METRIC_SLEEP_DEBT_SECONDS, _whole(sleep_debt), "s")
-    add(METRIC_SLEEP_BASELINE_DURATION_SECONDS, _whole(sleep_baseline), "s")
-    add(METRIC_SLEEP_LATENCY_ASLEEP_SECONDS, _whole(latency_asleep), "s")
-    add(METRIC_SLEEP_LATENCY_OUT_SECONDS, _whole(latency_out), "s")
-    add(METRIC_WAKEUP_TIME_CONSISTENCY, wakeup_consistency, "HH:MM:SS")
-    add(METRIC_SLEEP_START_TIME_CONSISTENCY, sleep_start_consistency, "HH:MM:SS")
-    add(METRIC_BEDTIME_CONSISTENCY, bedtime_consistency, "HH:MM:SS")
-    add(METRIC_SNORE_DURATION_SECONDS, _whole(snore_sec), "s")
-    add(METRIC_HEAVY_SNORE_DURATION_SECONDS, _whole(heavy_snore_sec), "s")
-    add(METRIC_SNORE_PERCENT, _whole(snore_pct), "percent")
-    add(METRIC_HEAVY_SNORE_PERCENT, _whole(heavy_snore_pct), "percent")
-    add(METRIC_SNORE_MITIGATION_EVENTS_COUNT, _whole(mitigation_events), "count")
-    add(METRIC_TOSS_AND_TURN_COUNT, _whole(tnt), "count")
-    add(METRIC_SOCIAL_JETLAG_SECONDS, _whole(social_jetlag), "s")
-    add(METRIC_CHRONOTYPE_CLASS, chronotype_class, None)
-
-    add(METRIC_BEDTIME_BASELINE_TIME, bedtime_baseline, "HH:MM:SS")
-    add(METRIC_SLEEP_START_BASELINE_TIME, sleep_start_baseline, "HH:MM:SS")
-    add(METRIC_SLEEP_END_BASELINE_TIME, sleep_end_baseline, "HH:MM:SS")
-    add(METRIC_SLEEP_MIDPOINT_BASELINE_TIME, sleep_midpoint_baseline, "HH:MM:SS")
-    add(METRIC_TOTAL_SLEEP_TIME_BASELINE_SECONDS, _whole(total_sleep_time_baseline), "s")
-    add(METRIC_DEEP_SLEEP_BASELINE_SECONDS, _whole(deep_sleep_baseline), "s")
-
-    add(METRIC_HRV_7DAY_AVG_MS, hrv_7day_avg, "ms")
-    add(METRIC_SLEEP_RESPIRATION_RATE_7DAY_AVG_BRPM, resp_7day_avg, "brpm")
-    add(METRIC_SLEEPING_HEART_RATE_7DAY_AVG_BPM, hr_7day_avg, "bpm")
-    add(METRIC_SLEEP_DURATION_7DAY_AVG_SECONDS, _whole(sleep_duration_7day_avg), "s")
-    add(METRIC_SLEEP_STAGE_DEEP_7DAY_AVG_SECONDS, _whole(deep_7day_avg), "s")
-    add(METRIC_SLEEP_STAGE_REM_7DAY_AVG_SECONDS, _whole(rem_7day_avg), "s")
-    add(METRIC_SNORE_DURATION_7DAY_AVG_SECONDS, _whole(snore_7day_avg), "s")
-    add(METRIC_HEAVY_SNORE_DURATION_7DAY_AVG_SECONDS, _whole(heavy_snore_7day_avg), "s")
-
-    if tags is not None:
-        add(METRIC_SLEEP_TAGS, {"tags": tags}, None)
-
-    add(METRIC_SLEEP_ALGORITHM_VERSION, sleep_algorithm_version, None)
-    add(METRIC_PRESENCE_ALGORITHM_VERSION, presence_algorithm_version, None)
-    add(METRIC_HRV_ALGORITHM_VERSION, hrv_algorithm_version, None)
-
-    return ObservationBatch(
-        logical_date=logical_date,
-        observations=observations,
-        source_payload_hash=_hash(selected),
-        normalizer_version=NORMALIZER_VERSION,
-    )
+    return observations
 
 
 def summarize_trends_shape(payload: Any) -> dict[str, Any]:

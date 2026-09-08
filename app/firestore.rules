@@ -321,7 +321,7 @@ service cloud.firestore {
     function hasValidRecommendationAudit(userId, audit, version) {
       let hasLineage = 'knowledgeLineage' in audit;
       return audit is map
-        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
+        && audit.keys().hasOnly(['policyVersion', 'evaluatedAt', 'decisionContextRevision', 'safetyStatus', 'history', 'envelope', 'plannedDose', 'executionDose', 'candidateScores', 'droppedContributorObjectives', 'externalPlan', 'externalRest', 'authoredOccurrence', 'primarySession', 'additionalSessions', 'subjectiveDrift', 'identityDecision', 'knowledgeLineage'])
         && (
           (version < 4 && !hasLineage)
           || (version == 4 && hasLineage && hasValidKnowledgeLineage(audit.knowledgeLineage))
@@ -346,9 +346,43 @@ service cloud.firestore {
         && (!('plannedDose' in audit) || hasValidDose(audit.plannedDose))
         && (!('executionDose' in audit) || hasValidDose(audit.executionDose))
         && audit.candidateScores is list && audit.candidateScores.size() <= 64
+        && !(('externalPlan' in audit) && ('externalRest' in audit))
+        // ADR-0035: default authored rest bypasses ranking entirely, so candidateScores must
+        // be empty. An explicit athlete override (audit.externalRest.overridden == true)
+        // suspends only the protected-rest short circuit -- selection is the ordinary ranked
+        // planner path, so candidateScores is populated exactly like any other decision.
+        && (!('externalRest' in audit)
+          || (('overridden' in audit.externalRest) && audit.externalRest.overridden == true)
+          || audit.candidateScores.size() == 0)
         && (!('droppedContributorObjectives' in audit) || (audit.droppedContributorObjectives is list && audit.droppedContributorObjectives.size() <= 64))
-        && (!('primarySession' in audit) || hasValidSessionReferenceBinding(audit.primarySession))
-        && (!('additionalSessions' in audit) || hasValidAdditionalSessions(audit.additionalSessions))
+        // `provenance.ts`'s buildRecommendationAudit sets audit.primarySession/
+        // additionalSessions to the exact same value as the sibling top-level
+        // request.resource.data.primarySession/additionalSessions field (never an
+        // independently-derived copy) -- hasValidRecommendation already runs the full
+        // hasValidSessionReferenceBinding/hasValidAdditionalSessions structural
+        // validation on those top-level fields. Re-running that same (non-trivial: up to
+        // 4 additional-session bindings, each checking several source-kind shapes)
+        // validation a second time here on an identical value was pure duplicate rule-
+        // evaluation cost; a single equality check against the already-validated
+        // top-level field is enough and meaningfully reduces this audit's total
+        // evaluation cost (see the per-request rule-evaluation ceiling note below).
+        && (!('primarySession' in audit) || audit.primarySession == request.resource.data.primarySession)
+        && (!('additionalSessions' in audit) || audit.additionalSessions == request.resource.data.additionalSessions)
+        // ADR-0036 (H4) D-PLACEMENT: a v4 intraday bundle's resolved window trace was
+        // intended to persist here for display, but this whole audit is already right at
+        // Firestore's per-request rule-evaluation ceiling -- adding even a minimal
+        // 3-expression check for one more optional field (verified with the emulator
+        // suite, not a guess) pushed a create/update over "the maximum of 1000
+        // expressions to evaluate". That display field is deliberately not persisted;
+        // `activeExternalPlanService.ts`'s bundle-aware primary-session selection (the
+        // actual decision-affecting behavior) does not depend on it. The
+        // primarySession/additionalSessions dedup above (issue #435) is a real, verified
+        // reduction in this audit's evaluation cost, but re-tested with the emulator
+        // suite and confirmed **still not enough headroom** for even the same minimal
+        // intradayBundle check -- the ceiling error recurred identically. Whoever revisits
+        // this next needs a bigger reduction than that one dedup (see issue #435's
+        // remaining candidates: knowledge-lineage unrolled-array cost, identity-provenance
+        // `get()` lookups, or moving this field outside `recommendationAudit` entirely).
         && (!('externalPlan' in audit) || (
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
@@ -357,6 +391,20 @@ service cloud.firestore {
           && audit.externalPlan.revision is int && audit.externalPlan.revision >= 1
           && audit.externalPlan.sessionId is string && audit.externalPlan.sessionId.size() <= 64
           && audit.externalPlan.contentHash is string && audit.externalPlan.contentHash.size() <= 128
+        ))
+        && (!('externalRest' in audit) || (
+          audit.externalRest is map
+          // 'overridden' is optional and, when present, must be the literal true -- the TS
+          // ExternalRestDecisionProvenance type never writes false; absence means the
+          // default (non-overridden) protected-rest path.
+          && audit.externalRest.keys().hasOnly(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date', 'overridden'])
+          && audit.externalRest.keys().hasAll(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date'])
+          && audit.externalRest.planId is string && audit.externalRest.planId.size() <= 64
+          && audit.externalRest.revision is int && audit.externalRest.revision >= 1
+          && audit.externalRest.contentHash is string && audit.externalRest.contentHash.size() <= 128
+          && audit.externalRest.restDirectiveId is string && audit.externalRest.restDirectiveId.size() <= 64
+          && audit.externalRest.date is string && isValidActivityDate(audit.externalRest.date)
+          && (!('overridden' in audit.externalRest) || audit.externalRest.overridden == true)
         ))
         && (!('authoredOccurrence' in audit) || (
           audit.authoredOccurrence is map
@@ -388,7 +436,15 @@ service cloud.firestore {
         && (!('primarySession' in request.resource.data) || hasValidSessionReferenceBinding(request.resource.data.primarySession))
         && (!('additionalSessions' in request.resource.data) || hasValidAdditionalSessions(request.resource.data.additionalSessions))
         && (request.resource.data.schemaVersion < 3
-          || ('recommendationAudit' in request.resource.data && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit, request.resource.data.schemaVersion)));
+          || ('recommendationAudit' in request.resource.data
+            && hasValidRecommendationAudit(userId, request.resource.data.recommendationAudit, request.resource.data.schemaVersion)
+            // ADR-0035: the canonical-Rest binding applies only to the default (non-
+            // overridden) authored-rest path. An explicit athlete override runs the
+            // ordinary ranked planner and may legitimately persist any template.
+            && (!('externalRest' in request.resource.data.recommendationAudit)
+              || (('overridden' in request.resource.data.recommendationAudit.externalRest)
+                && request.resource.data.recommendationAudit.externalRest.overridden == true)
+              || request.resource.data.templateId == 'rest_01')));
     }
 
     function schemaRatchets() {
@@ -595,8 +651,37 @@ service cloud.firestore {
         && hasValidAxisValue(m, 'neuromuscular');
     }
 
+    function isValidEquipmentItem(item) {
+      return item is string && item.size() <= 50;
+    }
+
+    // Each item must be a string of at most 50 characters, matching
+    // validationCore.ts's MAX_EQUIPMENT_ITEM_LENGTH -- otherwise an owner could persist
+    // e.g. equipment: [42] past rules and have the client-side parser (validateFixedActivity/
+    // validateScheduleWindow) reject the whole document as INVALID on read.
     function hasValidEquipmentList(list) {
-      return list is list && list.size() <= 20;
+      let sz = list.size();
+      return list is list && sz <= 20
+        && (sz <= 0 || isValidEquipmentItem(list[0]))
+        && (sz <= 1 || isValidEquipmentItem(list[1]))
+        && (sz <= 2 || isValidEquipmentItem(list[2]))
+        && (sz <= 3 || isValidEquipmentItem(list[3]))
+        && (sz <= 4 || isValidEquipmentItem(list[4]))
+        && (sz <= 5 || isValidEquipmentItem(list[5]))
+        && (sz <= 6 || isValidEquipmentItem(list[6]))
+        && (sz <= 7 || isValidEquipmentItem(list[7]))
+        && (sz <= 8 || isValidEquipmentItem(list[8]))
+        && (sz <= 9 || isValidEquipmentItem(list[9]))
+        && (sz <= 10 || isValidEquipmentItem(list[10]))
+        && (sz <= 11 || isValidEquipmentItem(list[11]))
+        && (sz <= 12 || isValidEquipmentItem(list[12]))
+        && (sz <= 13 || isValidEquipmentItem(list[13]))
+        && (sz <= 14 || isValidEquipmentItem(list[14]))
+        && (sz <= 15 || isValidEquipmentItem(list[15]))
+        && (sz <= 16 || isValidEquipmentItem(list[16]))
+        && (sz <= 17 || isValidEquipmentItem(list[17]))
+        && (sz <= 18 || isValidEquipmentItem(list[18]))
+        && (sz <= 19 || isValidEquipmentItem(list[19]));
     }
 
     function hasValidAvailabilityContextOverride(m) {
@@ -642,6 +727,38 @@ service cloud.firestore {
       allow delete: if isOwner(userId);
     }
 
+    // ADR-0036 D-WINDOW: the athlete's versioned schedule, the sole owner of actual
+    // same-date availability. Rules validate the per-document shape only -- the
+    // cross-window non-overlap invariant needs every sibling window for a date at once
+    // and is enforced by `scheduleWindowService.ts`/`scheduleWindows.ts`, the same split
+    // `hasValidExternalPlanRevision` above uses for cross-entry invariants rules cannot see.
+    function hasValidScheduleWindow(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && isValidActivityDate(data.date)
+        && data.keys().hasOnly(['userId', 'date', 'startLocal', 'endLocal', 'label', 'equipment', 'environment', 'revision', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'date', 'startLocal', 'endLocal', 'revision', 'createdAt', 'updatedAt'])
+        && data.startLocal is string && data.startLocal.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && data.endLocal is string && data.endLocal.matches('^([01][0-9]|2[0-3]):[0-5][0-9]$')
+        && data.endLocal > data.startLocal
+        && data.revision is int && data.revision >= 1
+        && data.createdAt is string
+        && data.updatedAt is string
+        && (!('label' in data) || (data.label is string && data.label.size() > 0 && data.label.size() <= 100))
+        && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
+        && (!('environment' in data) || data.environment in ['indoor', 'outdoor', 'either']);
+    }
+
+    match /users/{userId}/schedule_windows/{windowId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidScheduleWindow(userId);
+      allow update: if hasValidScheduleWindow(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt
+        && request.resource.data.revision > resource.data.revision;
+      allow delete: if isOwner(userId);
+    }
+
     function hasValidPlanBlock(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
@@ -672,14 +789,67 @@ service cloud.firestore {
         && (!('supersededFrom' in data) || data.supersededFrom == null || isValidActivityDate(data.supersededFrom));
     }
 
+    function isValidExternalRestDirective(directive, weekCount) {
+      return directive is map
+        && directive.keys().hasOnly(['id', 'week', 'day'])
+        && directive.keys().hasAll(['id', 'week', 'day'])
+        && directive.id is string && directive.id.size() > 0 && directive.id.size() <= 64
+        && directive.week is int && directive.week >= 1 && directive.week <= weekCount
+        && directive.day in ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+    }
+
+    function hasValidExternalRestDirectives(restDays, weekCount) {
+      return restDays is list && restDays.size() <= 26
+        && (restDays.size() < 1 || isValidExternalRestDirective(restDays[0], weekCount))
+        && (restDays.size() < 2 || isValidExternalRestDirective(restDays[1], weekCount))
+        && (restDays.size() < 3 || isValidExternalRestDirective(restDays[2], weekCount))
+        && (restDays.size() < 4 || isValidExternalRestDirective(restDays[3], weekCount))
+        && (restDays.size() < 5 || isValidExternalRestDirective(restDays[4], weekCount))
+        && (restDays.size() < 6 || isValidExternalRestDirective(restDays[5], weekCount))
+        && (restDays.size() < 7 || isValidExternalRestDirective(restDays[6], weekCount))
+        && (restDays.size() < 8 || isValidExternalRestDirective(restDays[7], weekCount))
+        && (restDays.size() < 9 || isValidExternalRestDirective(restDays[8], weekCount))
+        && (restDays.size() < 10 || isValidExternalRestDirective(restDays[9], weekCount))
+        && (restDays.size() < 11 || isValidExternalRestDirective(restDays[10], weekCount))
+        && (restDays.size() < 12 || isValidExternalRestDirective(restDays[11], weekCount))
+        && (restDays.size() < 13 || isValidExternalRestDirective(restDays[12], weekCount))
+        && (restDays.size() < 14 || isValidExternalRestDirective(restDays[13], weekCount))
+        && (restDays.size() < 15 || isValidExternalRestDirective(restDays[14], weekCount))
+        && (restDays.size() < 16 || isValidExternalRestDirective(restDays[15], weekCount))
+        && (restDays.size() < 17 || isValidExternalRestDirective(restDays[16], weekCount))
+        && (restDays.size() < 18 || isValidExternalRestDirective(restDays[17], weekCount))
+        && (restDays.size() < 19 || isValidExternalRestDirective(restDays[18], weekCount))
+        && (restDays.size() < 20 || isValidExternalRestDirective(restDays[19], weekCount))
+        && (restDays.size() < 21 || isValidExternalRestDirective(restDays[20], weekCount))
+        && (restDays.size() < 22 || isValidExternalRestDirective(restDays[21], weekCount))
+        && (restDays.size() < 23 || isValidExternalRestDirective(restDays[22], weekCount))
+        && (restDays.size() < 24 || isValidExternalRestDirective(restDays[23], weekCount))
+        && (restDays.size() < 25 || isValidExternalRestDirective(restDays[24], weekCount))
+        && (restDays.size() < 26 || isValidExternalRestDirective(restDays[25], weekCount));
+    }
+
     function hasValidExternalPlanRevision() {
       let data = request.resource.data;
-      return data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions'])
-        && data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
-        && data.schema in ['adaptive-training-recommender/external-plan@1', 'adaptive-training-recommender/external-plan@2']
+      // ADR-0035/0036: rules validate the bounded plan-level storage shape for v3/v4. The
+      // TypeScript import validator remains authoritative for cross-entry invariants such
+      // as id/date uniqueness and fixed-session/rest conflicts, which require viewing the
+      // two authored lists together.
+      return data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
+        && data.schema in [
+          'adaptive-training-recommender/external-plan@1',
+          'adaptive-training-recommender/external-plan@2',
+          'adaptive-training-recommender/external-plan@3',
+          'adaptive-training-recommender/external-plan@4',
+        ]
+        && (data.schema in ['adaptive-training-recommender/external-plan@3', 'adaptive-training-recommender/external-plan@4']
+              ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
+                 && data.keys().hasAll(['restDays'])
+              : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
         && data.revision is int && data.revision >= 1
         && isValidActivityDate(data.startDate)
         && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
+        && (!(data.schema in ['adaptive-training-recommender/external-plan@3', 'adaptive-training-recommender/external-plan@4'])
+          || hasValidExternalRestDirectives(data.restDays, data.weekCount))
         && data.sessions is list && data.sessions.size() >= 1 && data.sessions.size() <= 120;
     }
 
@@ -725,6 +895,36 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if hasValidPlanBlock(userId);
       allow update: if hasValidPlanBlock(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isOwner(userId);
+    }
+
+    function hasValidScheduleOverlay(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'title', 'category', 'sport', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'equipment', 'environment', 'notes', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'title', 'category', 'startDate', 'endDate', 'dailyAvailabilityMinutes', 'volumeScale', 'intensityScale', 'expectedCost', 'createdAt', 'updatedAt'])
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 200
+        && data.category in ['active_sport', 'sedentary_rest', 'high_step_walking', 'limited_availability']
+        && (!('sport' in data) || data.sport in ['skiing', 'volleyball', 'hiking', 'court_sport', 'field_sport', 'general'])
+        && isValidActivityDate(data.startDate)
+        && isValidActivityDate(data.endDate)
+        && data.startDate <= data.endDate
+        && data.dailyAvailabilityMinutes is int && data.dailyAvailabilityMinutes >= 0 && data.dailyAvailabilityMinutes <= 1440
+        && data.volumeScale is number && data.volumeScale >= 0 && data.volumeScale <= 1
+        && data.intensityScale is number && data.intensityScale >= 0 && data.intensityScale <= 1
+        && hasValidExpectedCost(data.expectedCost)
+        && (!('equipment' in data) || hasValidEquipmentList(data.equipment))
+        && (!('environment' in data) || data.environment in ['indoor', 'outdoor', 'either'])
+        && (!('notes' in data) || (data.notes is string && data.notes.size() <= 1000))
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/schedule_overlays/{overlayId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidScheduleOverlay(userId);
+      allow update: if hasValidScheduleOverlay(userId)
         && keepsOwnership(userId)
         && request.resource.data.createdAt == resource.data.createdAt;
       allow delete: if isOwner(userId);
@@ -946,23 +1146,62 @@ service cloud.firestore {
       }
     }
 
+    function hasValidOccurrenceWindowBinding(binding) {
+      return binding is map
+        && binding.keys().hasOnly(['windowId', 'bundleId', 'order', 'boundStartLocal', 'boundEndLocal', 'startInstant', 'endInstant'])
+        && binding.keys().hasAll(['windowId', 'bundleId', 'order', 'boundStartLocal', 'boundEndLocal', 'startInstant', 'endInstant'])
+        && binding.windowId is string && binding.windowId.size() > 0 && binding.windowId.size() <= 128
+        && binding.bundleId is string && binding.bundleId.size() > 0 && binding.bundleId.size() <= 128
+        && binding.order is int && binding.order >= 0
+        && binding.boundStartLocal is string && binding.boundStartLocal.size() > 0
+        && binding.boundEndLocal is string && binding.boundEndLocal.size() > 0
+        && binding.startInstant is string && binding.startInstant.size() > 0
+        && binding.endInstant is string && binding.endInstant.size() > 0;
+    }
+
+    // H4 (#434) PR 3 / ADR-0036 D-WINDOW: `windowBinding` on its own records the resolved
+    // window an intraday member sits in but enforces nothing across documents -- real
+    // exclusivity comes from `session_occurrence_windows` below, whose document id *is*
+    // `(date, windowId)`.
     function hasValidSessionOccurrence(userId, occurrenceId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'state', 'placementOrder', 'createdAt', 'updatedAt'])
-        && data.keys().hasAll(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'state', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['userId', 'occurrenceId', 'date', 'authority', 'definitionRef', 'externalPlanRef', 'windowBinding', 'state', 'placementOrder', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'occurrenceId', 'date', 'authority', 'state', 'createdAt', 'updatedAt'])
+        && (!('windowBinding' in data) || ('externalPlanRef' in data && hasValidOccurrenceWindowBinding(data.windowBinding)))
+        && (('definitionRef' in data) != ('externalPlanRef' in data))
         && data.occurrenceId == occurrenceId
         && isValidActivityDate(data.date)
-        && data.authority in ['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session']
-        && data.state in ['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed']
-        && data.definitionRef is map
-        && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
-        && data.definitionRef.keys().hasAll(['definitionId', 'revision', 'contentHash'])
-        && data.definitionRef.definitionId is string && data.definitionRef.definitionId.size() > 0
-        && data.definitionRef.revision is int && data.definitionRef.revision >= 1
-        && data.definitionRef.contentHash is string && data.definitionRef.contentHash.size() > 0
+        && data.state in ['scheduled', 'active', 'superseded', 'completed', 'abandoned', 'missed', 'skipped']
+        && (
+          ('externalPlanRef' in data && data.authority == 'external_plan')
+          || ('definitionRef' in data && data.authority in ['unplanned_log', 'schedule', 'replace_recommendation', 'additional_session'])
+        )
+        && (!('definitionRef' in data) || (
+          data.definitionRef is map
+          && data.definitionRef.keys().hasOnly(['definitionId', 'revision', 'contentHash'])
+          && data.definitionRef.keys().hasAll(['definitionId', 'revision', 'contentHash'])
+          && data.definitionRef.definitionId is string && data.definitionRef.definitionId.size() > 0
+          && data.definitionRef.revision is int && data.definitionRef.revision >= 1
+          && data.definitionRef.contentHash is string && data.definitionRef.contentHash.size() > 0
+        ))
+        && (!('externalPlanRef' in data) || (
+          data.externalPlanRef is map
+          && data.externalPlanRef.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
+          && data.externalPlanRef.keys().hasAll(['planId', 'revision', 'sessionId', 'contentHash'])
+          && data.externalPlanRef.planId is string && data.externalPlanRef.planId.size() > 0 && data.externalPlanRef.planId.size() <= 64
+          && data.externalPlanRef.revision is int && data.externalPlanRef.revision >= 1
+          && data.externalPlanRef.sessionId is string && data.externalPlanRef.sessionId.size() > 0 && data.externalPlanRef.sessionId.size() <= 64
+          && data.externalPlanRef.contentHash is string && data.externalPlanRef.contentHash.size() > 0 && data.externalPlanRef.contentHash.size() <= 128
+        ))
         && (!('placementOrder' in data) || (data.placementOrder is int && data.placementOrder >= 0))
         && data.createdAt is string && data.updatedAt is string;
+    }
+
+    function isValidOccurrenceStateTransition(fromState, toState) {
+      return fromState == toState
+        || (fromState == 'scheduled' && toState in ['active', 'completed', 'abandoned', 'skipped', 'superseded', 'missed'])
+        || (fromState == 'active' && toState in ['completed', 'abandoned', 'superseded']);
     }
 
     match /users/{userId}/session_occurrences/{occurrenceId} {
@@ -972,8 +1211,46 @@ service cloud.firestore {
         && keepsOwnership(userId)
         && request.resource.data.date == resource.data.date
         && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.definitionRef == resource.data.definitionRef
+        && request.resource.data.authority == resource.data.authority
+        && isValidOccurrenceStateTransition(resource.data.state, request.resource.data.state)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['state', 'updatedAt']);
+      allow delete: if isOwner(userId);
+    }
+
+    // H4 (#434) PR 3 / ADR-0036 D-WINDOW: transactional exclusivity for "at most one
+    // occurrence per resolved window". Document id is deterministic from (date, windowId)
+    // (see `windowReservationId` in `sessionOccurrenceService.ts`), so a create-if-absent
+    // write inside the same transaction that creates the occurrence is what makes a
+    // duplicate binding to one window impossible -- `windowBinding` on the occurrence
+    // itself is a snapshot, not an enforcement mechanism. Released by deletion in the same
+    // transaction that supersedes/skips the occurrence holding it and binds a *different*
+    // window, or handed to a same-window successor via the constrained update below.
+    function hasValidWindowReservation(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'date', 'windowId', 'occurrenceId', 'createdAt'])
+        && data.keys().hasAll(['userId', 'date', 'windowId', 'occurrenceId', 'createdAt'])
+        && isValidActivityDate(data.date)
+        && data.windowId is string && data.windowId.size() > 0 && data.windowId.size() <= 128
+        && data.occurrenceId is string && data.occurrenceId.size() > 0 && data.occurrenceId.size() <= 128
+        && data.createdAt is string;
+    }
+
+    match /users/{userId}/session_occurrence_windows/{reservationId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidWindowReservation(userId);
+      // A re-import that keeps the same resolved window (`getOrCreateExternalPlanOccurrence`
+      // superseding a stale-revision predecessor) hands this reservation to the successor
+      // occurrence in place, rather than deleting and recreating it -- Firestore evaluates a
+      // `set()` on an existing document as `update`, so the reservation-claiming write for
+      // exactly that case needs an update rule, not just create. Everything the reservation's
+      // *identity* is keyed on (`date`, `windowId`, ownership) stays immutable; only the
+      // occurrence it points at (and the timestamp) may change.
+      allow update: if hasValidWindowReservation(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.windowId == resource.data.windowId
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['occurrenceId', 'createdAt']);
       allow delete: if isOwner(userId);
     }
 
@@ -1375,6 +1652,116 @@ service cloud.firestore {
           && string(request.resource.data.revision) == revId;
         allow update, delete: if false;
       }
+    }
+
+    function hasValidIntradayDecision(userId, decisionId) {
+      let data = request.resource.data;
+      let requiredKeys = [
+        'id', 'userId', 'date', 'asOf', 'policyVersion', 'schemaVersion',
+        'status', 'supersededDecisionId', 'occurrenceId', 'sessionId',
+        'windowId', 'bundleId', 'orderInBundle', 'predecessorExecutionId',
+        'predecessorOccurrenceId', 'reassessmentInputRevision',
+        'bundlePlacement', 'ledgerSnapshot', 'verdict'
+      ];
+      let allowedKeys = [
+        'id', 'userId', 'date', 'asOf', 'policyVersion', 'schemaVersion',
+        'status', 'supersededDecisionId', 'occurrenceId', 'sessionId',
+        'windowId', 'bundleId', 'orderInBundle', 'predecessorExecutionId',
+        'predecessorOccurrenceId', 'reassessmentInputRevision',
+        'bundlePlacement', 'ledgerSnapshot', 'verdict',
+        'postReservationLedgerRevision'
+      ];
+      return hasOwnedUserId(userId)
+        && data.keys().hasAll(requiredKeys)
+        && data.keys().hasOnly(allowedKeys)
+        && data.id == decisionId
+        && data.id is string && data.id.size() > 0 && data.id.size() <= 128
+        && data.date is string && data.date.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+        && data.asOf is string && data.asOf.size() > 0 && data.asOf.size() <= 64
+        && data.policyVersion is string && data.policyVersion.size() > 0 && data.policyVersion.size() <= 128
+        && data.schemaVersion == 1
+        && data.status in ['provisional', 'confirmed', 'superseded', 'dropped']
+        && (data.supersededDecisionId == null || (data.supersededDecisionId is string && data.supersededDecisionId.size() > 0 && data.supersededDecisionId.size() <= 128))
+        && data.occurrenceId is string && data.occurrenceId.size() > 0 && data.occurrenceId.size() <= 128
+        && data.sessionId is string && data.sessionId.size() > 0 && data.sessionId.size() <= 128
+        && data.windowId is string && data.windowId.size() > 0 && data.windowId.size() <= 128
+        && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
+        && data.orderInBundle is int && data.orderInBundle >= 0
+        && (data.predecessorExecutionId == null || (data.predecessorExecutionId is string && data.predecessorExecutionId.size() > 0 && data.predecessorExecutionId.size() <= 128))
+        && (data.predecessorOccurrenceId == null || (data.predecessorOccurrenceId is string && data.predecessorOccurrenceId.size() > 0 && data.predecessorOccurrenceId.size() <= 128))
+        && (data.predecessorExecutionId == null) == (data.predecessorOccurrenceId == null)
+        && data.reassessmentInputRevision is map
+        && data.reassessmentInputRevision.keys().hasAll(['availabilityRevision', 'completedFactsRevision', 'checkinRevision', 'ledgerRevision', 'placementRevision'])
+        && data.bundlePlacement is map
+        && data.bundlePlacement.bundleId is string && data.bundlePlacement.bundleId.size() > 0 && data.bundlePlacement.bundleId.size() <= 128
+        && data.bundlePlacement.outcome in ['placed', 'infeasible']
+        && (
+          (data.bundlePlacement.outcome == 'placed' && data.bundlePlacement.bindings is list && data.bundlePlacement.bindings.size() > 0)
+          || (data.bundlePlacement.outcome == 'infeasible' && data.bundlePlacement.reason is string && data.bundlePlacement.reason.size() > 0 && data.bundlePlacement.reason.size() <= 512)
+        )
+        && data.ledgerSnapshot is map
+        && data.ledgerSnapshot.keys().hasAll(['ceilings', 'entries'])
+        && data.ledgerSnapshot.ceilings is map
+        && data.ledgerSnapshot.entries is list
+        && data.verdict is map
+        && data.verdict.decision in ['proceed', 'scale', 'defer', 'skip', 'pending']
+        && data.verdict.reasons is list
+        && (!('postReservationLedgerRevision' in data) || (data.postReservationLedgerRevision is string && data.postReservationLedgerRevision.size() > 0 && data.postReservationLedgerRevision.size() <= 128));
+    }
+
+    match /users/{userId}/intraday_decisions/{decisionId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidIntradayDecision(userId, decisionId);
+      allow update, delete: if false;
+    }
+
+    // H4 (#434) PR 3 / ADR-0036 D-LEDGER, Phase 2 step 6a: the persisted date-level
+    // reservation aggregate. Firestore's `Transaction.get()` accepts a `DocumentReference`
+    // only -- a transaction cannot query "every occurrence for this date" -- so this one
+    // named document is the serialization authority every reserving/releasing write must
+    // update atomically; `session_occurrences` alone cannot give a claim transaction that
+    // guarantee. `reservations` is keyed by occurrenceId (an unbounded, dynamic keyspace),
+    // which the rules language cannot iterate to validate each entry's shape -- the same
+    // accepted tradeoff this schema already makes elsewhere for dynamic-keyed maps (e.g.
+    // `tissueResponses`); per-entry validation is enforced by
+    // `dailyLedgerAggregateService.ts` and its own tests, not by these rules.
+    function hasValidDailyLedgerAggregate(userId, date) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'date', 'revision', 'ceilings', 'reservations', 'generations', 'seededAt', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'date', 'revision', 'ceilings', 'reservations', 'seededAt', 'createdAt', 'updatedAt'])
+        && data.date == date
+        && isValidActivityDate(data.date)
+        && data.revision is int && data.revision >= 1
+        && data.ceilings is map
+        && data.ceilings.keys().hasOnly(['dailyMinuteCeiling', 'dailySystemicCostCeiling'])
+        && data.ceilings.keys().hasAll(['dailyMinuteCeiling', 'dailySystemicCostCeiling'])
+        && data.ceilings.dailyMinuteCeiling is number && data.ceilings.dailyMinuteCeiling >= 0
+        && data.ceilings.dailySystemicCostCeiling is number && data.ceilings.dailySystemicCostCeiling >= 0 && data.ceilings.dailySystemicCostCeiling <= 1
+        && data.reservations is map
+        && data.reservations.size() <= 50
+        // H4 (#434) PR 3 step 8, item 2a: per-sessionId recovery generation counters,
+        // keyed the same dynamic way as `reservations` -- see that field's comment on
+        // why the rules language cannot validate individual entry values here.
+        && (!('generations' in data) || (data.generations is map && data.generations.size() <= 50))
+        && data.seededAt is string && data.seededAt.size() > 0
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/daily_ledgers/{date} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidDailyLedgerAggregate(userId, date);
+      allow update: if hasValidDailyLedgerAggregate(userId, date)
+        && keepsOwnership(userId)
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.ceilings == resource.data.ceilings
+        && request.resource.data.seededAt == resource.data.seededAt
+        && request.resource.data.createdAt == resource.data.createdAt
+        // Every mutating transition bumps revision by exactly one (plan step 6a): this is
+        // the same optimistic-sequencing property that makes a concurrent claim conflict
+        // and retry rather than silently overwrite another writer's reservation change.
+        && request.resource.data.revision == resource.data.revision + 1;
+      allow delete: if false;
     }
 
     function hasKnownOutcomeMetric(metricId) {

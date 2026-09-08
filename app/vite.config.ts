@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { loadEnv } from 'vite';
 import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
@@ -16,10 +17,27 @@ const gitDirty = process.env.VITE_GIT_DIRTY !== undefined
   ? process.env.VITE_GIT_DIRTY === 'true'
   : Boolean(readGit(['status', '--porcelain']));
 
+// Vite evaluates this config before it injects .env/.env.local into process.env. The proxy
+// is a development-only concern, so load the normal development env set explicitly here;
+// shell variables still win and .env.local is included by loadEnv.
+const localProxyEnv = loadEnv('development', process.cwd(), 'VITE_');
+
 export default defineConfig({
   define: {
     'import.meta.env.VITE_GIT_SHA': JSON.stringify(gitSha),
     'import.meta.env.VITE_GIT_DIRTY': JSON.stringify(String(gitDirty)),
+  },
+  server: {
+    proxy: {
+      '/api/garmin': {
+        target: localProxyEnv.VITE_GARMIN_BACKEND_URL || 'http://localhost:8081',
+        changeOrigin: true,
+      },
+      '/api/google-health': {
+        target: localProxyEnv.VITE_GOOGLE_HEALTH_BACKEND_URL || 'http://localhost:8082',
+        changeOrigin: true,
+      },
+    },
   },
   plugins: [
     react(),
@@ -118,18 +136,9 @@ export default defineConfig({
             return 'engine-context';
           }
 
-          // ── App: core decision engine (rules + planner + optimizer) ───────
-          // rules.ts (~67 kB) + planner.ts (~74 kB) + optimizer.ts (~49 kB)
-          // + periodization.ts (~36 kB) + templates.ts (~39 kB) + supporting modules
+          // ── App: planning & schedule subsystem ────────────────────────────
           if (
-            id.includes('/engine/rules') ||
             id.includes('/engine/planner') ||
-            id.includes('/engine/optimizer') ||
-            id.includes('/engine/periodization') ||
-            id.includes('/engine/templates') ||
-            id.includes('/engine/eligibility') ||
-            id.includes('/engine/schedule') ||
-            id.includes('/engine/stimulus') ||
             id.includes('/engine/coverage') ||
             id.includes('/engine/weeklyAllocation') ||
             id.includes('/engine/weeklyDosePacking') ||
@@ -139,14 +148,29 @@ export default defineConfig({
             id.includes('/engine/planningMode') ||
             id.includes('/engine/planningOverlays') ||
             id.includes('/engine/planSchedule') ||
-            id.includes('/engine/dose') ||
             id.includes('/engine/trainingCapacity') ||
-            id.includes('/engine/injuryPolicy') ||
-            id.includes('/engine/taperPolicy') ||
             id.includes('/engine/externalSession') ||
             id.includes('/engine/externalSessionProfiles') ||
             id.includes('/engine/externalPlacement') ||
             id.includes('/engine/externalCritique')
+          ) {
+            return 'engine-planning';
+          }
+
+          // ── App: core decision engine (rules + optimizer + templates) ─────
+          // rules.ts (~67 kB) + optimizer.ts (~49 kB) + periodization.ts (~36 kB)
+          // + templates.ts (~39 kB) + supporting modules
+          if (
+            id.includes('/engine/rules') ||
+            id.includes('/engine/optimizer') ||
+            id.includes('/engine/periodization') ||
+            id.includes('/engine/templates') ||
+            id.includes('/engine/eligibility') ||
+            id.includes('/engine/schedule') ||
+            id.includes('/engine/stimulus') ||
+            id.includes('/engine/dose') ||
+            id.includes('/engine/injuryPolicy') ||
+            id.includes('/engine/taperPolicy')
           ) {
             return 'engine-core';
           }

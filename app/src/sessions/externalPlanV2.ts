@@ -25,8 +25,6 @@ import type {
     ExternalSessionGating,
     ExternalSessionScaling,
     ObjectiveKey,
-    ExternalTrainingPlan,
-    ExternalPlanSession,
 } from '../engine/models';
 import {
     validateExternalPlanEnvelope,
@@ -70,12 +68,14 @@ export function isV2Plan(plan: { schema: string }): plan is ExternalTrainingPlan
     return plan.schema === EXTERNAL_PLAN_SCHEMA_V2;
 }
 
-/** A plan or session of either schema version, for the read/scheduling paths that treat
+/** A plan or session of any schema version, for the read/scheduling paths that treat
  * `gating`/`placement`/`priority`/`objectives`/`scaling`/`isEvent` identically regardless
  * of version (M3.6) -- `engine/externalPlacement.ts`, `activeExternalPlanService.ts`, the
- * session resolver, and the import UI. */
-export type AnyExternalTrainingPlan = ExternalTrainingPlan | ExternalTrainingPlanV2;
-export type AnyExternalPlanSession = ExternalPlanSession | ExternalPlanSessionV2;
+ * session resolver, and the import UI. Re-exported (type-only, so no runtime cycle) from
+ * `externalPlanAny.ts`, which is where v3 (ADR-0035) widens the union -- kept re-exported
+ * here too so every existing `from '../sessions/externalPlanV2'` import site keeps working
+ * unchanged. */
+export type { AnyExternalTrainingPlan, AnyExternalPlanSession } from './externalPlanAny';
 
 /** Narrows a session pulled from `plan.sessions[i]` once the plan itself is known to be
  * v2 -- there is no per-session discriminant, since a v2 *plan*'s sessions are always
@@ -85,7 +85,9 @@ export function isV2Session(session: { definition?: unknown; prescription?: unkn
     return 'definition' in session && !('prescription' in session);
 }
 
-function validateExternalSessionV2(raw: any, index: number, weekCount: number, errors: ValidationError[]): void {
+/** Exported for `externalPlanV3.ts` to reuse: v3 inherits v2's `definition`-based session
+ * contract unchanged (ADR-0035). */
+export function validateExternalSessionV2(raw: any, index: number, weekCount: number, errors: ValidationError[]): void {
     const path = `sessions[${index}]`;
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
         errors.push({ field: path, message: 'Session must be an object' });

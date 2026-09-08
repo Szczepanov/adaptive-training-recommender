@@ -11,6 +11,7 @@ const ownerId = 'athlete-a';
 const otherUserId = 'athlete-b';
 const recommendationPath = `users/${ownerId}/daily_recommendations/2026-08-07`;
 const fixedActivityPath = `users/${ownerId}/fixed_activities/activity-1`;
+const scheduleWindowPath = `users/${ownerId}/schedule_windows/window-1`;
 const planBlockPath = `users/${ownerId}/plan_blocks/trip-august`;
 const trainingIntentProfilePath = `users/${ownerId}/training_intent/profile`;
 const preferencesPath = `users/${ownerId}/preferences/profile`;
@@ -36,6 +37,15 @@ function validExternalPlanRevision() {
         planId: 'autumn-block', revision: 1, title: '4-week block',
         startDate: '2026-08-17', weekCount: 4,
         sessions: [{ id: 'w1-a', title: 'Threshold', priority: 'key' }],
+    };
+}
+
+/** ADR-0035. */
+function validExternalPlanRevisionV3() {
+    return {
+        ...validExternalPlanRevision(),
+        schema: 'adaptive-training-recommender/external-plan@3',
+        restDays: [{ id: 'w1-fri-rest', week: 1, day: 'friday' }],
     };
 }
 
@@ -600,6 +610,12 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), equipment: Array.from({ length: 21 }, (_, i) => `item-${i}`) }));
     });
 
+    it('rejects a fixed activity with a non-string or oversized equipment item', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), equipment: [42] }));
+        await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), equipment: ['x'.repeat(51)] }));
+    });
+
     it('allows a fixed activity with a valid availabilityContextOverride (Phase 6.2b / D6-B)', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await expect(assertSucceeds(setDoc(doc(ownerDb, fixedActivityPath), {
@@ -627,6 +643,100 @@ emulatorDescribe('Firestore security rules', () => {
     it('rejects a fixed activity with a malformed date', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '08/12/2026' }));
+    });
+
+    // ADR-0036 D-WINDOW: the athlete's versioned schedule.
+    function validScheduleWindow() {
+        return {
+            userId: ownerId,
+            date: '2026-09-10',
+            startLocal: '06:00',
+            endLocal: '07:00',
+            revision: 1,
+            createdAt: '2026-09-01T00:00:00Z',
+            updatedAt: '2026-09-01T00:00:00Z',
+        };
+    }
+
+    it('allows an owner to create a valid schedule window', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, scheduleWindowPath), validScheduleWindow()))).resolves.toBeUndefined();
+    });
+
+    it('allows an owner update that bumps revision and preserves createdAt', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, scheduleWindowPath), {
+            ...validScheduleWindow(),
+            endLocal: '07:30',
+            revision: 2,
+            updatedAt: '2026-09-02T00:00:00Z',
+        }))).resolves.toBeUndefined();
+    });
+
+    it('rejects an update that does not bump revision', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), endLocal: '07:30' }));
+    });
+
+    it('rejects an update that changes createdAt', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), revision: 2, createdAt: '2026-09-05T00:00:00Z' }));
+    });
+
+    it('rejects a schedule window where endLocal is not strictly after startLocal', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), startLocal: '07:00', endLocal: '07:00' }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), startLocal: '22:00', endLocal: '02:00' }));
+    });
+
+    it('rejects a malformed startLocal/endLocal', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), startLocal: '6:00' }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), endLocal: '24:00' }));
+    });
+
+    it('rejects a schedule window with an unknown environment', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), environment: 'space' }));
+    });
+
+    it('rejects a schedule window with an oversized label', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), label: 'x'.repeat(101) }));
+    });
+
+    it('rejects a schedule window with a non-string or oversized equipment item', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), equipment: [42] }));
+        await assertFails(setDoc(doc(ownerDb, scheduleWindowPath), { ...validScheduleWindow(), equipment: ['x'.repeat(51)] }));
+    });
+
+    it('rejects unauthenticated schedule window access', async () => {
+        const anonDb = testEnvironment.unauthenticatedContext().firestore();
+        await assertFails(setDoc(doc(anonDb, scheduleWindowPath), validScheduleWindow()));
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
+        });
+        await assertFails(getDoc(doc(anonDb, scheduleWindowPath)));
+    });
+
+    it('rejects cross-user schedule window reads and writes', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, scheduleWindowPath)));
+        await assertFails(setDoc(doc(otherDb, scheduleWindowPath), validScheduleWindow()));
+        await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/schedule_windows/window-2`), { ...validScheduleWindow(), userId: ownerId }));
     });
 
     it('rejects a fixed activity with a YYYY-MM-DD-shaped but calendar-impossible date', async () => {
@@ -717,7 +827,7 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, externalPlanPath), { ...validExternalPlanHeader(), weekCount: 27 }));
         await assertFails(setDoc(doc(ownerDb, externalRevisionPath), {
             ...validExternalPlanRevision(),
-            schema: 'adaptive-training-recommender/external-plan@3',
+            schema: 'adaptive-training-recommender/external-plan@4',
         }));
         await assertFails(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevision(), sessions: [] }));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/autumn-block/revisions/4`), {
@@ -730,6 +840,57 @@ emulatorDescribe('Firestore security rules', () => {
         }));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/autumn-block/placement/stale`), validExternalPlacement()));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/external_plans/other-block/placement/current`), validExternalPlacement()));
+    });
+
+    it('accepts a well-formed external-plan@3 revision with restDays (ADR-0035)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, externalRevisionPath), validExternalPlanRevisionV3()));
+    });
+
+    it('accepts external-plan@3 with an empty restDays list', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevisionV3(), restDays: [] }));
+    });
+
+    it('rejects a v1/v2 revision carrying restDays -- the field is v3-only', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), {
+            ...validExternalPlanRevision(),
+            restDays: [{ id: 'w1-fri-rest', week: 1, day: 'friday' }],
+        }));
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), {
+            ...validExternalPlanRevision(),
+            schema: 'adaptive-training-recommender/external-plan@2',
+            restDays: [{ id: 'w1-fri-rest', week: 1, day: 'friday' }],
+        }));
+    });
+
+    it('rejects an external-plan@3 revision missing restDays entirely', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const { restDays: _restDays, ...withoutRestDays } = validExternalPlanRevisionV3();
+        void _restDays;
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), withoutRestDays));
+    });
+
+    it('rejects an oversized restDays list', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const restDays = Array.from({ length: 27 }, (_, i) => ({ id: `r${i}`, week: 1, day: 'friday' }));
+        await assertFails(setDoc(doc(ownerDb, externalRevisionPath), { ...validExternalPlanRevisionV3(), restDays }));
+    });
+
+    it('rejects a decision audit whose externalRest provenance is malformed (ADR-0035)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const rec = validRecommendation();
+        rec.recommendationAudit.externalRest = { planId: 'autumn-block', revision: 1, contentHash: 'a'.repeat(64), restDirectiveId: 'w1-fri-rest' /* missing date */ };
+        await assertFails(setDoc(doc(ownerDb, recommendationPath), rec));
+    });
+
+    it('accepts a decision audit carrying valid externalRest provenance', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const rec = validRecommendation();
+        rec.templateId = 'rest_01';
+        rec.recommendationAudit.externalRest = { planId: 'autumn-block', revision: 1, contentHash: 'a'.repeat(64), restDirectiveId: 'w1-fri-rest', date: '2026-08-21' };
+        await assertSucceeds(setDoc(doc(ownerDb, recommendationPath), rec));
     });
 
     it('rejects cross-user external plan access and forged ownership', async () => {
@@ -1172,6 +1333,24 @@ emulatorDescribe('Firestore security rules', () => {
         };
     }
 
+    function validExternalPlanSessionOccurrence() {
+        return {
+            userId: ownerId,
+            occurrenceId: 'occ-ext-1',
+            date: '2026-08-18',
+            authority: 'external_plan',
+            state: 'scheduled',
+            externalPlanRef: {
+                planId: 'plan-1',
+                revision: 1,
+                sessionId: 'session-1',
+                contentHash: 'hash-abc-123',
+            },
+            createdAt: '2026-08-18T10:00:00Z',
+            updatedAt: '2026-08-18T10:00:00Z',
+        };
+    }
+
     function validSessionExecution() {
         return {
             userId: ownerId,
@@ -1357,11 +1536,283 @@ emulatorDescribe('Firestore security rules', () => {
             authority: 'additional_session',
         }))).resolves.toBeUndefined();
 
+        // external_plan succeeds in Issue #434 PR 2
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionOccPath}-ext`), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-unplanned-1-ext',
+        }))).resolves.toBeUndefined();
+
         // unknown authority is rejected
         await assertFails(setDoc(doc(ownerDb, `${sessionOccPath}-unknown`), {
             ...validSessionOccurrence(),
             occurrenceId: 'occ-unplanned-1-unknown',
             authority: 'bogus_authority',
+        }));
+    });
+
+    it('allows external-plan occurrence lifecycle (scheduled -> active -> completed / skipped) and enforces mutual exclusivity of refs', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const occPath = `users/${ownerId}/session_occurrences/occ-ext-lifecycle`;
+        const baseOcc = {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-lifecycle',
+        };
+
+        // 1. Create scheduled external-plan occurrence
+        await expect(assertSucceeds(setDoc(doc(ownerDb, occPath), baseOcc))).resolves.toBeUndefined();
+
+        // 2. Transition to active
+        await expect(assertSucceeds(setDoc(doc(ownerDb, occPath), {
+            ...baseOcc,
+            state: 'active',
+            updatedAt: '2026-08-18T10:05:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 3. Transition to completed
+        await expect(assertSucceeds(setDoc(doc(ownerDb, occPath), {
+            ...baseOcc,
+            state: 'completed',
+            updatedAt: '2026-08-18T11:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 3b. Completed occurrence cannot transition back to active
+        await assertFails(setDoc(doc(ownerDb, occPath), {
+            ...baseOcc,
+            state: 'active',
+            updatedAt: '2026-08-18T11:05:00Z',
+        }));
+
+        // 4. Create another occurrence with skipped state
+        const skippedPath = `users/${ownerId}/session_occurrences/occ-ext-skipped`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, skippedPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-skipped',
+            state: 'skipped',
+        }))).resolves.toBeUndefined();
+
+        // 4b. Skipped occurrence cannot transition back to active
+        await assertFails(setDoc(doc(ownerDb, skippedPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-skipped',
+            state: 'active',
+            updatedAt: '2026-08-18T10:05:00Z',
+        }));
+
+        // 4c. Scheduled occurrence can transition directly to completed (production state before PR 3 claims)
+        const directPath = `users/${ownerId}/session_occurrences/occ-ext-direct`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, directPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-direct',
+            state: 'scheduled',
+        }))).resolves.toBeUndefined();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, directPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-direct',
+            state: 'completed',
+            updatedAt: '2026-08-18T11:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 4d. Terminal completed occurrence cannot transition back to scheduled
+        await assertFails(setDoc(doc(ownerDb, directPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-direct',
+            state: 'scheduled',
+            updatedAt: '2026-08-18T11:05:00Z',
+        }));
+
+        // 5. Rejects an occurrence with both definitionRef and externalPlanRef
+        const bothPath = `users/${ownerId}/session_occurrences/occ-ext-both`;
+        await assertFails(setDoc(doc(ownerDb, bothPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-both',
+            definitionRef: {
+                definitionId: 'def-full-body',
+                revision: 1,
+                contentHash: 'hash-abc-123',
+            },
+        }));
+
+        // 6. Rejects an occurrence with neither ref
+        const neitherPath = `users/${ownerId}/session_occurrences/occ-ext-neither`;
+        const noRef = { ...validExternalPlanSessionOccurrence(), occurrenceId: 'occ-ext-neither' };
+        delete (noRef as { externalPlanRef?: unknown }).externalPlanRef;
+        await assertFails(setDoc(doc(ownerDb, neitherPath), noRef));
+
+        // 7. Rejects externalPlanRef paired with non-external_plan authority
+        const mismatchedExtPath = `users/${ownerId}/session_occurrences/occ-ext-mismatched`;
+        await assertFails(setDoc(doc(ownerDb, mismatchedExtPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-mismatched',
+            authority: 'replace_recommendation',
+        }));
+
+        // 8. Rejects definitionRef paired with external_plan authority
+        const mismatchedDefPath = `users/${ownerId}/session_occurrences/occ-def-mismatched`;
+        await assertFails(setDoc(doc(ownerDb, mismatchedDefPath), {
+            ...validSessionOccurrence(),
+            occurrenceId: 'occ-def-mismatched',
+            authority: 'external_plan',
+        }));
+    });
+
+    it('validates windowBinding on external-plan occurrences (H4 #434 PR 3, D-WINDOW)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        function validWindowBinding() {
+            return {
+                windowId: 'window-1', bundleId: 'bundle-1', order: 0,
+                boundStartLocal: '07:00', boundEndLocal: '08:00',
+                startInstant: '2026-08-18T05:00:00Z', endInstant: '2026-08-18T06:00:00Z',
+            };
+        }
+
+        // 1. Accepts a valid windowBinding on an external-plan occurrence.
+        const boundPath = `users/${ownerId}/session_occurrences/occ-ext-bound`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, boundPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-bound',
+            windowBinding: validWindowBinding(),
+        }))).resolves.toBeUndefined();
+
+        // 2. Rejects windowBinding on a manual (non-external-plan) occurrence.
+        const manualWithWindowPath = `users/${ownerId}/session_occurrences/occ-manual-window`;
+        await assertFails(setDoc(doc(ownerDb, manualWithWindowPath), {
+            ...validSessionOccurrence(),
+            occurrenceId: 'occ-manual-window',
+            windowBinding: validWindowBinding(),
+        }));
+
+        // 3. Rejects a windowBinding missing a required field.
+        const incompletePath = `users/${ownerId}/session_occurrences/occ-ext-incomplete-window`;
+        const incompleteBinding = validWindowBinding() as Partial<ReturnType<typeof validWindowBinding>>;
+        delete incompleteBinding.order;
+        await assertFails(setDoc(doc(ownerDb, incompletePath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-incomplete-window',
+            windowBinding: incompleteBinding,
+        }));
+
+        // 4. windowBinding is immutable once set (the update rule's diff().affectedKeys()
+        // already restricts updates to ['state', 'updatedAt'], so any windowBinding change
+        // on update is rejected the same way externalPlanRef changes are).
+        await assertFails(setDoc(doc(ownerDb, boundPath), {
+            ...validExternalPlanSessionOccurrence(),
+            occurrenceId: 'occ-ext-bound',
+            windowBinding: { ...validWindowBinding(), windowId: 'window-2' },
+            updatedAt: '2026-08-18T11:00:00Z',
+        }));
+    });
+
+    it('enforces session_occurrence_windows as the D-WINDOW exclusivity mechanism (H4 #434 PR 3)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const reservationPath = `users/${ownerId}/session_occurrence_windows/win-2026-08-18-window-1`;
+
+        function validReservation() {
+            return {
+                userId: ownerId, date: '2026-08-18', windowId: 'window-1',
+                occurrenceId: 'occ-ext-1', createdAt: '2026-08-18T10:00:00Z',
+            };
+        }
+
+        // 1. Owner can create a valid reservation.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, reservationPath), validReservation())))
+            .resolves.toBeUndefined();
+
+        // 2. Rejects a shape with an extra/missing field.
+        const malformedPath = `users/${ownerId}/session_occurrence_windows/win-2026-08-18-window-2`;
+        await assertFails(setDoc(doc(ownerDb, malformedPath), { ...validReservation(), extra: 'nope' }));
+        const missingFieldPath = `users/${ownerId}/session_occurrence_windows/win-2026-08-18-window-3`;
+        const missingField: Partial<ReturnType<typeof validReservation>> = validReservation();
+        delete missingField.occurrenceId;
+        await assertFails(setDoc(doc(ownerDb, missingFieldPath), missingField));
+
+        // 3. A same-window handoff (occurrenceId repointed, date/windowId unchanged) is
+        // allowed -- this is exactly what getOrCreateExternalPlanOccurrence's re-import
+        // supersession does when the successor keeps the predecessor's resolved window:
+        // Firestore evaluates that `set()` on an existing document as `update`, so without
+        // this the whole occurrence-creation transaction would fail with permission-denied.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, reservationPath), {
+            ...validReservation(), occurrenceId: 'occ-ext-2', createdAt: '2026-08-18T11:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 4. The reservation's identity (date, windowId) stays immutable even though
+        // occurrenceId can change -- a reservation must never be silently moved to cover a
+        // different window or date.
+        await assertFails(setDoc(doc(ownerDb, reservationPath), {
+            ...validReservation(), windowId: 'window-2',
+        }));
+        await assertFails(setDoc(doc(ownerDb, reservationPath), {
+            ...validReservation(), date: '2026-08-19',
+        }));
+
+        // 5. The owner may delete their own reservation (releasing the window); a
+        // cross-user read/write/update is denied.
+        await assertFails(getDoc(doc(otherDb, reservationPath)));
+        await assertFails(deleteDoc(doc(otherDb, reservationPath)));
+        await assertFails(setDoc(doc(otherDb, reservationPath), { ...validReservation(), occurrenceId: 'occ-hijacked' }));
+        await expect(assertSucceeds(deleteDoc(doc(ownerDb, reservationPath)))).resolves.toBeUndefined();
+    });
+
+    it('enforces the daily_ledgers reservation aggregate contract (H4 #434 PR 3, D-LEDGER step 6a)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const aggregatePath = `users/${ownerId}/daily_ledgers/2026-08-18`;
+
+        function validAggregate() {
+            return {
+                userId: ownerId, date: '2026-08-18', revision: 1,
+                ceilings: { dailyMinuteCeiling: 90, dailySystemicCostCeiling: 1 },
+                reservations: { 'occ-1': { minutes: 60, systemicCost: 0.4, state: 'reserved' } },
+                seededAt: '2026-08-18T05:00:00Z',
+                createdAt: '2026-08-18T05:00:00Z', updatedAt: '2026-08-18T05:00:00Z',
+            };
+        }
+
+        // 1. Owner can seed a valid aggregate.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, aggregatePath), validAggregate())))
+            .resolves.toBeUndefined();
+
+        // 2. Cross-user read is denied.
+        await assertFails(getDoc(doc(otherDb, aggregatePath)));
+
+        // 3. A revision jump greater than 1 is rejected -- every mutating transition must
+        // bump revision by exactly one.
+        await assertFails(setDoc(doc(ownerDb, aggregatePath), {
+            ...validAggregate(), revision: 3, updatedAt: '2026-08-18T06:00:00Z',
+        }));
+
+        // 4. A legitimate +1 update (adding a reservation) succeeds.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, aggregatePath), {
+            ...validAggregate(),
+            revision: 2,
+            reservations: { ...validAggregate().reservations, 'occ-2': { minutes: 30, systemicCost: 0.2, state: 'reserved' } },
+            updatedAt: '2026-08-18T06:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 5. ceilings/seededAt/createdAt/date are immutable once seeded.
+        await assertFails(setDoc(doc(ownerDb, aggregatePath), {
+            ...validAggregate(), revision: 3, ceilings: { dailyMinuteCeiling: 999, dailySystemicCostCeiling: 1 },
+        }));
+        await assertFails(setDoc(doc(ownerDb, aggregatePath), {
+            ...validAggregate(), revision: 3, seededAt: '2026-08-18T07:00:00Z',
+        }));
+
+        // 6. Deletes are never allowed -- the aggregate is an append/mutate-only ledger.
+        await assertFails(deleteDoc(doc(ownerDb, aggregatePath)));
+
+        // 7. Rejects a malformed shape (missing a required field).
+        const malformed = validAggregate() as Partial<ReturnType<typeof validAggregate>>;
+        delete malformed.ceilings;
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_ledgers/2026-08-19`), malformed));
+
+        // 8. generations (H4 #434 PR 3 step 8, item 2a) is optional and, when present, a
+        // map -- the same dynamic-keyed tradeoff as reservations.
+        const withGenerationsPath = `users/${ownerId}/daily_ledgers/2026-08-20`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, withGenerationsPath), {
+            ...validAggregate(), date: '2026-08-20', generations: { 'session-am': 1 },
+        }))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/daily_ledgers/2026-08-21`), {
+            ...validAggregate(), date: '2026-08-21', generations: 'not-a-map',
         }));
     });
 

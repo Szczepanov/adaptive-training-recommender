@@ -1,8 +1,21 @@
 import type { DataState } from '../../engine/dataState';
-import type { DailyRecoverySnapshot, DailySubjectiveCheckin, DecisionJournalEntry } from '../../engine/models';
+import type {
+    DailyRecoverySnapshot,
+    DailySubjectiveCheckin,
+    DecisionJournalEntry,
+    PhysicalWorkDuration,
+    PhysicalWorkIntensity,
+    PhysicalWorkLoadArea,
+} from '../../engine/models';
 import { SHADOW_VERDICTS } from '../../engine/models';
 import { isValidDate } from '../../engine/validation';
 import { resolveLegacyIllnessSymptoms, validateHealthContext } from '../../engine/healthContextValidation';
+import {
+    PHYSICAL_WORK_DURATIONS,
+    PHYSICAL_WORK_INTENSITIES,
+    PHYSICAL_WORK_LOAD_AREAS,
+    PHYSICAL_WORK_NOTES_MAX_CHARS,
+} from '../../engine/validationCore';
 
 type RawDocument = Record<string, unknown>;
 
@@ -90,11 +103,64 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
         return issue(documentPath, 'invalid-checkin-field');
     }
 
+    let physicalWork: DailySubjectiveCheckin['physicalWork'] = undefined;
+    if (raw.physicalWork !== undefined && raw.physicalWork !== null) {
+        if (!isObject(raw.physicalWork) || typeof raw.physicalWork.performed !== 'boolean') {
+            return issue(documentPath, 'invalid-physical-work', 'physicalWork');
+        }
+        const pw = raw.physicalWork;
+        if (pw.performed) {
+            if (pw.duration === undefined || pw.duration === null
+                || typeof pw.duration !== 'string'
+                || !PHYSICAL_WORK_DURATIONS.includes(pw.duration as PhysicalWorkDuration)) {
+                return issue(documentPath, 'invalid-physical-work', 'physicalWork.duration');
+            }
+            if (pw.intensity === undefined || pw.intensity === null
+                || typeof pw.intensity !== 'string'
+                || !PHYSICAL_WORK_INTENSITIES.includes(pw.intensity as PhysicalWorkIntensity)) {
+                return issue(documentPath, 'invalid-physical-work', 'physicalWork.intensity');
+            }
+            if (pw.loadAreas === undefined || pw.loadAreas === null
+                || !Array.isArray(pw.loadAreas) || pw.loadAreas.length === 0
+                || pw.loadAreas.some(area => typeof area !== 'string' || !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea))) {
+                return issue(documentPath, 'invalid-physical-work', 'physicalWork.loadAreas');
+            }
+        } else {
+            if (pw.duration !== undefined && pw.duration !== null
+                && (typeof pw.duration !== 'string' || !PHYSICAL_WORK_DURATIONS.includes(pw.duration as PhysicalWorkDuration))) {
+                return issue(documentPath, 'invalid-physical-work', 'physicalWork.duration');
+            }
+            if (pw.intensity !== undefined && pw.intensity !== null
+                && (typeof pw.intensity !== 'string' || !PHYSICAL_WORK_INTENSITIES.includes(pw.intensity as PhysicalWorkIntensity))) {
+                return issue(documentPath, 'invalid-physical-work', 'physicalWork.intensity');
+            }
+            if (pw.loadAreas !== undefined && pw.loadAreas !== null) {
+                if (!Array.isArray(pw.loadAreas) || pw.loadAreas.length === 0 || pw.loadAreas.some(area => typeof area !== 'string' || !PHYSICAL_WORK_LOAD_AREAS.includes(area as PhysicalWorkLoadArea))) {
+                    return issue(documentPath, 'invalid-physical-work', 'physicalWork.loadAreas');
+                }
+            }
+        }
+        if (pw.notes !== undefined && pw.notes !== null && (typeof pw.notes !== 'string' || pw.notes.length > PHYSICAL_WORK_NOTES_MAX_CHARS)) {
+            return issue(documentPath, 'invalid-physical-work', 'physicalWork.notes');
+        }
+        physicalWork = {
+            performed: Boolean(pw.performed),
+            ...(pw.duration ? { duration: pw.duration as PhysicalWorkDuration } : {}),
+            ...(pw.intensity ? { intensity: pw.intensity as PhysicalWorkIntensity } : {}),
+            ...(Array.isArray(pw.loadAreas) && pw.loadAreas.length > 0 ? { loadAreas: Array.from(new Set(pw.loadAreas as PhysicalWorkLoadArea[])) } : {}),
+            ...(typeof pw.notes === 'string' && pw.notes.trim() ? { notes: pw.notes.trim() } : {}),
+        };
+    }
+
     const normalized: DailySubjectiveCheckin = {
         ...(raw as unknown as DailySubjectiveCheckin),
         illnessSymptoms: resolveLegacyIllnessSymptoms(raw.illnessSymptoms, healthContext),
         ...(healthContext ? { healthContext } : {}),
+        ...(physicalWork ? { physicalWork } : {}),
     };
+    if (!physicalWork) {
+        delete (normalized as { physicalWork?: unknown }).physicalWork;
+    }
     return {
         status: 'AVAILABLE',
         data: normalized,

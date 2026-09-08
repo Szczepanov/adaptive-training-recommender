@@ -18,8 +18,57 @@ permissions:
   contents: read
 
 jobs:
+  detect-changes:
+    name: Detect Changes
+    runs-on: ubuntu-latest
+    outputs:
+      code_changed: ${{ steps.detect.outputs.code_changed }}
+      docs_only: ${{ steps.detect.outputs.docs_only }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Detect changed files
+        id: detect
+        shell: bash
+        run: |
+          python3 scripts/detect_ci_changes.py "${{ github.event.pull_request.base.sha || 'origin/main' }}"
+
+  docs-hygiene:
+    name: Documentation & Security Hygiene
+    if: needs.detect-changes.outputs.docs_only == 'true'
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "0.12.2"
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Run repository hygiene pre-commit checks
+        env:
+          # Verify trailing whitespace, yaml/json syntax, and gitleaks secrets detection on doc PRs
+          SKIP: uv-lock,ruff-check,ruff-format,mypy,eslint
+        run: uv run pre-commit run --all-files --show-diff-on-failure
+
   python-tests:
     name: Python Test Suite (${{ matrix.python-version }})
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -27,6 +76,8 @@ jobs:
         python-version: ["3.14"]
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
       - name: Install uv
         uses: astral-sh/setup-uv@v7
@@ -76,8 +127,10 @@ jobs:
       - name: Python dependency audit
         run: uvx pip-audit
 
-  frontend-build:
-    name: Frontend Build & Firestore Rules
+  frontend-hygiene:
+    name: Frontend Hygiene & Static Gates
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
     runs-on: ubuntu-latest
     env:
       # Build/test-only configuration. Production configuration remains deployment-owned.
@@ -92,6 +145,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Set up Node.js
         uses: actions/setup-node@v7
@@ -100,14 +154,19 @@ jobs:
           cache: "npm"
           cache-dependency-path: app/package-lock.json
 
-      - name: Set up Java for Firestore Emulator
-        uses: actions/setup-java@v6
-        with:
-          distribution: temurin
-          java-version: "21"
-
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Node dependency audit
+        shell: bash
+        run: |
+          # Audit high/critical vulnerabilities immediately after install while the tree is pristine.
+          # Include a single retry with backoff in case the npm registry security endpoint times out.
+          npm audit --audit-level=high || {
+            echo "npm audit returned an error or registry timeout; retrying once..." >&2
+            sleep 5
+            npm audit --audit-level=high
+          }
 
       - name: Type check frontend
         run: npm run typecheck
@@ -136,6 +195,38 @@ jobs:
           fi
           node scripts/check-policy-drift.mjs "${BASE_SHA}"
 
+      - name: Build frontend bundle
+        run: npm run build:bundle
+
+  frontend-tests:
+    name: Frontend Unit Tests & Firestore Rules
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Set up Java for Firestore Emulator
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Install Node dependencies
+        run: npm ci
+
       - name: Run frontend test suite with coverage
         run: npm run test:coverage
 
@@ -149,6 +240,29 @@ jobs:
 
       - name: Run Firestore security-rule emulator suite
         run: npm run test:rules
+
+  engine-simulations:
+    name: Engine Simulations & AI Gates
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: app/package-lock.json
+
+      - name: Install Node dependencies
+        run: npm ci
 
       - name: Run simulation scenarios & aggregate bounds gate
         run: |
@@ -165,17 +279,110 @@ jobs:
         run: npm run simulate:diff
         continue-on-error: true
 
-      - name: Build frontend bundle
-        run: npm run build:bundle
-
-      - name: Node dependency audit
-        run: npm audit --audit-level=high
-
   docker-build:
-    name: Docker Image Build
+    name: Docker Build & Compose Smoke
+    if: needs.detect-changes.outputs.code_changed == 'true'
+    needs: detect-changes
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
 
-      - name: Build Docker image
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build root Garmin sync Docker image
         run: docker build -t adaptive-training-garmin-sync .
+
+      - name: Create mock service account for smoke test
+        run: |
+          python3 -c "import json, subprocess; pem = subprocess.check_output(['openssl', 'genrsa', '2048'], stderr=subprocess.DEVNULL).decode(); json.dump({'type':'service_account','project_id':'test-project','private_key_id':'mock-key','private_key':pem,'client_email':'mock@test-project.iam.gserviceaccount.com','token_uri':'https://oauth2.googleapis.com/token'}, open('firebase-service-account.json', 'w'))"
+
+      - name: Validate Docker Compose configuration
+        env:
+          VITE_FIREBASE_API_KEY: test-api-key
+          VITE_FIREBASE_AUTH_DOMAIN: test-project.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: test-project
+          VITE_FIREBASE_STORAGE_BUCKET: test-project.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: "123456789"
+          VITE_FIREBASE_APP_ID: 1:123456789:web:abcdef
+          VITE_FIREBASE_MEASUREMENT_ID: G-TEST
+        run: docker compose config
+
+      - name: Build Docker Compose services
+        env:
+          VITE_FIREBASE_API_KEY: test-api-key
+          VITE_FIREBASE_AUTH_DOMAIN: test-project.firebaseapp.com
+          VITE_FIREBASE_PROJECT_ID: test-project
+          VITE_FIREBASE_STORAGE_BUCKET: test-project.appspot.com
+          VITE_FIREBASE_MESSAGING_SENDER_ID: "123456789"
+          VITE_FIREBASE_APP_ID: 1:123456789:web:abcdef
+          VITE_FIREBASE_MEASUREMENT_ID: G-TEST
+        run: docker compose build
+
+      - name: Start services and wait for healthchecks
+        env:
+          APP_USER_ID: test-user
+          GARMIN_TOKEN_BUCKET: test-bucket
+          GCP_PROJECT_ID: test-project
+          VITE_FIREBASE_API_KEY: test-api-key
+          VITE_FIREBASE_PROJECT_ID: test-project
+        run: docker compose up -d --wait --wait-timeout 90
+
+      - name: Smoke test full-stack routing and headers
+        run: python3 scripts/docker_compose_smoke.py
+
+      - name: Display container logs on failure
+        if: failure()
+        run: docker compose logs
+
+      - name: Clean up containers
+        if: always()
+        run: docker compose down -v
+
+  ci-gate:
+    name: CI Gate
+    if: always()
+    needs:
+      - detect-changes
+      - docs-hygiene
+      - python-tests
+      - frontend-hygiene
+      - frontend-tests
+      - engine-simulations
+      - docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify overall CI result
+        shell: bash
+        run: |
+          echo "Job results:"
+          echo "  detect-changes: ${{ needs.detect-changes.result }}"
+          echo "  docs-hygiene: ${{ needs.docs-hygiene.result }}"
+          echo "  python-tests: ${{ needs.python-tests.result }}"
+          echo "  frontend-hygiene: ${{ needs.frontend-hygiene.result }}"
+          echo "  frontend-tests: ${{ needs.frontend-tests.result }}"
+          echo "  engine-simulations: ${{ needs.engine-simulations.result }}"
+          echo "  docker-build: ${{ needs.docker-build.result }}"
+
+          for result in \
+            "${{ needs.detect-changes.result }}" \
+            "${{ needs.docs-hygiene.result }}" \
+            "${{ needs.python-tests.result }}" \
+            "${{ needs.frontend-hygiene.result }}" \
+            "${{ needs.frontend-tests.result }}" \
+            "${{ needs.engine-simulations.result }}" \
+            "${{ needs.docker-build.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "A required CI job did not succeed (status: $result)." >&2
+              exit 1
+            fi
+          done
+
+          if [ "${{ needs.detect-changes.result }}" != "success" ]; then
+            echo "detect-changes job did not succeed." >&2
+            exit 1
+          fi
+
+          echo "All required CI jobs completed successfully."

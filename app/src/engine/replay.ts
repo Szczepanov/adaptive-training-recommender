@@ -1,7 +1,10 @@
-import type { DailyRecommendation, ExternalDecisionProvenance, ExternalTrainingPlan } from './models';
-import type { SessionReferenceBinding } from '../sessions/models';
+import type { DailyRecommendation, ExternalDecisionProvenance, ExternalRestDirective, ExternalRestProvenance, ExternalTrainingPlan } from './models';
+import { isExternalPlanOccurrence, isManualOccurrence, type SessionReferenceBinding } from '../sessions/models';
 import { computeContentHash } from './externalPlanHash';
+import { resolveRestDate } from './externalPlacement';
 import { externalTemplateId, isExternalTemplateId } from './externalSessionProfiles';
+import { isExternalRestOverride } from './externalRestProvenance';
+import { getCanonicalRestTemplate } from './rules';
 import { isHistoricalPolicyVersion, POLICY_VERSION } from './policy';
 import { subjectiveDriftAuditReplayErrors } from './subjectiveDriftAudit';
 import { identityDecisionProvenanceReplayErrors } from './identityProvenance';
@@ -143,7 +146,9 @@ function authoredOccurrenceDecisionErrors(recommendation: DailyRecommendation): 
  * - an `isEvent` session is a FixedActivity-style commitment, so the engine still ranks
  *   any additional recommendation while retaining the event revision/hash as an input to
  *   that decision.
- * Replay verifies the relevant selection invariant for each shape.
+ * ADR-0035 adds authored-rest provenance, which is mutually exclusive with external-session
+ * provenance. Replay rejects a malformed audit that claims both authorities rather than
+ * silently choosing one branch.
  */
 export function replayRecommendationAudit(
     recommendation: DailyRecommendation,
@@ -177,8 +182,12 @@ export function replayRecommendationAudit(
     errors.push(...sessionBindingConsistencyErrors(recommendation));
     errors.push(...sessionBindingErrors(audit, sessionEvidence));
 
-    if (audit.externalPlan) {
+    if (audit.externalPlan && audit.externalRest) {
+        errors.push('Recommendation audit cannot contain both externalPlan and externalRest provenance for the same decision.');
+    } else if (audit.externalPlan) {
         errors.push(...externalDecisionErrors(recommendation, audit.externalPlan, externalRevision));
+    } else if (audit.externalRest) {
+        errors.push(...externalRestErrors(recommendation, audit.externalRest, externalRevision));
     } else {
         if (externalRevision) {
             errors.push('A plan revision was supplied for a decision that did not come from an external plan.');
@@ -259,6 +268,69 @@ function externalDecisionErrors(
 }
 
 /**
+ * ADR-0035: mirrors `externalDecisionErrors` for an authored-rest decision. Replay fails
+ * closed if *any* of the persisted source-identity fields (`planId`, revision, content
+ * hash, rest directive id, or the resolved plan-local date) does not match the loaded
+ * immutable plan -- it must not infer rest from session absence or substitute a different
+ * directive/date from the same plan (see the ADR's persistence/audit/replay section).
+ */
+function externalRestErrors(
+    recommendation: DailyRecommendation,
+    provenance: ExternalRestProvenance,
+    externalRevision: ExternalRevisionEvidence | null,
+): string[] {
+    const errors: string[] = [];
+
+    if (!externalRevision) {
+        errors.push(`Authored-rest decision references plan ${provenance.planId} revision ${provenance.revision}, which was not supplied; it cannot be replayed without it.`);
+        return errors;
+    }
+
+    if (externalRevision.plan.planId !== provenance.planId || externalRevision.plan.revision !== provenance.revision) {
+        errors.push(`Supplied revision is ${externalRevision.plan.planId}@${externalRevision.plan.revision}, but the audit references ${provenance.planId}@${provenance.revision}.`);
+        return errors;
+    }
+
+    if (externalRevision.contentHash !== provenance.contentHash) {
+        errors.push(`Plan content hash mismatch: the audit recorded ${provenance.contentHash} but the supplied revision hashes to ${externalRevision.contentHash}. The stored revision has changed since this decision was made.`);
+        return errors;
+    }
+
+    const restDays = (externalRevision.plan as { restDays?: ExternalRestDirective[] }).restDays ?? [];
+    const directive = restDays.find(item => item.id === provenance.restDirectiveId);
+    if (!directive) {
+        errors.push(`Rest directive ${provenance.restDirectiveId} is not present in plan ${provenance.planId} revision ${provenance.revision}.`);
+        return errors;
+    }
+
+    const resolvedDate = resolveRestDate(externalRevision.plan, directive);
+    if (resolvedDate !== provenance.date) {
+        errors.push(`Rest directive ${provenance.restDirectiveId} resolves to ${resolvedDate} against the supplied plan, but the audit recorded ${provenance.date}. Replay fails closed rather than trusting the persisted date.`);
+        return errors;
+    }
+
+    // An explicit athlete override keeps the authored rest directive as load-bearing input
+    // provenance, but selection itself is the ordinary ranked planner path. Reuse that path's
+    // replay checks rather than pretending the canonical Rest template still owned selection.
+    if (isExternalRestOverride(provenance)) {
+        errors.push(...authoredOccurrenceDecisionErrors(recommendation));
+        return errors;
+    }
+
+    if (recommendation.templateId !== getCanonicalRestTemplate().id) {
+        errors.push(`Persisted template ${recommendation.templateId} does not match the canonical Rest template expected for an authored-rest decision.`);
+    }
+
+    // Default authored rest bypasses ranking entirely (rules.ts's authoredRestRecommendation
+    // never calls rankCandidates), mirroring the ordinary external-session rejection above.
+    if (recommendation.recommendationAudit!.candidateScores.length > 0) {
+        errors.push('An authored-rest decision audited ranked candidates, which that decision path must not produce.');
+    }
+
+    return errors;
+}
+
+/**
  * Convenience wrapper that hashes the supplied revision itself, so a caller cannot
  * accidentally pass the audit's own recorded hash back in and verify nothing.
  */
@@ -305,9 +377,18 @@ export async function replayRecommendationAuditAgainstSessions(
             const occurrence = await sessionOccurrenceService.getOccurrence(userId, binding.occurrenceId);
             if (occurrence.status !== 'AVAILABLE' || occurrence.data.date !== recommendation.date) continue;
             if (binding.sessionSource.kind === 'manual' && (
-                occurrence.data.definitionRef.definitionId !== binding.sessionSource.definitionId
+                !isManualOccurrence(occurrence.data)
+                || occurrence.data.definitionRef.definitionId !== binding.sessionSource.definitionId
                 || occurrence.data.definitionRef.revision !== binding.sessionSource.revision
                 || occurrence.data.definitionRef.contentHash !== binding.sessionSource.contentHash
+            )) continue;
+
+            if (binding.sessionSource.kind === 'external_plan' && (
+                !isExternalPlanOccurrence(occurrence.data)
+                || occurrence.data.externalPlanRef.planId !== binding.sessionSource.planId
+                || occurrence.data.externalPlanRef.revision !== binding.sessionSource.revision
+                || occurrence.data.externalPlanRef.sessionId !== binding.sessionSource.sessionId
+                || occurrence.data.externalPlanRef.contentHash !== binding.sessionSource.contentHash
             )) continue;
 
             const expectedAuthority = audit?.authoredOccurrence?.occurrenceId === binding.occurrenceId

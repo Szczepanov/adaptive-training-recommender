@@ -22,6 +22,7 @@ artifacts/firestore-rules-rollbacks/
 artifacts/sequence-search-comparison/
 artifacts/ai-plan-judge/
 artifacts/persona-plan-judge/
+artifacts/hybrid-persona-plan-judge/
 test-results/
 playwright-report/
 *.local

@@ -281,6 +281,97 @@ describe('external decision replay (ADR-0019 D-IMMUT)', () => {
     });
 });
 
+describe('authored rest replay (ADR-0035)', () => {
+    const PLAN_ID = 'autumn-block';
+    const DIRECTIVE_ID = 'w1-tue-rest';
+
+    function restPlanRevision(overrides: Partial<ExternalTrainingPlan> = {}): ExternalTrainingPlan & { restDays: { id: string; week: number; day: string }[] } {
+        return {
+            schema: EXTERNAL_PLAN_SCHEMA,
+            planId: PLAN_ID, revision: 1, title: '4-week block',
+            startDate: '2026-08-17', weekCount: 4,
+            sessions: [{
+                id: 'w1-threshold', title: 'Threshold 3x12', priority: 'key',
+                placement: { week: 1, preferredDay: 'monday', flexibility: 'preferred', ifMissed: 'drop' },
+                gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: [] },
+                prescription: { summary: '3x12 at threshold.' },
+            }],
+            restDays: [{ id: DIRECTIVE_ID, week: 1, day: 'tuesday' }],
+            ...overrides,
+        } as ExternalTrainingPlan & { restDays: { id: string; week: number; day: string }[] };
+    }
+
+    async function restRecommendation(plan: ExternalTrainingPlan, date = '2026-08-18'): Promise<DailyRecommendation> {
+        const { computeContentHash } = await import('./externalPlanHash');
+        const record = auditedRecommendation();
+        record.templateId = 'rest_01';
+        record.recommendationAudit!.candidateScores = [];
+        record.recommendationAudit!.externalRest = {
+            planId: PLAN_ID, revision: 1, contentHash: await computeContentHash(plan),
+            restDirectiveId: DIRECTIVE_ID, date,
+        };
+        return record;
+    }
+
+    it('replays reproducibly against the revision it names', async () => {
+        const plan = restPlanRevision();
+        expect(await replayRecommendationAuditAgainstRevision(await restRecommendation(plan), plan))
+            .toEqual({ reproducible: true, policyMatchesCurrent: true, errors: [] });
+    });
+
+    it('fails closed with a distinct hash-mismatch reason when the stored revision was edited', async () => {
+        const original = restPlanRevision();
+        const mutated = restPlanRevision({ title: 'Edited title' } as Partial<ExternalTrainingPlan>);
+
+        const result = await replayRecommendationAuditAgainstRevision(await restRecommendation(original), mutated);
+
+        expect(result.reproducible).toBe(false);
+        expect(result.errors[0]).toMatch(/content hash mismatch/i);
+    });
+
+    it('rejects a revision that no longer contains the named rest directive', async () => {
+        const plan = restPlanRevision();
+        const record = await restRecommendation(plan);
+        record.recommendationAudit!.externalRest!.restDirectiveId = 'w2-missing-rest';
+
+        expect((await replayRecommendationAuditAgainstRevision(record, plan)).errors[0])
+            .toContain('is not present in plan autumn-block revision 1');
+    });
+
+    it('fails closed when the persisted date does not match what the directive actually resolves to', async () => {
+        const plan = restPlanRevision();
+        const record = await restRecommendation(plan, '2026-08-19'); // directive actually resolves to 2026-08-18
+
+        expect((await replayRecommendationAuditAgainstRevision(record, plan)).errors[0])
+            .toContain('but the audit recorded 2026-08-19');
+    });
+
+    it('rejects a persisted template other than canonical Rest for an authored-rest decision', async () => {
+        const plan = restPlanRevision();
+        const record = await restRecommendation(plan);
+        record.templateId = 'easy_01';
+
+        expect((await replayRecommendationAuditAgainstRevision(record, plan)).errors[0])
+            .toContain('does not match the canonical Rest template');
+    });
+
+    it('refuses to call an authored-rest decision reproducible without the revision', async () => {
+        const result = replayRecommendationAudit(await restRecommendation(restPlanRevision()));
+
+        expect(result.reproducible).toBe(false);
+        expect(result.errors[0]).toContain('cannot be replayed without it');
+    });
+
+    it('rejects ranked candidates on an authored-rest decision -- rest bypasses ranking entirely', async () => {
+        const plan = restPlanRevision();
+        const record = await restRecommendation(plan);
+        record.recommendationAudit!.candidateScores = [{ templateId: 'easy_01', utilityScore: 1, excludedReasons: [] }];
+
+        expect((await replayRecommendationAuditAgainstRevision(record, plan)).errors)
+            .toContain('An authored-rest decision audited ranked candidates, which that decision path must not produce.');
+    });
+});
+
 describe('M3.2 session prescription binding replay', () => {
     const binding: SessionReferenceBinding = {
         sessionSource: { kind: 'catalog', workoutId: 'catalog-workout-1', catalogVersion: '1' },

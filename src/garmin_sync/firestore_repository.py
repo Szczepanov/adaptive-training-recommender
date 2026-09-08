@@ -1,5 +1,7 @@
+import itertools
 import logging
 import os
+from collections.abc import Iterable, Iterator
 from datetime import datetime, timezone
 from typing import Any, Mapping, cast
 
@@ -24,11 +26,12 @@ logger = logging.getLogger(__name__)
 def init_firestore_client(credentials_path: str | None = None) -> Any:
     """Initialize Firebase Admin SDK and return Firestore client."""
     if not firebase_admin._apps:
-        if credentials_path and os.path.exists(credentials_path):
+        resolved_path = credentials_path or os.getenv("FIREBASE_CREDENTIALS_PATH")
+        if resolved_path and os.path.exists(resolved_path):
             logger.info(
-                f"Initializing Firebase Admin with service account from '{credentials_path}'..."
+                f"Initializing Firebase Admin with service account from '{resolved_path}'..."
             )
-            cred = credentials.Certificate(credentials_path)
+            cred = credentials.Certificate(resolved_path)
             firebase_admin.initialize_app(cred)
         else:
             logger.info("Initializing Firebase Admin with Application Default Credentials (ADC)...")
@@ -115,6 +118,28 @@ class FirestoreRecoveryRepository:
                 f"Error reading Firestore snapshot for user {self.user_id} date {date_iso}: {e}"
             )
             return None
+
+    def get_snapshots_batch(self, date_isos: list[str]) -> dict[str, dict[str, Any]]:
+        """Fetch multiple recovery snapshots efficiently in batches."""
+        db = self._get_db()
+        refs = [self._get_doc_ref(d) for d in date_isos]
+        snapshots = {}
+
+        chunk_size = 400
+        for i in range(0, len(refs), chunk_size):
+            chunk = refs[i : i + chunk_size]
+            try:
+                for doc_snap in db.get_all(chunk):
+                    if doc_snap.exists:
+                        data = doc_snap.to_dict()
+                        if data.get("userId") == self.user_id:
+                            snapshots[doc_snap.id] = data
+            except Exception as e:
+                logger.warning(
+                    f"Error reading batch of Firestore snapshots for user {self.user_id}: {e}"
+                )
+                raise
+        return snapshots
 
     def is_fresh(
         self,
@@ -468,8 +493,9 @@ class FirestoreRecoveryRepository:
             return int(result[0][0].value)
         except Exception:
             # Firestore aggregation queries may be unavailable in older emulators/mocks --
-            # fall back to a client-side count.
-            return sum(1 for _ in query.stream())
+            # fall back to a client-side count. Use select([]) to project only document
+            # IDs, avoiding full document payload transfer.
+            return sum(1 for _ in query.select([]).stream())
 
     def save_health_observation_day_bundle(
         self,
@@ -605,6 +631,44 @@ class FirestoreRecoveryRepository:
         doc_ref.delete()
         return True
 
+    def delete_health_observation_day_bundles_batch(
+        self,
+        keys: list[tuple[str, str, str]],
+    ) -> int:
+        """Batch delete multiple day-source bundles from Firestore.
+
+        Keys should be a list of (logical_date, provider, transport) tuples.
+        Deletes are executed in batches of 500 to respect Firestore limits.
+
+        Returns the total number of deletion operations submitted to batches.
+        """
+        if not keys:
+            return 0
+
+        db = self._get_db()
+        collection_ref = (
+            db.collection("users").document(self.user_id).collection("health_observation_days")
+        )
+
+        def batched(
+            iterable: Iterable[tuple[str, str, str]], n: int
+        ) -> Iterator[list[tuple[str, str, str]]]:
+            it = iter(iterable)
+            while chunk := list(itertools.islice(it, n)):
+                yield chunk
+
+        deleted_count = 0
+        for chunk in batched(keys, 500):
+            batch = db.batch()
+            for logical_date, provider, transport in chunk:
+                doc_id = f"{logical_date}_{provider}_{transport}"
+                doc_ref = collection_ref.document(doc_id)
+                batch.delete(doc_ref)
+                deleted_count += 1
+            batch.commit()
+
+        return deleted_count
+
     def get_health_observation_bundles_in_range(
         self,
         start_date: str,
@@ -623,13 +687,27 @@ class FirestoreRecoveryRepository:
         )
 
         docs: list[dict[str, Any]] = []
-        for doc in query.stream():
-            data = doc.to_dict()
-            if provider and data.get("provider") != provider:
-                continue
-            if transport and data.get("transport") != transport:
-                continue
-            docs.append(data)
+        chunk_size = 500
+        paged_query = query.limit(chunk_size)
+
+        while True:
+            chunk_docs = list(paged_query.stream())
+            if not chunk_docs:
+                break
+
+            for doc in chunk_docs:
+                data = doc.to_dict()
+                if provider and data.get("provider") != provider:
+                    continue
+                if transport and data.get("transport") != transport:
+                    continue
+                docs.append(data)
+
+            if len(chunk_docs) < chunk_size:
+                break
+
+            last_doc = chunk_docs[-1]
+            paged_query = query.start_after(last_doc).limit(chunk_size)
 
         docs.sort(key=lambda d: d.get("logicalDate", ""))
         return docs
@@ -785,15 +863,50 @@ class FirestoreRecoveryRepository:
         events.sort(key=lambda item: (item.get("recordedAt", ""), item.get("id", "")))
         return events
 
+    def get_identity_review_events_for_assessments(
+        self, assessment_ids: list[str]
+    ) -> dict[str, list[dict[str, Any]]]:
+        if not assessment_ids:
+            return {}
+
+        reviews_by_assessment: dict[str, list[dict[str, Any]]] = {
+            assessment_id: [] for assessment_id in assessment_ids
+        }
+
+        chunk_size = 30
+        for i in range(0, len(assessment_ids), chunk_size):
+            chunk = assessment_ids[i : i + chunk_size]
+            query = self._identity_collection("health_identity_review_events").where(
+                filter=FieldFilter("assessmentId", "in", chunk)
+            )
+            events = [doc.to_dict() for doc in query.stream()]
+            for event in events:
+                recorded_at = event.get("recordedAt")
+                if isinstance(recorded_at, datetime):
+                    event["recordedAt"] = (
+                        recorded_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                    )
+                assessment_id = event.get("assessmentId")
+                if isinstance(assessment_id, str) and assessment_id in reviews_by_assessment:
+                    reviews_by_assessment[assessment_id].append(event)
+
+        for events in reviews_by_assessment.values():
+            events.sort(key=lambda item: (item.get("recordedAt", ""), item.get("id", "")))
+
+        return reviews_by_assessment
+
     def get_effective_identity_decision_projections_in_range(
         self, start_night_key: str, end_night_key: str
     ) -> dict[IdentityBundleKey, EffectiveIdentityDecisionProjection]:
         """Derive baseline-authoritative decisions from immutable persisted evidence."""
 
         assessments = self.get_identity_assessments_in_range(start_night_key, end_night_key)
-        reviews = {
-            assessment_id: self.get_identity_review_events(assessment_id)
+
+        assessment_ids = [
+            assessment_id
             for assessment in assessments
             if isinstance((assessment_id := assessment.get("id")), str)
-        }
+        ]
+
+        reviews = self.get_identity_review_events_for_assessments(assessment_ids)
         return build_effective_identity_decision_index(assessments, reviews)

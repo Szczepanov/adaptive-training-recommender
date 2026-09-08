@@ -8,7 +8,7 @@ import {
 import type { TrainingHistoryProvider } from './trainingHistory';
 import type { DailyReadiness, UserContext, EngineObjectiveInput, SubjectiveInput, TrainingSettings } from './models';
 import type { SubjectiveBaseline, SubjectiveBaselineMetric, SubjectiveMetricBaseline } from './subjectiveBaseline';
-import { mapContextFromGoalsAndTrainingSettings } from './adapters';
+import { createSubjectiveOnlyObjectiveInput, mapContextFromGoalsAndTrainingSettings } from './adapters';
 import { TEMPLATES_BY_ID } from './templates';
 
 // --- Fixtures --------------------------------------------------------------
@@ -1511,5 +1511,78 @@ describe('Phase 9.3: no production call site passes subjectiveDriftPolicy "drift
             if (valueUsage) offenders.push(file);
         }
         expect(offenders).toEqual([]);
+    });
+});
+
+describe('Subjective-Only / Wearable-Free Recommendation Support', () => {
+    const objective = createSubjectiveOnlyObjectiveInput();
+    const context = baseContext();
+
+    it('evaluates green subjective check-in as train mode with zero wearable delta strain', () => {
+        const subjective = greenSubjective();
+        const state = evaluateReadinessAndSafetyEnvelope({ subjective, objective }, context);
+
+        expect(state.mode).toBe('train');
+        expect(state.telemetry.metricStrain.acuteDeviation).toBe(0);
+        expect(state.telemetry.metricStrain.multiDayDrift).toBe(0);
+        expect(state.telemetry.metricStrain.totalMetricStrain).toBe(0);
+    });
+
+    it('evaluates severe subjective fatigue (>=8) as recover mode with subjective-only inputs', () => {
+        const subjective = neutralSubjective({ fatigue: 8 });
+        const state = evaluateReadinessAndSafetyEnvelope({ subjective, objective }, context);
+
+        expect(state.mode).toBe('recover');
+        expect(state.fatigueTriggeredRecover).toBe(true);
+    });
+
+    it('evaluates moderate soreness as modify mode with subjective-only inputs', () => {
+        const subjective = neutralSubjective({ soreness: 7 });
+        const state = evaluateReadinessAndSafetyEnvelope({ subjective, objective }, context);
+
+        expect(state.mode).toBe('modify');
+    });
+
+    it('generates a valid recommendation without mentioning Garmin baselines when wearable data is absent', () => {
+        const subjective = greenSubjective();
+        const recommendation = evaluateTraining({ subjective, objective }, context, '2026-09-03');
+
+        expect(recommendation.mode).toBe('train');
+        expect(recommendation.template).toBeDefined();
+        expect(recommendation.rationale).not.toContain('Garmin baselines');
+        expect(recommendation.rationale).toContain('morning check-in');
+        expect(recommendation.telemetry?.metricStrain.totalMetricStrain).toBe(0);
+    });
+
+    it('does not label a partial wearable snapshot as subjective-only', () => {
+        const recommendation = evaluateTraining(
+            { subjective: greenSubjective(), objective: { ...objective, sleep_score: 82 } },
+            context,
+            '2026-09-03',
+        );
+
+        expect(recommendation.rationale).toContain('Garmin baselines');
+        expect(recommendation.rationale).not.toContain('based on your morning check-in.');
+    });
+
+    // Regression: hasWearableObjectiveData previously only checked absolute values
+    // (sleep_score, rhr, hrv_last_night, ...), so a snapshot carrying only delta fields
+    // -- which do feed metricStrain and can move the mode -- was misclassified as
+    // subjective-only, and the rationale wrongly attributed the decision to the morning
+    // check-in instead of Garmin baselines.
+    it.each([
+        ['rhr_delta', { rhr_delta: 6 }],
+        ['hrv_delta', { hrv_delta: -15 }],
+        ['respiration_delta', { respiration_delta: 3 }],
+        ['sleep_score_delta_7d', { sleep_score_delta_7d: -20 }],
+    ])('does not label a delta-only wearable snapshot (%s) as subjective-only', (_label, deltaOverride) => {
+        const recommendation = evaluateTraining(
+            { subjective: greenSubjective(), objective: { ...objective, ...deltaOverride } },
+            context,
+            '2026-09-03',
+        );
+
+        expect(recommendation.rationale).toContain('Garmin baselines');
+        expect(recommendation.rationale).not.toContain('based on your morning check-in.');
     });
 });

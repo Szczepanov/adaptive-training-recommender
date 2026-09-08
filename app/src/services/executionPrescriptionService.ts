@@ -1,7 +1,7 @@
 import {
     doc,
     getDoc,
-    setDoc,
+    runTransaction,
     type Firestore,
 } from 'firebase/firestore';
 import { getDb } from '../firebase';
@@ -45,6 +45,15 @@ export class ExecutionPrescriptionService {
         return doc(this.db, 'users', userId, 'execution_prescriptions', prescriptionHash);
     }
 
+    /**
+     * Persists an execution prescription using write-once, first-commit semantics (ADR-0023).
+     *
+     * Execution prescriptions are immutable and content-addressed; Firestore security rules
+     * strictly forbid updates (`allow update, delete: if false`). If a record with the same
+     * `prescriptionHash` has already been committed, the transaction validates that the stored
+     * content hash matches and exits without modifying the existing document, preserving the
+     * first committed write (including its `createdAt` timestamp).
+     */
     async savePrescription(userId: string, prescription: ExecutionPrescription): Promise<void> {
         const computedHash = await hashExecutionPrescription(prescription);
         if (prescription.prescriptionHash !== computedHash) {
@@ -52,19 +61,21 @@ export class ExecutionPrescriptionService {
         }
 
         const ref = this.prescriptionRef(userId, prescription.prescriptionHash);
-        const existing = await getDoc(ref);
-        if (existing.exists()) {
-            const persisted = existing.data() as ExecutionPrescription;
-            const persistedHash = await hashExecutionPrescription(persisted);
-            if (persistedHash !== prescription.prescriptionHash) {
-                throw new Error(`Stored prescription ${prescription.prescriptionHash} does not match its content hash`);
+        await runTransaction(this.db, async transaction => {
+            const existing = await transaction.get(ref);
+            if (existing.exists()) {
+                const persisted = existing.data() as ExecutionPrescription;
+                const persistedHash = await hashExecutionPrescription(persisted);
+                if (persistedHash !== prescription.prescriptionHash) {
+                    throw new Error(`Stored prescription ${prescription.prescriptionHash} does not match its content hash`);
+                }
+                return;
             }
-            return;
-        }
 
-        await setDoc(ref, {
-            ...prescription,
-            userId,
+            transaction.set(ref, {
+                ...prescription,
+                userId,
+            });
         });
     }
 

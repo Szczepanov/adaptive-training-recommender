@@ -51,6 +51,48 @@ a delivery queue.
 
 ## Current plans
 
+The [cycling-primary hybrid evaluation plan](./cycling-primary-hybrid-evaluation.md) has
+delivered opt-in deterministic persona scenarios (H1), outdoor easy-cycling equipment
+specificity plus an anchor-date coverage-ordering fix (H2/H2b), an H3 investigation that
+verified existing authored-block/replacement contracts, and explicit rest-day authoring
+under [ADR-0035](../adr/0035-explicit-rest-day-authoring.md) (H3-rest, delivered). H4
+intraday windows/reassessment is accepted in
+[ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md) and **In progress**:
+D-TIME (`localInstant.ts`), D-LEDGER's pure engine (`dailyLedger.ts`), D-PLACEMENT's
+bundle-placement engine, D-REASSESS's pure `reassessDependentBundleMember`
+(`intradayReassessment.ts`, #442) and D-AUDIT's decision store (`intradayDecision.ts`,
+#443) are all delivered; #434 PR 1 bound the v4 primary session to the source-neutral
+launch path (#440), PR 2 added external-plan occurrence tracking (#445), PR 3
+Phases 1-2 (#448) added D-WINDOW's real per-window exclusivity, atomic re-import
+supersession, and D-LEDGER's persisted date-level reservation aggregate, and PR 3 Phase 3
+(#450, #451, #454) added the bundle-member adjudication loop
+(`services/intradayBundleMemberAdjudication.ts`) and its `Home.tsx` wiring -- giving
+`reassessDependentBundleMember` and the decision store their first live caller, so a
+non-primary member is now reassessed, reserved and emitted as an `additionalSessions`
+binding. It is still **not launchable**: no component renders `additionalSessions`,
+`claimOccurrenceLaunch` still has no production caller, and completing the AM session does
+not yet write the `immediate` `SessionResponse` a dependent PM member reads, so such a
+member stays `pending`. The
+[bundle-launch plan](./h4-434-pr3-bundle-second-member-launch.md) tracks #434 PR 3's
+remaining Phases 4-6 (the launch affordance and atomic claim, post-AM `SessionResponse`
+capture, and the `POLICY_VERSION` bump) as the path to a live H4 release. Beyond PR 3, H4
+also still needs ledger remainder/admission as a real ranking input in `planner.ts`, and a
+bundle's resolved placement persisted for display (blocked on `firestore.rules`' audit
+shape at Firestore's per-request rule-evaluation ceiling).
+H5 block intent and controlled progression is accepted in
+[ADR-0037](../adr/0037-block-intent-and-controlled-progression.md) and is **In progress**:
+H5a intent contracts and canonical replay (`engine/blockIntent.ts`,
+`engine/blockIntentReplay.ts`) and H5b report-only progression review
+(`engine/progressionReview.ts`) are delivered, neither wired into daily recommendation
+selection; H5c confirmed bounded revisions and cumulative `external-plan@5` are unstarted
+and independently startable. H4's same-day canonical performed-fact boundary is verified;
+H5 runtime needs validated intent mappings and linked response evidence. H5
+delivers intent authoring, report-only review, then confirmed bounded revisions. The work
+does not replace the reviewed active persona-judge baseline. The
+[implementation handoff](./cycling-primary-hybrid-implementation-handoff.md) supplies
+work orders for H2/H2b/H3/H3-rest and the H5 sequence; **its H4 work order is superseded**
+by the bundle-launch plan linked above.
+
 These implement the way forward in
 [`docs/analysis/2026-08-08-architecture-review.md`](../analysis/2026-08-08-architecture-review.md)
 §7.5. Finding IDs (`F1`, `F16`, …) refer to that document.
@@ -151,10 +193,11 @@ all-`Ready` table became unusable.
 | ES | [Direct Eight Sleep recovery ingestion](./eight-sleep-direct-recovery-ingestion.md) | **In progress (default-off)** | ES9's daily backfill keeps accumulating automatically; `compare-eight-sleep-transports`/`audit-multisource --eight-sleep-transport eight_sleep_direct` run on demand | ES10 needs continued accumulation plus a separate activation review | owned direct read-only recovery connector for Eight Sleep (ADR-0030); ES8's real-account probe ran 2026-08-28; ES9 has a full year (314 nights) of real Garmin-vs-Eight-Sleep-Direct evidence, see [analysis](../analysis/2026-08-28-garmin-eight-sleep-cross-device-agreement.md) |
 | TO | [Training occurrence reconciliation & structured strength unification](./training-occurrence-reconciliation-and-strength-session-unification.md) | **In progress** | none merged yet — [PR #324](https://github.com/Szczepanov/adaptive-training-recommender/pull/324) implements all five scoped PRs, open against `main` | activation of TO4 (history shadow diff feeding real evidence) and TO5 (FIT workout-identity in reconciliation scoring) needs reviewed shadow data per ADR-0034, same discipline as D-MPOLICY | canonical `PerformedTrainingOccurrence` distinct from `SessionOccurrence`'s planning authority (ADR-0034); TO1 reconciliation engine + Firestore collections are shadow-mode only, TO2's Activities read model is flag-gated off by default, TO3 adds durable performed-rest timing, TO4/TO5 are deliberately decode/shadow-only, not wired into any live recommendation or coach path |
 | SEP | [Safety evidence pack — subjective readiness, injury/pain](./2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md) | **Implemented** | none | none | P0 evidence/policy migration for the four previously-unresolved high-safety Sports Knowledge Registry families (`readiness.subjective_mode_thresholds`, `injury.tissue_response_severity`, `injury.region_restriction_mapping`, `injury.pain_envelope_mapping`); SEP-A (PR #317), SEP-B (PR #318), and SEP-C1–C4 (PR #319, #320) are all merged to `main` — clinical envelope decoupling, running-restriction contextualization, tissue-response latency, and a fail-closed clinical-escalation protocol are live; see the [SEP-B execution plan](./2026-09-01-safety-evidence-pack-injury-pain-sep-b.md) for reconciled behavior detail |
+| SKR | [Sports Knowledge Registry](./sports-knowledge-registry-follow-up.md) | **Implemented (SKR1–SKR4 complete; SKR5 planned)** | — | — | ADR-0033 versioned claim registry, persisted recommendation lineage (SKR1), engine knowledge coverage inventory (SKR2), heuristic policy migrations & catalog recovery audit (SKR3), and identity-scoped athlete-specific evidence boundary with safety monotonicity (SKR4) |
 
 
-Rows G, HRF, S, M, CT, WU, UX, OV, HA, SV, MS, PI, ES, TO, and SEP are **not phases**. They are capability/surface plans whose work items are
-prefixed `G*`, `HRF*`, `S*`, `M*`, `CT*`, `WU*`, `UX*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*`, `ES*`, `TO*`, `SEP-*` precisely so they cannot be mistaken for the `Phase 0`–`9`
+Rows G, HRF, S, M, CT, WU, UX, OV, HA, SV, MS, PI, ES, TO, SEP, and SKR are **not phases**. They are capability/surface plans whose work items are
+prefixed `G*`, `HRF*`, `S*`, `M*`, `CT*`, `WU*`, `UX*`, `OV*`, `HA*`, `SV*`, `MS*`, `PI*`, `ES*`, `TO*`, `SEP-*`, `SKR*` precisely so they cannot be mistaken for the `Phase 0`–`9`
 sequence; the `#` column carries that prefix rather than a phase number. For capability plans, an item
 with satisfied dependencies but an unmet usage trigger is **not** listed as startable. A transferred
 historical item (former M7) is likewise not listed under its old plan; only the canonical owner tracks it.

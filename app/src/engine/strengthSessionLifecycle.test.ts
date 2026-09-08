@@ -22,7 +22,7 @@ describe('computeSessionDate', () => {
 
     it('respects the winter (CET, UTC+1) offset too, not just summer CEST', () => {
         // Warsaw is always ahead of UTC (CET UTC+1 in winter, CEST UTC+2 in summer), so a
-        // UTC-split bug can only ever manifest as "local has already rolled to the next
+        // UTC-split issue can only ever manifest as "local has already rolled to the next
         // day while UTC has not" -- the case above. This asserts the winter offset is
         // applied correctly too, via Intl rather than a hardcoded +1/+2.
         expect(computeSessionDate('2026-01-01T23:30:00Z')).toBe('2026-01-02');

@@ -204,7 +204,11 @@ def test_repository_derives_effective_decision_index_from_persisted_evidence(
     monkeypatch.setattr(
         repository, "get_identity_assessments_in_range", lambda _start, _end: [assessment]
     )
-    monkeypatch.setattr(repository, "get_identity_review_events", lambda _assessment_id: [review])
+    monkeypatch.setattr(
+        repository,
+        "get_identity_review_events_for_assessments",
+        lambda _assessment_ids: {assessment["id"]: [review]},
+    )
 
     decisions = repository.get_effective_identity_decision_projections_in_range(
         "2026-08-27", "2026-08-27"
