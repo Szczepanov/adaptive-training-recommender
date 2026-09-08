@@ -1,12 +1,23 @@
 import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { SessionCompletionSheet } from './SessionCompletionSheet';
+import { SessionCompletionSheet, resolveSubmittedTissueFeedback } from './SessionCompletionSheet';
 import { COMPLETION_TISSUE_LEVEL_OPTIONS } from './sessionCompletionOptions';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
 
 describe('SessionCompletionSheet', () => {
     it('uses the canonical tissue-response vocabulary for completion feedback', () => {
         expect(COMPLETION_TISSUE_LEVEL_OPTIONS.map(option => option.value)).toEqual(['mild', 'moderate', 'severe']);
+    });
+
+    it('includes the currently selected tissue region when Finish is used before Add region', () => {
+        expect(resolveSubmittedTissueFeedback([], 'knee', 'moderate')).toEqual([
+            { region: 'knee', painDuringTraining: 'moderate', afterTrainingState: 'moderate' },
+        ]);
+    });
+
+    it('does not duplicate a tissue region that was already added', () => {
+        const existing = [{ region: 'knee' as const, painDuringTraining: 'mild' as const, afterTrainingState: 'mild' as const }];
+        expect(resolveSubmittedTissueFeedback(existing, 'knee', 'severe')).toBe(existing);
     });
 
     it('renders summary metrics correctly including duration, total sets, and completed exercises count', () => {
