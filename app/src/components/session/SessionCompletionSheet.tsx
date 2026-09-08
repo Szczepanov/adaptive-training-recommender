@@ -1,7 +1,11 @@
 import React, { useState, useMemo } from 'react';
 import type { BodyRegion, TissueResponseLevel } from '../../engine/models';
 import type { SessionStepSummary } from '../../workouts/strengthSessionEntry';
-import { COMPLETION_TISSUE_LEVEL_OPTIONS } from './sessionCompletionOptions';
+import {
+    COMPLETION_TISSUE_LEVEL_OPTIONS,
+    resolveSubmittedTissueFeedback,
+    type CompletionTissueFeedback,
+} from './sessionCompletionOptions';
 
 const COMMON_REGIONS: Array<{ id: BodyRegion; label: string }> = [
     { id: 'knee', label: 'Knee' },
@@ -25,32 +29,7 @@ export interface SessionCompletionPayload {
     /** Athlete-reported fatigue that was unexpected for this session. */
     unexpectedFatigue?: boolean;
     notes?: string;
-    tissueFeedback?: Array<{
-        region: BodyRegion;
-        painDuringTraining: TissueResponseLevel;
-        afterTrainingState?: TissueResponseLevel;
-    }>;
-}
-
-type TissueFeedback = NonNullable<SessionCompletionPayload['tissueFeedback']>;
-
-/**
- * The region/severity selectors are a pending draft until the athlete presses "Add region".
- * Finishing the session is also an explicit submit action, so it must not silently discard
- * that draft. Keep this pure so the submit-edge behavior is covered without DOM interaction.
- */
-export function resolveSubmittedTissueFeedback(
-    tissueFeedback: TissueFeedback,
-    selectedRegion: BodyRegion | '',
-    reportedPain: TissueResponseLevel,
-): TissueFeedback {
-    if (!selectedRegion || tissueFeedback.some(item => item.region === selectedRegion)) {
-        return tissueFeedback;
-    }
-    return [
-        ...tissueFeedback,
-        { region: selectedRegion, painDuringTraining: reportedPain, afterTrainingState: reportedPain },
-    ];
+    tissueFeedback?: CompletionTissueFeedback[];
 }
 
 interface SessionCompletionSheetProps {
@@ -82,7 +61,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     const [notes, setNotes] = useState('');
     const [selectedRegion, setSelectedRegion] = useState<BodyRegion | ''>('');
     const [reportedPain, setReportedPain] = useState<TissueResponseLevel>('mild');
-    const [tissueFeedback, setTissueFeedback] = useState<TissueFeedback>([]);
+    const [tissueFeedback, setTissueFeedback] = useState<CompletionTissueFeedback[]>([]);
     const [showAbandonConfirm, setShowAbandonConfirm] = useState(openAbandonConfirmation);
     const [elapsedMinutes] = useState(() => Math.max(1, Math.round((Date.now() - Date.parse(startedAt)) / 60000)));
 
