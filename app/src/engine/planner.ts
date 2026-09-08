@@ -365,7 +365,7 @@ export function applyProjectedObjectiveCredits(
         allocations.push({ objectiveId: objective.id, earnedCredit: allocated });
         const nextProjectedCredit = projectedCredit + allocated;
         return {
-            ...objective,
+            ...definition,
             completedCredit,
             projectedCredit: nextProjectedCredit,
             completedExposures: projectCompatibilityExposures(
