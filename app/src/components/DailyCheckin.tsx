@@ -124,6 +124,7 @@ const SCALES: ScaleConfig[] = [
 
 export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: DailyCheckinProps) {
   const [checkin, setCheckin] = useState<Partial<DailySubjectiveCheckin> | null>(null);
+  const [persistedCheckin, setPersistedCheckin] = useState<DailySubjectiveCheckin | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -143,6 +144,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       setLoading(true);
       setError(null);
       setAvailabilityDefault(null);
+      setPersistedCheckin(null);
       const today = getLocalDateString();
 
       try {
@@ -216,6 +218,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
         setPendingFollowups(needed);
 
         if (existing) {
+          setPersistedCheckin(existing);
           setCheckin(existing);
         } else {
           const defaultTimeAvailable = resolvedAvailabilityDefault
@@ -415,10 +418,20 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
       painOrInjury: level === 'severe' ? true : checkin.painOrInjury,
     };
     setCheckin(updatedCheckin);
-    setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
-    if (checkin.userId && checkin.date) {
-      await checkinService.upsertTodayCheckin(checkin.userId, updatedCheckin);
+    setError(null);
+
+    try {
+      if (checkin.userId && checkin.date) {
+        const savedCheckin = await checkinService.upsertTodayCheckin(checkin.userId, updatedCheckin);
+        setCheckin(savedCheckin);
+        setPersistedCheckin(savedCheckin);
+      }
+      setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
+    } catch (err: unknown) {
+      setError(`Couldn't save follow-up: ${getErrorMessage(err)}`);
+      return;
     }
+
     // M5.2: one session-level SessionResponse per session for the next_morning window --
     // several regions of the same session must not create duplicates, so an existing one
     // is checked for first. The tissue value itself is never written here or duplicated
@@ -475,6 +488,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
 
       const result = await checkinService.upsertTodayCheckin(userId, checkinToSave);
       setCheckin(result);
+      setPersistedCheckin(result);
       if (onCheckinSaved) await onCheckinSaved();
       onNavigate('home');
     } catch (err: unknown) {
@@ -508,11 +522,11 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     () => BODY_REGIONS.filter(region => !checkin?.tissueResponses?.[region]),
     [checkin?.tissueResponses],
   );
-  // Header stepper state is derived read-only from the daily document plus the
-  // outstanding follow-up count, so Skip/Back reads as leaving known pending steps.
+  // Header state is anchored to the last successful persistence result, not the live form
+  // draft. This is what makes "done" mean saved while the user is still editing.
   const checkinSteps = useMemo(
-    () => deriveCheckinSteps(checkin, pendingFollowups.length),
-    [checkin, pendingFollowups.length],
+    () => deriveCheckinSteps(persistedCheckin, pendingFollowups.length),
+    [persistedCheckin, pendingFollowups.length],
   );
 
   if (loading) {
