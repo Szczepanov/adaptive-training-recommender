@@ -17,10 +17,22 @@ on:
 permissions:
   contents: read
 
+# Cancel a superseded run when new commits land on the same PR branch -- only the latest
+# commit's result matters for merge, and letting a stale run finish just burns runner minutes
+# behind the new one. Scoped to pull_request only: a direct push to main, and the
+# workflow_call this workflow serves as deploy-production.yml's release gate (inherits the
+# caller's workflow_dispatch event, never 'pull_request'), must never be cancelled by an
+# unrelated later run -- cancelling a mid-release validate run would break the production
+# release.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   detect-changes:
     name: Detect Changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       code_changed: ${{ steps.detect.outputs.code_changed }}
       docs_only: ${{ steps.detect.outputs.docs_only }}
@@ -41,6 +53,7 @@ jobs:
     if: needs.detect-changes.outputs.docs_only == 'true'
     needs: detect-changes
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
         with:
@@ -70,6 +83,7 @@ jobs:
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -141,6 +155,7 @@ jobs:
     defaults:
       run:
         working-directory: app
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -206,6 +221,7 @@ jobs:
     defaults:
       run:
         working-directory: app
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7
         with:
@@ -226,6 +242,14 @@ jobs:
 
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Cache Firestore emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('app/package-lock.json') }}
+          restore-keys: |
+            firebase-emulators-${{ runner.os }}-
 
       - name: Run frontend test suite with coverage
         run: npm run test:coverage
@@ -249,6 +273,7 @@ jobs:
     defaults:
       run:
         working-directory: app
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -284,6 +309,19 @@ jobs:
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      # Shared build-time/runtime placeholders for the Docker Compose smoke stack. Hoisted to
+      # job level (rather than repeated per-step) so the pre-warm build steps below pass
+      # `docker compose build` the exact same build-arg values it will use itself -- a
+      # mismatched value is a different BuildKit cache key and silently defeats the cache.
+      VITE_FIREBASE_API_KEY: test-api-key
+      VITE_FIREBASE_AUTH_DOMAIN: test-project.firebaseapp.com
+      VITE_FIREBASE_PROJECT_ID: test-project
+      VITE_FIREBASE_STORAGE_BUCKET: test-project.appspot.com
+      VITE_FIREBASE_MESSAGING_SENDER_ID: "123456789"
+      VITE_FIREBASE_APP_ID: 1:123456789:web:abcdef
+      VITE_FIREBASE_MEASUREMENT_ID: G-TEST
     steps:
       - uses: actions/checkout@v7
         with:
@@ -292,33 +330,58 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
+      # Plain `docker build` never persists layers between runs -- every CI run re-pulled
+      # python:3.14-slim and re-ran `uv sync` from a cold cache. Building through buildx with
+      # the GitHub Actions cache backend (type=gha) reuses those layers across runs and only
+      # rebuilds what actually changed (the Dockerfile already orders COPY src after
+      # `uv sync --no-install-project`, so a src/-only change still hits the cached dependency
+      # layer). `load: true` keeps prior behavior of leaving the image in the local Docker
+      # daemon, even though nothing downstream in this job currently references its tag.
+      # `mode=max` (not the default `mode=min`) is required for a multi-stage build like this
+      # one: the expensive `uv sync` layers live only in the discarded `builder` stage, and
+      # mode=min only persists cache for layers that survive into the final exported image.
+      # Distinct `scope` values keep this cache and the frontend image's below from colliding
+      # -- they'd otherwise share the same default GHA cache scope and evict each other.
       - name: Build root Garmin sync Docker image
-        run: docker build -t adaptive-training-garmin-sync .
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: adaptive-training-garmin-sync:latest
+          load: true
+          cache-from: type=gha,scope=garmin-sync
+          cache-to: type=gha,mode=max,scope=garmin-sync
+
+      # Same rationale as the image above -- app/Dockerfile's builder stage runs
+      # `npm ci --legacy-peer-deps`, previously uncached across runs. This doesn't need its
+      # own tag consumed anywhere: it exists to warm BuildKit's local cache for this exact
+      # context/Dockerfile/build-arg combination, so the "Build Docker Compose services" step
+      # below rebuilds the same frontend image as a fast cache hit instead of from scratch.
+      - name: Build frontend Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: app
+          file: app/Dockerfile
+          tags: adaptive-training-recommender-frontend:cache-warm
+          load: true
+          cache-from: type=gha,scope=frontend
+          cache-to: type=gha,mode=max,scope=frontend
+          build-args: |
+            VITE_FIREBASE_API_KEY=${{ env.VITE_FIREBASE_API_KEY }}
+            VITE_FIREBASE_AUTH_DOMAIN=${{ env.VITE_FIREBASE_AUTH_DOMAIN }}
+            VITE_FIREBASE_PROJECT_ID=${{ env.VITE_FIREBASE_PROJECT_ID }}
+            VITE_FIREBASE_STORAGE_BUCKET=${{ env.VITE_FIREBASE_STORAGE_BUCKET }}
+            VITE_FIREBASE_MESSAGING_SENDER_ID=${{ env.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+            VITE_FIREBASE_APP_ID=${{ env.VITE_FIREBASE_APP_ID }}
+            VITE_FIREBASE_MEASUREMENT_ID=${{ env.VITE_FIREBASE_MEASUREMENT_ID }}
 
       - name: Create mock service account for smoke test
         run: |
           python3 -c "import json, subprocess; pem = subprocess.check_output(['openssl', 'genrsa', '2048'], stderr=subprocess.DEVNULL).decode(); json.dump({'type':'service_account','project_id':'test-project','private_key_id':'mock-key','private_key':pem,'client_email':'mock@test-project.iam.gserviceaccount.com','token_uri':'https://oauth2.googleapis.com/token'}, open('firebase-service-account.json', 'w'))"
 
       - name: Validate Docker Compose configuration
-        env:
-          VITE_FIREBASE_API_KEY: test-api-key
-          VITE_FIREBASE_AUTH_DOMAIN: test-project.firebaseapp.com
-          VITE_FIREBASE_PROJECT_ID: test-project
-          VITE_FIREBASE_STORAGE_BUCKET: test-project.appspot.com
-          VITE_FIREBASE_MESSAGING_SENDER_ID: "123456789"
-          VITE_FIREBASE_APP_ID: 1:123456789:web:abcdef
-          VITE_FIREBASE_MEASUREMENT_ID: G-TEST
         run: docker compose config
 
       - name: Build Docker Compose services
-        env:
-          VITE_FIREBASE_API_KEY: test-api-key
-          VITE_FIREBASE_AUTH_DOMAIN: test-project.firebaseapp.com
-          VITE_FIREBASE_PROJECT_ID: test-project
-          VITE_FIREBASE_STORAGE_BUCKET: test-project.appspot.com
-          VITE_FIREBASE_MESSAGING_SENDER_ID: "123456789"
-          VITE_FIREBASE_APP_ID: 1:123456789:web:abcdef
-          VITE_FIREBASE_MEASUREMENT_ID: G-TEST
         run: docker compose build
 
       - name: Start services and wait for healthchecks
@@ -326,8 +389,6 @@ jobs:
           APP_USER_ID: test-user
           GARMIN_TOKEN_BUCKET: test-bucket
           GCP_PROJECT_ID: test-project
-          VITE_FIREBASE_API_KEY: test-api-key
-          VITE_FIREBASE_PROJECT_ID: test-project
         run: docker compose up -d --wait --wait-timeout 90
 
       - name: Smoke test full-stack routing and headers
@@ -353,6 +414,7 @@ jobs:
       - engine-simulations
       - docker-build
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Verify overall CI result
         shell: bash

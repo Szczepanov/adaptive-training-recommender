@@ -126,6 +126,9 @@ jobs:
     defaults:
       run:
         working-directory: app
+    # This workflow's own concurrency group above queues (cancel-in-progress: false) rather
+    # than cancels, so a hung step would otherwise block every later deploy indefinitely.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
         with:
@@ -166,6 +169,18 @@ jobs:
 
       - name: Install Node dependencies
         run: npm ci
+
+      # firestore:rules:deploy below runs the emulator suite before deploying. Without this,
+      # every deploy re-downloads the Firestore Emulator from scratch (see ci.yml's identical
+      # step and https://github.com/Szczepanov/adaptive-training-recommender/pull/515).
+      - name: Cache Firestore emulator
+        if: ${{ inputs.deploy_rules }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('app/package-lock.json') }}
+          restore-keys: |
+            firebase-emulators-${{ runner.os }}-
 
       # The project-ID check below only catches a Firebase project mismatch. It says nothing
       # about the other values app/src/firebase.ts reads -- a missing API key, auth domain, or
