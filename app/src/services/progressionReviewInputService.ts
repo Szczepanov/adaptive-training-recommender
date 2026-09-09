@@ -261,42 +261,51 @@ async function assemblePrerequisiteEvidence(
 ): Promise<ProgressionPrerequisiteEvidence | undefined> {
     const contract = block.progressionContract;
     const targetObjective = contract ? objectivesById(block).get(contract.targetBinding.objectiveId) : undefined;
-    if (!contract || !targetObjective) return undefined;
+    const prerequisites = targetObjective?.entryPrerequisites;
+    if (!contract || !targetObjective || !prerequisites) return undefined;
 
-    const lookbackDays = targetObjective.entryPrerequisites?.minBaselineDays ?? 90;
+    // `requiredPriorExposures` has no authored lookback window today. Retain the existing
+    // conservative 90-day search (or a longer explicitly requested baseline), but do not
+    // reinterpret that query range as proof that the underlying history is complete.
+    const lookbackDays = Math.max(prerequisites.minBaselineDays ?? 0, 90);
     const lookbackStart = addDaysToLocalDateString(block.dateRange.startDate, -lookbackDays);
 
     const [priorFacts, checkins] = await Promise.all([
-        getPerformedTrainingFactsInRange(userId, lookbackStart, block.dateRange.startDate),
-        checkinService.getCheckinsInRange(userId, lookbackStart, addDaysToLocalDateString(asOfDate, 1)),
+        prerequisites.requiredPriorExposures !== undefined
+            ? getPerformedTrainingFactsInRange(userId, lookbackStart, block.dateRange.startDate)
+            : Promise.resolve(null),
+        prerequisites.prohibitedTissueSeverities?.length
+            ? checkinService.getCheckinsInRange(userId, lookbackStart, addDaysToLocalDateString(asOfDate, 1))
+            : Promise.resolve(null),
     ]);
 
-    const priorComparableExposures = priorFacts.exposures.filter(exposure => priorFacts.coverageCredits
-        .some(credit => credit.performedOccurrenceId === exposure.performedOccurrenceId
-            && credit.coverageKey === targetObjective.coverageKey
-            && credit.creditKind !== 'none')).length;
+    const evidence: ProgressionPrerequisiteEvidence = {};
 
-    const earliestExposureDate = priorFacts.exposures.reduce<string | undefined>(
-        (earliest, exposure) => (!earliest || exposure.localDate < earliest ? exposure.localDate : earliest),
-        undefined,
-    );
-    const baselineDays = earliestExposureDate
-        ? Math.max(0, calendarDayDiff(earliestExposureDate, block.dateRange.startDate))
-        : 0;
+    if (priorFacts) {
+        evidence.priorComparableExposures = priorFacts.exposures.filter(exposure => priorFacts.coverageCredits
+            .some(credit => credit.performedOccurrenceId === exposure.performedOccurrenceId
+                && credit.coverageKey === targetObjective.coverageKey
+                && credit.creditKind !== 'none')).length;
+    }
 
-    const observedTissueSeverities = [...new Set(
-        checkins.flatMap(checkin => Object.values(checkin.tissueResponses ?? {}))
-            .map(deriveTissueSeverity)
-            .filter((severity): severity is NonNullable<typeof severity> => severity !== null),
-    )];
+    // There is currently no authoritative "history coverage begins on X" fact. The old
+    // implementation used the earliest observed exposure as a proxy for baseline duration,
+    // which could turn one isolated old activity into proof of N days of baseline history.
+    // Leave baselineDays absent so H5b emits `required_baseline_duration_evidence_missing`
+    // until a real coverage boundary is available.
 
-    return { priorComparableExposures, baselineDays, observedTissueSeverities };
-}
+    if (checkins) {
+        const severities = [...new Set(
+            checkins.flatMap(checkin => Object.values(checkin.tissueResponses ?? {}))
+                .map(deriveTissueSeverity)
+                .filter((severity): severity is NonNullable<typeof severity> => severity !== null),
+        )];
+        // An empty query or check-ins without interpretable tissue responses are absence of
+        // evidence, not evidence that no prohibited severity occurred.
+        if (severities.length > 0) evidence.observedTissueSeverities = severities;
+    }
 
-function calendarDayDiff(fromDateInclusive: string, toDateExclusive: string): number {
-    const [fy, fm, fd] = fromDateInclusive.split('-').map(Number);
-    const [ty, tm, td] = toDateExclusive.split('-').map(Number);
-    return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000);
+    return evidence;
 }
 
 async function assembleActiveRestrictions(
