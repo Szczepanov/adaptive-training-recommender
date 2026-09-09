@@ -4,7 +4,7 @@ import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import { usabilityMetrics, type OnboardingWizardStage } from '../utils/usabilityMetrics';
 import { getLocalDateString } from '../utils/localDate';
-import { skipOnboardingForNow } from './onboarding/skipOnboarding';
+import { continueOnboardingSkipForSessionOnly, skipOnboardingForNow } from './onboarding/skipOnboarding';
 import { weeklyCommitmentFromExerciseDays } from './onboarding/weeklyCommitment';
 import './OnboardingWizard.css';
 
@@ -65,6 +65,10 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
     const [sportAccess, setSportAccess] = useState({ outdoor_bike: false, swim_access: false });
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    // #493: retain the stage where a durable Skip was attempted. If storage is blocked,
+    // completion telemetry must wait until the athlete either retries a durable Skip or
+    // explicitly chooses the session-only continuation.
+    const [blockedSkipStage, setBlockedSkipStage] = useState<OnboardingWizardStage | null>(null);
     // Mount time anchors the wizard-completion telemetry, mirroring the
     // first-view TTR clock in `usabilityMetrics`.
     const [wizardStartMs] = useState(() => (typeof performance !== 'undefined' ? performance.now() : 0));
@@ -82,10 +86,26 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
 
     const handleSkip = () => {
         if (saving) return;
-        // Skip persists dismissal only: no goal is created and training
-        // settings are left untouched. When browser storage is blocked the
-        // dismissal is session-only and the wizard may resurface on refresh.
-        skipOnboardingForNow(userId, currentWizardStage, wizardElapsedMs(), onCompleted);
+        // Skip persists dismissal only: no goal is created and training settings are left
+        // untouched. If browser storage rejects the dismissal, keep the wizard open and do
+        // not record a completed skip until the athlete explicitly chooses how to proceed.
+        const persisted = skipOnboardingForNow(
+            userId,
+            currentWizardStage,
+            wizardElapsedMs(),
+            onCompleted,
+        );
+        if (!persisted) setBlockedSkipStage(currentWizardStage);
+    };
+
+    const handleContinueSessionOnly = () => {
+        if (!blockedSkipStage) return;
+        continueOnboardingSkipForSessionOnly(
+            userId,
+            blockedSkipStage,
+            wizardElapsedMs(),
+            onCompleted,
+        );
     };
 
     const handleFinish = async () => {
@@ -170,6 +190,21 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
     return (
         <main className="onboarding-modal-backdrop" role="main" aria-label="Rapid Onboarding Setup">
             <div className="onboarding-card">
+                {blockedSkipStage && (
+                    <>
+                        <p className="form-error-msg" role="alert">
+                            Skip could not be saved — browser storage is blocked, so setup would
+                            reappear on refresh. Enable storage and skip again to dismiss
+                            permanently, or continue for this session only and re-run setup later
+                            from Coach Preferences.
+                        </p>
+                        <div className="onboarding-action-row">
+                            <button type="button" className="btn-primary" onClick={handleContinueSessionOnly}>
+                                Continue for this session
+                            </button>
+                        </div>
+                    </>
+                )}
                 {step === 1 && (
                     <div className="onboarding-step step-1">
                         <span className="onboarding-kicker">Welcome to Adaptive Training</span>
