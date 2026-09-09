@@ -1042,6 +1042,60 @@ service cloud.firestore {
       }
     }
 
+    // ADR-0037 (H5a/H5c): IntentBlock persistence. Modeled directly on external_plans above
+    // (header + immutable revisions/{revisionId} split, revision-not-newer on the header),
+    // kept deliberately shallow/structural per PR #468's rule-evaluation-budget lesson --
+    // `engine/blockIntent.ts`'s validateIntentBlock is authoritative for the deep
+    // cross-field invariants (dose envelopes, knowledge lineage, progression-contract
+    // binding, etc.); rules only need to keep the top-level shape and revision/hash
+    // identity honest, the same division of labor hasValidExternalPlanRevision already uses.
+    function hasValidIntentBlockHeader(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'blockId', 'revision', 'contentHash', 'sourcePlanId', 'sourcePlanRevision', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'blockId', 'revision', 'contentHash', 'sourcePlanId', 'sourcePlanRevision', 'createdAt', 'updatedAt'])
+        && data.blockId is string && data.blockId.size() > 0 && data.blockId.size() <= 128
+        && data.revision is int && data.revision >= 1
+        && data.contentHash is string && data.contentHash.size() == 64
+        && data.sourcePlanId is string && data.sourcePlanId.size() > 0 && data.sourcePlanId.size() <= 128
+        && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    function hasValidIntentBlockRevision(blockId, revisionId) {
+      let data = request.resource.data;
+      return data.keys().hasOnly(['userId', 'blockId', 'revision', 'block', 'pinnedTrainingIntentProfile', 'sourceSchemaVersion', 'sourceRef', 'contentHash', 'createdAt'])
+        && data.keys().hasAll(['userId', 'blockId', 'revision', 'block', 'pinnedTrainingIntentProfile', 'sourceSchemaVersion', 'sourceRef', 'contentHash', 'createdAt'])
+        && data.blockId == blockId
+        && string(data.revision) == revisionId
+        && data.revision is int && data.revision >= 1
+        && data.block is map
+        && data.pinnedTrainingIntentProfile is map
+        && data.sourceSchemaVersion is string && data.sourceSchemaVersion.size() > 0
+        && (data.sourceRef == null || (data.sourceRef is string && data.sourceRef.size() <= 128))
+        && data.contentHash is string && data.contentHash.size() == 64
+        && data.createdAt is string;
+    }
+
+    match /users/{userId}/intent_blocks/{blockId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidIntentBlockHeader(userId) && request.resource.data.blockId == blockId;
+      allow update: if hasValidIntentBlockHeader(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.blockId == resource.data.blockId
+        && request.resource.data.blockId == blockId
+        && request.resource.data.revision >= resource.data.revision;
+      allow delete: if isOwner(userId);
+
+      match /revisions/{revisionId} {
+        allow read: if isOwner(userId);
+        allow create: if isOwner(userId)
+          && hasValidIntentBlockRevision(blockId, revisionId)
+          && request.resource.data.userId == userId;
+        allow update, delete: if false;
+      }
+    }
+
     match /users/{userId}/plan_blocks/{blockId} {
       allow read: if isOwner(userId);
       allow create: if hasValidPlanBlock(userId);
