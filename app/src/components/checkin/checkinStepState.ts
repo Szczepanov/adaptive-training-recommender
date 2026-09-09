@@ -42,18 +42,32 @@ const SAFETY_FLAGS = [
  * The caller deliberately supplies the persisted snapshot rather than the editable
  * form draft. This keeps the header honest: entering a value is not the same thing as
  * saving it, and Back/Skip must never make an unsaved draft look persisted.
+ *
+ * Persisted `dataQuality.missingFields` is authoritative when available. This matters for
+ * compatibility reads where the parser can normalize an omitted legacy field (notably
+ * `illnessSymptoms`) into the typed model without changing the fact that the field itself
+ * was absent from the saved document.
  */
 export function deriveCheckinSteps(
   savedCheckin: Partial<DailySubjectiveCheckin> | null,
   pendingFollowupCount: number,
 ): CheckinStepState[] {
-  const savedRecoveryCount = savedCheckin
-    ? RECOVERY_KEYS.filter(key => typeof savedCheckin[key] === 'number').length
-    : 0;
-  const savedSafetyCount = savedCheckin
-    ? SAFETY_FLAGS.filter(flag => savedCheckin[flag] !== undefined).length
-    : 0;
+  const persistedMissingFields = savedCheckin?.dataQuality?.missingFields;
+  const hasPersistedCompleteness = Array.isArray(persistedMissingFields);
+  const missing = new Set(persistedMissingFields ?? []);
+
+  const recoveryIsSaved = (key: typeof RECOVERY_KEYS[number]) =>
+    typeof savedCheckin?.[key] === 'number'
+    && (!hasPersistedCompleteness || !missing.has(key));
+  const safetyIsSaved = (flag: typeof SAFETY_FLAGS[number]) =>
+    savedCheckin?.[flag] !== undefined
+    && (!hasPersistedCompleteness || !missing.has(flag));
+
+  const savedRecoveryCount = RECOVERY_KEYS.filter(recoveryIsSaved).length;
+  const savedSafetyCount = SAFETY_FLAGS.filter(safetyIsSaved).length;
   const savedTimeAvailable = savedCheckin?.availability?.timeAvailableMin ?? null;
+  const availabilityIsSaved = savedTimeAvailable !== null
+    && (!hasPersistedCompleteness || !missing.has('timeAvailableMin'));
 
   return [
     {
@@ -80,8 +94,8 @@ export function deriveCheckinSteps(
     {
       id: 'availability',
       label: CHECKIN_STEP_LABELS.availability,
-      status: savedTimeAvailable === null ? 'pending' : 'done',
-      detail: savedTimeAvailable === null ? 'Not saved' : `${savedTimeAvailable} min saved`,
+      status: availabilityIsSaved ? 'done' : 'pending',
+      detail: availabilityIsSaved ? `${savedTimeAvailable} min saved` : 'Not saved',
     },
   ];
 }
