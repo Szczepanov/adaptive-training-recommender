@@ -48,6 +48,29 @@ function run(appDir: string) {
     return spawnSync(process.execPath, [SCRIPT, '--previous'], { cwd: appDir, encoding: 'utf8' });
 }
 
+function setupWithSettings(baselineSettings: Record<string, unknown>, currentSettings: Record<string, unknown>) {
+    const root = mkdtempSync(join(tmpdir(), 'judge-drift-settings-'));
+    roots.push(root);
+    const appDir = join(root, 'app');
+    const currentPath = join(appDir, 'artifacts/ai-plan-judge/latest/judge-summary.json');
+    const baselinePath = join(root, 'docs/analysis/plan-judge-baseline.json');
+    mkdirSync(dirname(currentPath), { recursive: true });
+    mkdirSync(dirname(baselinePath), { recursive: true });
+
+    const current = summary('same-commit');
+    (current.provenance as Record<string, unknown>).judgeSettings = currentSettings;
+    const baseline = summary('same-commit');
+    (baseline.provenance as Record<string, unknown>).judgeSettings = baselineSettings;
+
+    writeFileSync(currentPath, JSON.stringify(current));
+    writeFileSync(baselinePath, JSON.stringify(baseline));
+    return { appDir };
+}
+
+function runDirect(appDir: string, extraArgs: string[] = []) {
+    return spawnSync(process.execPath, [SCRIPT, ...extraArgs], { cwd: appDir, encoding: 'utf8' });
+}
+
 describe('judge:diff:prev provenance hardening', () => {
     it('fails closed when no previous artifact exists', () => {
         const { appDir } = setup();
@@ -128,5 +151,60 @@ describe('judge:diff:prev provenance hardening', () => {
         expect(result.status).toBe(0);
         expect(result.stdout).toContain('Baseline (4B)');
         expect(result.stdout).toContain('Diff check complete');
+    });
+});
+
+describe('judge:diff settings comparability guard', () => {
+    it('fails closed when sample count differs from the baseline', () => {
+        const { appDir } = setupWithSettings(
+            { samples: 5, packetVersion: 'v2', thinkingEnabled: false, numCtx: 65536 },
+            { samples: 1, packetVersion: 'v2', thinkingEnabled: false, numCtx: 65536 },
+        );
+        const result = runDirect(appDir);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('NOT COMPARABLE');
+        expect(result.stderr).toContain('Sample count changed: 5 -> 1');
+        expect(result.stderr).toContain('judge:e2e');
+    });
+
+    it('fails closed when packet version, thinking mode, and context window all differ', () => {
+        const { appDir } = setupWithSettings(
+            { samples: 5, packetVersion: 'v2', thinkingEnabled: false, numCtx: 65536 },
+            { samples: 5, packetVersion: 'v1', thinkingEnabled: true, numCtx: 32768 },
+        );
+        const result = runDirect(appDir);
+        expect(result.status).toBe(1);
+        expect(result.stderr).toContain('Packet version changed: v2 -> v1');
+        expect(result.stderr).toContain('Thinking mode changed: false -> true');
+        expect(result.stderr).toContain('Context window (num_ctx) changed: 65536 -> 32768');
+    });
+
+    it('does not flag a settings match', () => {
+        const { appDir } = setupWithSettings(
+            { samples: 5, packetVersion: 'v2', thinkingEnabled: false, numCtx: 65536 },
+            { samples: 5, packetVersion: 'v2', thinkingEnabled: false, numCtx: 65536 },
+        );
+        const result = runDirect(appDir);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('Diff check complete');
+        expect(result.stdout).not.toContain('Judge run settings differ');
+    });
+
+    it('downgrades to a warning under --allow-settings-change', () => {
+        const { appDir } = setupWithSettings(
+            { samples: 5, packetVersion: 'v2', thinkingEnabled: false, numCtx: 65536 },
+            { samples: 1, packetVersion: 'v1', thinkingEnabled: true, numCtx: 32768 },
+        );
+        const result = runDirect(appDir, ['--allow-settings-change']);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('Comparability Warnings');
+        expect(result.stdout).toContain('Continuing because --allow-settings-change was supplied');
+    });
+
+    it('treats missing settings on either side as a non-fatal warning, not a proven mismatch', () => {
+        const { appDir } = setup();
+        const result = runDirect(appDir);
+        expect(result.status).toBe(0);
+        expect(result.stdout).toContain('not recorded on one side');
     });
 });

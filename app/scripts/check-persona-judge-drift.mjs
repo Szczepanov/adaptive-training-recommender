@@ -9,6 +9,7 @@ const stabilityPath = resolve(outputDir, 'judge-stability.json');
 const manifestPath = resolve(outputDir, 'judge-run-manifest.json');
 
 const allowModelChange = process.argv.includes('--allow-model-change');
+const allowSettingsChange = process.argv.includes('--allow-settings-change') || allowModelChange;
 const againstIndex = process.argv.indexOf('--against');
 const againstCustomPath = againstIndex !== -1 && process.argv[againstIndex + 1] ? process.argv[againstIndex + 1] : null;
 const requiredScores = ['safety_recovery_fit', 'goal_event_fit', 'sequencing', 'periodization_taper', 'preference_capacity_fit', 'robustness', 'overall'];
@@ -98,6 +99,12 @@ const current = {
   provenance: {
     judgeModel: manifest?.judgeModel ?? 'unknown',
     judgeProvider: manifest?.judgeProvider ?? 'unknown',
+    ...(manifest ? {
+      judgeSettings: {
+        samples: manifest.samples,
+        thinkingEnabled: manifest.thinkingEnabled,
+      },
+    } : {}),
   },
   familyCount: scoreRows.length,
   caseCount: allCaseScores.length,
@@ -127,6 +134,29 @@ if (baselineModel !== currentModel) {
   const message = `Judge model changed: ${baselineModel} -> ${currentModel}. Model drift can dominate engine drift.`;
   if (allowModelChange) warnings.push(`${message} Continuing because --allow-model-change was supplied.`);
   else fatal.push(`${message} Re-run with the baseline model, or pass --allow-model-change.`);
+}
+
+// Sample count and thinking mode are as comparability-breaking as the model itself: a samples=1
+// run scored against a samples=5 baseline (e.g. `persona:local` vs the baseline's actual
+// `persona:local:stability`/`persona:e2e` settings) compares one noisy draw to a five-sample
+// median with no warning. Only compare a field when both sides recorded it.
+const baselineSettings = baseline.provenance?.judgeSettings ?? baseline.judgeSettings ?? null;
+const currentSettings = current.provenance.judgeSettings ?? null;
+if (!baselineSettings || !currentSettings) {
+  warnings.push('Judge run settings (samples/thinking mode) are not recorded on one side; comparability cannot be verified beyond the model name.');
+} else {
+  const mismatches = [];
+  if (baselineSettings.samples !== undefined && currentSettings.samples !== undefined && baselineSettings.samples !== currentSettings.samples) {
+    mismatches.push(`Sample count changed: ${baselineSettings.samples} -> ${currentSettings.samples}.`);
+  }
+  if (baselineSettings.thinkingEnabled !== undefined && currentSettings.thinkingEnabled !== undefined && baselineSettings.thinkingEnabled !== currentSettings.thinkingEnabled) {
+    mismatches.push(`Thinking mode changed: ${baselineSettings.thinkingEnabled} -> ${currentSettings.thinkingEnabled}.`);
+  }
+  if (mismatches.length > 0) {
+    const message = `Judge run settings differ from the baseline (${mismatches.join(' ')}) Score deltas are not comparable — a settings mismatch can swamp real engine drift.`;
+    if (allowSettingsChange) warnings.push(`${message} Continuing because --allow-settings-change was supplied.`);
+    else fatal.push(`${message} Re-run with \`npm run persona:e2e\` (matches the committed baseline's settings), or pass --allow-settings-change for an explicitly exploratory comparison.`);
+  }
 }
 
 if (baseline.familyCount !== current.familyCount) fatal.push(`Family count changed: ${baseline.familyCount} -> ${current.familyCount}.`);

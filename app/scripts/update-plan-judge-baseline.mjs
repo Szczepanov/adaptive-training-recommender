@@ -16,7 +16,8 @@ const corpusPath = resolve(outputDir, 'corpus.json');
 
 if (!reviewed) {
   console.error('Refusing to update the committed plan judge baseline without --reviewed.');
-  console.error('Run `npm run judge:diff`, review the semantic changes, then rerun:');
+  console.error('Run `npm run judge:e2e` (matches the committed baseline\'s settings and runs');
+  console.error('judge:diff for you), review the semantic changes, then rerun:');
   console.error('  npm run judge:update-baseline -- --reviewed');
   process.exit(1);
 }
@@ -24,7 +25,7 @@ if (!reviewed) {
 for (const path of [summaryPath, familiesPath, promptPath, responseSchemaPath, scoresPath, corpusPath]) {
   if (!existsSync(path)) {
     console.error(`Fresh plan judge artifact not found: ${path}`);
-    console.error('Run `npm run judge:local` or `npm run judge:run` first.');
+    console.error('Run `npm run judge:e2e` (or `npm run judge:run` for a cloud provider) first.');
     process.exit(1);
   }
 }

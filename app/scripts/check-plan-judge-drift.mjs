@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 const defaultBaselinePath = resolve('../docs/analysis/plan-judge-baseline.json');
 const currentPath = resolve('artifacts/ai-plan-judge/latest/judge-summary.json');
 const allowModelChange = process.argv.includes('--allow-model-change');
+const allowSettingsChange = process.argv.includes('--allow-settings-change') || allowModelChange;
 const failOnRegression = process.argv.includes('--fail-on-regression');
 const usePrevious = process.argv.includes('--previous') || process.argv.includes('--prev');
 const againstIndex = process.argv.indexOf('--against');
@@ -200,6 +201,39 @@ if (fatal.length === 0) {
     const message = `Judge model changed: ${baselineModel} -> ${currentModel}. Model drift can dominate engine drift.`;
     if (allowModelChange) warnings.push(`${message} Continuing because --allow-model-change was supplied.`);
     else fatal.push(`${message} Re-run with the baseline model, or explicitly pass --allow-model-change for an exploratory comparison.`);
+  }
+
+  // Sampling/packet/thinking/context settings are as comparability-breaking as the model itself:
+  // e.g. `npm run judge:local` (samples=1, packet v1, thinking on, ctx 32768) vs the baseline's
+  // actual `judge:e2e` settings (samples=5, --blind/v2, thinking off, ctx 65536) previously
+  // produced a spurious "16 regressions, 0 improvements" diff with no warning at all. Only compare
+  // a field when both sides actually recorded it — an unrecorded field is "unknown", not a proven
+  // mismatch, and older baseline formats may predate `judgeSettings` entirely.
+  const baselineSettings = baseline.provenance.judgeSettings ?? baseline.judgeSettings ?? null;
+  const currentSettings = current.provenance.judgeSettings ?? current.judgeSettings ?? null;
+  if (!baselineSettings || !currentSettings) {
+    warnings.push('Judge run settings (samples/packet/thinking/context) are not recorded on one side; comparability cannot be verified beyond the model name.');
+  } else {
+    const settingsFields = [
+      ['samples', 'Sample count'],
+      ['packetVersion', 'Packet version'],
+      ['thinkingEnabled', 'Thinking mode'],
+      ['numCtx', 'Context window (num_ctx)'],
+      ['rubricScale', 'Rubric scale'],
+      ['isPairwise', 'Pairwise mode'],
+    ];
+    const mismatches = [];
+    for (const [field, label] of settingsFields) {
+      const baseVal = baselineSettings[field];
+      const currVal = currentSettings[field];
+      if (baseVal === undefined || currVal === undefined) continue;
+      if (baseVal !== currVal) mismatches.push(`${label} changed: ${baseVal} -> ${currVal}.`);
+    }
+    if (mismatches.length > 0) {
+      const message = `Judge run settings differ from the baseline (${mismatches.join(' ')}) Score deltas are not comparable — a settings mismatch can swamp real engine drift.`;
+      if (allowSettingsChange) warnings.push(`${message} Continuing because --allow-settings-change was supplied.`);
+      else fatal.push(`${message} Re-run with \`npm run judge:e2e\` (matches the committed baseline's settings exactly), or pass --allow-settings-change for an explicitly exploratory comparison.`);
+    }
   }
 
   if (baseline.familyCount !== current.familyCount) fatal.push(`Family count changed: ${baseline.familyCount} -> ${current.familyCount}.`);

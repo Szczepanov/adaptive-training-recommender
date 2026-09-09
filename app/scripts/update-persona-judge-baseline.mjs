@@ -23,8 +23,8 @@ const baselinePath = resolve('../docs/analysis/persona-judge-baseline.json');
 
 if (!reviewed) {
   console.error('Refusing to update the committed persona judge baseline without --reviewed.');
-  console.error('Run `npm run persona:local:stability` or `npm run persona:gemini`, review the');
-  console.error('scores in artifacts/persona-plan-judge/latest/, then rerun:');
+  console.error('Run `npm run persona:e2e` (matches the committed baseline\'s settings and runs');
+  console.error('persona:diff for you) or `npm run persona:gemini`, review the scores, then rerun:');
   console.error('  npm run persona:update-baseline -- --reviewed');
   process.exit(1);
 }
