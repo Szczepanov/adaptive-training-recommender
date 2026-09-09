@@ -1,8 +1,27 @@
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { usabilityMetrics } from './usabilityMetrics';
+
+const STORAGE_KEY = 'adaptive_training_usability_events_v1';
+
+function installLocalStorage() {
+    const storage = new Map<string, string>();
+    const localStorageMock = {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, String(value)),
+        removeItem: (key: string) => storage.delete(key),
+        clear: () => storage.clear(),
+    };
+    vi.stubGlobal('window', { localStorage: localStorageMock });
+    return storage;
+}
 
 describe('usabilityMetrics task-based evaluation', () => {
     beforeEach(() => {
+        usabilityMetrics.clear();
+    });
+
+    afterEach(() => {
+        vi.unstubAllGlobals();
         usabilityMetrics.clear();
     });
 
@@ -58,12 +77,58 @@ describe('usabilityMetrics task-based evaluation', () => {
         expect(report.errorRate).toBe(1);
     });
 
-    it('safely handles corrupted or [null] entries in localStorage', () => {
-        if (typeof window !== 'undefined' && window.localStorage) {
-            window.localStorage.setItem('adaptive_training_usability_events_v1', JSON.stringify([null, { malformed: true }]));
-            const report = usabilityMetrics.generateSummaryReport();
-            expect(report.totalViews).toBe(0);
-            expect(report.totalActions).toBe(0);
-        }
+    it('records wizard completion and skip outcomes including the skip stage', () => {
+        const userId = 'athlete-test';
+        const date = '2026-08-26';
+
+        usabilityMetrics.recordWizardCompleted(userId, date, 'completed', 12000, 'equipment');
+        usabilityMetrics.recordWizardCompleted(userId, date, 'skipped', 3000, 'focus');
+
+        const report = usabilityMetrics.generateSummaryReport();
+        expect(report.wizardCompletions).toBe(1);
+        expect(report.wizardSkips).toBe(1);
+        expect(report.wizardSkipsByStage).toEqual({ focus: 1 });
+        // Wizard telemetry is additive: recommendation TTR reporting is unchanged.
+        expect(report.totalViews).toBe(0);
+        expect(report.totalActions).toBe(0);
+    });
+
+    it('keeps session telemetry available when localStorage reads work but writes fail', () => {
+        vi.stubGlobal('window', {
+            localStorage: {
+                getItem: () => null,
+                setItem: () => { throw new Error('storage blocked'); },
+                removeItem: () => undefined,
+            },
+        });
+
+        usabilityMetrics.recordWizardCompleted('athlete-test', '2026-08-26', 'skipped', 3000, 'welcome');
+
+        const report = usabilityMetrics.generateSummaryReport();
+        expect(report.wizardSkips).toBe(1);
+        expect(report.wizardSkipsByStage).toEqual({ welcome: 1 });
+    });
+
+    it('does not classify malformed wizard outcomes as completions', () => {
+        const storage = installLocalStorage();
+        storage.set(STORAGE_KEY, JSON.stringify([
+            null,
+            { malformed: true },
+            {
+                id: 'evt-wizard-malformed',
+                timestamp: '2026-08-26T10:00:00.000Z',
+                eventType: 'wizard_completed',
+                userId: 'athlete-test',
+                date: '2026-08-26',
+                details: { outcome: 'unknown' },
+            },
+        ]));
+
+        const report = usabilityMetrics.generateSummaryReport();
+        expect(report.totalViews).toBe(0);
+        expect(report.totalActions).toBe(0);
+        expect(report.wizardCompletions).toBe(0);
+        expect(report.wizardSkips).toBe(0);
+        expect(report.wizardSkipsByStage).toEqual({});
     });
 });

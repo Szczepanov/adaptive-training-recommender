@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { getOnboardingDoneStorageKey, isOnboardingDismissedForUser } from './onboardingStorage';
+import { clearOnboardingDismissalForUser, dismissOnboardingForUser, getOnboardingDoneStorageKey, isOnboardingDismissedForUser } from './onboardingStorage';
 
 describe('onboardingStorage user isolation', () => {
   const storage = new Map<string, string>();
@@ -70,5 +70,36 @@ describe('onboardingStorage user isolation', () => {
     // User B later completes onboarding
     window.localStorage.setItem(getOnboardingDoneStorageKey(userB), 'true');
     expect(isOnboardingDismissedForUser(userB)).toBe(true);
+  });
+
+  it('dismiss persists dismissal without requiring a goal write', () => {
+    expect(dismissOnboardingForUser('firebase-uid-skipper')).toBe(true);
+    expect(isOnboardingDismissedForUser('firebase-uid-skipper')).toBe(true);
+  });
+
+  it('dismiss returns false for null or empty user IDs', () => {
+    expect(dismissOnboardingForUser(null)).toBe(false);
+    expect(dismissOnboardingForUser('')).toBe(false);
+  });
+
+  it('clear removes a stored dismissal so the wizard can be re-launched', () => {
+    const userId = 'firebase-uid-relaunch';
+    window.localStorage.setItem(getOnboardingDoneStorageKey(userId), 'true');
+    expect(isOnboardingDismissedForUser(userId)).toBe(true);
+
+    clearOnboardingDismissalForUser(userId);
+    expect(isOnboardingDismissedForUser(userId)).toBe(false);
+  });
+
+  it('clear leaves other users dismissed', () => {
+    const userA = 'firebase-uid-stays-dismissed';
+    const userB = 'firebase-uid-relaunching';
+    window.localStorage.setItem(getOnboardingDoneStorageKey(userA), 'true');
+    window.localStorage.setItem(getOnboardingDoneStorageKey(userB), 'true');
+
+    clearOnboardingDismissalForUser(userB);
+
+    expect(isOnboardingDismissedForUser(userA)).toBe(true);
+    expect(isOnboardingDismissedForUser(userB)).toBe(false);
   });
 });

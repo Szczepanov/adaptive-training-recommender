@@ -2,6 +2,9 @@ import { useState, memo } from 'react';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
+import { usabilityMetrics, type OnboardingWizardStage } from '../utils/usabilityMetrics';
+import { getLocalDateString } from '../utils/localDate';
+import { skipOnboardingForNow } from './onboarding/skipOnboarding';
 import { weeklyCommitmentFromExerciseDays } from './onboarding/weeklyCommitment';
 import './OnboardingWizard.css';
 
@@ -62,6 +65,28 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
     const [sportAccess, setSportAccess] = useState({ outdoor_bike: false, swim_access: false });
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    // Mount time anchors the wizard-completion telemetry, mirroring the
+    // first-view TTR clock in `usabilityMetrics`.
+    const [wizardStartMs] = useState(() => (typeof performance !== 'undefined' ? performance.now() : 0));
+
+    const wizardElapsedMs = () => {
+        if (typeof performance === 'undefined') return undefined;
+        return Math.round(performance.now() - wizardStartMs);
+    };
+
+    const currentWizardStage: OnboardingWizardStage = step === 1
+        ? 'welcome'
+        : step === 2
+            ? 'focus'
+            : 'equipment';
+
+    const handleSkip = () => {
+        if (saving) return;
+        // Skip persists dismissal only: no goal is created and training
+        // settings are left untouched. When browser storage is blocked the
+        // dismissal is session-only and the wizard may resurface on refresh.
+        skipOnboardingForNow(userId, currentWizardStage, wizardElapsedMs(), onCompleted);
+    };
 
     const handleFinish = async () => {
         if (saving) return;
@@ -126,6 +151,13 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                 });
             }
 
+            usabilityMetrics.recordWizardCompleted(
+                userId,
+                getLocalDateString(),
+                'completed',
+                wizardElapsedMs(),
+                'equipment',
+            );
             onCompleted();
         } catch (err) {
             console.error('Failed to complete rapid onboarding:', err);
@@ -148,6 +180,9 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                         <div className="onboarding-action-row">
                             <button type="button" className="btn-primary btn-large" onClick={() => setStep(2)}>
                                 Let&apos;s Set Up Your Profile →
+                            </button>
+                            <button type="button" className="btn-secondary" onClick={handleSkip}>
+                                Skip for now
                             </button>
                         </div>
                     </div>
@@ -189,6 +224,7 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                         <div className="onboarding-action-row">
                             <button type="button" className="btn-secondary" onClick={() => setStep(1)}>Back</button>
                             <button type="button" className="btn-primary" onClick={() => setStep(3)}>Next: Equipment & Days →</button>
+                            <button type="button" className="btn-secondary" onClick={handleSkip}>Skip for now</button>
                         </div>
                     </div>
                 )}
@@ -240,6 +276,7 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                             <button type="button" className="btn-primary btn-large" onClick={() => void handleFinish()} disabled={saving}>
                                 {saving ? 'Building Your Plan...' : 'Generate Today’s Recommendation →'}
                             </button>
+                            <button type="button" className="btn-secondary" onClick={handleSkip} disabled={saving}>Skip for now</button>
                         </div>
                     </div>
                 )}
