@@ -15,6 +15,29 @@ const recommendation = {
     adherence: { respondedAt: null, followed: null, actualModality: null, actualDurationMin: null, skipped: false, notes: null },
 };
 
+// Mirrors validV4Recommendation() in engine/validationRecommendation.test.ts -- a real v4
+// document written since "persist recommendation knowledge lineage" always carries this
+// shape (recommendationAudit.knowledgeLineage populated).
+const recommendationV4 = {
+    ...recommendation,
+    date: '2026-08-31',
+    schemaVersion: 4,
+    recommendationAudit: {
+        policyVersion: '2026-08-skr1-persisted-knowledge-lineage-v1',
+        evaluatedAt: '2026-08-31T06:00:00Z',
+        decisionContextRevision: 'history-v1:2026-08-31:7:none:none',
+        safetyStatus: 'complete',
+        history: {
+            completedEventCount: 0,
+            unmatchedEventCount: 0,
+            sourceStatuses: { activities: 'AVAILABLE', recommendations: 'AVAILABLE', manualTraining: 'MISSING' },
+        },
+        envelope: { safetyRestrictedModalityCount: 0, planMaxAllowableTier: 'Easy' },
+        candidateScores: [],
+        knowledgeLineage: [{ claimId: 'readiness.objective_mode_thresholds', version: 1 }],
+    },
+};
+
 describe('training-history persistence parsers', () => {
     it('accepts the documented schema-less legacy Garmin record', () => {
         const parsed = parseNormalizedGarminActivity(activity, 'users/u1/activities/a-1', 'a-1');
@@ -291,8 +314,15 @@ describe('training-history persistence parsers', () => {
         expect(parseDailyRecommendation(recommendation, 'users/u1/daily_recommendations/2026-08-06')).toMatchObject({ status: 'AVAILABLE', data: { date: '2026-08-06' } });
         expect(parseDailyRecommendation({ ...recommendation, schemaVersion: 3 }, 'users/u1/daily_recommendations/2026-08-06'))
             .toMatchObject({ status: 'INVALID', issues: [{ field: 'recommendationAudit' }] });
+        // v4 (persisted knowledge lineage) is accepted through the same strict validator
+        // once it carries a valid recommendationAudit.knowledgeLineage; without one it
+        // fails schema validation, not the version gate.
         expect(parseDailyRecommendation({ ...recommendation, schemaVersion: 4 }, 'users/u1/daily_recommendations/2026-08-06'))
-            .toMatchObject({ status: 'INVALID', issues: [{ code: 'unsupported-schema-version', schemaVersion: 4 }] });
+            .toMatchObject({ status: 'INVALID', issues: [{ field: 'recommendationAudit' }, { field: 'recommendationAudit.knowledgeLineage' }] });
+        expect(parseDailyRecommendation(recommendationV4, 'users/u1/daily_recommendations/2026-08-31'))
+            .toMatchObject({ status: 'AVAILABLE', data: { date: '2026-08-31', schemaVersion: 4 } });
+        expect(parseDailyRecommendation({ ...recommendation, schemaVersion: 5 }, 'users/u1/daily_recommendations/2026-08-06'))
+            .toMatchObject({ status: 'INVALID', issues: [{ code: 'unsupported-schema-version', schemaVersion: 5 }] });
     });
 
     it('preserves a valid exact Phase 9 engine verdict without changing the historical schema version', () => {

@@ -148,12 +148,12 @@ describe('EnginePersistenceContract', () => {
             mode: 'train',
             rationale: 'rationale',
             revision: 1,
-            schemaVersion: 4,
+            schemaVersion: 5,
         };
 
         const contractResult = validatePersistedRecommendationContract(persistedDoc);
         expect(contractResult.valid).toBe(false);
-        expect(contractResult.errors).toContain('schemaVersion must be 1, 2, or 3 when present, got 4');
+        expect(contractResult.errors).toContain('schemaVersion must be 1, 2, 3, or 4 when present, got 5');
 
         const parseResult = parseDailyRecommendation(persistedDoc, 'users/user-1/daily_recommendations/2026-08-26');
         expect(parseResult.status).toBe('INVALID');
