@@ -5,11 +5,12 @@ import {
     resolveRepetitionWeightSuggestion,
     resolveRestPreviewStep,
 } from './SessionRunner';
+import { useSessionRunner } from '../../hooks/useSessionRunner';
 import { formatSessionLoad } from '../../sessions/loadDisplay';
 import type { SessionDefinition, SessionEntry, SessionStep } from '../../sessions/models';
 
 vi.mock('../../hooks/useSessionRunner', () => ({
-    useSessionRunner: () => ({
+    useSessionRunner: vi.fn(() => ({
         activeStep: null,
         activeBlock: null,
         activeBlockIndex: 0,
@@ -18,7 +19,7 @@ vi.mock('../../hooks/useSessionRunner', () => ({
         entries: [],
         execution: null,
         isRestoring: false,
-    }),
+    })),
 }));
 
 vi.mock('../../hooks/useOverloadHistory', () => ({
@@ -65,12 +66,41 @@ const definitionWithBlock = (
 });
 
 describe('SessionRunner session picker', () => {
-    it('offers a preview before starting every reviewed session', () => {
+    it('collapses creation to one New session entry instead of parallel actions (#495)', () => {
         const html = renderToStaticMarkup(<SessionRunner userId="user-1" />);
 
         expect(html).toContain('Start a Structured Session');
-        expect(html).toContain('Preview');
-        expect(html).toContain('Start Session →');
+        expect(html).toContain('New session');
+        // Fixture/template libraries stay behind the chooser, not top-level.
+        expect(html).not.toContain('Start Session →');
+        expect(html).not.toContain('Import session JSON');
+        expect(html).not.toContain('Build session');
+    });
+
+    it('keeps save-as-template out of the active-run top bar (#495)', () => {
+        const step = repetitionStep('squat', 3);
+        const definition = definitionWithBlock('sequential', [step]);
+        vi.mocked(useSessionRunner).mockReturnValueOnce({
+            activeStep: step,
+            activeBlock: definition.blocks[0],
+            activeBlockIndex: 0,
+            activeStepIndex: 0,
+            definition,
+            entries: [],
+            execution: { state: 'in_progress' },
+            isRestoring: false,
+            elapsedSeconds: 0,
+            isRestRunning: false,
+            syncStatus: 'synced',
+            canUndo: false,
+            sessionEnded: false,
+            ineligibleOptionIds: new Set<string>(),
+        } as unknown as ReturnType<typeof useSessionRunner>);
+        const html = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+
+        expect(html).toContain('⏱️');
+        expect(html).not.toContain('Save Template');
+        expect(html).not.toContain('save-template-header-btn');
     });
 });
 

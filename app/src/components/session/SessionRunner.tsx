@@ -23,6 +23,7 @@ import { ChoiceCard } from './ChoiceCard';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
+import { SCREEN_LABELS } from '../../types/navigation';
 import './SessionRunner.css';
 
 // Import positive fixtures for quick unplanned session launch
@@ -172,6 +173,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [editingSavedDefinitionId, setEditingSavedDefinitionId] = useState<string | null>(null);
     const [updatingSavedDefinitionId, setUpdatingSavedDefinitionId] = useState<string | null>(null);
     const [showArchivedDefinitions, setShowArchivedDefinitions] = useState(false);
+    // #495: session creation collapses to one "New session" entry. The chooser keeps all
+    // four sources reachable (saved template, reviewed fixture, JSON import, manual build)
+    // without presenting four parallel top-level actions. Import/build delegate to the
+    // injected App-level authoring modes; template/fixture branches render inline below.
+    type SessionCreationSource = 'template' | 'fixture';
+    const [showCreationChooser, setShowCreationChooser] = useState(false);
+    const [creationSource, setCreationSource] = useState<SessionCreationSource | null>(null);
     // M4.3: a companion is a separately executable session referenced from the one that just
     // finished (SessionDefinition.companionSessions), never an embedded block -- those already
     // render inline within the same execution. Starting one creates its own execution; it may
@@ -627,7 +635,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 {previewDefinition ? (
                     <section className="session-definition-preview-screen" aria-labelledby="session-definition-preview-title">
                         <button type="button" className="preview-back-button" onClick={() => setPreviewDefinition(null)}>
-                            ← All structured sessions
+                            ← All {SCREEN_LABELS.sessions}
                         </button>
                         <h2 id="session-definition-preview-title" className="sr-only">Session preview</h2>
                         <SessionDefinitionPreview
@@ -645,13 +653,35 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 <header className="session-runner-header">
                     <h2>🚀 Start a Structured Session</h2>
                     <p className="session-runner-subtitle">Start a reviewed session, or make one that is stored and validated before execution.</p>
-                    {(onImportSession || onBuildSession) && <div className="session-authoring-actions">
-                        {onImportSession && <button type="button" className="start-fixture-btn" onClick={onImportSession}>Import session JSON</button>}
-                        {onBuildSession && <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={() => onBuildSession()}>Build session</button>}
-                    </div>}
+                    {creationSource === null ? (
+                        showCreationChooser ? (
+                            <div className="session-authoring-actions" role="group" aria-label="New session source">
+                                <button type="button" className="start-fixture-btn" onClick={() => setCreationSource('template')}>From template</button>
+                                <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={() => setCreationSource('fixture')}>From fixture</button>
+                                {onImportSession && <button type="button" className="start-fixture-btn" onClick={onImportSession}>Import JSON</button>}
+                                {onBuildSession && <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={() => onBuildSession()}>Build manually</button>}
+                            </div>
+                        ) : (
+                            <div className="session-authoring-actions">
+                                <button type="button" className="start-fixture-btn" onClick={() => setShowCreationChooser(true)}>＋ New session</button>
+                            </div>
+                        )
+                    ) : (
+                        <div className="session-authoring-actions">
+                            <button type="button" className="preview-back-button" onClick={() => { setCreationSource(null); setShowCreationChooser(true); }}>
+                                ← New session
+                            </button>
+                        </div>
+                    )}
                 </header>
                 {savedDefinitionsError && <p className="session-runner-error" role="alert">{savedDefinitionsError}</p>}
-                {activeSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="saved-session-library-title">
+                {creationSource === 'template' && activeSavedDefinitions.length === 0 && archivedSavedDefinitions.length === 0 && !savedDefinitionsError && (
+                    <p className="session-runner-subtitle">
+                        No saved templates yet — start from a reviewed fixture, or
+                        {(onImportSession || onBuildSession) ? ' import JSON or build one manually.' : ' import or build one from the Sessions screen.'}
+                    </p>
+                )}
+                {creationSource === 'template' && activeSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="saved-session-library-title">
                     <h3 id="saved-session-library-title">Your custom templates</h3>
                     <div className="fixture-grid">
                         {activeSavedDefinitions.map(header => <div key={header.definitionId} className="fixture-card">
@@ -685,7 +715,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         </div>)}
                     </div>
                 </section>}
-                {archivedSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="archived-session-library-title">
+                {creationSource === 'template' && archivedSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="archived-session-library-title">
                     <button type="button" className="preview-back-button" onClick={() => setShowArchivedDefinitions(current => !current)}>
                         {showArchivedDefinitions ? 'Hide archived templates' : `Show archived templates (${archivedSavedDefinitions.length})`}
                     </button>
@@ -706,7 +736,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         </div>)}
                     </div>}
                 </section>}
-                <div className="fixture-grid">
+                {creationSource === 'fixture' && <div className="fixture-grid">
                     {AVAILABLE_FIXTURES.map(fixture => (
                         <div key={fixture.id} className="fixture-card">
                             <div className="fixture-info">
@@ -728,7 +758,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             </div>
                         </div>
                     ))}
-                </div>
+                </div>}
                 </>}
             </div>
         );
@@ -839,17 +869,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         aria-label={soundMuted ? 'Unmute sound' : 'Mute sound'}
                     >
                         {soundMuted ? '🔇' : '🔊'}
-                    </button>
-                    <button
-                        type="button"
-                        className="save-template-header-btn"
-                        onClick={() => {
-                            setCustomTemplateTitle(definition.title);
-                            setShowSaveTemplateModal(true);
-                        }}
-                        title="Save adjusted workout as a new template"
-                    >
-                        💾 Save Template
                     </button>
                     <span className="session-timer">⏱️ {formatTime(runner.elapsedSeconds)}</span>
                     <span className={`sync-pill ${runner.syncStatus}`}>{runner.syncStatus}</span>
@@ -1125,7 +1144,25 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             </div>
 
             {/* Completion Sheet */}
+            {/* #495: save-as-template lives here, next to the finish/abandon decision,
+                instead of the active-run top bar -- reaching it requires opening the
+                completion flow, so it cannot fire accidentally mid-set. It still derives
+                from the raw working definition, so template semantics are unchanged. */}
             {showCompletionSheet && (
+                <>
+                    <div className="session-authoring-actions">
+                        <button
+                            type="button"
+                            className="preview-fixture-btn"
+                            onClick={() => {
+                                setCustomTemplateTitle(definition.title);
+                                setShowSaveTemplateModal(true);
+                            }}
+                            title="Save adjusted workout as a new template"
+                        >
+                            💾 Save as template
+                        </button>
+                    </div>
                 <SessionCompletionSheet
                     startedAt={runner.execution.startedAt}
                     totalSets={entries.length}
@@ -1147,6 +1184,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         'Could not abandon the session. It remains open, so you can retry.',
                     )}
                 />
+                </>
             )}
 
             {/* Exercise Swap Modal */}

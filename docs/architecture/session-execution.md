@@ -55,6 +55,8 @@ write-once. `saveDefinitionRevision` validates and hashes the definition, then b
 new revision and latest-revision header atomically.
 
 * **Save** creates a new definition at revision 1 and refreshes the session picker.
+  Save is offered from the completion flow rather than the active-run top bar, so it cannot
+  fire accidentally mid-set; it still derives from the raw working definition.
 * **Edit** loads the verified latest revision and saves the same definition ID at revision N+1.
 * **Duplicate** loads the verified latest revision, assigns a new definition ID, and saves
   revision 1.
