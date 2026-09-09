@@ -614,20 +614,6 @@ fail closed; Rest stays available as the safe non-training fallback. This is pur
 accounting, not a Firestore read or a replacement for the transactional intraday
 `daily_ledgers/{date}` launch aggregate.
 
-**Fixed-activity dedup unified on occurrence identity.** The rolling planner's admission
-gate above and the day's objective/cost crediting used to run on separate identity schemes.
-`applyFixedActivityStimulusCredit` (stimulus credit), `generateWeekAheadPlan`'s cost
-tracking, and `unrepresentedFixedActivityProjection` (the delta that carries an in-memory,
-never-persisted imported-event `FixedActivity` into tomorrow's projection) now all key off
-the same `fixedActivityOccurrenceKey`/`dedupeFixedActivitiesByLedgerIdentity` identity
-`fixedActivityLedger.ts` already defines, rather than each site's own ad hoc key. The
-identity-based projection diff replaced a count-triggered aggregate cost/stimulus
-subtraction that could misfire whenever an unrelated activity happened to bring the
-represented count up to the trace's count. `decisionTrace.calibration.fixedActivity` gained
-a per-occurrence `entries[]` for this; `calibration` remains transient/simulator-only and is
-never persisted into `RecommendationAudit`, so none of this touches Firestore schema, rules
-or replay.
-
 ### Bounded sequence search prototype (Phase 5.1, `sequenceSearch.ts`) -- not live
 
 The "projected" tier above is a greedy walk: each day takes `rankCandidates`' rank-0 pick
