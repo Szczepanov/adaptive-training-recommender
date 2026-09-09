@@ -254,6 +254,14 @@ async function assembleLinkedExposures(
     }));
 }
 
+function observedTissueSeverities(checkins: readonly { tissueResponses?: Record<string, unknown> }[]): NonNullable<ProgressionPrerequisiteEvidence['observedTissueSeverities']> {
+    return [...new Set(
+        checkins.flatMap(checkin => Object.values(checkin.tissueResponses ?? {}))
+            .map(deriveTissueSeverity)
+            .filter((severity): severity is NonNullable<typeof severity> => severity !== null),
+    )];
+}
+
 async function assemblePrerequisiteEvidence(
     userId: string,
     block: IntentBlock,
@@ -261,20 +269,21 @@ async function assemblePrerequisiteEvidence(
 ): Promise<ProgressionPrerequisiteEvidence | undefined> {
     const contract = block.progressionContract;
     const targetObjective = contract ? objectivesById(block).get(contract.targetBinding.objectiveId) : undefined;
-    const prerequisites = targetObjective?.entryPrerequisites;
-    if (!contract || !targetObjective || !prerequisites) return undefined;
+    if (!contract || !targetObjective) return undefined;
 
-    // `requiredPriorExposures` has no authored lookback window today. Retain the existing
-    // conservative 90-day search (or a longer explicitly requested baseline), but do not
-    // reinterpret that query range as proof that the underlying history is complete.
-    const lookbackDays = Math.max(prerequisites.minBaselineDays ?? 0, 90);
+    const prerequisites = targetObjective.entryPrerequisites;
+    const lookbackDays = Math.max(prerequisites?.minBaselineDays ?? 0, 90);
     const lookbackStart = addDaysToLocalDateString(block.dateRange.startDate, -lookbackDays);
 
     const [priorFacts, checkins] = await Promise.all([
-        prerequisites.requiredPriorExposures !== undefined
+        prerequisites?.requiredPriorExposures !== undefined
             ? getPerformedTrainingFactsInRange(userId, lookbackStart, block.dateRange.startDate)
             : Promise.resolve(null),
-        prerequisites.prohibitedTissueSeverities?.length
+        // Tissue observations are useful review/audit context even when no explicit tissue
+        // prerequisite is authored. They become a *gate* only when the objective declares
+        // prohibited severities. Absence of interpretable tissue evidence remains absence,
+        // never an affirmative clean result.
+        (!prerequisites || prerequisites.prohibitedTissueSeverities?.length)
             ? checkinService.getCheckinsInRange(userId, lookbackStart, addDaysToLocalDateString(asOfDate, 1))
             : Promise.resolve(null),
     ]);
@@ -295,16 +304,11 @@ async function assemblePrerequisiteEvidence(
     // until a real coverage boundary is available.
 
     if (checkins) {
-        const severities = [...new Set(
-            checkins.flatMap(checkin => Object.values(checkin.tissueResponses ?? {}))
-                .map(deriveTissueSeverity)
-                .filter((severity): severity is NonNullable<typeof severity> => severity !== null),
-        )];
-        // An empty query or check-ins without interpretable tissue responses are absence of
-        // evidence, not evidence that no prohibited severity occurred.
+        const severities = observedTissueSeverities(checkins);
         if (severities.length > 0) evidence.observedTissueSeverities = severities;
     }
 
+    if (!prerequisites && Object.keys(evidence).length === 0) return undefined;
     return evidence;
 }
 
