@@ -40,14 +40,15 @@ Full statements, with rationale and the checks that enforce them, are in
 ### Full suite (Makefile, repository root)
 
 * `make check` — the core local code gate: `ruff check`, `ruff format --check`, `mypy`,
-  `pytest`, `tsc -b`, `eslint`, `vitest`, workout validation. It calls the frontend gates
-  individually, so it does **not** run `validate:knowledge` or
-  `validate:knowledge-coverage`; use `cd app && npm run check` for frontend work that needs
-  the complete frontend gate. CI adds further path-specific checks; see below.
+  `pytest`, `tsc -b`, `eslint`, `vitest`, knowledge validation, knowledge-coverage
+  validation, and workout validation. `check-frontend` mirrors the app's `npm run check`
+  gate; CI adds further path-specific checks such as dependency audits, policy drift,
+  coverage/rules, simulations, and Docker validation.
 * `make all` — `check` + `simulate` + `build` (the default target)
 * `make test` — unit tests only (`pytest` + `vitest`)
 * `make typecheck` / `make lint` — both stacks
 * `make format` — auto-format Python and TypeScript; `make format-check` verifies Python formatting without writing
+* `make validate-knowledge` / `validate-knowledge-coverage` / `validate-workouts` — run the frontend registries/catalog validators individually
 * `make simulate` — scenario simulations + baseline diff verification
 * `make simulate-calibrate` / `simulate-fatigue-fusion` / `simulate-subjective-drift` / `compare-sequence-search` — targeted evidence runs
 * `make build` — production frontend build
@@ -120,8 +121,8 @@ fails the PR if any required job on that path fails.
 | Code | Docker build & compose smoke | root image build, Compose config/build/up, smoke checks |
 
 `make check` already covers Python lint **and formatting**, mypy, pytest, frontend typecheck,
-ESLint, Vitest, and workout validation. The important CI-only additions are dependency/lock
-audits, pre-commit hygiene, the knowledge validators, policy-drift and bundle checks,
+ESLint, Vitest, the knowledge validators, and workout validation. The important CI-only
+additions are dependency/lock audits, pre-commit hygiene, policy-drift and bundle checks,
 coverage/rules tests, simulation/AI gates, and Docker validation.
 
 ### Docker
