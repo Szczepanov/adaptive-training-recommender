@@ -416,8 +416,12 @@ living-reference section when implementing them.
    Done (#484): removed the unused `Goals` `onNavigate` prop — no repair flow needed it —
    and kept `constraints` as the stable route key with user-facing copy in `navigation.ts`
    `SCREEN_LABELS` (`Training Setup`).
-9. Review immediate-persist Training Setup controls for undo/confirmation where a mistaken
-   toggle can materially change feasibility/safety decisions.
+9. ~~Review immediate-persist Training Setup controls for undo/confirmation where a mistaken
+   toggle can materially change feasibility/safety decisions.~~
+   Done (#492): destructive autosaved controls (equipment, safety limits, injury-constraint
+   add/edit/remove) offer a one-shot Undo toast that reverts to the pre-save snapshot via
+   `trainingSettingsService` `buildRevertUpdate`; non-destructive edits keep instant-save
+   with no toast. Gating semantics unchanged.
 
 ### Sessions and testing
 

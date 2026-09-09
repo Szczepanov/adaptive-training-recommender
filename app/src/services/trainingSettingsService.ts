@@ -141,6 +141,27 @@ export function mergeSettings(current: TrainingSettings, update: TrainingSetting
     return next;
 }
 
+function slicesEqual(left: unknown, right: unknown): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+/**
+ * Builds the update that restores `previous` from `next` for every changed
+ * top-level settings slice, so a destructive autosaved change (equipment,
+ * guardrails, injuries) can be reverted from the UI with one toast action.
+ * Returns `null` when nothing changed. Pure: no Firestore IO.
+ */
+export function buildRevertUpdate(previous: TrainingSettings, next: TrainingSettings): TrainingSettingsUpdate | null {
+    const revert: TrainingSettingsUpdate = {};
+    if (!slicesEqual(previous.equipment, next.equipment)) revert.equipment = { ...previous.equipment };
+    if (!slicesEqual(previous.guardrails, next.guardrails)) revert.guardrails = { ...previous.guardrails };
+    if (!slicesEqual(previous.injuries, next.injuries)) revert.injuries = previous.injuries ? [...previous.injuries] : [];
+    if (!slicesEqual(previous.defaults, next.defaults)) revert.defaults = { ...previous.defaults };
+    if (!slicesEqual(previous.preferences, next.preferences)) revert.preferences = { ...previous.preferences };
+    if (!slicesEqual(previous.migration, next.migration)) revert.migration = { ...previous.migration };
+    return Object.keys(revert).length > 0 ? revert : null;
+}
+
 export class TrainingSettingsService {
     private ref(userId: string) {
         return doc(getDb(), 'users', userId, COLLECTION, DOCUMENT);

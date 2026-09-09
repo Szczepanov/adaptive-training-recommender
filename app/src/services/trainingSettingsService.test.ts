@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createDefaultTrainingSettings, mergeSettings, migrateLegacyConstraints, parseTrainingSettings } from './trainingSettingsService';
+import { buildRevertUpdate, createDefaultTrainingSettings, mergeSettings, migrateLegacyConstraints, parseTrainingSettings } from './trainingSettingsService';
 import type { UserConstraint } from '../engine/models';
 
 function legacy(key: string, value: UserConstraint['value'], isActive = true): UserConstraint {
@@ -80,5 +80,47 @@ describe('training settings storage parsing', () => {
         const clearingUpdate = { defaults: { weekdayMaxMinutes: 30 }, recoveryBootstrapDate: null } as unknown as Parameters<typeof mergeSettings>[1];
         const clearedAttempt = mergeSettings(withBootstrap, clearingUpdate);
         expect(clearedAttempt.recoveryBootstrapDate).toBe('2026-09-01');
+    });
+});
+
+describe('destructive settings revert (#492)', () => {
+    it('builds an equipment revert that restores the previous value', () => {
+        const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const next = mergeSettings(previous, { equipment: { treadmill: true } });
+        const revert = buildRevertUpdate(previous, next);
+        expect(revert).toEqual({ equipment: previous.equipment });
+        expect(mergeSettings(next, revert!).equipment.treadmill).toBe(false);
+    });
+
+    it('builds a guardrail revert that restores the previous avoid flags', () => {
+        const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const next = mergeSettings(previous, { guardrails: { avoid_high_impact: true, avoid_heavy_spinal_loading: true } });
+        const revert = buildRevertUpdate(previous, next);
+        expect(revert).toEqual({ guardrails: previous.guardrails });
+        const restored = mergeSettings(next, revert!);
+        expect(restored.guardrails.avoid_high_impact).toBe(false);
+        expect(restored.guardrails.avoid_heavy_spinal_loading).toBe(false);
+    });
+
+    it('reverts an injury-constraint add back to the previous list', () => {
+        const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const next = mergeSettings(previous, { injuries: [{ region: 'knee', severity: 'limit' }] });
+        const revert = buildRevertUpdate(previous, next);
+        expect(revert).toEqual({ injuries: [] });
+        expect(mergeSettings(next, revert!).injuries).toEqual([]);
+    });
+
+    it('reverts an injury-constraint edit back to the previous list', () => {
+        const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const withInjury = mergeSettings(previous, { injuries: [{ region: 'knee', severity: 'monitor' }] });
+        const edited = mergeSettings(withInjury, { injuries: [{ region: 'knee', severity: 'exclude' }] });
+        const revert = buildRevertUpdate(withInjury, edited);
+        expect(revert).toEqual({ injuries: withInjury.injuries });
+        expect(mergeSettings(edited, revert!).injuries).toEqual([{ region: 'knee', severity: 'monitor' }]);
+    });
+
+    it('returns null when nothing changed', () => {
+        const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        expect(buildRevertUpdate(previous, previous)).toBeNull();
     });
 });
