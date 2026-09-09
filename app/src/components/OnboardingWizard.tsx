@@ -2,9 +2,9 @@ import { useState, memo } from 'react';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
-import { dismissOnboardingForUser } from '../utils/onboardingStorage';
 import { usabilityMetrics, type OnboardingWizardStage } from '../utils/usabilityMetrics';
 import { getLocalDateString } from '../utils/localDate';
+import { skipOnboardingForNow } from './onboarding/skipOnboarding';
 import { weeklyCommitmentFromExerciseDays } from './onboarding/weeklyCommitment';
 import './OnboardingWizard.css';
 
@@ -20,22 +20,6 @@ interface ExerciseDaysSliderProps {
     value: number;
     onChange: (days: number) => void;
     disabled?: boolean;
-}
-
-/**
- * Explicit dismissal action kept separate from the Firestore-writing completion path.
- * This narrow seam is intentionally testable so Skip cannot regress into a partial setup
- * write when onboarding evolves.
- */
-export function skipOnboardingForNow(
-    userId: string,
-    stage: OnboardingWizardStage,
-    elapsedMs: number | undefined,
-    onCompleted: () => void,
-): void {
-    dismissOnboardingForUser(userId);
-    usabilityMetrics.recordWizardCompleted(userId, getLocalDateString(), 'skipped', elapsedMs, stage);
-    onCompleted();
 }
 
 export function ExerciseDaysSlider({ value, onChange, disabled = false }: ExerciseDaysSliderProps) {

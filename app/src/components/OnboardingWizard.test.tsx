@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ExerciseDaysSlider, OnboardingWizard, skipOnboardingForNow } from './OnboardingWizard';
+import { ExerciseDaysSlider, OnboardingWizard } from './OnboardingWizard';
+import { skipOnboardingForNow } from './onboarding/skipOnboarding';
 import { weeklyCommitmentFromExerciseDays } from './onboarding/weeklyCommitment';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
