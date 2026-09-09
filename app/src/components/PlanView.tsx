@@ -438,6 +438,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     [decisionInput?.subjectiveCheckin],
   );
   const canGenerateAdaptiveForecast = canGenerateNormalRecommendation(safetyCheckinStatus);
+  const wearableRepairAction = wearableForecastBlock?.repairAction;
 
   return (
     <div className="plan-view-container">
@@ -577,13 +578,13 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             <div className="plan-missing-recovery-card">
               <p>📊 {wearableForecastBlock.message}</p>
               <div className="plan-unavailable-actions">
-                {wearableForecastBlock.repairAction?.kind === 'navigate' && onNavigate && (
+                {wearableRepairAction?.kind === 'navigate' && onNavigate && (
                   <button
                     type="button"
                     className="plan-retry-btn"
-                    onClick={() => onNavigate(wearableForecastBlock.repairAction!.screen)}
+                    onClick={() => onNavigate(wearableRepairAction.screen)}
                   >
-                    {wearableForecastBlock.repairAction.label} →
+                    {wearableRepairAction.label} →
                   </button>
                 )}
                 {wearableForecastBlock.canResync && (
