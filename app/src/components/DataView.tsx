@@ -20,6 +20,7 @@ import { unlinkCompletedWorkoutSource } from './completedWorkoutActions';
 import { configuredActivitiesReadModelPolicy } from '../training-occurrence/activitiesReadModelPolicy';
 import { getCompletedWorkoutsInRange } from '../training-occurrence/activitiesReadModelService';
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
+import { SCREEN_LABELS } from '../types/navigation';
 import './DataView.css';
 
 interface DataViewProps {
@@ -254,7 +255,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
     return (
       <div className="data-view-container">
         <div className="data-view-header">
-          <h1>Detailed Data & Telemetry</h1>
+          <h1>{initialTab === 'brief' ? SCREEN_LABELS.brief : SCREEN_LABELS.data}</h1>
         </div>
         <div className="no-data">
           <p>No data available</p>
@@ -762,7 +763,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
 
   const renderConstraintsData = () => (
     <div className="data-section">
-      <h3>Training Settings</h3>
+      <h3>{SCREEN_LABELS.constraints}</h3>
       <div className="constraints-list">
         <div className="constraint-detail">
           <h4>Available equipment</h4>
@@ -974,7 +975,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
     <div className="data-view-container">
       <div className="data-view-header">
         <div>
-          <h1>Detailed Data & Telemetry</h1>
+          <h1>{initialTab === 'brief' ? SCREEN_LABELS.brief : SCREEN_LABELS.data}</h1>
           <p className="header-subtitle">Inspect engine inputs, recovery metrics, activity telemetry, and adherence.</p>
         </div>
       </div>
@@ -1014,13 +1015,13 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
           className={activeTab === 'constraints' ? 'active' : ''}
           onClick={() => setActiveTab('constraints')}
         >
-          Training Settings
+          {SCREEN_LABELS.constraints}
         </button>
         <button
           className={activeTab === 'preferences' ? 'active' : ''}
           onClick={() => setActiveTab('preferences')}
         >
-          Preferences
+          {SCREEN_LABELS.preferences}
         </button>
         <button
           className={activeTab === 'adherence' ? 'active' : ''}

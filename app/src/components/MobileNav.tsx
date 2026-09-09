@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import type { Screen } from '../types/navigation';
+import { SCREEN_LABELS } from '../types/navigation';
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
 
@@ -74,7 +75,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
           onClick={() => handleNavigate('home')}
         >
           <span className="nav-icon">🏠</span>
-          <span className="nav-label">Today</span>
+          <span className="nav-label">{SCREEN_LABELS.home}</span>
         </button>
 
         <button
@@ -82,7 +83,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
           onClick={() => handleNavigate('checkin')}
         >
           <span className="nav-icon">✓</span>
-          <span className="nav-label">Check-in</span>
+          <span className="nav-label">{SCREEN_LABELS.checkin}</span>
         </button>
 
         <button
@@ -90,7 +91,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
           onClick={() => handleNavigate('plan')}
         >
           <span className="nav-icon">📋</span>
-          <span className="nav-label">Plan</span>
+          <span className="nav-label">{SCREEN_LABELS.plan}</span>
         </button>
 
         <button
@@ -119,7 +120,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               >
                 <span className="item-icon">🎯</span>
                 <div className="item-text">
-                  <span className="item-title">Goals & Target Events</span>
+                  <span className="item-title">{SCREEN_LABELS.goals}</span>
                   <span className="item-sub">Manage events and target milestones</span>
                 </div>
               </button>
@@ -133,7 +134,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               >
                 <span className="item-icon">📊</span>
                 <div className="item-text">
-                  <span className="item-title">Detailed Data</span>
+                  <span className="item-title">{SCREEN_LABELS.data}</span>
                   <span className="item-sub">View analytics and snapshot telemetry</span>
                 </div>
               </button>
@@ -144,7 +145,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               >
                 <span className="item-icon">⚠️</span>
                 <div className="item-text">
-                  <span className="item-title">Training Setup</span>
+                  <span className="item-title">{SCREEN_LABELS.constraints}</span>
                   <span className="item-sub">Manage physical cautions & equipment</span>
                 </div>
               </button>
@@ -155,7 +156,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               >
                 <span className="item-icon">⚙️</span>
                 <div className="item-text">
-                  <span className="item-title">Coach Preferences</span>
+                  <span className="item-title">{SCREEN_LABELS.preferences}</span>
                   <span className="item-sub">Configure modalities & strain caps</span>
                 </div>
               </button>
@@ -166,7 +167,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               >
                 <span className="item-icon">🚀</span>
                 <div className="item-text">
-                  <span className="item-title">Structured Sessions</span>
+                  <span className="item-title">{SCREEN_LABELS.sessions}</span>
                   <span className="item-sub">Run a multidomain fixture and record native measures</span>
                 </div>
               </button>
@@ -177,7 +178,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               >
                 <span className="item-icon">🧪</span>
                 <div className="item-text">
-                  <span className="item-title">Protocol Testing</span>
+                  <span className="item-title">{SCREEN_LABELS.testing}</span>
                   <span className="item-sub">Run a locked assessment and record comparable raw outcomes</span>
                 </div>
               </button>
@@ -191,7 +192,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               >
                 <span className="item-icon">📤</span>
                 <div className="item-text">
-                  <span className="item-title">Export Context for AI</span>
+                  <span className="item-title">{SCREEN_LABELS.brief}</span>
                   <span className="item-sub">Compile recent metrics & prompt for your AI</span>
                 </div>
               </button>

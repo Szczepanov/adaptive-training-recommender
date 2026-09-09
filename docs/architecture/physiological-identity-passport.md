@@ -138,7 +138,7 @@ allowed enum values; automatic assessments and passport documents are server-wri
 
 ## Suspicious-night review UI (PI7)
 
-`IdentityReviewCard` (mounted on the Detailed Data screen, next to `HealthAnomalyShadowPanel`)
+`IdentityReviewCard` (mounted on the Data screen, next to `HealthAnomalyShadowPanel`)
 surfaces the most recent night whose automatic evaluator abstained for a reason the athlete can
 actually confirm or deny — `identityReviewUi.ts`'s `needsSuspiciousNightReview()` deliberately
 excludes nights that are `UNCERTAIN` only because the passport is immature or pairing was

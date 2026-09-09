@@ -34,6 +34,7 @@ import type {
   NextDayPotentialPlan,
 } from '../engine/models';
 import type { Screen } from '../types/navigation';
+import { SCREEN_LABELS } from '../types/navigation';
 import { ExternalPlanWeek } from './ExternalPlanWeek';
 import { ExternalPlanImport } from './ExternalPlanImport';
 import { WeekAheadStrip } from './WeekAheadStrip';
@@ -420,7 +421,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       <div className="plan-view-header">
         <div className="plan-view-title-group">
           <span className="plan-view-badge">Week Architecture</span>
-          <h2 className="plan-view-heading">Training Plan</h2>
+          <h2 className="plan-view-heading">{SCREEN_LABELS.plan}</h2>
           <p className="plan-week-range">Next 7 days · {formatWeekRange(today)}</p>
         </div>
         <div className="plan-header-actions">

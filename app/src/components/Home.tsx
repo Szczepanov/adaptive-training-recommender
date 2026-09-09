@@ -1554,7 +1554,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
 
             {onViewData && (
               <button onClick={onViewData} className="quick-action-btn secondary full-width">
-                📊 View Detailed Data
+                📊 View Data
               </button>
             )}
           </div>

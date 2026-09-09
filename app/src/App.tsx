@@ -94,7 +94,7 @@ function App() {
 
       // HA-D evidence collection is deliberately fire-and-forget relative to readiness.
       // Only an explicit shadow-v1 runtime value reaches the HA service, and the result is
-      // retained solely so the Detailed Data trace can update after immutable persistence.
+      // retained solely so the Data trace can update after immutable persistence.
       void runConfiguredHealthAnomalyShadow(requestUserId, input.date)
         .then(result => {
           if (

@@ -164,7 +164,7 @@ interface HealthAnomalyFollowupCardProps {
 }
 
 /**
- * Shadow-era HA6 surface. It intentionally lives on Detailed Data rather than Home: HA7 still
+  * Shadow-era HA6 surface. It intentionally lives on Data rather than Home: HA7 still
  * owns any visible anomaly/possible-illness alert semantics. This card only collects a later
  * retrospective label for an episode that the shadow evaluator already persisted.
  */

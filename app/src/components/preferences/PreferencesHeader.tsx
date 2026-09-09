@@ -1,5 +1,7 @@
 
 
+import { SCREEN_LABELS } from '../../types/navigation';
+
 interface PreferencesHeaderProps {
   hasChanges: boolean;
 }
@@ -8,7 +10,7 @@ export function PreferencesHeader({ hasChanges }: PreferencesHeaderProps) {
   return (
     <div className="preferences-header">
       <div>
-        <h1>Preferences</h1>
+        <h1>{SCREEN_LABELS.preferences}</h1>
         <p className="header-subtitle">
           Configure how the adaptive engine selects and presents training recommendations.
         </p>
