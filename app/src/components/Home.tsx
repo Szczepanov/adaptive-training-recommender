@@ -87,6 +87,7 @@ import {
 import './Home.css';
 
 import type { Screen } from '../types/navigation';
+import { SCREEN_LABELS } from '../types/navigation';
 
 interface HomeProps {
   userId: string;
@@ -328,9 +329,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           // is actionable rather than a dead end -- re-saving there re-runs validation
           // and clears the INVALID state.
           const repairTargets: ErrorRepairAction[] = [];
-          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'goals', label: 'Review goals' });
-          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'preferences', label: 'Review preferences' });
-          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'constraints', label: 'Review training settings' });
+          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'goals', label: `Review ${SCREEN_LABELS.goals}` });
+          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'preferences', label: `Review ${SCREEN_LABELS.preferences}` });
+          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'constraints', label: `Review ${SCREEN_LABELS.constraints}` });
           setErrorRepairTargets(repairTargets);
         }
         setError(decisionSourceFailure.status === 'UNAVAILABLE'
@@ -355,6 +356,9 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           setRecommendation(null);
           setNextDayPlan(null);
           clearExternalPlanState();
+          // Connection configuration lives under Coach Preferences -- link there so the
+          // state names the missing input, offers the fixing screen, and still retries.
+          setErrorRepairTargets([{ kind: 'navigate', screen: 'preferences', label: `Review ${SCREEN_LABELS.preferences}` }]);
           setError('Garmin connection status could not be verified. Retry before using wearable-free mode.');
           return;
         }

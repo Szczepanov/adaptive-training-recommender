@@ -377,8 +377,11 @@ living-reference section when implementing them.
 
 4. Add an explicit authority/explanation banner when coach plan, adaptive forecast, and the
    Home recommendation differ.
-5. Standardize fail-closed recovery: say what is missing, link to the owning repair surface,
-   and provide retry when retry is meaningful.
+5. ~~Standardize fail-closed recovery: say what is missing, link to the owning repair surface,~~
+   ~~and provide retry when retry is meaningful.~~
+   Done (#483): every Home and PlanView blocking state names the missing input, links to
+   the owning repair surface where one exists (goals, preferences, training setup, Garmin
+   resync, plan import), and always offers retry or resync with no silent dead ends.
 6. Make Check-in progress and partial-save semantics explicit so Back/Skip versus submit is
    unambiguous.
 

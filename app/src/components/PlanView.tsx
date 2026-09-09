@@ -75,6 +75,9 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const [loadError, setLoadError] = useState<string | null>(null);
   const [forecastUnavailable, setForecastUnavailable] = useState<string | null>(null);
   const [forecastRepairTargets, setForecastRepairTargets] = useState<ErrorRepairAction[]>([]);
+  // An unverifiable (INVALID) active coach plan is repaired in the import/revise UI on
+  // this same screen -- offer opening it as a forward action beyond retry.
+  const [planImportRepairOffered, setPlanImportRepairOffered] = useState<boolean>(false);
   const [wearableForecastBlock, setWearableForecastBlock] = useState<{
     message: string;
     canResync: boolean;
@@ -91,6 +94,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     setLoadError(null);
     setForecastUnavailable(null);
     setForecastRepairTargets([]);
+    setPlanImportRepairOffered(false);
     setWearableForecastBlock(null);
     setWeekAheadPlan(null);
     setNextDayPlan(null);
@@ -108,12 +112,17 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       setDecisionInput(input);
 
       // P0: Enforce strict DataState semantics. Do NOT silently convert unavailable/invalid
-      // schedule data into empty arrays.
+      // schedule data into empty arrays. Name which schedule input failed so the state is
+      // actionable; these inputs have no owning repair screen, so retry is the repair.
       if (actState.status !== 'AVAILABLE' || blocksState.status !== 'AVAILABLE') {
+        const failedInputs: string[] = [];
+        if (actState.status !== 'AVAILABLE') failedInputs.push('fixed activities');
+        if (blocksState.status !== 'AVAILABLE') failedInputs.push('plan blocks');
+        const failedInputsLabel = failedInputs.join(' and ');
         const unavailMsg =
           actState.status === 'UNAVAILABLE' || blocksState.status === 'UNAVAILABLE'
-            ? 'Some schedule inputs are temporarily unavailable. Check your connection and retry.'
-            : 'Schedule data could not be verified. Please retry before using this plan.';
+            ? `The plan week's ${failedInputsLabel} are temporarily unavailable. Check your connection and retry.`
+            : `The plan week's ${failedInputsLabel} could not be verified. Please retry before using this plan.`;
         setForecastUnavailable(unavailMsg);
         setFixedActivities([]);
         setActivePlan(null);
@@ -132,9 +141,9 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
           // is actionable rather than a dead end -- re-saving there re-runs validation
           // and clears the INVALID state.
           const repairTargets: ErrorRepairAction[] = [];
-          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'goals', label: 'Review goals' });
-          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'preferences', label: 'Review preferences' });
-          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'constraints', label: 'Review training settings' });
+          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'goals', label: `Review ${SCREEN_LABELS.goals}` });
+          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'preferences', label: `Review ${SCREEN_LABELS.preferences}` });
+          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'constraints', label: `Review ${SCREEN_LABELS.constraints}` });
           setForecastRepairTargets(repairTargets);
         }
         setForecastUnavailable(
@@ -186,6 +195,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       // silently decay to MISSING / no plan, as that could discard athlete placements.
       const activePlanState = await activeExternalPlanService.getActivePlanState(userId, today, acts);
       if (activePlanState.status === 'INVALID' || activePlanState.status === 'UNAVAILABLE') {
+        if (activePlanState.status === 'INVALID') setPlanImportRepairOffered(true);
         setForecastUnavailable(
           activePlanState.status === 'UNAVAILABLE'
             ? 'Your active coach plan is temporarily unavailable. Check your connection and retry.'
@@ -501,6 +511,11 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             ) : (
               <GarminSyncNowButton key="resync" userId={userId} onSynced={loadPlanData} />
             ))}
+            {planImportRepairOffered && (
+              <button type="button" className="plan-retry-btn" onClick={() => setShowImport(true)}>
+                📥 Review imported plan
+              </button>
+            )}
             <button type="button" className="plan-retry-btn" onClick={loadPlanData}>
               🔄 Retry
             </button>
