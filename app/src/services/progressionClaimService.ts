@@ -1,34 +1,22 @@
 /**
- * ADR-0037 D-AUTHORITY: the athlete-scoped singleton progression-claim transaction, Phase C
- * of `docs/plans/h5c-progression-claim-design.md` -- implemented as specified there, not
- * redesigned. Modeled directly on H4's `services/intradayLaunchClaim.ts`
- * (`claimIntradayMemberLaunch`/`releaseIntradayMemberClaim`): one addressable claim
- * document, a revision-gated transaction, compare-and-clear release, and a typed conflict
- * error distinguishing "someone else is mid-experiment" from "your proposal is stale."
+ * ADR-0037 D-AUTHORITY: athlete-scoped singleton progression confirmation.
  *
- * `confirmProgressionRevision` composes `intentBlockService.ts`'s transaction-composable
- * `stageRevision` primitive (Phase A) with the claim/activation writes, inside one
- * transaction it owns -- the design doc's "transaction-aware authoring boundary"
- * requirement.
- *
- * No query-then-create, ever: every read here is a direct document reference
- * (`progression_experiment_claim/current`, the deterministic activation key, the block's own
- * header/revision refs). Nothing queries a collection to establish uniqueness.
+ * Confirmation is intentionally stricter than the UI. The caller supplies a proposal, but
+ * this service is the mutation boundary: it must prove that the proposal still describes
+ * exactly one bounded step of the current contract before it authors a new revision.
  */
 
 import { doc, getDoc, runTransaction, type Firestore, type Transaction } from 'firebase/firestore';
 import { getDb } from '../firebase';
-import type { IntentBlock } from '../engine/blockIntent';
+import { validateIntentBlock, type IntentBlock } from '../engine/blockIntent';
 import type { ProposedProgressionChange } from '../engine/progressionReview';
 import { buildTreatmentIntentReplayPayloadV1, hashTreatmentIntentReplayPayload } from '../engine/blockIntentReplay';
+import { addDaysToLocalDateString } from '../utils/localDate';
 import {
     IntentBlockService,
-    resolvePinnedProfile,
-    MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION,
     type IntentBlockHeader,
     type IntentBlockRevisionDocument,
 } from './intentBlockService';
-import { TrainingIntentProfileService } from './trainingIntentProfileService';
 
 export type ProgressionConfirmationCode =
     | 'active_progression_experiment_exists'
@@ -36,10 +24,9 @@ export type ProgressionConfirmationCode =
     | 'activation-identity-mismatch'
     | 'block-not-found'
     | 'no-progression-contract'
-    | 'unknown-target-objective';
+    | 'unknown-target-objective'
+    | 'invalid-proposed-change';
 
-/** Mirrors `intradayLaunchClaim.ts`'s `StaleDecisionError`: a machine `code` plus a
- * separate, deliberately distinct `athleteMessage` a UI can show as-is. */
 export class ProgressionConfirmationError extends Error {
     readonly code: ProgressionConfirmationCode;
     readonly athleteMessage: string;
@@ -88,18 +75,14 @@ export interface ProgressionExperimentActivation {
 }
 
 export interface ConfirmProgressionRevisionResult {
+    /** Current header at the time this call resolves. On an idempotent replay it may be newer
+     * than the immutable activation revision; use activation.activationRevisionId when
+     * presenting the revision created by this proposal. */
     header: IntentBlockHeader;
     activation: ProgressionExperimentActivation;
-    /** True only on the very first successful confirmation; false when this call resolved
-     * an already-existing activation (idempotent replay). */
     created: boolean;
 }
 
-/** Deterministic, bounded, Firestore-safe encoding of `(blockId, proposalId)` -- reuses the
- * same SHA-256/hex recipe as `engine/externalPlanHash.ts`'s `computeContentHash` and
- * `blockIntentReplay.ts`'s `hashTreatmentIntentReplayPayload`, so this codebase has exactly
- * one hashing convention rather than a second ad hoc one. Never a random UUID or timestamp:
- * the same logical confirmation retried from another tab must resolve to the same reference. */
 export async function deterministicActivationKey(blockId: string, proposalId: string): Promise<string> {
     const canonical = JSON.stringify({ blockId, proposalId });
     const bytes = new TextEncoder().encode(canonical);
@@ -119,30 +102,132 @@ function settingsSnapshot(variable: string, unit: string, value: number): Progre
     return { variable, unit, value };
 }
 
-/** Applies one proposed change onto the block's current progression contract, producing
- * the next forward-only revision. Never mutates `current` -- `stageRevision` (Phase A)
- * writes the result as a brand new immutable revision document. */
-function nextBlockWithAppliedChange(current: IntentBlock, change: ProposedProgressionChange): IntentBlock {
-    if (!current.progressionContract) {
+function sameTargetBinding(
+    left: ProposedProgressionChange['targetBinding'],
+    right: NonNullable<IntentBlock['progressionContract']>['targetBinding'],
+): boolean {
+    return left.objectiveId === right.objectiveId
+        && left.sessionId === right.sessionId
+        && left.stepId === right.stepId;
+}
+
+function invalidChange(detail: string): never {
+    throw new ProgressionConfirmationError(
+        'invalid-proposed-change',
+        detail,
+        'This proposed change no longer matches the current progression contract. Please run the review again.',
+    );
+}
+
+/** Revalidates the proposal at the mutation boundary rather than trusting UI-produced data.
+ * Only the one bounded advance or configured bounded reduction can be confirmed. */
+function assertProposedChangeMatchesCurrentContract(
+    current: IntentBlock,
+    change: ProposedProgressionChange,
+): void {
+    const contract = current.progressionContract;
+    if (!contract) {
         throw new ProgressionConfirmationError(
             'no-progression-contract',
             `IntentBlock '${current.id}' has no progressionContract to confirm a revision against`,
             'This block no longer has an active progression target.',
         );
     }
-    return {
+
+    if (!current.objectives.some(objective => objective.id === contract.targetBinding.objectiveId)) {
+        throw new ProgressionConfirmationError(
+            'unknown-target-objective',
+            `IntentBlock '${current.id}' progressionContract targets missing objective '${contract.targetBinding.objectiveId}'`,
+            'This proposed change no longer matches the block. Please review it again.',
+        );
+    }
+
+    if (!sameTargetBinding(change.targetBinding, contract.targetBinding)) {
+        invalidChange(`Proposal target binding does not equal the current contract target binding for '${current.id}'`);
+    }
+    if (change.variable !== contract.variable || change.unit !== contract.unit) {
+        invalidChange(`Proposal variable/unit '${change.variable} ${change.unit}' does not equal '${contract.variable} ${contract.unit}'`);
+    }
+    if (![change.previousValue, change.proposedValue, change.derivedDoseEffects.delta].every(Number.isFinite)) {
+        invalidChange('Proposal contains a non-finite numeric value');
+    }
+    if (change.previousValue !== contract.currentValue) {
+        invalidChange(`Proposal previousValue ${change.previousValue} does not equal currentValue ${contract.currentValue}`);
+    }
+    if (change.derivedDoseEffects.delta !== change.proposedValue - change.previousValue) {
+        invalidChange('Proposal derived dose delta does not equal proposedValue - previousValue');
+    }
+
+    const allowedValues = new Set<number>();
+    if (contract.currentValue < contract.permittedRange.max) {
+        allowedValues.add(Math.min(contract.permittedRange.max, contract.currentValue + contract.increment));
+    }
+    if (contract.reductionAlternative && contract.currentValue > contract.permittedRange.min) {
+        allowedValues.add(Math.max(
+            contract.permittedRange.min,
+            contract.currentValue - contract.reductionAlternative.decrement,
+        ));
+    }
+    if (!allowedValues.has(change.proposedValue)) {
+        invalidChange(
+            `Proposal value ${change.proposedValue} is not one bounded step from currentValue ${contract.currentValue}`,
+        );
+    }
+}
+
+/** Advance the review schedule with the authored progression revision. Leaving the old due
+ * date in place makes the freshly-created revision immediately due again and can reuse the
+ * same observation window. Anchoring to the prior scheduled review keeps cadence explicit;
+ * the block end remains the final review boundary. */
+function nextReviewDate(current: IntentBlock): string {
+    const candidate = addDaysToLocalDateString(
+        current.reviewSchedule.nextReviewDate,
+        current.reviewSchedule.reviewCadenceDays,
+    );
+    return candidate > current.dateRange.endDate ? current.dateRange.endDate : candidate;
+}
+
+function nextBlockWithAppliedChange(current: IntentBlock, change: ProposedProgressionChange): IntentBlock {
+    assertProposedChangeMatchesCurrentContract(current, change);
+    const contract = current.progressionContract!;
+    const next: IntentBlock = {
         ...current,
         revision: current.revision + 1,
-        progressionContract: { ...current.progressionContract, currentValue: change.proposedValue },
+        reviewSchedule: {
+            ...current.reviewSchedule,
+            nextReviewDate: nextReviewDate(current),
+        },
+        progressionContract: { ...contract, currentValue: change.proposedValue },
     };
+
+    const validation = validateIntentBlock(next);
+    if (!validation.valid) {
+        invalidChange(`Authored next revision is invalid: ${validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('; ')}`);
+    }
+    return next;
+}
+
+function existingActivationMatchesRequest(
+    existing: ProgressionExperimentActivation,
+    blockId: string,
+    proposalId: string,
+    expectedSourcePlanRevision: number,
+    proposedChange: ProposedProgressionChange,
+): boolean {
+    return existing.blockId === blockId
+        && existing.proposalId === proposalId
+        && existing.sourcePlanRevision === expectedSourcePlanRevision
+        && existing.priorSettings.variable === proposedChange.variable
+        && existing.priorSettings.unit === proposedChange.unit
+        && existing.priorSettings.value === proposedChange.previousValue
+        && existing.acceptedSettings.variable === proposedChange.variable
+        && existing.acceptedSettings.unit === proposedChange.unit
+        && existing.acceptedSettings.value === proposedChange.proposedValue;
 }
 
 /**
- * Confirms an athlete-reviewed `ProposedProgressionChange` (H5b's `evaluateProgressionReview`
- * output) as a new bounded `IntentBlock` revision, atomically with acquiring the
- * one-experiment-per-athlete singleton claim. `expectedSourcePlanRevision` must be the block
- * revision the caller observed when it generated `proposedChange` (i.e. when the review ran),
- * not a value re-derived inside this function -- staleness is judged against exactly that.
+ * Confirms an athlete-reviewed proposal as one new bounded IntentBlock revision, atomically
+ * with acquiring the athlete-wide singleton claim and writing immutable activation evidence.
  */
 export async function confirmProgressionRevision(
     userId: string,
@@ -155,13 +240,11 @@ export async function confirmProgressionRevision(
     const activationKey = await deterministicActivationKey(blockId, proposalId);
     const experimentId = activationKey;
     const intentBlocks = new IntentBlockService(db);
-    const pinnedProfile = await resolvePinnedProfile(userId, new TrainingIntentProfileService(db));
     const now = new Date().toISOString();
 
     let created = true;
 
     const result = await runTransaction(db, async (transaction: Transaction) => {
-        // 1. Reads before writes, in the design doc's own order.
         const activationSnap = await transaction.get(activationRef(db, userId, activationKey));
         const claimSnap = await transaction.get(claimRef(db, userId));
         const headerRef = intentBlocks.headerRef(userId, blockId);
@@ -169,15 +252,19 @@ export async function confirmProgressionRevision(
 
         if (activationSnap.exists()) {
             const existing = activationSnap.data() as ProgressionExperimentActivation;
-            if (existing.blockId !== blockId || existing.proposalId !== proposalId) {
+            if (!existingActivationMatchesRequest(
+                existing,
+                blockId,
+                proposalId,
+                expectedSourcePlanRevision,
+                proposedChange,
+            )) {
                 throw new ProgressionConfirmationError(
                     'activation-identity-mismatch',
-                    `Activation '${activationKey}' identity (${existing.blockId}/${existing.proposalId}) does not match the requested confirmation (${blockId}/${proposalId})`,
-                    'Something unexpected happened confirming this change. Please refresh and try again.',
+                    `Activation '${activationKey}' does not match the requested confirmation payload`,
+                    'This confirmation conflicts with an earlier activation. Please refresh before continuing.',
                 );
             }
-            // Idempotent replay: no second claim/plan write. Read the header as it stands
-            // now purely to return a fresh IntentBlockHeader alongside the existing activation.
             if (!headerSnap.exists()) {
                 throw new ProgressionConfirmationError(
                     'block-not-found',
@@ -225,38 +312,64 @@ export async function confirmProgressionRevision(
         }
         const currentRevisionDoc = currentRevisionSnap.data() as IntentBlockRevisionDocument;
         const currentBlock = currentRevisionDoc.block;
-        const targetObjective = currentBlock.objectives.find(objective => objective.id === proposedChange.targetBinding.objectiveId);
-        if (!targetObjective || !currentBlock.progressionContract) {
-            throw new ProgressionConfirmationError(
-                'unknown-target-objective',
-                `IntentBlock '${blockId}' has no objective/progressionContract matching proposedChange.targetBinding`,
-                'This proposed change no longer matches the block. Please review it again.',
-            );
-        }
 
+        // Revalidate the exact bounded mutation against the transactionally-read current
+        // contract. This closes the authority gap where a caller could previously supply an
+        // arbitrary in-range value, mismatched target binding, or stale previousValue.
+        assertProposedChangeMatchesCurrentContract(currentBlock, proposedChange);
         const nextBlock = nextBlockWithAppliedChange(currentBlock, proposedChange);
+
+        // A progression revision changes only the progression contract. Reuse the source
+        // revision's frozen profile + source provenance rather than silently re-pinning a
+        // newer live TrainingIntentProfile during confirmation.
+        const pinnedProfile = {
+            ...currentRevisionDoc.pinnedTrainingIntentProfile,
+            priorities: [...currentRevisionDoc.pinnedTrainingIntentProfile.priorities],
+            weeklyCommitment: { ...currentRevisionDoc.pinnedTrainingIntentProfile.weeklyCommitment },
+        };
         const payload = buildTreatmentIntentReplayPayloadV1(
-            nextBlock, { ...pinnedProfile, priorities: [...pinnedProfile.priorities] }, MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION, undefined,
+            nextBlock,
+            { ...pinnedProfile, priorities: [...pinnedProfile.priorities] },
+            currentRevisionDoc.sourceSchemaVersion,
+            currentRevisionDoc.sourceRef ?? undefined,
         );
         const contentHash = await hashTreatmentIntentReplayPayload(payload);
 
         const newHeader = intentBlocks.stageRevision(
-            transaction, userId, header, nextBlock, pinnedProfile,
-            MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION, null, contentHash, now,
+            transaction,
+            userId,
+            header,
+            nextBlock,
+            pinnedProfile,
+            currentRevisionDoc.sourceSchemaVersion,
+            currentRevisionDoc.sourceRef,
+            contentHash,
+            now,
         );
 
         const claimRevision = (claim?.revision ?? 0) + 1;
         const nextClaim: ProgressionExperimentClaim = {
-            userId, state: 'held', experimentId, blockId, proposalId,
+            userId,
+            state: 'held',
+            experimentId,
+            blockId,
+            proposalId,
             sourcePlanRevision: expectedSourcePlanRevision,
-            activationKey, activationRevisionId: String(nextBlock.revision),
-            acquiredAt: now, revision: claimRevision,
-            createdAt: claim?.createdAt ?? now, updatedAt: now,
+            activationKey,
+            activationRevisionId: String(nextBlock.revision),
+            acquiredAt: now,
+            revision: claimRevision,
+            createdAt: claim?.createdAt ?? now,
+            updatedAt: now,
         };
         transaction.set(claimRef(db, userId), nextClaim);
 
         const activation: ProgressionExperimentActivation = {
-            userId, activationKey, experimentId, blockId, proposalId,
+            userId,
+            activationKey,
+            experimentId,
+            blockId,
+            proposalId,
             sourcePlanRevision: expectedSourcePlanRevision,
             activationRevisionId: String(nextBlock.revision),
             claimRevision,
@@ -272,12 +385,6 @@ export async function confirmProgressionRevision(
     return { ...result, created };
 }
 
-/**
- * Compare-and-clear release, modeled on `releaseIntradayMemberClaim`: only clears the claim
- * when the stored `experimentId` still matches the caller's, so a delayed cleanup for an old
- * experiment can never clear a newer one's claim. The immutable activation record is never
- * deleted or mutated -- it remains the historical/idempotency evidence for that confirmation.
- */
 export async function releaseProgressionClaim(
     userId: string,
     experimentId: string,
@@ -291,7 +398,12 @@ export async function releaseProgressionClaim(
             if (claim.state !== 'held' || claim.experimentId !== experimentId) {
                 return { released: false, reason: `claim is '${claim.state}' owned by '${claim.experimentId}', not '${experimentId}'` };
             }
-            const released: ProgressionExperimentClaim = { ...claim, state: 'released', revision: claim.revision + 1, updatedAt: new Date().toISOString() };
+            const released: ProgressionExperimentClaim = {
+                ...claim,
+                state: 'released',
+                revision: claim.revision + 1,
+                updatedAt: new Date().toISOString(),
+            };
             transaction.set(claimRef(db, userId), released);
             return { released: true };
         });
@@ -300,10 +412,10 @@ export async function releaseProgressionClaim(
     }
 }
 
-/** Read-only convenience for a UI to check whether the athlete already has a held claim
- * before offering another confirmation. Never used to establish claim uniqueness itself --
- * that guarantee comes only from the transaction above. */
-export async function getCurrentProgressionClaim(userId: string, db: Firestore = getDb()): Promise<ProgressionExperimentClaim | null> {
+export async function getCurrentProgressionClaim(
+    userId: string,
+    db: Firestore = getDb(),
+): Promise<ProgressionExperimentClaim | null> {
     const snap = await getDoc(claimRef(db, userId));
     return snap.exists() ? (snap.data() as ProgressionExperimentClaim) : null;
 }
