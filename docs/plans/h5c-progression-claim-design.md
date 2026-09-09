@@ -2,22 +2,21 @@
 
 **Status:** Approved (design agreed) — not `Ready`: this document specifies the
 confirmation/singleton-claim contract; no code exists yet.
-**Blocked by:** Nothing for the design itself. Implementation additionally needs "the
-existing authoring boundary" that produces a new plan/definition revision to be named
-concretely (see Work item 3) — that boundary already exists elsewhere in the codebase but
-has not yet been identified as the specific integration point H5c's confirmation writes
-through.
+**Blocked by:** Runtime implementation must first identify the existing plan/definition
+authoring boundary and make that boundary transaction-aware (or introduce a shared
+transaction-aware primitive) so the accepted plan revision, singleton claim and activation
+audit are committed by the **same caller-owned Firestore transaction**. A boundary that
+starts its own transaction or calls `setDoc` out of band does not satisfy this design.
 **Unlocks:** H5c implementation (athlete-confirmed bounded progression revisions);
 cumulative `external-plan@5` acceptance, which the cycling hybrid evaluation plan already
 notes is otherwise unblocked now that H4's v4 contract has landed.
 **Governs:** [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md) D-AUTHORITY,
 D-CHANGE's one-active-experiment rule.
 **Builds on:** H5a (`engine/blockIntent.ts`, `engine/blockIntentReplay.ts`) and H5b
-(`engine/progressionReview.ts`), both delivered. The transaction shape below is modeled
-directly on H4's `services/intradayLaunchClaim.ts` (`claimIntradayMemberLaunch` /
-`releaseIntradayMemberClaim`) and `services/dailyLedgerAggregateService.ts` — the closest
-existing "one addressable claim document + revision-gated transaction + compare-and-clear
-release" precedent in this codebase.
+(`engine/progressionReview.ts`), both delivered. The compare-and-clear/revision discipline
+is modeled on H4's `services/intradayLaunchClaim.ts` and
+`services/dailyLedgerAggregateService.ts`, but H5c additionally needs a deterministic
+activation record because confirmation must be idempotent across client/network retries.
 
 ## Goal
 
@@ -32,6 +31,10 @@ idempotently under retry, and without ever losing or double-applying an incremen
   delivered (they are).
 - ADR-0037 is Accepted (it is); this document does not reopen its decisions, only fills in
   the transaction/schema detail it deliberately left to implementation.
+- Before runtime activation, the normal plan-authoring write path must be named and exposed
+  as a primitive that can enqueue its reads/writes on a **transaction supplied by the H5c
+  caller**. No nested `runTransaction`, `setDoc`, network side effect, telemetry emission or
+  other non-transactional mutation may occur from inside the retriable callback.
 
 ## Design
 
@@ -51,11 +54,14 @@ forbids establishing uniqueness by querying active block/proposal collections an
 creating an experiment outside that same atomic operation, "because that check can race
 across blocks."
 
-### 1. Claim document
+### 1. Singleton claim document
 
-**Path:** `users/{userId}/progression_experiment_claim/{singleton}` — one fixed-id document
-per athlete, independent of block/proposal storage (per the ADR's own requirement that the
-claim's identity not be derivable by querying blocks).
+**Literal path:** `users/{userId}/progression_experiment_claim/current`.
+
+`current` is part of the invariant, not an example id. Using
+`progression_experiment_claim/{singleton}` would let multiple differently named documents
+exist and would leave "singleton" enforcement to application convention. A literal path
+lets both application code and Firestore rules address exactly one athlete-scoped claim.
 
 ```ts
 interface ProgressionExperimentClaim {
@@ -65,7 +71,8 @@ interface ProgressionExperimentClaim {
     blockId: string;
     proposalId: string;
     sourcePlanRevision: number;
-    activationRevisionId: string;   // id of the created forward-only revision record
+    activationKey: string;
+    activationRevisionId: string;   // id of the created forward-only plan/definition revision
     acquiredAt: string;
     revision: number;               // bumped by exactly 1 on every mutation
     createdAt: string;
@@ -75,132 +82,224 @@ interface ProgressionExperimentClaim {
 
 Why one fixed id rather than a per-block or per-date document (unlike H4's
 `daily_ledgers/{date}`): the rule being enforced is per-*athlete*, not per-*day* or
-per-*block* — a `daily_ledgers`-shaped per-block claim would let two blocks each acquire
-their own claim and both proceed, which is exactly the race the ADR prohibits.
+per-*block* — a per-block claim would let two blocks each acquire their own claim and both
+proceed, exactly the race ADR-0037 prohibits.
 
-### 2. Confirmation transaction
+### 2. Deterministic activation/idempotency document
 
-`confirmProgressionRevision(userId, blockId, proposalId, expectedSourcePlanRevision, proposedChange)`,
-modeled directly on `claimIntradayMemberLaunch`'s structure:
+**Path:** `users/{userId}/progression_experiment_activations/{activationKey}`.
 
-1. **Reads before writes** (Firestore's own rule, and the pattern H4 already follows):
-   read the claim document by direct reference; read the block/plan document at
-   `expectedSourcePlanRevision`'s path to confirm it is still current; read any existing
-   activation record for `(blockId, proposalId)` for idempotency.
-2. **Branch, inside the same transaction:**
-   - Existing activation record for this exact `(blockId, proposalId)` already exists →
-     return it unchanged (idempotent replay; no second increment, no second claim write).
-   - Claim `state == 'held'` and `experimentId` belongs to a *different* block/proposal →
-     fail with `active_progression_experiment_exists` (a typed conflict, not a thrown
-     Firestore error — mirror `StaleDecisionCode`'s pattern in `intradayLaunchClaim.ts`).
-   - Current source plan revision does not match `expectedSourcePlanRevision` → fail with a
-     **distinct** conflict, e.g. `stale-source-revision` (never collapse this into the same
-     code as the previous branch — a caller needs to know whether to re-fetch the proposal
-     or tell the athlete someone else is mid-experiment).
-   - Otherwise: write the new forward-only revision/activation record through "the existing
-     authoring boundary" (name the concrete function once identified — see Work item 3) and
-     `transaction.set` the claim to `{ state: 'held', experimentId, blockId, proposalId,
-     sourcePlanRevision: expectedSourcePlanRevision, activationRevisionId, revision:
-     current.revision + 1, ... }` in the same transaction.
-3. **No query-then-create, ever.** Step 1 reads the claim by direct document reference
-   only. Nothing in this function runs a collection query across blocks or proposals before
-   acquiring the claim.
+`activationKey` must be a deterministic, bounded, Firestore-safe encoding/hash of
+`(blockId, proposalId)` produced by one shared helper. It must not contain a random UUID or
+request timestamp. The same logical confirmation on another tab/device therefore resolves
+to the same document reference without a collection query.
 
-### 3. Release (compare-and-clear)
+```ts
+interface ProgressionExperimentActivation {
+    userId: string;
+    activationKey: string;
+    experimentId: string;
+    blockId: string;
+    proposalId: string;
+    sourcePlanRevision: number;
+    activationRevisionId: string;
+    claimRevision: number;
+    activatedAt: string;
+    // Minimal before/after values needed to explain/replay the accepted bounded change.
+    priorSettings: ProgressionSettingsSnapshot;
+    acceptedSettings: ProgressionSettingsSnapshot;
+}
+```
+
+The activation document is **create-once and immutable**. It is the durable idempotency
+answer: if it already exists and its stored block/proposal identity matches the requested
+activation, confirmation returns that record unchanged and performs no claim or plan write.
+An identity mismatch at the deterministic key is an invariant/data-integrity failure, not a
+reason to overwrite it.
+
+### 3. Confirmation transaction
+
+`confirmProgressionRevision(userId, blockId, proposalId, expectedSourcePlanRevision, proposedChange)`:
+
+Before `runTransaction`, compute the literal claim reference, deterministic activation
+reference, and any deterministic identifiers/timestamps needed by the attempted activation.
+They stay stable if Firestore retries the transaction callback.
+
+Inside one caller-owned Firestore transaction, with **all reads before writes**:
+
+1. Read the activation document by direct deterministic reference.
+   - If it exists and matches `(blockId, proposalId)`, return it unchanged. This is the
+     idempotent replay path: no second dose increment, plan revision or claim revision.
+   - If it exists but the identity does not match, fail with an invariant-conflict result.
+2. Read `progression_experiment_claim/current` by direct reference.
+3. Read the current authored block/plan state and revision required to revalidate the
+   proposal. Do not read a historical path and infer that it is still current.
+4. Branch before any write:
+   - Claim `state == 'held'` for a different block/proposal → return
+     `active_progression_experiment_exists`.
+   - Current source revision differs from `expectedSourcePlanRevision`, or the proposal no
+     longer validates against the current block state → return the distinct
+     `stale-source-revision`/typed revalidation conflict. No claim/activation/plan write.
+5. Invoke the shared **transaction-aware authoring primitive** with this same transaction to
+   enqueue the normal forward-only plan/definition revision. The primitive must preserve
+   every invariant of ordinary authoring; H5c must not invent a parallel storage format.
+6. Enqueue claim create/update at the literal `/current` document with
+   `revision = previous.revision + 1` (or `1` on first create), the same experiment identity,
+   source revision and deterministic `activationKey`.
+7. Enqueue **create-only** activation evidence at the deterministic activation document,
+   recording the resulting authored revision id and claim revision.
+8. Commit. Firestore serialization/retry is the concurrency boundary; no external side
+   effect is allowed from inside the retriable callback.
+
+This ordering is deliberate. A transaction retry can rerun validation/application logic, so
+random ids, `Date.now()`-style evidence timestamps that change on each callback run,
+telemetry, toasts, navigation, or independent writes belong outside the callback. Only the
+transaction's own reads/writes may determine committed state.
+
+### 4. Release (compare-and-clear)
 
 `releaseProgressionClaim(userId, experimentId)`, modeled on `releaseIntradayMemberClaim`:
-read the claim; if `state !== 'held'` or `claim.experimentId !== experimentId`, no-op /
-return `{ released: false }` — a delayed cleanup for an old experiment must never clear a
-newer one's claim, exactly as `releaseIntradayMemberClaim` refuses to reverse a reservation
-that isn't in the exact state it expects. Only when the stored identity matches does the
-transaction set `state: 'released'` and bump `revision`.
+read `/progression_experiment_claim/current`; if `state !== 'held'` or
+`claim.experimentId !== experimentId`, no-op / return `{ released: false }` — a delayed
+cleanup for an old experiment must never clear a newer one's claim. Only when the stored
+identity matches does the transaction set `state: 'released'` and bump `revision`.
 
-Called when an experiment reaches a terminal state: completed its bounded run, was
-cancelled, or was redirected per D-CHANGE's `redirect` action.
+The immutable activation record is **not** deleted or mutated on release. It remains the
+historical/idempotency evidence for that accepted proposal.
 
-### 4. Firestore rules sketch
+Release is called when an experiment reaches a terminal state: completed its bounded run,
+was cancelled, or was redirected per D-CHANGE's `redirect` action.
 
-Model on `daily_ledgers`'s revision-gated update, in the same shallow/structural style PR
-#468 established (detail validation at the TS boundary, not in rules):
+### 5. Firestore rules sketch
 
-```
-match /users/{userId}/progression_experiment_claim/{singleton} {
+Use a literal claim path and an immutable activation collection. Keep rules shallow and
+structural, following PR #468's rule-budget lesson; proposal business validation remains in
+the transaction service/authoring boundary.
+
+```text
+match /users/{userId}/progression_experiment_claim/current {
   allow read: if isOwner(userId);
-  allow create: if hasValidProgressionClaim(userId);
+  allow create: if hasValidProgressionClaim(userId)
+    && request.resource.data.revision == 1;
   allow update: if hasValidProgressionClaim(userId)
     && keepsOwnership(userId)
     && request.resource.data.revision == resource.data.revision + 1;
   allow delete: if false;
 }
+
+match /users/{userId}/progression_experiment_activations/{activationKey} {
+  allow read: if isOwner(userId);
+  allow create: if hasValidProgressionActivation(userId, activationKey);
+  allow update, delete: if false;
+}
 ```
 
-`hasValidProgressionClaim` checks `state in ['held', 'released']`, required-key shape, and
-bounded string sizes only — no cross-field business logic in rules, matching the lesson
-`recommendationAudit`'s budget failure already taught this codebase.
+`hasValidProgressionClaim` / `hasValidProgressionActivation` check exact required-key shape,
+ownership, bounded strings/numbers, and for the activation record that the payload's
+`activationKey` equals the path id. They do not query blocks or encode the progression
+policy in rules.
 
-### 5. Idempotency and failure-mode table
+### 6. Idempotency and failure-mode table
 
 | Scenario | Required outcome |
 |---|---|
-| Two concurrent confirmations for two *different* blocks/proposals | Exactly one commits and acquires the claim; the other fails with `active_progression_experiment_exists` |
-| The same confirmation retried (network retry, double-tap) | Returns/reuses the existing activation; claim revision does not increment a second time |
-| Source plan revision moved since the proposal was generated | Fails with the stale-source conflict; no claim/activation write |
-| Release racing a newer confirmation for a different experiment | The stale release's `experimentId` no longer matches; it no-ops, never clearing the newer claim |
-| Failure between validation and commit (e.g. transaction abort) | Neither an orphan claim nor a partial activation record exists — Firestore transactions already give this atomicity by construction; no custom two-phase cleanup is needed *inside* the transaction, only correct ordering of what the transaction writes |
+| Two concurrent confirmations for two *different* blocks/proposals | Exactly one commits and acquires `/current`; the other retries/observes the held claim and returns `active_progression_experiment_exists` |
+| Two concurrent confirmations for the *same* block/proposal | Both resolve the same deterministic activation reference; exactly one authored revision and one activation are committed, and both callers resolve to that activation |
+| Same confirmation retried after network ambiguity/double-tap | Direct-read existing activation and return it; claim revision and authored plan revision do not increment again |
+| Source plan revision moved since proposal generation | Typed stale/revalidation conflict; zero claim, activation or authored-plan writes |
+| Release racing a newer confirmation for another experiment | Stale release identity does not match `/current`; no-op, newer claim remains held |
+| Transaction callback retries | Deterministic refs/ids remain stable; callback performs no out-of-band side effects; one atomic committed state exists |
+| Transaction aborts | Neither orphan claim, partial activation nor partial authored revision exists |
+
+## Authoring-boundary implementation gate
+
+H5c is **not runtime-ready** until the current plan/definition authoring provider and commit
+path are identified. The implementation work item must:
+
+1. name the current shared authoring function(s) used by normal user-facing plan changes;
+2. verify which document(s), revision preconditions, hashes/provenance and audit records that
+   path writes;
+3. expose a transaction-aware primitive that accepts the caller's Firestore transaction (or
+   an equivalent write/precondition abstraction) and enqueues the same mutation; and
+4. prove with tests that H5c confirmation cannot create a plan revision if claim/activation
+   commit fails, and cannot acquire a claim if plan revision creation fails.
+
+If the existing authoring path cannot participate in a caller-owned transaction, the correct
+next implementation step is to refactor/add that primitive. Calling an existing `setDoc`
+helper from inside the H5c callback or starting a nested transaction would violate
+D-AUTHORITY even if happy-path tests pass.
+
+## No recommendation-time query
+
+The direct activation/claim/current-plan reads above happen only during an explicit athlete
+confirmation. They must **not** be added to ordinary recommendation generation. H5b remains
+report-only until H5c is separately implemented/activated, so this design adds no
+recommendation-time read or latency path.
 
 ## Tests to add (at implementation time)
 
-- Concurrent-confirmation test: two parallel `confirmProgressionRevision` calls for
-  different experiments against an empty claim — assert exactly one activation and exactly
-  one `active_progression_experiment_exists` conflict (a real emulator transaction-race
-  test, not a mocked sequential call — the guarantee being tested is Firestore's own
-  transaction serialization).
-- Idempotent-retry test: same `(blockId, proposalId)` confirmed twice — second call returns
-  the first's activation, claim revision unchanged after the second call.
-- Stale-source test: source plan revision bumped between proposal generation and
-  confirmation — confirmation fails with the distinct stale-source conflict, no claim/
-  activation written.
-- Compare-and-clear test: release called with a stale `experimentId` after a newer
-  experiment has already acquired the claim — release no-ops, newer claim intact.
-- Rules emulator test mirroring the `daily_ledgers` pattern: revision-jump rejection,
-  cross-user denial, delete always denied.
+- Real-emulator concurrent confirmation: two different proposals against an empty claim —
+  exactly one activation; the other returns `active_progression_experiment_exists`.
+- Real-emulator same-proposal race: two tabs confirm identical `(blockId, proposalId)` —
+  one activation document and exactly one authored revision; both callers resolve the same
+  activation.
+- Idempotent retry after simulated network ambiguity — existing deterministic activation is
+  returned; claim and authored revision counters are unchanged.
+- Stale-source test: bump source plan revision between proposal generation and confirmation —
+  typed stale conflict and **zero writes** to claim/activation/accepted plan revision.
+- Authoring atomicity test: force the authoring mutation/precondition to fail — claim and
+  activation remain absent/unchanged; force activation/claim failure — authored revision is
+  absent.
+- Compare-and-clear test: stale `experimentId` cannot release a newer held claim.
+- Rules emulator tests: literal `/current` ownership/shape/revision checks; differently named
+  claim documents are not writable; activation create shape/key binding; activation update
+  and delete are always denied; cross-user access denied.
 
 ## Acceptance criteria
 
-- [ ] Exactly one athlete-scoped claim document model exists, independent of block storage.
-- [ ] Confirmation acquires the claim and writes the forward-only revision in one
-      transaction; no code path queries blocks/proposals before acquiring the claim.
-- [ ] Two distinct, typed conflict codes exist for "claim held by another experiment" vs.
-      "stale source revision."
-- [ ] Repeated confirmation of the same proposal is provably idempotent (test above).
+- [ ] The only writable athlete-scoped claim path is
+      `users/{userId}/progression_experiment_claim/current`.
+- [ ] A deterministic `(blockId, proposalId)` activation key is shared by code, tests and
+      rules; activation evidence is create-once/immutable.
+- [ ] Confirmation reads an existing activation by direct reference first and is idempotent
+      across concurrent same-proposal calls and client/network retries.
+- [ ] Claim, accepted forward-only plan/definition revision and activation audit commit in
+      one caller-owned transaction through the **normal transaction-aware authoring
+      boundary**.
+- [ ] No code path queries blocks/proposals to establish singleton uniqueness.
+- [ ] Distinct typed conflicts exist for "another active experiment", stale source/revalidation,
+      and deterministic-key invariant mismatch.
 - [ ] Release is compare-and-clear and cannot clear a claim it does not own.
-- [ ] `POLICY_VERSION` is bumped only if/when H5c's confirmation path is wired into daily
-      recommendation selection — this design doc's scope (confirmation/claim mechanics) does
-      not by itself change decision behavior.
+- [ ] H5c adds no recommendation-time query/read path while still report-only.
+- [ ] `POLICY_VERSION` is bumped only if/when H5c is wired into live recommendation
+      selection; this design/confirmation persistence alone does not change decision policy.
 
 ## Risks & rollback
 
-- **Getting the claim scope wrong (per-block instead of per-athlete)** would silently
-  reintroduce the exact race the ADR prohibits. The design fixes this by making the claim
-  document's path athlete-scoped only, with no block/date segment.
-- **Reusing `StaleDecisionCode`-style stringly-typed conflicts without keeping them
-  distinct** would make callers unable to tell a "someone else is experimenting" state from
-  a "your proposal is stale" state, which the ADR explicitly requires to stay separate.
-- Rollback is simple because nothing is implemented yet: this document can be revised or
-  superseded without any migration, since no claim documents exist in production.
+- **Convention-only singleton id:** allowing `{singleton}` as an arbitrary id can create two
+  claim documents. The literal `/current` path removes that ambiguity.
+- **Query-based idempotency:** searching for "any existing activation" can race or require
+  indexes. The deterministic activation reference makes idempotency a direct transactional
+  read.
+- **Nested/out-of-band authoring write:** a helper that starts its own transaction or calls
+  `setDoc` breaks the atomicity promised by D-AUTHORITY. The transaction-aware authoring
+  boundary is therefore an implementation blocker, not cleanup work.
+- **Retry side effects:** Firestore may rerun transaction callbacks. Keeping ids/timestamps
+  stable and all side effects outside the callback prevents duplicate observable actions.
+- Rollback remains simple because nothing is implemented yet: this design can be revised or
+  superseded without data migration.
 
 ## Out of scope (for this design; left for implementation or a later document)
 
-- The confirmation review UI (before/after dose, tradeoffs, affected future sessions
-  display).
-- Naming the concrete "existing authoring boundary" function that creates the new plan/
-  definition revision — an implementation-time task, not a design decision.
-- Cumulative `external-plan@5` (depends on this design, but is separately scoped).
-- Wiring `progressionReview.ts`'s output into any live recommendation-selection path — H5b
-  remains report-only until H5c's confirmation path is built and separately policy-reviewed.
+- The confirmation review UI (before/after dose, tradeoffs, affected future sessions display).
+- Naming the concrete existing authoring function — identifying/refactoring it is the first
+  implementation gate above, not something this design may guess.
+- Cumulative `external-plan@5` (depends on H5c, separately scoped).
+- Wiring `progressionReview.ts` output into live recommendation selection — H5b remains
+  report-only until H5c's confirmation path is built and separately policy-reviewed.
 
-## Docs to update once this lands
+## Docs to update once runtime implementation lands
 
-- `docs/plans/README.md`'s H5 row — link this document, note H5c now has an accepted design.
-- `docs/plans/cycling-primary-hybrid-evaluation.md`'s H5 section — replace "H5c needs the
-  athlete-scoped singleton progression-claim transaction design" with a link here.
+- `docs/plans/README.md` H5 row/status — distinguish accepted design from implemented H5c.
+- `docs/plans/cycling-primary-hybrid-evaluation.md` H5 section — record the concrete
+  transaction-aware authoring boundary and implementation evidence.
