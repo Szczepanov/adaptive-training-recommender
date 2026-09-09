@@ -67,6 +67,15 @@ export function describeAbandonedAssessment(
     return `Attempt ${attempt.id} (${protocol.title} · rev ${protocol.revision} · ${attempt.purpose}) was abandoned. What was lost: this locked attempt will never produce a benchmark observation, and abandonment is terminal — it cannot be resumed. To re-test, start a fresh attempt under the same locked protocol revision.`;
 }
 
+export function canStartFreshAssessmentAttempt(
+    attempt: Pick<AssessmentAttempt, 'state'> | null,
+): boolean {
+    // A fresh attempt is safe only after terminal abandonment was actually persisted. If the
+    // linked SessionExecution is abandoned but the AssessmentAttempt transition failed, leaving
+    // the old attempt open and starting another would violate the one-open-attempt workflow.
+    return attempt?.state === 'abandoned';
+}
+
 export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClose, onSessionStateChange }) => {
     const [stage, setStage] = useState<TestingStage>('lookup');
     const [protocolId, setProtocolId] = useState('');
@@ -159,7 +168,10 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                     await refreshSaved(openAttempt.id, loadedProtocol);
                     return;
                 }
-                if (openAttempt.state !== 'abandoned') await assessmentAttemptService.abandonAttempt(userId, openAttempt.id, 'Linked execution was abandoned.');
+                if (openAttempt.state !== 'abandoned') {
+                    await assessmentAttemptService.abandonAttempt(userId, openAttempt.id, 'Linked execution was abandoned.');
+                }
+                setAttempt({ ...openAttempt, state: 'abandoned' });
                 setStage('abandoned');
             })
             .catch(reason => {
@@ -382,8 +394,10 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
     };
 
     const metricRows = useMemo(() => protocol?.metricIds.map(getMetricDefinition) ?? [], [protocol]);
+    const abandonmentPersisted = canStartFreshAssessmentAttempt(attempt);
 
     const startFreshAttempt = () => {
+        if (!canStartFreshAssessmentAttempt(attempt)) return;
         // #494: recovery path back into the flow without resurrecting the terminal attempt.
         // startTest builds a brand-new attempt id (createAssessmentAttemptId mints
         // Date.now()/random entropy), so the abandoned attempt stays abandoned -- no
@@ -544,11 +558,17 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
 
             {stage === 'abandoned' && (
                 <section className="testing-card">
-                    <h3>Assessment abandoned — no benchmark recorded</h3>
-                    <p>{attempt && protocol ? describeAbandonedAssessment(attempt, protocol) : 'No valid benchmark observation was created.'}</p>
+                    <h3>{abandonmentPersisted ? 'Assessment abandoned — no benchmark recorded' : 'Assessment abandonment not yet confirmed'}</h3>
+                    <p>
+                        {attempt && protocol
+                            ? abandonmentPersisted
+                                ? describeAbandonedAssessment(attempt, protocol)
+                                : `The session execution was abandoned, but attempt ${attempt.id} is still ${attempt.state}. Starting another attempt is blocked until the terminal abandonment is persisted. Close and reopen Testing to reconcile the open attempt.`
+                            : 'No valid benchmark observation was created.'}
+                    </p>
                     <div className="testing-actions">
-                        {protocol && <button type="button" className="testing-primary" onClick={startFreshAttempt}>Start a fresh attempt</button>}
-                        <button type="button" className={protocol ? 'testing-secondary' : 'testing-primary'} onClick={onClose}>Done</button>
+                        {protocol && abandonmentPersisted && <button type="button" className="testing-primary" onClick={startFreshAttempt}>Start a fresh attempt</button>}
+                        <button type="button" className={protocol && abandonmentPersisted ? 'testing-secondary' : 'testing-primary'} onClick={onClose}>Done</button>
                     </div>
                 </section>
             )}
