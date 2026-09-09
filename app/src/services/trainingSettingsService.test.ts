@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildRevertUpdate, createDefaultTrainingSettings, mergeSettings, migrateLegacyConstraints, parseTrainingSettings } from './trainingSettingsService';
+import { buildRevertUpdate, createDefaultTrainingSettings, mergeSettings, migrateLegacyConstraints, parseTrainingSettings, type TrainingSettingsUpdate } from './trainingSettingsService';
 import type { UserConstraint } from '../engine/models';
 
 function legacy(key: string, value: UserConstraint['value'], isActive = true): UserConstraint {
@@ -84,19 +84,32 @@ describe('training settings storage parsing', () => {
 });
 
 describe('destructive settings revert (#492)', () => {
-    it('builds an equipment revert that restores the previous value', () => {
+    it('builds a field-scoped equipment revert that restores the previous value', () => {
         const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
-        const next = mergeSettings(previous, { equipment: { treadmill: true } });
-        const revert = buildRevertUpdate(previous, next);
-        expect(revert).toEqual({ equipment: previous.equipment });
+        const update: TrainingSettingsUpdate = { equipment: { treadmill: true } };
+        const next = mergeSettings(previous, update);
+        const revert = buildRevertUpdate(previous, update);
+        expect(revert).toEqual({ equipment: { treadmill: false } });
         expect(mergeSettings(next, revert!).equipment.treadmill).toBe(false);
     });
 
-    it('builds a guardrail revert that restores the previous avoid flags', () => {
+    it('does not clobber a later equipment save when undoing an earlier toggle', () => {
         const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
-        const next = mergeSettings(previous, { guardrails: { avoid_high_impact: true, avoid_heavy_spinal_loading: true } });
-        const revert = buildRevertUpdate(previous, next);
-        expect(revert).toEqual({ guardrails: previous.guardrails });
+        const firstUpdate: TrainingSettingsUpdate = { equipment: { treadmill: true } };
+        const revert = buildRevertUpdate(previous, firstUpdate);
+        const afterFirst = mergeSettings(previous, firstUpdate);
+        const afterLaterSave = mergeSettings(afterFirst, { equipment: { outdoor_bike: true } });
+        const restored = mergeSettings(afterLaterSave, revert!);
+        expect(restored.equipment.treadmill).toBe(false);
+        expect(restored.equipment.outdoor_bike).toBe(true);
+    });
+
+    it('builds a guardrail revert only for the avoid flags that changed', () => {
+        const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
+        const update: TrainingSettingsUpdate = { guardrails: { avoid_high_impact: true, avoid_heavy_spinal_loading: true } };
+        const next = mergeSettings(previous, update);
+        const revert = buildRevertUpdate(previous, update);
+        expect(revert).toEqual({ guardrails: { avoid_high_impact: false, avoid_heavy_spinal_loading: false } });
         const restored = mergeSettings(next, revert!);
         expect(restored.guardrails.avoid_high_impact).toBe(false);
         expect(restored.guardrails.avoid_heavy_spinal_loading).toBe(false);
@@ -104,8 +117,9 @@ describe('destructive settings revert (#492)', () => {
 
     it('reverts an injury-constraint add back to the previous list', () => {
         const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
-        const next = mergeSettings(previous, { injuries: [{ region: 'knee', severity: 'limit' }] });
-        const revert = buildRevertUpdate(previous, next);
+        const update: TrainingSettingsUpdate = { injuries: [{ region: 'knee', severity: 'limit' }] };
+        const next = mergeSettings(previous, update);
+        const revert = buildRevertUpdate(previous, update);
         expect(revert).toEqual({ injuries: [] });
         expect(mergeSettings(next, revert!).injuries).toEqual([]);
     });
@@ -113,14 +127,15 @@ describe('destructive settings revert (#492)', () => {
     it('reverts an injury-constraint edit back to the previous list', () => {
         const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
         const withInjury = mergeSettings(previous, { injuries: [{ region: 'knee', severity: 'monitor' }] });
-        const edited = mergeSettings(withInjury, { injuries: [{ region: 'knee', severity: 'exclude' }] });
-        const revert = buildRevertUpdate(withInjury, edited);
+        const update: TrainingSettingsUpdate = { injuries: [{ region: 'knee', severity: 'exclude' }] };
+        const edited = mergeSettings(withInjury, update);
+        const revert = buildRevertUpdate(withInjury, update);
         expect(revert).toEqual({ injuries: withInjury.injuries });
         expect(mergeSettings(edited, revert!).injuries).toEqual([{ region: 'knee', severity: 'monitor' }]);
     });
 
-    it('returns null when nothing changed', () => {
+    it('returns null when the requested update would not change anything', () => {
         const previous = createDefaultTrainingSettings('athlete', '2026-08-07T10:00:00.000Z');
-        expect(buildRevertUpdate(previous, previous)).toBeNull();
+        expect(buildRevertUpdate(previous, { equipment: { treadmill: false } })).toBeNull();
     });
 });

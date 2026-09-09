@@ -141,24 +141,54 @@ export function mergeSettings(current: TrainingSettings, update: TrainingSetting
     return next;
 }
 
-function slicesEqual(left: unknown, right: unknown): boolean {
+function valuesEqual(left: unknown, right: unknown): boolean {
     return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function buildPartialRevert<T extends object>(previous: T, update: Partial<T>): Partial<T> | null {
+    const revert: Partial<T> = {};
+    for (const key of Object.keys(update) as Array<keyof T>) {
+        if (!valuesEqual(previous[key], update[key])) {
+            revert[key] = previous[key];
+        }
+    }
+    return Object.keys(revert).length > 0 ? revert : null;
+}
+
 /**
- * Builds the update that restores `previous` from `next` for every changed
- * top-level settings slice, so a destructive autosaved change (equipment,
- * guardrails, injuries) can be reverted from the UI with one toast action.
- * Returns `null` when nothing changed. Pure: no Firestore IO.
+ * Builds the smallest update that restores the values touched by `update` to
+ * their state in `previous`. Keeping the inverse patch field-scoped prevents
+ * Undo from overwriting unrelated settings saved after the destructive action.
+ * Returns `null` when the requested update would not change anything. Pure: no
+ * Firestore IO.
  */
-export function buildRevertUpdate(previous: TrainingSettings, next: TrainingSettings): TrainingSettingsUpdate | null {
+export function buildRevertUpdate(previous: TrainingSettings, update: TrainingSettingsUpdate): TrainingSettingsUpdate | null {
     const revert: TrainingSettingsUpdate = {};
-    if (!slicesEqual(previous.equipment, next.equipment)) revert.equipment = { ...previous.equipment };
-    if (!slicesEqual(previous.guardrails, next.guardrails)) revert.guardrails = { ...previous.guardrails };
-    if (!slicesEqual(previous.injuries, next.injuries)) revert.injuries = previous.injuries ? [...previous.injuries] : [];
-    if (!slicesEqual(previous.defaults, next.defaults)) revert.defaults = { ...previous.defaults };
-    if (!slicesEqual(previous.preferences, next.preferences)) revert.preferences = { ...previous.preferences };
-    if (!slicesEqual(previous.migration, next.migration)) revert.migration = { ...previous.migration };
+
+    if (update.equipment) {
+        const equipment = buildPartialRevert(previous.equipment, update.equipment);
+        if (equipment) revert.equipment = equipment;
+    }
+    if (update.guardrails) {
+        const guardrails = buildPartialRevert(previous.guardrails, update.guardrails);
+        if (guardrails) revert.guardrails = guardrails;
+    }
+    if (update.injuries !== undefined && !valuesEqual(previous.injuries ?? [], update.injuries)) {
+        revert.injuries = [...(previous.injuries ?? [])];
+    }
+    if (update.defaults) {
+        const defaults = buildPartialRevert(previous.defaults, update.defaults);
+        if (defaults) revert.defaults = defaults;
+    }
+    if (update.preferences) {
+        const preferences = buildPartialRevert(previous.preferences, update.preferences);
+        if (preferences) revert.preferences = preferences;
+    }
+    if (update.migration) {
+        const migration = buildPartialRevert(previous.migration, update.migration);
+        if (migration) revert.migration = migration;
+    }
+
     return Object.keys(revert).length > 0 ? revert : null;
 }
 

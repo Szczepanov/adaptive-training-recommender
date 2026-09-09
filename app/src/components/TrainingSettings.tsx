@@ -56,6 +56,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   const [injuryDraft, setInjuryDraft] = useState(emptyInjuryDraft);
   const [editingInjuryIndex, setEditingInjuryIndex] = useState<number | null>(null);
   const [undoState, setUndoState] = useState<{ message: string; revert: TrainingSettingsUpdate } | null>(null);
+  const [undoInFlight, setUndoInFlight] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -84,14 +85,13 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
 
   // Destructive autosaved changes (equipment, safety limits, injury constraints)
   // act as hard recommendation gates, so they persist instantly but offer a
-  // one-shot Undo toast that reverts to the pre-save snapshot. Non-destructive
+  // one-shot Undo toast containing a field-scoped inverse patch. Non-destructive
   // edits (time/location, recovery preferences, migration review) keep plain
   // instant-save via `save` with no toast.
   const saveDestructive = async (update: TrainingSettingsUpdate, message: string) => {
-    const previous = settings;
+    const revert = settings ? buildRevertUpdate(settings, update) : null;
     const updated = await save(update);
-    if (updated && previous) {
-      const revert = buildRevertUpdate(previous, updated);
+    if (updated) {
       setUndoState(revert ? { message, revert } : null);
     }
     return updated;
@@ -99,9 +99,14 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
 
   const undoLastChange = async () => {
     const current = undoState;
-    setUndoState(null);
-    if (!current) return;
-    await save(current.revert);
+    if (!current || undoInFlight) return;
+
+    setUndoInFlight(true);
+    const restored = await save(current.revert);
+    if (restored) {
+      setUndoState(latest => latest === current ? null : latest);
+    }
+    setUndoInFlight(false);
   };
 
   const saveInjury = async (event: FormEvent<HTMLFormElement>) => {
@@ -156,10 +161,10 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
       </header>
       {error && <p className="settings-error" role="alert">{error}</p>}
       {undoState && (
-        <div className="settings-undo-toast" role="alert">
+        <div className="settings-undo-toast" role="status" aria-live="polite" aria-atomic="true">
           <span>{undoState.message}</span>
-          <button type="button" onClick={() => void undoLastChange()}>Undo</button>
-          <button type="button" onClick={() => setUndoState(null)} aria-label="Dismiss undo">Dismiss</button>
+          <button type="button" disabled={undoInFlight} onClick={() => void undoLastChange()}>{undoInFlight ? 'Undoing…' : 'Undo'}</button>
+          <button type="button" disabled={undoInFlight} onClick={() => setUndoState(null)} aria-label="Dismiss undo">Dismiss</button>
         </div>
       )}
       {!settings.migration.legacyReviewed && (
