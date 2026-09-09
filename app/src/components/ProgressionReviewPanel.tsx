@@ -49,8 +49,13 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
       if (headerState.status !== 'AVAILABLE') continue;
       const revisionState = await intentBlockService.getRevisionState(userId, blockId, headerState.data.revision);
       if (revisionState.status !== 'AVAILABLE') continue;
-      if (revisionState.data.block.reviewSchedule.nextReviewDate <= today) {
-        due.push({ header: headerState.data, block: revisionState.data.block });
+      const block = revisionState.data.block;
+      if (
+        block.dateRange.startDate <= today
+        && today <= block.dateRange.endDate
+        && block.reviewSchedule.nextReviewDate <= today
+      ) {
+        due.push({ header: headerState.data, block });
       }
     }
     setDueBlocks(due);
@@ -87,7 +92,12 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
     try {
       const proposalId = deriveProposalId(due.header.revision, result.asOfDate, result.proposedChange);
       const confirmation = await confirmProgressionRevision(
-        userId, selectedBlockId, proposalId, due.header.revision, result.proposedChange,
+        userId,
+        selectedBlockId,
+        proposalId,
+        due.header.revision,
+        result.proposedChange,
+        result.asOfDate,
       );
       setConfirmedActivation(confirmation);
       await loadDueBlocks();
