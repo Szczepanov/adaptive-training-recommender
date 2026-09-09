@@ -655,11 +655,11 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             return (
                 <div className="session-runner-container no-active">
                     <h2>Active session needs its stored prescription</h2>
-                    <p>Return from the session that started it so the exact snapshot can be restored. Starting another session is disabled.</p>
+                    <p>Return Home, then reopen the session that started it so the exact snapshot can be restored. Starting another session is disabled.</p>
                     {onClose && (
                         <div className="session-authoring-actions">
                             <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={onClose}>
-                                ← Back to {SCREEN_LABELS.sessions}
+                                ← Back to {SCREEN_LABELS.home}
                             </button>
                         </div>
                     )}
