@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   activeExternalPlanService,
+  externalRestContextForDate,
   type ActiveExternalPlan,
 } from '../services/activeExternalPlanService';
 import { externalPlanService } from '../services/externalPlanService';
@@ -33,6 +34,7 @@ import type {
   FixedActivity,
   DailyDecisionInput,
   NextDayPotentialPlan,
+  Recommendation,
 } from '../engine/models';
 import type { Screen } from '../types/navigation';
 import { SCREEN_LABELS } from '../types/navigation';
@@ -80,6 +82,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const [critique, setCritique] = useState<ExternalWeekCritique | null>(null);
   const [fixedActivities, setFixedActivities] = useState<FixedActivity[]>([]);
   const [decisionInput, setDecisionInput] = useState<DailyDecisionInput | null>(null);
+  const [adaptiveTodayRecommendation, setAdaptiveTodayRecommendation] = useState<Recommendation | null>(null);
   const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
   const [nextDayPlan, setNextDayPlan] = useState<NextDayPotentialPlan | null>(null);
   const [selectedNextDayTier, setSelectedNextDayTier] = useState<'green' | 'yellow' | 'red'>('green');
@@ -111,6 +114,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
     setForecastRepairTargets([]);
     setPlanImportRepairOffered(false);
     setWearableForecastBlock(null);
+    setAdaptiveTodayRecommendation(null);
     setWeekAheadPlan(null);
     setNextDayPlan(null);
     setCritique(null);
@@ -271,7 +275,9 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
           setCritique(null);
         }
 
-        // Generate the 7-day AI forecast
+        // Generate the 7-day AI forecast. `WeekAheadPlan.days` intentionally starts at
+        // tomorrow (WeekAheadStrip labels index 0 as Tomorrow), so preserve today's ranked
+        // recommendation separately for the #487 same-day authority comparison.
         if (preparedSnapshot) {
           const baseRec = await evaluateTrainingWithIntent(
             userId,
@@ -294,6 +300,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             false,
             input.scheduleOverlays,
           );
+          setAdaptiveTodayRecommendation(baseRec);
           setClinicalEscalationRequired(baseRec.envelopes?.safety.clinicalEscalationRequired === true);
 
           const tomorrowPlan = await evaluateNextDayPlanWithIntent(
@@ -443,24 +450,23 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const canGenerateAdaptiveForecast = canGenerateNormalRecommendation(safetyCheckinStatus);
   const wearableRepairAction = wearableForecastBlock?.repairAction;
 
-  // #487: follow-this-one verdict inputs, read-only over already-computed state.
-  // The coach placements, the AI forecast days, and the critique findings below are
-  // the same values the week views render; deriving the banner from them adds no
-  // engine logic and never overrules safety envelopes.
+  // #487: compare the imported coach prescription with the same-day ranked adaptive
+  // recommendation that seeds the tomorrow-forward forecast. Do not search
+  // `weekAheadPlan.days` for today: that collection intentionally starts tomorrow.
   const authorityBanner = useMemo((): AuthorityBannerInput | null => {
-    if (!activePlan || !weekAheadPlan) return null;
+    if (!activePlan || !adaptiveTodayRecommendation) return null;
     const coachToday = activePlan.placed.find(
       (item) => item.date === today && occupiesDate(item.status),
     );
-    const forecastToday = weekAheadPlan.days.find((day) => day.date === today);
     return {
       hasImportedPlan: true,
       coachSessionTitleToday: coachToday?.session.title ?? null,
-      forecastModeToday: forecastToday ? forecastToday.mode : null,
-      forecastTitleToday: forecastToday?.template.title ?? null,
+      coachHasExplicitRestToday: !coachToday && externalRestContextForDate(activePlan, today) !== null,
+      adaptiveModeToday: adaptiveTodayRecommendation.mode,
+      adaptiveTitleToday: adaptiveTodayRecommendation.template.title ?? null,
       coachFlaggedToday: (critique?.findings ?? []).some((finding) => finding.date === today),
     };
-  }, [activePlan, weekAheadPlan, critique, today]);
+  }, [activePlan, adaptiveTodayRecommendation, critique, today]);
 
   return (
     <div className="plan-view-container">
