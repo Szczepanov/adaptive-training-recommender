@@ -227,6 +227,12 @@ Back/Skip can return without saving. Partial daily documents can exist, but base
 uses its own completeness rules rather than treating every partial save as a valid subjective
 baseline point.
 
+The progress header deliberately distinguishes editable form state from saved state. Recovery,
+Safety, and Availability are derived from the last successfully persisted daily check-in, so
+prefilled defaults or unsaved edits cannot appear complete. Follow-ups reflect the outstanding
+review queue and clear only after a follow-up save succeeds (or the athlete explicitly skips
+that prompt for the current visit).
+
 ### 5. Structured sessions
 
 `App.tsx` uses `sessionAuthoringMode` to switch the `sessions` route between:
@@ -379,8 +385,12 @@ living-reference section when implementing them.
    Home recommendation differ.
 5. Standardize fail-closed recovery: say what is missing, link to the owning repair surface,
    and provide retry when retry is meaningful.
-6. Make Check-in progress and partial-save semantics explicit so Back/Skip versus submit is
-   unambiguous.
+6. ~~Make Check-in progress and partial-save semantics explicit so Back/Skip versus submit is
+   unambiguous.~~ Done (#488): `DailyCheckin` renders a 4-step `CheckinStepper`
+   (Follow-ups, Recovery, Safety, Availability). Recovery/Safety/Availability status is
+   derived read-only from the last successfully persisted daily document, while Follow-ups
+   reflects the outstanding review queue, so unsaved defaults or edits never masquerade as
+   saved progress and Skip/Back remains intentional.
 
 ### Settings
 
