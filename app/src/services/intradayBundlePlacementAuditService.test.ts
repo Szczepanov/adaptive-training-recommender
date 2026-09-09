@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const firestore = vi.hoisted(() => ({
     doc: vi.fn(() => ({ __ref: true })),
@@ -26,8 +26,27 @@ function placedProposal(): BundlePlacementProposal {
     };
 }
 
+function persistedRecord(overrides: Record<string, unknown> = {}) {
+    return {
+        userId: 'u1',
+        date: '2026-08-18',
+        bundleId: 'old-bundle',
+        outcome: 'infeasible',
+        bindings: [],
+        reason: 'old placement',
+        revision: 3,
+        createdAt: '2026-08-17T05:00:00.000Z',
+        updatedAt: '2026-08-18T05:00:00.000Z',
+        ...overrides,
+    };
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
+});
+
+afterEach(() => {
+    vi.useRealTimers();
 });
 
 describe('recordIntradayBundlePlacement', () => {
@@ -51,13 +70,15 @@ describe('recordIntradayBundlePlacement', () => {
         expect((written as { createdAt: string }).createdAt).toBe((written as { updatedAt: string }).updatedAt);
     });
 
-    it('increments revision and preserves createdAt on a later write', async () => {
+    it('increments revision and preserves createdAt on a later observation', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-18T06:00:00.000Z'));
         let written: unknown;
         firestore.runTransaction.mockImplementation(async (_db: unknown, updateFn: (t: unknown) => unknown) => {
             const transaction = {
                 get: vi.fn().mockResolvedValue({
                     exists: () => true,
-                    data: () => ({ revision: 3, createdAt: '2026-08-17T05:00:00.000Z' }),
+                    data: () => persistedRecord(),
                 }),
                 set: vi.fn((_ref: unknown, record: unknown) => { written = record; }),
             };
@@ -66,7 +87,51 @@ describe('recordIntradayBundlePlacement', () => {
 
         await recordIntradayBundlePlacement('u1', '2026-08-18', placedProposal());
 
-        expect(written).toMatchObject({ revision: 4, createdAt: '2026-08-17T05:00:00.000Z' });
+        expect(written).toMatchObject({
+            revision: 4,
+            createdAt: '2026-08-17T05:00:00.000Z',
+            updatedAt: '2026-08-18T06:00:00.000Z',
+        });
+    });
+
+    it('does not let an older observation overwrite evidence that committed later', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-18T06:00:00.000Z'));
+        const set = vi.fn();
+        firestore.runTransaction.mockImplementation(async (_db: unknown, updateFn: (t: unknown) => unknown) => updateFn({
+            get: vi.fn().mockResolvedValue({
+                exists: () => true,
+                data: () => persistedRecord({ updatedAt: '2026-08-18T06:00:00.001Z' }),
+            }),
+            set,
+        }));
+
+        await recordIntradayBundlePlacement('u1', '2026-08-18', placedProposal());
+
+        expect(set).not.toHaveBeenCalled();
+    });
+
+    it('does not manufacture a new revision when the placement evidence is unchanged', async () => {
+        vi.useFakeTimers();
+        vi.setSystemTime(new Date('2026-08-18T06:00:00.000Z'));
+        const proposal = placedProposal();
+        const set = vi.fn();
+        firestore.runTransaction.mockImplementation(async (_db: unknown, updateFn: (t: unknown) => unknown) => updateFn({
+            get: vi.fn().mockResolvedValue({
+                exists: () => true,
+                data: () => persistedRecord({
+                    bundleId: proposal.bundleId,
+                    outcome: proposal.outcome,
+                    bindings: proposal.bindings,
+                    reason: null,
+                }),
+            }),
+            set,
+        }));
+
+        await recordIntradayBundlePlacement('u1', '2026-08-18', proposal);
+
+        expect(set).not.toHaveBeenCalled();
     });
 
     it('records an infeasible outcome with an empty bindings list and the reason, not a fabricated binding', async () => {
