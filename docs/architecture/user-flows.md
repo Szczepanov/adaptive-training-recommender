@@ -420,8 +420,11 @@ living-reference section when implementing them.
 
 10. Differentiate normal session execution and protocol testing more strongly around the
     shared runner, especially during execution and completion.
-11. Consolidate the structured-session creation entry points behind a clearer `New session`
-    chooser while preserving the underlying import/manual/template contracts.
+11. ~~Consolidate the structured-session creation entry points behind a clearer `New session`
+    chooser while preserving the underlying import/manual/template contracts.~~ Done (#495):
+    one `New session` entry with a From template / From fixture / Import JSON / Build manually
+    chooser; save-as-template is a secondary action inside the completion dialog rather than
+    an active-run peer action.
 12. Make companion/follow-up executions explicit and clarify whether abandoning a testing
     attempt is intentionally destructive/terminal before confirmation.
 

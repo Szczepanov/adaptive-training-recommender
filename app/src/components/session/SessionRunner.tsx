@@ -23,6 +23,7 @@ import { ChoiceCard } from './ChoiceCard';
 import { ExerciseSwapModal } from './ExerciseSwapModal';
 import { SessionDefinitionPreview } from './SessionDefinitionPreview';
 import { isSoundEnabled, setSoundEnabled } from '../../utils/audioFeedback';
+import { SCREEN_LABELS } from '../../types/navigation';
 import './SessionRunner.css';
 
 // Import positive fixtures for quick unplanned session launch
@@ -132,6 +133,19 @@ export function resolveRestPreviewStep(
     return nextBlock?.steps[0] ?? null;
 }
 
+export function resolveEmptyTemplateGuidance(canImportSession: boolean, canBuildSession: boolean): string {
+    if (canImportSession && canBuildSession) {
+        return 'No saved templates yet — start from a reviewed fixture, import JSON, or build one manually.';
+    }
+    if (canImportSession) {
+        return 'No saved templates yet — start from a reviewed fixture or import JSON.';
+    }
+    if (canBuildSession) {
+        return 'No saved templates yet — start from a reviewed fixture or build one manually.';
+    }
+    return 'No saved templates yet — start from a reviewed fixture, or import or build one from the Sessions screen.';
+}
+
 interface SessionRunnerProps {
     userId: string;
     /** A persisted M3 binding plus the exact snapshot-resolved definition to execute. */
@@ -172,6 +186,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const [editingSavedDefinitionId, setEditingSavedDefinitionId] = useState<string | null>(null);
     const [updatingSavedDefinitionId, setUpdatingSavedDefinitionId] = useState<string | null>(null);
     const [showArchivedDefinitions, setShowArchivedDefinitions] = useState(false);
+    // #495: session creation collapses to one "New session" entry. The chooser keeps all
+    // four sources reachable (saved template, reviewed fixture, JSON import, manual build)
+    // without presenting four parallel top-level actions. Import/build delegate to the
+    // injected App-level authoring modes; template/fixture branches render inline below.
+    type SessionCreationSource = 'template' | 'fixture';
+    const [showCreationChooser, setShowCreationChooser] = useState(false);
+    const [creationSource, setCreationSource] = useState<SessionCreationSource | null>(null);
     // M4.3: a companion is a separately executable session referenced from the one that just
     // finished (SessionDefinition.companionSessions), never an embedded block -- those already
     // render inline within the same execution. Starting one creates its own execution; it may
@@ -627,7 +648,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 {previewDefinition ? (
                     <section className="session-definition-preview-screen" aria-labelledby="session-definition-preview-title">
                         <button type="button" className="preview-back-button" onClick={() => setPreviewDefinition(null)}>
-                            ← All structured sessions
+                            ← All {SCREEN_LABELS.sessions}
                         </button>
                         <h2 id="session-definition-preview-title" className="sr-only">Session preview</h2>
                         <SessionDefinitionPreview
@@ -645,13 +666,34 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 <header className="session-runner-header">
                     <h2>🚀 Start a Structured Session</h2>
                     <p className="session-runner-subtitle">Start a reviewed session, or make one that is stored and validated before execution.</p>
-                    {(onImportSession || onBuildSession) && <div className="session-authoring-actions">
-                        {onImportSession && <button type="button" className="start-fixture-btn" onClick={onImportSession}>Import session JSON</button>}
-                        {onBuildSession && <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={() => onBuildSession()}>Build session</button>}
-                    </div>}
+                    {creationSource === null ? (
+                        showCreationChooser ? (
+                            <div className="session-authoring-actions" role="group" aria-label="New session source">
+                                <button type="button" className="start-fixture-btn" onClick={() => setCreationSource('template')}>From template</button>
+                                <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={() => setCreationSource('fixture')}>From fixture</button>
+                                {onImportSession && <button type="button" className="start-fixture-btn" onClick={onImportSession}>Import JSON</button>}
+                                {onBuildSession && <button type="button" className="start-fixture-btn secondary-authoring-btn" onClick={() => onBuildSession()}>Build manually</button>}
+                            </div>
+                        ) : (
+                            <div className="session-authoring-actions">
+                                <button type="button" className="start-fixture-btn" onClick={() => setShowCreationChooser(true)}>＋ New session</button>
+                            </div>
+                        )
+                    ) : (
+                        <div className="session-authoring-actions">
+                            <button type="button" className="preview-back-button" onClick={() => { setCreationSource(null); setShowCreationChooser(true); }}>
+                                ← New session
+                            </button>
+                        </div>
+                    )}
                 </header>
                 {savedDefinitionsError && <p className="session-runner-error" role="alert">{savedDefinitionsError}</p>}
-                {activeSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="saved-session-library-title">
+                {creationSource === 'template' && activeSavedDefinitions.length === 0 && archivedSavedDefinitions.length === 0 && !savedDefinitionsError && (
+                    <p className="session-runner-subtitle">
+                        {resolveEmptyTemplateGuidance(Boolean(onImportSession), Boolean(onBuildSession))}
+                    </p>
+                )}
+                {creationSource === 'template' && activeSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="saved-session-library-title">
                     <h3 id="saved-session-library-title">Your custom templates</h3>
                     <div className="fixture-grid">
                         {activeSavedDefinitions.map(header => <div key={header.definitionId} className="fixture-card">
@@ -685,7 +727,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         </div>)}
                     </div>
                 </section>}
-                {archivedSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="archived-session-library-title">
+                {creationSource === 'template' && archivedSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="archived-session-library-title">
                     <button type="button" className="preview-back-button" onClick={() => setShowArchivedDefinitions(current => !current)}>
                         {showArchivedDefinitions ? 'Hide archived templates' : `Show archived templates (${archivedSavedDefinitions.length})`}
                     </button>
@@ -706,7 +748,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         </div>)}
                     </div>}
                 </section>}
-                <div className="fixture-grid">
+                {creationSource === 'fixture' && <div className="fixture-grid">
                     {AVAILABLE_FIXTURES.map(fixture => (
                         <div key={fixture.id} className="fixture-card">
                             <div className="fixture-info">
@@ -728,7 +770,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             </div>
                         </div>
                     ))}
-                </div>
+                </div>}
                 </>}
             </div>
         );
@@ -839,17 +881,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         aria-label={soundMuted ? 'Unmute sound' : 'Mute sound'}
                     >
                         {soundMuted ? '🔇' : '🔊'}
-                    </button>
-                    <button
-                        type="button"
-                        className="save-template-header-btn"
-                        onClick={() => {
-                            setCustomTemplateTitle(definition.title);
-                            setShowSaveTemplateModal(true);
-                        }}
-                        title="Save adjusted workout as a new template"
-                    >
-                        💾 Save Template
                     </button>
                     <span className="session-timer">⏱️ {formatTime(runner.elapsedSeconds)}</span>
                     <span className={`sync-pill ${runner.syncStatus}`}>{runner.syncStatus}</span>
@@ -1125,6 +1156,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             </div>
 
             {/* Completion Sheet */}
+            {/* #495: save-as-template is a secondary action inside completion. The sheet stays
+                mounted but hidden while the title editor owns the modal layer, preserving any
+                sRPE, completion, fatigue, notes, or tissue feedback already entered. */}
             {showCompletionSheet && (
                 <SessionCompletionSheet
                     startedAt={runner.execution.startedAt}
@@ -1133,10 +1167,17 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     saving={false}
                     openAbandonConfirmation={showAbandonConfirmation}
                     error={completionError}
+                    hidden={showSaveTemplateModal}
                     onCancel={() => {
                         setShowCompletionSheet(false);
                         setShowAbandonConfirmation(false);
                         setCompletionError(null);
+                    }}
+                    onSaveTemplate={() => {
+                        setCustomTemplateTitle(definition.title);
+                        setSaveTemplateError(null);
+                        setSaveTemplateSuccess(null);
+                        setShowSaveTemplateModal(true);
                     }}
                     onComplete={payload => finishSession(
                         () => runner.completeSession(payload),
@@ -1167,7 +1208,17 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     <div className="exercise-swap-modal save-template-modal">
                         <div className="swap-modal-header">
                             <h3 id="save-template-modal-title">Save as Custom Template</h3>
-                            <button type="button" className="close-btn" onClick={() => setShowSaveTemplateModal(false)} aria-label="Close">✕</button>
+                            <button
+                                type="button"
+                                className="close-btn"
+                                onClick={() => {
+                                    setShowSaveTemplateModal(false);
+                                }}
+                                disabled={isSavingTemplate || Boolean(saveTemplateSuccess)}
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
                         </div>
                         <p className="swap-subtitle">
                             Save your adjusted workout (including any swapped exercises) so you can start it again anytime.
@@ -1186,16 +1237,23 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             />
                         </label>
                         <div className="swap-modal-actions">
-                            <button type="button" className="cancel-swap-btn" onClick={() => setShowSaveTemplateModal(false)}>
+                            <button
+                                type="button"
+                                className="cancel-swap-btn"
+                                onClick={() => {
+                                    setShowSaveTemplateModal(false);
+                                }}
+                                disabled={isSavingTemplate || Boolean(saveTemplateSuccess)}
+                            >
                                 Cancel
                             </button>
                             <button
                                 type="button"
                                 className="confirm-swap-btn"
-                                disabled={isSavingTemplate || !customTemplateTitle.trim()}
+                                disabled={isSavingTemplate || !customTemplateTitle.trim() || Boolean(saveTemplateSuccess)}
                                 onClick={handleSaveCustomTemplate}
                             >
-                                {isSavingTemplate ? 'Saving…' : 'Save Template'}
+                                {isSavingTemplate ? 'Saving…' : saveTemplateSuccess ? 'Saved' : 'Save Template'}
                             </button>
                         </div>
                     </div>
