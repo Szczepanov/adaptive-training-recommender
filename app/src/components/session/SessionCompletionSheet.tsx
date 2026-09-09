@@ -81,6 +81,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     // ⚡ Bolt: Memoize step array filters to prevent redundant O(N) operations on every form state change (e.g. typing in notes)
     const missingRequiredSteps = useMemo(() => steps.filter(s => s.isPlanned && !s.optional && !s.isComplete), [steps]);
     const completedExercisesCount = useMemo(() => steps.filter(s => s.loggedSetsCount > 0).length, [steps]);
+    const abandoningAssessment = recordKind === 'AssessmentAttempt';
 
     const handleConfirmComplete = async () => {
         const submittedTissueFeedback = resolveSubmittedTissueFeedback(tissueFeedback, selectedRegion, reportedPain);
@@ -116,12 +117,18 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                 {error && <p className="session-runner-error" role="alert">{error}</p>}
                 {showAbandonConfirm ? (
                     <div className="abandon-confirmation-view">
-                        <h3 className="danger-text">Abandon Session?</h3>
-                        <p>
-                            Are you sure you want to abandon this session?
-                        </p>
+                        <h3 id="completion-title" className="danger-text">
+                            {abandoningAssessment ? 'Abandon Locked Assessment?' : 'Abandon Session?'}
+                        </h3>
+                        {abandoningAssessment ? (
+                            <p>
+                                This permanently abandons the locked AssessmentAttempt. It is terminal, cannot be resumed, and will never produce a benchmark observation. To test again, you must start a fresh attempt.
+                            </p>
+                        ) : (
+                            <p>Are you sure you want to abandon this session?</p>
+                        )}
                         <p className="abandon-subtext">
-                            <strong>Note:</strong> Partial sets you have logged ({totalSets} sets) are permanently retained in your history and will not be deleted.
+                            <strong>{abandoningAssessment ? 'What is retained:' : 'Note:'}</strong> Partial sets you have logged ({totalSets} sets) are permanently retained in your history and will not be deleted.
                         </p>
                         <div className="sheet-actions">
                             <button
@@ -130,7 +137,11 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                 onClick={onAbandon}
                                 disabled={saving}
                             >
-                                {saving ? 'Abandoning...' : 'Yes, Abandon Session'}
+                                {saving
+                                    ? 'Abandoning...'
+                                    : abandoningAssessment
+                                        ? 'Yes, Abandon Assessment'
+                                        : 'Yes, Abandon Session'}
                             </button>
                             <button
                                 type="button"

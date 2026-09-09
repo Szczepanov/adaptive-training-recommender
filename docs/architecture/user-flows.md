@@ -476,8 +476,14 @@ living-reference section when implementing them.
     one `New session` entry with a From template / From fixture / Import JSON / Build manually
     chooser; save-as-template is a secondary action inside the completion dialog rather than
     an active-run peer action.
-12. Make companion/follow-up executions explicit and clarify whether abandoning a testing
-    attempt is intentionally destructive/terminal before confirmation.
+12. ~~Make companion/follow-up executions explicit and clarify whether abandoning a testing
+    attempt is intentionally destructive/terminal before confirmation.~~ Done (#494):
+    the `SessionRunner` companion prompt labels companions as follow-ups to the finished
+    session — explicitly not the next workout block — via `resolveCompanionPromptCopy`,
+    and the `TestingWorkflow` abandoned stage states what was lost (the locked attempt
+    will never produce a benchmark observation, and abandonment is terminal) with a
+    `Start a fresh attempt` forward path back to the protocol lock. No execution or
+    persistence semantics changed.
 
 ### Onboarding, auth, and export
 

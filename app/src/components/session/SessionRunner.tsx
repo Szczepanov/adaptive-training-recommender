@@ -133,6 +133,18 @@ export function resolveRestPreviewStep(
     return nextBlock?.steps[0] ?? null;
 }
 
+export function resolveCompanionPromptCopy(finishedTitle: string, companionCount: number): { heading: string; subheading: string } {
+    // #494: companions are follow-ups to the session that just finished, never the next
+    // workout block -- the prompt must say so explicitly either way the count reads.
+    const companionNoun = companionCount === 1 ? 'a separately executable follow-up companion' : `${companionCount} separately executable follow-up companions`;
+    return {
+        heading: companionCount === 1
+            ? 'Follow-up companion available'
+            : 'Follow-up companions available',
+        subheading: `${finishedTitle} lists ${companionNoun}. This is a follow-up to what you just finished — not your next workout block. Start now or later — skipping records nothing.`,
+    };
+}
+
 export function resolveEmptyTemplateGuidance(canImportSession: boolean, canBuildSession: boolean): string {
     if (canImportSession && canBuildSession) {
         return 'No saved templates yet — start from a reviewed fixture, import JSON, or build one manually.';
@@ -597,13 +609,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         // execution and takes over this same "active session" view normally; skipping just
         // dismisses the prompt. Takes priority over the ordinary picker below.
         if (companionPrompt) {
+            const companionCopy = resolveCompanionPromptCopy(companionPrompt.finishedTitle, companionPrompt.companions.length);
             return (
                 <div className="session-runner-container no-active">
                     <header className="session-runner-header">
-                        <h2>Companion session available</h2>
+                        <h2>{companionCopy.heading}</h2>
                         <p className="session-runner-subtitle">
-                            {companionPrompt.finishedTitle} lists {companionPrompt.companions.length === 1 ? 'a' : companionPrompt.companions.length}
-                            {' '}separately executable companion{companionPrompt.companions.length === 1 ? '' : 's'}. Start now or later — skipping records nothing.
+                            {companionCopy.subheading}
                         </p>
                     </header>
                     {companionError && <p className="session-runner-error" role="alert">{companionError}</p>}

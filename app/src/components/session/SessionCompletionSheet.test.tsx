@@ -160,9 +160,35 @@ describe('SessionCompletionSheet', () => {
             />,
         );
 
+        expect(html).toContain('id="completion-title"');
         expect(html).toContain('Abandon Session?');
         expect(html).toContain('Yes, Abandon Session');
         expect(html).toContain('Partial sets you have logged (2 sets) are permanently retained');
+    });
+
+    it('warns before a locked assessment is terminally abandoned (#494)', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={2}
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+                openAbandonConfirmation={true}
+                recordKind="AssessmentAttempt"
+            />,
+        );
+
+        expect(html).toContain('Abandon Locked Assessment?');
+        expect(html).toContain('permanently abandons the locked AssessmentAttempt');
+        expect(html).toContain('terminal');
+        expect(html).toContain('cannot be resumed');
+        expect(html).toContain('will never produce a benchmark observation');
+        expect(html).toContain('start a fresh attempt');
+        expect(html).toContain('What is retained:');
+        expect(html).toContain('Yes, Abandon Assessment');
     });
 
     it('renders Save as template inside the completion dialog when the action is available (#495)', () => {

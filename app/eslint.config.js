@@ -27,10 +27,12 @@ export default defineConfig([
     },
   },
   {
-    // SessionRunner exports two pure deterministic guidance helpers solely so the runner's
-    // load/rest semantics can be regression-tested without mounting session persistence.
-    // Keep the Fast Refresh exception scoped to this file rather than weakening the rule globally.
-    files: ['src/components/session/SessionRunner.tsx'],
+    // SessionRunner exports pure deterministic guidance helpers solely so the runner's
+    // load/rest/companion semantics can be regression-tested without mounting session
+    // persistence; TestingWorkflow exports its abandoned-state copy for the same reason
+    // (its module pulls Firebase-backed services at import). Keep the Fast Refresh
+    // exception scoped to these files rather than weakening the rule globally.
+    files: ['src/components/session/SessionRunner.tsx', 'src/components/testing/TestingWorkflow.tsx'],
     rules: {
       'react-refresh/only-export-components': 'off',
     },
