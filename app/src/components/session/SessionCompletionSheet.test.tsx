@@ -164,4 +164,44 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('Yes, Abandon Session');
         expect(html).toContain('Partial sets you have logged (2 sets) are permanently retained');
     });
+
+    it('renders Save as template inside the completion dialog when the action is available (#495)', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={2}
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                onSaveTemplate={vi.fn()}
+                saving={false}
+            />,
+        );
+
+        expect(html).toContain('role="dialog"');
+        expect(html).toContain('aria-modal="true"');
+        expect(html).toContain('data-testid="completion-save-template-button"');
+        expect(html).toContain('Save as template');
+    });
+
+    it('hides Save as template from the abandon confirmation (#495)', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={2}
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                onSaveTemplate={vi.fn()}
+                saving={false}
+                openAbandonConfirmation={true}
+            />,
+        );
+
+        expect(html).toContain('Abandon Session?');
+        expect(html).not.toContain('completion-save-template-button');
+        expect(html).not.toContain('Save as template');
+    });
 });
