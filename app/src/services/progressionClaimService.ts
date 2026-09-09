@@ -13,6 +13,7 @@ import type { ProposedProgressionChange } from '../engine/progressionReview';
 import { buildTreatmentIntentReplayPayloadV1, hashTreatmentIntentReplayPayload } from '../engine/blockIntentReplay';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import { parseTrainingSettings } from './trainingSettingsService';
+import { deriveProgressionProposalId } from './progressionProposalIdentity';
 import {
     IntentBlockService,
     type IntentBlockHeader,
@@ -293,6 +294,15 @@ export async function confirmProgressionRevision(
     reviewAsOfDate: string,
     db: Firestore = getDb(),
 ): Promise<ConfirmProgressionRevisionResult> {
+    const expectedProposalId = deriveProgressionProposalId(
+        expectedSourcePlanRevision,
+        reviewAsOfDate,
+        proposedChange,
+    );
+    if (proposalId !== expectedProposalId) {
+        invalidChange(`Proposal id '${proposalId}' does not equal canonical id '${expectedProposalId}'`);
+    }
+
     const activationKey = await deterministicActivationKey(blockId, proposalId);
     const experimentId = activationKey;
     const intentBlocks = new IntentBlockService(db);
