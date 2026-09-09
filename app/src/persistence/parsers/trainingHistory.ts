@@ -323,15 +323,17 @@ export function parseNormalizedGarminActivity(
     };
 }
 
-/** v1/v2/v3 persisted recommendations are accepted through the existing strict validator;
+/** v1/v2/v3/v4 persisted recommendations are accepted through the existing strict
+ * validator (v4 adds `recommendationAudit.knowledgeLineage`, written since the "persist
+ * recommendation knowledge lineage" change and fully validated by validateRecommendation);
  * newer schemas must not silently enter the engine before an explicit migration exists.
  * Phase 9.0 adds one backward-compatible evidence-only field, `engineVerdict`, validated
- * here because the historical recommendation validator intentionally owns only the v1-v3
+ * here because the historical recommendation validator intentionally owns only the v1-v4
  * decision shape. */
 export function parseDailyRecommendation(raw: unknown, documentPath: string): DataState<DailyRecommendation> {
     if (!isObject(raw)) return invalid(documentPath, 'not-an-object');
     const schemaVersion = raw.schemaVersion;
-    if (schemaVersion !== undefined && schemaVersion !== 1 && schemaVersion !== 2 && schemaVersion !== 3) {
+    if (schemaVersion !== undefined && schemaVersion !== 1 && schemaVersion !== 2 && schemaVersion !== 3 && schemaVersion !== 4) {
         return invalid(documentPath, 'unsupported-schema-version', 'schemaVersion', typeof schemaVersion === 'number' ? schemaVersion : undefined);
     }
     if (raw.engineVerdict !== undefined && !isShadowVerdict(raw.engineVerdict)) {
