@@ -145,7 +145,8 @@ describe('SessionRunner session picker', () => {
         expect(html).toContain('Locked assessment');
     });
 
-    it('leaves the running header untinted for normal sessions (#496)', () => {        const step = repetitionStep('squat', 3);
+    it('leaves the running header untinted for normal sessions (#496)', () => {
+        const step = repetitionStep('squat', 3);
         const definition = definitionWithBlock('sequential', [step]);
         vi.mocked(useSessionRunner).mockReturnValueOnce({
             activeStep: step,
