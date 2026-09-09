@@ -203,6 +203,31 @@
     width: fit-content;
 }
 
+/* #496: assessment executions share the runner, so the header is tinted per mode. */
+.mode-tag-assessment {
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #fbbf24;
+    background: rgba(245, 158, 11, 0.15);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    width: fit-content;
+}
+
+.runner-mode-assessment .session-top-bar {
+    border-bottom: 1px solid #b45309;
+    background: rgba(245, 158, 11, 0.08);
+    border-radius: 8px 8px 0 0;
+    padding: 0.75rem 0.75rem 0.75rem;
+}
+
+.completion-record-provenance {
+    margin: 0.25rem 0 0 0;
+    font-size: 0.85rem;
+    color: #94a3b8;
+}
+
 .session-title-text {
     margin: 0;
     font-size: 1.2rem;

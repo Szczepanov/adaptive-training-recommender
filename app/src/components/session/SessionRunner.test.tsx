@@ -118,6 +118,56 @@ describe('SessionRunner session picker', () => {
         expect(html).not.toContain('Save Template');
         expect(html).not.toContain('save-template-header-btn');
     });
+
+    it('tints the running header for locked assessments (#496)', () => {
+        const step = repetitionStep('squat', 3);
+        const definition = definitionWithBlock('sequential', [step]);
+        vi.mocked(useSessionRunner).mockReturnValueOnce({
+            activeStep: step,
+            activeBlock: definition.blocks[0],
+            activeBlockIndex: 0,
+            activeStepIndex: 0,
+            definition,
+            entries: [],
+            execution: { state: 'in_progress' },
+            isRestoring: false,
+            elapsedSeconds: 0,
+            isRestRunning: false,
+            syncStatus: 'synced',
+            canUndo: false,
+            sessionEnded: false,
+            ineligibleOptionIds: new Set<string>(),
+        } as unknown as ReturnType<typeof useSessionRunner>);
+        const html = renderToStaticMarkup(<SessionRunner userId="user-1" mode="assessment" />);
+
+        expect(html).toContain('runner-mode-assessment');
+        expect(html).toContain('Locked assessment');
+    });
+
+    it('leaves the running header untinted for normal sessions (#496)', () => {
+        const step = repetitionStep('squat', 3);
+        const definition = definitionWithBlock('sequential', [step]);
+        vi.mocked(useSessionRunner).mockReturnValueOnce({
+            activeStep: step,
+            activeBlock: definition.blocks[0],
+            activeBlockIndex: 0,
+            activeStepIndex: 0,
+            definition,
+            entries: [],
+            execution: { state: 'in_progress' },
+            isRestoring: false,
+            elapsedSeconds: 0,
+            isRestRunning: false,
+            syncStatus: 'synced',
+            canUndo: false,
+            sessionEnded: false,
+            ineligibleOptionIds: new Set<string>(),
+        } as unknown as ReturnType<typeof useSessionRunner>);
+        const html = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+
+        expect(html).not.toContain('runner-mode-assessment');
+        expect(html).not.toContain('Locked assessment');
+    });
 });
 
 describe('formatSessionLoad', () => {

@@ -155,6 +155,9 @@ interface SessionRunnerProps {
     onBuildSession?: (initialDefinition?: SessionDefinition) => void;
     onSessionStateChange?: (execution: SessionExecution | null) => void;
     onClose?: () => void;
+    /** Chrome-only execution context. `'assessment'` tints the header and labels the
+     * completion sheet with the AssessmentAttempt record; persistence is unchanged. */
+    mode?: 'session' | 'assessment';
 }
 
 export const SessionRunner: React.FC<SessionRunnerProps> = ({
@@ -165,6 +168,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     onBuildSession,
     onSessionStateChange,
     onClose,
+    mode = 'session',
 }) => {
     const runner = useSessionRunner(userId, AVAILABLE_FIXTURES);
     const overload = useOverloadHistory(userId);
@@ -861,11 +865,12 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
     const activeEffort = activeStep ? formatEffort(activeStep) : null;
 
     return (
-        <div className="session-runner-container">
+        <div className={`session-runner-container${mode === 'assessment' ? ' runner-mode-assessment' : ''}`}>
             {/* Top Bar */}
             <div className="session-top-bar">
                 <div className="session-header-left">
                     <span className="intent-tag">{definition.intent}</span>
+                    {mode === 'assessment' && <span className="mode-tag mode-tag-assessment">Locked assessment</span>}
                     <h2 className="session-title-text">{definition.title}</h2>
                 </div>
                 <div className="session-header-right">
@@ -1168,6 +1173,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     openAbandonConfirmation={showAbandonConfirmation}
                     error={completionError}
                     hidden={showSaveTemplateModal}
+                    recordKind={mode === 'assessment' ? 'AssessmentAttempt' : 'SessionExecution'}
                     onCancel={() => {
                         setShowCompletionSheet(false);
                         setShowAbandonConfirmation(false);

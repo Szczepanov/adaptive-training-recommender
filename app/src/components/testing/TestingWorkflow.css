@@ -132,6 +132,21 @@
   padding: 10px 12px;
 }
 
+/* #496: collapsed lock card shown above the shared runner during assessment execution. */
+.testing-lock-summary {
+  border-color: #b45309;
+  background: rgba(245, 158, 11, 0.06);
+  gap: 8px;
+}
+
+.testing-lock-summary summary {
+  cursor: pointer;
+  font-weight: 600;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+
 .testing-note {
   font-size: 0.9rem;
   opacity: 0.78;
