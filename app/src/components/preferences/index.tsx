@@ -8,6 +8,7 @@ import { PerformanceSections } from './PerformanceSections';
 import { GarminConnectionSection } from './GarminConnectionSection';
 import { GoogleHealthConnectionSection } from './GoogleHealthConnectionSection';
 import { HealthRunYogaPresetSection } from './HealthRunYogaPresetSection';
+import { OnboardingRelaunchSection } from './OnboardingRelaunchSection';
 import type { Screen } from '../../types/navigation';
 import '../Preferences.css';
 
@@ -84,6 +85,8 @@ export function Preferences({ userId }: PreferencesProps) {
           userId={userId}
           onApplied={loadPreferences}
         />
+
+        <OnboardingRelaunchSection userId={userId} />
 
         <TrainingPlanSection
           trainingIntentProfile={trainingIntentProfile}

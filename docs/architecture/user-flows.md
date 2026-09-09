@@ -84,7 +84,11 @@ drawer; it is not a URL/history transition.
 
 Successful onboarding writes training settings, the training-intent profile, and (if the
 athlete is still goal-less) an active goal before `onCompleted` stores the per-user browser
-dismissal key. There is currently no Skip action. A blocked `localStorage` write alone does
+dismissal key. Skip persists only that dismissal key — it never creates a goal and never
+writes training settings — and is logged to local usability telemetry as a skipped wizard
+completion. A skipped (goal-less, dismissed) account can re-launch the wizard from the
+Coach Preferences surface, which clears the dismissal key and reloads. A blocked
+`localStorage` write alone does
 not make a successfully onboarded athlete loop forever, because the active-goal gate also
 suppresses the overlay.
 
@@ -354,7 +358,8 @@ moving an input across an authority boundary.
 7. Several recovery states are weak rather than truly terminal: DataView's no-data state has
    no local retry, some PlanView invalid states have limited repair affordance, a missing
    stored session prescription is fail-closed, testing abandonment is terminal for that
-   attempt, and onboarding has no Skip.
+   attempt, and a skipped onboarding with blocked browser storage resurfaces the wizard on
+   refresh (dismissal persistence needs working `localStorage`).
 8. Garmin is used both as an app sign-in path and as a wearable/provider connection, which
    can read as one task even though the flows and credentials have different purposes.
 
@@ -402,8 +407,11 @@ living-reference section when implementing them.
 
 ### Onboarding, auth, and export
 
-13. Add an explicit onboarding Skip/dismiss path only if product semantics define what a
-    goal-less dismissed account should do; do not implement it as a browser flag alone.
+13. ~~Add an explicit onboarding Skip/dismiss path only if product semantics define what a
+    goal-less dismissed account should do; do not implement it as a browser flag alone.~~
+    Done (#490): Skip persists only the per-user dismissal key — no goal, no training-settings
+    writes — skipped completions are logged to local usability telemetry, and a goal-less
+    dismissed account can re-launch the wizard from Coach Preferences.
  14. ~~Use distinct copy for app authentication (`Continue/Sign in with Garmin`) and wearable
      data connection (`Connect Garmin wearable`).~~ Done (#497): `LoginScreen` garmin mode
      uses `Sign in with Garmin`, `GarminConnectionSection` uses `Connect Garmin wearable`.

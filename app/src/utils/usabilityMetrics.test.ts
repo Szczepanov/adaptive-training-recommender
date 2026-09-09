@@ -58,8 +58,22 @@ describe('usabilityMetrics task-based evaluation', () => {
         expect(report.errorRate).toBe(1);
     });
 
-    it('safely handles corrupted or [null] entries in localStorage', () => {
-        if (typeof window !== 'undefined' && window.localStorage) {
+    it('records wizard completion and skip outcomes in local telemetry', () => {
+        const userId = 'athlete-test';
+        const date = '2026-08-26';
+
+        usabilityMetrics.recordWizardCompleted(userId, date, 'completed', 12000);
+        usabilityMetrics.recordWizardCompleted(userId, date, 'skipped', 3000);
+
+        const report = usabilityMetrics.generateSummaryReport();
+        expect(report.wizardCompletions).toBe(1);
+        expect(report.wizardSkips).toBe(1);
+        // Wizard telemetry is additive: recommendation TTR reporting is unchanged.
+        expect(report.totalViews).toBe(0);
+        expect(report.totalActions).toBe(0);
+    });
+
+    it('safely handles corrupted or [null] entries in localStorage', () => {        if (typeof window !== 'undefined' && window.localStorage) {
             window.localStorage.setItem('adaptive_training_usability_events_v1', JSON.stringify([null, { malformed: true }]));
             const report = usabilityMetrics.generateSummaryReport();
             expect(report.totalViews).toBe(0);

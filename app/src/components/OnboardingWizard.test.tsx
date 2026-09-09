@@ -12,6 +12,14 @@ describe('OnboardingWizard', () => {
     expect(html).toContain('Welcome to Adaptive Training');
     expect(html).toContain('Let&#x27;s Set Up Your Profile →');
   });
+
+  it('offers an explicit Skip path on the welcome step without starting setup', () => {
+    const html = renderToStaticMarkup(
+      <OnboardingWizard userId="athlete-1" onCompleted={() => {}} />
+    );
+
+    expect(html).toContain('Skip for now');
+  });
 });
 
 describe('ExerciseDaysSlider', () => {

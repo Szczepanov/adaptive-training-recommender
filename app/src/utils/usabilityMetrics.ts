@@ -1,7 +1,7 @@
 export interface UsabilitySessionEvent {
     id: string;
     timestamp: string;
-    eventType: 'recommendation_view' | 'action_selected' | 'alternative_chosen' | 'override_attempt' | 'completion_reported';
+    eventType: 'recommendation_view' | 'action_selected' | 'alternative_chosen' | 'override_attempt' | 'completion_reported' | 'wizard_completed';
     userId: string;
     date: string;
     durationMs?: number;
@@ -12,6 +12,8 @@ export interface UsabilitySessionEvent {
 export interface UsabilitySummaryReport {
     totalViews: number;
     totalActions: number;
+    wizardCompletions: number;
+    wizardSkips: number;
     averageTtrMs: number;
     medianTtrMs: number;
     overrideRate: number;
@@ -145,10 +147,23 @@ class UsabilityMetricsTracker {
         });
     }
 
+    recordWizardCompleted(userId: string, date: string, outcome: 'completed' | 'skipped', durationMs?: number): void {
+        this.saveEvent({
+            id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            timestamp: new Date().toISOString(),
+            eventType: 'wizard_completed',
+            userId,
+            date,
+            durationMs,
+            details: { outcome },
+        });
+    }
+
     generateSummaryReport(): UsabilitySummaryReport {
         const events = this.getStoredEvents();
         const views = events.filter(e => e.eventType === 'recommendation_view');
         const actions = events.filter(e => e.eventType === 'action_selected');
+        const wizardOutcomes = events.filter(e => e.eventType === 'wizard_completed');
         const overrides = events.filter(e => e.eventType === 'override_attempt');
         const blockedOverrides = overrides.filter(e => e.details?.blockedByGate === true);
 
@@ -177,6 +192,8 @@ class UsabilityMetricsTracker {
         return {
             totalViews: views.length,
             totalActions: actions.length,
+            wizardCompletions: wizardOutcomes.filter(e => e.details?.outcome !== 'skipped').length,
+            wizardSkips: wizardOutcomes.filter(e => e.details?.outcome === 'skipped').length,
             averageTtrMs: Math.round(avgTtr),
             medianTtrMs: Math.round(medianTtr),
             overrideRate: Math.round(overrideRate * 100) / 100,

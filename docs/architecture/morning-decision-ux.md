@@ -74,6 +74,8 @@ That last distinction is intentional documentation of current behavior; the UI m
 
 The rapid wizard persists training settings before creating the active goal. The active goal is used by the app as an onboarding-complete signal, so creating it first could suppress the wizard after a partial write failure while leaving equipment/time settings at defaults.
 
+Skip is the deliberate exception to that write order: it persists only the per-user browser dismissal key and never creates a goal or writes training settings, so there is no partial-write state to order. A skipped goal-less account can re-launch the wizard from the Coach Preferences surface.
+
 Failures remain in the wizard with the athlete's current selections intact so completion can be retried safely.
 
 ## 7. Usability telemetry
@@ -83,6 +85,7 @@ Failures remain in the wizard with the athlete's current selections intact so co
 - events are stored in browser `localStorage` when available;
 - storage is capped to the most recent 200 persisted events;
 - recommendation TTR is measured from the **first recorded view** to the **first deliberate action** for that user/date;
+- wizard completion is recorded as a `wizard_completed` event with a `completed` / `skipped` outcome and the elapsed time since the wizard mounted;
 - repeated renders before that action do not restart the clock;
 - later actions are recorded but are not assigned the original first-action TTR;
 - browser-storage failure is non-fatal and falls back to in-memory collection for the current runtime.
