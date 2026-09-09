@@ -175,7 +175,7 @@ describe('resolveCompanionPromptCopy', () => {
     it('labels a single companion as a follow-up, not the next workout block (#494)', () => {
         const copy = resolveCompanionPromptCopy('Full-body maintenance', 1);
 
-        expect(copy.heading).toContain('Follow-up');
+        expect(copy.heading).toBe('Follow-up companion available');
         expect(copy.subheading).toContain('follow-up');
         expect(copy.subheading).toContain('not your next workout block');
     });
@@ -183,7 +183,7 @@ describe('resolveCompanionPromptCopy', () => {
     it('keeps the follow-up framing for multiple companions (#494)', () => {
         const copy = resolveCompanionPromptCopy('Full-body maintenance', 2);
 
-        expect(copy.heading).toContain('Follow-up');
+        expect(copy.heading).toBe('Follow-up companions available');
         expect(copy.subheading).toContain('2 separately executable follow-up companions');
         expect(copy.subheading).toContain('not your next workout block');
     });
