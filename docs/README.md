@@ -184,6 +184,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-03 PR 388 auth and wearable-free review**](./analysis/2026-09-03-pr-388-auth-wearable-free-review.md) — Review of PR 388 covering authentication and provider-link boundaries, recommendation composition, and 7-day planning.
 * [**2026-09-04 judge:e2e:quick drift diagnosis**](./analysis/2026-09-04-judge-e2e-quick-drift-diagnosis.md) — Diagnosis of a reported regression in the local 4B AI plan judge after PR #387 / #388, confirming it as sampling noise rather than an engine behavior change.
 * [**2026-09-05 Local AI-judge throughput tuning**](./analysis/2026-09-05-local-judge-vram-tuning.md) — Local GPU VRAM headroom analysis and adjustments to sample counts, context windows, and concurrency for AI-judge tools.
+* [**2026-09-07 ADR-0038 Recovery Placement Implementation Analysis**](./analysis/2026-09-07-adr-0038-recovery-placement-implementation-analysis.md) — Analysis of recovery placement options for external plans under ADR-0038.
+* [**2026-09-07 Recommender Optimization Analysis**](./analysis/2026-09-07-recommender-optimization-opportunities.md) — Investigation into potential optimization strategies for the core recommender engine.
 
 ---
 
