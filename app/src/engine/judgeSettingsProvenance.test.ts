@@ -90,7 +90,8 @@ function setupPersona(baselineSettings: Record<string, unknown>, manifest: Recor
 
 describe('judge settings provenance completeness', () => {
     it('warns when an individual plan-judge setting is missing instead of silently skipping it', () => {
-        const { numPredict: _omitted, ...partialBaseline } = planSettings;
+        const partialBaseline: Record<string, unknown> = { ...planSettings };
+        delete partialBaseline.numPredict;
         const { appDir } = setupPlan(partialBaseline, planSettings);
         const result = spawnSync(process.execPath, [PLAN_SCRIPT], { cwd: appDir, encoding: 'utf8' });
 
