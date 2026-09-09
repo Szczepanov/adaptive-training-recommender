@@ -28,6 +28,11 @@ interface DataViewProps {
   userId: string;
   onBack: () => void;
   initialTab?: DataViewTab;
+  /** When provided, the duplicate export affordances (Context-brief tab content and
+   * Activities Copy All) become deep links to the canonical `brief` screen instead of
+   * reimplementing its export (#491). The `brief` screen itself omits this prop so it
+   * keeps the full export UI. */
+  onNavigateToBrief?: () => void;
 }
 
 type DataViewTab = 'recovery' | 'activities' | 'strength' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
@@ -88,7 +93,7 @@ function formatCandidateBaseline(
   return `7d med ${formatCandidateNumber(median7d)} · 28d med ${formatCandidateNumber(median28d)} · MAD ${formatCandidateNumber(mad28d)} · Δ7 ${formatCandidateDelta(delta7d)} · Δ28 ${formatCandidateDelta(delta28d)}`;
 }
 
-export function DataView({ decisionInput, userId, initialTab = 'recovery' }: DataViewProps) {
+export function DataView({ decisionInput, userId, initialTab = 'recovery', onNavigateToBrief }: DataViewProps) {
   const [activeTab, setActiveTab] = useState<DataViewTab>(initialTab);
   const [brief, setBrief] = useState<ContextBriefResult | null>(null);
   // Tagged with the date it belongs to, so a failure for one date is not rendered
@@ -186,7 +191,9 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
     // `briefDate` must be defined for the comparison to settle: passing undefined lets the
     // service default to today, whose asOfDate would never equal undefined and would
     // re-trigger this effect on every render.
-    if (activeTab !== 'brief' || !briefDate || (brief?.asOfDate === briefDate && brief.preset === briefPreset)) return;
+    // When this view only links to the canonical export surface (#491), never fetch
+    // the brief here -- the `brief` screen builds it.
+    if (onNavigateToBrief || activeTab !== 'brief' || !briefDate || (brief?.asOfDate === briefDate && brief.preset === briefPreset)) return;
     let cancelled = false;
     contextBriefService.build(userId, briefDate, briefWindowDaysFor(briefPreset), briefPreset)
       .then(result => { if (!cancelled) { setBrief(result); setBriefError(null); } })
@@ -200,7 +207,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
         setBriefError({ date: briefDate, message: 'Could not assemble the brief. Retry the dashboard refresh.' });
       });
     return () => { cancelled = true; };
-  }, [activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset]);
+  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset]);
 
   const selectBriefPreset = (preset: BriefWindowPreset) => {
     setBriefPreset(preset);
@@ -865,6 +872,26 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   const visibleBriefError = briefError && briefError.date === briefDate ? briefError.message : null;
 
   const renderContextBrief = () => {
+    // Deep-link fallback: the Context-brief tab navigates to the canonical export
+    // surface directly (#491), so this branch is only reachable if the tab is active
+    // while a navigate handler is set.
+    if (onNavigateToBrief) {
+      return (
+        <div className="data-section">
+          <h3>Context brief</h3>
+          <p className="brief-intro">
+            Export for AI lives in one place now — open {SCREEN_LABELS.brief} for the
+            canonical daily (2-day) or full (14-day) brief with char and token counts.
+            {' '}Read-only: generating it changes nothing.
+          </p>
+          <div className="brief-actions">
+            <button className="brief-copy" onClick={onNavigateToBrief}>
+              Open {SCREEN_LABELS.brief}
+            </button>
+          </div>
+        </div>
+      );
+    }
     const approxTokens = brief ? Math.ceil(brief.text.length / 4) : null;
     return (
       <div className="data-section">
@@ -1031,7 +1058,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
         </button>
         <button
           className={activeTab === 'brief' ? 'active' : ''}
-          onClick={() => setActiveTab('brief')}
+          onClick={() => {
+            // The `brief` screen is the canonical Export-for-AI surface (#491);
+            // from the Data screen this tab deep-links to it instead of duplicating it.
+            if (onNavigateToBrief) onNavigateToBrief();
+            else setActiveTab('brief');
+          }}
         >
           Context brief
         </button>
@@ -1050,15 +1082,27 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
               </div>
               {activityWindow?.state.status === 'AVAILABLE' && activityWindow.state.data.length > 0 && (
                 <div className="activities-header-actions">
-                  <button
-                    type="button"
-                    className="quick-action-btn secondary"
-                    style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                    onClick={handleCopyAllActivities}
-                    title="Copy all recent activities with detailed telemetry as JSON for AI planning"
-                  >
-                    {allActivitiesCopied ? '✓ Copied All JSON' : '📋 Copy All (JSON)'}
-                  </button>
+                  {onNavigateToBrief ? (
+                    <button
+                      type="button"
+                      className="quick-action-btn secondary"
+                      style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                      onClick={onNavigateToBrief}
+                      title="Open the canonical Export Context for AI surface for AI planning export"
+                    >
+                      📋 Export via {SCREEN_LABELS.brief}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="quick-action-btn secondary"
+                      style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                      onClick={handleCopyAllActivities}
+                      title="Copy all recent activities with detailed telemetry as JSON for AI planning"
+                    >
+                      {allActivitiesCopied ? '✓ Copied All JSON' : '📋 Copy All (JSON)'}
+                    </button>
+                  )}
                   <button
                     type="button"
                     className="quick-action-btn secondary"
