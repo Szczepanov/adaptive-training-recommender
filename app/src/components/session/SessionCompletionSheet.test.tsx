@@ -241,7 +241,7 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('Finishing saves a SessionExecution record.');
     });
 
-    it('labels the completion sheet with the AssessmentAttempt record for locked assessments (#496)', () => {
+    it('labels locked assessment completion without claiming the AssessmentAttempt is already complete (#496)', () => {
         const html = renderToStaticMarkup(
             <SessionCompletionSheet
                 startedAt={new Date().toISOString()}
@@ -255,6 +255,8 @@ describe('SessionCompletionSheet', () => {
             />,
         );
 
-        expect(html).toContain('Finishing saves a SessionExecution and completes the linked AssessmentAttempt record.');
+        expect(html).toContain('Finishing saves a SessionExecution for this AssessmentAttempt.');
+        expect(html).toContain('The AssessmentAttempt is completed only after its observations are saved.');
+        expect(html).not.toContain('completes the linked AssessmentAttempt record');
     });
 });
