@@ -311,10 +311,16 @@ Most of the surface is inspection/export. The Activities tab is the exception: i
 corrective actions (for example activity reclassification, and canonical-source unlinking
 when that read model is enabled), so the screen must not be described as strictly read-only.
 
-The `brief` route is the same `DataView` component opened on `Context brief`. The Data and
-brief navigation entries refresh decision input before navigating. If `decisionInput` is
-null, DataView shows `No data available`; that state has no in-component retry action,
-although the global navigation chrome remains available.
+The `brief` route is the same `DataView` component opened on `Context brief`, and it is
+the canonical Export-for-AI surface. From the Data screen, the Context brief tab and the
+Activities AI-export action deep-link to it (`App.tsx` `handleNavigate('brief')` via
+`DataView` `onNavigateToBrief`) instead of duplicating its export. On the canonical `brief`
+screen, the same Activities action returns to the local Context brief tab, so the legacy raw
+clipboard exporter is not reachable there either. Only the `brief` screen renders the daily
+(2-day) / full (14-day) brief with char and token counts. The Data and brief navigation
+entries refresh decision input before navigating. If `decisionInput` is null, DataView shows
+`No data available`; that state has no in-component retry action, although the global
+navigation chrome remains available.
 
 ### 10. Protocol testing
 
@@ -361,8 +367,9 @@ moving an input across an authority boundary.
    discover.
 4. Imported coach plan, adaptive week forecast, and Home recommendation can disagree without
    a single authority explanation in the UI.
-5. AI/context export appears as the `brief` route, the DataView Context brief tab, and raw
-   Activities JSON export.
+5. AI/context export has one canonical surface: the `brief` route. The DataView
+   Context brief tab and Activities AI-export action route to it rather than duplicating it;
+   when already inside the canonical `brief` screen, that action returns to Context brief.
 6. `sessions` and `testing` share `SessionRunner`, so the execution UI alone does not strongly
    communicate provenance.
 7. Several recovery states are weak rather than truly terminal: DataView's no-data state has
@@ -441,7 +448,12 @@ living-reference section when implementing them.
 14. ~~Use distinct copy for app authentication (`Continue/Sign in with Garmin`) and wearable
     data connection (`Connect Garmin wearable`).~~ Done (#497): `LoginScreen` garmin mode
     uses `Sign in with Garmin`, `GarminConnectionSection` uses `Connect Garmin wearable`.
-15. Choose a canonical AI-export surface and make the other export affordances clearly point
-    to or distinguish themselves from it.
+15. ~~Choose a canonical AI-export surface and make the other export affordances clearly point
+    to or distinguish themselves from it.~~
+    Done (#491): `brief` is the canonical Export-for-AI surface; the DataView Context-brief
+    tab and Activities AI-export action route to it (or return to the local Context brief tab
+    when already on the canonical screen). The legacy raw Activities clipboard exporter is
+    removed from the UI. Exported brief content is unchanged (daily 2d vs full 14d windows,
+    char and token counts).
 16. Add local retry/repair affordances to weak recovery states, starting with DataView's
     null-input state and PlanView source failures.
