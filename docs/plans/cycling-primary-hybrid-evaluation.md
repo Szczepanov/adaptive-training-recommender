@@ -12,19 +12,27 @@ post-AM `SessionResponse` completion facts, while multi-region tissue feedback r
 the daily check-in as the canonical tissue authority. Phase 6 applies the cumulative
 `2026-09-h4-intraday-bundle-member-launch-v1` policy transition, completing the H4 release;
 dependent members still require the response and separation checks before they become
-launchable. The broader ledger-based ranking/admission unification
-and persistence of a bundle's resolved placement for display also remain; H5 design is
-accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted).
+launchable. The rolling planner's ledger-based ranking/admission gating is also delivered
+(PR #474, `2026-09-h4-d-ledger-planner-admission-v2`), and the three narrower ad hoc
+fixed-activity dedup mechanisms that PR left un-unified are now unified onto the same
+occurrenceId/revision identity, activating `2026-09-fixed-activity-dedup-identity-unification-v1`
+(mechanical bump -- `simulate:diff` proves the refactor is output-preserving, but the drift
+gate cannot prove that from source alone; `decisionTrace.calibration` itself is transient and
+not persisted). A bundle's resolved placement is also now persisted for
+display, at `users/{userId}/intraday_bundle_placements/{date}` -- a separate sibling
+document rather than a `recommendationAudit.externalPlan` field, since that document's
+rule-evaluation budget was re-verified insufficient. H5 design is
+accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted,
+though H5c now has an accepted transaction design -- see below).
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
 confirmation; H4's live release is delivered through PR 3 Phase 6, recorded in
-[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's remaining non-gating
-work also needs its own decision-affecting PR(s): unifying `planner.ts`'s three ad hoc dedup
-mechanisms onto the ledger's remainder/admission semantics as a real ranking input, and
-persisting a bundle's resolved placement for display. The latter was previously blocked by
-`firestore.rules`' per-request expression ceiling, but #468 reduced recommendation-audit
-validation cost and closed #435, so it is now unblocked rather than complete. H5c needs the
-athlete-scoped singleton progression-claim transaction design, and cumulative
-`external-plan@5` acceptance is unblocked now that H4's v4 contract has landed.
+[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's non-gating follow-up work
+(dedup unification and placement-display persistence) is delivered -- see the H4 section
+below for what it does and deliberately does not yet cover (full ADR-0036 D-AUDIT compliance
+for placement remains separate). H5c's transaction design is written
+([the progression-claim design](./h5c-progression-claim-design.md)); implementation still
+needs "the existing authoring boundary" named concretely, and cumulative `external-plan@5`
+acceptance is unblocked by the landed H4 v4 contract but in practice follows H5c.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -461,11 +469,20 @@ display and atomic launch.
 Surfacing the bundle's *resolved binding data* for display in recommendation audit was
 attempted and reverted in the original placement-wiring PR because an extra optional-field
 check exceeded Firestore's per-request rules-expression ceiling. That was a real emulator
-failure and correctly blocked the change at the time. It is no longer a current blocker:
-PR #468 reduced recommendation-audit evaluation cost and closed #435. The resolved placement
-is still not persisted, however, so a follow-up must reintroduce the field with schema,
-rules, replay and expression-budget coverage rather than treating #468 as implementation of
-the feature itself.
+failure and correctly blocked the change at the time. #468 reduced recommendation-audit
+evaluation cost and closed #435, but re-testing with the emulator suite confirmed that
+reduction still was not enough headroom for even a minimal `intradayBundle` check on
+`recommendationAudit` -- the ceiling error recurred identically, so #468 alone did not
+implement this feature. The resolved placement is now persisted instead at a separate
+sibling document, `users/{userId}/intraday_bundle_placements/{date}`
+(`intradayBundlePlacementAuditService.ts`), written best-effort/non-blocking from `Home.tsx`
+right where `resolveIntradayBundlePlacement` already computes the proposal. This is
+deliberately the smaller **display-only** slice of ADR-0036 D-AUDIT: no replay
+recomputation/verification, no ledger-ceiling snapshot, no override/supersession id, and no
+`POLICY_VERSION` bump (the decision-affecting bundle-aware primary-session selection above
+was already shipped separately and does not depend on this document). Verified with a
+dedicated emulator rules test (revision-gating, cross-user denial, malformed-shape
+rejection, infeasible-outcome shape) independent of `recommendationAudit`'s own budget.
 
 ### Same-day canonical performed-fact boundary (verified)
 
@@ -489,7 +506,7 @@ occurrence. `getPerformedTrainingFactsThroughToday`
 (`training-occurrence/performedTrainingFactsService.ts`) makes that an explicit,
 correctly-named function. It is not called from any production/decision path yet.
 
-### Fixed-activity cost-reduce duplication unified (delivered)
+### Fixed-activity cost-reduce duplication unified (delivered; dedup-mechanism unification also delivered)
 
 `schedule.ts`'s `calculateReservedCapacityProfile`, `planner.ts`'s
 `fixedActivityCostProfileForDate` (also used by `externalCritique.ts`), and `rules.ts`'s
@@ -503,13 +520,27 @@ not prove semantic equivalence for the restructured call sites.
 The three different ad hoc dedup mechanisms across these sites (`seenOccurrences` in
 `applyFixedActivityStimulusCredit`, `appliedFixedCostOccurrences`/
 `appliedProjectionOccurrences` in `generateWeekAheadPlan`, and the decision-trace delta
-in `unrepresentedFixedActivityProjection`) are **not yet unified** onto the ledger's
-`occurrenceId`/`revision` model, and none of these call sites yet consult
-`computeDailyLedger`'s remainder or `admitsCandidate` when ranking or admitting a
-candidate. D-PLACEMENT's own placement-correctness wiring is delivered. The execution-
-binding pipeline and D-REASSESS/D-AUDIT now have live wiring through PR 3 Phase 4; using
-the ledger's remainder/admission semantics as a real ranking/admission input across these
-three call sites remains separate decision-affecting work.
+in `unrepresentedFixedActivityProjection`) are now **unified** onto the ledger's
+`occurrenceId`/`revision` identity (`fixedActivityOccurrenceKey`/
+`dedupeFixedActivitiesByLedgerIdentity` from `fixedActivityLedger.ts`, reused rather than
+each site's own key scheme). `unrepresentedFixedActivityProjection` specifically now diffs
+by occurrence identity instead of a count-triggered aggregate cost/stimulus subtraction --
+`decisionTrace.calibration.fixedActivity` gained a per-occurrence `entries[]` alongside its
+existing aggregate fields for this. `decisionTrace.calibration` is confirmed transient
+(`provenance.ts` does not persist it into `RecommendationAudit`), so this needed no
+Firestore/rules/replay change and is engine-internal only. Note this is narrower than "ledger
+remainder/admission as a real ranking/admission input": that broader gate (`admitsCandidate`/
+`computeDailyLedger` deciding whether a *candidate template* is admitted) is a separate
+concern already delivered in the rolling forecast's `evaluateProjectedDate` (PR #474) -- these
+three sites credit/cost-track fixed *commitments* that already exist, not admit ranking
+candidates, so they were never candidates for `admitsCandidate` gating themselves.
+`simulate:diff` shows no semantic difference against the committed baseline -- this refactor
+is genuinely output-preserving for every simulated scenario -- but `rules.ts`/`planner.ts`
+are both on the drift gate's watched decision-file list, and this is a substantive restructure
+rather than a comment/whitespace-only change, so `check-policy-drift.mjs` correctly still
+requires a bump; it cannot prove semantic equivalence from an AST diff alone. `POLICY_VERSION`
+was therefore bumped mechanically to `2026-09-fixed-activity-dedup-identity-unification-v1`,
+the same precedent as the earlier `2026-09-fixed-activity-cost-dedup-v1` transition.
 
 ### Issue #434 execution-binding pipeline (delivered through PR 3 Phase 4)
 
@@ -541,7 +572,11 @@ contract the current decision policy.
 
 **What remains:** no PR 3 release-gating work. Phases 4-5 provide the launch and post-AM
 evidence path; Phase 6 activates their cumulative policy contract. The broader ledger
-ranking/admission and placement-persistence follow-ups remain separate H4 work.
+dedup-unification and placement-persistence follow-ups (both delivered -- see "Fixed-activity
+cost-reduce duplication unified" and "D-PLACEMENT wiring" below) were the last separate H4
+work; full ADR-0036 D-AUDIT compliance for the persisted placement (replay verification,
+ledger-ceiling snapshot, override/supersession id) remains a deliberately separate,
+unscoped follow-up.
 
 ## H5 — Explicit develop/maintain intent and progression
 
@@ -549,10 +584,13 @@ ranking/admission and placement-persistence follow-ups remain separate H4 work.
 **H5a (intent contracts + canonical replay) and H5b (report-only progression review)
 delivered** in `engine/blockIntent.ts`/`blockIntentReplay.ts`/`progressionReview.ts`,
 per the implementation handoff's H5 work order. H5c (athlete-confirmed bounded
-revisions) and cumulative `external-plan@5` are unstarted.
-**Dependencies:** H5c needs the athlete-scoped singleton progression-claim transaction
-design. `external-plan@5` acceptance depends on the landed H4 v4 contract, which has
-landed.
+revisions) and cumulative `external-plan@5` are unstarted; H5c's transaction design is
+now specified in [the progression-claim design](./h5c-progression-claim-design.md)
+(no code yet -- design only).
+**Dependencies:** H5c's design is written; implementation additionally needs "the existing
+authoring boundary" that produces a new plan/definition revision named concretely (see that
+document's Work item 3). `external-plan@5` acceptance depends on the landed H4 v4 contract,
+which has landed, and in practice on H5c's shape being implemented first.
 
 Decision: per-objective `develop | maintain` intent is separate from priority and profile
 commitment. Use existing plan, dose, coverage, response and outcome authorities. New import
@@ -606,6 +644,10 @@ change. PR 3 Phase 5 added the post-AM evidence path, and Phase 6 completed the 
 H4 transition by archiving the then-current
 `2026-09-simulation-sequence-occupational-context-v2` policy and activating
 `2026-09-h4-intraday-bundle-member-launch-v1`. The planner's D-LEDGER admission wiring then
-archived that version and activated `2026-09-h4-d-ledger-planner-admission-v1`. H5c will
-require normal policy review when it changes decision behavior. Do not enable experimental
-personalization simply to improve a judge score.
+archived that version and activated `2026-09-h4-d-ledger-planner-admission-v1`, later
+superseded by `-v2` for the fixed-activity cost-reduce reduce consolidation. The
+fixed-activity dedup-identity unification then archived `-v2` and activated
+`2026-09-fixed-activity-dedup-identity-unification-v1` -- another mechanical bump, not a
+behavior change (`simulate:diff` clean). H5c will require normal policy review when it
+changes decision behavior. Do not enable experimental personalization simply to improve a
+judge score.

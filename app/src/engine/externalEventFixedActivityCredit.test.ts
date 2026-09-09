@@ -76,4 +76,26 @@ describe('external event fixed-activity objective credit', () => {
 
         expect(external.credits).toEqual([]);
     });
+
+    it('credits a same-day duplicate occurrence only once, through the shared ledger identity', () => {
+        const activity = baseActivity({ id: 'catalog', templateId: 'end_easy_01' });
+        // A genuine duplicate record for the same occurrence (e.g. two reads racing before
+        // the caller's own array-level dedup runs) must not double-count its stimulus --
+        // this now goes through `dedupeFixedActivitiesByLedgerIdentity`, the same
+        // occurrenceId/revision identity `dailyLedger.ts` uses, instead of a local Set.
+        const result = applyFixedActivityStimulusCredit(microcycle(), [activity, { ...activity }], DATE);
+
+        expect(result.exposures).toHaveLength(1);
+        expect(result.credits).toHaveLength(1);
+        expect(result.credits[0].earnedCredit).toBeCloseTo(0.8, 6);
+    });
+
+    it('fails closed on two conflicting same-day records for the same occurrence identity', () => {
+        const first = baseActivity({ id: 'catalog', templateId: 'end_easy_01', durationMin: 60 });
+        const conflicting = baseActivity({ id: 'catalog', templateId: 'end_easy_01', durationMin: 90 });
+
+        expect(() => applyFixedActivityStimulusCredit(microcycle(), [first, conflicting], DATE)).toThrow(
+            /Conflicting fixed-activity revisions/,
+        );
+    });
 });

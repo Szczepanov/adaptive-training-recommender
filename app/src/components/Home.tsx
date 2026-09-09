@@ -46,6 +46,7 @@ import {
   adjudicateIntradayBundleMembers,
   type IntradayBundleMemberStatus,
 } from '../services/intradayBundleMemberAdjudication';
+import { recordIntradayBundlePlacement } from '../services/intradayBundlePlacementAuditService';
 import type { LedgerCeilings } from '../engine/dailyLedger';
 import { checkinService } from '../services/checkinService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
@@ -502,6 +503,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         const bundlePlacement = (activeExternal && bundleContext && isV4Plan(activeExternal.plan))
           ? resolveIntradayBundlePlacement(activeExternal, input.date, bundleContext)
           : null;
+        // Display-only persistence of the placement decision already made above (ADR-0036
+        // D-PLACEMENT follow-up) -- fire-and-forget, must never delay or fail today's
+        // recommendation; the service itself swallows write failures.
+        if (bundlePlacement) void recordIntradayBundlePlacement(userId, input.date, bundlePlacement);
         const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, bundleContext) : null;
         const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;
 

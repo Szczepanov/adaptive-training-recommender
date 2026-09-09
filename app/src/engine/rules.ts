@@ -37,6 +37,7 @@ import { isTemplatePhaseEligible } from './periodization';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
 import { adjudicateExternalSession } from './externalSession';
 import { externalEventAsFixedActivity, toSyntheticTemplate, externalSessionDisplayPrescription } from './externalSessionProfiles';
+import { fixedActivityOccurrenceKey } from './fixedActivityIdentity';
 // M3.6: this module only ever reads gating/isEvent/id/title, identical on v1 and v2
 // sessions -- widened to accept either rather than kept v1-only.
 import type { AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
@@ -51,7 +52,6 @@ import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
 import { mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
-import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -110,7 +110,20 @@ function calibrationTrace(
             projectedCredit: objective.projectedCredit ?? 0,
             requiredCredit: objective.requiredCredit ?? objective.targetExposures,
         })),
-        fixedActivity: { count: todayActivities.length, cost, stimulus },
+        fixedActivity: {
+            count: todayActivities.length,
+            cost,
+            stimulus,
+            // Per-occurrence identity alongside the aggregate above so a later date's
+            // projection (`unrepresentedFixedActivityProjection`) can diff by
+            // `occurrenceId` instead of inferring an unrepresented activity from a bare
+            // count/aggregate-profile subtraction.
+            entries: todayActivities.map(activity => ({
+                occurrenceId: fixedActivityOccurrenceKey(activity),
+                cost: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0, ...(activity.expectedCost ?? {}) },
+                stimulus: { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0, ...(activity.expectedStimulus ?? {}) },
+            })),
+        },
     };
 }
 
@@ -1282,28 +1295,32 @@ function unrepresentedFixedActivityProjection(
     const trace = rec.decisionTrace?.calibration?.fixedActivity;
     if (!trace) return null;
     const represented = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
-    if (trace.count <= represented.length) return null;
+    // Identity-based diff (ADR-0036 D-LEDGER's occurrenceId model) rather than a
+    // count-triggered aggregate-profile subtraction: exactly the occurrences today's
+    // ranking saw but that are absent from the caller's own array are unrepresented,
+    // regardless of whether an unrelated activity was also added or removed meanwhile.
+    const representedIds = new Set(represented.map(fixedActivityOccurrenceKey));
+    const unrepresentedEntries = trace.entries.filter(entry => !representedIds.has(entry.occurrenceId));
+    if (unrepresentedEntries.length === 0) return null;
 
-    const representedCost = sumFixedActivityCostProfiles(represented);
-    const representedStimulus = represented.reduce<WorkoutStimulusProfile>((sum, activity) => ({
-        aerobicEndurance: sum.aerobicEndurance + (activity.expectedStimulus?.aerobicEndurance ?? 0),
-        thresholdPower: sum.thresholdPower + (activity.expectedStimulus?.thresholdPower ?? 0),
-        vo2MaxPower: sum.vo2MaxPower + (activity.expectedStimulus?.vo2MaxPower ?? 0),
-        repeatedSurges: sum.repeatedSurges + (activity.expectedStimulus?.repeatedSurges ?? 0),
-        sprintPower: sum.sprintPower + (activity.expectedStimulus?.sprintPower ?? 0),
-        fatigueResistance: sum.fatigueResistance + (activity.expectedStimulus?.fatigueResistance ?? 0),
-        maxStrength: sum.maxStrength + (activity.expectedStimulus?.maxStrength ?? 0),
-        hypertrophy: sum.hypertrophy + (activity.expectedStimulus?.hypertrophy ?? 0),
+    const costProfile = unrepresentedEntries.reduce<WorkoutCostProfile>((sum, entry) => ({
+        systemic: sum.systemic + entry.cost.systemic,
+        cardiovascular: sum.cardiovascular + entry.cost.cardiovascular,
+        lowerBody: sum.lowerBody + entry.cost.lowerBody,
+        upperBody: sum.upperBody + entry.cost.upperBody,
+        impactTissue: sum.impactTissue + entry.cost.impactTissue,
+        neuromuscular: sum.neuromuscular + entry.cost.neuromuscular,
+    }), ZERO_COST);
+    const stimulusProfile = unrepresentedEntries.reduce<WorkoutStimulusProfile>((sum, entry) => ({
+        aerobicEndurance: sum.aerobicEndurance + entry.stimulus.aerobicEndurance,
+        thresholdPower: sum.thresholdPower + entry.stimulus.thresholdPower,
+        vo2MaxPower: sum.vo2MaxPower + entry.stimulus.vo2MaxPower,
+        repeatedSurges: sum.repeatedSurges + entry.stimulus.repeatedSurges,
+        sprintPower: sum.sprintPower + entry.stimulus.sprintPower,
+        fatigueResistance: sum.fatigueResistance + entry.stimulus.fatigueResistance,
+        maxStrength: sum.maxStrength + entry.stimulus.maxStrength,
+        hypertrophy: sum.hypertrophy + entry.stimulus.hypertrophy,
     }), ZERO_STIMULUS);
-
-    const costProfile = Object.fromEntries(
-        (Object.keys(ZERO_COST) as (keyof WorkoutCostProfile)[])
-            .map(key => [key, Math.max(0, trace.cost[key] - representedCost[key])]),
-    ) as unknown as WorkoutCostProfile;
-    const stimulusProfile = Object.fromEntries(
-        (Object.keys(ZERO_STIMULUS) as (keyof WorkoutStimulusProfile)[])
-            .map(key => [key, Math.max(0, trace.stimulus[key] - representedStimulus[key])]),
-    ) as unknown as WorkoutStimulusProfile;
     const hasCost = Object.values(costProfile).some(value => value > 0);
     const hasStimulus = Object.values(stimulusProfile).some(value => value > 0);
     if (!hasCost && !hasStimulus) return null;

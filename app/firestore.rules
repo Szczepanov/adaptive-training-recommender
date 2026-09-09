@@ -436,16 +436,21 @@ service cloud.firestore {
         // Firestore's per-request rule-evaluation ceiling -- adding even a minimal
         // 3-expression check for one more optional field (verified with the emulator
         // suite, not a guess) pushed a create/update over "the maximum of 1000
-        // expressions to evaluate". That display field is deliberately not persisted;
-        // `activeExternalPlanService.ts`'s bundle-aware primary-session selection (the
-        // actual decision-affecting behavior) does not depend on it. The
+        // expressions to evaluate". That display field is deliberately not persisted on
+        // *this* document; `activeExternalPlanService.ts`'s bundle-aware primary-session
+        // selection (the actual decision-affecting behavior) does not depend on it. The
         // primarySession/additionalSessions dedup above (issue #435) is a real, verified
         // reduction in this audit's evaluation cost, but re-tested with the emulator
         // suite and confirmed **still not enough headroom** for even the same minimal
-        // intradayBundle check -- the ceiling error recurred identically. Whoever revisits
-        // this next needs a bigger reduction than that one dedup (see issue #435's
-        // remaining candidates: knowledge-lineage unrolled-array cost, identity-provenance
-        // `get()` lookups, or moving this field outside `recommendationAudit` entirely).
+        // intradayBundle check -- the ceiling error recurred identically. The resolved
+        // placement is instead persisted at `users/{userId}/intraday_bundle_placements/
+        // {date}` (see that collection's rules and `intradayBundlePlacementAuditService.ts`
+        // below/elsewhere in this file) -- a separate document with its own independent
+        // expression budget, not another attempt at this one. Whoever revisits *this*
+        // document's own headroom for unrelated reasons still has issue #435's remaining
+        // candidates available (knowledge-lineage unrolled-array cost, identity-provenance
+        // `get()` lookups), but closing that headroom is no longer a blocker for placement
+        // display.
         && (!('externalPlan' in audit) || (
           audit.externalPlan is map
           && audit.externalPlan.keys().hasOnly(['planId', 'revision', 'sessionId', 'contentHash'])
@@ -1918,6 +1923,43 @@ service cloud.firestore {
         // Every mutating transition bumps revision by exactly one (plan step 6a): this is
         // the same optimistic-sequencing property that makes a concurrent claim conflict
         // and retry rather than silently overwrite another writer's reservation change.
+        && request.resource.data.revision == resource.data.revision + 1;
+      allow delete: if false;
+    }
+
+    // ADR-0036 (H4) D-PLACEMENT follow-up: a v4 intraday bundle's resolved window
+    // placement, persisted for display only -- see
+    // `intradayBundlePlacementAuditService.ts`'s header for why this is a separate
+    // sibling document rather than a `recommendationAudit.externalPlan` field
+    // (that path is already at Firestore's per-request rule-evaluation ceiling).
+    // Kept deliberately shallow/structural per PR #468's lesson: `bindings`' own field
+    // shapes are validated at the TS boundary (`IntradayBundlePlacementRecord`), not here.
+    function hasValidIntradayBundlePlacement(userId, date) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'date', 'bundleId', 'outcome', 'bindings', 'reason', 'revision', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'date', 'bundleId', 'outcome', 'bindings', 'reason', 'revision', 'createdAt', 'updatedAt'])
+        && data.date == date
+        && isValidActivityDate(data.date)
+        && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
+        && data.outcome in ['placed', 'infeasible']
+        && data.bindings is list && data.bindings.size() <= 8
+        && (data.reason == null || (data.reason is string && data.reason.size() <= 512))
+        && data.revision is int && data.revision >= 1
+        && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/intraday_bundle_placements/{date} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidIntradayBundlePlacement(userId, date);
+      // A later re-proposal for the same date may legitimately replace this document
+      // (e.g. schedule windows changed since the last computation); the revision gate
+      // still stops a stale/slower write from clobbering a newer one that already
+      // committed.
+      allow update: if hasValidIntradayBundlePlacement(userId, date)
+        && keepsOwnership(userId)
+        && request.resource.data.date == resource.data.date
+        && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.revision == resource.data.revision + 1;
       allow delete: if false;
     }

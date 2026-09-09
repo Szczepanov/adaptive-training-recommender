@@ -1023,6 +1023,15 @@ export interface Recommendation {
                 count: number;
                 cost: WorkoutCostProfile;
                 stimulus: WorkoutStimulusProfile;
+                /** Per-occurrence identity for the fixed activities behind the aggregate
+                 * above, keyed by the same `fixedActivityOccurrenceKey` the daily ledger
+                 * uses. Lets a later date's projection diff by occurrence identity instead
+                 * of inferring an unrepresented activity from count/aggregate subtraction. */
+                entries: Array<{
+                    occurrenceId: string;
+                    cost: WorkoutCostProfile;
+                    stimulus: WorkoutStimulusProfile;
+                }>;
             };
         };
     };
