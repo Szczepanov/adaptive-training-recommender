@@ -315,10 +315,16 @@ Most of the surface is inspection/export. The Activities tab is the exception: i
 corrective actions (for example activity reclassification, and canonical-source unlinking
 when that read model is enabled), so the screen must not be described as strictly read-only.
 
-The `brief` route is the same `DataView` component opened on `Context brief`. The Data and
-brief navigation entries refresh decision input before navigating. If `decisionInput` is
-null, DataView shows `No data available`; that state has no in-component retry action,
-although the global navigation chrome remains available.
+The `brief` route is the same `DataView` component opened on `Context brief`, and it is
+the canonical Export-for-AI surface. From the Data screen, the Context brief tab and the
+Activities AI-export action deep-link to it (`App.tsx` `handleNavigate('brief')` via
+`DataView` `onNavigateToBrief`) instead of duplicating its export. On the canonical `brief`
+screen, the same Activities action returns to the local Context brief tab, so the legacy raw
+clipboard exporter is not reachable there either. Only the `brief` screen renders the daily
+(2-day) / full (14-day) brief with char and token counts. The Data and brief navigation
+entries refresh decision input before navigating. If `decisionInput` is null, DataView shows
+`No data available`; that state has no in-component retry action, although the global
+navigation chrome remains available.
 
 ### 10. Protocol testing
 
@@ -367,8 +373,10 @@ moving an input across an authority boundary.
    tomorrow-forward forecast show a single follow-Home banner only on genuine today
    disagreement (`PlanAuthorityBanner` / `shouldShowAuthorityBanner`); agreement,
    unplanned coach days, and insufficient comparison data carry no verdict copy.
-5. AI/context export appears as the `brief` route, the DataView Context brief tab, and raw
-   Activities JSON export.
+5. AI/context export has one canonical surface: the `brief` route. The DataView
+   Context brief tab and Activities AI-export action route to it rather than duplicating it;
+   when already inside the canonical `brief` screen, that action returns to Context brief.
+
 6. `sessions` and `testing` share `SessionRunner`, so the execution UI alone does not strongly
    communicate provenance.
 7. Several recovery states are weak rather than truly terminal: DataView's no-data state has
@@ -427,13 +435,24 @@ living-reference section when implementing them.
    Done (#484): removed the unused `Goals` `onNavigate` prop — no repair flow needed it —
    and kept `constraints` as the stable route key with user-facing copy in `navigation.ts`
    `SCREEN_LABELS` (`Training Setup`).
-9. Review immediate-persist Training Setup controls for undo/confirmation where a mistaken
-   toggle can materially change feasibility/safety decisions.
+9. ~~Review immediate-persist Training Setup controls for undo/confirmation where a mistaken
+   toggle can materially change feasibility/safety decisions.~~
+   Done (#492): destructive autosaved controls (equipment, safety limits, injury-constraint
+   add/edit/remove) offer a one-shot Undo toast that reverts to the pre-save snapshot via
+   `trainingSettingsService` `buildRevertUpdate`; non-destructive edits keep instant-save
+   with no toast. Gating semantics unchanged.
 
 ### Sessions and testing
 
-10. Differentiate normal session execution and protocol testing more strongly around the
-    shared runner, especially during execution and completion.
+10. ~~Differentiate normal session execution and protocol testing more strongly around the
+    shared runner, especially during execution and completion.~~ Done (#496):
+    `SessionRunner` takes a chrome-only `mode` (`session` | `assessment`, default
+    `session`): assessment mode tints the runner header with a `Locked assessment` badge,
+    `TestingWorkflow` keeps the protocol lock visible (collapsed) above the shared runner
+    during execution with the attempt id and abandon cost, and `SessionCompletionSheet`
+    identifies the saved `SessionExecution` plus its linked `AssessmentAttempt` context. The
+    `AssessmentAttempt` itself is completed only after raw observations are saved. No
+    execution or observation persistence semantics changed.
 11. ~~Consolidate the structured-session creation entry points behind a clearer `New session`
     chooser while preserving the underlying import/manual/template contracts.~~ Done (#495):
     one `New session` entry with a From template / From fixture / Import JSON / Build manually
@@ -452,7 +471,12 @@ living-reference section when implementing them.
 14. ~~Use distinct copy for app authentication (`Continue/Sign in with Garmin`) and wearable
     data connection (`Connect Garmin wearable`).~~ Done (#497): `LoginScreen` garmin mode
     uses `Sign in with Garmin`, `GarminConnectionSection` uses `Connect Garmin wearable`.
-15. Choose a canonical AI-export surface and make the other export affordances clearly point
-    to or distinguish themselves from it.
+15. ~~Choose a canonical AI-export surface and make the other export affordances clearly point
+    to or distinguish themselves from it.~~
+    Done (#491): `brief` is the canonical Export-for-AI surface; the DataView Context-brief
+    tab and Activities AI-export action route to it (or return to the local Context brief tab
+    when already on the canonical screen). The legacy raw Activities clipboard exporter is
+    removed from the UI. Exported brief content is unchanged (daily 2d vs full 14d windows,
+    char and token counts).
 16. Add local retry/repair affordances to weak recovery states, starting with DataView's
     null-input state and PlanView source failures.

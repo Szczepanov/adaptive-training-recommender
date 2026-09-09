@@ -141,6 +141,57 @@ export function mergeSettings(current: TrainingSettings, update: TrainingSetting
     return next;
 }
 
+function valuesEqual(left: unknown, right: unknown): boolean {
+    return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function buildPartialRevert<T extends object>(previous: T, update: Partial<T>): Partial<T> | null {
+    const revert: Partial<T> = {};
+    for (const key of Object.keys(update) as Array<keyof T>) {
+        if (!valuesEqual(previous[key], update[key])) {
+            revert[key] = previous[key];
+        }
+    }
+    return Object.keys(revert).length > 0 ? revert : null;
+}
+
+/**
+ * Builds the smallest update that restores the values touched by `update` to
+ * their state in `previous`. Keeping the inverse patch field-scoped prevents
+ * Undo from overwriting unrelated settings saved after the destructive action.
+ * Returns `null` when the requested update would not change anything. Pure: no
+ * Firestore IO.
+ */
+export function buildRevertUpdate(previous: TrainingSettings, update: TrainingSettingsUpdate): TrainingSettingsUpdate | null {
+    const revert: TrainingSettingsUpdate = {};
+
+    if (update.equipment) {
+        const equipment = buildPartialRevert(previous.equipment, update.equipment);
+        if (equipment) revert.equipment = equipment;
+    }
+    if (update.guardrails) {
+        const guardrails = buildPartialRevert(previous.guardrails, update.guardrails);
+        if (guardrails) revert.guardrails = guardrails;
+    }
+    if (update.injuries !== undefined && !valuesEqual(previous.injuries ?? [], update.injuries)) {
+        revert.injuries = [...(previous.injuries ?? [])];
+    }
+    if (update.defaults) {
+        const defaults = buildPartialRevert(previous.defaults, update.defaults);
+        if (defaults) revert.defaults = defaults;
+    }
+    if (update.preferences) {
+        const preferences = buildPartialRevert(previous.preferences, update.preferences);
+        if (preferences) revert.preferences = preferences;
+    }
+    if (update.migration) {
+        const migration = buildPartialRevert(previous.migration, update.migration);
+        if (migration) revert.migration = migration;
+    }
+
+    return Object.keys(revert).length > 0 ? revert : null;
+}
+
 export class TrainingSettingsService {
     private ref(userId: string) {
         return doc(getDb(), 'users', userId, COLLECTION, DOCUMENT);
