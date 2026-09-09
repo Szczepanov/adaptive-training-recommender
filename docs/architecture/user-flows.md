@@ -147,18 +147,19 @@ Current chrome details worth preserving when changing navigation:
 
 * The mobile More drawer groups its destinations by intent — Train (`Sessions`,
   `Testing`, `Plan`), Configure (`Goals`, `Training Setup`, `Coach Preferences`),
-  Understand (`Data`, `Export Context for AI`) — and each group carries short sub-copy
-  in the existing `MobileNav` `item-sub` pattern. Every label renders from
-  `navigation.ts` `SCREEN_LABELS`; only the group names come from the drawer itself.
+  Understand (`Data`, `Export Context for AI`). Each group is a programmatically labelled
+  `role="group"` with short descriptive sub-copy whose typography matches the existing
+  drawer `item-sub` pattern; destination labels still render from `navigation.ts`
+  `SCREEN_LABELS`.
 * Desktop active-state rule (`Header`): top-level links are active on their exact
   `Screen`; the Settings button is active for `constraints`, `preferences`, `plan`, and
   `brief`; each Settings dropdown item is active on its exact `Screen`.
 * Mobile active-state rule (`MobileNav`): bottom tabs are active on their exact
   `Screen` (`home`, `checkin`, `plan`); the More tab is active for every other drawer
   destination (`goals`, `constraints`, `preferences`, `data`, `brief`, `sessions`,
-  `testing`); each drawer item is active on its exact `Screen` within its group, so the
-  athlete always sees both the section and the selected destination. Opening the drawer
-  while on `plan` shows the Train → `Plan` item active alongside the bottom tab.
+  `testing`); each drawer item is active on its exact `Screen` within its group and the
+  selected destination exposes `aria-current="page"`. Opening the drawer while on `plan`
+  therefore shows Train → `Plan` current alongside the current bottom Plan tab.
 * Only desktop renders `GarminSyncBadge` beside the brand.
 * Both menus show a non-clickable `Build {label}` entry followed by a clickable `Sign Out`.
 
@@ -321,10 +322,16 @@ Most of the surface is inspection/export. The Activities tab is the exception: i
 corrective actions (for example activity reclassification, and canonical-source unlinking
 when that read model is enabled), so the screen must not be described as strictly read-only.
 
-The `brief` route is the same `DataView` component opened on `Context brief`. The Data and
-brief navigation entries refresh decision input before navigating. If `decisionInput` is
-null, DataView shows `No data available`; that state has no in-component retry action,
-although the global navigation chrome remains available.
+The `brief` route is the same `DataView` component opened on `Context brief`, and it is
+the canonical Export-for-AI surface. From the Data screen, the Context brief tab and the
+Activities AI-export action deep-link to it (`App.tsx` `handleNavigate('brief')` via
+`DataView` `onNavigateToBrief`) instead of duplicating its export. On the canonical `brief`
+screen, the same Activities action returns to the local Context brief tab, so the legacy raw
+clipboard exporter is not reachable there either. Only the `brief` screen renders the daily
+(2-day) / full (14-day) brief with char and token counts. The Data and brief navigation
+entries refresh decision input before navigating. If `decisionInput` is null, DataView shows
+`No data available`; that state has no in-component retry action, although the global
+navigation chrome remains available.
 
 ### 10. Protocol testing
 
@@ -371,8 +378,9 @@ moving an input across an authority boundary.
    discover.
 4. Imported coach plan, adaptive week forecast, and Home recommendation can disagree without
    a single authority explanation in the UI.
-5. AI/context export appears as the `brief` route, the DataView Context brief tab, and raw
-   Activities JSON export.
+5. AI/context export has one canonical surface: the `brief` route. The DataView
+   Context brief tab and Activities AI-export action route to it rather than duplicating it;
+   when already inside the canonical `brief` screen, that action returns to Context brief.
 6. `sessions` and `testing` share `SessionRunner`, so the execution UI alone does not strongly
    communicate provenance.
 7. Several recovery states are weak rather than truly terminal: DataView's no-data state has
@@ -396,14 +404,14 @@ living-reference section when implementing them.
 2. ~~Make desktop and mobile primary destinations more symmetrical, or document a deliberate~~
    ~~reason for the difference. A daily-loop set such as Today / Check-in / Plan is the most~~
    ~~obvious candidate.~~
-   Done (#486): the mobile More drawer is grouped by intent — Train, Configure,
-   Understand — with per-item active highlighting inside each group, and the desktop and
-   mobile active-state rules are documented in the Navigation chrome section above. The
-   desktop Settings lump now covers `brief` alongside `constraints`, `preferences`, and
-   `plan`. Full destination symmetry between desktop and mobile remains a deliberate
-   non-goal: desktop promotes Sessions, Testing, Goals, and Data while mobile promotes
-   Plan (see confusing spot 1).
-3. Group Mobile More by intent (train / configure / understand) rather than one flat list.
+   Done (#486): the navigation reference now records the deliberate desktop/mobile
+   prominence difference and the exact active-state rules. Mobile keeps Plan as a primary
+   bottom destination while desktop promotes Sessions, Testing, Goals, and Data; the More
+   drawer groups the remaining mobile navigation by intent instead of pretending the two
+   shells are fully symmetrical.
+3. ~~Group Mobile More by intent (train / configure / understand) rather than one flat list.~~
+   Done (#486): Train, Configure, and Understand are labelled drawer groups with short
+   descriptions and per-destination visible/current state.
 
 ### Daily loop and repair
 
@@ -433,13 +441,24 @@ living-reference section when implementing them.
    Done (#484): removed the unused `Goals` `onNavigate` prop — no repair flow needed it —
    and kept `constraints` as the stable route key with user-facing copy in `navigation.ts`
    `SCREEN_LABELS` (`Training Setup`).
-9. Review immediate-persist Training Setup controls for undo/confirmation where a mistaken
-   toggle can materially change feasibility/safety decisions.
+9. ~~Review immediate-persist Training Setup controls for undo/confirmation where a mistaken
+   toggle can materially change feasibility/safety decisions.~~
+   Done (#492): destructive autosaved controls (equipment, safety limits, injury-constraint
+   add/edit/remove) offer a one-shot Undo toast that reverts to the pre-save snapshot via
+   `trainingSettingsService` `buildRevertUpdate`; non-destructive edits keep instant-save
+   with no toast. Gating semantics unchanged.
 
 ### Sessions and testing
 
-10. Differentiate normal session execution and protocol testing more strongly around the
-    shared runner, especially during execution and completion.
+10. ~~Differentiate normal session execution and protocol testing more strongly around the
+    shared runner, especially during execution and completion.~~ Done (#496):
+    `SessionRunner` takes a chrome-only `mode` (`session` | `assessment`, default
+    `session`): assessment mode tints the runner header with a `Locked assessment` badge,
+    `TestingWorkflow` keeps the protocol lock visible (collapsed) above the shared runner
+    during execution with the attempt id and abandon cost, and `SessionCompletionSheet`
+    identifies the saved `SessionExecution` plus its linked `AssessmentAttempt` context. The
+    `AssessmentAttempt` itself is completed only after raw observations are saved. No
+    execution or observation persistence semantics changed.
 11. ~~Consolidate the structured-session creation entry points behind a clearer `New session`
     chooser while preserving the underlying import/manual/template contracts.~~ Done (#495):
     one `New session` entry with a From template / From fixture / Import JSON / Build manually
@@ -458,7 +477,12 @@ living-reference section when implementing them.
 14. ~~Use distinct copy for app authentication (`Continue/Sign in with Garmin`) and wearable
     data connection (`Connect Garmin wearable`).~~ Done (#497): `LoginScreen` garmin mode
     uses `Sign in with Garmin`, `GarminConnectionSection` uses `Connect Garmin wearable`.
-15. Choose a canonical AI-export surface and make the other export affordances clearly point
-    to or distinguish themselves from it.
+15. ~~Choose a canonical AI-export surface and make the other export affordances clearly point
+    to or distinguish themselves from it.~~
+    Done (#491): `brief` is the canonical Export-for-AI surface; the DataView Context-brief
+    tab and Activities AI-export action route to it (or return to the local Context brief tab
+    when already on the canonical screen). The legacy raw Activities clipboard exporter is
+    removed from the UI. Exported brief content is unchanged (daily 2d vs full 14d windows,
+    char and token counts).
 16. Add local retry/repair affordances to weak recovery states, starting with DataView's
     null-input state and PlanView source failures.
