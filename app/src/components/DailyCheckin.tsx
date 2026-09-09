@@ -423,7 +423,8 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     try {
       if (checkin.userId && checkin.date) {
         const savedCheckin = await checkinService.upsertTodayCheckin(checkin.userId, updatedCheckin);
-        setCheckin(savedCheckin);
+        // The save response belongs to the progress snapshot only. Replacing the editable
+        // draft here could clobber a slider/toggle edit made while this request was in flight.
         setPersistedCheckin(savedCheckin);
       }
       setPendingFollowups(prev => prev.filter(item => !(item.region === region && item.sessionRef?.id === sessionRef?.id && item.sessionRef?.kind === sessionRef?.kind)));
