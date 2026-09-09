@@ -157,6 +157,7 @@ Current chrome details worth preserving when changing navigation:
 ### 1. Sign-in
 
 Entry is automatic whenever auth is not authenticated.
+
 `LoginScreen` has four modes:
 
 1. `sign-in`: email/password through `emailAuthService.signIn`.
@@ -316,6 +317,7 @@ null, DataView shows `No data available`; that state has no in-component retry a
 although the global navigation chrome remains available.
 
 ### 10. Protocol testing
+
 `TestingWorkflow` owns the assessment lifecycle rather than creating a separate runner:
 
 `lookup` → `ready/lock` → `running` (delegates to `SessionRunner`) → raw result capture →
