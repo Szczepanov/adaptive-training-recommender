@@ -1,47 +1,28 @@
-# Session execution and saved-template lifecycle
+# Session execution architecture
 
-This is the living reference for source-neutral session execution. Design rationale lives in
-[ADR-0023](../adr/0023-multidomain-session-authoring-execution-and-evidence.md); this document
-describes the current application behavior.
+This document describes the persisted structured-session execution model and its key UI/service contracts.
 
-## Content and persistence boundary
+## Stored definitions and executions
 
-`SessionDefinition` is executable content only. A custom definition revision is stored at
-`users/{userId}/session_definitions/{definitionId}/revisions/{revision}` as a flat document
-whose envelope adds `userId`, `definitionId`, `contentHash`, and `createdAt`.
+A `SessionDefinition` is the reusable prescription. A `SessionExecution` is one performed or in-progress instance of that prescription. Executions carry the prescription hash and source provenance so an in-progress session can restore the exact snapshot that was launched rather than resolving a potentially newer template revision.
 
-`parseSessionDefinitionRevisionDocument` validates that envelope against the requested path,
-selects the closed `SESSION_DEFINITION_KEYS` content set, and then runs
-`validateSessionDefinition`. `SessionDefinitionService.getDefinitionRevision` recomputes the
-canonical `hashSessionDefinition` before returning the definition. Invalid identity, envelope,
-schema, or hash data returns `INVALID`; executable content is never silently repaired.
+An execution is user-scoped. Its performed evidence is stored as `SessionEntry` records tied to the execution and authored step IDs. Choice entries record athlete decisions separately from work entries, so branch selection remains auditable and does not silently mutate the authored prescription.
 
-This one verified service read is used by preview, starting a saved template, manual-source
-resolution, and active-session restoration. Existing correctly written revisions need no
-migration: their storage shape is decoded as an envelope rather than mistaken for domain
-content.
+## Launch authority
 
-## Catalog warm-ups and execution logging
+Structured sessions can come from reviewed fixtures, saved custom templates, imported JSON, manual authoring, or a recommendation/plan occurrence that already resolved a stored prescription. The runner does not grant recommendation-selection authority to an unplanned launch: template/fixture/manual/import launches use the unplanned session source contract, while recommendation/plan launches keep their bound occurrence and prescription hash.
 
-Catalog strength prescriptions begin with an explicit `warmup` block. The catalog adapter preserves
-that role, step dose/rest, and any bounded structured load into the content-addressed execution
-prescription. The runner shows the load instruction as stored; it does not derive a kilogram target
-from a percentage or profile during rendering.
+A stored execution whose exact prescription cannot be restored fails closed. The runner does not let the athlete start a second session over ambiguous in-progress state.
 
-For a repetition step, `SessionRunner` passes the active block role into `RepetitionInputCard`.
-Entries from a prescribed `warmup` block default to `isWarmup: true`; other blocks default to false.
-The athlete can correct the checkbox before logging, and the recorded value remains the historical
-fact used by downstream strength-volume and estimated-1RM exclusion filters. Stored execution
-prescriptions carry their blocks and display metadata, so a later catalog warm-up revision cannot
-rewrite an already-started or historical session.
+## Progression and performed evidence
 
-Repetition submission is single-flight at the input surface: while one set is being persisted, a
-second Enter/click is ignored and the log button is disabled. This prevents rapid duplicate submits
-from deriving the same ordinal `setIndex` from one rendered entry snapshot. Rest timing is deliberately
-separate from persistence timing: the countdown starts when the set is optimistically accepted into
-the execution UI, before the asynchronous write. A delayed write completion therefore cannot restart
-a timer that the athlete has already skipped or adjusted. The timer remains advisory and does not lock
-the set form.
+The runner treats the authored definition as the prescription and entries as performed evidence. Sequential multi-set work remains on the current step until its required entries are complete. Rotating groups use persisted group progress rather than authored list order alone. Choice points can alter effective execution flow, but the selected choice is itself recorded as evidence.
+
+The step-navigation and completion displays derive from the same target-entry rules used by group progression, preventing display logic from claiming a grouped step is complete while execution logic still expects more work.
+
+## Rest behavior
+
+Rest timers are advisory rather than locks. Logging controls remain available while rest counts down. The preview shown during rest resolves the next actually due work from persisted progress, so sequential multi-set work previews the current exercise until its sets are complete and rotating groups preview the next group member.
 
 Rest omission is block-aware. Authored rest is always preserved. Outside warm-up blocks, a step with
 no authored rest retains the runner's legacy 60-second advisory fallback. Inside a structured warm-up,
@@ -55,8 +36,10 @@ write-once. `saveDefinitionRevision` validates and hashes the definition, then b
 new revision and latest-revision header atomically.
 
 * **Save** creates a new definition at revision 1 and refreshes the session picker.
-  Save is offered from the completion flow rather than the active-run top bar, so it cannot
-  fire accidentally mid-set; it still derives from the raw working definition.
+  Save is a secondary action inside the completion dialog rather than the active-run top bar,
+  so it cannot fire accidentally mid-set. Opening its title editor hands off from the completion
+  dialog rather than stacking modal layers, then returns to completion after save/cancel. The
+  saved template still derives from the raw working definition.
 * **Edit** loads the verified latest revision and saves the same definition ID at revision N+1.
 * **Duplicate** loads the verified latest revision, assigns a new definition ID, and saves
   revision 1.
@@ -73,11 +56,3 @@ The runner retains a raw working definition and may expose a choice-resolved eff
 definition for the current execution. Saving a custom template derives from the raw working
 definition: deliberate exercise substitutions are retained, but a one-time selected choice is
 not baked into the template while leaving the same option set available for a later execution.
-
-## Rules and tests
-
-Firestore rules enforce user ownership, immutable revision creation, valid header lifecycle,
-and the full allowed definition field set including `companionSessions`. The parser and service
-tests cover writer-shaped documents, strict envelope validation, hash mismatch, batched writes,
-and archive/restore. Visual coverage exercises custom-template preview and the archived library
-at desktop and 390px mobile widths.
