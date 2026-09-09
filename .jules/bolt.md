@@ -29,3 +29,6 @@
 ## 2026-09-07 - Use Map lookup for Canonical Rest Template
 **Learning:** The `getCanonicalRestTemplate()` function was performing an O(N) lookup across the `ENRICHED_TEMPLATES` and `TEMPLATES` arrays via `.find(t => t.category === 'Rest')` to retrieve the canonical `rest_01` fallback template. Since this function is called extremely frequently (especially during optimization branching and when falling back on constraints), replacing it with an O(1) dictionary lookup via `ENRICHED_TEMPLATES_BY_ID.get('rest_01')` avoids redundant iteration.
 **Action:** When a fallback or canonical item is known by its ID (like `rest_01`), prefer O(1) dictionary lookups via `_BY_ID` maps rather than scanning arrays via `.find()` on category strings.
+## 2026-09-08 - Use Map lookup for known default Rest templates
+**Learning:** Throughout the codebase (like in `planner.ts` and `safetyCheckin.ts`), fetching the fallback rest template via an array scan like `ENRICHED_TEMPLATES.find(t => t.category === 'Rest')` is unnecessary O(N) overhead when we just want the default Rest template. The `rest_01` template is the universal fallback.
+**Action:** Always fetch the fallback Rest template directly via `ENRICHED_TEMPLATES_BY_ID.get('rest_01')` (or `TEMPLATES_BY_ID`) rather than iterating the entire array looking for the 'Rest' category.
