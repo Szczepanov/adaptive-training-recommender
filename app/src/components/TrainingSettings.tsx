@@ -1,13 +1,14 @@
-import { type FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import type { BodyRegion, GuardrailKey, InjuryConstraint, SessionTemplate, TrainingSettings as TrainingSettingsModel } from '../engine/models';
 import { resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { trainingSettingsService, type TrainingSettingsUpdate } from '../services/trainingSettingsService';
 import { getLocalDateString } from '../utils/localDate';
-import { SCREEN_LABELS } from '../types/navigation';
+import { SCREEN_LABELS, type Screen } from '../types/navigation';
 import './TrainingSettings.css';
 
 interface TrainingSettingsProps {
   userId: string;
+  onNavigate?: (screen: Screen) => void;
 }
 
 const equipmentLabels: Record<keyof TrainingSettingsModel['equipment'], string> = {
@@ -36,7 +37,20 @@ const injuryRegions: Array<{ value: BodyRegion; label: string }> = [
 const injuryModalities: SessionTemplate['modality'][] = ['Running', 'Cycling', 'Swimming', 'Walking', 'Strength', 'Field', 'Mobility', 'Cross Training'];
 const emptyInjuryDraft = { region: '', severity: 'limit' as InjuryConstraint['severity'], restrictedModalities: [] as SessionTemplate['modality'][], reviewBy: '', note: '' };
 
-export function TrainingSettings({ userId }: TrainingSettingsProps) {
+function CrossSurfaceNote({ onNavigate, children }: { onNavigate?: (screen: Screen) => void; children: ReactNode }) {
+  return (
+    <p className="section-intro">
+      {children}{' '}
+      {onNavigate && (
+        <button type="button" onClick={() => onNavigate('preferences')}>
+          Open {SCREEN_LABELS.preferences}
+        </button>
+      )}
+    </p>
+  );
+}
+
+export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) {
   const [settings, setSettings] = useState<TrainingSettingsModel | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [injuryDraft, setInjuryDraft] = useState(emptyInjuryDraft);
@@ -114,6 +128,7 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
       <header>
         <h1>{SCREEN_LABELS.constraints}</h1>
         <p>Equipment determines what can be prescribed. Safety limits are always enforced. Preferences only break ties between suitable options.</p>
+        <p className="section-intro">Changes on this screen save automatically and act as hard gates: they remove sessions from every recommendation. Softer tie-breaks live in {SCREEN_LABELS.preferences} and only apply after an explicit save there.</p>
       </header>
       {error && <p className="settings-error" role="alert">{error}</p>}
       {!settings.migration.legacyReviewed && (
@@ -127,6 +142,7 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
       <section aria-labelledby="equipment-title">
         <h2 id="equipment-title">Available equipment & sport access</h2>
         <p className="section-intro">Turn on only equipment and venues you can reliably use for a typical session. Pool access may be indoor or outdoor.</p>
+        <CrossSurfaceNote onNavigate={onNavigate}>Related: {SCREEN_LABELS.preferences} → “Unavailable Training Types” excludes modalities by name, even when the equipment here would allow them.</CrossSurfaceNote>
         <div className="settings-list">
           {Object.entries(equipmentLabels).map(([key, label]) => (
             <label className="setting-row" key={key}>
@@ -140,6 +156,7 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
       <section aria-labelledby="guardrails-title">
         <h2 id="guardrails-title">Safety limits</h2>
         <p className="section-intro">These limits remove matching sessions from every recommendation, including “Harder”. This is not medical advice.</p>
+        <CrossSurfaceNote onNavigate={onNavigate}>Related: mere dislikes (no safety impact) belong in {SCREEN_LABELS.preferences} → “Training I’d Rather Avoid”, which only penalizes rather than blocks.</CrossSurfaceNote>
         <div className="settings-list">
           {Object.entries(guardrailDetails).map(([key, detail]) => (
             <label className="setting-row" key={key}>
@@ -152,12 +169,15 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
 
       <section aria-labelledby="availability-title">
         <h2 id="availability-title">Time and location</h2>
+        <p className="section-intro">These limits are hard caps: longer sessions are never recommended.</p>
+        <CrossSurfaceNote onNavigate={onNavigate}>Related: {SCREEN_LABELS.preferences} → “Default Available Duration” holds soft time budgets that shape durations without gating.</CrossSurfaceNote>
         <div className="time-inputs">
           <label>Weekday session limit (minutes)<input type="number" min="0" max="1440" value={settings.defaults.weekdayMaxMinutes ?? ''} onChange={(event) => void save({ defaults: { weekdayMaxMinutes: event.target.value === '' ? null : Number(event.target.value) } })} /></label>
           <label>Weekend session limit (minutes)<input type="number" min="0" max="1440" value={settings.defaults.weekendMaxMinutes ?? ''} onChange={(event) => void save({ defaults: { weekendMaxMinutes: event.target.value === '' ? null : Number(event.target.value) } })} /></label>
         </div>
         <fieldset>
           <legend>Training location requirement</legend>
+          <p className="section-intro">This is the persistent requirement. A one-day indoor-only override lives in today’s check-in availability.</p>
           {(['either', 'indoor', 'outdoor'] as const).map((environment) => <label key={environment}><input type="radio" name="environment" checked={settings.defaults.environment === environment} onChange={() => void save({ defaults: { environment } })} /> {environment === 'either' ? 'Any location' : `${environment[0].toUpperCase()}${environment.slice(1)} only`}</label>)}
         </fieldset>
       </section>

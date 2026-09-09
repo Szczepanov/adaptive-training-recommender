@@ -1,13 +1,16 @@
 
 import type { UserPreferences, RecoveryStyle, TimeOfDay, ExplanationVerbosity } from '../../engine/models';
+import type { Screen } from '../../types/navigation';
+import { SCREEN_LABELS } from '../../types/navigation';
 
 interface StyleSectionsProps {
   preferences: UserPreferences;
+  onNavigate?: (screen: Screen) => void;
   updatePreference: <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => void;
   updateNestedPreference: <K extends keyof UserPreferences['preferredUnits']>(key: K, value: UserPreferences['preferredUnits'][K]) => void;
 }
 
-export function StyleSections({ preferences, updatePreference, updateNestedPreference }: StyleSectionsProps) {
+export function StyleSections({ preferences, onNavigate, updatePreference, updateNestedPreference }: StyleSectionsProps) {
   return (
     <>
       {/* Training Decision Style */}
@@ -60,6 +63,16 @@ export function StyleSections({ preferences, updatePreference, updateNestedPrefe
         <h2>Default Available Duration</h2>
         <p className="preference-desc">
           Default daily time budgets used to filter or scale session durations.
+        </p>
+        <p className="preference-desc">
+          Related: {SCREEN_LABELS.constraints} → “Time and location” sets hard session caps
+          that are never exceeded; these defaults only shape durations. Remember to save here
+          with Save Preferences; time-cap changes there save immediately.
+          {onNavigate && (
+            <button type="button" onClick={() => onNavigate('constraints')}>
+              Open {SCREEN_LABELS.constraints}
+            </button>
+          )}
         </p>
         <div className="time-inputs">
           <div className="time-input-group">

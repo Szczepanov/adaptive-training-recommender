@@ -17,7 +17,7 @@ interface PreferencesProps {
   onNavigate?: (screen: Screen) => void;
 }
 
-export function Preferences({ userId }: PreferencesProps) {
+export function Preferences({ userId, onNavigate }: PreferencesProps) {
   const {
     preferences,
     trainingIntentProfile,
@@ -98,6 +98,7 @@ export function Preferences({ userId }: PreferencesProps) {
 
         <ModalitySections
           preferences={preferences}
+          onNavigate={onNavigate}
           addPreferredModality={addPreferredModality}
           removePreferredModality={removePreferredModality}
           addAvoidedModality={addAvoidedModality}
@@ -108,6 +109,7 @@ export function Preferences({ userId }: PreferencesProps) {
 
         <StyleSections
           preferences={preferences}
+          onNavigate={onNavigate}
           updatePreference={updatePreference}
           updateNestedPreference={updateNestedPreference}
         />

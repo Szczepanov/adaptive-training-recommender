@@ -295,7 +295,10 @@ The two routes intentionally have different authority:
 
 The distinction is architecturally important, but some concepts overlap in the UI:
 equipment versus unavailable modalities, hard time limits versus preferred/default times,
-and persistent environment setup versus today's `indoorOnly` availability.
+and persistent environment setup versus today's `indoorOnly` availability. Each overlapping
+section now names its counterpart inline (`TrainingSettings` equipment, time/location, and
+guardrail notes point at `Preferences`; `ModalitySections` unavailable/avoided notes and the
+`StyleSections` default-duration note point back), and both headers state their save model.
 
 ### 9. Data and AI export
 
@@ -400,8 +403,11 @@ living-reference section when implementing them.
 
 ### Settings
 
-7. Visually pair Training Setup (hard gates) and Coach Preferences (soft preferences), with
-   cross-links between overlapping equipment/time/environment concepts.
+7. ~~Visually pair Training Setup (hard gates) and Coach Preferences (soft preferences), with
+   cross-links between overlapping equipment/time/environment concepts.~~
+   Done (#489): each overlapping control names its counterpart inline from either side, and
+   both headers state their save semantics (immediate autosave on Training Setup, explicit
+   Save on Coach Preferences). Engine authority unchanged. Full tab-merge deferred.
 8. ~~Either remove `Goals.onNavigate` or use it for explicit repair/deep-link flows; an unused
    navigation prop is misleading API surface.~~
    Done (#484): removed the unused `Goals` `onNavigate` prop — no repair flow needed it —
