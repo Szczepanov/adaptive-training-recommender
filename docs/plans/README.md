@@ -81,19 +81,22 @@ unexpected fatigue, and notes; multi-region tissue feedback remains in the daily
 check-in as the canonical tissue authority. PR 3 Phase 6 applies the cumulative
 `2026-09-h4-intraday-bundle-member-launch-v1` policy contract, completing the live H4
 release. The [bundle-launch plan](./h4-434-pr3-bundle-second-member-launch.md) records the
-delivered phases. Beyond PR 3, H4
-also still needs ledger remainder/admission as a real ranking input in `planner.ts`, and a
-bundle's resolved placement persisted for display. The latter was previously blocked by
-Firestore's per-request rule-evaluation ceiling, but #468 reduced recommendation-audit
-validation cost and closed #435; persistence is therefore unblocked but still unimplemented
-and still requires its own schema/rules/replay review.
+delivered phases. Beyond PR 3, H4's ledger remainder/admission is now a real ranking input
+in the rolling forecast (`planner.ts`'s `evaluateProjectedDate`, PR #474), and the three
+narrower ad hoc fixed-activity dedup mechanisms that PR left un-unified are now unified onto
+the same occurrenceId/revision identity. A bundle's resolved placement is also now persisted
+for display, at `users/{userId}/intraday_bundle_placements/{date}` -- a separate sibling
+document, not a `recommendationAudit.externalPlan` field, since that document's own
+rule-evaluation budget was re-verified insufficient even after #468's reduction closed #435.
 H5 block intent and controlled progression is accepted in
 [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md) and is **In progress**:
 H5a intent contracts and canonical replay (`engine/blockIntent.ts`,
 `engine/blockIntentReplay.ts`) and H5b report-only progression review
 (`engine/progressionReview.ts`) are delivered, neither wired into daily recommendation
-selection; H5c confirmed bounded revisions and cumulative `external-plan@5` are unstarted
-and independently startable. H4's same-day canonical performed-fact boundary is verified;
+selection; H5c confirmed bounded revisions and cumulative `external-plan@5` are unstarted,
+though H5c's transaction design is now specified in
+[the progression-claim design](./h5c-progression-claim-design.md) (design only, no code).
+H4's same-day canonical performed-fact boundary is verified;
 H5 runtime needs validated intent mappings and linked response evidence. H5
 delivers intent authoring, report-only review, then confirmed bounded revisions. The work
 does not replace the reviewed active persona-judge baseline. The
