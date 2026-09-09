@@ -143,8 +143,9 @@
   cursor: pointer;
   font-weight: 600;
   min-height: 44px;
-  display: flex;
-  align-items: center;
+  box-sizing: border-box;
+  padding: 10px 0;
+  /* Preserve the native list-item display so the disclosure marker stays visible. */
 }
 
 .testing-note {
