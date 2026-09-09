@@ -1,0 +1,45 @@
+.progression-block-editor .form-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.progression-block-editor .form-row label {
+  flex: 1 1 160px;
+}
+
+.progression-block-editor fieldset {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.progression-block-editor .checkbox-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 12px 0;
+}
+
+.progression-block-issues {
+  margin: 12px 0;
+  padding: 8px 12px;
+  border: 1px solid #c0392b;
+  border-radius: 4px;
+  background: #fdecea;
+}
+
+.progression-block-error {
+  color: #c0392b;
+}
+
+.progression-block-saved {
+  color: #1e7e34;
+}
+
+.progression-block-list .setting-row {
+  padding: 6px 0;
+  border-bottom: 1px solid #eee;
+}

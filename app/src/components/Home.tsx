@@ -1558,6 +1558,21 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               )}
             </div>
 
+            {/* ADR-0037 H5c: a thin, static entry point only -- checking for due reviews
+                here would add another async fetch to Home's own dashboard load, and this
+                feature deliberately has no recommendation-time read (see the H5c design
+                doc's "no recommendation-time query" invariant). The live due-block list
+                lives in ProgressionReviewPanel itself, inside Training Setup. */}
+            <div className="dashboard-card" onClick={() => onNavigate('constraints')}>
+              <div className="card-header">
+                <h3>Progression Review</h3>
+              </div>
+              <div className="card-empty">
+                <p>Author or review a bounded progression target</p>
+                <p className="card-action">Open Training Setup</p>
+              </div>
+            </div>
+
             {onViewData && (
               <button onClick={onViewData} className="quick-action-btn secondary full-width">
                 📊 View Data

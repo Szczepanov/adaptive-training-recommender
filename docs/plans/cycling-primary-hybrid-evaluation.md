@@ -22,17 +22,18 @@ not persisted). A bundle's resolved placement is also now persisted for
 display, at `users/{userId}/intraday_bundle_placements/{date}` -- a separate sibling
 document rather than a `recommendationAudit.externalPlan` field, since that document's
 rule-evaluation budget was re-verified insufficient. H5 design is
-accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted,
-though H5c now has an accepted transaction design -- see below).
+accepted as ADR-0037 with H5a/H5b/H5c now all delivered -- see below for what H5c's
+delivery does and deliberately does not cover; only cumulative `external-plan@5` remains
+unstarted.
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
 confirmation; H4's live release is delivered through PR 3 Phase 6, recorded in
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's non-gating follow-up work
 (dedup unification and placement-display persistence) is delivered -- see the H4 section
 below for what it does and deliberately does not yet cover (full ADR-0036 D-AUDIT compliance
-for placement remains separate). H5c's transaction design is written
-([the progression-claim design](./h5c-progression-claim-design.md)); implementation still
-needs "the existing authoring boundary" named concretely, and cumulative `external-plan@5`
-acceptance is unblocked by the landed H4 v4 contract but in practice follows H5c.
+for placement remains separate). H5c is delivered per
+[the progression-claim design](./h5c-progression-claim-design.md); cumulative
+`external-plan@5` acceptance is unblocked by the landed H4 v4 contract and by H5c's shape
+now existing, but remains separately scoped work.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -580,33 +581,50 @@ unscoped follow-up.
 
 ## H5 — Explicit develop/maintain intent and progression
 
-**Status:** Design accepted in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md).
-**H5a (intent contracts + canonical replay) and H5b (report-only progression review)
-delivered** in `engine/blockIntent.ts`/`blockIntentReplay.ts`/`progressionReview.ts`,
-per the implementation handoff's H5 work order. H5c (athlete-confirmed bounded
-revisions) and cumulative `external-plan@5` are unstarted; H5c's transaction design is
-now specified in [the progression-claim design](./h5c-progression-claim-design.md)
-(no code yet -- design only).
-**Dependencies:** H5c's design is written; implementation additionally needs "the existing
-authoring boundary" that produces a new plan/definition revision named concretely (see that
-document's Work item 3). `external-plan@5` acceptance depends on the landed H4 v4 contract,
-which has landed, and in practice on H5c's shape being implemented first.
+**Status:** Accepted design in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md);
+**H5a, H5b and H5c all delivered as of 2026-09-09**. Only cumulative `external-plan@5`
+remains unstarted.
+**Dependencies:** `external-plan@5` acceptance depends on the landed H4 v4 contract (landed)
+and on H5c's shape (now delivered); it remains separately scoped work.
 
 Decision: per-objective `develop | maintain` intent is separate from priority and profile
 commitment. Use existing plan, dose, coverage, response and outcome authorities. New import
 authority belongs in `external-plan@5`; earlier schemas remain unchanged. Maintenance is
 an intended outcome, not a default dose discount or an assertion of preserved performance.
 
-H5a's delivered `engine/blockIntent.ts` is not wired into `external-plan@5` import yet
-(the ADR's own note: "manual intent and report-only groundwork does not require H4
-runtime release" applied only to the manual-authoring path H5a/H5b actually deliver).
-H5b's `engine/progressionReview.ts` is report-only and not consulted by daily
-recommendation selection; `POLICY_VERSION` is unchanged by either. H5c (athlete-confirmed
-bounded revisions) is the remaining work: one active progression experiment changes one
-variable within reviewed bounds, missing/adverse follow-up blocks advancement, outcome
-reports retain no automatic selection authority, and hold/reduction/redirect remain
-explicit alternatives. The ADR owns the complete compatibility, substitution, evidence,
-confirmation and replay acceptance bar.
+H5a's `engine/blockIntent.ts`/`blockIntentReplay.ts` delivered the domain model and replay
+digest; H5b's `engine/progressionReview.ts` delivered the pure, report-only review. Neither
+had any persistence, real-data assembly, or UI on its own -- investigating H5c's
+"authoring-boundary implementation gate" found no `IntentBlock` persistence existed
+anywhere, and no service assembled real evidence into a `ProgressionReviewInput`. **H5c's
+delivery therefore built the full chain, per
+[the progression-claim design](./h5c-progression-claim-design.md):**
+
+- `services/intentBlockService.ts` -- `IntentBlock` persistence, built from scratch as a
+  transaction-composable primitive (there was no existing authoring boundary to adapt; the
+  closest candidates, `PlanBlockService` and `ExternalPlanService`, were each a mismatch --
+  see the design doc's own investigation notes).
+- `services/progressionReviewInputService.ts` -- the exposure/coverage/prescription/outcome
+  join `ProgressionReviewInput` needs, assembled from real
+  `getPerformedTrainingFactsInRange`, `sessionOutcomeReportService`, check-in tissue
+  responses and `trainingSettingsService` data. `boundProgressResults` is a deliberate scope
+  cut (always `[]`): a real bound-metric result needs the separate OV evaluation-snapshot
+  machinery, which nothing in this manual-authoring path produces.
+- `services/progressionClaimService.ts` -- the athlete-scoped singleton progression-claim
+  transaction exactly as the design doc specifies: one literal claim path
+  (`progression_experiment_claim/current`), a deterministic create-once activation document
+  for idempotency, no query-then-create anywhere, distinct typed conflicts for "another
+  active experiment" vs. "stale source revision."
+- `components/ProgressionBlockEditor.tsx` / `components/ProgressionReviewPanel.tsx`,
+  mounted in `TrainingSettings.tsx` -- an athlete-facing authoring form (scoped to the
+  common single-objective case, not `IntentBlock`'s full generality) and a review/confirm
+  UI following `Home.tsx`'s existing typed-conflict-to-`athleteMessage` convention.
+
+`POLICY_VERSION` is unchanged by all of H5c (verified via `check-policy-drift.mjs` and
+`simulate:diff` on every commit): confirming a progression revision persists an audited
+`IntentBlock` revision, but nothing yet reads that revision from any recommendation
+selection path. Wiring a confirmed revision into live selection is separate, later,
+separately policy-reviewed work -- not part of this delivery.
 
 ## Reproduction and verification
 

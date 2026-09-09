@@ -91,11 +91,17 @@ rule-evaluation budget was re-verified insufficient even after #468's reduction 
 H5 block intent and controlled progression is accepted in
 [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md) and is **In progress**:
 H5a intent contracts and canonical replay (`engine/blockIntent.ts`,
-`engine/blockIntentReplay.ts`) and H5b report-only progression review
-(`engine/progressionReview.ts`) are delivered, neither wired into daily recommendation
-selection; H5c confirmed bounded revisions and cumulative `external-plan@5` are unstarted,
-though H5c's transaction design is now specified in
-[the progression-claim design](./h5c-progression-claim-design.md) (design only, no code).
+`engine/blockIntentReplay.ts`), H5b report-only progression review
+(`engine/progressionReview.ts`), and H5c confirmed bounded revisions are all delivered per
+[the progression-claim design](./h5c-progression-claim-design.md) -- `intentBlockService.ts`
+(persistence, built from scratch since no authoring boundary existed to adapt),
+`progressionReviewInputService.ts` (real evidence assembly), `progressionClaimService.ts`
+(the athlete-scoped singleton claim/confirmation transaction), and an athlete-facing
+authoring + review UI (`ProgressionBlockEditor.tsx`/`ProgressionReviewPanel.tsx`, mounted in
+`TrainingSettings.tsx`). None of it is wired into daily recommendation selection --
+confirming a progression revision persists an audited `IntentBlock` revision but does not
+yet change any recommendation; that wiring, and cumulative `external-plan@5`, remain
+separate, later, separately policy-reviewed work.
 H4's same-day canonical performed-fact boundary is verified;
 H5 runtime needs validated intent mappings and linked response evidence. H5
 delivers intent authoring, report-only review, then confirmed bounded revisions. The work

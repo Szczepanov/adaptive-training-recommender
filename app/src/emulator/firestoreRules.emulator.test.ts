@@ -19,6 +19,8 @@ const goalPath = `users/${ownerId}/goals/goal-1`;
 const externalPlanPath = `users/${ownerId}/external_plans/autumn-block`;
 const externalRevisionPath = `${externalPlanPath}/revisions/1`;
 const externalPlacementPath = `${externalPlanPath}/placement/current`;
+const intentBlockPath = `users/${ownerId}/intent_blocks/block_1`;
+const intentBlockRevisionPath = `${intentBlockPath}/revisions/1`;
 const decisionJournalPath = `users/${ownerId}/decision_journal/2026-08-07`;
 const checkinPath = `users/${ownerId}/daily_subjective_checkins/2026-08-18`;
 
@@ -54,6 +56,28 @@ function validExternalPlacement() {
         userId: ownerId, planId: 'autumn-block', revision: 1,
         assignments: [{ sessionId: 'w1-a', date: '2026-08-18', status: 'planned' }],
         updatedAt: '2026-08-15T06:00:00Z',
+    };
+}
+
+function validIntentBlockHeader() {
+    return {
+        userId: ownerId, blockId: 'block_1', revision: 1,
+        contentHash: 'a'.repeat(64),
+        sourcePlanId: 'block_1', sourcePlanRevision: 1,
+        createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
+    };
+}
+
+/** Rules only check top-level shape (see hasValidIntentBlockRevision's own comment) --
+ * `block`/`pinnedTrainingIntentProfile` need only be maps, not a fully valid IntentBlock. */
+function validIntentBlockRevision() {
+    return {
+        userId: ownerId, blockId: 'block_1', revision: 1,
+        block: { id: 'block_1', revision: 1, objectives: [] },
+        pinnedTrainingIntentProfile: { priorities: ['balanced_performance'], weeklyCommitment: { minSessions: 3, targetSessions: 4, maxSessions: 5 } },
+        sourceSchemaVersion: 'manual-intent-block-v1', sourceRef: null,
+        contentHash: 'a'.repeat(64),
+        createdAt: '2026-09-01T00:00:00Z',
     };
 }
 
@@ -888,6 +912,57 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(getDoc(doc(otherDb, externalRevisionPath)));
         await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/external_plans/forged`), validExternalPlanHeader()));
         await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/external_plans/autumn-block/placement/current`), validExternalPlacement()));
+    });
+
+    it('stores an intent block header and revision for its owner (ADR-0037 H5a/H5c persistence)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertSucceeds(setDoc(doc(ownerDb, intentBlockPath), validIntentBlockHeader()));
+        await assertSucceeds(setDoc(doc(ownerDb, intentBlockRevisionPath), validIntentBlockRevision()));
+    });
+
+    it('makes an intent block revision create-only', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), intentBlockRevisionPath), validIntentBlockRevision());
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, intentBlockRevisionPath), { ...validIntentBlockRevision(), sourceSchemaVersion: 'edited' }));
+        await assertFails(deleteDoc(doc(ownerDb, intentBlockRevisionPath)));
+        await assertSucceeds(getDoc(doc(ownerDb, intentBlockRevisionPath)));
+    });
+
+    it('refuses an intent block header that moves backwards to a superseded revision', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), intentBlockPath), { ...validIntentBlockHeader(), revision: 3 });
+        });
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, intentBlockPath), { ...validIntentBlockHeader(), revision: 2 }));
+        await assertSucceeds(setDoc(doc(ownerDb, intentBlockPath), { ...validIntentBlockHeader(), revision: 4 }));
+    });
+
+    it('rejects a malformed intent block header and revision', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, intentBlockPath), { ...validIntentBlockHeader(), contentHash: 'short' }));
+        await assertFails(setDoc(doc(ownerDb, intentBlockPath), { ...validIntentBlockHeader(), sourcePlanRevision: 0 }));
+        await assertFails(setDoc(doc(ownerDb, intentBlockRevisionPath), { ...validIntentBlockRevision(), contentHash: 'short' }));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intent_blocks/block_1/revisions/2`), {
+            ...validIntentBlockRevision(),
+            revision: 1,
+        }));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intent_blocks/other_block/revisions/1`), {
+            ...validIntentBlockRevision(),
+            blockId: 'block_1',
+        }));
+    });
+
+    it('rejects cross-user intent block access and forged ownership', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), intentBlockPath), validIntentBlockHeader());
+            await setDoc(doc(context.firestore(), intentBlockRevisionPath), validIntentBlockRevision());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, intentBlockPath)));
+        await assertFails(getDoc(doc(otherDb, intentBlockRevisionPath)));
+        await assertFails(setDoc(doc(otherDb, `users/${otherUserId}/intent_blocks/forged`), validIntentBlockHeader()));
     });
 
     it('allows canonical unavailable modalities and rejects unsupported values', async () => {
