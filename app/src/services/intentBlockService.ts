@@ -45,7 +45,7 @@ import {
 } from '../engine/blockIntentReplay';
 import { TrainingIntentProfileService, trainingIntentProfileService } from './trainingIntentProfileService';
 
-/** `IntentBlock.sourcePlanId`/`sourcePlanRevision` describe the plan an external import
+/** `IntentBlock.sourcePlanId`/`IntentBlock.sourcePlanRevision` describe the plan an external import
  * would attach a block to (`external-plan@5`, separately scoped and unstarted). A block
  * authored directly by the athlete through this service has no such import behind it, so it
  * is deliberately self-sourced: `sourcePlanId` is the block's own id and `sourcePlanRevision`
@@ -160,8 +160,9 @@ export class IntentBlockService {
         }
     }
 
-    /** Re-validates on read, per the same discipline as `ExternalPlanService.getRevisionState`:
-     * a revision that no longer satisfies the contract is `INVALID`, never coerced. */
+    /** Re-validates both domain shape and canonical replay identity on read. A revision whose
+     * block or frozen provenance no longer hashes to its stored `contentHash` is `INVALID`,
+     * never coerced into an available authored input. */
     async getRevisionState(userId: string, blockId: string, revision: number): Promise<DataState<IntentBlockRevisionDocument>> {
         const documentPath = `users/${userId}/intent_blocks/${blockId}/revisions/${revision}`;
         try {
@@ -175,6 +176,34 @@ export class IntentBlockService {
             if (data.userId !== userId || data.blockId !== blockId || data.revision !== revision || data.block.id !== blockId || data.block.revision !== revision) {
                 return { status: 'INVALID', issues: [{ code: 'path-identity-mismatch', documentPath }] };
             }
+
+            let computedHash: string;
+            try {
+                const pinnedProfile = {
+                    ...data.pinnedTrainingIntentProfile,
+                    priorities: [...data.pinnedTrainingIntentProfile.priorities],
+                    weeklyCommitment: { ...data.pinnedTrainingIntentProfile.weeklyCommitment },
+                };
+                const payload = buildTreatmentIntentReplayPayloadV1(
+                    data.block,
+                    { ...pinnedProfile, priorities: [...pinnedProfile.priorities] },
+                    data.sourceSchemaVersion,
+                    data.sourceRef ?? undefined,
+                );
+                computedHash = await hashTreatmentIntentReplayPayload(payload);
+            } catch {
+                return {
+                    status: 'INVALID',
+                    issues: [{ code: 'invalid-replay-provenance', documentPath }],
+                };
+            }
+            if (data.contentHash !== computedHash) {
+                return {
+                    status: 'INVALID',
+                    issues: [{ code: 'content-hash-mismatch', field: 'contentHash', documentPath }],
+                };
+            }
+
             return { status: 'AVAILABLE', data, revision: String(revision) };
         } catch (error: unknown) {
             return { status: 'UNAVAILABLE', operation: 'read intent block revision', retryable: getErrorCode(error) !== 'permission-denied', message: getErrorMessage(error) };
