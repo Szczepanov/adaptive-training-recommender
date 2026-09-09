@@ -8,7 +8,6 @@ import { contextBriefService, type ContextBriefResult } from '../services/contex
 import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import {
-  copyActivitiesBundleToClipboard,
   downloadActivitiesJsonFile,
   exportActivitiesBundleToJson,
 } from '../utils/activityJsonExport';
@@ -28,6 +27,10 @@ interface DataViewProps {
   userId: string;
   onBack: () => void;
   initialTab?: DataViewTab;
+  /** When provided, Context-brief and AI-export affordances deep-link to the canonical
+   * `brief` screen. The canonical `brief` screen omits this prop so it renders the full
+   * brief while still routing any in-view AI export action back to that brief tab. */
+  onNavigateToBrief?: () => void;
 }
 
 type DataViewTab = 'recovery' | 'activities' | 'strength' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
@@ -88,7 +91,7 @@ function formatCandidateBaseline(
   return `7d med ${formatCandidateNumber(median7d)} · 28d med ${formatCandidateNumber(median28d)} · MAD ${formatCandidateNumber(mad28d)} · Δ7 ${formatCandidateDelta(delta7d)} · Δ28 ${formatCandidateDelta(delta28d)}`;
 }
 
-export function DataView({ decisionInput, userId, initialTab = 'recovery' }: DataViewProps) {
+export function DataView({ decisionInput, userId, initialTab = 'recovery', onNavigateToBrief }: DataViewProps) {
   const [activeTab, setActiveTab] = useState<DataViewTab>(initialTab);
   const [brief, setBrief] = useState<ContextBriefResult | null>(null);
   // Tagged with the date it belongs to, so a failure for one date is not rendered
@@ -108,7 +111,6 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   } | null>(null);
   const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
   const [activityOverrides, setActivityOverrides] = useState<Record<string, ActivityOverride>>({});
-  const [allActivitiesCopied, setAllActivitiesCopied] = useState(false);
   // ADR-0034 PR2: canonical Activities read model, gated by VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY.
   // Default 'off' leaves activityWindow/ActivityTelemetry above as the sole, unchanged
   // production path -- this state and its effect are inert unless explicitly enabled.
@@ -186,7 +188,9 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
     // `briefDate` must be defined for the comparison to settle: passing undefined lets the
     // service default to today, whose asOfDate would never equal undefined and would
     // re-trigger this effect on every render.
-    if (activeTab !== 'brief' || !briefDate || (brief?.asOfDate === briefDate && brief.preset === briefPreset)) return;
+    // When this view only links to the canonical export surface (#491), never fetch
+    // the brief here -- the `brief` screen builds it.
+    if (onNavigateToBrief || activeTab !== 'brief' || !briefDate || (brief?.asOfDate === briefDate && brief.preset === briefPreset)) return;
     let cancelled = false;
     contextBriefService.build(userId, briefDate, briefWindowDaysFor(briefPreset), briefPreset)
       .then(result => { if (!cancelled) { setBrief(result); setBriefError(null); } })
@@ -200,7 +204,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
         setBriefError({ date: briefDate, message: 'Could not assemble the brief. Retry the dashboard refresh.' });
       });
     return () => { cancelled = true; };
-  }, [activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset]);
+  }, [onNavigateToBrief, activeTab, userId, brief?.asOfDate, brief?.preset, briefDate, briefPreset]);
 
   const selectBriefPreset = (preset: BriefWindowPreset) => {
     setBriefPreset(preset);
@@ -221,21 +225,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
     }
   };
 
-  const handleCopyAllActivities = async () => {
-    if (!activityWindow || activityWindow.state.status !== 'AVAILABLE' || activityWindow.state.data.length === 0) return;
-    const startInclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), -6);
-    const throughDateExclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), 1);
-    try {
-      await copyActivitiesBundleToClipboard(activityWindow.state.data, {
-        userId,
-        startDateInclusive: startInclusive,
-        throughDateExclusive,
-      });
-      setAllActivitiesCopied(true);
-      window.setTimeout(() => setAllActivitiesCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy activities bundle to clipboard', err);
+  const openCanonicalBrief = () => {
+    if (onNavigateToBrief) {
+      onNavigateToBrief();
+      return;
     }
+    setActiveTab('brief');
   };
 
   const handleDownloadActivities = () => {
@@ -865,6 +860,26 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
   const visibleBriefError = briefError && briefError.date === briefDate ? briefError.message : null;
 
   const renderContextBrief = () => {
+    // Deep-link fallback: the Context-brief tab navigates to the canonical export
+    // surface directly (#491), so this branch is only reachable if the tab is active
+    // while a navigate handler is set.
+    if (onNavigateToBrief) {
+      return (
+        <div className="data-section">
+          <h3>Context brief</h3>
+          <p className="brief-intro">
+            Export for AI lives in one place now — open {SCREEN_LABELS.brief} for the
+            canonical daily (2-day) or full (14-day) brief with char and token counts.
+            {' '}Read-only: generating it changes nothing.
+          </p>
+          <div className="brief-actions">
+            <button className="brief-copy" onClick={onNavigateToBrief}>
+              Open {SCREEN_LABELS.brief}
+            </button>
+          </div>
+        </div>
+      );
+    }
     const approxTokens = brief ? Math.ceil(brief.text.length / 4) : null;
     return (
       <div className="data-section">
@@ -1031,7 +1046,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
         </button>
         <button
           className={activeTab === 'brief' ? 'active' : ''}
-          onClick={() => setActiveTab('brief')}
+          onClick={openCanonicalBrief}
         >
           Context brief
         </button>
@@ -1045,7 +1060,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
               <div>
                 <h3 style={{ margin: 0 }}>Recent activity telemetry</h3>
                 <p className="activities-tab-subtitle">
-                  Inspect detailed Garmin telemetry. Export structured JSON for external AI agent planning.
+                  Inspect detailed Garmin telemetry. Use the canonical context brief for AI planning; JSON download remains a data export.
                 </p>
               </div>
               {activityWindow?.state.status === 'AVAILABLE' && activityWindow.state.data.length > 0 && (
@@ -1054,10 +1069,10 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery' }: Dat
                     type="button"
                     className="quick-action-btn secondary"
                     style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                    onClick={handleCopyAllActivities}
-                    title="Copy all recent activities with detailed telemetry as JSON for AI planning"
+                    onClick={openCanonicalBrief}
+                    title="Open the canonical Export Context for AI surface for AI planning export"
                   >
-                    {allActivitiesCopied ? '✓ Copied All JSON' : '📋 Copy All (JSON)'}
+                    📋 Export via {SCREEN_LABELS.brief}
                   </button>
                   <button
                     type="button"

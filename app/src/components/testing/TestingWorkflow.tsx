@@ -372,22 +372,41 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
 
     const metricRows = useMemo(() => protocol?.metricIds.map(getMetricDefinition) ?? [], [protocol]);
 
+    // #496: chrome only -- the protocol lock stays visible (collapsed) while the shared
+    // runner executes, so assessment provenance never disappears behind the workout UI.
+    // The copy states what abandoning costs; the abandonment flow itself is unchanged (#494).
+    const lockSummary = protocol && attempt ? (
+        <details className="testing-card testing-lock-summary">
+            <summary>Locked assessment: {protocol.title} · rev {protocol.revision} · {attempt.purpose}</summary>
+            <p>Attempt <code>{attempt.id}</code>. Abandoning the session below abandons this locked attempt and creates no benchmark observation.</p>
+        </details>
+    ) : null;
+
     if (recovering) return <div className="testing-workflow"><p>Recovering testing workflow…</p></div>;
 
     if (stage === 'running' && launch) {
         return (
-            <SessionRunner
-                userId={userId}
-                initialSession={launch}
-                onInitialSessionHandled={() => setLaunch(null)}
-                onSessionStateChange={handleExecutionState}
-                onClose={onClose}
-            />
+            <div className="testing-workflow">
+                {lockSummary}
+                <SessionRunner
+                    userId={userId}
+                    initialSession={launch}
+                    onInitialSessionHandled={() => setLaunch(null)}
+                    onSessionStateChange={handleExecutionState}
+                    onClose={onClose}
+                    mode="assessment"
+                />
+            </div>
         );
     }
 
     if (stage === 'running' && execution?.state === 'in_progress') {
-        return <SessionRunner userId={userId} onSessionStateChange={handleExecutionState} onClose={onClose} />;
+        return (
+            <div className="testing-workflow">
+                {lockSummary}
+                <SessionRunner userId={userId} onSessionStateChange={handleExecutionState} onClose={onClose} mode="assessment" />
+            </div>
+        );
     }
 
     return (
