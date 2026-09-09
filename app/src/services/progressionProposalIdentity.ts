@@ -37,7 +37,7 @@ function sha256Hex(value: string): string {
     view.setUint32(totalLength - 8, Math.floor(bitLength / 0x1_0000_0000), false);
     view.setUint32(totalLength - 4, bitLength >>> 0, false);
 
-    const hash = [...SHA256_INITIAL];
+    const hash: number[] = [...SHA256_INITIAL];
     const words = new Uint32Array(64);
 
     for (let offset = 0; offset < totalLength; offset += 64) {
