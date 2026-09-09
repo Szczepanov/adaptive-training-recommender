@@ -227,6 +227,14 @@ jobs:
       - name: Install Node dependencies
         run: npm ci
 
+      - name: Cache Firestore emulator
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/firebase/emulators
+          key: firebase-emulators-${{ runner.os }}-${{ hashFiles('app/package-lock.json') }}
+          restore-keys: |
+            firebase-emulators-${{ runner.os }}-
+
       - name: Run frontend test suite with coverage
         run: npm run test:coverage
 
