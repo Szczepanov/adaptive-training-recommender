@@ -227,6 +227,12 @@ Back/Skip can return without saving. Partial daily documents can exist, but base
 uses its own completeness rules rather than treating every partial save as a valid subjective
 baseline point.
 
+The progress header deliberately distinguishes editable form state from saved state. Recovery,
+Safety, and Availability are derived from the last successfully persisted daily check-in, so
+prefilled defaults or unsaved edits cannot appear complete. Follow-ups reflect the outstanding
+review queue and clear only after a follow-up save succeeds (or the athlete explicitly skips
+that prompt for the current visit).
+
 ### 5. Structured sessions
 
 `App.tsx` uses `sessionAuthoringMode` to switch the `sessions` route between:
@@ -270,8 +276,8 @@ periodization/taper calculations, and the screen derives the current focus event
 Two implementation details matter to navigation work:
 
 * paused goals appear only under `all`, because there is no dedicated paused filter; and
-* `GoalsProps` accepts `onNavigate`, but `Goals` currently destructures only `userId`, so the
-  navigation callback is unused.
+* `Goals` takes only `userId`; it owns no repair/deep-link navigation, and callers
+  reach it through `App.tsx` `handleNavigate`.
 
 ### 8. Training Setup versus Coach Preferences
 
@@ -381,15 +387,20 @@ living-reference section when implementing them.
    and provide retry when retry is meaningful.
 6. ~~Make Check-in progress and partial-save semantics explicit so Back/Skip versus submit is
    unambiguous.~~ Done (#488): `DailyCheckin` renders a 4-step `CheckinStepper`
-   (Follow-ups, Recovery, Safety, Availability) derived read-only from the daily document,
-   so saved versus pending state is explicit and Skip/Back reads as intentional.
+   (Follow-ups, Recovery, Safety, Availability). Recovery/Safety/Availability status is
+   derived read-only from the last successfully persisted daily document, while Follow-ups
+   reflects the outstanding review queue, so unsaved defaults or edits never masquerade as
+   saved progress and Skip/Back remains intentional.
 
 ### Settings
 
 7. Visually pair Training Setup (hard gates) and Coach Preferences (soft preferences), with
    cross-links between overlapping equipment/time/environment concepts.
-8. Either remove `Goals.onNavigate` or use it for explicit repair/deep-link flows; an unused
-   navigation prop is misleading API surface.
+8. ~~Either remove `Goals.onNavigate` or use it for explicit repair/deep-link flows; an unused
+   navigation prop is misleading API surface.~~
+   Done (#484): removed the unused `Goals` `onNavigate` prop — no repair flow needed it —
+   and kept `constraints` as the stable route key with user-facing copy in `navigation.ts`
+   `SCREEN_LABELS` (`Training Setup`).
 9. Review immediate-persist Training Setup controls for undo/confirmation where a mistaken
    toggle can materially change feasibility/safety decisions.
 
