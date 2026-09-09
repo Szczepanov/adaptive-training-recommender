@@ -52,6 +52,7 @@ function normalizeToSummary(data, fallbackLabel) {
         caseSetSha256: data.current.caseSetSha256,
         corpusSha256: data.current.corpusSha256,
         familiesSha256: data.current.familiesSha256,
+        judgeSettings: data.current.judgeSettings,
       },
       familyCount: data.current.familyCount,
       caseCount: data.current.caseCount,
@@ -203,31 +204,40 @@ if (fatal.length === 0) {
     else fatal.push(`${message} Re-run with the baseline model, or explicitly pass --allow-model-change for an exploratory comparison.`);
   }
 
-  // Sampling/packet/thinking/context settings are as comparability-breaking as the model itself:
-  // e.g. `npm run judge:local` (samples=1, packet v1, thinking on, ctx 32768) vs the baseline's
-  // actual `judge:e2e` settings (samples=5, --blind/v2, thinking off, ctx 65536) previously
-  // produced a spurious "16 regressions, 0 improvements" diff with no warning at all. Only compare
-  // a field when both sides actually recorded it — an unrecorded field is "unknown", not a proven
-  // mismatch, and older baseline formats may predate `judgeSettings` entirely.
+  // Judge runtime settings that can change the sampled outputs are part of the measurement
+  // instrument, just like the model and prompt. Missing per-field provenance is "unknown" rather
+  // than a proven mismatch, but it must be surfaced instead of silently bypassing comparability.
   const baselineSettings = baseline.provenance.judgeSettings ?? baseline.judgeSettings ?? null;
   const currentSettings = current.provenance.judgeSettings ?? current.judgeSettings ?? null;
   if (!baselineSettings || !currentSettings) {
-    warnings.push('Judge run settings (samples/packet/thinking/context) are not recorded on one side; comparability cannot be verified beyond the model name.');
+    warnings.push('Judge run settings are not recorded on one side; comparability cannot be verified beyond the model name.');
   } else {
     const settingsFields = [
       ['samples', 'Sample count'],
       ['packetVersion', 'Packet version'],
       ['thinkingEnabled', 'Thinking mode'],
+      ['baseSeed', 'Base seed'],
+      ['seedStrategy', 'Seed strategy'],
+      ['temperature', 'Temperature'],
       ['numCtx', 'Context window (num_ctx)'],
+      ['numPredict', 'Prediction budget (num_predict)'],
       ['rubricScale', 'Rubric scale'],
       ['isPairwise', 'Pairwise mode'],
     ];
     const mismatches = [];
+    const missingFields = [];
     for (const [field, label] of settingsFields) {
       const baseVal = baselineSettings[field];
       const currVal = currentSettings[field];
-      if (baseVal === undefined || currVal === undefined) continue;
+      if (baseVal === undefined || currVal === undefined) {
+        const missingSide = [baseVal === undefined ? 'baseline' : null, currVal === undefined ? 'current' : null].filter(Boolean).join(' and ');
+        missingFields.push(`${label} (${missingSide})`);
+        continue;
+      }
       if (baseVal !== currVal) mismatches.push(`${label} changed: ${baseVal} -> ${currVal}.`);
+    }
+    if (missingFields.length > 0) {
+      warnings.push(`Judge run settings are incomplete (${missingFields.join(', ')}); comparability cannot be fully verified for those fields.`);
     }
     if (mismatches.length > 0) {
       const message = `Judge run settings differ from the baseline (${mismatches.join(' ')}) Score deltas are not comparable — a settings mismatch can swamp real engine drift.`;
@@ -384,6 +394,7 @@ const diffData = {
     promptSha256: baseline.provenance.promptSha256,
     responseSchemaSha256: baseline.provenance.responseSchemaSha256,
     caseSetSha256: baseline.provenance.caseSetSha256,
+    judgeSettings: baseline.provenance.judgeSettings ?? baseline.judgeSettings,
     familyCount: baseline.familyCount,
     caseCount: baseline.caseCount,
     meanSensitivityQuality: round2(baseMean),
@@ -398,6 +409,7 @@ const diffData = {
     caseSetSha256: current.provenance.caseSetSha256,
     corpusSha256: current.provenance.corpusSha256,
     familiesSha256: current.provenance.familiesSha256,
+    judgeSettings: current.provenance.judgeSettings ?? current.judgeSettings,
     familyCount: current.familyCount,
     caseCount: current.caseCount,
     meanSensitivityQuality: round2(currMean),
