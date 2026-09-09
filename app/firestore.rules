@@ -1096,6 +1096,61 @@ service cloud.firestore {
       }
     }
 
+    // ADR-0037 D-AUTHORITY (H5c), per docs/plans/h5c-progression-claim-design.md's own
+    // rules sketch: the athlete-scoped singleton progression-claim, at a literal `current`
+    // path so "singleton" is enforced by the path itself, not application convention. Kept
+    // shallow/structural, matching every other collection added in this PR.
+    function hasValidProgressionClaim(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'state', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'acquiredAt', 'revision', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'state', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'acquiredAt', 'revision', 'createdAt', 'updatedAt'])
+        && data.state in ['held', 'released']
+        && data.experimentId is string && data.experimentId.size() > 0 && data.experimentId.size() <= 64
+        && data.blockId is string && data.blockId.size() > 0 && data.blockId.size() <= 128
+        && data.proposalId is string && data.proposalId.size() > 0 && data.proposalId.size() <= 128
+        && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
+        && data.activationKey is string && data.activationKey.size() == 64
+        && data.activationRevisionId is string && data.activationRevisionId.size() > 0
+        && data.acquiredAt is string && data.createdAt is string && data.updatedAt is string;
+    }
+
+    match /users/{userId}/progression_experiment_claim/current {
+      allow read: if isOwner(userId);
+      allow create: if hasValidProgressionClaim(userId) && request.resource.data.revision == 1;
+      allow update: if hasValidProgressionClaim(userId)
+        && keepsOwnership(userId)
+        && request.resource.data.revision == resource.data.revision + 1;
+      allow delete: if false;
+    }
+
+    // Deliberately no `../progression_experiment_claim/{anythingElse}` match: only the
+    // literal `current` path above is writable, so a client cannot create a second claim
+    // document under a different id and defeat the singleton by construction.
+
+    function hasValidProgressionActivation(userId, activationKey) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'activationKey', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationRevisionId', 'claimRevision', 'activatedAt', 'priorSettings', 'acceptedSettings'])
+        && data.keys().hasAll(['userId', 'activationKey', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationRevisionId', 'claimRevision', 'activatedAt', 'priorSettings', 'acceptedSettings'])
+        && data.activationKey == activationKey
+        && data.activationKey is string && data.activationKey.size() == 64
+        && data.experimentId is string && data.experimentId.size() > 0
+        && data.blockId is string && data.blockId.size() > 0
+        && data.proposalId is string && data.proposalId.size() > 0
+        && data.sourcePlanRevision is int && data.sourcePlanRevision >= 1
+        && data.activationRevisionId is string && data.activationRevisionId.size() > 0
+        && data.claimRevision is int && data.claimRevision >= 1
+        && data.activatedAt is string
+        && data.priorSettings is map && data.acceptedSettings is map;
+    }
+
+    match /users/{userId}/progression_experiment_activations/{activationKey} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidProgressionActivation(userId, activationKey);
+      allow update, delete: if false;
+    }
+
     match /users/{userId}/plan_blocks/{blockId} {
       allow read: if isOwner(userId);
       allow create: if hasValidPlanBlock(userId);

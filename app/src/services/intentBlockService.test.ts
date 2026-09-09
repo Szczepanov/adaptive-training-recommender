@@ -12,7 +12,13 @@ vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
 const profileState = vi.hoisted(() => ({ getProfileState: vi.fn() }));
-vi.mock('./trainingIntentProfileService', () => ({ trainingIntentProfileService: profileState }));
+vi.mock('./trainingIntentProfileService', () => ({
+    trainingIntentProfileService: profileState,
+    // `IntentBlockService.save` constructs its own db-bound instance rather than using the
+    // singleton (see intentBlockService.ts's resolvePinnedProfile doc comment) -- `new`ing
+    // this mock must resolve to the same controllable object as the singleton above.
+    TrainingIntentProfileService: vi.fn().mockImplementation(function TrainingIntentProfileService() { return profileState; }),
+}));
 
 import {
     IntentBlockService,

@@ -43,7 +43,7 @@ import {
     hashTreatmentIntentReplayPayload,
     type PinnedTrainingIntentProfileSnapshot,
 } from '../engine/blockIntentReplay';
-import { trainingIntentProfileService } from './trainingIntentProfileService';
+import { TrainingIntentProfileService, trainingIntentProfileService } from './trainingIntentProfileService';
 
 /** `IntentBlock.sourcePlanId`/`sourcePlanRevision` describe the plan an external import
  * would attach a block to (`external-plan@5`, separately scoped and unstarted). A block
@@ -108,8 +108,17 @@ export class MissingTrainingIntentProfileError extends Error {
     }
 }
 
-async function resolvePinnedProfile(userId: string): Promise<PinnedTrainingIntentProfileSnapshot> {
-    const profileState = await trainingIntentProfileService.getProfileState(userId);
+/** Exported for reuse by `progressionClaimService.ts`, which pins the same kind of
+ * snapshot for a confirmation-driven revision rather than a manually-authored one.
+ * Accepts an explicit profile-service instance (bound to the same `Firestore` as whatever
+ * is calling this) rather than always reaching for the ungrounded default singleton --
+ * without this, a caller constructed against an injected/emulator `db` would silently read
+ * the profile from the production default instance instead. */
+export async function resolvePinnedProfile(
+    userId: string,
+    profileService: TrainingIntentProfileService = trainingIntentProfileService,
+): Promise<PinnedTrainingIntentProfileSnapshot> {
+    const profileState = await profileService.getProfileState(userId);
     if (profileState.status !== 'AVAILABLE') throw new MissingTrainingIntentProfileError();
     const profile = profileState.data;
     return {
@@ -247,7 +256,7 @@ export class IntentBlockService {
         const validation = validateIntentBlock(block);
         if (!validation.valid) throw new IntentBlockValidationFailedError(validation.issues);
 
-        const pinnedProfile = await resolvePinnedProfile(userId);
+        const pinnedProfile = await resolvePinnedProfile(userId, new TrainingIntentProfileService(this.db));
         const sourceSchemaVersion = options.sourceSchemaVersion ?? MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION;
         const sourceRef = options.sourceRef ?? null;
         const payload = buildTreatmentIntentReplayPayloadV1(block, pinnedProfile, sourceSchemaVersion, sourceRef ?? undefined);

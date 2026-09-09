@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, type Firestore } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { TrainingIntentProfile } from '../engine/models';
 import type { DataState } from '../engine/dataState';
@@ -9,9 +9,15 @@ const COLLECTION = 'training_intent';
 const DOC_ID = 'profile';
 
 export class TrainingIntentProfileService {
+    private readonly db: Firestore;
+
+    constructor(db: Firestore = getDb()) {
+        this.db = db;
+    }
+
     async getProfileState(userId: string): Promise<DataState<TrainingIntentProfile>> {
         try {
-            const snapshot = await getDoc(doc(getDb(), 'users', userId, COLLECTION, DOC_ID));
+            const snapshot = await getDoc(doc(this.db, 'users', userId, COLLECTION, DOC_ID));
             if (!snapshot.exists()) return { status: 'MISSING' };
             const parsed = validateTrainingIntentProfile(snapshot.data());
             if (!parsed.isValid || !parsed.data || parsed.data.userId !== userId) {
@@ -34,7 +40,7 @@ export class TrainingIntentProfileService {
         };
         const parsed = validateTrainingIntentProfile(raw);
         if (!parsed.isValid || !parsed.data) throw new Error(`Validation failed: ${parsed.errors.map(error => error.message).join('; ')}`);
-        await setDoc(doc(getDb(), 'users', userId, COLLECTION, DOC_ID), parsed.data, { merge: true });
+        await setDoc(doc(this.db, 'users', userId, COLLECTION, DOC_ID), parsed.data, { merge: true });
         return parsed.data;
     }
 }
