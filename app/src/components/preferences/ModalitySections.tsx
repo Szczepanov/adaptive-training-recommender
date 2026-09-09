@@ -1,9 +1,12 @@
 
 import type { UserPreferences } from '../../engine/models';
+import type { Screen } from '../../types/navigation';
+import { SCREEN_LABELS } from '../../types/navigation';
 import { CANONICAL_MODALITIES } from '../../utils/modalities';
 
 interface ModalitySectionsProps {
   preferences: UserPreferences;
+  onNavigate?: (screen: Screen) => void;
   addPreferredModality: (modality: string) => void;
   removePreferredModality: (modality: string) => void;
   addAvoidedModality: (modality: string) => void;
@@ -14,6 +17,7 @@ interface ModalitySectionsProps {
 
 export function ModalitySections({
   preferences,
+  onNavigate,
   addPreferredModality,
   removePreferredModality,
   addAvoidedModality,
@@ -97,6 +101,16 @@ export function ModalitySections({
         <p className="preference-desc">
           Hard exclusions: these activities will not be offered, even when they would otherwise fit the plan.
         </p>
+        <p className="preference-desc">
+          Related: {SCREEN_LABELS.constraints} → “Available equipment &amp; sport access” gates
+          by venue and gear, while this list excludes by modality name. Remember to save here
+          with Save Preferences; equipment changes there save immediately.
+          {onNavigate && (
+            <button type="button" onClick={() => onNavigate('constraints')}>
+              Open {SCREEN_LABELS.constraints}
+            </button>
+          )}
+        </p>
         <div className="modality-select-group">
           <select
             value=""
@@ -132,7 +146,7 @@ export function ModalitySections({
           Modalities you dislike. The engine will apply a strong soft penalty to avoid prescribing these when viable alternatives exist.
         </p>
         <p className="preference-warning-note">
-          💡 <strong>Note:</strong> Safety & injury restrictions (e.g. Achilles pain) belong in <em>Constraints</em>, not Preferences.
+          💡 <strong>Note:</strong> Safety & injury restrictions (e.g. Achilles pain) belong in <em>{SCREEN_LABELS.constraints}</em>, not Preferences.
         </p>
 
         <div className="modality-select-group">
