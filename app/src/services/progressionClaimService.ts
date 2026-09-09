@@ -235,7 +235,9 @@ export async function confirmProgressionRevision(
         }
 
         const nextBlock = nextBlockWithAppliedChange(currentBlock, proposedChange);
-        const payload = buildTreatmentIntentReplayPayloadV1(nextBlock, pinnedProfile, MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION, undefined);
+        const payload = buildTreatmentIntentReplayPayloadV1(
+            nextBlock, { ...pinnedProfile, priorities: [...pinnedProfile.priorities] }, MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION, undefined,
+        );
         const contentHash = await hashTreatmentIntentReplayPayload(payload);
 
         const newHeader = intentBlocks.stageRevision(

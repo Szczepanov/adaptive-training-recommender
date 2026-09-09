@@ -259,7 +259,9 @@ export class IntentBlockService {
         const pinnedProfile = await resolvePinnedProfile(userId, new TrainingIntentProfileService(this.db));
         const sourceSchemaVersion = options.sourceSchemaVersion ?? MANUAL_INTENT_BLOCK_SOURCE_SCHEMA_VERSION;
         const sourceRef = options.sourceRef ?? null;
-        const payload = buildTreatmentIntentReplayPayloadV1(block, pinnedProfile, sourceSchemaVersion, sourceRef ?? undefined);
+        const payload = buildTreatmentIntentReplayPayloadV1(
+            block, { ...pinnedProfile, priorities: [...pinnedProfile.priorities] }, sourceSchemaVersion, sourceRef ?? undefined,
+        );
         const contentHash = await hashTreatmentIntentReplayPayload(payload);
         const now = new Date().toISOString();
 

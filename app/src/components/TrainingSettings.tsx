@@ -4,6 +4,8 @@ import { resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { trainingSettingsService, buildRevertUpdate, type TrainingSettingsUpdate } from '../services/trainingSettingsService';
 import { getLocalDateString } from '../utils/localDate';
 import { SCREEN_LABELS, type Screen } from '../types/navigation';
+import { ProgressionBlockEditor } from './ProgressionBlockEditor';
+import { ProgressionReviewPanel } from './ProgressionReviewPanel';
 import './TrainingSettings.css';
 
 interface TrainingSettingsProps {
@@ -57,6 +59,9 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   const [editingInjuryIndex, setEditingInjuryIndex] = useState<number | null>(null);
   const [undoState, setUndoState] = useState<{ message: string; revert: TrainingSettingsUpdate } | null>(null);
   const [undoInFlight, setUndoInFlight] = useState(false);
+  // Forces ProgressionReviewPanel to re-mount and reload its due-block list after the
+  // editor saves a new/revised block, rather than the two components sharing state.
+  const [progressionRefreshKey, setProgressionRefreshKey] = useState(0);
 
   const load = useCallback(async () => {
     try {
@@ -292,6 +297,13 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
           </div>
         )}
       </section>
+
+      {/* ADR-0037 H5c: report-only review (H5b) becomes a real, confirmable feature here.
+          Neither section feeds any live recommendation yet -- see the H5c design doc's
+          'no recommendation-time query' invariant -- so they are intentionally last,
+          after every hard-gating setting above. */}
+      <ProgressionReviewPanel key={progressionRefreshKey} userId={userId} />
+      <ProgressionBlockEditor userId={userId} onBlockSaved={() => setProgressionRefreshKey(current => current + 1)} />
     </main>
   );
 }
