@@ -138,7 +138,9 @@ export function resolveCompanionPromptCopy(finishedTitle: string, companionCount
     // workout block -- the prompt must say so explicitly either way the count reads.
     const companionNoun = companionCount === 1 ? 'a separately executable follow-up companion' : `${companionCount} separately executable follow-up companions`;
     return {
-        heading: 'Follow-up companion available',
+        heading: companionCount === 1
+            ? 'Follow-up companion available'
+            : 'Follow-up companions available',
         subheading: `${finishedTitle} lists ${companionNoun}. This is a follow-up to what you just finished — not your next workout block. Start now or later — skipping records nothing.`,
     };
 }
