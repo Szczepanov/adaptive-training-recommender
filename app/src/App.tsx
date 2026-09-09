@@ -349,6 +349,7 @@ function App() {
                 decisionInput={decisionInput}
                 userId={userId!}
                 onBack={() => handleNavigate('home')}
+                onNavigateToBrief={() => handleNavigate('brief')}
               />
               {decisionInput && (
                 <HealthAnomalyShadowPanel

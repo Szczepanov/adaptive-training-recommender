@@ -1,7 +1,7 @@
 import { type FormEvent, type ReactNode, useCallback, useEffect, useMemo, useState } from 'react';
 import type { BodyRegion, GuardrailKey, InjuryConstraint, SessionTemplate, TrainingSettings as TrainingSettingsModel } from '../engine/models';
 import { resolveInjuryRestrictions } from '../engine/injuryPolicy';
-import { trainingSettingsService, type TrainingSettingsUpdate } from '../services/trainingSettingsService';
+import { trainingSettingsService, buildRevertUpdate, type TrainingSettingsUpdate } from '../services/trainingSettingsService';
 import { getLocalDateString } from '../utils/localDate';
 import { SCREEN_LABELS, type Screen } from '../types/navigation';
 import './TrainingSettings.css';
@@ -55,6 +55,8 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
   const [error, setError] = useState<string | null>(null);
   const [injuryDraft, setInjuryDraft] = useState(emptyInjuryDraft);
   const [editingInjuryIndex, setEditingInjuryIndex] = useState<number | null>(null);
+  const [undoState, setUndoState] = useState<{ message: string; revert: TrainingSettingsUpdate } | null>(null);
+  const [undoInFlight, setUndoInFlight] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -81,6 +83,32 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
     }
   };
 
+  // Destructive autosaved changes (equipment, safety limits, injury constraints)
+  // act as hard recommendation gates, so they persist instantly but offer a
+  // one-shot Undo toast containing a field-scoped inverse patch. Non-destructive
+  // edits (time/location, recovery preferences, migration review) keep plain
+  // instant-save via `save` with no toast.
+  const saveDestructive = async (update: TrainingSettingsUpdate, message: string) => {
+    const revert = settings ? buildRevertUpdate(settings, update) : null;
+    const updated = await save(update);
+    if (updated) {
+      setUndoState(revert ? { message, revert } : null);
+    }
+    return updated;
+  };
+
+  const undoLastChange = async () => {
+    const current = undoState;
+    if (!current || undoInFlight) return;
+
+    setUndoInFlight(true);
+    const restored = await save(current.revert);
+    if (restored) {
+      setUndoState(latest => latest === current ? null : latest);
+    }
+    setUndoInFlight(false);
+  };
+
   const saveInjury = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!settings) return;
@@ -92,9 +120,10 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
       ...(injuryDraft.note.trim() ? { note: injuryDraft.note.trim() } : {}),
     };
     const nextInjuries = [...(settings.injuries ?? [])];
-    if (editingInjuryIndex === null) nextInjuries.push(injury);
+    const isNewInjury = editingInjuryIndex === null;
+    if (isNewInjury) nextInjuries.push(injury);
     else nextInjuries[editingInjuryIndex] = injury;
-    if (await save({ injuries: nextInjuries })) {
+    if (await saveDestructive({ injuries: nextInjuries }, isNewInjury ? 'Injury constraint added.' : 'Injury constraint updated.')) {
       setInjuryDraft(emptyInjuryDraft);
       setEditingInjuryIndex(null);
     }
@@ -131,6 +160,13 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
         <p className="section-intro">Changes on this screen save automatically and act as hard gates: they remove sessions from every recommendation. Softer tie-breaks live in {SCREEN_LABELS.preferences} and only apply after an explicit save there.</p>
       </header>
       {error && <p className="settings-error" role="alert">{error}</p>}
+      {undoState && (
+        <div className="settings-undo-toast" role="status" aria-live="polite" aria-atomic="true">
+          <span>{undoState.message}</span>
+          <button type="button" disabled={undoInFlight} onClick={() => void undoLastChange()}>{undoInFlight ? 'Undoing…' : 'Undo'}</button>
+          <button type="button" disabled={undoInFlight} onClick={() => setUndoState(null)} aria-label="Dismiss undo">Dismiss</button>
+        </div>
+      )}
       {!settings.migration.legacyReviewed && (
         <section className="settings-review" aria-labelledby="legacy-review-title">
           <h2 id="legacy-review-title">Review migrated settings</h2>
@@ -146,7 +182,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
         <div className="settings-list">
           {Object.entries(equipmentLabels).map(([key, label]) => (
             <label className="setting-row" key={key}>
-              <input type="checkbox" checked={settings.equipment[key as keyof TrainingSettingsModel['equipment']]} onChange={(event) => void save({ equipment: { [key]: event.target.checked } })} />
+              <input type="checkbox" checked={settings.equipment[key as keyof TrainingSettingsModel['equipment']]} onChange={(event) => void saveDestructive({ equipment: { [key]: event.target.checked } }, `${label} ${event.target.checked ? 'enabled' : 'disabled'}.`)} />
               <span><strong>{label}</strong><small>{settings.equipment[key as keyof TrainingSettingsModel['equipment']] ? 'Available for recommendations' : 'Not used in recommendations'}</small></span>
             </label>
           ))}
@@ -160,7 +196,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
         <div className="settings-list">
           {Object.entries(guardrailDetails).map(([key, detail]) => (
             <label className="setting-row" key={key}>
-              <input type="checkbox" checked={settings.guardrails[key as GuardrailKey]} onChange={(event) => void save({ guardrails: { [key]: event.target.checked } })} />
+              <input type="checkbox" checked={settings.guardrails[key as GuardrailKey]} onChange={(event) => void saveDestructive({ guardrails: { [key]: event.target.checked } }, `${detail.label} ${event.target.checked ? 'enabled' : 'disabled'}.`)} />
               <span><strong>{detail.label}</strong><small>{detail.effect}</small></span>
             </label>
           ))}
@@ -237,7 +273,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
                   <button type="button" onClick={() => {
                     const nextInjuries = (settings.injuries ?? []).filter((_, i) => i !== index);
                     if (editingInjuryIndex === index) { setInjuryDraft(emptyInjuryDraft); setEditingInjuryIndex(null); }
-                    void save({ injuries: nextInjuries });
+                    void saveDestructive({ injuries: nextInjuries }, 'Injury constraint removed.');
                   }}>Remove</button>
                 </div>
               </div>
