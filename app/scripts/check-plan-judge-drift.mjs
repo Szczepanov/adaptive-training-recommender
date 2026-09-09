@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 const defaultBaselinePath = resolve('../docs/analysis/plan-judge-baseline.json');
 const currentPath = resolve('artifacts/ai-plan-judge/latest/judge-summary.json');
 const allowModelChange = process.argv.includes('--allow-model-change');
+const allowSettingsChange = process.argv.includes('--allow-settings-change') || allowModelChange;
 const failOnRegression = process.argv.includes('--fail-on-regression');
 const usePrevious = process.argv.includes('--previous') || process.argv.includes('--prev');
 const againstIndex = process.argv.indexOf('--against');
@@ -51,6 +52,7 @@ function normalizeToSummary(data, fallbackLabel) {
         caseSetSha256: data.current.caseSetSha256,
         corpusSha256: data.current.corpusSha256,
         familiesSha256: data.current.familiesSha256,
+        judgeSettings: data.current.judgeSettings,
       },
       familyCount: data.current.familyCount,
       caseCount: data.current.caseCount,
@@ -202,6 +204,48 @@ if (fatal.length === 0) {
     else fatal.push(`${message} Re-run with the baseline model, or explicitly pass --allow-model-change for an exploratory comparison.`);
   }
 
+  // Judge runtime settings that can change the sampled outputs are part of the measurement
+  // instrument, just like the model and prompt. Missing per-field provenance is "unknown" rather
+  // than a proven mismatch, but it must be surfaced instead of silently bypassing comparability.
+  const baselineSettings = baseline.provenance.judgeSettings ?? baseline.judgeSettings ?? null;
+  const currentSettings = current.provenance.judgeSettings ?? current.judgeSettings ?? null;
+  if (!baselineSettings || !currentSettings) {
+    warnings.push('Judge run settings are not recorded on one side; comparability cannot be verified beyond the model name.');
+  } else {
+    const settingsFields = [
+      ['samples', 'Sample count'],
+      ['packetVersion', 'Packet version'],
+      ['thinkingEnabled', 'Thinking mode'],
+      ['baseSeed', 'Base seed'],
+      ['seedStrategy', 'Seed strategy'],
+      ['temperature', 'Temperature'],
+      ['numCtx', 'Context window (num_ctx)'],
+      ['numPredict', 'Prediction budget (num_predict)'],
+      ['rubricScale', 'Rubric scale'],
+      ['isPairwise', 'Pairwise mode'],
+    ];
+    const mismatches = [];
+    const missingFields = [];
+    for (const [field, label] of settingsFields) {
+      const baseVal = baselineSettings[field];
+      const currVal = currentSettings[field];
+      if (baseVal === undefined || currVal === undefined) {
+        const missingSide = [baseVal === undefined ? 'baseline' : null, currVal === undefined ? 'current' : null].filter(Boolean).join(' and ');
+        missingFields.push(`${label} (${missingSide})`);
+        continue;
+      }
+      if (baseVal !== currVal) mismatches.push(`${label} changed: ${baseVal} -> ${currVal}.`);
+    }
+    if (missingFields.length > 0) {
+      warnings.push(`Judge run settings are incomplete (${missingFields.join(', ')}); comparability cannot be fully verified for those fields.`);
+    }
+    if (mismatches.length > 0) {
+      const message = `Judge run settings differ from the baseline (${mismatches.join(' ')}) Score deltas are not comparable — a settings mismatch can swamp real engine drift.`;
+      if (allowSettingsChange) warnings.push(`${message} Continuing because --allow-settings-change was supplied.`);
+      else fatal.push(`${message} Re-run with \`npm run judge:e2e\` (matches the committed baseline's settings exactly), or pass --allow-settings-change for an explicitly exploratory comparison.`);
+    }
+  }
+
   if (baseline.familyCount !== current.familyCount) fatal.push(`Family count changed: ${baseline.familyCount} -> ${current.familyCount}.`);
   if (baseline.caseCount !== current.caseCount) fatal.push(`Case count changed: ${baseline.caseCount} -> ${current.caseCount}.`);
 
@@ -350,6 +394,7 @@ const diffData = {
     promptSha256: baseline.provenance.promptSha256,
     responseSchemaSha256: baseline.provenance.responseSchemaSha256,
     caseSetSha256: baseline.provenance.caseSetSha256,
+    judgeSettings: baseline.provenance.judgeSettings ?? baseline.judgeSettings,
     familyCount: baseline.familyCount,
     caseCount: baseline.caseCount,
     meanSensitivityQuality: round2(baseMean),
@@ -364,6 +409,7 @@ const diffData = {
     caseSetSha256: current.provenance.caseSetSha256,
     corpusSha256: current.provenance.corpusSha256,
     familiesSha256: current.provenance.familiesSha256,
+    judgeSettings: current.provenance.judgeSettings ?? current.judgeSettings,
     familyCount: current.familyCount,
     caseCount: current.caseCount,
     meanSensitivityQuality: round2(currMean),

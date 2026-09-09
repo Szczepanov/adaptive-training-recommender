@@ -9,6 +9,7 @@ const stabilityPath = resolve(outputDir, 'judge-stability.json');
 const manifestPath = resolve(outputDir, 'judge-run-manifest.json');
 
 const allowModelChange = process.argv.includes('--allow-model-change');
+const allowSettingsChange = process.argv.includes('--allow-settings-change') || allowModelChange;
 const againstIndex = process.argv.indexOf('--against');
 const againstCustomPath = againstIndex !== -1 && process.argv[againstIndex + 1] ? process.argv[againstIndex + 1] : null;
 const requiredScores = ['safety_recovery_fit', 'goal_event_fit', 'sequencing', 'periodization_taper', 'preference_capacity_fit', 'robustness', 'overall'];
@@ -98,6 +99,14 @@ const current = {
   provenance: {
     judgeModel: manifest?.judgeModel ?? 'unknown',
     judgeProvider: manifest?.judgeProvider ?? 'unknown',
+    ...(manifest ? {
+      judgeSettings: {
+        samples: manifest.samples,
+        baseSeed: manifest.baseSeed,
+        seedStrategy: manifest.seedStrategy,
+        thinkingEnabled: manifest.thinkingEnabled,
+      },
+    } : {}),
   },
   familyCount: scoreRows.length,
   caseCount: allCaseScores.length,
@@ -127,6 +136,42 @@ if (baselineModel !== currentModel) {
   const message = `Judge model changed: ${baselineModel} -> ${currentModel}. Model drift can dominate engine drift.`;
   if (allowModelChange) warnings.push(`${message} Continuing because --allow-model-change was supplied.`);
   else fatal.push(`${message} Re-run with the baseline model, or pass --allow-model-change.`);
+}
+
+// Sampling, seed policy, and thinking mode are part of the measurement instrument. Missing
+// per-field provenance is "unknown" rather than a proven mismatch, but it must be surfaced instead
+// of silently bypassing the comparability guard.
+const baselineSettings = baseline.provenance?.judgeSettings ?? baseline.judgeSettings ?? null;
+const currentSettings = current.provenance.judgeSettings ?? null;
+if (!baselineSettings || !currentSettings) {
+  warnings.push('Judge run settings are not recorded on one side; comparability cannot be verified beyond the model name.');
+} else {
+  const settingsFields = [
+    ['samples', 'Sample count'],
+    ['baseSeed', 'Base seed'],
+    ['seedStrategy', 'Seed strategy'],
+    ['thinkingEnabled', 'Thinking mode'],
+  ];
+  const mismatches = [];
+  const missingFields = [];
+  for (const [field, label] of settingsFields) {
+    const baseVal = baselineSettings[field];
+    const currVal = currentSettings[field];
+    if (baseVal === undefined || currVal === undefined) {
+      const missingSide = [baseVal === undefined ? 'baseline' : null, currVal === undefined ? 'current' : null].filter(Boolean).join(' and ');
+      missingFields.push(`${label} (${missingSide})`);
+      continue;
+    }
+    if (baseVal !== currVal) mismatches.push(`${label} changed: ${baseVal} -> ${currVal}.`);
+  }
+  if (missingFields.length > 0) {
+    warnings.push(`Judge run settings are incomplete (${missingFields.join(', ')}); comparability cannot be fully verified for those fields.`);
+  }
+  if (mismatches.length > 0) {
+    const message = `Judge run settings differ from the baseline (${mismatches.join(' ')}) Score deltas are not comparable — a settings mismatch can swamp real engine drift.`;
+    if (allowSettingsChange) warnings.push(`${message} Continuing because --allow-settings-change was supplied.`);
+    else fatal.push(`${message} Re-run with \`npm run persona:e2e\` (matches the committed baseline's settings), or pass --allow-settings-change for an explicitly exploratory comparison.`);
+  }
 }
 
 if (baseline.familyCount !== current.familyCount) fatal.push(`Family count changed: ${baseline.familyCount} -> ${current.familyCount}.`);

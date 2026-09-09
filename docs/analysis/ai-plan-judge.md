@@ -72,18 +72,51 @@ The travel case intentionally tests **executed** capacity, equipment, and enviro
 
 ### 2. Run the model judge
 
-Local model:
+**To compare against the committed baseline, use `judge:e2e`, not `judge:local`.** The
+committed baseline (`docs/analysis/plan-judge-baseline.json`) was built with a specific
+settings bundle — `--blind` (packet v2), `--samples 5`, thinking **disabled**, and
+`--ctx 65536` — and `npm run judge:diff` only tolerates comparing runs made with that same
+bundle (see `check-plan-judge-drift.mjs`'s settings guard below). `judge:local`'s defaults
+(1 sample, packet v1, thinking **on**, `--ctx 32768`) intentionally differ, because it exists
+for fast local iteration, not baseline comparison — using it to judge "did I regress the
+baseline?" compares one noisy single-sample draw under a different prompt packet and
+thinking mode to a five-sample median, which can (and did — see
+`git log --grep 'refresh simulation, persona-judge, and plan-judge baselines'`) manufacture
+a double-digit false "regression" count with zero real behavior change:
 
 ```bash
-# Standard local evaluation (1 sample, fresh)
+# Baseline-comparable: matches docs/analysis/plan-judge-baseline.json's settings exactly,
+# regenerates the corpus, runs the judge, and runs judge:diff for you.
+npm run judge:e2e
+
+# Higher-throughput variant tuned for the 4B quick model + more VRAM headroom (10 samples,
+# thinking on, wider ctx/concurrency) -- still blind, still baseline-comparable in spirit,
+# but NOT the same settings bundle as the committed baseline, so judge:diff will refuse to
+# compare it directly unless you pass --allow-settings-change.
+npm run judge:e2e:quick
+```
+
+For fast local iteration where baseline comparability doesn't matter (e.g. sanity-checking
+a corpus change before committing to a full `judge:e2e` run):
+
+```bash
+# Quick smoke test (1 sample, fresh) -- NOT comparable to the committed baseline
 npm run judge:local
 
-# Multi-sample stability measurement (5 samples, fresh)
+# Multi-sample stability measurement (5 samples, fresh) -- still packet v1/thinking-on,
+# so still NOT comparable to the committed baseline; use judge:e2e for that
 npm run judge:local:stability
 
 # Quick local evaluation (4B, one sample, thinking off)
 npm run judge:local:quick
 ```
+
+`npm run judge:diff` fails closed (exit 1, "NOT COMPARABLE") when the current run's judge
+model, sample count, packet version, thinking mode, `num_ctx`, or rubric scale differs from
+what the baseline was built with, rather than silently producing a diff that mixes settings
+drift into what looks like engine drift. Pass `--allow-settings-change` (or the pre-existing
+`--allow-model-change`, which also covers settings) only for a deliberately exploratory
+comparison, and treat its output as directional, not a real before/after.
 
 Local `--quick` runs default to `hf.co/empero-ai/Qwen3.8-4B-Distill-GGUF`.
 Standard and stability runs retain the 9B Q4 model. Override the quick checkpoint with
