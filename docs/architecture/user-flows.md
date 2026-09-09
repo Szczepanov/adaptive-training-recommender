@@ -1,403 +1,409 @@
 # User flows
 
-Living reference for how navigation and user flows work today. Design rationale lives in
-ADRs and in `mobile_ux_implementation_plan`; this document describes current behaviour.
-When this document and code disagree, the code wins.
+Living reference for how navigation and user flows work today. Design rationale belongs in
+ADRs and implementation plans; this document describes current behaviour. When this document
+and code disagree, the code wins.
 
-Related:
+## Source map and maintenance contract
 
-* `navigation.ts` `Screen` — the single route type.
-* `App.tsx` `App`, `loadDecisionInput`, `handleNavigate` — routing authority.
-* `AccountScopedApp.tsx` `AccountScopedApp` — account-scoped remount.
-* `Header.tsx` `Header`, `MobileNav.tsx` `MobileNav` — desktop vs mobile chrome.
-* `morning-decision-ux.md` — Home disclosure, confidence, alternatives contracts.
-* `account-scoped-ui-state.md` — auth isolation invariant.
-* `session-execution.md` — saved-template lifecycle.
+Use the concrete paths below when checking this document. Prefer these source-of-truth files
+over inferred component names or historical plans.
+
+* `app/src/types/navigation.ts` `Screen` — the complete in-app route type.
+* `app/src/main.tsx` — mounts `AuthProvider` and `AccountScopedApp`.
+* `app/src/AccountScopedApp.tsx` `AccountScopedApp` — keys the `App` subtree by Firebase
+  `uid` so account transitions replace account-scoped React state.
+* `app/src/App.tsx` `App`, `loadDecisionInput`, `handleNavigate` — route state, daily
+  auto-routing, global overlays/banners, screen rendering, and session launch plumbing.
+* `app/src/components/Header.tsx` `Header` and `app/src/components/MobileNav.tsx`
+  `MobileNav` — desktop and mobile navigation chrome.
+* `app/src/contexts/AuthContext.tsx` `AuthProvider` — Firebase auth phase and background
+  first-use/default-data initialization.
+* `docs/architecture/morning-decision-ux.md` — Home disclosure, confidence, and
+  alternatives contracts.
+* `docs/architecture/account-scoped-ui-state.md` — account-isolation invariant.
+* `docs/architecture/session-execution.md` — saved-template and structured-session
+  lifecycle.
+
+This file intentionally references symbols rather than line numbers. If navigation changes,
+update this document in the same PR.
 
 ## Global shell
 
-There is no URL router. `App.tsx` `screen` state is the router.
+There is no URL router. `App.tsx` keeps a `Screen` value in React state and renders the
+corresponding screen.
 
-### Auth gate
+### Authentication and account isolation
 
-`AuthContext.tsx` `AuthContext` resolves `AuthPhase` (`CHECKING` / `LOGIN` / `AUTHENTICATED`)
-via Firebase `onAuthStateChanged`. First login runs `initializeUserData`: creates default
-preferences and v3 training settings under `users/{uid}/...`.
+`AuthProvider` resolves `AuthPhase` (`CHECKING` / `LOGIN` / `AUTHENTICATED`) via Firebase
+`onAuthStateChanged`.
 
-* `authPhase !== AUTHENTICATED` → only `LoginScreen.tsx` `LoginScreen` renders.
-* Authenticated but decision input not yet composed for this `uid` → blocking
-  `Loading today's check-in status...`. This prevents a Home flash before the check-in
-  gate is known.
-* `AccountScopedApp.tsx` `AccountScopedApp` keys `App` by `user:${uid}` (`anonymous`
-  while logged out), so switching accounts remounts the whole UI subtree. See
-  `account-scoped-ui-state.md` for the invariant.
+* During `CHECKING`, `LoginScreen` renders the authentication-checking state.
+* During `LOGIN`, `LoginScreen` renders the sign-in/create-account/reset/Garmin-auth UI.
+* During `AUTHENTICATED`, `App` becomes available after the initial daily route is resolved.
+* `initializeUserData` runs in the background after an authenticated Firebase user is
+  observed. It ensures default preferences exist and asks `trainingSettingsService` to
+  create/migrate the typed training-settings profile. Authentication itself does not wait
+  for this initialization to finish.
+* `AccountScopedApp` keys `<App>` as `user:${uid}` (or `anonymous` while unauthenticated),
+  replacing the whole account-scoped UI subtree when the authenticated identity changes.
+  `App` also keeps explicit reset/cancellation guards as defense in depth for asynchronous
+  work and date-scoped state.
 
-### Daily auto-route
+See `account-scoped-ui-state.md` for the invariant and regression scenario.
 
-`App.tsx` `loadDecisionInput` composes `decisionComposer.composeDailyDecisionInput`
-and then chooses the first screen:
+### Initial and daily auto-route
 
-* `hasCompletedSubjectiveCheckinForDecision(input)` true → `home`.
+`App.tsx` `loadDecisionInput` composes
+`decisionComposer.composeDailyDecisionInput(userId)` and chooses the first authenticated
+screen:
+
+* `hasCompletedSubjectiveCheckinForDecision(input)` → `home`.
 * Otherwise → `checkin`.
-* On composition failure → fail toward `checkin` (that screen reads its own daily
-  document and still offers a Dashboard escape hatch).
+* If initial composition fails, route toward `checkin`; that screen reads its own daily
+  document and still allows return to the dashboard.
 
-Re-routing on a new calendar day only happens while already on `home` or `checkin`,
-checked on focus / visibility change / 60s interval. It never ejects `sessions`,
-`testing`, `plan`, or other workflows mid-task.
+Until the first route for the current `uid` is known, `App` shows
+`Loading today's check-in status...`, preventing a transient Home render before the check-in
+gate is known.
 
-`App.tsx` `handleNavigate` only sets `currentScreenRef` / `screen` and closes the
-desktop `Settings` dropdown and mobile `More` drawer. Returning to `home`/`checkin`
-across midnight triggers a reload.
+After initial routing, a new calendar day is re-evaluated only while the athlete is already
+on `home` or `checkin`. The check runs on window focus, visibility change, and a 60-second
+interval. It does not eject the athlete from `sessions`, `testing`, `plan`, or another
+workflow mid-task. Returning to `home` or `checkin` across midnight triggers a refresh.
 
-### Overlays and banners
+`handleNavigate` updates the route and closes the desktop Settings menu and mobile More
+drawer; it is not a URL/history transition.
 
-* `OnboardingWizard.tsx` `OnboardingWizard` is a modal overlay, not a `Screen`. It shows
-  when `!onboardingDismissed && decisionInput.activeGoals.length === 0`. Dismissal is
-  persisted per-user in `onboardingStorage.ts` (`adaptive_training_onboarding_done_{uid}`).
-* Resume banners sit above `<main>`:
-  * legacy Strength v1 open document → `Close legacy session` (transitions to `abandoned`,
-    no resume in old UI).
-  * `sessionExecutionService.findInProgressExecution` hit → `Resume session`, routed to
-    `sessions` or `testing` based on resolved `SessionIntent`.
-* Chrome hiding: `Header` hides during an in-progress runner in `sessions`/`testing`;
-  `MobileNav` hides on `checkin` and during an in-progress runner.
+### Onboarding overlay and resume banners
+
+`OnboardingWizard` is an overlay, not a `Screen`. It appears when both conditions hold:
+
+* onboarding is not dismissed for the current user; and
+* the composed decision input has zero active goals.
+
+Successful onboarding writes training settings, the training-intent profile, and (if the
+athlete is still goal-less) an active goal before `onCompleted` stores the per-user browser
+dismissal key. There is currently no Skip action. A blocked `localStorage` write alone does
+not make a successfully onboarded athlete loop forever, because the active-goal gate also
+suppresses the overlay.
+
+`App` can also render two resume/cleanup banners above `<main>`:
+
+* an open legacy Strength v1 document can be closed by transitioning it to `abandoned`;
+* an in-progress structured execution can be resumed in `sessions` or `testing`, depending
+  on the resolved `SessionIntent`.
+
+The desktop `Header` is hidden while a structured runner is in progress. `MobileNav` is
+hidden during `checkin` and while a structured runner is in progress.
 
 ## Screens
 
-`navigation.ts` `Screen`:
+The complete `app/src/types/navigation.ts` `Screen` union is:
 
 `home` | `checkin` | `goals` | `constraints` | `preferences` | `data` | `plan` | `brief` | `sessions` | `testing`
 
-| Screen | Component | Purpose |
+| Screen | Main component | Current responsibility |
 |---|---|---|
-| `home` | `Home.tsx` `Home` | Today dashboard: recommendation, alternatives, adherence, week-ahead |
-| `checkin` | `DailyCheckin.tsx` `DailyCheckin` | Morning subjective + safety + availability input |
-| `goals` | `Goals.tsx` `Goals` | Goals / target events CRUD driving periodization and taper |
-| `constraints` | `TrainingSettings.tsx` `TrainingSettings` | Hard gates: equipment, safety limits, time/location, injury constraints |
-| `preferences` | `Preferences.tsx` `Preferences` | Soft preferences: modalities, style, capabilities, connections |
-| `data` | `DataView.tsx` `DataView` (+ `HealthAnomalyShadowPanel`, `IdentityReviewCard`) | Read-only telemetry inspector, 9 tabs |
-| `brief` | `DataView` with `initialTab="brief"` | Export context for AI (same component, different entry tab) |
-| `plan` | `PlanView.tsx` `PlanView` | 7-day week architecture: coach plan vs AI forecast |
-| `sessions` | `session/SessionRunner.tsx` `SessionRunner` (+ `SessionJsonImport`, `ManualSessionBuilder`) | Execute / author structured sessions |
-| `testing` | `testing/TestingWorkflow.tsx` `TestingWorkflow` | Locked protocol assessments → raw observations |
+| `home` | `Home` | Today's adaptive recommendation, alternatives, adherence/follow-up, and week-ahead context |
+| `checkin` | `DailyCheckin` | Subjective recovery, safety/tissue context, and today's availability |
+| `goals` | `Goals` | Goal and target-event CRUD used by periodization/taper logic |
+| `constraints` | `TrainingSettings` | Hard training setup: equipment, safety limits, time/location, injury constraints |
+| `preferences` | `Preferences` | Soft coaching preferences, planning intent, capabilities, and provider connections |
+| `data` | `DataView` plus anomaly/identity cards | Telemetry/context inspection and export; Activities also exposes explicit corrective writes such as reclassification/source unlinking |
+| `brief` | `DataView` with `initialTab="brief"` | Export context for AI through the same component with a different entry tab |
+| `plan` | `PlanView` | Seven-day coach-plan versus adaptive-forecast view and plan editing/import |
+| `sessions` | `SessionRunner`, `SessionJsonImport`, `ManualSessionBuilder` | Execute, import, build, and manage structured sessions/templates |
+| `testing` | `TestingWorkflow` | Locked protocol assessments and raw observation capture |
 
 There are no dedicated `login` or `onboarding` routes; both are conditional renders.
 
 ## Navigation chrome
 
-Desktop (`Header.tsx` `Header`) and mobile (`MobileNav.tsx` `MobileNav`) expose the
-same ten screens with opposite prominence.
+Desktop and mobile expose all ten `Screen` values, but with different prominence.
 
-| Screen | Desktop | Mobile |
+| Screen | Desktop `Header` | Mobile `MobileNav` |
 |---|---|---|
-| `home` | `Home` link + brand `⚡ Adaptive Coach` | Bottom `🏠 Today` |
-| `checkin` | `Check-in` link | Bottom `✓ Check-in` |
-| `plan` | `Settings ▾` → `📋 Import Training Plan` | Bottom `📋 Plan` (top-level) |
-| `sessions` | `Sessions` link | `More` drawer → `🚀 Structured Sessions` |
-| `testing` | `Testing` link | `More` drawer → `🧪 Protocol Testing` |
-| `goals` | `Goals` link | `More` drawer → `🎯 Goals & Target Events` |
-| `data` | `Data` link (runs `loadDecisionInput` first) | `More` drawer → `📊 Detailed Data` |
-| `brief` | `Settings ▾` → `📤 Export Context for AI` | `More` drawer → `📤 Export Context for AI` |
-| `constraints` | `Settings ▾` → `⚙️ Training Setup` | `More` drawer → `⚠️ Training Setup` |
-| `preferences` | `Settings ▾` → `⚙️ Coach Preferences` | `More` drawer → `⚙️ Coach Preferences` |
+| `home` | `Home` plus brand → Home | Bottom `Today` |
+| `checkin` | `Check-in` | Bottom `Check-in` |
+| `plan` | Settings → `Import Training Plan` | Bottom `Plan` |
+| `sessions` | `Sessions` | More → `Structured Sessions` |
+| `testing` | `Testing` | More → `Protocol Testing` |
+| `goals` | `Goals` | More → `Goals & Target Events` |
+| `data` | `Data` (refreshes decision input first) | More → `Detailed Data` (refreshes first) |
+| `brief` | Settings → `Export Context for AI` | More → `Export Context for AI` |
+| `constraints` | Settings → `Training Setup` | More → `Training Setup` |
+| `preferences` | Settings → `Coach Preferences` | More → `Coach Preferences` |
 
-Notes:
+Current chrome details worth preserving when changing navigation:
 
-* Desktop `Settings` active state covers `constraints` / `preferences` / `plan` (omits
-  `brief`). Mobile `More` active state covers `goals` / `constraints` / `preferences` /
-  `data` / `brief` / `sessions` / `testing`.
-* Only desktop shows `GarminSyncBadge.tsx` `GarminSyncBadge` next to the brand.
-* Both chrome menus end with non-clickable `Build {label}` and `Sign Out`.
+* Desktop Settings is marked active for `constraints`, `preferences`, and `plan`, but not
+  `brief`.
+* Mobile More is marked active for `goals`, `constraints`, `preferences`, `data`, `brief`,
+  `sessions`, and `testing`.
+* Only desktop renders `GarminSyncBadge` beside the brand.
+* Both menus show a non-clickable `Build {label}` entry followed by a clickable `Sign Out`.
 
-## Flows
+## User flows
 
 ### 1. Sign-in
 
-Entry: automatic when logged out.
+Entry is automatic whenever auth is not authenticated.
 
-`LoginScreen.tsx` `AuthMode`:
+`LoginScreen` has four modes:
 
-1. `sign-in`: email + password → `emailAuthService.signIn`. Links to `sign-up` and
-   `forgot-password`. Secondary `Continue with Garmin` → `garmin` mode.
-2. `sign-up`: email + password + confirm → `emailAuthService.signUp`. Anti-enumeration
-   wording on `email-already-in-use`.
-3. `forgot-password`: email → `requestPasswordReset` → uniform
-   `If an account exists...` confirmation → back to sign-in.
-4. `garmin`: Garmin email + password → `garminAuthService.startLogin`; if
-   `mfa_required`, OTP step → `completeMfa` → `signInWithCustomToken`.
+1. `sign-in`: email/password through `emailAuthService.signIn`.
+2. `sign-up`: email/password/confirmation through `emailAuthService.signUp`; account-exists
+   errors use non-enumerating copy.
+3. `forgot-password`: `requestPasswordReset` with a uniform "If an account exists..."
+   confirmation.
+4. `garmin`: Garmin credentials through `garminAuthService.startLogin`; an MFA challenge,
+   when required, completes through `completeMfa`, then Firebase signs in with the returned
+   custom token.
 
-Exit: success flips `onAuthStateChanged` to `AUTHENTICATED`; no explicit navigate.
-Confusing today: "Garmin login" (auth into the app) vs `Preferences`
-`GarminConnectionSection` (link wearable for sync) share credential phrasing but are
-different tasks.
+Success is observed by Firebase auth; no explicit screen navigation is required.
+
+Potential confusion: "Continue with Garmin" is an app-authentication method, while Garmin
+connection controls under Preferences link wearable data for sync. They are separate tasks.
 
 ### 2. First run / onboarding
 
-Entry: automatic overlay on first authenticated load with zero active goals.
+Entry is the automatic overlay described above: authenticated, not dismissed, and no active
+goals.
 
-`OnboardingWizard.tsx` steps: `Welcome` → `Focus` (`general_fitness` / `running` /
-`cycling` / `triathlon` / `strength`) → `Equipment` + sport access + `ExerciseDaysSlider`
-(1–7, default 4) → `Generate Today's Recommendation`.
+The wizard is:
 
-Writes (in order): `trainingSettingsService.updateTrainingSettings` (equipment map,
-weekday/weekend time defaults) → `trainingIntentProfileService.upsert` (evergreen
-priority + weekly commitment) → `goalService.createGoal` only if still goal-less.
-Failures stay in the wizard with selections intact for retry. Creating the goal last
-is deliberate: the goal is the onboarding-complete signal, so it must not suppress the
-wizard before settings persist (see `morning-decision-ux.md` `Rapid onboarding completion`).
+`Welcome` → `Focus` → `Equipment + sport access + exercise days` →
+`Generate Today's Recommendation`.
 
-Today there is no Skip; storage-blocked browsers see the wizard on every refresh.
+Completion writes in deliberate order:
 
-### 3. Daily core loop (the happy path)
+1. `trainingSettingsService.updateTrainingSettings`;
+2. `trainingIntentProfileService.upsert`;
+3. `goalService.createGoal` only if no active goal exists;
+4. `onCompleted`, which stores the account-scoped dismissal flag and reloads decision input.
 
-Intended order: `checkin` → `home` → `sessions` → back to `home` next day.
+Failures remain in the wizard with selections intact for retry. Creating the goal last keeps
+"has an active goal" from suppressing onboarding before the settings/profile writes have
+succeeded.
 
-1. Athlete lands on `checkin` (auto-routed if yesterday/today subjective is incomplete).
-2. Completes `DailyCheckin` → `upsertTodayCheckin` → `onCheckinSaved` reloads decision
-   input → `onNavigate('home')`.
-3. `Home` composes the day (`decisionComposer.composeDailyDecisionInput`), applies
-   fail-closed gates (see below), evaluates `evaluateTrainingWithIntent`, binds
-   `primarySession`, persists via `recommendationService.saveRecommendation`, and shows
-   the morning card (What / Why / What-would-change-it per `morning-decision-ux.md`).
-4. Athlete optionally picks easier/harder or a one-tap alternative, then `Start session`
-   → `onStartSession(binding)` resolves via
-   `sessionDefinitionResolver.resolveSessionDefinition` → `sessions`.
-5. `SessionRunner` executes and completes/abandons → `onClose` → `home`.
-6. Next morning, `AdherencePrompt` / `LaterDayFollowupCard` / tissue follow-ups reconcile
-   yesterday before the new recommendation.
+### 3. Daily core loop
 
-Fail-closed gates on `Home` (and mirrored in `PlanView`): `INVALID`/`UNAVAILABLE`
-recovery snapshot, goals, preferences, or training settings block the recommendation and
-offer repair (`Review goals/preferences/training settings`, `GarminSyncNowButton`).
-Wearable `sync_required`/`unavailable` shows a sync block instead of a stale plan.
-`StaleDecisionError` on intraday claims forces a full reload rather than a partial write.
+Typical path:
 
-### 4. Check-in in detail
+`checkin` → `home` → optional `sessions` → `home`.
 
-`DailyCheckin.tsx` `DailyCheckin` order:
+1. If today's subjective check-in is incomplete, initial/daily routing selects `checkin`.
+2. `DailyCheckin` saves today's check-in and then refreshes decision input before navigating
+   to `home`.
+3. `Home` composes/evaluates the current decision, applies fail-closed source and wearable
+   gates, persists the recommendation, and presents the morning decision.
+4. Choosing a structured session resolves its stored definition before navigating to
+   `sessions`. Resolution failure rejects the launch rather than silently stranding an
+   occurrence claim.
+5. Completing or abandoning the structured runner returns through its `onClose` path to
+   `home`.
+6. Later-day/adherence/tissue follow-ups feed subsequent decisions without becoming a second
+   route system.
 
-1. Yesterday follow-up: pending tissue follow-ups plus `relevantFollowupRegions` derived
-   from yesterday `sessionExecution` tissue tags, one at a time (Answer `normal` /
-   `mild` / `moderate` / `severe`, auto-upserts plus `sessionResponseService`
-   `next_morning`, or Skip).
-2. Subjective Recovery: six 1–10 sliders (`readiness` / `sleepQuality` / `fatigue` /
-   `soreness` / `mentalStress` / `motivation`, three inverted) + `Use typical values`.
-3. Health & Safety: `painOrInjury` / `illnessSymptoms` / `alreadyTrainedToday` toggles,
-   four red flags (`neurological` / `acute_trauma_structural` / `systemic_infection` /
-   `rapidly_worsening`), `PhysicalWorkSection`, `HealthContextSection`,
-   `Local Tissue Response` cards (region → morning state → pain-during / after-training /
-   next-morning reaction; `severe` auto-sets `painOrInjury`).
-4. Availability: `timeAvailableMin` (prefilled from preferences with source hint),
-   `preferredModalityToday`, `indoorOnly`, notes.
-5. Collapsible `Garmin Context` — only revealed after the first complete submit
-   (anti-anchoring: wearable values hidden until subjective is captured).
-6. `Save & see today's plan` / `Update & see today's plan` → home.
+A stale intraday decision/claim is handled by reloading the complete decision context rather
+than partially applying an obsolete write.
 
-Exits: `Skip/Back to Dashboard` → `home` without saving; `View Today's Plan` when already
-submitted. Partial saves are allowed but only fully-scored days enter subjective baselines.
+### 4. Check-in
 
-### 5. Sessions: run, import, build
+`DailyCheckin` groups four kinds of work:
 
-`SessionRunner.tsx` `SessionRunner` states in order: restoring → companion prompt
-(post-finish, time-gated) → picker → active run → `SessionCompletionSheet`.
+1. pending next-morning/tissue follow-ups from previous training;
+2. subjective recovery ratings;
+3. health/safety, physical-work, and local-tissue context;
+4. today's availability and modality/environment constraints.
 
-* Picker: `Your custom templates` (Preview / Start / Edit / Duplicate / Archive +
-  archived toggle) + built-in fixtures (Preview / Start) + `Import` (`SessionJsonImport`)
-  + `Build` (`ManualSessionBuilder`).
-* Active run: timer/sync/sound/save-template bar, step pills, active-step panel with
-  Swap, input cards (`Repetition` / `Duration` / `Distance` / `Checkoff` / `ChoiceCard`),
-  advisory rest preview, `GroupProgress`, editable performed list, Undo toast.
-* Completion: complete/abandon → companion occurrence or `onClose` → `home`.
-  `StrengthOverloadHistory` renders below the runner at the `App.tsx` level.
+Garmin context is deliberately hidden until the first complete subjective submission to
+reduce anchoring on wearable values. The normal submit path saves and returns to Home;
+Back/Skip can return without saving. Partial daily documents can exist, but baseline logic
+uses its own completeness rules rather than treating every partial save as a valid subjective
+baseline point.
 
-`App.tsx` `sessionAuthoringMode` swaps the whole `sessions` screen between `import`,
-`manual`, and runner. Three creation paths (fixture / saved / import / build) plus the
-save-as-template loop is the richest — and most confusing — part of this flow.
-Companion sessions are separate executions and are easily mistaken for the next block.
-A missing stored prescription (`Active session needs its stored prescription`) blocks
-starting another session until resolved.
+### 5. Structured sessions
+
+`App.tsx` uses `sessionAuthoringMode` to switch the `sessions` route between:
+
+* `SessionRunner`;
+* JSON import; and
+* manual session building/editing.
+
+The runner restores an existing execution when applicable, otherwise exposes saved/custom
+and built-in definitions, executes the selected prescription, records performed entries, and
+finishes through the completion flow. `StrengthOverloadHistory` is rendered below the runner
+at the `App` level.
+
+An in-progress structured execution is global account state for resume purposes. A stored
+prescription that cannot be resolved is fail-closed instead of allowing a second session to
+start over ambiguous execution state.
 
 ### 6. Week plan
 
-`PlanView.tsx` `PlanView` loads fixed activities + plan blocks + decision input, applies
-the same fail-closed and wearable gates as Home, then resolves `resolveTrainingIntent`
-and critiques with `critiqueExternalWeek` / `evaluateTrainingWithIntent` /
-`generateWeekAheadPlanWithIntent`.
+`PlanView` loads the decision context together with fixed/imported plan data, applies the
+same safety/data-availability principles as the daily recommendation path, and renders the
+week architecture.
 
-Two views when an imported plan exists:
+When an imported plan exists, the screen presents both:
 
-* `📋 Coach's Plan ({title})` — `ExternalPlanWeek` (move/replace session,
-  `proposeReplacement` / `applyConfirmedProposal`).
-* `🤖 AI Adaptive Forecast` — `WeekAheadStrip` with green/yellow/red confidence tiers.
+* the coach-authored plan (`ExternalPlanWeek`), including supported move/replace flows; and
+* the AI adaptive forecast (`WeekAheadStrip`).
 
-Without an active plan, only the evergreen forecast shows plus a subtle
-`Have a coach's plan? Import it` affordance; `📥 Import/Revise Plan` toggles
-`ExternalPlanImport`. The screen always ends with `ScheduleOverlayCard`. Exit via
-`onNavigate(checkin/goals/preferences/constraints)`; `onPlanChanged` reloads the
-dashboard. Today the imported plan, the AI forecast, and the Home recommendation can
-disagree with no single "follow this one" banner.
+Without an active imported plan, the evergreen/adaptive forecast remains available and the
+screen offers plan import/revision. The screen also renders schedule-overlay context.
+
+Current UX ambiguity: coach plan, adaptive week forecast, and today's Home recommendation
+can differ without one explicit "this is authoritative for today" banner.
 
 ### 7. Goals and target events
 
-`Goals.tsx` `Goals`: filter `active` / `archived` / `all` → grouped by category → per-card
-`Edit` / `Pause`–`Reactivate` / `Archive` / `Delete` (archived only, with confirm) →
-`GoalModal`.
+`Goals` supports active/archived/all filtering and goal creation/editing, pause/reactivate,
+archive, and archived-goal deletion. Dated event goals carry event metadata used by
+periodization/taper calculations, and the screen derives the current focus event/phase.
 
-Modal: title/description, `Open-ended` toggle (dated goals derive `category` via
-`deriveGoalCategory`, read-only), target date, `This is a race/key event` →
-`eventCategory` / `eventPreset` (`EVENT_PRESETS`) / `taperStartDate` / `eventLifecycle`
-(`scheduled` / `completed` / `DNS` / `DNF` / `cancelled`, edit-only) / `targetOutcome`,
-domain, priority ★1–5 (maps to taper class A/B/C), status (edit-only), optional
-metric/value/unit. A side `EVENT PREPARATION` panel shows phase, countdown, priority,
-and category when a focus event exists.
+Two implementation details matter to navigation work:
 
-`paused` is invisible in the filter tabs (only `active` / `archived` / `all`), and the
-accepted-but-unused `onNavigate` prop means repair flows cannot deep-link back cleanly.
+* paused goals appear only under `all`, because there is no dedicated paused filter; and
+* `GoalsProps` accepts `onNavigate`, but `Goals` currently destructures only `userId`, so the
+  navigation callback is unused.
 
-### 8. Settings split: Training Setup vs Coach Preferences
+### 8. Training Setup versus Coach Preferences
 
-Two screens own adjacent controls with different save models:
+The two routes intentionally have different authority:
 
-* `constraints` (`TrainingSettings.tsx` `TrainingSettings`, titled `Training Settings`):
-  hard gates. Migration banner (`legacyReviewed`) → equipment (7 checkboxes, autosave) →
-  safety limits (4 `avoid_*`, autosave) → time/location (weekday/weekend max,
-  `either` / `indoor` / `outdoor`) → `preferActiveRecovery` → injury constraints
-  (region / severity `monitor` / `limit` / `exclude` / restricted modalities / review-by /
-  note + derived read-only restrictions). Every toggle autosaves with no undo.
-* `preferences` (`Preferences.tsx`): soft tie-breakers. `GarminConnectionSection` +
-  `GoogleHealthConnectionSection` + `HealthRunYogaPresetSection` (one-click preset) +
-  `TrainingPlanSection` (planning mode, priorities, weekly commitment) +
-  `ModalitySections` (preferred / avoided / unavailable) + `StyleSections` (recovery
-  style, times, verbosity, units) + `PerformanceSections` (capabilities, 1RM) +
-  `PreferencesFooter` (explicit Save/Reset with `hasChanges` / `saving`).
+* `constraints` / `TrainingSettings` owns hard feasibility and safety inputs. Several
+  controls persist immediately.
+* `preferences` / `Preferences` owns softer coaching/planning preferences and connection
+  configuration and uses an explicit save/reset model for editable preference state.
 
-Overlap causing confusion: equipment vs unavailable modalities, time limits vs default
-times, environment vs per-day `indoorOnly`; explicit Save vs autosave vs daily check-in
-availability.
+The distinction is architecturally important, but some concepts overlap in the UI:
+equipment versus unavailable modalities, hard time limits versus preferred/default times,
+and persistent environment setup versus today's `indoorOnly` availability.
 
 ### 9. Data and AI export
 
-`DataView.tsx` `DataView` is read-only (9 tabs): `Recovery` (raw/derived/deltas,
-candidate baselines v4/v5, data quality) | `Activities` (7-day `ActivityTelemetry` or
-canonical `CompletedWorkoutList` behind `VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY`,
-Copy All JSON / Download / Reclassify via `ActivityReclassificationModal`) |
-`Strength History` | `Check-in` | `Goals` | `Training Settings` | `Preferences` |
-`Adherence` (30-day followed/modified/skipped by `train` / `modify` / `recover`) |
-`Context brief` (`daily` 2d vs `full` 14d, persisted in localStorage, Copy, char/token
-count).
+`DataView` has nine tabs:
 
-`brief` is the same component with `initialTab="brief"`. Entry always runs
-`loadDecisionInput` first except the Home `onViewData` shortcut, which reloads then
-navigates. `No data available` (null `decisionInput`) currently has no retry action.
+`Recovery` | `Activities` | `Strength History` | `Check-in` | `Goals` |
+`Training Settings` | `Preferences` | `Adherence` | `Context brief`.
+
+Most of the surface is inspection/export. The Activities tab is the exception: it exposes
+corrective actions (for example activity reclassification, and canonical-source unlinking
+when that read model is enabled), so the screen must not be described as strictly read-only.
+
+The `brief` route is the same `DataView` component opened on `Context brief`. The Data and
+brief navigation entries refresh decision input before navigating. If `decisionInput` is
+null, DataView shows `No data available`; that state has no in-component retry action,
+although the global navigation chrome remains available.
 
 ### 10. Protocol testing
 
-`testing/TestingWorkflow.tsx` `TestingWorkflow` stages: `lookup` (bundled cycling tests
-+ manual `protocolId` + revision) → `ready` (protocol lock card: metrics / burden /
-warmup / familiarization / invalidation + comparison context + purpose
-`familiarization` / `baseline` / `checkpoint` / `post_block` → `Confirm lock and start`)
-→ `running` (delegates to `SessionRunner`, syncs `AssessmentAttempt`
-`scheduled` → `in_progress`) → `capture` (numeric metric values + validity
-`valid` / `invalid` / `practice` / `questionable` + reason/note + device provenance +
-re-enter context → `Save raw observation(s)`) → `complete` (revisions + `Correct`
-appends a new revision) / `abandoned`. Open attempts auto-recover on mount.
-`Close` / `Done` → `home`; `onSessionStateChange` drives the global resume banner.
+`TestingWorkflow` owns the assessment lifecycle rather than creating a separate runner:
 
-The runner looks identical to `sessions`; only the banner differentiates them.
-Abandonment is terminal (no resume), and a reload after execution requires manual
-re-entry of the locked context.
+`lookup` → `ready/lock` → `running` (delegates to `SessionRunner`) → raw result capture →
+`complete` or `abandoned`.
+
+Open attempts are recovered on mount. The workflow records assessment-specific context and
+raw observations around the shared structured-session execution. Global resume state marks
+an in-progress testing execution with `SessionIntent = testing`, routing Resume back to the
+`testing` screen.
+
+Because `testing` and ordinary `sessions` share the runner, their in-run visual structure is
+very similar; provenance/context around the runner is therefore important.
+
+## Save/write ownership by flow
+
+This table is intentionally high-level. It exists to prevent UX work from accidentally
+moving an input across an authority boundary.
+
+| Surface | Main write behaviour |
+|---|---|
+| Auth | Firebase auth plus auth-service flows; user defaults initialize in background |
+| Onboarding | Ordered settings → intent profile → goal writes, then browser dismissal flag |
+| Check-in | Daily subjective/safety/availability document plus follow-up responses |
+| Home | Recommendation persistence and bounded interaction/claim writes |
+| Goals | Explicit goal/event CRUD |
+| Training Setup | Hard setup/constraint writes, including immediate-persist controls |
+| Coach Preferences | Preference/connection/planning-intent edits with explicit save/reset where applicable |
+| Data | Mostly read/export; Activities includes explicit corrective writes |
+| Plan | Imported-plan creation/revision and supported move/replace operations |
+| Sessions | Template lifecycle plus `SessionExecution`/performed evidence |
+| Testing | Assessment-attempt lifecycle plus raw observation revisions |
 
 ## Known confusing spots (observed, not proposed)
 
-1. Desktop promotes `sessions` / `testing` / `goals` / `data`; mobile promotes `plan`
-   and buries the former in `More`. Muscle memory does not transfer.
-2. `preferences` (soft) vs `constraints`/`Training Settings`/`Training Setup` (hard) vs
-   per-day `checkin.availability` — three names and three save models for overlapping
-   equipment/time/location controls.
-3. Tissue has three homes: daily check-in tissue → persistent `TrainingSettings` injury
-   constraints → session `next_morning` / `LaterDayFollowupCard` responses. Correct
-   layering, hard to discover which governs today.
-4. Imported coach plan vs AI forecast vs Home recommendation can disagree with no
-   follow-this-one banner.
-5. Three export-to-AI paths: `brief` screen vs `data` → `Context brief` tab vs `data` →
-   `Activities` → Copy All JSON.
-6. `sessions` vs `testing` share the runner UI; only the banner says which provenance
-   you are in.
-7. Dead ends: `DataView` no-data state (no retry), `PlanView` `INVALID` without repair
-   navigation, `SessionRunner` prescription-missing lock, `TestingWorkflow` `abandoned`
-   with only `Done`, `OnboardingWizard` with no skip.
+1. Desktop promotes Sessions, Testing, Goals, and Data; mobile promotes Plan and moves those
+   items into More. Navigation muscle memory does not transfer cleanly.
+2. `preferences` (soft), `constraints` / Training Setup (hard), and per-day check-in
+   availability use different names and save models for partially overlapping concepts.
+3. Tissue/safety information appears in daily check-in, persistent injury constraints, and
+   post-session response/follow-up flows. The layering is intentional but difficult to
+   discover.
+4. Imported coach plan, adaptive week forecast, and Home recommendation can disagree without
+   a single authority explanation in the UI.
+5. AI/context export appears as the `brief` route, the DataView Context brief tab, and raw
+   Activities JSON export.
+6. `sessions` and `testing` share `SessionRunner`, so the execution UI alone does not strongly
+   communicate provenance.
+7. Several recovery states are weak rather than truly terminal: DataView's no-data state has
+   no local retry, some PlanView invalid states have limited repair affordance, a missing
+   stored session prescription is fail-closed, testing abandonment is terminal for that
+   attempt, and onboarding has no Skip.
+8. Garmin is used both as an app sign-in path and as a wearable/provider connection, which
+   can read as one task even though the flows and credentials have different purposes.
 
 ## Recommendations for future flow improvements
 
-Grouped, smallest-first. None of these are committed plans; they are candidates for
-the next UX pass.
+These are candidates, not committed architecture. Keep behavioural fixes separate from this
+living-reference section when implementing them.
 
-### IA and naming (highest leverage)
+### Information architecture and naming
 
-1. Unify screen names across desktop and mobile. Pick one label per `Screen` and use it
-   in `Header`, `MobileNav`, and the screen title: e.g. always `Training Setup`
-   (not `Training Settings` in the title and `Training Setup` in nav), always `Plan`
-   (not `Import Training Plan` on desktop only).
-2. Give `More` a real information architecture: group drawer items (`Train`: Sessions,
-   Testing, Plan; `Configure`: Goals, Training Setup, Coach Preferences; `Understand`:
-   Detailed Data, Export for AI) instead of one flat list with a single lumped active
-   state.
-3. Promote the same primary tabs on both form factors, or document why they differ.
-   Today `plan` is bottom-level on mobile and buried on desktop; pick the daily-loop
-   tabs (`Today` / `Check-in` / `Plan`) as global primaries and demote the rest
-   symmetrically.
+1. Use one user-facing name per `Screen` across Header, MobileNav, and screen titles. In
+   particular, converge `Training Settings`/`Training Setup` and desktop `Import Training
+   Plan` versus mobile `Plan`.
+2. Make desktop and mobile primary destinations more symmetrical, or document a deliberate
+   reason for the difference. A daily-loop set such as Today / Check-in / Plan is the most
+   obvious candidate.
+3. Group Mobile More by intent (train / configure / understand) rather than one flat list.
 
-### Daily loop
+### Daily loop and repair
 
-4. Add a one-line "follow this one" banner when coach plan, AI forecast, and Home
-   disagree, linking to the authoritative source for today (`PlanView` already computes
-   both; it only needs the verdict copy).
-5. Standardize fail-closed repair: every gate should offer the same triplet —
-   what is missing, where to fix it (deep link), and retry. `Home` has three repair
-   idioms today (navigate vs resync vs reload); `PlanView` `INVALID` sometimes offers
-   none.
-6. Make check-in progress explicit: a 4-step header (Follow-ups → Recovery → Safety →
-   Availability) with partial-save state, so `Skip/Back` does not feel like data loss
-   and `Update & see today's plan` reads as the normal path.
+4. Add an explicit authority/explanation banner when coach plan, adaptive forecast, and the
+   Home recommendation differ.
+5. Standardize fail-closed recovery: say what is missing, link to the owning repair surface,
+   and provide retry when retry is meaningful.
+6. Make Check-in progress and partial-save semantics explicit so Back/Skip versus submit is
+   unambiguous.
 
 ### Settings
 
-7. Merge or visually pair the overlapping controls: show Training Setup (hard gates)
-   and Coach Preferences (soft) as two tabs of one Settings surface with a shared
-   explicit Save model, or at minimum cross-link equipment ↔ unavailable modalities
-   and time limits ↔ default times inline.
-8. Rename `constraints` route or title to match navigation (`Training Setup`), and fix
-   the `Goals` unused `onNavigate` so repair buttons can deep-link back to the
-   blocking screen.
-9. Add undo / confirmation for autosaved destructive toggles in `TrainingSettings`
-   (equipment, `avoid_*`, injury constraints); today every toggle writes immediately.
+7. Visually pair Training Setup (hard gates) and Coach Preferences (soft preferences), with
+   cross-links between overlapping equipment/time/environment concepts.
+8. Either remove `Goals.onNavigate` or use it for explicit repair/deep-link flows; an unused
+   navigation prop is misleading API surface.
+9. Review immediate-persist Training Setup controls for undo/confirmation where a mistaken
+   toggle can materially change feasibility/safety decisions.
 
 ### Sessions and testing
 
-10. Differentiate `sessions` vs `testing` chrome beyond the banner: tint the runner
-    header, keep the `TestingWorkflow` lock card visible (collapsed) during `running`,
-    and label the completion sheet with its provenance (`SessionExecution` vs
-    `AssessmentAttempt`).
-11. Collapse session creation from four entries (fixture / saved / import / build) to
-    one `New session` entry with a chooser, and move save-as-template out of the active
-    run bar so it cannot be tapped mid-set.
-12. Make companion sessions unmistakable (e.g. `Follow-up — not the next block`) and
-    make `TestingWorkflow` abandonment resumable or explicitly destructive with
-    confirm copy.
+10. Differentiate normal session execution and protocol testing more strongly around the
+    shared runner, especially during execution and completion.
+11. Consolidate the structured-session creation entry points behind a clearer `New session`
+    chooser while preserving the underlying import/manual/template contracts.
+12. Make companion/follow-up executions explicit and clarify whether abandoning a testing
+    attempt is intentionally destructive/terminal before confirmation.
 
-### Onboarding and auth
+### Onboarding, auth, and export
 
-13. Add Skip to `OnboardingWizard` (persist dismissal without a goal) and a settings
-    entry to re-launch it; log wizard completion in `usabilityMetrics.ts` alongside
-    recommendation TTR.
-14. Disambiguate the two Garmin concepts in copy: `Sign in with Garmin` (auth) vs
-    `Connect Garmin wearable` (sync). Never reuse the same credential phrasing.
-
-### Data / export dead ends
-
-15. One export path: keep `brief` as the canonical Export for AI surface and turn the
-    `DataView` context-brief tab and activities Copy All into deep links to it.
-16. Add retry to `DataView` `No data available` and repair navigation to `PlanView`
-    `INVALID`; audit every terminal state (`abandoned`, prescription-missing,
-    storage-blocked onboarding) for at least one forward action.
+13. Add an explicit onboarding Skip/dismiss path only if product semantics define what a
+    goal-less dismissed account should do; do not implement it as a browser flag alone.
+14. Use distinct copy for app authentication (`Continue/Sign in with Garmin`) and wearable
+    data connection (`Connect Garmin wearable`).
+15. Choose a canonical AI-export surface and make the other export affordances clearly point
+    to or distinguish themselves from it.
+16. Add local retry/repair affordances to weak recovery states, starting with DataView's
+    null-input state and PlanView source failures.
