@@ -3,6 +3,7 @@ import type { BodyRegion, GuardrailKey, InjuryConstraint, SessionTemplate, Train
 import { resolveInjuryRestrictions } from '../engine/injuryPolicy';
 import { trainingSettingsService, type TrainingSettingsUpdate } from '../services/trainingSettingsService';
 import { getLocalDateString } from '../utils/localDate';
+import { SCREEN_LABELS } from '../types/navigation';
 import './TrainingSettings.css';
 
 interface TrainingSettingsProps {
@@ -111,7 +112,7 @@ export function TrainingSettings({ userId }: TrainingSettingsProps) {
   return (
     <main className="training-settings">
       <header>
-        <h1>Training Settings</h1>
+        <h1>{SCREEN_LABELS.constraints}</h1>
         <p>Equipment determines what can be prescribed. Safety limits are always enforced. Preferences only break ties between suitable options.</p>
       </header>
       {error && <p className="settings-error" role="alert">{error}</p>}

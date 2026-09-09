@@ -1,5 +1,6 @@
 import React, { useRef, useEffect } from 'react';
 import type { Screen } from '../types/navigation';
+import { SCREEN_LABELS } from '../types/navigation';
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
 import { GarminSyncBadge } from './GarminSyncBadge';
@@ -72,31 +73,31 @@ export const Header: React.FC<HeaderProps> = ({
             className={`nav-link ${screen === 'home' ? 'active' : ''}`}
             onClick={() => handleNavigate('home')}
           >
-            Home
+            {SCREEN_LABELS.home}
           </button>
           <button
             className={`nav-link ${screen === 'checkin' ? 'active' : ''}`}
             onClick={() => handleNavigate('checkin')}
           >
-            Check-in
+            {SCREEN_LABELS.checkin}
           </button>
           <button
             className={`nav-link ${screen === 'sessions' ? 'active' : ''}`}
             onClick={() => handleNavigate('sessions')}
           >
-            Sessions
+            {SCREEN_LABELS.sessions}
           </button>
           <button
             className={`nav-link ${screen === 'testing' ? 'active' : ''}`}
             onClick={() => handleNavigate('testing')}
           >
-            Testing
+            {SCREEN_LABELS.testing}
           </button>
           <button
             className={`nav-link ${screen === 'goals' ? 'active' : ''}`}
             onClick={() => handleNavigate('goals')}
           >
-            Goals
+            {SCREEN_LABELS.goals}
           </button>
           <button
             className={`nav-link ${screen === 'data' ? 'active' : ''}`}
@@ -105,7 +106,7 @@ export const Header: React.FC<HeaderProps> = ({
               handleNavigate('data');
             }}
           >
-            Data
+            {SCREEN_LABELS.data}
           </button>
 
           <div className="more-menu-container" ref={desktopSettingsRef}>
@@ -126,7 +127,7 @@ export const Header: React.FC<HeaderProps> = ({
                   onClick={() => handleNavigate('plan')}
                   role="menuitem"
                 >
-                  <span className="item-icon">📋</span> Import Training Plan
+                  <span className="item-icon">📋</span> {SCREEN_LABELS.plan}
                 </button>
                 <button
                   className={`dropdown-item ${screen === 'brief' ? 'active' : ''}`}
@@ -136,21 +137,21 @@ export const Header: React.FC<HeaderProps> = ({
                   }}
                   role="menuitem"
                 >
-                  <span className="item-icon">📤</span> Export Context for AI
+                  <span className="item-icon">📤</span> {SCREEN_LABELS.brief}
                 </button>
                 <button
                   className={`dropdown-item ${screen === 'constraints' ? 'active' : ''}`}
                   onClick={() => handleNavigate('constraints')}
                   role="menuitem"
                 >
-                  <span className="item-icon">⚙️</span> Training Setup
+                  <span className="item-icon">⚙️</span> {SCREEN_LABELS.constraints}
                 </button>
                 <button
                   className={`dropdown-item ${screen === 'preferences' ? 'active' : ''}`}
                   onClick={() => handleNavigate('preferences')}
                   role="menuitem"
                 >
-                  <span className="item-icon">⚙️</span> Coach Preferences
+                  <span className="item-icon">⚙️</span> {SCREEN_LABELS.preferences}
                 </button>
                 <div className="dropdown-divider" />
                 <div

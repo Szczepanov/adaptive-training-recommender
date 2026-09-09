@@ -89,7 +89,7 @@ prior-day lookback over already-persisted assessment revisions. No future data i
 into the original assessment; only the separate outcome document is written or revised.
 
 The follow-up form (`HealthAnomalyFollowupCard`) is mounted only beside the existing shadow
-trace on the Detailed Data screen. It carries the same "evidence only, does not change your
+trace on the Data screen. It carries the same "evidence only, does not change your
 recommendation" framing as the shadow trace itself, and never renders the
 `possible illness or systemic stress` alert wording — that remains gated on the HA7 evidence
 decision.
@@ -100,7 +100,7 @@ without fitting sparse noise.
 
 ## Shadow diagnostics
 
-When `shadow-v1` is explicitly enabled, the Detailed Data screen appends a developer-only
+When `shadow-v1` is explicitly enabled, the Data screen appends a developer-only
 **Health anomaly (shadow)** trace. It shows:
 
 - state, evidence level, episode/persistence and policy/revision provenance;

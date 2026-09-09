@@ -14,6 +14,7 @@ import { getLocalDateString, addDaysToLocalDateString } from '../utils/localDate
 import { resolveDefaultTimeAvailable, type CheckinAvailabilityDefault } from '../utils/checkinDefaults';
 import { getErrorMessage } from '../utils/errors';
 import type { Screen } from '../types/navigation';
+import { SCREEN_LABELS } from '../types/navigation';
 import { HealthContextSection } from './checkin/HealthContextSection';
 import { PhysicalWorkSection } from './checkin/PhysicalWorkSection';
 import { SubjectiveScaleRow } from './checkin/SubjectiveScaleRow';
@@ -563,7 +564,7 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
           </button>
         )}
         <div className="checkin-title-group">
-          <h1>Morning Check-in</h1>
+          <h1>{SCREEN_LABELS.checkin}</h1>
           <span className="checkin-date-badge">Today · {checkin.date || getLocalDateString()}</span>
         </div>
       </div>

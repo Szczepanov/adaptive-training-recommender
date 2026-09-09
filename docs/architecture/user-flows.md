@@ -124,16 +124,19 @@ Desktop and mobile expose all ten `Screen` values, but with different prominence
 
 | Screen | Desktop `Header` | Mobile `MobileNav` |
 |---|---|---|
-| `home` | `Home` plus brand → Home | Bottom `Today` |
+| `home` | `Home` plus brand → Home | Bottom `Home` |
 | `checkin` | `Check-in` | Bottom `Check-in` |
-| `plan` | Settings → `Import Training Plan` | Bottom `Plan` |
-| `sessions` | `Sessions` | More → `Structured Sessions` |
-| `testing` | `Testing` | More → `Protocol Testing` |
-| `goals` | `Goals` | More → `Goals & Target Events` |
-| `data` | `Data` (refreshes decision input first) | More → `Detailed Data` (refreshes first) |
+| `plan` | Settings → `Plan` | Bottom `Plan` |
+| `sessions` | `Sessions` | More → `Sessions` |
+| `testing` | `Testing` | More → `Testing` |
+| `goals` | `Goals` | More → `Goals` |
+| `data` | `Data` (refreshes decision input first) | More → `Data` (refreshes first) |
 | `brief` | Settings → `Export Context for AI` | More → `Export Context for AI` |
 | `constraints` | Settings → `Training Setup` | More → `Training Setup` |
 | `preferences` | Settings → `Coach Preferences` | More → `Coach Preferences` |
+
+Every label above renders from `navigation.ts` `SCREEN_LABELS`, the single source of
+truth shared by `Header`, `MobileNav`, and each screen's heading (#485).
 
 Current chrome details worth preserving when changing navigation:
 
@@ -288,7 +291,7 @@ and persistent environment setup versus today's `indoorOnly` availability.
 `DataView` has nine tabs:
 
 `Recovery` | `Activities` | `Strength History` | `Check-in` | `Goals` |
-`Training Settings` | `Preferences` | `Adherence` | `Context brief`.
+`Training Setup` | `Coach Preferences` | `Adherence` | `Context brief`.
 
 Most of the surface is inspection/export. The Activities tab is the exception: it exposes
 corrective actions (for example activity reclassification, and canonical-source unlinking
@@ -362,9 +365,9 @@ living-reference section when implementing them.
 
 ### Information architecture and naming
 
-1. Use one user-facing name per `Screen` across Header, MobileNav, and screen titles. In
-   particular, converge `Training Settings`/`Training Setup` and desktop `Import Training
-   Plan` versus mobile `Plan`.
+1. ~~Use one user-facing name per `Screen` across Header, MobileNav, and screen titles.~~
+   Done (#485): one canonical label per `Screen` renders from `navigation.ts`
+   `SCREEN_LABELS` in Header, MobileNav, and each screen heading.
 2. Make desktop and mobile primary destinations more symmetrical, or document a deliberate
    reason for the difference. A daily-loop set such as Today / Check-in / Plan is the most
    obvious candidate.
