@@ -4,12 +4,10 @@ import { shouldShowAuthorityBanner, type AuthorityBannerInput } from './planAuth
 /**
  * Follow-this-one authority banner for `PlanView` (#487).
  *
- * Verdict copy plus a link only: every input here is already computed by
- * `PlanView` (`ExternalPlanWeek` placements, `WeekAheadStrip` forecast days,
- * `ExternalWeekCritique` findings), and nothing in this module touches engine
- * decision logic. The copy never overrules safety envelopes -- it points at
- * Home, whose recommendation already passed them, and says safety limits still
- * apply.
+ * Verdict copy plus a link only: `PlanView` compares the imported coach prescription
+ * with the same-day adaptive recommendation that seeds the tomorrow-forward forecast.
+ * Nothing in this component changes decision logic or safety envelopes. When those
+ * sources disagree, Home remains the place to resolve the final today decision.
  */
 interface PlanAuthorityBannerProps extends AuthorityBannerInput {
     onViewHome?: () => void;
@@ -21,8 +19,8 @@ export const PlanAuthorityBanner: React.FC<PlanAuthorityBannerProps> = (props) =
     return (
         <div className="plan-authority-banner" role="status" aria-label="Authoritative source for today">
             <p className="plan-authority-text">
-                ⚖️ Coach plan and AI forecast differ today — follow {SCREEN_LABELS.home} for today; safety limits
-                still apply.
+                ⚖️ Coach plan and adaptive guidance differ today. Follow the decision on {SCREEN_LABELS.home}; safety
+                limits still apply.
             </p>
             {onViewHome && (
                 <button type="button" className="plan-retry-btn" onClick={onViewHome}>
