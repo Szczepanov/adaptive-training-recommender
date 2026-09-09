@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ProgressionReviewPanel } from './ProgressionReviewPanel';
-import { deriveProposalId } from './progressionReviewPanelLogic';
+import { claimBelongsToReviewedRevision, deriveProposalId } from './progressionReviewPanelLogic';
 import type { ProposedProgressionChange } from '../engine/progressionReview';
+import type { ProgressionExperimentClaim } from '../services/progressionClaimService';
 
 function change(overrides: Partial<ProposedProgressionChange> = {}): ProposedProgressionChange {
     return {
@@ -12,6 +13,24 @@ function change(overrides: Partial<ProposedProgressionChange> = {}): ProposedPro
         previousValue: 90,
         proposedValue: 100,
         derivedDoseEffects: { delta: 10 },
+        ...overrides,
+    };
+}
+
+function heldClaim(overrides: Partial<ProgressionExperimentClaim> = {}): ProgressionExperimentClaim {
+    return {
+        userId: 'u1',
+        state: 'held',
+        experimentId: 'experiment-1',
+        blockId: 'block-1',
+        proposalId: 'proposal-1',
+        sourcePlanRevision: 1,
+        activationKey: 'a'.repeat(64),
+        activationRevisionId: '2',
+        acquiredAt: '2026-09-01T00:00:00.000Z',
+        revision: 1,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
         ...overrides,
     };
 }
@@ -53,5 +72,20 @@ describe('deriveProposalId', () => {
     it('differs when the target binding differs even if the before/after dose is identical', () => {
         expect(deriveProposalId(1, '2026-09-15', change({ targetBinding: { objectiveId: 'obj_1' } })))
             .not.toBe(deriveProposalId(1, '2026-09-15', change({ targetBinding: { objectiveId: 'obj_2' } })));
+    });
+});
+
+describe('claimBelongsToReviewedRevision', () => {
+    it('allows completion only for the exact held block/revision under review', () => {
+        expect(claimBelongsToReviewedRevision(heldClaim(), 'block-1', 2)).toBe(true);
+    });
+
+    it('rejects a stale review revision', () => {
+        expect(claimBelongsToReviewedRevision(heldClaim(), 'block-1', 1)).toBe(false);
+    });
+
+    it('rejects a different block or released claim', () => {
+        expect(claimBelongsToReviewedRevision(heldClaim(), 'block-2', 2)).toBe(false);
+        expect(claimBelongsToReviewedRevision(heldClaim({ state: 'released' }), 'block-1', 2)).toBe(false);
     });
 });
