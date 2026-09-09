@@ -98,10 +98,10 @@ Full statements, with rationale and the checks that enforce them, are in
 * `npm run validate:workouts` / `validate:knowledge` / `validate:knowledge-coverage` — catalog and registry validators, individually
 * `npm run simulate:scenarios` — multi-week engine simulations → `artifacts/simulation-reports/latest/`
 * `npm run simulate:diff` — non-blocking semantic diff against `docs/analysis/simulation-baseline.json` (`simulate:update-baseline` to re-baseline)
-* `node scripts/check-policy-drift.mjs <base-sha>` — verify `POLICY_VERSION` was bumped when decision logic changed
+* `node scripts/check-policy-drift.mjs <base-sha>` — verify `POLICY_VERSION` was bumped when decision logic changes
 * `npm run replay:recommendation -- <audit.json>` — replay a persisted decision against its own audit
 * `npm run build:plan-judge-corpus && npm run report:sequencing` — deterministic sequencing collision/spacing/opportunity-cost diagnostics (issue #458; report only, no gate)
-* `npm run judge:*` / `npm run persona:*` — AI-judge and persona-judge harnesses over the plan corpus; `judge:diff` / `persona:diff` compare against the committed baselines, `*:update-baseline` re-baseline them
+* `judge:*` and `persona:*` are script-name families, **not executable npm wildcards**. Use concrete scripts such as `npm run judge:run`, `npm run judge:diff`, `npm run judge:update-baseline`, `npm run persona:run`, `npm run persona:diff`, and `npm run persona:update-baseline`; see `app/package.json` for local/quick/e2e/resume variants.
 * `npm run evidence:health-anomaly`, `evidence:identity-replay`, `measure:garmin-zone-credit` — shadow-mode evidence runs
 * `npm run visual:install` → `visual:refresh` — Playwright screenshots into `artifacts/visual-review/latest/`; `visual:serve` runs the harness at `http://127.0.0.1:4174`
 
@@ -307,7 +307,7 @@ app/src/sessions/
   models.ts            # Source-neutral session definitions, prescriptions, occurrences, executions
   validation.ts        # Canonical schema validators for definitions, prescriptions, occurrences, entries
   sessionDefinitionResolver.ts # Pinned revision / occurrence resolution and hash verification
-  sessionDefinitionHash.ts # Canonical SHA-256 content hashing for definition and prescription
+  sessionDefinitionHash.ts # Canonical SHA-256 content hashing of definition and prescription
   sessionDefinitionDiff.ts # M3.7: fine-grained content diff between two definition revisions
   inputProfiles.ts     # Input card profiles (repetition, duration, distance, check-offs, gauges)
   performedComparison.ts # Planned vs completed steps, volume, omissions, hold duration
