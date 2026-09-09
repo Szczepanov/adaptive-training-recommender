@@ -336,11 +336,11 @@ its description has actually shipped.
    environment, a `revision` bumped on update) plus `engine/scheduleWindows.ts` (pure
    per-document and cross-window-non-overlap validation, `resolveScheduleWindowsForDate`
    returning `[]` for the legacy single-untimed-slot case) and
-   `services/scheduleWindowService.ts` (`users/{userId}/schedule_windows/{windowId}`,
-   rejecting an overlapping create/update client-side -- a best-effort, non-atomic check;
-   Firestore's client transactions cannot read an arbitrary query, so this cannot fully
-   close the race against concurrent writers, and full enforcement needs a trusted server
-   boundary, out of scope here) are the delivered contract. `firestore.rules` validates
+   `services/scheduleWindowService.ts`'s authoritative
+   `users/{userId}/schedule_window_manifests/{YYYY-MM-DD}` transaction boundary are the
+   delivered contract. Each mutation reads and writes the full bounded date manifest, so
+   concurrent writers serialize through one document; rules inspect every entry and pair
+   and deny all writes to the retired sibling collection. `firestore.rules` validates
    per-document shape/ownership/revision-increase/`createdAt`-immutability (including
    each `equipment` item's own type/length, not just the list's size), mirroring
    `hasValidFixedActivity`. Recurring-template resolution to dated instances is

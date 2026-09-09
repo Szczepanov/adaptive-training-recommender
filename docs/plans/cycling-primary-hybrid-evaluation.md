@@ -373,24 +373,19 @@ correctly scoped so windows on different dates are never compared against each o
 and `resolveScheduleWindowsForDate` (returns `[]` for a date with no windows -- the
 supported legacy case: callers must keep today's single untimed-slot behavior rather than
 treating an empty result as "no availability", per D-WINDOW: "missing metadata never
-creates an AM and PM pair"). `services/scheduleWindowService.ts` persists these at
-`users/{userId}/schedule_windows/{windowId}` (ADR-0002 user-owned path), rejecting a
-create/update that would overlap an existing same-date window client-side -- a
-best-effort, non-atomic check (read siblings, then write, no lock between): Firestore's
-client `Transaction.get()` only reads a known `DocumentReference`, not an arbitrary
-query, so a client-side transaction cannot close this race either, and two concurrent
-writes (or a direct SDK write bypassing this service) can still both pass and persist
-overlapping windows. `firestore.rules` intentionally validates only per-document shape
-and ownership -- the same split `hasValidExternalPlanRevision`'s comment already
-documents for cross-session plan invariants rules cannot see across sibling documents --
-plus requires `revision` to strictly increase on update, validates each `equipment` item's
-own type/length (not just the list's size -- `hasValidEquipmentList` was fixed in review
-to check this, since it previously let a non-string/oversized item pass rules and then
-fail client-side parsing as `INVALID`), and keeps `createdAt` immutable, mirroring
-`hasValidFixedActivity` (itself now covered by the same equipment-item fix). Closing the
-race for real needs a trusted server boundary (e.g. a Cloud Function serializing writes
-per user/date); out of scope for this bounded PR and flagged as a known limitation, not
-treated as solved.
+creates an AM and PM pair"). Issue #430 replaced the former sibling-document layout with
+the authoritative `users/{userId}/schedule_window_manifests/{YYYY-MM-DD}` document.
+`ScheduleWindowService` transacts that one document for every create, update, date move,
+and delete, so Firestore retries a concurrent writer against the current full window set.
+The manifest deliberately permits at most eight windows: `firestore.rules` cannot iterate
+an arbitrary list, but can validate all eight entries and all 28 pairs, including a direct
+SDK write. The rules deny writes to the retired `schedule_windows` sibling collection,
+require document revisions to increase exactly one per mutation, and preserve manifest
+creation time. The service retains each surviving window's stable id and increments its
+own revision on update. Invalid or unavailable manifests, and any retired sibling
+documents awaiting explicit migration, are fail-closed: they never become the empty legacy
+slot in D-PLACEMENT. Emulator tests prove overlapping concurrent
+creates/moves and direct-write bypasses are rejected.
 
 Recurring availability ("Recurring availability is resolved to dated instances by the
 app", D-WINDOW) is intentionally deferred: this slice only models and persists

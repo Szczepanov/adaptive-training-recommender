@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { ScheduleWindow } from './models';
+import type { ScheduleWindow, ScheduleWindowManifest } from './models';
 import {
     resolveScheduleWindowsForDate,
     scheduleWindowDurationMinutes,
     scheduleWindowsOverlap,
     validateScheduleWindow,
+    validateScheduleWindowManifest,
     validateScheduleWindowSet,
 } from './scheduleWindows';
 
@@ -16,6 +17,18 @@ function makeWindow(overrides: Partial<ScheduleWindow> = {}): ScheduleWindow {
         startLocal: '06:00',
         endLocal: '07:00',
         revision: 1,
+        createdAt: '2026-09-01T00:00:00.000Z',
+        updatedAt: '2026-09-01T00:00:00.000Z',
+        ...overrides,
+    };
+}
+
+function makeManifest(overrides: Partial<ScheduleWindowManifest> = {}): ScheduleWindowManifest {
+    return {
+        userId: 'u1',
+        date: '2026-09-10',
+        revision: 1,
+        windows: [makeWindow()],
         createdAt: '2026-09-01T00:00:00.000Z',
         updatedAt: '2026-09-01T00:00:00.000Z',
         ...overrides,
@@ -120,6 +133,42 @@ describe('validateScheduleWindowSet', () => {
         const first = makeWindow({ id: 'a', date: '2026-09-10', startLocal: '06:00', endLocal: '08:00' });
         const second = makeWindow({ id: 'b', date: '2026-09-11', startLocal: '07:00', endLocal: '09:00' });
         expect(validateScheduleWindowSet([first, second])).toEqual([]);
+    });
+
+    it('flags duplicate stable ids', () => {
+        expect(validateScheduleWindowSet([makeWindow({ id: 'same' }), makeWindow({ id: 'same', startLocal: '17:00', endLocal: '18:00' })]))
+            .toEqual([expect.objectContaining({ message: 'Duplicate schedule window id: same' })]);
+    });
+});
+
+describe('validateScheduleWindowManifest', () => {
+    it('accepts a bounded manifest with non-overlapping same-date windows', () => {
+        const manifest = makeManifest({
+            windows: [makeWindow({ id: 'am' }), makeWindow({ id: 'pm', startLocal: '17:00', endLocal: '18:00' })],
+        });
+        expect(validateScheduleWindowManifest(manifest).isValid).toBe(true);
+    });
+
+    it('rejects an overlapping manifest even when every individual window is valid', () => {
+        const result = validateScheduleWindowManifest(makeManifest({
+            windows: [makeWindow({ id: 'first', endLocal: '08:00' }), makeWindow({ id: 'second', startLocal: '07:00', endLocal: '09:00' })],
+        }));
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(error => error.message.includes('Overlapping schedule windows'))).toBe(true);
+    });
+
+    it('rejects a window that does not belong to the manifest date or user', () => {
+        expect(validateScheduleWindowManifest(makeManifest({ windows: [makeWindow({ userId: 'other-user' })] })).isValid).toBe(false);
+        expect(validateScheduleWindowManifest(makeManifest({ windows: [makeWindow({ date: '2026-09-11' })] })).isValid).toBe(false);
+    });
+
+    it('rejects more than the rule-verifiable maximum of eight windows', () => {
+        const windows = Array.from({ length: 9 }, (_, index) => makeWindow({
+            id: `w-${index}`,
+            startLocal: `${String(index).padStart(2, '0')}:00`,
+            endLocal: `${String(index + 1).padStart(2, '0')}:00`,
+        }));
+        expect(validateScheduleWindowManifest(makeManifest({ windows })).isValid).toBe(false);
     });
 });
 
