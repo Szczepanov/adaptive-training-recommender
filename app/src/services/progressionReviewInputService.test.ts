@@ -9,6 +9,12 @@ vi.mock('../training-occurrence/repository', () => repository);
 const outcomes = vi.hoisted(() => ({ sessionOutcomeReportService: { buildReport: vi.fn() } }));
 vi.mock('./sessionOutcomeReportService', () => outcomes);
 
+const executions = vi.hoisted(() => ({ sessionExecutionService: { getExecution: vi.fn() } }));
+vi.mock('./sessionExecutionService', () => executions);
+
+const prescriptions = vi.hoisted(() => ({ executionPrescriptionService: { getPrescription: vi.fn() } }));
+vi.mock('./executionPrescriptionService', () => prescriptions);
+
 const checkins = vi.hoisted(() => ({ checkinService: { getCheckinsInRange: vi.fn() } }));
 vi.mock('./checkinService', () => checkins);
 
@@ -59,6 +65,15 @@ function block(overrides: Partial<IntentBlock> = {}): IntentBlock {
     };
 }
 
+function externalPlanBlock(): IntentBlock {
+    const result = block({ sourcePlanId: 'plan-1' });
+    result.progressionContract = {
+        ...result.progressionContract!,
+        targetBinding: { objectiveId: 'obj_1', sessionId: 'session-1' },
+    };
+    return result;
+}
+
 function exposure(overrides: Partial<PerformedExposureFact> = {}): PerformedExposureFact {
     return {
         performedOccurrenceId: 'occ-1',
@@ -85,10 +100,61 @@ function credit(overrides: Partial<CoverageCreditFact> = {}): CoverageCreditFact
     };
 }
 
+function bindPinnedExternalPrescription(occurrenceId = 'occ-1', executionId = 'exec-1'): void {
+    const sessionSource = {
+        kind: 'external_plan' as const,
+        planId: 'plan-1',
+        revision: 1,
+        sessionId: 'session-1',
+        contentHash: 'content-1',
+    };
+    repository.performedTrainingOccurrenceRepository.getById.mockResolvedValueOnce({
+        performedOccurrenceId: occurrenceId,
+        sourceRefs: [{ kind: 'structured_execution', executionId, prescriptionHash: 'rx-1' }],
+    });
+    executions.sessionExecutionService.getExecution.mockResolvedValueOnce({
+        status: 'AVAILABLE',
+        data: {
+            userId: USER_ID,
+            executionId,
+            sessionSource,
+            prescriptionHash: 'rx-1',
+            date: '2026-09-05',
+            startedAt: '2026-09-05T08:00:00.000Z',
+            completedAt: '2026-09-05T09:30:00.000Z',
+            updatedAt: '2026-09-05T09:30:00.000Z',
+            state: 'completed',
+            schemaVersion: 1,
+        },
+        revision: null,
+    });
+    prescriptions.executionPrescriptionService.getPrescription.mockResolvedValueOnce({
+        status: 'AVAILABLE',
+        data: {
+            schemaVersion: 1,
+            prescriptionHash: 'rx-1',
+            sessionSource,
+            definitionHash: 'definition-1',
+            blocks: [],
+            displayMetadata: {
+                title: 'Threshold quality',
+                intent: 'training',
+                duration: { min: 90, max: 90 },
+            },
+            createdAt: '2026-09-01T00:00:00.000Z',
+        },
+        revision: null,
+    });
+}
+
 beforeEach(() => {
     vi.clearAllMocks();
-    facts.getPerformedTrainingFactsInRange.mockResolvedValue({ asOfDate: 'x', windowDays: 0, revision: 'x', exposures: [], coverageCredits: [] });
+    facts.getPerformedTrainingFactsInRange.mockResolvedValue({
+        asOfDate: 'x', windowDays: 0, revision: 'x', exposures: [], coverageCredits: [],
+    });
     outcomes.sessionOutcomeReportService.buildReport.mockResolvedValue([]);
+    executions.sessionExecutionService.getExecution.mockResolvedValue({ status: 'MISSING' });
+    prescriptions.executionPrescriptionService.getPrescription.mockResolvedValue({ status: 'MISSING' });
     checkins.checkinService.getCheckinsInRange.mockResolvedValue([]);
     settings.trainingSettingsService.peekTrainingSettingsState.mockResolvedValue({ status: 'MISSING' });
     repository.performedTrainingOccurrenceRepository.getById.mockResolvedValue(null);
@@ -101,27 +167,85 @@ describe('assembleProgressionReviewInput', () => {
         expect(result.prerequisiteEvidence).toBeUndefined();
     });
 
-    it('classifies an exact-credit exposure within tolerance as matched_current_target', async () => {
+    it('does not manufacture a current-prescription match from exact coverage and performed duration alone', async () => {
         facts.getPerformedTrainingFactsInRange.mockResolvedValueOnce({
             asOfDate: 'x', windowDays: 1, revision: 'x',
             exposures: [exposure()], coverageCredits: [credit()],
         });
         const result = await assembleProgressionReviewInput(USER_ID, block(), '2026-09-20');
         expect(result.linkedExposures).toHaveLength(1);
-        expect(result.linkedExposures[0].prescription.status).toBe('matched_current_target');
-        expect(result.linkedExposures[0].prescription.value).toBe(90);
+        expect(result.linkedExposures[0].prescription.status).toBe('partial');
+        expect(Number.isNaN(result.linkedExposures[0].prescription.value)).toBe(true);
     });
 
-    it('classifies an exact-credit exposure far from the contract value as partial', async () => {
+    it('matches only when exact coverage, source revision, immutable prescription and delivered dose all match', async () => {
+        facts.getPerformedTrainingFactsInRange.mockResolvedValueOnce({
+            asOfDate: 'x', windowDays: 1, revision: 'x',
+            exposures: [exposure()], coverageCredits: [credit()],
+        });
+        bindPinnedExternalPrescription();
+
+        const result = await assembleProgressionReviewInput(USER_ID, externalPlanBlock(), '2026-09-20');
+        expect(result.linkedExposures[0].prescription).toMatchObject({
+            status: 'matched_current_target',
+            sourcePlanRevision: 1,
+            sessionId: 'session-1',
+            variable: 'duration_min',
+            unit: 'minutes',
+            value: 90,
+        });
+    });
+
+    it('classifies a pinned prescription at the wrong source-plan revision as mismatch', async () => {
+        facts.getPerformedTrainingFactsInRange.mockResolvedValueOnce({
+            asOfDate: 'x', windowDays: 1, revision: 'x',
+            exposures: [exposure()], coverageCredits: [credit()],
+        });
+        const sessionSource = {
+            kind: 'external_plan' as const,
+            planId: 'plan-1', revision: 2, sessionId: 'session-1', contentHash: 'content-2',
+        };
+        repository.performedTrainingOccurrenceRepository.getById.mockResolvedValueOnce({
+            performedOccurrenceId: 'occ-1',
+            sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1', prescriptionHash: 'rx-2' }],
+        });
+        executions.sessionExecutionService.getExecution.mockResolvedValueOnce({
+            status: 'AVAILABLE',
+            data: {
+                userId: USER_ID, executionId: 'exec-1', sessionSource, prescriptionHash: 'rx-2',
+                date: '2026-09-05', startedAt: '2026-09-05T08:00:00.000Z',
+                completedAt: '2026-09-05T09:30:00.000Z', updatedAt: '2026-09-05T09:30:00.000Z',
+                state: 'completed', schemaVersion: 1,
+            },
+            revision: null,
+        });
+        prescriptions.executionPrescriptionService.getPrescription.mockResolvedValueOnce({
+            status: 'AVAILABLE',
+            data: {
+                schemaVersion: 1, prescriptionHash: 'rx-2', sessionSource, definitionHash: 'definition-2', blocks: [],
+                displayMetadata: { title: 'Threshold quality', intent: 'training', duration: { min: 90, max: 90 } },
+                createdAt: '2026-09-01T00:00:00.000Z',
+            },
+            revision: null,
+        });
+
+        const result = await assembleProgressionReviewInput(USER_ID, externalPlanBlock(), '2026-09-20');
+        expect(result.linkedExposures[0].prescription.status).toBe('mismatch');
+        expect(result.linkedExposures[0].prescription.sourcePlanRevision).toBe(2);
+    });
+
+    it('keeps a matching prescription partial when delivered duration is materially short', async () => {
         facts.getPerformedTrainingFactsInRange.mockResolvedValueOnce({
             asOfDate: 'x', windowDays: 1, revision: 'x',
             exposures: [exposure({ durationMin: 40 })], coverageCredits: [credit()],
         });
-        const result = await assembleProgressionReviewInput(USER_ID, block(), '2026-09-20');
+        bindPinnedExternalPrescription();
+        const result = await assembleProgressionReviewInput(USER_ID, externalPlanBlock(), '2026-09-20');
         expect(result.linkedExposures[0].prescription.status).toBe('partial');
+        expect(result.linkedExposures[0].prescription.value).toBe(90);
     });
 
-    it('classifies a semantic-confident credit as partial', async () => {
+    it('classifies a semantic-confident credit as partial even with real performed work', async () => {
         facts.getPerformedTrainingFactsInRange.mockResolvedValueOnce({
             asOfDate: 'x', windowDays: 1, revision: 'x',
             exposures: [exposure()], coverageCredits: [credit({ creditKind: 'semantic_confident' })],
@@ -130,7 +254,7 @@ describe('assembleProgressionReviewInput', () => {
         expect(result.linkedExposures[0].prescription.status).toBe('partial');
     });
 
-    it('classifies real work credited to a different role as mismatch', async () => {
+    it('classifies real work credited only to a different role as mismatch', async () => {
         facts.getPerformedTrainingFactsInRange.mockResolvedValueOnce({
             asOfDate: 'x', windowDays: 1, revision: 'x',
             exposures: [exposure()], coverageCredits: [credit({ coverageKey: 'recovery_spin' })],
@@ -141,8 +265,7 @@ describe('assembleProgressionReviewInput', () => {
 
     it('classifies an exposure with no coverage credits at all as unknown', async () => {
         facts.getPerformedTrainingFactsInRange.mockResolvedValueOnce({
-            asOfDate: 'x', windowDays: 1, revision: 'x',
-            exposures: [exposure()], coverageCredits: [],
+            asOfDate: 'x', windowDays: 1, revision: 'x', exposures: [exposure()], coverageCredits: [],
         });
         const result = await assembleProgressionReviewInput(USER_ID, block(), '2026-09-20');
         expect(result.linkedExposures[0].prescription.status).toBe('unknown');
@@ -150,13 +273,12 @@ describe('assembleProgressionReviewInput', () => {
 
     it('joins a structured-execution exposure to its SessionOutcome by resolved execution id', async () => {
         facts.getPerformedTrainingFactsInRange.mockResolvedValueOnce({
-            asOfDate: 'x', windowDays: 1, revision: 'x',
-            exposures: [exposure()], coverageCredits: [credit()],
+            asOfDate: 'x', windowDays: 1, revision: 'x', exposures: [exposure()], coverageCredits: [credit()],
         });
         repository.performedTrainingOccurrenceRepository.getById.mockResolvedValueOnce({
-            performedOccurrenceId: 'occ-1',
-            sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1' }],
+            performedOccurrenceId: 'occ-1', sourceRefs: [{ kind: 'structured_execution', executionId: 'exec-1' }],
         });
+        executions.sessionExecutionService.getExecution.mockResolvedValueOnce({ status: 'MISSING' });
         const sessionOutcome = { sourceSession: { kind: 'execution', id: 'exec-1', date: '2026-09-05' }, response: 'unknown' };
         outcomes.sessionOutcomeReportService.buildReport.mockResolvedValueOnce([sessionOutcome]);
 
@@ -200,21 +322,20 @@ describe('assembleProgressionReviewInput', () => {
         expect(result.activeRestrictions).toEqual({ hasAdverseTissue: false });
     });
 
-    it('feeds a fully-populated assembly straight into evaluateProgressionReview and does not hold on missing data', async () => {
-        const exposures = ['2026-09-05', '2026-09-08', '2026-09-12'].map(localDate => exposure({ performedOccurrenceId: `occ-${localDate}`, localDate }));
+    it('feeds real-but-unpinned exposure evidence to the evaluator without accidentally authorizing progression', async () => {
+        const exposures = ['2026-09-05', '2026-09-08', '2026-09-12']
+            .map(localDate => exposure({ performedOccurrenceId: `occ-${localDate}`, localDate }));
         facts.getPerformedTrainingFactsInRange.mockResolvedValueOnce({
             asOfDate: 'x', windowDays: 14, revision: 'x',
             exposures,
             coverageCredits: exposures.map(item => credit({ performedOccurrenceId: item.performedOccurrenceId })),
         });
 
-        // Must be on/after reviewSchedule.nextReviewDate (2026-09-15 in the fixture), or the
-        // evaluator holds as "not yet due" before ever counting evidence.
         const input = await assembleProgressionReviewInput(USER_ID, block(), '2026-09-15');
         const result = evaluateProgressionReview(input);
 
-        expect(result.reasons).not.toContain('missing_progression_contract');
         expect(result.evidenceAudit.candidateExposureCount).toBe(3);
-        expect(['advance_proposal', 'hold', 'reduce_proposal', 'redirect']).toContain(result.action);
+        expect(result.evidenceAudit.exposuresObserved).toBe(0);
+        expect(result.action).toBe('hold');
     });
 });
