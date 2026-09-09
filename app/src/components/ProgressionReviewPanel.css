@@ -1,0 +1,44 @@
+.progression-review-due-list {
+  list-style: none;
+  padding: 0;
+}
+
+.progression-review-due-list li {
+  padding: 6px 0;
+}
+
+.progression-review-result {
+  margin-top: 16px;
+  padding: 12px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+}
+
+.progression-review-reasons {
+  margin: 8px 0;
+}
+
+.progression-review-audit {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 8px 0;
+}
+
+.progression-review-audit dt {
+  font-weight: 600;
+}
+
+.progression-review-proposal {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid #eee;
+}
+
+.progression-review-error {
+  color: #c0392b;
+}
+
+.progression-review-confirmed {
+  color: #1e7e34;
+}
