@@ -6,7 +6,7 @@ Garmin linking is an application flow, not an operations workflow:
 
 ```text
 web app
-  -> Continue with Garmin / Connect Garmin
+  -> Sign in with Garmin / Connect Garmin wearable
   -> Garmin credentials (+ MFA when required)
   -> garmin-account-link Cloud Run service
   -> resolve stable Garmin identity
@@ -58,9 +58,9 @@ The self-service implementation follows these rules:
 - Those two top-level collections are intentionally server-only: browser Firestore rules contain no allow rule for them. Firebase Admin/Cloud Run owns them.
 - User training data remains under `users/{uid}/...`, retaining the existing ownership rules.
 
-## New user: Continue with Garmin
+## New user: Sign in with Garmin
 
-1. Open the app and choose **Continue with Garmin**.
+1. Open the app and choose **Sign in with Garmin**.
 2. Enter Garmin email/password.
 3. If Garmin requests MFA, enter the code in the app.
 4. The backend checks whether this Garmin identity is already linked.
@@ -78,11 +78,11 @@ Migration is deliberately explicit once:
 
 1. Deploy the new Garmin service and frontend.
 2. On the login screen choose **Use existing app login** and sign into the existing Firebase account.
-3. Open **Preferences -> Garmin account**.
-4. Choose **Connect Garmin** and complete Garmin MFA if requested.
+3. Open **Preferences -> Garmin wearable**.
+4. Choose **Connect Garmin wearable** and complete Garmin MFA if requested.
 5. The browser sends the existing Firebase ID token with the Garmin login. The backend therefore binds that Garmin identity to the **existing UID** rather than creating a new user.
 6. The new token is stored at `garmin/users/<existing-uid>/garmin_tokens.json`.
-7. From then on, sign out and use **Continue with Garmin**. It resolves back to the existing UID and all historical data remains in place.
+7. From then on, sign out and use **Sign in with Garmin**. It resolves back to the existing UID and all historical data remains in place.
 
 The previous shared object `garmin/garmin_tokens.json` is intentionally not used as a fallback. Explicit re-linking prevents a stale/shared token from being silently associated with the wrong Firebase user.
 
@@ -91,7 +91,7 @@ The previous shared object `garmin/garmin_tokens.json` is intentionally not used
 After the existing-user migration, adding another person is entirely self-service:
 
 1. Sign out.
-2. The family member chooses **Continue with Garmin**.
+2. The family member chooses **Sign in with Garmin**.
 3. She authenticates her own Garmin account and completes MFA if needed.
 4. A new internal Firebase user is created automatically because the Garmin identity has no mapping yet.
 5. Her data is stored only under her new UID and her token only under `garmin/users/<her-uid>/...`.
@@ -153,7 +153,7 @@ Then deploy in this order:
 1. **Deploy Garmin Sync** — deploys the account-link HTTP service plus the three scheduled jobs.
 2. **Deploy Frontend & Firestore Rules** — deploys the Firebase Hosting rewrite `/api/garmin/** -> garmin-account-link` plus the web UI.
 3. Perform the existing-user migration above.
-4. Sign out and onboard the spouse with **Continue with Garmin**.
+4. Sign out and onboard the spouse with **Sign in with Garmin**.
 5. Run a manual/smoke sync and verify each login sees only its own data.
 
 GitHub no longer needs `GARMIN_EMAIL`, `GARMIN_PASSWORD`, `GARMIN_TOTP_SECRET`, `APP_USER_IDS`, or the old per-user Garmin Environments. Legacy `APP_USER_ID` remains supported only for explicit local/manual single-user CLI operations.
