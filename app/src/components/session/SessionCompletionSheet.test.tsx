@@ -239,6 +239,7 @@ describe('SessionCompletionSheet', () => {
         );
 
         expect(html).toContain('Finishing saves a SessionExecution record.');
+        expect(html).not.toContain('AssessmentAttempt');
     });
 
     it('labels locked assessment completion without claiming the AssessmentAttempt is already complete (#496)', () => {
