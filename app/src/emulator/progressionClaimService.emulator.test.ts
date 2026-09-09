@@ -1,15 +1,7 @@
 /**
- * ADR-0037 D-AUTHORITY (H5c), Phase C: `confirmProgressionRevision`/`releaseProgressionClaim`
- * exercised against the real emulator with the real security rules.
- *
- * A mocked-transaction unit test cannot prove any of what matters here -- exactly the same
- * reasoning `intradayLaunchClaim.emulator.test.ts` gives for its own real-emulator suite.
- * The properties under test are products of Firestore's actual commit protocol: that two
- * confirmations for *different* proposals against the same athlete's claim serialize to
- * exactly one winner, that two confirmations for the *identical* proposal resolve to one
- * activation, and that the `revision == resource.data.revision + 1` rule on the claim
- * document is what makes any of this true rather than an application-level convention a
- * mock would happily let slide.
+ * ADR-0037 D-AUTHORITY (H5c): confirmation/release against real Firestore transactions
+ * and the real rules. These tests cover serialization as well as mutation-boundary
+ * revalidation; mocked transactions cannot prove either property.
  */
 import { readFileSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
@@ -135,11 +127,6 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
     });
 
     it('resolves a repeated confirmation of the IDENTICAL proposal to the same activation without a second authored revision', async () => {
-        // Sequential, not concurrent: this proves the idempotent-replay branch itself
-        // (activation-by-reference short-circuits before any write). Genuine concurrent
-        // contention for the athlete-scoped claim is already proven above for two
-        // *different* proposals -- the case ADR-0037 is actually worried about (a second
-        // experiment stealing the singleton), and the one a mocked test cannot prove.
         const userId = 'athlete-same-proposal';
         const db = ownerDb(userId);
         await seedProfileAndBlock(db, userId, 'block-solo');
@@ -157,13 +144,85 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
         if (headerState.status === 'AVAILABLE') expect(headerState.data.revision).toBe(2);
     });
 
+    it('rejects reuse of a proposal id with a different before/after payload', async () => {
+        const userId = 'athlete-idempotency-payload';
+        const db = ownerDb(userId);
+        await seedProfileAndBlock(db, userId, 'block-payload');
+
+        await confirmProgressionRevision(userId, 'block-payload', 'proposal-same-id', 1, change(), db);
+        await expect(confirmProgressionRevision(
+            userId,
+            'block-payload',
+            'proposal-same-id',
+            1,
+            change({ proposedValue: 110, derivedDoseEffects: { delta: 20 } }),
+            db,
+        )).rejects.toMatchObject({ code: 'activation-identity-mismatch' });
+    });
+
+    it('rejects an arbitrary jump even when the caller supplies internally-consistent numbers', async () => {
+        const userId = 'athlete-arbitrary-jump';
+        const db = ownerDb(userId);
+        await seedProfileAndBlock(db, userId, 'block-jump');
+
+        await expect(confirmProgressionRevision(
+            userId,
+            'block-jump',
+            'proposal-jump',
+            1,
+            change({ proposedValue: 130, derivedDoseEffects: { delta: 40 } }),
+            db,
+        )).rejects.toMatchObject({ code: 'invalid-proposed-change' });
+
+        expect(await getCurrentProgressionClaim(userId, db)).toBeNull();
+        const service = new IntentBlockService(db);
+        const headerState = await service.getHeaderState(userId, 'block-jump');
+        expect(headerState.status).toBe('AVAILABLE');
+        if (headerState.status === 'AVAILABLE') expect(headerState.data.revision).toBe(1);
+    });
+
+    it('rejects a mismatched target binding instead of applying its value to the real contract', async () => {
+        const userId = 'athlete-wrong-binding';
+        const db = ownerDb(userId);
+        await seedProfileAndBlock(db, userId, 'block-binding');
+
+        await expect(confirmProgressionRevision(
+            userId,
+            'block-binding',
+            'proposal-binding',
+            1,
+            change({ targetBinding: { objectiveId: 'different-objective' } }),
+            db,
+        )).rejects.toMatchObject({ code: 'invalid-proposed-change' });
+        expect(await getCurrentProgressionClaim(userId, db)).toBeNull();
+    });
+
+    it('advances the review cadence and carries the frozen source-profile snapshot into the accepted revision', async () => {
+        const userId = 'athlete-cadence';
+        const db = ownerDb(userId);
+        await seedProfileAndBlock(db, userId, 'block-cadence');
+        const service = new IntentBlockService(db);
+        const sourceState = await service.getRevisionState(userId, 'block-cadence', 1);
+        expect(sourceState.status).toBe('AVAILABLE');
+
+        const confirmation = await confirmProgressionRevision(userId, 'block-cadence', 'proposal-cadence', 1, change(), db);
+        expect(confirmation.activation.activationRevisionId).toBe('2');
+
+        const acceptedState = await service.getRevisionState(userId, 'block-cadence', 2);
+        expect(acceptedState.status).toBe('AVAILABLE');
+        if (sourceState.status === 'AVAILABLE' && acceptedState.status === 'AVAILABLE') {
+            expect(acceptedState.data.block.reviewSchedule.nextReviewDate).toBe('2026-09-29');
+            expect(acceptedState.data.pinnedTrainingIntentProfile).toEqual(sourceState.data.pinnedTrainingIntentProfile);
+            expect(acceptedState.data.sourceSchemaVersion).toBe(sourceState.data.sourceSchemaVersion);
+            expect(acceptedState.data.sourceRef).toBe(sourceState.data.sourceRef);
+        }
+    });
+
     it('rejects a stale source revision with zero claim/activation/plan writes', async () => {
         const userId = 'athlete-stale-source';
         const db = ownerDb(userId);
         await seedProfileAndBlock(db, userId, 'block-stale');
 
-        // The block moved to revision 2 (e.g. a direct edit) after the review that produced
-        // this proposedChange observed revision 1.
         const service = new IntentBlockService(db);
         await service.save(userId, block('block-stale', 95, 2));
 
@@ -185,14 +244,18 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
         const first = await confirmProgressionRevision(userId, 'block-release', 'proposal-1', 1, change(), db);
         await releaseProgressionClaim(userId, first.activation.experimentId, db);
 
-        // A second, later experiment now holds the claim.
         const service = new IntentBlockService(db);
         const headerAfterFirst = await service.getHeaderState(userId, 'block-release');
         const revisionAfterFirst = headerAfterFirst.status === 'AVAILABLE' ? headerAfterFirst.data.revision : 2;
-        const second = await confirmProgressionRevision(userId, 'block-release', 'proposal-2', revisionAfterFirst, change({ previousValue: 100, proposedValue: 110 }), db);
+        const second = await confirmProgressionRevision(
+            userId,
+            'block-release',
+            'proposal-2',
+            revisionAfterFirst,
+            change({ previousValue: 100, proposedValue: 110 }),
+            db,
+        );
 
-        // A delayed release for the FIRST (already-released, terminal) experiment must not
-        // touch the second's now-held claim.
         const staleRelease = await releaseProgressionClaim(userId, first.activation.experimentId, db);
         expect(staleRelease.released).toBe(false);
 
