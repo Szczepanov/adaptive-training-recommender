@@ -428,8 +428,15 @@ living-reference section when implementing them.
 
 ### Sessions and testing
 
-10. Differentiate normal session execution and protocol testing more strongly around the
-    shared runner, especially during execution and completion.
+10. ~~Differentiate normal session execution and protocol testing more strongly around the
+    shared runner, especially during execution and completion.~~ Done (#496):
+    `SessionRunner` takes a chrome-only `mode` (`session` | `assessment`, default
+    `session`): assessment mode tints the runner header with a `Locked assessment` badge,
+    `TestingWorkflow` keeps the protocol lock visible (collapsed) above the shared runner
+    during execution with the attempt id and abandon cost, and `SessionCompletionSheet`
+    identifies the saved `SessionExecution` plus its linked `AssessmentAttempt` context. The
+    `AssessmentAttempt` itself is completed only after raw observations are saved. No
+    execution or observation persistence semantics changed.
 11. ~~Consolidate the structured-session creation entry points behind a clearer `New session`
     chooser while preserving the underlying import/manual/template contracts.~~ Done (#495):
     one `New session` entry with a From template / From fixture / Import JSON / Build manually

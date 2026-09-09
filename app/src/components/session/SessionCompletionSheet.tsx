@@ -32,6 +32,8 @@ export interface SessionCompletionPayload {
     tissueFeedback?: CompletionTissueFeedback[];
 }
 
+export type SessionCompletionRecordKind = 'SessionExecution' | 'AssessmentAttempt';
+
 interface SessionCompletionSheetProps {
     startedAt: string;
     totalSets: number;
@@ -44,6 +46,9 @@ interface SessionCompletionSheetProps {
     onSaveTemplate?: () => void;
     /** Keep the completion form mounted while another modal owns focus so draft feedback survives. */
     hidden?: boolean;
+    /** Provenance context shown in chrome. Completion always persists SessionExecution first;
+     * the linked AssessmentAttempt lifecycle continues separately until observations are saved. */
+    recordKind?: SessionCompletionRecordKind;
     saving: boolean;
     openAbandonConfirmation?: boolean;
     error?: string | null;
@@ -58,6 +63,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     onCancel,
     onSaveTemplate,
     hidden = false,
+    recordKind = 'SessionExecution',
     saving,
     openAbandonConfirmation = false,
     error = null,
@@ -139,6 +145,11 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                 ) : (
                     <>
                         <h2 id="completion-title" className="completion-sheet-title">Complete Session</h2>
+                        <p className="completion-record-provenance">
+                            {recordKind === 'AssessmentAttempt'
+                                ? 'Finishing saves a SessionExecution for this AssessmentAttempt. The AssessmentAttempt is completed only after its observations are saved.'
+                                : 'Finishing saves a SessionExecution record.'}
+                        </p>
 
                         <div className="completion-summary-metrics">
                             <div className="metric-pill">

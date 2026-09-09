@@ -224,4 +224,40 @@ describe('SessionCompletionSheet', () => {
         expect(html).not.toContain('completion-save-template-button');
         expect(html).not.toContain('Save as template');
     });
+
+    it('labels the completion sheet with the SessionExecution record by default (#496)', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={2}
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+            />,
+        );
+
+        expect(html).toContain('Finishing saves a SessionExecution record.');
+        expect(html).not.toContain('AssessmentAttempt');
+    });
+
+    it('labels locked assessment completion without claiming the AssessmentAttempt is already complete (#496)', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={2}
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                saving={false}
+                recordKind="AssessmentAttempt"
+            />,
+        );
+
+        expect(html).toContain('Finishing saves a SessionExecution for this AssessmentAttempt.');
+        expect(html).toContain('The AssessmentAttempt is completed only after its observations are saved.');
+        expect(html).not.toContain('completes the linked AssessmentAttempt record');
+    });
 });
