@@ -9,6 +9,7 @@ import type {
 } from './models';
 import { resolveMaximumSessionMinutes } from './eligibility';
 import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
+import { dedupeFixedActivitiesByLedgerIdentity } from './fixedActivityLedger';
 
 export interface ResolvedAvailability {
     date: string;
@@ -173,7 +174,11 @@ export function resolveAvailability(
         ? resolveMaximumSessionMinutes(userContext, checkinMinutes, dateStr)
         : (Number.isFinite(checkinMinutes) ? checkinMinutes : NO_CONTEXT_FALLBACK_MINUTES);
 
-    const daysFixed = fixedActivities.filter(activity => activity.date === dateStr);
+    // D-LEDGER occurrence identity spans revisions, including a move to another date.
+    // Reconcile the whole input set first, then select the requested day, so a stale
+    // pre-reschedule row cannot continue consuming capacity on its former date.
+    const daysFixed = dedupeFixedActivitiesByLedgerIdentity(fixedActivities)
+        .filter(activity => activity.date === dateStr);
     const activeOverlays = activeScheduleOverlaysForDate(scheduleOverlays, dateStr);
 
     const fixedOverrides = daysFixed

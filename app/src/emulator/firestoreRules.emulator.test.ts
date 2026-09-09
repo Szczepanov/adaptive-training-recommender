@@ -11,7 +11,7 @@ const ownerId = 'athlete-a';
 const otherUserId = 'athlete-b';
 const recommendationPath = `users/${ownerId}/daily_recommendations/2026-08-07`;
 const fixedActivityPath = `users/${ownerId}/fixed_activities/activity-1`;
-const scheduleWindowPath = `users/${ownerId}/schedule_windows/window-1`;
+const scheduleWindowPath = `users/${ownerId}/schedule_window_manifests/2026-09-10`;
 const planBlockPath = `users/${ownerId}/plan_blocks/trip-august`;
 const trainingIntentProfilePath = `users/${ownerId}/training_intent/profile`;
 const preferencesPath = `users/${ownerId}/preferences/profile`;
@@ -621,14 +621,22 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, fixedActivityPath), { ...validFixedActivity(), date: '08/12/2026' }));
     });
 
-    // ADR-0036 D-WINDOW: the athlete's versioned schedule.
+    // ADR-0036 D-WINDOW: one authoritative same-date manifest.
     function validScheduleWindow() {
         return {
             userId: ownerId,
             date: '2026-09-10',
-            startLocal: '06:00',
-            endLocal: '07:00',
             revision: 1,
+            windows: [{
+                id: 'window-1',
+                userId: ownerId,
+                date: '2026-09-10',
+                startLocal: '06:00',
+                endLocal: '07:00',
+                revision: 1,
+                createdAt: '2026-09-01T00:00:00Z',
+                updatedAt: '2026-09-01T00:00:00Z',
+            }],
             createdAt: '2026-09-01T00:00:00Z',
             updatedAt: '2026-09-01T00:00:00Z',
         };
@@ -644,11 +652,12 @@ emulatorDescribe('Firestore security rules', () => {
             await setDoc(doc(context.firestore(), scheduleWindowPath), validScheduleWindow());
         });
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const updated = validScheduleWindow();
+        updated.revision = 2;
+        updated.updatedAt = '2026-09-02T00:00:00Z';
+        updated.windows[0] = { ...updated.windows[0], endLocal: '07:30', revision: 2, updatedAt: '2026-09-02T00:00:00Z' };
         await expect(assertSucceeds(setDoc(doc(ownerDb, scheduleWindowPath), {
-            ...validScheduleWindow(),
-            endLocal: '07:30',
-            revision: 2,
-            updatedAt: '2026-09-02T00:00:00Z',
+            ...updated,
         }))).resolves.toBeUndefined();
     });
 

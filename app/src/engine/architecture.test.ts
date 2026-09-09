@@ -512,13 +512,13 @@ describe('Architecture & Phased Engine Integration', () => {
                 id: 'c1', title: 'Road Race', date: '2026-09-12', priority: 'A', lifecycle: 'scheduled', category: 'cycling_event',
                 demandProfile: { aerobicEndurance: 0.8, thresholdPower: 0.8, vo2MaxPower: 0.6, repeatedSurges: 0.5, sprintPower: 0.3, fatigueResistance: 0.7, neuromuscular: 0.4 }
             };
-            // `date` must be pinned to the fixture's own '2026-08-07' -- `rankCandidates` falls
-            // back to the real wall-clock date (`getLocalDateString()`) when omitted, which
-            // silently changes `daysToRace` against the hardcoded '2026-09-12' event date as
-            // real time passes. Left implicit, this test passed only while the wall clock
-            // happened to be far from 2026-09-12 and started failing once it drifted within
-            // event-proximity taper/safety range, which legitimately suppresses Strength.
-            const rankedWithEvent = rankCandidatesByUtility(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, { focusEvent: cyclingFocusEvent, date: '2026-08-07' });
+            // Pin `date` explicitly (same fix as ee211f78 for the Race-Specific Endurance
+            // test): without it, `rankCandidatesByUtility` falls back to the real wall-clock
+            // date via `getLocalDateString()`. The event above is fixed at '2026-09-12', so an
+            // unpinned call computes a different days-until-event on every day the suite runs
+            // -- and once that gap narrows to a few days, taper/race-week logic this test was
+            // never written to expect can suppress or reorder the very templates it asserts on.
+            const rankedWithEvent = rankCandidatesByUtility(ENRICHED_TEMPLATES, [], fatigue, availability, [], prefs, { date: '2026-08-07', focusEvent: cyclingFocusEvent });
             const cyclingPick = rankedWithEvent.find(r => r.template.modality === 'Cycling');
             const strengthPick = rankedWithEvent.find(r => r.template.modality === 'Strength');
             expect(cyclingPick).toBeDefined();

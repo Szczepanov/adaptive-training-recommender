@@ -91,6 +91,8 @@ import type { CompletedExposure, TrainingHistoryProvider } from './trainingHisto
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
 import { resolveFixedActivityIdentity } from './fixedActivityIdentity';
 import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
+import { admitsCandidate, computeDailyLedger, type DailyLedgerResult } from './dailyLedger';
+import { dedupeFixedActivitiesByLedgerIdentity, pendingFixedActivityLedgerEntries } from './fixedActivityLedger';
 
 export interface WeekAheadDay {
     date: string;
@@ -516,7 +518,11 @@ export interface ProjectedDateEvaluation {
     fatigueTier: 'train' | 'modify' | 'recover';
     anchorRole: 'event-specific' | 'quality' | null;
     adjacentToAnchor: boolean;
+    /** Shared day remainder after pending fixed commitments have been reconciled. */
+    dailyLedger: DailyLedgerResult;
     eligible: SessionTemplate[];
+    /** Candidates excluded by the date-wide D-LEDGER capacity remainder before ranking. */
+    ledgerExcludedTemplateIds: readonly string[];
     fatigueGated: SessionTemplate[];
     optimizationContext: OptimizationContext;
     rank(candidates: readonly SessionTemplate[]): RankCandidatesResult;
@@ -529,6 +535,17 @@ export function evaluateProjectedDate(
 ): ProjectedDateEvaluation {
     const periodization = evaluatePeriodizationPhase(shared.events, date, shared.todayDate);
     const availability = resolveAvailability(date, null, shared.fixedActivities, shared.context, shared.scheduleOverlays ?? []);
+    const fixedLedgerEntries = pendingFixedActivityLedgerEntries(availability.fixedActivities);
+    const fixedReservedMinutes = fixedLedgerEntries.reduce((sum, entry) => sum + entry.reservedMinutes, 0);
+    const overlaySystemicCost = scheduleOverlayCostProfileForDate(shared.scheduleOverlays ?? [], date).systemic;
+    // `resolveAvailability` has already reduced the time window by pending fixed activities.
+    // Reconstruct its pre-pending-fixed daily ceiling, then let D-LEDGER subtract each unique
+    // occurrence exactly once. Overlays remain a separate date-level reservation, so their
+    // systemic cost narrows the ceiling rather than being fabricated as an occurrence.
+    const dailyLedger: DailyLedgerResult = computeDailyLedger({
+        dailyMinuteCeiling: availability.maxTimeMinutes + fixedReservedMinutes,
+        dailySystemicCostCeiling: Math.max(0, 1 - overlaySystemicCost),
+    }, fixedLedgerEntries);
 
     const rankingFatigue = applyCompletedSessionLoad(
         projectFatigueForRankingDate(state.externalFatigue, shared.internalStrain, shared.internalStrainAsOf, date, shared.fatigueFusionPolicy ?? 'max'),
@@ -541,12 +558,28 @@ export function evaluateProjectedDate(
     const eligible = eligibleTemplates(ENRICHED_TEMPLATES, shared.context, availability.maxTimeMinutes, date)
         .filter(template => templateFitsResolvedAvailability(template, availability))
         .filter(t => isTemplatePhaseEligible(t, periodization));
+    const isLedgerAdmitted = (template: SessionTemplate): boolean => {
+        // Rest has no exercise occurrence or capacity debit. Keep it available as the safe
+        // fallback when every training candidate is correctly denied by the shared day.
+        if (template.category === 'Rest') return true;
+        const effective = effectiveTemplateForProjection(template);
+        return admitsCandidate(
+            dailyLedger,
+            availability.maxTimeMinutes,
+            effective.durationMin,
+            effective.costProfile?.systemic ?? effective.systemicCost,
+        ).admitted;
+    };
+    const ledgerAdmitted = eligible.filter(isLedgerAdmitted);
+    const ledgerExcludedTemplateIds = eligible
+        .filter(template => !isLedgerAdmitted(template))
+        .map(template => template.id);
 
     const isConservative = shared.preferences?.conservativeBias ?? false;
     const fatigueThresholds = projectedFatigueThresholds(isConservative);
     const fatigueTier = fatigueTierFor(peakFatigue, fatigueThresholds);
 
-    const fatigueGated = eligible.filter(t => {
+    const fatigueGated = ledgerAdmitted.filter(t => {
         if (peakFatigue >= fatigueThresholds.recover) {
             return t.category === 'Rest' || t.category === 'Mobility/Recovery';
         }
@@ -583,6 +616,7 @@ export function evaluateProjectedDate(
         {
             anchorRole, adjacentToAnchor, resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHours: resolveRecoveryHoursForTemplate, fatigueTier,
             authoredPlanBlocks: shared.authoredPlanBlocks,
+            resolvedAvailability: availability,
             ...(planDefinition ? {
                 coverageState: buildCoverageState(
                     planDefinition,
@@ -605,7 +639,9 @@ export function evaluateProjectedDate(
         fatigueTier,
         anchorRole,
         adjacentToAnchor,
+        dailyLedger,
         eligible,
+        ledgerExcludedTemplateIds,
         fatigueGated,
         optimizationContext,
         rank: (candidates: readonly SessionTemplate[]) => {
@@ -628,6 +664,7 @@ export function evaluateProjectedDate(
 }
 
 const NOT_ELIGIBLE_ON_DATE = 'NOT_ELIGIBLE_ON_DATE';
+const DAILY_LEDGER_CAPACITY = 'DAILY_LEDGER_CAPACITY';
 const PROJECTED_DATE_OUTCOMES = new WeakMap<ProjectedDateEvaluation, ProjectedDateOutcome>();
 
 export function projectedDateOutcomeFrom(evaluation: ProjectedDateEvaluation): ProjectedDateOutcome {
@@ -636,8 +673,10 @@ export function projectedDateOutcomeFrom(evaluation: ProjectedDateEvaluation): P
     const ranking = evaluation.rank(evaluation.fatigueGated);
     const eligibleIds = new Set(evaluation.eligible.map(template => template.id));
     const gatedIds = new Set(evaluation.fatigueGated.map(template => template.id));
+    const ledgerExcludedIds = new Set(evaluation.ledgerExcludedTemplateIds);
     const exclusionReasons = new Map<string, readonly string[]>();
     ranking.rejected.forEach(candidate => exclusionReasons.set(candidate.template.id, candidate.excludedReasons));
+    evaluation.ledgerExcludedTemplateIds.forEach(templateId => exclusionReasons.set(templateId, [DAILY_LEDGER_CAPACITY]));
     ENRICHED_TEMPLATES.forEach(template => {
         if (!eligibleIds.has(template.id)) exclusionReasons.set(template.id, [NOT_ELIGIBLE_ON_DATE]);
     });
@@ -646,7 +685,7 @@ export function projectedDateOutcomeFrom(evaluation: ProjectedDateEvaluation): P
         fatigueTier: evaluation.fatigueTier,
         acceptedTemplateIds: ranking.accepted.map(candidate => candidate.template.id),
         fatigueExcludedTemplateIds: evaluation.eligible
-            .filter(template => !gatedIds.has(template.id))
+            .filter(template => !ledgerExcludedIds.has(template.id) && !gatedIds.has(template.id))
             .map(template => template.id),
         exclusionReasons,
     };
@@ -1014,7 +1053,11 @@ export function generateWeekAheadPlan(
 
     const totalDays = Math.max(1, options.days ?? 7);
     const events = options.events ?? [];
-    const fixedActivities = options.fixedActivities ?? [];
+    // Reconcile revisions once at the planner boundary so every downstream consumer --
+    // date grouping, stimulus credit, fatigue carry-forward and diagnostics -- sees the
+    // same newest occurrence fact. A stale pre-reschedule revision cannot claim the id
+    // before the current revision's date is evaluated.
+    const fixedActivities = dedupeFixedActivitiesByLedgerIdentity(options.fixedActivities ?? []);
     const fixedActivitiesByDate = groupFixedActivitiesByDate(fixedActivities);
     const unsetDateFixedActivities = fixedActivities.filter(a => !a.date);
     const getFixedActivitiesForDate = (targetDate: string): FixedActivity[] => {

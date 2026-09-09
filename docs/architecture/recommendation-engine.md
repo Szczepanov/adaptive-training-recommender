@@ -604,6 +604,16 @@ this so their load is never projected a second time. See
 [docs/plans/phase-5-sequence-planning.md](../plans/phase-5-sequence-planning.md) 5.3 for
 the original storage/validation contract.
 
+**D-LEDGER admission in the rolling planner.** Before each projected date is ranked,
+`fixedActivityLedger.ts` reconciles pending fixed commitments by their stable occurrence key and
+newest `updatedAt` revision. `resolveAvailability` consumes that same deduplicated set. The
+planner passes the resulting entries to `computeDailyLedger`, keeps overlay load as a date-level
+ceiling reservation, and uses `admitsCandidate` to exclude any non-Rest candidate that cannot
+fit both remaining minutes and systemic cost. Conflicting equal-revision fixed-activity facts
+fail closed; Rest stays available as the safe non-training fallback. This is pure forecast
+accounting, not a Firestore read or a replacement for the transactional intraday
+`daily_ledgers/{date}` launch aggregate.
+
 ### Bounded sequence search prototype (Phase 5.1, `sequenceSearch.ts`) -- not live
 
 The "projected" tier above is a greedy walk: each day takes `rankCandidates`' rank-0 pick

@@ -33,7 +33,7 @@ export interface RequiredRoleOccurrence {
 }
 
 export type WeeklyRoleAllocationStatus = 'reserved' | 'fulfilled' | 'missed' | 'unresolved_search_budget';
-export type WeeklyRoleMissReason = 'no_exact_candidate' | 'hard_safety_or_recovery' | 'projected_fatigue' | 'fixed_seed' | 'no_conflict_free_date';
+export type WeeklyRoleMissReason = 'no_exact_candidate' | 'hard_safety_or_recovery' | 'daily_ledger_capacity' | 'projected_fatigue' | 'fixed_seed' | 'no_conflict_free_date';
 
 export interface RoleReservation {
     occurrenceId: string;
@@ -87,7 +87,7 @@ export interface ProjectedDateOutcome {
     acceptedTemplateIds: readonly string[];
     /** Template ids removed by the projected fatigue ceiling before ranking. */
     fatigueExcludedTemplateIds: readonly string[];
-    /** `rankCandidates` exclusion reasons, keyed by rejected template id. */
+    /** Production hard-gate exclusion reasons, keyed by rejected template id. */
     exclusionReasons: ReadonlyMap<string, readonly string[]>;
 }
 
@@ -120,6 +120,7 @@ const SAFETY_EXCLUSION_REASONS = new Set([
 ]);
 
 const FATIGUE_CEILING_BLOCKER = 'PROJECTED_FATIGUE_CEILING';
+export const DAILY_LEDGER_CAPACITY_BLOCKER = 'DAILY_LEDGER_CAPACITY';
 
 function canonicalOccurrenceId(parts: readonly string[]): string {
     return parts.map(part => encodeURIComponent(part)).join('|');
@@ -247,6 +248,7 @@ interface OccurrenceSearchState {
     sawDateConflict: boolean;
     sawFatigueExclusion: boolean;
     sawSafetyExclusion: boolean;
+    sawLedgerCapacityExclusion: boolean;
 }
 
 function assignmentSignature(assignments: readonly AllocationAssignment[]): string {
@@ -259,11 +261,13 @@ function assignmentSignature(assignments: readonly AllocationAssignment[]): stri
 function missReasonFor(state: OccurrenceSearchState): WeeklyRoleMissReason {
     if (state.candidates.length === 0) {
         if (state.sawSafetyExclusion) return 'hard_safety_or_recovery';
+        if (state.sawLedgerCapacityExclusion) return 'daily_ledger_capacity';
         if (state.sawFatigueExclusion) return 'projected_fatigue';
         return 'no_exact_candidate';
     }
     if (state.sawDateConflict) return 'no_conflict_free_date';
     if (state.sawSafetyExclusion) return 'hard_safety_or_recovery';
+    if (state.sawLedgerCapacityExclusion) return 'daily_ledger_capacity';
     if (state.sawFatigueExclusion) return 'projected_fatigue';
     return 'no_conflict_free_date';
 }
@@ -321,6 +325,7 @@ export function resolveWeeklyRoleReservations(
         const blockers = new Set<string>();
         let sawFatigueExclusion = false;
         let sawSafetyExclusion = false;
+        let sawLedgerCapacityExclusion = false;
         for (const date of dates) {
             const outcome = rootOutcomes.get(date)!;
             for (const templateId of occurrence.eligibleTemplateIds) {
@@ -333,6 +338,7 @@ export function resolveWeeklyRoleReservations(
                     for (const reason of outcome.exclusionReasons.get(templateId) ?? []) {
                         blockers.add(`${date}:${reason}`);
                         if (SAFETY_EXCLUSION_REASONS.has(reason)) sawSafetyExclusion = true;
+                        if (reason === DAILY_LEDGER_CAPACITY_BLOCKER) sawLedgerCapacityExclusion = true;
                     }
                 }
             }
@@ -346,6 +352,7 @@ export function resolveWeeklyRoleReservations(
             sawDateConflict: false,
             sawFatigueExclusion,
             sawSafetyExclusion,
+            sawLedgerCapacityExclusion,
         };
     });
 
@@ -399,6 +406,7 @@ export function resolveWeeklyRoleReservations(
                     for (const reason of outcome.exclusionReasons.get(candidate.templateId) ?? []) {
                         next.blockers.add(`${candidate.date}:${reason}`);
                         if (SAFETY_EXCLUSION_REASONS.has(reason)) next.sawSafetyExclusion = true;
+                        if (reason === DAILY_LEDGER_CAPACITY_BLOCKER) next.sawLedgerCapacityExclusion = true;
                     }
                 }
                 continue;

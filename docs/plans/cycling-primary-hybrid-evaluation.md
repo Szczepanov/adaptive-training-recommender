@@ -9,13 +9,14 @@ Phase 3 (#440, #445, #448, #450, #451, #454) and Phase 4 (#465) -- so a non-prim
 member is now adjudicated, reserved, surfaced as an `additionalSessions` binding, and
 launchable when its verdict has a valid binding. Phase 5 now captures and persists the
 post-AM `SessionResponse` completion facts, while multi-region tissue feedback remains in
-the daily check-in as the canonical tissue authority. Only the
-H4-specific Phase 6 policy work remains; dependent members still require the response and
-separation checks before they become launchable. The broader ledger-based ranking/admission unification
+the daily check-in as the canonical tissue authority. Phase 6 applies the cumulative
+`2026-09-h4-intraday-bundle-member-launch-v1` policy transition, completing the H4 release;
+dependent members still require the response and separation checks before they become
+launchable. The broader ledger-based ranking/admission unification
 and persistence of a bundle's resolved placement for display also remain; H5 design is
 accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted).
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
-confirmation; H4's live release is gated on PR 3 Phase 6, tracked in
+confirmation; H4's live release is delivered through PR 3 Phase 6, recorded in
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's remaining non-gating
 work also needs its own decision-affecting PR(s): unifying `planner.ts`'s three ad hoc dedup
 mechanisms onto the ledger's remainder/admission semantics as a real ranking input, and
@@ -36,7 +37,7 @@ This document remains the status and evidence record.
 pipeline and is retained for its H2/H2b/H3/H3-rest record and its still-accurate inventory of
 the un-unified dedup mechanisms. For current H4 implementation work, read
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) instead -- it is the
-authoritative spec for the remaining Phase 6 policy transition.
+historical implementation record for the delivered H4 release.
 
 Reuse the existing `cycling_primary_hybrid_advanced` persona. Add scenarios that exercise
 distinct decisions and group them into focused judge families. Retain the existing seven
@@ -267,7 +268,8 @@ also remains blocked on current-workload/restriction confirmation.
 
 ## H4 — Intraday capacity and post-AM reassessment
 
-**Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
+**Status:** Implemented — the H4 release and the planner-admission follow-up are delivered under
+[ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
 **D-SCHEMA, D-LEDGER, D-TIME and D-WINDOW delivered**; **same-day canonical
 performed-fact boundary verified**; **D-PLACEMENT's bundle-placement engine delivered**
 as a pure module, and its **placement-correctness wired** into
@@ -279,12 +281,11 @@ modules -- `engine/intradayReassessment.ts`'s `reassessDependentBundleMember` (#
 execution-binding pipeline has since given them a live caller, through PR 3 Phase 4 (see
 "Issue #434 execution-binding pipeline" below).
 
-Still unstarted: the `dailyLedger.ts` refactor into `resolveAvailability`'s existing
-deductions and `planner.ts`'s three ad hoc dedup mechanisms, recommendation-audit
-persistence of a bundle's resolved placement for display, and the H4-specific Phase 6 policy
-transition -- the last of which is what actually gates a live H4 release. Placement persistence was previously
-blocked by the recommendation-audit rules-expression ceiling; #468 closed #435 by reducing
-that evaluation cost, so it is now unblocked but not implemented.
+The rolling planner now uses D-LEDGER occurrence/revision identity for pending fixed activities
+and filters candidates through `computeDailyLedger` / `admitsCandidate` before ranking. The
+H4-specific Phase 6 policy transition is also delivered. Persisting a bundle's resolved
+placement for display in the recommendation audit remains separately unimplemented; #468 closed
+the earlier rules-expression blocker (#435), so that work is unblocked but non-gating.
 **Dependencies:** ADR-0035 rest support (delivered). The `external-plan@4`/`dailyLedger.ts`
 D-SCHEMA/D-LEDGER slice itself left `POLICY_VERSION` unchanged (neither module is
 consumed by any decision path); the fixed-activity cost-reduce dedup slice bumped it
@@ -372,24 +373,19 @@ correctly scoped so windows on different dates are never compared against each o
 and `resolveScheduleWindowsForDate` (returns `[]` for a date with no windows -- the
 supported legacy case: callers must keep today's single untimed-slot behavior rather than
 treating an empty result as "no availability", per D-WINDOW: "missing metadata never
-creates an AM and PM pair"). `services/scheduleWindowService.ts` persists these at
-`users/{userId}/schedule_windows/{windowId}` (ADR-0002 user-owned path), rejecting a
-create/update that would overlap an existing same-date window client-side -- a
-best-effort, non-atomic check (read siblings, then write, no lock between): Firestore's
-client `Transaction.get()` only reads a known `DocumentReference`, not an arbitrary
-query, so a client-side transaction cannot close this race either, and two concurrent
-writes (or a direct SDK write bypassing this service) can still both pass and persist
-overlapping windows. `firestore.rules` intentionally validates only per-document shape
-and ownership -- the same split `hasValidExternalPlanRevision`'s comment already
-documents for cross-session plan invariants rules cannot see across sibling documents --
-plus requires `revision` to strictly increase on update, validates each `equipment` item's
-own type/length (not just the list's size -- `hasValidEquipmentList` was fixed in review
-to check this, since it previously let a non-string/oversized item pass rules and then
-fail client-side parsing as `INVALID`), and keeps `createdAt` immutable, mirroring
-`hasValidFixedActivity` (itself now covered by the same equipment-item fix). Closing the
-race for real needs a trusted server boundary (e.g. a Cloud Function serializing writes
-per user/date); out of scope for this bounded PR and flagged as a known limitation, not
-treated as solved.
+creates an AM and PM pair"). Issue #430 replaced the former sibling-document layout with
+the authoritative `users/{userId}/schedule_window_manifests/{YYYY-MM-DD}` document.
+`ScheduleWindowService` transacts that one document for every create, update, date move,
+and delete, so Firestore retries a concurrent writer against the current full window set.
+The manifest deliberately permits at most eight windows: `firestore.rules` cannot iterate
+an arbitrary list, but can validate all eight entries and all 28 pairs, including a direct
+SDK write. The rules deny writes to the retired `schedule_windows` sibling collection,
+require document revisions to increase exactly one per mutation, and preserve manifest
+creation time. The service retains each surviving window's stable id and increments its
+own revision on update. Invalid or unavailable manifests, and any retired sibling
+documents awaiting explicit migration, are fail-closed: they never become the empty legacy
+slot in D-PLACEMENT. Emulator tests prove overlapping concurrent
+creates/moves and direct-write bypasses are rejected.
 
 Recurring availability ("Recurring availability is resolved to dated instances by the
 app", D-WINDOW) is intentionally deferred: this slice only models and persists
@@ -538,17 +534,14 @@ against the day's ledger aggregate, is emitted as an `additionalSessions` bindin
 launch path atomically validates the persisted decision and ledger state, claims the
 occurrence, and rolls both claims back if execution start fails.
 
-**What it does not yet activate:** the H4-specific Phase 6 policy transition is still open;
-the current global policy version has since advanced for ADR-0038/recovery-calibration work,
-but that does not constitute the H4 launch-policy bump.
+**Release activation:** Phase 6 sets `POLICY_VERSION` to
+`2026-09-h4-intraday-bundle-member-launch-v1` and archives the immediately preceding
+`2026-09-simulation-sequence-occupational-context-v2`, making the complete H4 launch
+contract the current decision policy.
 
-**What remains:** PR 3 Phase 6 --
-[the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md) is the authoritative spec.
-Phase 4 is delivered in #465 and Phase 5 in #470. Phase 5 records the post-AM
-`immediate` `SessionResponse`, extends the completion sheet with
-`completedFraction`/`unexpectedFatigue`, and preserves the confirmation evidence linkage;
-Phase 6 bumps `POLICY_VERSION` from the then-current
-global value and archives that value. This is the gate on a live H4 release.
+**What remains:** no PR 3 release-gating work. Phases 4-5 provide the launch and post-AM
+evidence path; Phase 6 activates their cumulative policy contract. The broader ledger
+ranking/admission and placement-persistence follow-ups remain separate H4 work.
 
 ## H5 — Explicit develop/maintain intent and progression
 
@@ -609,10 +602,10 @@ H1 did not change engine behavior and therefore required no policy bump. H2/H2b 
 decision-affecting. H3's new test was non-decision-affecting; explicit-rest behavior had
 its own policy transition. H4's fixed-activity dedup bump reflected the drift gate's
 mechanical requirement, while `h4-intraday-bundle-placement-v1` was H4's first real behavior
-change. PR 3 Phase 4 did not itself perform the final H4 policy transition because dependent
-members still lack the Phase-5 post-AM evidence. The remaining H4 policy change must start
-from the **then-current** global `POLICY_VERSION` (currently
-`2026-09-recommender-recovery-calibration-v1` on `main` at `78a2e11`), not from an obsolete
-H4 id. H4's ledger-based ranking/admission wiring and H5c will each require normal policy
-review when they actually change decision behavior. Do not enable experimental
+change. PR 3 Phase 5 added the post-AM evidence path, and Phase 6 completed the cumulative
+H4 transition by archiving the then-current
+`2026-09-simulation-sequence-occupational-context-v2` policy and activating
+`2026-09-h4-intraday-bundle-member-launch-v1`. The planner's D-LEDGER admission wiring then
+archived that version and activated `2026-09-h4-d-ledger-planner-admission-v1`. H5c will
+require normal policy review when it changes decision behavior. Do not enable experimental
 personalization simply to improve a judge score.

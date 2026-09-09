@@ -2,10 +2,9 @@
  * ADR-0036 (H4) D-LEDGER: one pure, as-of daily accounting boundary for the shared minute
  * and systemic-cost ceiling a date's windows draw from. This module has no dependency on
  * wall-clock/timezone resolution (D-TIME), Firestore, or any existing schedule module --
- * every input (ceilings, reservations, actuals) is already resolved by the caller. It is
- * not wired into `schedule.ts`'s `resolveAvailability`, `planner.ts`'s fixed-activity cost
- * reduces, or any recommendation decision yet; see the H4 status notes in
- * `docs/plans/cycling-primary-hybrid-evaluation.md` for the deferred wiring step.
+ * every input (ceilings, reservations, actuals) is already resolved by the caller. The
+ * rolling planner adapts pending fixed activities to this boundary before candidate ranking;
+ * direct same-day readiness selection remains outside this module's scope.
  *
  * Keep the current common cost/eligibility authorities: this file does not invent another
  * fatigue-fusion formula or a second systemic-cost scale. `dailySystemicCostCeiling` and
