@@ -384,7 +384,7 @@ function App() {
           )}
 
           {screen === 'goals' && (
-            <Goals key={userId} userId={userId!} onNavigate={handleNavigate} />
+            <Goals key={userId} userId={userId!} />
           )}
 
           {screen === 'constraints' && (
