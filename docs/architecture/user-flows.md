@@ -270,8 +270,8 @@ periodization/taper calculations, and the screen derives the current focus event
 Two implementation details matter to navigation work:
 
 * paused goals appear only under `all`, because there is no dedicated paused filter; and
-* `GoalsProps` accepts `onNavigate`, but `Goals` currently destructures only `userId`, so the
-  navigation callback is unused.
+* `Goals` takes only `userId`; it owns no repair/deep-link navigation, and callers
+  reach it through `App.tsx` `handleNavigate`.
 
 ### 8. Training Setup versus Coach Preferences
 
@@ -392,8 +392,11 @@ living-reference section when implementing them.
    Done (#489): each overlapping control names its counterpart inline from either side, and
    both headers state their save semantics (immediate autosave on Training Setup, explicit
    Save on Coach Preferences). Engine authority unchanged. Full tab-merge deferred.
-8. Either remove `Goals.onNavigate` or use it for explicit repair/deep-link flows; an unused
-   navigation prop is misleading API surface.
+8. ~~Either remove `Goals.onNavigate` or use it for explicit repair/deep-link flows; an unused
+   navigation prop is misleading API surface.~~
+   Done (#484): removed the unused `Goals` `onNavigate` prop — no repair flow needed it —
+   and kept `constraints` as the stable route key with user-facing copy in `navigation.ts`
+   `SCREEN_LABELS` (`Training Setup`).
 9. Review immediate-persist Training Setup controls for undo/confirmation where a mistaken
    toggle can materially change feasibility/safety decisions.
 
