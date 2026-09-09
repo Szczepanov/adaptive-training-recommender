@@ -268,7 +268,8 @@ also remains blocked on current-workload/restriction confirmation.
 
 ## H4 — Intraday capacity and post-AM reassessment
 
-**Status:** Design accepted in [ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
+**Status:** Implemented — the H4 release and the planner-admission follow-up are delivered under
+[ADR-0036](../adr/0036-intraday-training-windows-and-reassessment.md).
 **D-SCHEMA, D-LEDGER, D-TIME and D-WINDOW delivered**; **same-day canonical
 performed-fact boundary verified**; **D-PLACEMENT's bundle-placement engine delivered**
 as a pure module, and its **placement-correctness wired** into
@@ -280,12 +281,11 @@ modules -- `engine/intradayReassessment.ts`'s `reassessDependentBundleMember` (#
 execution-binding pipeline has since given them a live caller, through PR 3 Phase 4 (see
 "Issue #434 execution-binding pipeline" below).
 
-Still unstarted: the `dailyLedger.ts` refactor into `resolveAvailability`'s existing
-deductions and `planner.ts`'s three ad hoc dedup mechanisms, recommendation-audit
-persistence of a bundle's resolved placement for display, and the H4-specific Phase 6 policy
-transition -- the last of which is what actually gates a live H4 release. Placement persistence was previously
-blocked by the recommendation-audit rules-expression ceiling; #468 closed #435 by reducing
-that evaluation cost, so it is now unblocked but not implemented.
+The rolling planner now uses D-LEDGER occurrence/revision identity for pending fixed activities
+and filters candidates through `computeDailyLedger` / `admitsCandidate` before ranking. The
+H4-specific Phase 6 policy transition is also delivered. Persisting a bundle's resolved
+placement for display in the recommendation audit remains separately unimplemented; #468 closed
+the earlier rules-expression blocker (#435), so that work is unblocked but non-gating.
 **Dependencies:** ADR-0035 rest support (delivered). The `external-plan@4`/`dailyLedger.ts`
 D-SCHEMA/D-LEDGER slice itself left `POLICY_VERSION` unchanged (neither module is
 consumed by any decision path); the fixed-activity cost-reduce dedup slice bumped it
@@ -605,7 +605,7 @@ mechanical requirement, while `h4-intraday-bundle-placement-v1` was H4's first r
 change. PR 3 Phase 5 added the post-AM evidence path, and Phase 6 completed the cumulative
 H4 transition by archiving the then-current
 `2026-09-simulation-sequence-occupational-context-v2` policy and activating
-`2026-09-h4-intraday-bundle-member-launch-v1`. H4's ledger-based ranking/admission wiring
-and H5c will each require normal policy
-review when they actually change decision behavior. Do not enable experimental
+`2026-09-h4-intraday-bundle-member-launch-v1`. The planner's D-LEDGER admission wiring then
+archived that version and activated `2026-09-h4-d-ledger-planner-admission-v1`. H5c will
+require normal policy review when it changes decision behavior. Do not enable experimental
 personalization simply to improve a judge score.

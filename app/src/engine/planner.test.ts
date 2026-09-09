@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { evaluateNextDayPlan, evaluateNextDayPlanWithIntent, evaluateTraining, evaluateTrainingWithIntent } from './rules';
 import { mapContextFromGoalsAndTrainingSettings } from './adapters';
-import { generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, type ProjectionExposure } from './planner';
+import { evaluateProjectedDate, generateWeekAheadPlan, generateWeekAheadPlanWithIntent, prepareWeekAheadPlanSeed, projectTrailingHistory, reconcileObjectivesForDate, resolveWeeklyAnchors, type ProjectionExposure } from './planner';
+import { createEmptyFatigue } from './fatigue';
 import { resolveTrainingIntent } from './trainingIntent';
 import type { AuthoredPlanBlock, DailyReadiness, EngineObjectiveInput, FatigueState, FixedActivity, SubjectiveInput, TrainingSettings, UserContext, UserEvent, UserPreferences } from './models';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
@@ -1123,5 +1124,52 @@ describe('Phase 6.2b -- fixed activities as projected exposures', () => {
             expect(day3?.template.category).not.toBe('Race-Specific Endurance');
             expect(day3?.template.systemicCost ?? 0).toBeLessThanOrEqual(0.65);
         });
+    });
+});
+
+describe('D-LEDGER planner admission', () => {
+    const fixedActivity = (overrides: Partial<FixedActivity> & Pick<FixedActivity, 'id' | 'date'>): FixedActivity => ({
+        userId: 'u1', title: 'Fixed activity', durationMin: 30, isCompleted: false, fixed: true,
+        environment: 'either', equipment: [], createdAt: '2026-09-01T00:00:00Z', updatedAt: '2026-09-01T00:00:00Z',
+        ...overrides,
+    });
+
+    it('excludes ranking candidates that do not fit the shared remaining systemic capacity', () => {
+        const context = baseContext();
+        const readiness: DailyReadiness = { subjective: neutralSubjective(), objective: quietObjective() };
+        const seed = prepareWeekAheadPlanSeed(readiness, [], '2026-09-09', []);
+        const committed = fixedActivity({
+            id: 'morning-session', date: '2026-09-10', durationMin: 30,
+            expectedCost: { systemic: 0.9 },
+        });
+        const evaluation = evaluateProjectedDate('2026-09-10', {
+            microcycle: seed.microcycle,
+            externalFatigue: createEmptyFatigue('2026-09-09'),
+            projectedHistory: [],
+        }, {
+            context,
+            preferences: {
+                userId: 'u1', preferredRecoveryStyle: 'passive',
+                defaultWeekdayTimeMin: 90, defaultWeekendTimeMin: 90, preferredTimeOfDay: 'flexible',
+                preferredModalities: [], deprioritizedModalities: [], avoidedModalities: [],
+                explanationVerbosity: 'brief', conservativeBias: false,
+                preferredUnits: { distance: 'km', weight: 'kg', temperature: 'celsius' },
+                schemaVersion: 1, createdAt: '', updatedAt: '',
+            },
+            events: [], fixedActivities: [committed], authoredPlanBlocks: [], scheduleOverlays: [],
+            anchors: { eventSpecificAnchorDate: null, qualityAnchorDate: null },
+            internalStrain: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 },
+            internalStrainAsOf: '2026-09-09', todayDate: '2026-09-09',
+        });
+
+        expect(evaluation.dailyLedger.remainingMinutes).toBe(60);
+        expect(evaluation.dailyLedger.remainingSystemicCost).toBeCloseTo(0.1);
+        const excluded = evaluation.eligible.filter(template =>
+            evaluation.ledgerExcludedTemplateIds.includes(template.id),
+        );
+        expect(excluded.some(template => template.systemicCost > 0.1)).toBe(true);
+        expect(evaluation.fatigueGated.some(template =>
+            evaluation.ledgerExcludedTemplateIds.includes(template.id),
+        )).toBe(false);
     });
 });
