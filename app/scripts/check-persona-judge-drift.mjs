@@ -102,6 +102,8 @@ const current = {
     ...(manifest ? {
       judgeSettings: {
         samples: manifest.samples,
+        baseSeed: manifest.baseSeed,
+        seedStrategy: manifest.seedStrategy,
         thinkingEnabled: manifest.thinkingEnabled,
       },
     } : {}),
@@ -136,21 +138,34 @@ if (baselineModel !== currentModel) {
   else fatal.push(`${message} Re-run with the baseline model, or pass --allow-model-change.`);
 }
 
-// Sample count and thinking mode are as comparability-breaking as the model itself: a samples=1
-// run scored against a samples=5 baseline (e.g. `persona:local` vs the baseline's actual
-// `persona:local:stability`/`persona:e2e` settings) compares one noisy draw to a five-sample
-// median with no warning. Only compare a field when both sides recorded it.
+// Sampling, seed policy, and thinking mode are part of the measurement instrument. Missing
+// per-field provenance is "unknown" rather than a proven mismatch, but it must be surfaced instead
+// of silently bypassing the comparability guard.
 const baselineSettings = baseline.provenance?.judgeSettings ?? baseline.judgeSettings ?? null;
 const currentSettings = current.provenance.judgeSettings ?? null;
 if (!baselineSettings || !currentSettings) {
-  warnings.push('Judge run settings (samples/thinking mode) are not recorded on one side; comparability cannot be verified beyond the model name.');
+  warnings.push('Judge run settings are not recorded on one side; comparability cannot be verified beyond the model name.');
 } else {
+  const settingsFields = [
+    ['samples', 'Sample count'],
+    ['baseSeed', 'Base seed'],
+    ['seedStrategy', 'Seed strategy'],
+    ['thinkingEnabled', 'Thinking mode'],
+  ];
   const mismatches = [];
-  if (baselineSettings.samples !== undefined && currentSettings.samples !== undefined && baselineSettings.samples !== currentSettings.samples) {
-    mismatches.push(`Sample count changed: ${baselineSettings.samples} -> ${currentSettings.samples}.`);
+  const missingFields = [];
+  for (const [field, label] of settingsFields) {
+    const baseVal = baselineSettings[field];
+    const currVal = currentSettings[field];
+    if (baseVal === undefined || currVal === undefined) {
+      const missingSide = [baseVal === undefined ? 'baseline' : null, currVal === undefined ? 'current' : null].filter(Boolean).join(' and ');
+      missingFields.push(`${label} (${missingSide})`);
+      continue;
+    }
+    if (baseVal !== currVal) mismatches.push(`${label} changed: ${baseVal} -> ${currVal}.`);
   }
-  if (baselineSettings.thinkingEnabled !== undefined && currentSettings.thinkingEnabled !== undefined && baselineSettings.thinkingEnabled !== currentSettings.thinkingEnabled) {
-    mismatches.push(`Thinking mode changed: ${baselineSettings.thinkingEnabled} -> ${currentSettings.thinkingEnabled}.`);
+  if (missingFields.length > 0) {
+    warnings.push(`Judge run settings are incomplete (${missingFields.join(', ')}); comparability cannot be fully verified for those fields.`);
   }
   if (mismatches.length > 0) {
     const message = `Judge run settings differ from the baseline (${mismatches.join(' ')}) Score deltas are not comparable — a settings mismatch can swamp real engine drift.`;
