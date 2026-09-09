@@ -26,6 +26,10 @@ interface DataViewProps {
   decisionInput: DailyDecisionInput | null;
   userId: string;
   onBack: () => void;
+  /** Retry recomposing the daily decision input (App `loadDecisionInput`). Rendered as
+   * the forward action on the null-input empty state (#493); absent only in harnesses
+   * that render DataView without the App shell. */
+  onRetry?: () => void;
   initialTab?: DataViewTab;
   /** When provided, Context-brief and AI-export affordances deep-link to the canonical
    * `brief` screen. The canonical `brief` screen omits this prop so it renders the full
@@ -91,7 +95,7 @@ function formatCandidateBaseline(
   return `7d med ${formatCandidateNumber(median7d)} · 28d med ${formatCandidateNumber(median28d)} · MAD ${formatCandidateNumber(mad28d)} · Δ7 ${formatCandidateDelta(delta7d)} · Δ28 ${formatCandidateDelta(delta28d)}`;
 }
 
-export function DataView({ decisionInput, userId, initialTab = 'recovery', onNavigateToBrief }: DataViewProps) {
+export function DataView({ decisionInput, userId, initialTab = 'recovery', onNavigateToBrief, onRetry, onBack }: DataViewProps) {
   const [activeTab, setActiveTab] = useState<DataViewTab>(initialTab);
   const [brief, setBrief] = useState<ContextBriefResult | null>(null);
   // Tagged with the date it belongs to, so a failure for one date is not rendered
@@ -254,6 +258,17 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
         </div>
         <div className="no-data">
           <p>No data available</p>
+          <p className="data-state-notice">Today&apos;s decision input could not be composed. Retry the dashboard refresh, or return Home.</p>
+          <div className="brief-actions">
+            {onRetry && (
+              <button type="button" className="brief-copy" onClick={onRetry}>
+                Retry
+              </button>
+            )}
+            <button type="button" className="brief-copy" onClick={onBack}>
+              Back to Home
+            </button>
+          </div>
         </div>
       </div>
     );

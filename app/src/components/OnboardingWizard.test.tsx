@@ -54,8 +54,9 @@ describe('OnboardingWizard', () => {
     const goalWrite = vi.spyOn(goalService, 'createGoal');
     const onCompleted = vi.fn();
 
-    skipOnboardingForNow('athlete-1', 'focus', 1500, onCompleted);
+    const persisted = skipOnboardingForNow('athlete-1', 'focus', 1500, onCompleted);
 
+    expect(persisted).toBe(true);
     expect(settingsWrite).not.toHaveBeenCalled();
     expect(intentWrite).not.toHaveBeenCalled();
     expect(goalList).not.toHaveBeenCalled();
@@ -66,6 +67,25 @@ describe('OnboardingWizard', () => {
     const report = usabilityMetrics.generateSummaryReport();
     expect(report.wizardSkips).toBe(1);
     expect(report.wizardSkipsByStage).toEqual({ focus: 1 });
+  });
+
+  it('reports a blocked dismissal so the wizard can show storage-blocked guidance (#493)', () => {
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => { throw new Error('blocked'); },
+        removeItem: () => {},
+      },
+    });
+    const onCompleted = vi.fn();
+
+    const persisted = skipOnboardingForNow('athlete-1', 'welcome', 500, onCompleted);
+
+    expect(persisted).toBe(false);
+    // Telemetry still records the skip; the caller decides whether to dismiss.
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+    const report = usabilityMetrics.generateSummaryReport();
+    expect(report.wizardSkips).toBe(1);
   });
 });
 

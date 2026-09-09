@@ -86,7 +86,9 @@ Successful onboarding writes training settings, the training-intent profile, and
 athlete is still goal-less) an active goal before `onCompleted` stores the per-user browser
 dismissal key. Skip persists only that dismissal key — it never creates a goal and never
 writes training settings — and is logged to local usability telemetry as a skipped wizard
-completion with the stage where Skip was chosen. A skipped (goal-less, dismissed) account
+completion with the stage where Skip was chosen. When Skip itself cannot persist because
+browser storage is blocked, the wizard stays open with guidance and a Continue-for-session
+action instead of dismissing silently and resurfacing on refresh. A skipped (goal-less, dismissed) account
 can re-launch the wizard from the Coach Preferences surface, which clears the dismissal key
 and reloads; the relaunch action is disabled while Coach Preferences has unsaved edits so the
 reload cannot silently discard them. A blocked `localStorage` write alone does not make a
@@ -272,7 +274,8 @@ at the `App` level.
 
 An in-progress structured execution is global account state for resume purposes. A stored
 prescription that cannot be resolved is fail-closed instead of allowing a second session to
-start over ambiguous execution state.
+start over ambiguous execution state, and that state offers Back to `Sessions` rather than
+stranding the athlete.
 
 ### 6. Week plan
 
@@ -342,8 +345,9 @@ screen, the same Activities action returns to the local Context brief tab, so th
 clipboard exporter is not reachable there either. Only the `brief` screen renders the daily
 (2-day) / full (14-day) brief with char and token counts. The Data and brief navigation
 entries refresh decision input before navigating. If `decisionInput` is null, DataView shows
-`No data available`; that state has no in-component retry action, although the global
-navigation chrome remains available.
+`No data available` with Retry (recomposes via `App` `loadDecisionInput`) and Back to Home,
+so the empty state is never a dead end even though the global navigation chrome also
+remains available.
 
 ### 10. Protocol testing
 
@@ -398,11 +402,14 @@ moving an input across an authority boundary.
 
 6. `sessions` and `testing` share `SessionRunner`, so the execution UI alone does not strongly
    communicate provenance.
-7. Several recovery states are weak rather than truly terminal: DataView's no-data state has
-   no local retry, some PlanView invalid states have limited repair affordance, a missing
-   stored session prescription is fail-closed, testing abandonment is terminal for that
-   attempt, and a skipped onboarding with blocked browser storage resurfaces the wizard on
-   refresh (dismissal persistence needs working `localStorage`).
+7. Every audited terminal state now carries a forward action (#493): DataView's no-data
+   state offers Retry (recompose via `App` `loadDecisionInput`) and Back to Home; PlanView
+   invalid/unavailable states offer repair navigation, forced resync, corrected-plan import,
+   and Retry; a missing stored session prescription stays fail-closed but offers Back to
+   `Sessions`; testing abandonment names the loss and offers a fresh attempt or Done
+   (abandonment itself stays terminal for that attempt); and a storage-blocked Skip keeps
+   the wizard open with guidance plus Continue-for-session instead of silently resurfacing
+   on refresh.
 8. Garmin is used both as an app sign-in path and as a wearable/provider connection, which
    can read as one task even though the flows and credentials have different purposes.
 
@@ -513,5 +520,16 @@ living-reference section when implementing them.
     when already on the canonical screen). The legacy raw Activities clipboard exporter is
     removed from the UI. Exported brief content is unchanged (daily 2d vs full 14d windows,
     char and token counts).
-16. Add local retry/repair affordances to weak recovery states, starting with DataView's
-    null-input state and PlanView source failures.
+16. ~~Add local retry/repair affordances to weak recovery states, starting with DataView's
+    null-input state and PlanView source failures.~~
+    Done (#493): audited every terminal state from the issue against the merged tree.
+    Already covered, kept as-is: PlanView INVALID/UNAVAILABLE repair navigation, forced
+    resync, and corrected-plan import (`PlanView` `forecastRepairTargets`,
+    `planImportRepairOffered`); testing-abandonment fresh-attempt path (`TestingWorkflow`
+    `startFreshAttempt`, `describeAbandonedAssessment`, `canStartFreshAssessmentAttempt`);
+    onboarding Skip with relaunch (#490); the check-in stepper (#488); and the Home/PlanView
+    repair triplet (#483). Fixed by the audit itself: DataView null-input Retry plus Back to
+    Home (`DataView` `onRetry` wired to `App` `loadDecisionInput`); a Back to `Sessions`
+    action on the fail-closed SessionRunner prescription-missing state; and storage-blocked
+    Skip guidance with Continue-for-session (`OnboardingWizard` `skipStorageBlocked`,
+    `skipOnboardingForNow` persistence result). No engine or persistence semantic change.

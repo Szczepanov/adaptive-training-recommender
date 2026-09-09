@@ -65,6 +65,10 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
     const [sportAccess, setSportAccess] = useState({ outdoor_bike: false, swim_access: false });
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState<string | null>(null);
+    // #493: storage-blocked Skip guidance. skipOnboardingForNow reports whether the
+    // dismissal persisted; a blocked write is session-only and the wizard may
+    // resurface on refresh, so say so with recourse instead of failing silently.
+    const [skipStorageBlocked, setSkipStorageBlocked] = useState(false);
     // Mount time anchors the wizard-completion telemetry, mirroring the
     // first-view TTR clock in `usabilityMetrics`.
     const [wizardStartMs] = useState(() => (typeof performance !== 'undefined' ? performance.now() : 0));
@@ -83,9 +87,20 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
     const handleSkip = () => {
         if (saving) return;
         // Skip persists dismissal only: no goal is created and training
-        // settings are left untouched. When browser storage is blocked the
-        // dismissal is session-only and the wizard may resurface on refresh.
-        skipOnboardingForNow(userId, currentWizardStage, wizardElapsedMs(), onCompleted);
+        // settings are left untouched. Defer `onCompleted` until persistence is
+        // confirmed: when browser storage is blocked the dismissal would be
+        // session-only and the wizard would resurface on refresh, so keep the
+        // wizard open with guidance instead of failing silently.
+        const persisted = skipOnboardingForNow(userId, currentWizardStage, wizardElapsedMs(), () => {});
+        if (persisted) {
+            onCompleted();
+        } else {
+            setSkipStorageBlocked(true);
+        }
+    };
+
+    const handleContinueSessionOnly = () => {
+        onCompleted();
     };
 
     const handleFinish = async () => {
@@ -170,6 +185,19 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
     return (
         <main className="onboarding-modal-backdrop" role="main" aria-label="Rapid Onboarding Setup">
             <div className="onboarding-card">
+                {skipStorageBlocked && (
+                    <p className="form-error-msg" role="alert">
+                        Skip could not be saved — browser storage is blocked, so setup would
+                        reappear on refresh. Enable storage and skip again to dismiss
+                        permanently, or continue for this session only and re-run setup later
+                        from Coach Preferences.
+                        <span className="onboarding-action-row">
+                            <button type="button" className="btn-primary" onClick={handleContinueSessionOnly}>
+                                Continue for this session
+                            </button>
+                        </span>
+                    </p>
+                )}
                 {step === 1 && (
                     <div className="onboarding-step step-1">
                         <span className="onboarding-kicker">Welcome to Adaptive Training</span>

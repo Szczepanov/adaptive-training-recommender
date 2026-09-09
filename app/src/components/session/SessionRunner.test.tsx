@@ -169,6 +169,42 @@ describe('SessionRunner session picker', () => {
         expect(html).not.toContain('runner-mode-assessment');
         expect(html).not.toContain('Locked assessment');
     });
+
+    it('offers a forward action when the stored prescription cannot be restored (#493)', () => {
+        vi.mocked(useSessionRunner).mockReturnValueOnce({
+            activeStep: null,
+            activeBlock: null,
+            activeBlockIndex: 0,
+            activeStepIndex: 0,
+            definition: null,
+            entries: [],
+            execution: { state: 'in_progress' },
+            isRestoring: false,
+        } as unknown as ReturnType<typeof useSessionRunner>);
+        const html = renderToStaticMarkup(<SessionRunner userId="user-1" onClose={() => {}} />);
+
+        expect(html).toContain('Active session needs its stored prescription');
+        expect(html).toContain('Back to');
+    });
+
+    it('leaves the prescription-missing state without a dead end even when no close handler is injected (#493)', () => {
+        vi.mocked(useSessionRunner).mockReturnValueOnce({
+            activeStep: null,
+            activeBlock: null,
+            activeBlockIndex: 0,
+            activeStepIndex: 0,
+            definition: null,
+            entries: [],
+            execution: { state: 'in_progress' },
+            isRestoring: false,
+        } as unknown as ReturnType<typeof useSessionRunner>);
+        const html = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+
+        expect(html).toContain('Active session needs its stored prescription');
+        // No onClose: the copy still names the recovery path (return via the
+        // session that started it) instead of stranding the athlete silently.
+        expect(html).toContain('Return from the session that started it');
+    });
 });
 
 describe('resolveCompanionPromptCopy', () => {
