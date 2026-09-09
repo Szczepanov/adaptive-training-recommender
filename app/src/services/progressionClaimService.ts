@@ -310,7 +310,9 @@ export async function confirmProgressionRevision(
 
     let created = true;
 
-    const result = await runTransaction(db, async (transaction: Transaction) => {
+    let result: { header: IntentBlockHeader; activation: ProgressionExperimentActivation };
+    try {
+        result = await runTransaction(db, async (transaction: Transaction) => {
         // All transactional reads occur before any write. The current settings read is part
         // of D-AUTHORITY's confirmation-time constraint recheck, not recommendation-time I/O.
         const activationSnap = await transaction.get(activationRef(db, userId, activationKey));
@@ -453,7 +455,28 @@ export async function confirmProgressionRevision(
         transaction.set(activationRef(db, userId, activationKey), activation);
 
         return { header: newHeader, activation };
-    });
+        });
+    } catch (transactionError) {
+        // Two callers confirming the identical proposal can genuinely both reach the
+        // "not yet activated" branch and both attempt the same create/update writes before
+        // either commits. Firestore's own contention retry is for read-version conflicts,
+        // not for two transactions racing to the same terminal state through security-rule
+        // evaluation -- when that happens here, the loser can observe a rules rejection
+        // instead of a clean retry. Rather than surface that as a hard failure for what is,
+        // semantically, a successful idempotent confirmation, re-check by direct reference
+        // whether a matching activation now exists (written by the winner) before giving up.
+        const recovered = await getDoc(activationRef(db, userId, activationKey));
+        if (recovered.exists()) {
+            const existing = recovered.data() as ProgressionExperimentActivation;
+            if (existingActivationMatchesRequest(existing, blockId, proposalId, expectedSourcePlanRevision, proposedChange)) {
+                const headerSnap = await getDoc(intentBlocks.headerRef(userId, blockId));
+                if (headerSnap.exists()) {
+                    return { header: headerSnap.data() as IntentBlockHeader, activation: existing, created: false };
+                }
+            }
+        }
+        throw transactionError;
+    }
 
     return { ...result, created };
 }
