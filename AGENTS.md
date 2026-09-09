@@ -48,12 +48,12 @@ Full statements, with rationale and the checks that enforce them, are in
 * `make test` — unit tests only (`pytest` + `vitest`)
 * `make typecheck` / `make lint` — both stacks
 * `make format` — auto-format Python and TypeScript; `make format-check` verifies Python formatting without writing
-* `make validate-knowledge` / `validate-knowledge-coverage` / `validate-workouts` — run the frontend registries/catalog validators individually
+* `make validate-knowledge` / `make validate-knowledge-coverage` / `make validate-workouts` — run the frontend registries/catalog validators individually
 * `make simulate` — scenario simulations + baseline diff verification
-* `make simulate-calibrate` / `simulate-fatigue-fusion` / `simulate-subjective-drift` / `compare-sequence-search` — targeted evidence runs
+* `make simulate-calibrate` / `make simulate-fatigue-fusion` / `make simulate-subjective-drift` / `make compare-sequence-search` — targeted evidence runs
 * `make build` — production frontend build
 * `make install` — install Python and Node dependencies
-* `make deploy` / `deploy-all` / `deploy-rules` / `deploy-indexes` — Firebase Hosting / all assets / security rules (with drift check) / indexes
+* `make deploy` / `make deploy-all` / `make deploy-rules` / `make deploy-indexes` — Firebase Hosting / all assets / security rules (with drift check) / indexes
 * `make clean`, `make help` — housekeeping and target listing
 
 ### Python backend
@@ -96,15 +96,15 @@ Full statements, with rationale and the checks that enforce them, are in
 * `npm run test:rules` — Firestore security-rule suite inside the Firebase emulator (needs Java)
 * `npm run build` — `npm run check && vite build`
 * `npm run dev` — Vite dev server (`predev` runs `npm run check` first)
-* `npm run validate:workouts` / `validate:knowledge` / `validate:knowledge-coverage` — catalog and registry validators, individually
+* `npm run validate:workouts` / `npm run validate:knowledge` / `npm run validate:knowledge-coverage` — catalog and registry validators, individually
 * `npm run simulate:scenarios` — multi-week engine simulations → `artifacts/simulation-reports/latest/`
-* `npm run simulate:diff` — non-blocking semantic diff against `docs/analysis/simulation-baseline.json` (`simulate:update-baseline` to re-baseline)
+* `npm run simulate:diff` — non-blocking semantic diff against `docs/analysis/simulation-baseline.json` (`npm run simulate:update-baseline` to re-baseline)
 * `node scripts/check-policy-drift.mjs <base-sha>` — verify `POLICY_VERSION` was bumped when decision logic changes
 * `npm run replay:recommendation -- <audit.json>` — replay a persisted decision against its own audit
 * `npm run build:plan-judge-corpus && npm run report:sequencing` — deterministic sequencing collision/spacing/opportunity-cost diagnostics (issue #458; report only, no gate)
 * `judge:*` and `persona:*` are script-name families, **not executable npm wildcards**. Use concrete scripts such as `npm run judge:run`, `npm run judge:diff`, `npm run judge:update-baseline`, `npm run persona:run`, `npm run persona:diff`, and `npm run persona:update-baseline`; see `app/package.json` for local/quick/e2e/resume variants.
-* `npm run evidence:health-anomaly`, `evidence:identity-replay`, `measure:garmin-zone-credit` — shadow-mode evidence runs
-* `npm run visual:install` → `visual:refresh` — Playwright screenshots into `artifacts/visual-review/latest/`; `visual:serve` runs the harness at `http://127.0.0.1:4174`
+* `npm run evidence:health-anomaly`, `npm run evidence:identity-replay`, `npm run measure:garmin-zone-credit` — shadow-mode evidence runs
+* `npm run visual:install` → `npm run visual:refresh` — Playwright screenshots into `artifacts/visual-review/latest/`; `npm run visual:serve` runs the harness at `http://127.0.0.1:4174`
 
 ### What CI gates (`.github/workflows/ci.yml`)
 
