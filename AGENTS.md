@@ -1,7 +1,10 @@
 # AGENTS.md — Repository Reference for AI Agents
 
-The reference index for `adaptive-training-recommender`: what the packages are, what every
-command does, and which document to trust.
+The reference index for `adaptive-training-recommender`: package and command routing,
+verification gates, and which document to trust.
+
+**Scope:** this root file applies to the whole repository. A deeper `AGENTS.md`, if added,
+takes precedence for its subtree.
 
 **Read [`CLAUDE.md`](./CLAUDE.md) first** — it holds the invariants you must not violate,
 the pre-change checks, and the verification loop. This file answers *"where is it and what
@@ -36,7 +39,11 @@ Full statements, with rationale and the checks that enforce them, are in
 
 ### Full suite (Makefile, repository root)
 
-* `make check` — the commit gate: `ruff check`, `mypy`, `pytest`, `tsc -b`, `eslint`, `vitest`, workout validation. It calls the frontend gates individually, so it does **not** run `ruff format --check`, `validate:knowledge`, `validate:knowledge-coverage`, or the Firestore rules suite — all four of which CI does gate. Use `cd app && npm run check` for frontend work.
+* `make check` — the core local code gate: `ruff check`, `ruff format --check`, `mypy`,
+  `pytest`, `tsc -b`, `eslint`, `vitest`, workout validation. It calls the frontend gates
+  individually, so it does **not** run `validate:knowledge` or
+  `validate:knowledge-coverage`; use `cd app && npm run check` for frontend work that needs
+  the complete frontend gate. CI adds further path-specific checks; see below.
 * `make all` — `check` + `simulate` + `build` (the default target)
 * `make test` — unit tests only (`pytest` + `vitest`)
 * `make typecheck` / `make lint` — both stacks
@@ -100,19 +107,22 @@ Full statements, with rationale and the checks that enforce them, are in
 
 ### What CI gates (`.github/workflows/ci.yml`)
 
-`make check` is a subset of CI. These jobs run on a code change and each one can fail a PR:
+CI is path-sensitive. `detect-changes` chooses the applicable jobs, and the final `CI Gate`
+fails the PR if any required job on that path fails.
 
-| Job | Gates on |
-|---|---|
-| Documentation & security hygiene | `uv run pre-commit run --all-files` |
-| Python test suite | `uv lock --check`, `ruff check`, **`ruff format --check`**, `mypy src/garmin_sync`, `pytest` with coverage, `uvx pip-audit` |
-| Frontend hygiene & static gates | `npm audit --audit-level=high`, `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:workouts`, **policy-version drift vs the PR base**, `build:bundle` |
-| Frontend unit tests & Firestore rules | `npm run test:coverage`, **`npm run test:rules`** (emulator + Java) |
-| Engine simulations & AI gates | `simulate:scenarios` (aggregate-bounds gate), **`simulate:plan-judge`** (deterministic corpus gate), persona corpus build; `simulate:diff` runs advisory (`continue-on-error`) |
-| Docker build & compose smoke | root image build, compose up, smoke checks |
+| Change class | Job | Gates on |
+|---|---|---|
+| Docs-only | Documentation & security hygiene | repository-hygiene `pre-commit` checks (the CI job skips the code-only uv-lock/Ruff/mypy/ESLint hooks) |
+| Code | Python test suite | `uv lock --check`, repository-hygiene `pre-commit`, `ruff check`, `ruff format --check`, `mypy src/garmin_sync`, `pytest` with coverage, `uvx pip-audit` |
+| Code | Frontend hygiene & static gates | `npm audit --audit-level=high`, `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:workouts`, policy-version drift vs the PR base, `build:bundle` |
+| Code | Frontend unit tests & Firestore rules | `npm run test:coverage`, `npm run test:rules` (emulator + Java) |
+| Code | Engine simulations & AI gates | `simulate:scenarios` plus committed-baseline `git diff --exit-code`, `simulate:plan-judge`, persona corpus build; `simulate:diff` is advisory (`continue-on-error`) |
+| Code | Docker build & compose smoke | root image build, Compose config/build/up, smoke checks |
 
-The bolded items are the ones `make check` does **not** cover — they are where a locally
-green change most often fails in CI.
+`make check` already covers Python lint **and formatting**, mypy, pytest, frontend typecheck,
+ESLint, Vitest, and workout validation. The important CI-only additions are dependency/lock
+audits, pre-commit hygiene, the knowledge validators, policy-drift and bundle checks,
+coverage/rules tests, simulation/AI gates, and Docker validation.
 
 ### Docker
 
@@ -419,8 +429,9 @@ and say which you did.
   caller injected nothing. Do not widen that set.
 * **Immutability** — derive new objects rather than mutating inputs; the engine's replay and
   audit guarantees (ADR-0010) depend on it.
-* **Tests** — synthetic fixtures only (`tests/fixtures/` in Python, `app/src/sessions/fixtures/` and inline builders in the frontend). Never
-  call a live API from a test. New decision-authority behaviour needs a policy-alignment
-  test (ADR-0033); new engine behaviour needs a scenario the simulation harness can see.
+* **Tests** — synthetic fixtures only (`tests/fixtures/` in Python,
+  `app/src/sessions/fixtures/` and inline builders in the frontend). Never call a live API
+  from a test. New decision-authority behaviour needs a policy-alignment test (ADR-0033);
+  new engine behaviour needs a scenario the simulation harness can see.
 * **Commits** — conventional-commit prefixes (`feat:`, `fix:`, `docs:`, `chore:`, …).
   Reference symbols, not line numbers, in messages too.

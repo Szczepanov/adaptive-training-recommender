@@ -4,10 +4,10 @@
 backend (`src/garmin_sync/`) and a React + TypeScript + Firebase app (`app/`) whose engine
 turns recovery snapshots into adaptive training recommendations.
 
-**This file is the rules. [`AGENTS.md`](./AGENTS.md) is the reference** — the full command
-index and the file-by-file package map. Commands are listed there once, on purpose: when
-they lived in both files they drifted. Read `AGENTS.md` before concluding that a module,
-CLI subcommand or npm script does not exist.
+**This file is the rules. [`AGENTS.md`](./AGENTS.md) is the reference** — the command
+reference and package routing map. Commands are listed there once, on purpose: when they
+lived in both files they drifted. Read `AGENTS.md` before concluding that a module, CLI
+subcommand or npm script does not exist.
 
 ---
 
@@ -66,10 +66,12 @@ policy-alignment test (ADR-0033). Do not add one silently.
 
 **Before you call it done**
 ```bash
-make check          # ruff + mypy + pytest, tsc + eslint + vitest + workout validation
+make check          # ruff check/format + mypy + pytest; tsc + eslint + vitest + workouts
 ```
-- `make format` first if you touched Python: CI gates on `ruff format --check`, which
-  `make check` does not run.
+- Docs-only change → `uv run pre-commit run --all-files`. CI uses the docs-hygiene fast path
+  and skips the code test/build/simulation jobs.
+- `make check` already runs `ruff format --check` through `lint-python`; if formatting
+  fails, use `make format` (or `uv run ruff format .`) and rerun the gate.
 - Knowledge-registry or coverage change → `cd app && npm run check`. `make check` runs the
   frontend gates individually and skips `validate:knowledge` / `validate:knowledge-coverage`;
   CI does not.
@@ -90,7 +92,7 @@ The full index is in [`AGENTS.md` § Commands](./AGENTS.md#commands-reference). 
 need most:
 
 ```bash
-make check                             # everything that gates a commit
+make check                             # core local code gate; CI adds path-specific checks
 make test                              # pytest + vitest only
 make simulate                          # scenario simulations + baseline diff
 uv sync                                # restore Python deps
@@ -115,7 +117,7 @@ cd app && npm test                     # vitest only — the fast inner loop
 
 | Looking for | Go to |
 |---|---|
-| Full file-by-file map of every package | [`AGENTS.md` § Package architecture](./AGENTS.md#package-architecture) |
+| Package routing map | [`AGENTS.md` § Package architecture](./AGENTS.md#package-architecture) |
 | Adaptive engine (rules, fatigue, optimizer, planner, coverage) | `app/src/engine/` |
 | Knowledge registry, coverage inventory, alignment tests | `app/src/knowledge/` |
 | Source-neutral session authoring, execution, response, outcomes (ADR-0023) | `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/` |
