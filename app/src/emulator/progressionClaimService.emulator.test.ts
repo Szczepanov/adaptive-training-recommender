@@ -9,6 +9,7 @@ import { initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/
 import type { Firestore } from 'firebase/firestore';
 import { IntentBlockService } from '../services/intentBlockService';
 import { createDefaultTrainingSettings } from '../services/trainingSettingsService';
+import { deriveProgressionProposalId } from '../services/progressionProposalIdentity';
 import {
     confirmProgressionRevision,
     releaseProgressionClaim,
@@ -71,6 +72,14 @@ function change(overrides: Partial<ProposedProgressionChange> = {}): ProposedPro
     };
 }
 
+function proposalId(
+    sourceRevision: number,
+    reviewDate: string,
+    proposedChange: ProposedProgressionChange,
+): string {
+    return deriveProgressionProposalId(sourceRevision, reviewDate, proposedChange);
+}
+
 emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real transactions, real rules)', () => {
     let testEnvironment: RulesTestEnvironment;
 
@@ -110,10 +119,12 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
         const db = ownerDb(userId);
         await seedProfileAndBlock(db, userId, 'block-a');
         await seedProfileAndBlock(db, userId, 'block-b');
+        const proposedChange = change();
+        const id = proposalId(1, FIRST_REVIEW_DATE, proposedChange);
 
         const results = await Promise.allSettled([
-            confirmProgressionRevision(userId, 'block-a', 'proposal-a', 1, change(), FIRST_REVIEW_DATE, db),
-            confirmProgressionRevision(userId, 'block-b', 'proposal-b', 1, change(), FIRST_REVIEW_DATE, db),
+            confirmProgressionRevision(userId, 'block-a', id, 1, proposedChange, FIRST_REVIEW_DATE, db),
+            confirmProgressionRevision(userId, 'block-b', id, 1, proposedChange, FIRST_REVIEW_DATE, db),
         ]);
 
         const fulfilled = results.filter((r): r is PromiseFulfilledResult<Awaited<ReturnType<typeof confirmProgressionRevision>>> => r.status === 'fulfilled');
@@ -132,9 +143,11 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
         const userId = 'athlete-same-proposal';
         const db = ownerDb(userId);
         await seedProfileAndBlock(db, userId, 'block-solo');
+        const proposedChange = change();
+        const id = proposalId(1, FIRST_REVIEW_DATE, proposedChange);
 
-        const first = await confirmProgressionRevision(userId, 'block-solo', 'proposal-solo', 1, change(), FIRST_REVIEW_DATE, db);
-        const second = await confirmProgressionRevision(userId, 'block-solo', 'proposal-solo', 1, change(), FIRST_REVIEW_DATE, db);
+        const first = await confirmProgressionRevision(userId, 'block-solo', id, 1, proposedChange, FIRST_REVIEW_DATE, db);
+        const second = await confirmProgressionRevision(userId, 'block-solo', id, 1, proposedChange, FIRST_REVIEW_DATE, db);
 
         expect(first.activation.activationKey).toBe(second.activation.activationKey);
         expect(first.created).toBe(true);
@@ -146,34 +159,37 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
         if (headerState.status === 'AVAILABLE') expect(headerState.data.revision).toBe(2);
     });
 
-    it('rejects reuse of a proposal id with a different before/after payload', async () => {
+    it('rejects reuse of a canonical proposal id with a different before/after payload', async () => {
         const userId = 'athlete-idempotency-payload';
         const db = ownerDb(userId);
         await seedProfileAndBlock(db, userId, 'block-payload');
+        const firstChange = change();
+        const firstId = proposalId(1, FIRST_REVIEW_DATE, firstChange);
 
-        await confirmProgressionRevision(userId, 'block-payload', 'proposal-same-id', 1, change(), FIRST_REVIEW_DATE, db);
+        await confirmProgressionRevision(userId, 'block-payload', firstId, 1, firstChange, FIRST_REVIEW_DATE, db);
         await expect(confirmProgressionRevision(
             userId,
             'block-payload',
-            'proposal-same-id',
+            firstId,
             1,
             change({ proposedValue: 110, derivedDoseEffects: { delta: 20 } }),
             FIRST_REVIEW_DATE,
             db,
-        )).rejects.toMatchObject({ code: 'activation-identity-mismatch' });
+        )).rejects.toMatchObject({ code: 'invalid-proposed-change' });
     });
 
     it('rejects an arbitrary jump even when the caller supplies internally-consistent numbers', async () => {
         const userId = 'athlete-arbitrary-jump';
         const db = ownerDb(userId);
         await seedProfileAndBlock(db, userId, 'block-jump');
+        const proposedChange = change({ proposedValue: 130, derivedDoseEffects: { delta: 40 } });
 
         await expect(confirmProgressionRevision(
             userId,
             'block-jump',
-            'proposal-jump',
+            proposalId(1, FIRST_REVIEW_DATE, proposedChange),
             1,
-            change({ proposedValue: 130, derivedDoseEffects: { delta: 40 } }),
+            proposedChange,
             FIRST_REVIEW_DATE,
             db,
         )).rejects.toMatchObject({ code: 'invalid-proposed-change' });
@@ -189,13 +205,14 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
         const userId = 'athlete-wrong-binding';
         const db = ownerDb(userId);
         await seedProfileAndBlock(db, userId, 'block-binding');
+        const proposedChange = change({ targetBinding: { objectiveId: 'different-objective' } });
 
         await expect(confirmProgressionRevision(
             userId,
             'block-binding',
-            'proposal-binding',
+            proposalId(1, FIRST_REVIEW_DATE, proposedChange),
             1,
-            change({ targetBinding: { objectiveId: 'different-objective' } }),
+            proposedChange,
             FIRST_REVIEW_DATE,
             db,
         )).rejects.toMatchObject({ code: 'invalid-proposed-change' });
@@ -206,9 +223,17 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
         const userId = 'athlete-review-not-due';
         const db = ownerDb(userId);
         await seedProfileAndBlock(db, userId, 'block-early');
+        const reviewDate = '2026-09-14';
+        const proposedChange = change();
 
         await expect(confirmProgressionRevision(
-            userId, 'block-early', 'proposal-early', 1, change(), '2026-09-14', db,
+            userId,
+            'block-early',
+            proposalId(1, reviewDate, proposedChange),
+            1,
+            proposedChange,
+            reviewDate,
+            db,
         )).rejects.toMatchObject({ code: 'review-not-due' });
         expect(await getCurrentProgressionClaim(userId, db)).toBeNull();
     });
@@ -223,9 +248,16 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
             ...settings,
             injuries: [{ severity: 'limit', region: 'knee', reviewBy: '2026-10-01' }],
         });
+        const proposedChange = change();
 
         await expect(confirmProgressionRevision(
-            userId, 'block-restriction', 'proposal-restriction', 1, change(), FIRST_REVIEW_DATE, db,
+            userId,
+            'block-restriction',
+            proposalId(1, FIRST_REVIEW_DATE, proposedChange),
+            1,
+            proposedChange,
+            FIRST_REVIEW_DATE,
+            db,
         )).rejects.toMatchObject({ code: 'active-constraint-conflict' });
         expect(await getCurrentProgressionClaim(userId, db)).toBeNull();
     });
@@ -240,13 +272,14 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
             ...settings,
             injuries: [{ severity: 'exclude', region: 'knee', reviewBy: '2026-10-01' }],
         });
+        const proposedChange = change({ proposedValue: 80, derivedDoseEffects: { delta: -10 } });
 
         const reduced = await confirmProgressionRevision(
             userId,
             'block-reduction',
-            'proposal-reduction',
+            proposalId(1, FIRST_REVIEW_DATE, proposedChange),
             1,
-            change({ proposedValue: 80, derivedDoseEffects: { delta: -10 } }),
+            proposedChange,
             FIRST_REVIEW_DATE,
             db,
         );
@@ -261,9 +294,17 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
         const service = new IntentBlockService(db);
         const sourceState = await service.getRevisionState(userId, 'block-cadence', 1);
         expect(sourceState.status).toBe('AVAILABLE');
+        const reviewDate = '2026-09-17';
+        const proposedChange = change();
 
         const confirmation = await confirmProgressionRevision(
-            userId, 'block-cadence', 'proposal-cadence', 1, change(), '2026-09-17', db,
+            userId,
+            'block-cadence',
+            proposalId(1, reviewDate, proposedChange),
+            1,
+            proposedChange,
+            reviewDate,
+            db,
         );
         expect(confirmation.activation.activationRevisionId).toBe('2');
 
@@ -284,9 +325,16 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
 
         const service = new IntentBlockService(db);
         await service.save(userId, block('block-stale', 95, 2));
+        const proposedChange = change();
 
         await expect(confirmProgressionRevision(
-            userId, 'block-stale', 'proposal-stale', 1, change(), FIRST_REVIEW_DATE, db,
+            userId,
+            'block-stale',
+            proposalId(1, FIRST_REVIEW_DATE, proposedChange),
+            1,
+            proposedChange,
+            FIRST_REVIEW_DATE,
+            db,
         )).rejects.toMatchObject({ code: 'stale-source-revision' });
 
         const claim = await getCurrentProgressionClaim(userId, db);
@@ -300,22 +348,31 @@ emulatorDescribe('confirmProgressionRevision / releaseProgressionClaim (real tra
         const userId = 'athlete-compare-and-clear';
         const db = ownerDb(userId);
         await seedProfileAndBlock(db, userId, 'block-release');
+        const firstChange = change();
 
         const first = await confirmProgressionRevision(
-            userId, 'block-release', 'proposal-1', 1, change(), FIRST_REVIEW_DATE, db,
+            userId,
+            'block-release',
+            proposalId(1, FIRST_REVIEW_DATE, firstChange),
+            1,
+            firstChange,
+            FIRST_REVIEW_DATE,
+            db,
         );
         await releaseProgressionClaim(userId, first.activation.experimentId, db);
 
         const service = new IntentBlockService(db);
         const headerAfterFirst = await service.getHeaderState(userId, 'block-release');
         const revisionAfterFirst = headerAfterFirst.status === 'AVAILABLE' ? headerAfterFirst.data.revision : 2;
+        const secondReviewDate = '2026-09-29';
+        const secondChange = change({ previousValue: 100, proposedValue: 110 });
         const second = await confirmProgressionRevision(
             userId,
             'block-release',
-            'proposal-2',
+            proposalId(revisionAfterFirst, secondReviewDate, secondChange),
             revisionAfterFirst,
-            change({ previousValue: 100, proposedValue: 110 }),
-            '2026-09-29',
+            secondChange,
+            secondReviewDate,
             db,
         );
 
