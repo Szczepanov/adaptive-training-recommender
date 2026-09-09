@@ -18,6 +18,8 @@ import { SCREEN_LABELS } from '../types/navigation';
 import { HealthContextSection } from './checkin/HealthContextSection';
 import { PhysicalWorkSection } from './checkin/PhysicalWorkSection';
 import { SubjectiveScaleRow } from './checkin/SubjectiveScaleRow';
+import { CheckinStepper } from './checkin/CheckinStepper';
+import { deriveCheckinSteps } from './checkin/checkinStepState';
 import './DailyCheckin.css';
 
 const RED_FLAG_OPTIONS: Array<{ value: RedFlagCategory; label: string; desc: string }> = [
@@ -506,6 +508,12 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     () => BODY_REGIONS.filter(region => !checkin?.tissueResponses?.[region]),
     [checkin?.tissueResponses],
   );
+  // Header stepper state is derived read-only from the daily document plus the
+  // outstanding follow-up count, so Skip/Back reads as leaving known pending steps.
+  const checkinSteps = useMemo(
+    () => deriveCheckinSteps(checkin, pendingFollowups.length),
+    [checkin, pendingFollowups.length],
+  );
 
   if (loading) {
     return (
@@ -568,6 +576,8 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
           <span className="checkin-date-badge">Today · {checkin.date || getLocalDateString()}</span>
         </div>
       </div>
+
+      <CheckinStepper steps={checkinSteps} />
 
       {isAlreadySubmitted && (
         <aside className="checkin-completed-banner" role="status">

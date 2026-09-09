@@ -379,8 +379,10 @@ living-reference section when implementing them.
    Home recommendation differ.
 5. Standardize fail-closed recovery: say what is missing, link to the owning repair surface,
    and provide retry when retry is meaningful.
-6. Make Check-in progress and partial-save semantics explicit so Back/Skip versus submit is
-   unambiguous.
+6. ~~Make Check-in progress and partial-save semantics explicit so Back/Skip versus submit is
+   unambiguous.~~ Done (#488): `DailyCheckin` renders a 4-step `CheckinStepper`
+   (Follow-ups, Recovery, Safety, Availability) derived read-only from the daily document,
+   so saved versus pending state is explicit and Skip/Back reads as intentional.
 
 ### Settings
 
