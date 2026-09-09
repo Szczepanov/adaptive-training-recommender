@@ -27,6 +27,7 @@ import { checkinService } from './checkinService';
 import { trainingSettingsService } from './trainingSettingsService';
 import type { SessionOutcome } from '../responses/outcome';
 import type { ExecutionPrescription, SessionExecution, SessionSourceRef } from '../sessions/models';
+import type { DailySubjectiveCheckin } from '../engine/models';
 
 const DURATION_MATCH_TOLERANCE_FRACTION = 0.15;
 
@@ -254,7 +255,9 @@ async function assembleLinkedExposures(
     }));
 }
 
-function observedTissueSeverities(checkins: readonly { tissueResponses?: Record<string, unknown> }[]): NonNullable<ProgressionPrerequisiteEvidence['observedTissueSeverities']> {
+function observedTissueSeverities(
+    checkins: readonly DailySubjectiveCheckin[],
+): NonNullable<ProgressionPrerequisiteEvidence['observedTissueSeverities']> {
     return [...new Set(
         checkins.flatMap(checkin => Object.values(checkin.tissueResponses ?? {}))
             .map(deriveTissueSeverity)
