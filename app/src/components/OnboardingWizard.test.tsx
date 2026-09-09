@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ExerciseDaysSlider, OnboardingWizard } from './OnboardingWizard';
-import { skipOnboardingForNow } from './onboarding/skipOnboarding';
+import { continueOnboardingSkipForSessionOnly, skipOnboardingForNow } from './onboarding/skipOnboarding';
 import { weeklyCommitmentFromExerciseDays } from './onboarding/weeklyCommitment';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
@@ -69,7 +69,7 @@ describe('OnboardingWizard', () => {
     expect(report.wizardSkipsByStage).toEqual({ focus: 1 });
   });
 
-  it('reports a blocked dismissal so the wizard can show storage-blocked guidance (#493)', () => {
+  it('does not complete or record a blocked Skip until session-only continuation is explicit (#493)', () => {
     vi.stubGlobal('window', {
       localStorage: {
         getItem: () => null,
@@ -82,10 +82,15 @@ describe('OnboardingWizard', () => {
     const persisted = skipOnboardingForNow('athlete-1', 'welcome', 500, onCompleted);
 
     expect(persisted).toBe(false);
-    // Telemetry still records the skip; the caller decides whether to dismiss.
+    expect(onCompleted).not.toHaveBeenCalled();
+    expect(usabilityMetrics.generateSummaryReport().wizardSkips).toBe(0);
+
+    continueOnboardingSkipForSessionOnly('athlete-1', 'welcome', 750, onCompleted);
+
     expect(onCompleted).toHaveBeenCalledTimes(1);
     const report = usabilityMetrics.generateSummaryReport();
     expect(report.wizardSkips).toBe(1);
+    expect(report.wizardSkipsByStage).toEqual({ welcome: 1 });
   });
 });
 
