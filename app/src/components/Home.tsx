@@ -76,7 +76,11 @@ import { activityService } from '../services/activityService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
 import { TEMPLATES, TEMPLATES_BY_ID } from '../engine/templates';
 import type { ActivityOverride, DailyRecoverySnapshot, NormalizedGarminActivity } from '../engine/models';
-import type { ErrorRepairAction } from './errorRepairAction';
+import {
+  resolveDecisionCompositionRepairState,
+  resolveDecisionSourceRepairState,
+  type ErrorRepairAction,
+} from './errorRepairAction';
 import { useAutoGarminSync } from '../hooks/useAutoGarminSync';
 import { resolveWearablePlanningMode } from '../utils/wearablePlanningGate';
 import {
@@ -317,26 +321,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         return;
       }
 
-      const decisionSourceFailure = input.sourceStates
-        && [input.sourceStates.activeGoals, input.sourceStates.preferences, input.sourceStates.trainingSettings]
-          .find(state => state.status === 'INVALID' || state.status === 'UNAVAILABLE');
+      const decisionSourceFailure = resolveDecisionSourceRepairState(input.sourceStates);
       if (decisionSourceFailure) {
         setRecommendation(null);
         setNextDayPlan(null);
         clearExternalPlanState();
-        if (decisionSourceFailure.status === 'INVALID') {
-          // Point the user at whichever screen owns the invalid document(s) so the error
-          // is actionable rather than a dead end -- re-saving there re-runs validation
-          // and clears the INVALID state.
-          const repairTargets: ErrorRepairAction[] = [];
-          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'goals', label: `Review ${SCREEN_LABELS.goals}` });
-          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'preferences', label: `Review ${SCREEN_LABELS.preferences}` });
-          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'constraints', label: `Review ${SCREEN_LABELS.constraints}` });
-          setErrorRepairTargets(repairTargets);
-        }
-        setError(decisionSourceFailure.status === 'UNAVAILABLE'
-          ? 'Decision inputs are temporarily unavailable. Please retry before generating a plan.'
-          : 'Decision inputs need repair before generating a plan.');
+        setErrorRepairTargets(decisionSourceFailure.actions);
+        setError(decisionSourceFailure.message);
         return;
       }
 
@@ -775,7 +766,13 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     } catch (err) {
       if (!isCurrent()) return;
       console.error('Error loading dashboard data:', err);
-      setError('Failed to load dashboard data');
+      const compositionRepair = resolveDecisionCompositionRepairState(err);
+      if (compositionRepair) {
+        setErrorRepairTargets(compositionRepair.actions);
+        setError(compositionRepair.message);
+      } else {
+        setError('Failed to load dashboard data');
+      }
     } finally {
       if (isCurrent()) setLoading(false);
     }
