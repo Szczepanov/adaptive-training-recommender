@@ -263,6 +263,10 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         fixedTrace.count = 0;
         fixedTrace.cost = { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0 };
         fixedTrace.stimulus = { aerobicEndurance: 0, thresholdPower: 0, vo2MaxPower: 0, repeatedSurges: 0, sprintPower: 0, fatigueResistance: 0, maxStrength: 0, hypertrophy: 0 };
+        // The projection now diffs by occurrence identity (`entries`) rather than the
+        // count/aggregate fields above -- clear it too so this fixture still simulates
+        // "no unrepresented fixed activity" for tomorrow's projection.
+        fixedTrace.entries = [];
 
         const withEvent = await evaluateNextDayPlanWithIntent(
             'u1', [], readiness(), context(), DATE, today, undefined, EMPTY_HISTORY, [], [],
@@ -270,6 +274,38 @@ describe('evaluateTrainingWithIntent in externally_planned mode', () => {
         );
         const withoutEvent = await evaluateNextDayPlanWithIntent(
             'u1', [], readiness(), context(), DATE, withoutDecisionOnlyFixed, undefined, EMPTY_HISTORY, [], [],
+            profile('externally_planned'), null, 'max',
+        );
+        const withSystemic = withEvent.branches.green.recommendation.decisionTrace?.calibration?.fatigue.rawExternalLoad.systemic ?? 0;
+        const withoutSystemic = withoutEvent.branches.green.recommendation.decisionTrace?.calibration?.fatigue.rawExternalLoad.systemic ?? 0;
+        expect(withSystemic).toBeGreaterThan(withoutSystemic);
+    });
+
+    it('still credits the in-memory event by occurrence identity when an unrelated fixed activity brings the represented count up to the trace count', async () => {
+        const today = await evaluate(externalPlan({
+            isEvent: true,
+            title: 'Road Race',
+            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'fixed', ifMissed: 'drop' },
+            gating: { modality: 'cycling', intensity: 'max', durationMin: 50, durationMax: 60, environment: 'outdoor', equipment: [] },
+        }));
+        const withoutDecisionOnlyFixed = structuredClone(today);
+        const fixedTrace = withoutDecisionOnlyFixed.decisionTrace?.calibration?.fixedActivity;
+        if (!fixedTrace) throw new Error('Expected fixed-activity calibration');
+        fixedTrace.entries = [];
+
+        // An unrelated real commitment on the same date brings `represented.length` up to
+        // the synthetic event's own trace count. The prior count-only guard
+        // (`trace.count <= represented.length`) would have wrongly treated the event as
+        // already represented by this unrelated activity and dropped its credit; the
+        // identity-based diff must not be fooled by a matching count.
+        const decoy = [fixedActivity({ id: 'decoy-commitment' })];
+
+        const withEvent = await evaluateNextDayPlanWithIntent(
+            'u1', [], readiness(), context(), DATE, today, undefined, EMPTY_HISTORY, decoy, [],
+            profile('externally_planned'), null, 'max',
+        );
+        const withoutEvent = await evaluateNextDayPlanWithIntent(
+            'u1', [], readiness(), context(), DATE, withoutDecisionOnlyFixed, undefined, EMPTY_HISTORY, decoy, [],
             profile('externally_planned'), null, 'max',
         );
         const withSystemic = withEvent.branches.green.recommendation.decisionTrace?.calibration?.fatigue.rawExternalLoad.systemic ?? 0;

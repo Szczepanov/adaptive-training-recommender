@@ -89,7 +89,7 @@ import {
 } from './weeklyAllocation';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
-import { resolveFixedActivityIdentity } from './fixedActivityIdentity';
+import { fixedActivityOccurrenceKey, resolveFixedActivityIdentity } from './fixedActivityIdentity';
 import { sumFixedActivityCostProfiles } from './fixedActivityCostProfile';
 import { admitsCandidate, computeDailyLedger, type DailyLedgerResult } from './dailyLedger';
 import { dedupeFixedActivitiesByLedgerIdentity, pendingFixedActivityLedgerEntries } from './fixedActivityLedger';
@@ -959,16 +959,20 @@ export function applyFixedActivityStimulusCredit(
     fixedActivities: FixedActivity[],
     date: string,
 ): FixedActivityStimulusResult {
-    const dayActivities = fixedActivities.filter(a => a.date === date && !a.isCompleted && a.expectedStimulus);
+    // Deduped through the same occurrenceId/revision identity `dailyLedger.ts` and the
+    // top-level `generateWeekAheadPlan` fixed-activity array already use, rather than a
+    // local ad hoc Set: a genuine same-day revision conflict now fails closed instead of
+    // silently keeping whichever record happened to appear first in `fixedActivities`.
+    const dayActivities = dedupeFixedActivitiesByLedgerIdentity(
+        fixedActivities.filter(a => a.date === date && !a.isCompleted && a.expectedStimulus),
+    );
     let nextMicrocycle = microcycle;
     const credits: PlannedObjectiveCredit[] = [];
     const exposures: ProjectionExposure[] = [];
-    const seenOccurrences = new Set<string>();
 
     dayActivities.forEach(activity => {
         const identity = resolveFixedActivityIdentity(activity);
-        if (!identity || seenOccurrences.has(identity.occurrenceKey)) return;
-        seenOccurrences.add(identity.occurrenceKey);
+        if (!identity) return;
 
         const stimulus: WorkoutStimulusProfile = { ...ZERO_STIMULUS, ...activity.expectedStimulus };
         const stimulusConfidence = identity.stimulusConfidence ?? 'exact';
@@ -1174,9 +1178,13 @@ export function generateWeekAheadPlan(
     };
 
     const applyFixedActivityCost = (date: string) => {
+        // Cost and stimulus are independent axes credited from the same fixed-activity
+        // identity (`fixedActivityOccurrenceKey`), each tracked in its own namespace --
+        // `:cost` here vs. the exposure occurrenceKey in `appliedProjectionOccurrences` --
+        // so crediting one axis never suppresses the other.
         const dayActivities = getFixedActivitiesForDate(date).filter(a => !a.isCompleted && a.expectedCost);
         const freshActivities = dayActivities.filter(activity => {
-            const key = `fixed:${activity.id}:cost`;
+            const key = `${fixedActivityOccurrenceKey(activity)}:cost`;
             if (appliedFixedCostOccurrences.has(key)) return false;
             appliedFixedCostOccurrences.add(key);
             return true;
