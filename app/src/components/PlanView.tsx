@@ -10,6 +10,7 @@ import { garminConnectionService } from '../services/garminConnectionService';
 import { decisionComposer } from '../engine/composer';
 import {
   applyConfirmedProposal,
+  occupiesDate,
   proposeReplacement,
   type ReplacementProposal,
 } from '../engine/externalPlacement';
@@ -49,6 +50,8 @@ import {
   type WearablePlanningMode,
 } from '../utils/wearablePlanningGate';
 import { ScheduleOverlayCard } from './schedule/ScheduleOverlayCard';
+import { PlanAuthorityBanner } from './PlanAuthorityBanner';
+import type { AuthorityBannerInput } from './planAuthorityBannerRule';
 import './PlanView.css';
 
 interface PlanViewProps {
@@ -440,6 +443,25 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const canGenerateAdaptiveForecast = canGenerateNormalRecommendation(safetyCheckinStatus);
   const wearableRepairAction = wearableForecastBlock?.repairAction;
 
+  // #487: follow-this-one verdict inputs, read-only over already-computed state.
+  // The coach placements, the AI forecast days, and the critique findings below are
+  // the same values the week views render; deriving the banner from them adds no
+  // engine logic and never overrules safety envelopes.
+  const authorityBanner = useMemo((): AuthorityBannerInput | null => {
+    if (!activePlan || !weekAheadPlan) return null;
+    const coachToday = activePlan.placed.find(
+      (item) => item.date === today && occupiesDate(item.status),
+    );
+    const forecastToday = weekAheadPlan.days.find((day) => day.date === today);
+    return {
+      hasImportedPlan: true,
+      coachSessionTitleToday: coachToday?.session.title ?? null,
+      forecastModeToday: forecastToday ? forecastToday.mode : null,
+      forecastTitleToday: forecastToday?.template.title ?? null,
+      coachFlaggedToday: (critique?.findings ?? []).some((finding) => finding.date === today),
+    };
+  }, [activePlan, weekAheadPlan, critique, today]);
+
   return (
     <div className="plan-view-container">
       <div className="plan-view-header">
@@ -463,6 +485,13 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         <section className="plan-import-section" aria-label="Plan import and revision tool">
           <ExternalPlanImport userId={userId} onImported={handlePlanImported} />
         </section>
+      )}
+
+      {!loading && !loadError && !forecastUnavailable && authorityBanner && (
+        <PlanAuthorityBanner
+          {...authorityBanner}
+          onViewHome={onNavigate ? () => onNavigate('home') : undefined}
+        />
       )}
 
       {activePlan && (
