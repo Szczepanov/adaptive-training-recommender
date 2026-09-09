@@ -1,111 +1,194 @@
-# AGENTS.md — AI Agent Guidance for Adaptive Training Recommender
+# AGENTS.md — Repository Reference for AI Agents
 
-This document outlines repository rules, code conventions, testing instructions, and architecture for AI assistants operating on this codebase.
+The reference index for `adaptive-training-recommender`: package and command routing,
+verification gates, and which document to trust.
 
-## Repository Overview
+**Scope:** this root file applies to the whole repository. A deeper `AGENTS.md`, if added,
+takes precedence for its subtree.
 
-`adaptive-training-recommender` is a hybrid Python/TypeScript repository:
-* **Python Backend** (`src/garmin_sync/`): Ingests health & training metrics from Garmin Connect into user-scoped Firestore documents.
-* **Frontend App** (`app/`): React + TypeScript + Vite + Firebase application that reads user recovery snapshots and computes adaptive training recommendations.
+**Read [`CLAUDE.md`](./CLAUDE.md) first** — it holds the invariants you must not violate,
+the pre-change checks, and the verification loop. This file answers *"where is it and what
+do I run?"*; `CLAUDE.md` answers *"what am I allowed to do?"*.
+
+## Repository overview
+
+* **Python backend** (`src/garmin_sync/`) — ingests health and training metrics from Garmin
+  Connect (and Eight Sleep / Google Health transports) into user-scoped Firestore documents.
+* **Frontend app** (`app/`) — React + TypeScript + Vite + Firebase. Reads user recovery
+  snapshots and computes adaptive training recommendations. The decision engine lives in
+  `app/src/engine/`; its evaluators are pure, and only the orchestration entry points
+  reach for IO — as a lazily-imported default when no provider was injected.
 
 ---
 
-## Critical System Constraints
+## Critical system constraints
 
-1. **User Isolation**: NEVER write recovery documents to `daily_recovery_snapshot/{date}` or with `"default_user"`. Always write to `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`.
-2. **Timezone Semantics**: Always use `Europe/Warsaw` for local date calculations (`local_today()` in Python, `getLocalDateString()` in TypeScript). Do not use UTC `toISOString().split('T')[0]` for calendar dates.
-3. **No Credential Leaks**: Never commit `.env`, `.garth`, Firebase service account files, or raw health JSONs.
-4. **Step Count Semantics**: `totalSteps` in recovery snapshots represents the completed previous calendar day (`D - 1`). Rolling 7d/28d baselines normalize ambient step surges, and estimated activity steps (runs, field sports, walks) are deducted in `fatigue.ts` to prevent double-counting structured training.
+Full statements, with rationale and the checks that enforce them, are in
+[`CLAUDE.md` § 1](./CLAUDE.md#1-non-negotiable-invariants). In short:
+
+1. **User isolation** — write to `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`; never `daily_recovery_snapshot/{date}`, never `"default_user"` (ADR-0002).
+2. **Timezone semantics** — `Europe/Warsaw` for every calendar date, via `local_today()` / `getLocalDateString()`; never UTC `toISOString().split('T')[0]` (ADR-0003).
+3. **`D - 1` step semantics** — `totalSteps` is the previous completed day; baselines normalize ambient surges and `fatigue.ts` deducts estimated activity steps (ADR-0003).
+4. **Knowledge lineage** — decision-authority constants are owned by registered claims with alignment tests; check `app/src/knowledge/` before changing one (ADR-0033).
+5. **Policy version** — bump `POLICY_VERSION` when a change can alter a recommendation (ADR-0010).
+6. **No credential leaks** — never commit `.env`, `.garth/`, service-account files, or raw health JSON.
 
 ---
 
-## Commands Reference
+## Commands reference
 
-### Full Suite (Makefile)
-* `make all` — Run all code checks, test suites, simulations, and build
-* `make check` — the commit gate: `ruff check`, `ruff format --check`, `mypy`, `pytest`, `tsc -b`, `eslint`, `vitest`, `validate:knowledge`, `validate:knowledge-coverage`, workout validation. It covers every static frontend gate CI runs; only the Firestore rules emulator suite (`npm run test:rules`), `npm audit` and the base-SHA policy-drift check are CI-only.
-* `make test` — Run all unit test suites (pytest + vitest)
-* `make lint` — Run all linters (ruff + eslint)
-* `make format` — Auto-format Python and TypeScript code
-* `make simulate` — Run scenario simulations and verify baseline diff
-* `make build` — Build production frontend application
-* `make deploy` — Build and deploy frontend to Firebase Hosting
-* `make deploy-all` — Build and deploy all Firebase assets (Hosting + Rules + Indexes)
-* `make deploy-rules` — Deploy Firestore security rules (with drift check)
-* `make help` — Show all available Makefile targets
+### Full suite (Makefile, repository root)
 
-### Python Backend
-* `uv sync` — Restore dependencies
-* `uv run pre-commit install` — Install pre-commit git hooks locally
-* `uv run pre-commit run --all-files` — Run pre-commit checks across all staged files
-* `uv run pytest` — Run unit tests
-* `uv run ruff check .` — Run ruff linter & import sorter
-* `uv run ruff format --check .` — Check ruff code formatting (`uv run ruff format .` to format)
-* `uv run mypy src/garmin_sync` — Run static type checking on backend source
-* `uv run python -m garmin_sync sync` — Run daily ingestion for `APP_USER_ID`
-* `uv run python -m garmin_sync sync-all` — Run daily ingestion for every active Garmin link
-* `uv run python -m garmin_sync backfill --days 56` — Run historical backfill
-* `uv run python -m garmin_sync backfill-health --days 56` — Historical backfill for Google Health (Eight Sleep & Garmin)
-* `uv run python -m garmin_sync backfill-eight-sleep-direct --days 56` — Historical backfill for the direct Eight Sleep connector (ES8/ES9)
-* `uv run python -m garmin_sync audit --days 90` — Report sync/archive completeness
-* `uv run python -m garmin_sync audit-multisource --days 60` — Multisource shadow audit, Garmin Direct vs Eight Sleep (MS14)
-* `uv run python -m garmin_sync rebuild --start-date X --end-date Y` — Offline snapshot rebuild
-* `uv run python -m garmin_sync probe-health` — Google Health source-provenance probe (MS0)
-* `uv run python -m garmin_sync compare-transports --days 60` — Garmin direct vs Google Health transport equivalence (MS10)
-* `uv run python -m garmin_sync compare-eight-sleep-transports --days 60` — Eight Sleep direct vs Google Health transport equivalence (ES9)
-* `uv run python -m garmin_sync export-identity-replay --days 60` — Export real Garmin+Eight Sleep data as `identityReplay.ts`'s input shape (PI8)
-* `uv run python -m garmin_sync export-activities --days 7` — Export recent activity telemetry to JSON for AI agent planning
-* `uv run python -m garmin_sync push-workout` / `push-pending-workouts[-all]` — Push queued/pending structured workouts to Garmin
-* `uv run python -m garmin_sync poll-manual-sync[-all]` — Poll manual sync status for one or every active Garmin link
+* `make check` — the core local code gate: `ruff check`, `ruff format --check`, `mypy`,
+  `pytest`, `tsc -b`, `eslint`, `vitest`, knowledge validation, knowledge-coverage
+  validation, and workout validation. `check-frontend` mirrors the app's `npm run check`
+  gate; CI adds further path-specific checks such as dependency audits, policy drift,
+  coverage/rules, simulations, and Docker validation.
+* `make all` — `check` + `simulate` + `build` (the default target)
+* `make test` — unit tests only (`pytest` + `vitest`)
+* `make typecheck` / `make lint` — both stacks
+* `make format` — auto-format Python and TypeScript; `make format-check` verifies Python formatting without writing
+* `make validate-knowledge` / `make validate-knowledge-coverage` / `make validate-workouts` — run the frontend registries/catalog validators individually
+* `make simulate` — scenario simulations + baseline diff verification
+* `make simulate-calibrate` / `make simulate-fatigue-fusion` / `make simulate-subjective-drift` / `make compare-sequence-search` — targeted evidence runs
+* `make build` — production frontend build
+* `make install` — install Python and Node dependencies
+* `make deploy` / `make deploy-all` / `make deploy-rules` / `make deploy-indexes` — Firebase Hosting / all assets / security rules (with drift check) / indexes
+* `make clean`, `make help` — housekeeping and target listing
 
-### Frontend App
-* `cd app && npm ci` — Install node dependencies
-* `cd app && npm run check` — Run full validation suite (TypeScript typecheck, ESLint, Vitest, workout catalog)
-* `cd app && npm test` — Run engine unit test suite (`vitest run`)
-* `cd app && npm run test:rules` — Firestore security-rule suite inside the local Firebase emulator (needs Java)
-* `cd app && npm run build` — Build production bundle (`npm run check && vite build`)
-* `cd app && npm run dev` — Start Vite dev server (automatically executes `npm run check` pre-flight)
-* `cd app && npm run validate:workouts` — Validate workout catalog definitions and prescription contracts
-* `cd app && npm run simulate:scenarios` — Run multi-week engine simulations; reports land in `artifacts/simulation-reports/latest/`
-* `cd app && npm run simulate:diff` — Generate non-blocking semantic diff against committed baseline snapshot (`docs/analysis/simulation-baseline.json`)
-* `cd app && node scripts/check-policy-drift.mjs <base-sha>` — Verify POLICY_VERSION increment when engine decision logic changes
-* `cd app && npm run replay:recommendation -- <audit.json>` — Replay a persisted decision against its own audit to verify reproducibility
-* `cd app && npm run visual:install` — Install Playwright Chromium binary for visual review tests
-* `cd app && npm run visual:refresh` — Capture desktop/mobile visual review screenshots in `artifacts/visual-review/latest/`
-* `cd app && npm run visual:serve` — Start visual review harness dev server with synthetic fixtures (`http://127.0.0.1:4174`)
+### Python backend
 
+* `uv sync` — restore dependencies
+* `uv run pre-commit install` — install git hooks locally
+* `uv run pre-commit run --all-files` — run every pre-commit check
+* `uv run pytest` — unit tests
+* `uv run ruff check .` — lint and import sort
+* `uv run ruff format --check .` — formatting check (`uv run ruff format .` to apply)
+* `uv run mypy src/garmin_sync` — static type check
+* `uv run python scripts/bootstrap_garmin_tokens.py` — Garmin OAuth token bootstrap
+* `uv run python scripts/respiration_baseline_evidence.py` — synthetic respiration baseline sweep (ADR-0024)
+
+**`garmin_sync` CLI** (`uv run python -m garmin_sync <command>`):
+
+| Command | Does |
+|---|---|
+| `sync [--date YYYY-MM-DD] [--force]` | Daily ingestion for `APP_USER_ID` |
+| `sync-all` | Daily ingestion for every active Garmin link |
+| `backfill --days 56 [--force]` | Historical backfill |
+| `backfill-health --days 56` | Google Health backfill (Eight Sleep & Garmin) |
+| `backfill-eight-sleep-direct --days 56` | Direct Eight Sleep connector backfill (ES8/ES9) |
+| `rebuild --start-date X --end-date Y` | Offline snapshot rebuild from the raw archive |
+| `audit --days 90` | Sync/archive completeness report |
+| `audit-multisource --days 60` | Multisource shadow audit, Garmin direct vs Eight Sleep (MS14) |
+| `probe-health` | Google Health source-provenance probe (MS0) |
+| `compare-transports --days 60` | Garmin direct vs Google Health transport equivalence (MS10) |
+| `compare-eight-sleep-transports --days 60` | Eight Sleep direct vs Google Health equivalence (ES9) |
+| `export-identity-replay --days 60` | Export real data in `identityReplay.ts`'s input shape (PI8) |
+| `export-activities --days 7` | Export recent activity telemetry as JSON for planning |
+| `push-workout`, `push-pending-workouts[-all]` | Push queued/pending structured workouts to Garmin |
+| `poll-manual-sync[-all]` | Poll manual sync status for one or every active link |
+
+### Frontend app (run from `app/`)
+
+* `npm ci` — install dependencies
+* `npm run check` — the frontend gate: `tsc -b`, `eslint`, `vitest run`, knowledge validation, knowledge-coverage validation, workout catalog validation
+* `npm test` — `vitest run` only; the fast inner loop (`npm run test:watch`, `npm run test:coverage`)
+* `npm run test:rules` — Firestore security-rule suite inside the Firebase emulator (needs Java)
+* `npm run build` — `npm run check && vite build`
+* `npm run dev` — Vite dev server (`predev` runs `npm run check` first)
+* `npm run validate:workouts` / `npm run validate:knowledge` / `npm run validate:knowledge-coverage` — catalog and registry validators, individually
+* `npm run simulate:scenarios` — multi-week engine simulations → `artifacts/simulation-reports/latest/`
+* `npm run simulate:diff` — non-blocking semantic diff against `docs/analysis/simulation-baseline.json` (`npm run simulate:update-baseline` to re-baseline)
+* `node scripts/check-policy-drift.mjs <base-sha>` — verify `POLICY_VERSION` was bumped when decision logic changes
+* `npm run replay:recommendation -- <audit.json>` — replay a persisted decision against its own audit
+* `npm run build:plan-judge-corpus && npm run report:sequencing` — deterministic sequencing collision/spacing/opportunity-cost diagnostics (issue #458; report only, no gate)
+* `judge:*` and `persona:*` are script-name families, **not executable npm wildcards**. Use concrete scripts such as `npm run judge:run`, `npm run judge:diff`, `npm run judge:update-baseline`, `npm run persona:run`, `npm run persona:diff`, and `npm run persona:update-baseline`; see `app/package.json` for local/quick/e2e/resume variants.
+* `npm run evidence:health-anomaly`, `npm run evidence:identity-replay`, `npm run measure:garmin-zone-credit` — shadow-mode evidence runs
+* `npm run visual:install` → `npm run visual:refresh` — Playwright screenshots into `artifacts/visual-review/latest/`; `npm run visual:serve` runs the harness at `http://127.0.0.1:4174`
+
+### What CI gates (`.github/workflows/ci.yml`)
+
+CI is path-sensitive. `detect-changes` chooses the applicable jobs, and the final `CI Gate`
+fails the PR if any required job on that path fails.
+
+| Change class | Job | Gates on |
+|---|---|---|
+| Docs-only | Documentation & security hygiene | repository-hygiene `pre-commit` checks (the CI job skips the code-only uv-lock/Ruff/mypy/ESLint hooks) |
+| Code | Python test suite | `uv lock --check`, repository-hygiene `pre-commit`, `ruff check`, `ruff format --check`, `mypy src/garmin_sync`, `pytest` with coverage, `uvx pip-audit` |
+| Code | Frontend hygiene & static gates | `npm audit --audit-level=high`, `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:workouts`, policy-version drift vs the PR base, `build:bundle` |
+| Code | Frontend unit tests & Firestore rules | `npm run test:coverage`, `npm run test:rules` (emulator + Java) |
+| Code | Engine simulations & AI gates | `simulate:scenarios` plus committed-baseline `git diff --exit-code`, `simulate:plan-judge`, persona corpus build; `simulate:diff` is advisory (`continue-on-error`) |
+| Code | Docker build & compose smoke | root image build, Compose config/build/up, smoke checks |
+
+`make check` already covers Python lint **and formatting**, mypy, pytest, frontend typecheck,
+ESLint, Vitest, the knowledge validators, and workout validation. The important CI-only
+additions are dependency/lock audits, pre-commit hygiene, policy-drift and bundle checks,
+coverage/rules tests, simulation/AI gates, and Docker validation.
 
 ### Docker
-* `docker compose build` (or `make docker-build`) — Build backend and frontend images
-* `docker compose up -d` (or `make docker-up`) — Start backend API (port 8081) and frontend Nginx SPA (port 8080)
-* `docker compose down` (or `make docker-down`) — Stop and remove compose services and networks
-* `make docker-smoke` — Run health and reverse-proxy smoke checks against running containers
-* `docker build -t adaptive-training-garmin-sync .` — Build standalone Garmin sync container image
+
+* `docker compose build` (`make docker-build`) — build backend and frontend images
+* `docker compose up -d` (`make docker-up`) — backend API on 8081, frontend Nginx SPA on 8080
+* `docker compose down` (`make docker-down`) — stop and remove services and networks
+* `make docker-smoke` — health and reverse-proxy smoke checks against running containers
+* `docker build -t adaptive-training-garmin-sync .` — standalone Garmin sync image
 
 ---
 
-## Package Architecture
+## Package architecture
+
+Read this as a routing aid, not a complete file listing. **Where it disagrees with the
+directory, the directory wins** — and fix the line you found wrong.
 
 ```text
 src/garmin_sync/
   config.py            # Typed Settings & validation
   dates.py             # Europe/Warsaw date provider
   models.py            # Schema Version 3 models (ADR-0002); provenance records (ADR-0010)
+  canonical.py         # Vendor-neutral canonical metric/activity models
+  provider.py          # WearableProvider protocol (vendor-neutral boundary)
   garmin_client.py     # Garmin API wrapper with exponential backoff
+  garmin_provider.py   # Garmin adapter; the ONLY module allowed to know Garmin response shapes
   token_store.py       # LocalTokenStore & GcsTokenStore abstraction
   firestore_repository.py # Firestore user-scoped repository
   metrics.py           # Pure baseline and intensity classification math
-  mapper.py            # Payload transformation with metric dates
-  provider.py          # WearableProvider protocol (vendor-neutral boundary)
-  garmin_provider.py   # Garmin adapter implementing WearableProvider
-  canonical.py         # Vendor-neutral canonical metric/activity models
+  mapper.py            # Provider-neutral snapshot assembly over canonical.py types
   archive.py           # Immutable raw payload archive (ADR-0005)
   audit.py             # Sync completeness reporting
   service.py           # Daily sync, backfill, rebuild orchestrator
+  coordination.py      # Multi-user ingestion coordination and batch runs
   account_link.py      # Multi-user Garmin account linking and token storage
   account_link_api.py  # Local/remote HTTP API for account linking workflows
-  coordination.py      # Multi-user ingestion coordination and batch runs
+  base_api.py          # Shared JSON request-handler base for the link API services
+  connection_status.py # Client-visible provider connection status reconciliation (ADR-0029)
+  error_reporting.py   # Sanitized error classification/reporting -- never emits health values
+  migrate_user_data.py # User-scoped data migration between uids (planned, summarized, redacted)
   workout_export.py    # FIT/TCX workout export integration
+  google_health_auth.py     # Google Health OAuth tokens & refresh locking (MS4, ADR-0027)
+  google_health_client.py   # Google Health v4 raw list endpoint client (MS5)
+  google_health_mapper.py   # Raw v4 data points -> CanonicalHealthObservation + provenance (MS6)
+  google_health_provider.py # RecoveryObservationProvider over Google Health (MS3/MS6)
+  google_health_account_link.py     # Browser-redirect OAuth account linking for Google Health
+  google_health_account_link_api.py # Separate HTTP service for that linking flow
+  webhook_receiver.py  # Google Health webhook signature verification & subscriber (MS9)
+  health_observation_service.py # Multi-source observation sync, archive & persistence (MS7/MS8)
+  health_probe.py      # Google Health source-provenance probe runner (MS0)
+  equivalence.py       # Garmin direct vs Google Health transport equivalence analyzer (MS10)
+  multisource_audit.py # Multisource coverage/baseline/cross-source shadow audit (MS14)
+  presence_filter.py   # @deprecated secondary-source concordance filter; superseded by PI
+  identity_eligibility.py   # Fail-closed effective-identity eligibility projection (PI5, ADR-0028)
+  identity_replay_export.py # Real-data exporter for the PI8 historical identity replay
+  eight_sleep_config.py    # Configuration for the opt-in direct Eight Sleep transport (ADR-0030)
+  eight_sleep_client.py    # Minimal read-only client for Eight Sleep's private API
+  eight_sleep_mapper.py    # Eight Sleep trends -> ADR-0027 source-aware observations
+  eight_sleep_provider.py  # RecoveryObservationProvider over direct Eight Sleep ingestion
+  eight_sleep_probe.py     # Sanitized local probe; never prints secrets or health values
+  eight_sleep_equivalence.py # Eight Sleep direct vs Google Health equivalence (ES9)
+  fit_activity.py      # Strict in-memory decoding boundary for Garmin FIT downloads (ADR-0031)
+  fit_workout_identity.py # Versioned fingerprint for a device-recorded structured workout (ADR-0034)
+  hr_fidelity.py       # Shadow-only exercise HR trace fidelity assessment (ADR-0031)
+  _hr_fidelity_detectors.py # Deterministic artifact candidates for hr_fidelity (HRF3)
+  _hr_fidelity_timing.py    # Timer-window, sampling and coverage primitives for hr_fidelity (HRF3)
   cli.py               # Argument parsing and entry points
 
 app/src/engine/
@@ -155,7 +238,23 @@ app/src/engine/
   externalCritique.ts  # Advisory weekly review of a placed plan week (D-CRITIQUE)
   externalPlanHash.ts  # Canonical SHA-256 of a stored revision; replay anchor (D-IMMUT)
   authoredSessionGates.ts # Adjudicates authored occurrences against readiness/gates (ADR-0023)
-  sessionChoiceResolution.ts # Deterministic resolution of athlete branch points & choices
+  scheduleWindows.ts   # ADR-0036 D-WINDOW: versioned athlete schedule windows; structure only
+  localInstant.ts      # ADR-0036 D-TIME: local wall-clock -> instant; fails closed on DST gaps
+  dailyLedger.ts       # ADR-0036 D-LEDGER: as-of daily minute/systemic-cost accounting boundary
+  intradayLedgerInputs.ts # Builds today's LedgerEntry[] from resolved occurrence/execution facts
+  fixedActivityLedger.ts  # Adapts a persisted fixed activity to the D-LEDGER accounting boundary
+  fixedActivityCostProfile.ts # Shared six-dimension cost reduce over a fixed activity's expectedCost
+  intradayBundlePlacement.ts # ADR-0036 D-PLACEMENT: binds a bundle's members to real windows
+  intradayReassessment.ts # ADR-0036 D-REASSESS: fresh as-of verdict before a later session starts
+  intradayDecision.ts  # ADR-0036 D-AUDIT: write-once intraday decision records & replay verification
+  externalRestProvenance.ts # ADR-0035 authored-rest identity, incl. explicit same-day override marker
+  recoveryPlacement.ts # ADR-0038: exact recovery identity; product-policy vs authored authority
+  recoveryFacts.ts     # ADR-0038 RP2: performed/authored/generated recovery truth derivation
+  blockIntent.ts       # ADR-0037: per-objective intent, dose envelopes, protected roles (H5a)
+  blockIntentReplay.ts # ADR-0037 D-REPLAY: canonical semantic projection & SHA-256 hash
+  progressionReview.ts # ADR-0037: pure report-only progression review; no selection authority (H5b)
+  sequenceIntent.ts    # Derived sequencing preference; shapes soft ranking only, never gates
+  occupationalLoad.ts  # Physical-work check-in -> occupational strain context (issues #459-461)
   sequenceSearch.ts    # Phase 5.1 beam-search prototype -- measured, NOT in any live path
   shadowAgreement.ts   # Phase 9.0: pure engine-vs-athlete verdict classifier (evidence only)
   shadowLog.ts         # Phase 9.0: pure day-row joiner + CSV renderer for export
@@ -209,7 +308,7 @@ app/src/sessions/
   models.ts            # Source-neutral session definitions, prescriptions, occurrences, executions
   validation.ts        # Canonical schema validators for definitions, prescriptions, occurrences, entries
   sessionDefinitionResolver.ts # Pinned revision / occurrence resolution and hash verification
-  sessionDefinitionHash.ts # Canonical SHA-256 content hashing for definition and prescription
+  sessionDefinitionHash.ts # Canonical SHA-256 content hashing of definition and prescription
   sessionDefinitionDiff.ts # M3.7: fine-grained content diff between two definition revisions
   inputProfiles.ts     # Input card profiles (repetition, duration, distance, check-offs, gauges)
   performedComparison.ts # Planned vs completed steps, volume, omissions, hold duration
@@ -218,6 +317,10 @@ app/src/sessions/
   canonicalWorkoutAdapter.ts # Adapts canonical (Garmin/import) workouts to SessionDefinition
   externalPlanV2.ts    # M3.6: external-plan@2 imported-plan envelope
   externalSessionAdapter.ts # Imported external session -> SessionDefinition shim
+  externalPlanV3.ts    # external-plan@3 (ADR-0035) -- adds plan-level `restDays` directives
+  externalPlanV4.ts    # external-plan@4 (ADR-0036 D-SCHEMA) -- adds session-level `intraday` requests
+  externalPlanAny.ts   # Type-only union across v2/v3/v4, kept separate to avoid an import cycle
+  restEventTiming.ts   # Pure start/adjust/close transitions for one performed rest interval
   choiceResolution.ts  # Athlete-facing effective view from recorded branch-point choices (D-MCHOICE)
   groupProgression.ts  # Repeating-rotation execution-mode step sequencing
   occurrenceReconciliation.ts # M4.3: companion occurrence identity & duplicate reconciliation
@@ -246,6 +349,7 @@ app/src/observations/
   performanceTestingCatalog.ts # Catalog of structured performance-testing protocols
   progress.ts             # Series comparison and true-change interpretation against noise thresholds
   testingWorkflow.ts      # Testing-session workflow state machine
+  comparability.ts        # Canonical comparison-series construction & comparability gate
 
 app/src/outcomes/
   evaluationSpec.ts       # OV: OutcomeEvaluationSpec/metric-binding contracts & validators
@@ -264,21 +368,19 @@ app/src/knowledge/
   stimulusHeuristicsKnowledge.ts # Product-policy claims for stimulus credit, fatigue fusion, and planning priors (SKR3 W2b)
   periodizationEventDemandKnowledge.ts # Scientific boundaries and product presets for periodization (SKR3 W1)
   injuryPainKnowledge.ts # Tissue-response, severity scaling, and standing injury restriction claims (SEP)
-  readinessSleepHrvKnowledge.ts # Scientific and heuristic claims for HRV, sleep, and recovery balance
+  readinessCardiorespiratoryKnowledge.ts # RHR and respiration monitoring claims
+  subjectiveReadinessKnowledge.ts # Subjective readiness claims + mode-threshold policy claims
+  strengthConcurrentKnowledge.ts # Concurrent strength/endurance performance & sequencing claims
   strengthWarmupKnowledge.ts # General and specific warm-up protocol claims
   taperFuelingKnowledge.ts # Pre-event taper boundaries and fueling/hydration claims
   athleteEvidence.ts   # Identity-scoped athlete-specific evidence contracts, domain models, and validator (SKR4)
   athleteEvidencePolicy.ts # Pure policy refinement engine and safety monotonicity evaluator (SKR4)
 ```
 
-This map is a routing aid, not a complete file listing. Where it disagrees with the
-directory, the directory wins.
-
-**Before changing engine behaviour**, read
-`docs/architecture/recommendation-engine.md` (the two selection paths) and the relevant
-ADR. Known divergences between the ADRs and the code are tracked in
-`docs/analysis/2026-08-08-architecture-review.md`, with remediation sequenced in
-`docs/plans/`.
+**Before changing engine behaviour**, read `docs/architecture/recommendation-engine.md`
+(the two selection paths) and the relevant ADR. Known divergences between the ADRs and the
+code are tracked in `docs/analysis/2026-08-08-architecture-review.md`, with remediation
+sequenced in `docs/plans/`.
 
 ---
 
@@ -287,19 +389,18 @@ ADR. Known divergences between the ADRs and the code are tracked in
 `docs/` directories are not interchangeable — each has a different relationship to the
 truth, and reading one as if it were another has already caused a fixed defect to be
 re-reported three times. **[`docs/README.md`](./docs/README.md) opens with the routing
-table**: which directory is authoritative for what, precedence when two documents
-disagree, and task-oriented entry points. Read it before trusting any other document
-here.
+table**: which directory is authoritative for what, precedence when two documents disagree,
+and task-oriented entry points. Read it before trusting any other document here.
 
 The short version:
 
-| Directory | Is | Trust for |
-|---|---|---|
-| `docs/adr/` | Immutable decisions | Intended design and rationale — *not* current behaviour |
-| `docs/architecture/` | Living reference | How it works today |
-| `docs/analysis/` | Dated audit | Evidence as of its date — verify findings against code |
-| `docs/plans/` | Mutable, status-tracked | Work to be done; `Implemented`/`Archived` plans are history, not instructions |
-| `docs/ops/` | Runbooks | Operational procedure |
+| Directory | Is | Trust for | Do not trust for |
+|---|---|---|---|
+| `docs/adr/` | Immutable decisions | Intended design and rationale | What the code does today |
+| `docs/architecture/` | Living reference | How it works today | Why it was chosen |
+| `docs/analysis/` | Dated audit | Evidence as of its date | Current state — verify against code |
+| `docs/plans/` | Mutable, status-tracked | Work to be done; the status board in [`docs/plans/README.md`](./docs/plans/README.md) | Anything marked `Implemented`/`Archived` — that is history |
+| `docs/ops/` | Runbooks | Operational procedure | Design intent |
 
 **When two documents disagree, the code wins, then `architecture/`, then `adr/`.** Do not
 silently pick one — fix the doc or record the divergence in the current review document,
@@ -317,8 +418,21 @@ and say which you did.
 
 ---
 
-## Code Style & Testing Standards
+## Code style & testing standards
 
-* Maintain type hints across all Python modules.
-* Use synthetic JSON fixtures (`tests/fixtures/`) for unit tests; do not call live APIs during tests.
-* Ensure all frontend changes compile with TypeScript (`npm run build`).
+* **Python** — type hints on every module; `mypy src/garmin_sync` stays clean. Format with
+  `ruff format`; lint with `ruff check`.
+* **TypeScript** — every change must pass `tsc -b` and `eslint`. Engine evaluators stay
+  pure: no Firestore, no `fetch`, no `Date.now()` in a decision path (there is none today).
+  IO arrives through an injected boundary — `trainingHistory.ts` in TypeScript,
+  `provider.py` in Python. `rules.ts`, `trainingIntent.ts` and `replay.ts` are the
+  orchestration exceptions: they lazily import a Firestore-backed default only when the
+  caller injected nothing. Do not widen that set.
+* **Immutability** — derive new objects rather than mutating inputs; the engine's replay and
+  audit guarantees (ADR-0010) depend on it.
+* **Tests** — synthetic fixtures only (`tests/fixtures/` in Python,
+  `app/src/sessions/fixtures/` and inline builders in the frontend). Never call a live API
+  from a test. New decision-authority behaviour needs a policy-alignment test (ADR-0033);
+  new engine behaviour needs a scenario the simulation harness can see.
+* **Commits** — conventional-commit prefixes (`feat:`, `fix:`, `docs:`, `chore:`, …).
+  Reference symbols, not line numbers, in messages too.

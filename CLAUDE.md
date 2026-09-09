@@ -1,74 +1,128 @@
-# CLAUDE.md — Claude Code Instructions
+# CLAUDE.md — Operating Instructions for Claude Code
 
-Quick guide for building, testing, and working on `adaptive-training-recommender`.
+`adaptive-training-recommender` is a hybrid repository: a Python Garmin/health ingestion
+backend (`src/garmin_sync/`) and a React + TypeScript + Firebase app (`app/`) whose engine
+turns recovery snapshots into adaptive training recommendations.
 
-## Core Guidelines & Architectural Rules
-- **User Scoping**: Ingestion output path MUST be `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`. Never write `"default_user"` documents.
-- **Timezone**: Dates MUST be computed in `Europe/Warsaw` timezone (`local_today()` in Python, `getLocalDateString()` in TS). Avoid UTC `.toISOString().split('T')[0]` for calendar dates.
-- **Step Semantics**: `totalSteps` represents previous completed day (`D - 1`). Baselines and activity-deducted ambient surges feed `fatigue.ts`.
-- **Knowledge Lineage**: Before proposing or changing any engine threshold, weight, cadence or policy constant, check `app/src/knowledge/knowledgeCoverage.ts` for an existing coverage item and `sportsKnowledgeRegistry.ts` for existing claims — the answer, or an explicit statement that the evidence does not support one, is often already registered. New decision-authority rules require a claim, a coverage item and a policy-alignment test (ADR-0033). The registry is invisible exactly when it matters most: you are reading a bare `0.40` in `optimizer.ts`, and nothing there says an alignment-tested claim owns it.
-- **Security**: Never commit credentials, `.garth` token directories, `.env` files, or raw health JSON logs.
-
-## Essential Development Commands
-
-### All-in-One Commands (Makefile)
-- Run All Checks, Tests, Simulations & Build: `make all`
-- Run Full Validation Suite: `make check` (ruff lint+format, mypy, pytest, tsc, eslint, vitest, knowledge registry, knowledge coverage, workout catalog — a superset of CI's static frontend gates; only the Firestore rules suite, `npm audit` and the policy-drift check are CI-only)
-- Run All Tests (Python + Frontend): `make test`
-- Run Linters: `make lint`
-- Auto-Format Code: `make format`
-- Run Simulations & Baseline Diff: `make simulate`
-- Build Frontend App: `make build`
-- Deploy Frontend to Production Firebase: `make deploy`
-- Deploy All Firebase Assets: `make deploy-all`
-- Deploy Firestore Rules: `make deploy-rules`
-- Install Dependencies: `make install`
-- Help / List Targets: `make help`
-
-### Python Environment
-- Install / Sync: `uv sync`
-- Pre-commit Run: `uv run pre-commit run --all-files`
-- Run Tests: `uv run pytest`
-- Lint Python: `uv run ruff check .`
-- Check Format: `uv run ruff format --check .` (format with `uv run ruff format .`)
-- Type Check Python: `uv run mypy src/garmin_sync`
-- Daily Sync CLI: `uv run python -m garmin_sync sync [--date YYYY-MM-DD] [--force]`
-- Backfill CLI: `uv run python -m garmin_sync backfill [--days N] [--force]`
-- Login Bootstrap: `uv run python scripts/bootstrap_garmin_tokens.py`
-- Respiration Baseline Evidence (synthetic sweep, ADR-0024): `uv run python scripts/respiration_baseline_evidence.py`
-
-### Frontend Application (`app/`)
-- Install: `cd app && npm ci`
-- Full Check: `cd app && npm run check` (TypeScript, ESLint, Vitest, workout catalog)
-- Run Tests: `cd app && npm test`
-- Build: `cd app && npm run build`
-- Dev Server: `cd app && npm run dev` (automatically runs `npm run check` first via `predev`)
-- Engine Simulation: `cd app && npm run simulate:scenarios`
-- Simulation Diff: `cd app && npm run simulate:diff`
-- Sequencing/Ranking Diagnostics Report: `cd app && npm run build:plan-judge-corpus && npm run report:sequencing` (issue #458 — deterministic sequencing collision/spacing/opportunity-cost metrics; report only, no gate)
-- Policy Version Guard: `cd app && node scripts/check-policy-drift.mjs <base-sha>`
-- Replay Decision Audit: `cd app && npm run replay:recommendation -- <audit.json>`
-- Visual Review Harness: `cd app && npm run visual:refresh` (captures screenshots to `artifacts/visual-review/latest/`)
-- Firestore Rules Tests: `cd app && npm run test:rules` (executes Vitest in Firebase Firestore emulator)
-
-### Docker
-* `docker compose build` (or `make docker-build`) — Build backend and frontend images
-* `docker compose up -d` (or `make docker-up`) — Start backend API (port 8081) and frontend Nginx SPA (port 8080)
-* `docker compose down` (or `make docker-down`) — Stop and remove compose services and networks
-* `make docker-smoke` — Run health and reverse-proxy smoke checks against running containers
-* `docker build -t adaptive-training-garmin-sync .` — Build standalone Garmin sync container image
+**This file is the rules. [`AGENTS.md`](./AGENTS.md) is the reference** — the complete
+command reference and package routing map. This file keeps only the minimal working-loop
+subset; when full inventories lived in both files they drifted. Read `AGENTS.md` before
+concluding that a module, CLI subcommand or npm script does not exist.
 
 ---
 
-## Key Code Locations
-- `AGENTS.md`: **Authoritative package map** — the file-by-file index for everything not listed below. This section is a shortlist, not an inventory; check `AGENTS.md` before concluding a capability does not exist.
-- `app/src/knowledge/`: Sports knowledge registry (ADR-0033) — scientific claims, product-policy claims and their evidence lineage. `knowledgeCoverage.ts` inventories every decision-authority rule in the engine with its classification, coverage state and research priority; `*PolicyAlignment.test.ts` assert registered claims match implemented constants.
-- `src/garmin_sync/`: Core Python Garmin ingestion package.
-- `scripts/bootstrap_garmin_tokens.py`: Garmin OAuth token bootstrap utility.
-- `app/src/engine/`: Core adaptive engine modules (`rules.ts`, `schedule.ts`, `periodization.ts`, `microcycle.ts`, `fatigue.ts`, `optimizer.ts`).
-- `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/`: Source-neutral session authoring/execution, session-linked response evidence, metric testing, and outcome/goal-progress reporting (ADR-0023). See `AGENTS.md`'s package map for the full file-by-file breakdown — it has grown far beyond what fits here.
-- `app/src/training-occurrence/`: Canonical performed-training-occurrence reconciliation (ADR-0034) — shadow-mode only, not wired into recommendations yet (as of PR #324, open).
-- `app/src/utils/localDate.ts`: Frontend Warsaw date utility.
-- `app/src/services/recoverySnapshotService.ts`: User-scoped Firestore recovery reader.
-- `app/firestore.rules`: Security rules for user-owned paths.
-- `docs/plans/README.md`: Authoritative status board for every in-flight plan/capability — check here before assuming something is done or pending.
+## 1. Non-negotiable invariants
+
+These are enforced by tests and by ADRs. If a change appears to require breaking one, stop
+and say so instead of working around it.
+
+| # | Invariant | Concretely |
+|---|---|---|
+| I1 | **User scoping** | Recovery documents go to `users/{APP_USER_ID}/daily_recovery_snapshots/{YYYY-MM-DD}`. Never `daily_recovery_snapshot/{date}`, never a `"default_user"` document. (ADR-0002) |
+| I2 | **Warsaw calendar dates** | Use `local_today()` (Python) and `getLocalDateString()` (`app/src/utils/localDate.ts`). Never `new Date().toISOString().split('T')[0]` for a calendar date — it silently shifts the day for ~2 hours every night. (ADR-0003) |
+| I3 | **`D - 1` step semantics** | `totalSteps` in a snapshot is the *previous completed* calendar day. Rolling 7d/28d baselines normalize ambient surges; estimated activity steps are deducted in `fatigue.ts` so structured training is not counted twice. (ADR-0003) |
+| I4 | **Knowledge lineage** | Every engine threshold, weight, cadence or policy constant with decision authority is owned by a registered claim. Before touching one, see §2. (ADR-0033) |
+| I5 | **Policy version** | A change that can alter a recommendation must bump `POLICY_VERSION` in `app/src/engine/policy.ts`. Verify with `node scripts/check-policy-drift.mjs <base-sha>` from `app/`. (ADR-0010) |
+| I6 | **No credential leaks** | Never commit or print `.env`, `.garth/` token directories, Firebase service-account files, or raw health JSON payloads. Health data is personal data. |
+
+## 2. Before you change a number in the engine
+
+The knowledge registry is invisible exactly when it matters most: you are reading a bare
+`0.40` in `optimizer.ts`, and nothing at the call site says an alignment-tested claim owns
+it. So check first, every time:
+
+1. `app/src/knowledge/knowledgeCoverage.ts` — the inventory of every decision-authority
+   rule, with its classification, coverage state and research priority. Your constant is
+   probably already there.
+2. `app/src/knowledge/sportsKnowledgeRegistry.ts` — the registered claims. The answer, *or
+   an explicit statement that the evidence does not support one*, is often already written.
+3. `*PolicyAlignment.test.ts` — these assert that registered claims match the implemented
+   constants. A change that does not update both sides fails here, by design.
+
+A **new** decision-authority rule needs all three: a claim, a coverage item, and a
+policy-alignment test (ADR-0033). Do not add one silently.
+
+## 3. Working loop
+
+**Before writing code**
+- Check [`docs/plans/README.md`](./docs/plans/README.md) — the authoritative status board.
+  It says what is in progress, what shipped, and what is deliberately shadow-mode only.
+  Never infer delivery status from a file's existence or from this file.
+- For engine behaviour: `docs/architecture/recommendation-engine.md`, then the relevant ADR,
+  then `docs/analysis/2026-08-08-architecture-review.md` for known ADR/code divergences.
+- See [`AGENTS.md` § Reading the documentation](./AGENTS.md#reading-the-documentation) for
+  which `docs/` directory is authoritative for what. **Code wins, then `architecture/`,
+  then `adr/`.**
+
+**While writing code**
+- Keep evaluators pure — no Firestore, no `fetch`, no `Date.now()` inside a decision path.
+  Only the orchestration entry points (`rules.ts`, `trainingIntent.ts`, `replay.ts`) reach
+  for IO, and only as a lazily-imported default when the caller injected no provider
+  (`trainingHistory.ts` in TypeScript, `provider.py` in Python). Follow that pattern rather
+  than importing a service into an evaluator.
+- Python: type hints everywhere; `mypy src/garmin_sync` must stay clean.
+- Tests use synthetic fixtures (`tests/fixtures/`). Never call a live API from a test.
+- Reference symbols in docs and commit messages, never line numbers (§5).
+
+**Before you call it done**
+```bash
+make check          # ruff check/format + mypy + pytest; tsc + eslint + vitest + knowledge/workout validators
+```
+- Docs-only change → `uv run pre-commit run --all-files`. CI uses the docs-hygiene fast path
+  and skips the code test/build/simulation jobs.
+- `make check` already runs `ruff format --check` through `lint-python`; if formatting
+  fails, use `make format` (or `uv run ruff format .`) and rerun the gate.
+- Knowledge-registry and coverage validation are part of `make check`; use
+  `cd app && npm run check` when you want the same frontend-only gate without the Python
+  checks.
+- Engine or policy change → `make simulate` (scenario run, aggregate-bounds gate) plus
+  `cd app && npm run simulate:plan-judge` and the policy-drift check (I5). All three gate
+  CI; `simulate:diff` is advisory there, so read it but do not block on it.
+- Firestore rules change → `cd app && npm run test:rules` (needs the emulator and Java).
+  CI runs it on every code change, not only rules changes.
+- `make all` = `check` + `simulate` + `build`. Run it when the change is broad.
+- The full CI gate list is in
+  [`AGENTS.md` § What CI gates](./AGENTS.md#what-ci-gates-githubworkflowsciyml).
+
+Report what you actually ran and what it said. A skipped suite is a fact worth stating.
+
+## 4. Daily commands
+
+The full index is in [`AGENTS.md` § Commands](./AGENTS.md#commands-reference). The ones you
+need most:
+
+```bash
+make check                             # core local code gate, including knowledge/workout validators
+make test                              # pytest + vitest only
+make simulate                          # scenario simulations + baseline diff
+uv sync                                # restore Python deps
+uv run python -m garmin_sync sync      # daily ingestion for APP_USER_ID
+cd app && npm run check                # frontend gate (tsc, eslint, vitest, knowledge, workouts)
+cd app && npm test                     # vitest only — the fast inner loop
+```
+
+## 5. Repository conventions that exist because they were violated
+
+- **Reference symbols, never line numbers.** Write `` `rules.ts` `evaluateEnvelopes` ``, not
+  `` `rules.ts:544-556` ``. A 2026-08-08 audit found 91 line references in `docs/plans/`;
+  three of six sampled already pointed at the wrong code the day they were written.
+- **A finished plan must not read like a work list.** When a plan reaches `Implemented`,
+  strike its present-tense problem statements — otherwise they get acted on as live work.
+  A fixed defect was re-reported three times this way.
+- **Do not restate mutable status in an instruction file.** Delivery status belongs in
+  `docs/plans/README.md` alone; PR numbers and "not yet wired up" notes go stale here
+  faster than anyone updates them.
+
+## 6. Where things live
+
+| Looking for | Go to |
+|---|---|
+| Package routing map | [`AGENTS.md` § Package architecture](./AGENTS.md#package-architecture) |
+| Adaptive engine (rules, fatigue, optimizer, planner, coverage) | `app/src/engine/` |
+| Knowledge registry, coverage inventory, alignment tests | `app/src/knowledge/` |
+| Source-neutral session authoring, execution, response, outcomes (ADR-0023) | `app/src/sessions/`, `app/src/responses/`, `app/src/observations/`, `app/src/outcomes/` |
+| Canonical performed-training-occurrence reconciliation (ADR-0034) | `app/src/training-occurrence/` — check `docs/plans/README.md` for what is live vs shadow |
+| Python ingestion (sync, backfill, rebuild, audit, CLI) | `src/garmin_sync/` |
+| Garmin OAuth bootstrap | `scripts/bootstrap_garmin_tokens.py` |
+| Warsaw date helper / user-scoped Firestore reader / security rules | `app/src/utils/localDate.ts`, `app/src/services/recoverySnapshotService.ts`, `app/firestore.rules` |
+| Which document to trust | [`docs/README.md`](./docs/README.md) — routing table and precedence |
