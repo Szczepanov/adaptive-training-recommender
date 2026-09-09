@@ -1,15 +1,18 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { IntentBlock } from '../engine/blockIntent';
 import { evaluateProgressionReview, type ProgressionReviewResult } from '../engine/progressionReview';
 import { intentBlockService, type IntentBlockHeader } from '../services/intentBlockService';
 import { assembleProgressionReviewInput } from '../services/progressionReviewInputService';
 import {
   confirmProgressionRevision,
+  getCurrentProgressionClaim,
+  releaseProgressionClaim,
   ProgressionConfirmationError,
   type ConfirmProgressionRevisionResult,
+  type ProgressionExperimentClaim,
 } from '../services/progressionClaimService';
 import { getLocalDateString } from '../utils/localDate';
-import { deriveProposalId } from './progressionReviewPanelLogic';
+import { claimBelongsToReviewedRevision, deriveProposalId } from './progressionReviewPanelLogic';
 import './ProgressionReviewPanel.css';
 
 interface ProgressionReviewPanelProps {
@@ -30,14 +33,27 @@ const ACTION_LABELS: Record<ProgressionReviewResult['action'], string> = {
 
 export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) {
   const [dueBlocks, setDueBlocks] = useState<DueBlock[]>([]);
+  const [activeClaim, setActiveClaim] = useState<ProgressionExperimentClaim | null>(null);
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const [result, setResult] = useState<ProgressionReviewResult | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [completing, setCompleting] = useState(false);
+  const [completionMessage, setCompletionMessage] = useState<string | null>(null);
   const [confirmedActivation, setConfirmedActivation] = useState<ConfirmProgressionRevisionResult | null>(null);
 
   const today = getLocalDateString(new Date());
+
+  const loadCurrentClaim = useCallback(async () => {
+    try {
+      const claim = await getCurrentProgressionClaim(userId);
+      setActiveClaim(claim?.state === 'held' ? claim : null);
+    } catch (cause) {
+      console.error('Unable to load progression experiment claim', cause);
+      setActiveClaim(null);
+    }
+  }, [userId]);
 
   const loadDueBlocks = useCallback(async () => {
     const idsState = await intentBlockService.listBlockIds(userId);
@@ -61,12 +77,25 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
     setDueBlocks(due);
   }, [userId, today]);
 
-  useEffect(() => { void loadDueBlocks(); }, [loadDueBlocks]);
+  useEffect(() => {
+    void Promise.all([loadDueBlocks(), loadCurrentClaim()]);
+  }, [loadDueBlocks, loadCurrentClaim]);
+
+  const selectedDue = useMemo(
+    () => dueBlocks.find(item => item.header.blockId === selectedBlockId) ?? null,
+    [dueBlocks, selectedBlockId],
+  );
+  const selectedClaimCanComplete = claimBelongsToReviewedRevision(
+    activeClaim,
+    selectedBlockId,
+    selectedDue?.header.revision ?? null,
+  );
 
   const runReview = useCallback(async (blockId: string) => {
     setSelectedBlockId(blockId);
     setResult(null);
     setConfirmedActivation(null);
+    setCompletionMessage(null);
     setError(null);
     setLoading(true);
     try {
@@ -74,13 +103,36 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
       if (!due) return;
       const input = await assembleProgressionReviewInput(userId, due.block, today);
       setResult(evaluateProgressionReview(input));
+      await loadCurrentClaim();
     } catch (cause) {
       console.error('Unable to run progression review', cause);
       setError('Unable to review this block right now. Please try again.');
     } finally {
       setLoading(false);
     }
-  }, [userId, today, dueBlocks]);
+  }, [userId, today, dueBlocks, loadCurrentClaim]);
+
+  const handleCompleteExperiment = useCallback(async () => {
+    if (!activeClaim || !selectedClaimCanComplete || !result) return;
+    setCompleting(true);
+    setError(null);
+    setCompletionMessage(null);
+    try {
+      const release = await releaseProgressionClaim(userId, activeClaim.experimentId);
+      if (!release.released) {
+        setError('This experiment could not be completed because its active claim changed. Refresh and review again.');
+        await loadCurrentClaim();
+        return;
+      }
+      setActiveClaim(null);
+      setCompletionMessage('Current progression experiment completed. The progression slot is available for the next confirmed change.');
+    } catch (cause) {
+      console.error('Unable to complete progression experiment', cause);
+      setError('Unable to complete this progression experiment right now. Please try again.');
+    } finally {
+      setCompleting(false);
+    }
+  }, [activeClaim, selectedClaimCanComplete, result, userId, loadCurrentClaim]);
 
   const handleConfirm = useCallback(async () => {
     if (!selectedBlockId || !result?.proposedChange) return;
@@ -100,7 +152,7 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
         result.asOfDate,
       );
       setConfirmedActivation(confirmation);
-      await loadDueBlocks();
+      await Promise.all([loadDueBlocks(), loadCurrentClaim()]);
     } catch (cause) {
       if (cause instanceof ProgressionConfirmationError) {
         setError(cause.athleteMessage);
@@ -111,7 +163,9 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
     } finally {
       setConfirming(false);
     }
-  }, [userId, selectedBlockId, result, dueBlocks, loadDueBlocks]);
+  }, [userId, selectedBlockId, result, dueBlocks, loadDueBlocks, loadCurrentClaim]);
+
+  const competingClaim = activeClaim?.state === 'held' && !selectedClaimCanComplete;
 
   return (
     <section aria-labelledby="progression-review-title" className="progression-review-panel">
@@ -121,6 +175,13 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
         pinned execution-prescription identity, follow-up outcomes and active constraints against
         the block&apos;s bounded progression target. Nothing changes until you confirm it.
       </p>
+
+      {activeClaim && (
+        <p className="section-intro" role="status">
+          Active progression experiment: <strong>{activeClaim.blockId}</strong>, authored revision {activeClaim.activationRevisionId}.
+          {' '}Its athlete-wide slot remains held until that exact revision reaches review and you complete the reviewed experiment.
+        </p>
+      )}
 
       {dueBlocks.length === 0 ? (
         <p><small>No progression blocks are due for review right now.</small></p>
@@ -139,6 +200,7 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
 
       {loading && <p role="status">Reviewing…</p>}
       {error && <p role="alert" className="progression-review-error">{error}</p>}
+      {completionMessage && <p role="status" className="progression-review-confirmed">{completionMessage}</p>}
 
       {result && (
         <div className="progression-review-result">
@@ -155,6 +217,18 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
             {result.evidenceAudit.adverseResponseCount > 0 && <><dt>Adverse responses</dt><dd>{result.evidenceAudit.adverseResponseCount}</dd></>}
           </dl>
 
+          {selectedClaimCanComplete && (
+            <div className="progression-review-proposal">
+              <p>
+                This review closes the observation window for the currently active progression experiment.
+                Completing it releases only the singleton experiment slot; the authored revision and its activation history remain immutable.
+              </p>
+              <button type="button" onClick={() => void handleCompleteExperiment()} disabled={completing}>
+                {completing ? 'Completing…' : 'Complete reviewed experiment'}
+              </button>
+            </div>
+          )}
+
           {result.proposedChange && (
             <div className="progression-review-proposal">
               <p>
@@ -165,9 +239,16 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
                   {confirmedActivation.created ? 'Confirmed.' : 'Already confirmed earlier.'} Authored block revision {confirmedActivation.activation.activationRevisionId}.
                 </p>
               ) : (
-                <button type="button" onClick={() => void handleConfirm()} disabled={confirming}>
-                  {confirming ? 'Confirming…' : 'Confirm this change'}
-                </button>
+                <>
+                  {competingClaim && (
+                    <p className="section-intro">
+                      The athlete-wide progression slot is still held by another active experiment. Complete its due review before confirming this change.
+                    </p>
+                  )}
+                  <button type="button" onClick={() => void handleConfirm()} disabled={confirming || Boolean(activeClaim)}>
+                    {confirming ? 'Confirming…' : 'Confirm this change'}
+                  </button>
+                </>
               )}
             </div>
           )}
