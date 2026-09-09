@@ -237,6 +237,7 @@ In-depth technical design documents covering system subsystems:
 * [**Sustained Multidirectional Field Macrocycle (v5)**](./macrocycle-v5.md) — Target multidirectional speed, strength, and endurance field macrocycle specification.
 * [**Visual Review Workflow**](./visual-review.md) — Visual regression and layout review test harness using Playwright.
 * [**Sports Knowledge Registry**](./architecture/sports-knowledge-registry.md) — Implementation details of the versioned sports knowledge layer.
+* [**User Flows**](./architecture/user-flows.md) — Current navigation, per-screen flows, and flow-improvement recommendations.
 
 ---
 
