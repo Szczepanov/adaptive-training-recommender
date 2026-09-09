@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION } from './policy';
 
 describe('isHistoricalPolicyVersion', () => {
-    it('records the exact D-LEDGER planner-admission transition once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-h4-d-ledger-planner-admission-v2');
+    it('records the exact fixed-activity dedup-identity-unification transition once', () => {
+        expect(POLICY_VERSION).toBe('2026-09-fixed-activity-dedup-identity-unification-v1');
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
-                (version) => version === '2026-09-h4-intraday-bundle-member-launch-v1',
+                (version) => version === '2026-09-h4-d-ledger-planner-admission-v2',
             ),
         ).toHaveLength(1);
     });

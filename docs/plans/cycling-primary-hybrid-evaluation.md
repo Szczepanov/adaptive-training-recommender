@@ -15,8 +15,10 @@ dependent members still require the response and separation checks before they b
 launchable. The rolling planner's ledger-based ranking/admission gating is also delivered
 (PR #474, `2026-09-h4-d-ledger-planner-admission-v2`), and the three narrower ad hoc
 fixed-activity dedup mechanisms that PR left un-unified are now unified onto the same
-occurrenceId/revision identity (engine-internal only; `decisionTrace.calibration` is
-transient and not persisted). A bundle's resolved placement is also now persisted for
+occurrenceId/revision identity, activating `2026-09-fixed-activity-dedup-identity-unification-v1`
+(mechanical bump -- `simulate:diff` proves the refactor is output-preserving, but the drift
+gate cannot prove that from source alone; `decisionTrace.calibration` itself is transient and
+not persisted). A bundle's resolved placement is also now persisted for
 display, at `users/{userId}/intraday_bundle_placements/{date}` -- a separate sibling
 document rather than a `recommendationAudit.externalPlan` field, since that document's
 rule-evaluation budget was re-verified insufficient. H5 design is
@@ -531,9 +533,14 @@ remainder/admission as a real ranking/admission input": that broader gate (`admi
 `computeDailyLedger` deciding whether a *candidate template* is admitted) is a separate
 concern already delivered in the rolling forecast's `evaluateProjectedDate` (PR #474) -- these
 three sites credit/cost-track fixed *commitments* that already exist, not admit ranking
-candidates, so they were never candidates for `admitsCandidate` gating themselves. Verified
-output-preserving: `simulate:diff` shows no semantic difference and
-`check-policy-drift.mjs` confirms no `POLICY_VERSION` bump is required.
+candidates, so they were never candidates for `admitsCandidate` gating themselves.
+`simulate:diff` shows no semantic difference against the committed baseline -- this refactor
+is genuinely output-preserving for every simulated scenario -- but `rules.ts`/`planner.ts`
+are both on the drift gate's watched decision-file list, and this is a substantive restructure
+rather than a comment/whitespace-only change, so `check-policy-drift.mjs` correctly still
+requires a bump; it cannot prove semantic equivalence from an AST diff alone. `POLICY_VERSION`
+was therefore bumped mechanically to `2026-09-fixed-activity-dedup-identity-unification-v1`,
+the same precedent as the earlier `2026-09-fixed-activity-cost-dedup-v1` transition.
 
 ### Issue #434 execution-binding pipeline (delivered through PR 3 Phase 4)
 
@@ -637,6 +644,10 @@ change. PR 3 Phase 5 added the post-AM evidence path, and Phase 6 completed the 
 H4 transition by archiving the then-current
 `2026-09-simulation-sequence-occupational-context-v2` policy and activating
 `2026-09-h4-intraday-bundle-member-launch-v1`. The planner's D-LEDGER admission wiring then
-archived that version and activated `2026-09-h4-d-ledger-planner-admission-v1`. H5c will
-require normal policy review when it changes decision behavior. Do not enable experimental
-personalization simply to improve a judge score.
+archived that version and activated `2026-09-h4-d-ledger-planner-admission-v1`, later
+superseded by `-v2` for the fixed-activity cost-reduce reduce consolidation. The
+fixed-activity dedup-identity unification then archived `-v2` and activated
+`2026-09-fixed-activity-dedup-identity-unification-v1` -- another mechanical bump, not a
+behavior change (`simulate:diff` clean). H5c will require normal policy review when it
+changes decision behavior. Do not enable experimental personalization simply to improve a
+judge score.
