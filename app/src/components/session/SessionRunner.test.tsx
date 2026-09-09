@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
     SessionRunner,
+    resolveCompanionPromptCopy,
     resolveEmptyTemplateGuidance,
     resolveRepetitionWeightSuggestion,
     resolveRestPreviewStep,
@@ -144,8 +145,7 @@ describe('SessionRunner session picker', () => {
         expect(html).toContain('Locked assessment');
     });
 
-    it('leaves the running header untinted for normal sessions (#496)', () => {
-        const step = repetitionStep('squat', 3);
+    it('leaves the running header untinted for normal sessions (#496)', () => {        const step = repetitionStep('squat', 3);
         const definition = definitionWithBlock('sequential', [step]);
         vi.mocked(useSessionRunner).mockReturnValueOnce({
             activeStep: step,
@@ -167,6 +167,24 @@ describe('SessionRunner session picker', () => {
 
         expect(html).not.toContain('runner-mode-assessment');
         expect(html).not.toContain('Locked assessment');
+    });
+});
+
+describe('resolveCompanionPromptCopy', () => {
+    it('labels a single companion as a follow-up, not the next workout block (#494)', () => {
+        const copy = resolveCompanionPromptCopy('Full-body maintenance', 1);
+
+        expect(copy.heading).toContain('Follow-up');
+        expect(copy.subheading).toContain('follow-up');
+        expect(copy.subheading).toContain('not your next workout block');
+    });
+
+    it('keeps the follow-up framing for multiple companions (#494)', () => {
+        const copy = resolveCompanionPromptCopy('Full-body maintenance', 2);
+
+        expect(copy.heading).toContain('Follow-up');
+        expect(copy.subheading).toContain('2 separately executable follow-up companions');
+        expect(copy.subheading).toContain('not your next workout block');
     });
 });
 

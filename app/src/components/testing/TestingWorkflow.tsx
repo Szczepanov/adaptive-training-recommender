@@ -56,6 +56,17 @@ function attemptNote(validity: ObservationValidity, note: string, invalidReason:
     return cleanedNote || undefined;
 }
 
+export function describeAbandonedAssessment(
+    attempt: Pick<AssessmentAttempt, 'id' | 'purpose'>,
+    protocol: Pick<MeasurementProtocol, 'title' | 'revision'>,
+): string {
+    // #494: abandonment is terminal -- assessmentAttemptService.abandonAttempt allows no
+    // transition out of `abandoned` and findOpenAttempt never recovers one -- so the copy
+    // must state what was lost and that re-testing needs a fresh attempt. No persistence
+    // semantics change: this is copy plus a forward path, not a resurrection.
+    return `Attempt ${attempt.id} (${protocol.title} · rev ${protocol.revision} · ${attempt.purpose}) was abandoned. What was lost: this locked attempt will never produce a benchmark observation, and abandonment is terminal — it cannot be resumed. To re-test, start a fresh attempt under the same locked protocol revision.`;
+}
+
 export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClose, onSessionStateChange }) => {
     const [stage, setStage] = useState<TestingStage>('lookup');
     const [protocolId, setProtocolId] = useState('');
@@ -372,6 +383,18 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
 
     const metricRows = useMemo(() => protocol?.metricIds.map(getMetricDefinition) ?? [], [protocol]);
 
+    const startFreshAttempt = () => {
+        // #494: recovery path back into the flow without resurrecting the terminal attempt.
+        // startTest builds a brand-new attempt id (createAssessmentAttemptId mints
+        // Date.now()/random entropy), so the abandoned attempt stays abandoned -- no
+        // execution or persistence semantic change.
+        setAttempt(null);
+        setExecution(null);
+        setSaved([]);
+        setError(null);
+        setStage('ready');
+    };
+
     // #496: chrome only -- the protocol lock stays visible (collapsed) while the shared
     // runner executes, so assessment provenance never disappears behind the workout UI.
     // The copy states what abandoning costs; the abandonment flow itself is unchanged (#494).
@@ -519,7 +542,16 @@ export const TestingWorkflow: React.FC<TestingWorkflowProps> = ({ userId, onClos
                 </section>
             )}
 
-            {stage === 'abandoned' && <section className="testing-card"><h3>Assessment abandoned</h3><p>No valid benchmark observation was created.</p><button type="button" className="testing-primary" onClick={onClose}>Done</button></section>}
+            {stage === 'abandoned' && (
+                <section className="testing-card">
+                    <h3>Assessment abandoned — no benchmark recorded</h3>
+                    <p>{attempt && protocol ? describeAbandonedAssessment(attempt, protocol) : 'No valid benchmark observation was created.'}</p>
+                    <div className="testing-actions">
+                        {protocol && <button type="button" className="testing-primary" onClick={startFreshAttempt}>Start a fresh attempt</button>}
+                        <button type="button" className={protocol ? 'testing-secondary' : 'testing-primary'} onClick={onClose}>Done</button>
+                    </div>
+                </section>
+            )}
         </div>
     );
 };
