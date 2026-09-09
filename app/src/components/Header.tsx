@@ -111,7 +111,7 @@ export const Header: React.FC<HeaderProps> = ({
 
           <div className="more-menu-container" ref={desktopSettingsRef}>
             <button
-              className={`nav-link more-btn ${['constraints', 'preferences', 'plan'].includes(screen) ? 'active' : ''}`}
+              className={`nav-link more-btn ${['constraints', 'preferences', 'plan', 'brief'].includes(screen) ? 'active' : ''}`}
               onClick={() => setDesktopSettingsOpen((isOpen) => !isOpen)}
               aria-expanded={desktopSettingsOpen}
               aria-haspopup="menu"
