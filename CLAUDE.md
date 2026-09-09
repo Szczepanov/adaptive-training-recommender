@@ -55,8 +55,11 @@ policy-alignment test (ADR-0033). Do not add one silently.
   then `adr/`.**
 
 **While writing code**
-- Keep engine modules pure. Firestore/IO lives behind an injected boundary
-  (`trainingHistory.ts`, `provider.py`) — do not import a service into a pure evaluator.
+- Keep evaluators pure — no Firestore, no `fetch`, no `Date.now()` inside a decision path.
+  Only the orchestration entry points (`rules.ts`, `trainingIntent.ts`, `replay.ts`) reach
+  for IO, and only as a lazily-imported default when the caller injected no provider
+  (`trainingHistory.ts` in TypeScript, `provider.py` in Python). Follow that pattern rather
+  than importing a service into an evaluator.
 - Python: type hints everywhere; `mypy src/garmin_sync` must stay clean.
 - Tests use synthetic fixtures (`tests/fixtures/`). Never call a live API from a test.
 - Reference symbols in docs and commit messages, never line numbers (§5).
@@ -65,12 +68,19 @@ policy-alignment test (ADR-0033). Do not add one silently.
 ```bash
 make check          # ruff + mypy + pytest, tsc + eslint + vitest + workout validation
 ```
-- `make format` first if you touched formatting-sensitive files; `make check` does not
-  include the formatter check.
-- Engine or policy change → also `make simulate` (scenario run + baseline diff) and the
-  policy-drift check (I5).
+- `make format` first if you touched Python: CI gates on `ruff format --check`, which
+  `make check` does not run.
+- Knowledge-registry or coverage change → `cd app && npm run check`. `make check` runs the
+  frontend gates individually and skips `validate:knowledge` / `validate:knowledge-coverage`;
+  CI does not.
+- Engine or policy change → `make simulate` (scenario run, aggregate-bounds gate) plus
+  `cd app && npm run simulate:plan-judge` and the policy-drift check (I5). All three gate
+  CI; `simulate:diff` is advisory there, so read it but do not block on it.
 - Firestore rules change → `cd app && npm run test:rules` (needs the emulator and Java).
+  CI runs it on every code change, not only rules changes.
 - `make all` = `check` + `simulate` + `build`. Run it when the change is broad.
+- The full CI gate list is in
+  [`AGENTS.md` § What CI gates](./AGENTS.md#what-ci-gates-githubworkflowsciyml).
 
 Report what you actually ran and what it said. A skipped suite is a fact worth stating.
 
