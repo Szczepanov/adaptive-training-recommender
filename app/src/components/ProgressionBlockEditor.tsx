@@ -86,8 +86,8 @@ export function ProgressionBlockEditor({ userId, onBlockSaved }: ProgressionBloc
     <section aria-labelledby="progression-block-editor-title" className="progression-block-editor">
       <h2 id="progression-block-editor-title">Progression Blocks</h2>
       <p className="section-intro">
-        A block declares one objective's intent (develop or maintain) and, optionally, one bounded
-        progression target the app can review and let you confirm changes to over time.
+        A block declares one objective&apos;s intent (develop or maintain) and, optionally, one bounded
+        progression target the app can review. A block does not schedule or prescribe sessions by itself.
       </p>
 
       <form onSubmit={handleSubmit} className="progression-block-form">
@@ -170,6 +170,11 @@ export function ProgressionBlockEditor({ userId, onBlockSaved }: ProgressionBloc
             <p className="section-intro">
               Starts at the dose target above ({draft.doseTarget} min) and may only advance in fixed steps,
               up to the ceiling below, after a review you confirm.
+            </p>
+            <p className="section-intro">
+              Qualifying progression evidence must come from completed sessions with an immutable prescription
+              bound to this block&apos;s source revision. This manual form does not create those session prescriptions;
+              without a compatible binding, reviews hold rather than guessing that performed work matched the target.
             </p>
             <div className="form-row">
               <label>Increment per step (min)
