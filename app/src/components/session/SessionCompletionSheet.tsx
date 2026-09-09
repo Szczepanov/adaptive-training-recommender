@@ -46,7 +46,8 @@ interface SessionCompletionSheetProps {
     onSaveTemplate?: () => void;
     /** Keep the completion form mounted while another modal owns focus so draft feedback survives. */
     hidden?: boolean;
-    /** Provenance of the record this sheet persists. Chrome-only label; persistence is unchanged. */
+    /** Provenance context shown in chrome. Completion always persists SessionExecution first;
+     * the linked AssessmentAttempt lifecycle continues separately until observations are saved. */
     recordKind?: SessionCompletionRecordKind;
     saving: boolean;
     openAbandonConfirmation?: boolean;
@@ -146,7 +147,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                         <h2 id="completion-title" className="completion-sheet-title">Complete Session</h2>
                         <p className="completion-record-provenance">
                             {recordKind === 'AssessmentAttempt'
-                                ? 'Finishing saves a SessionExecution and completes the linked AssessmentAttempt record.'
+                                ? 'Finishing saves a SessionExecution for this AssessmentAttempt. The AssessmentAttempt is completed only after its observations are saved.'
                                 : 'Finishing saves a SessionExecution record.'}
                         </p>
 
