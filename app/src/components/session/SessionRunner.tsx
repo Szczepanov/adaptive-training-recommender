@@ -133,6 +133,19 @@ export function resolveRestPreviewStep(
     return nextBlock?.steps[0] ?? null;
 }
 
+export function resolveEmptyTemplateGuidance(canImportSession: boolean, canBuildSession: boolean): string {
+    if (canImportSession && canBuildSession) {
+        return 'No saved templates yet — start from a reviewed fixture, import JSON, or build one manually.';
+    }
+    if (canImportSession) {
+        return 'No saved templates yet — start from a reviewed fixture or import JSON.';
+    }
+    if (canBuildSession) {
+        return 'No saved templates yet — start from a reviewed fixture or build one manually.';
+    }
+    return 'No saved templates yet — start from a reviewed fixture, or import or build one from the Sessions screen.';
+}
+
 interface SessionRunnerProps {
     userId: string;
     /** A persisted M3 binding plus the exact snapshot-resolved definition to execute. */
@@ -677,8 +690,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                 {savedDefinitionsError && <p className="session-runner-error" role="alert">{savedDefinitionsError}</p>}
                 {creationSource === 'template' && activeSavedDefinitions.length === 0 && archivedSavedDefinitions.length === 0 && !savedDefinitionsError && (
                     <p className="session-runner-subtitle">
-                        No saved templates yet — start from a reviewed fixture, or
-                        {(onImportSession || onBuildSession) ? ' import JSON or build one manually.' : ' import or build one from the Sessions screen.'}
+                        {resolveEmptyTemplateGuidance(Boolean(onImportSession), Boolean(onBuildSession))}
                     </p>
                 )}
                 {creationSource === 'template' && activeSavedDefinitions.length > 0 && <section className="saved-session-library" aria-labelledby="saved-session-library-title">
@@ -810,7 +822,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             setSaveTemplateSuccess(`Saved as template "${title}"!`);
             setTimeout(() => {
                 setShowSaveTemplateModal(false);
-                setShowCompletionSheet(true);
                 setSaveTemplateSuccess(null);
             }, 1600);
         } catch (error) {
@@ -1145,9 +1156,9 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             </div>
 
             {/* Completion Sheet */}
-            {/* #495: save-as-template is a secondary action inside the modal completion flow,
-                instead of a peer active-run action. Opening the title editor temporarily hands
-                off from this dialog to the save dialog, avoiding simultaneous aria-modal layers. */}
+            {/* #495: save-as-template is a secondary action inside completion. The sheet stays
+                mounted but hidden while the title editor owns the modal layer, preserving any
+                sRPE, completion, fatigue, notes, or tissue feedback already entered. */}
             {showCompletionSheet && (
                 <SessionCompletionSheet
                     startedAt={runner.execution.startedAt}
@@ -1156,13 +1167,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     saving={false}
                     openAbandonConfirmation={showAbandonConfirmation}
                     error={completionError}
+                    hidden={showSaveTemplateModal}
                     onCancel={() => {
                         setShowCompletionSheet(false);
                         setShowAbandonConfirmation(false);
                         setCompletionError(null);
                     }}
                     onSaveTemplate={() => {
-                        setShowCompletionSheet(false);
                         setCustomTemplateTitle(definition.title);
                         setSaveTemplateError(null);
                         setSaveTemplateSuccess(null);
@@ -1202,7 +1213,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 className="close-btn"
                                 onClick={() => {
                                     setShowSaveTemplateModal(false);
-                                    setShowCompletionSheet(true);
                                 }}
                                 disabled={isSavingTemplate || Boolean(saveTemplateSuccess)}
                                 aria-label="Close"
@@ -1232,7 +1242,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                                 className="cancel-swap-btn"
                                 onClick={() => {
                                     setShowSaveTemplateModal(false);
-                                    setShowCompletionSheet(true);
                                 }}
                                 disabled={isSavingTemplate || Boolean(saveTemplateSuccess)}
                             >

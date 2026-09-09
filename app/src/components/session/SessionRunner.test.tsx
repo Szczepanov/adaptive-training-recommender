@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
     SessionRunner,
+    resolveEmptyTemplateGuidance,
     resolveRepetitionWeightSuggestion,
     resolveRestPreviewStep,
 } from './SessionRunner';
@@ -75,6 +76,21 @@ describe('SessionRunner session picker', () => {
         expect(html).not.toContain('Start Session →');
         expect(html).not.toContain('Import session JSON');
         expect(html).not.toContain('Build session');
+    });
+
+    it('describes only the authoring actions that the current caller actually exposes', () => {
+        expect(resolveEmptyTemplateGuidance(true, true)).toBe(
+            'No saved templates yet — start from a reviewed fixture, import JSON, or build one manually.',
+        );
+        expect(resolveEmptyTemplateGuidance(true, false)).toBe(
+            'No saved templates yet — start from a reviewed fixture or import JSON.',
+        );
+        expect(resolveEmptyTemplateGuidance(false, true)).toBe(
+            'No saved templates yet — start from a reviewed fixture or build one manually.',
+        );
+        expect(resolveEmptyTemplateGuidance(false, false)).toBe(
+            'No saved templates yet — start from a reviewed fixture, or import or build one from the Sessions screen.',
+        );
     });
 
     it('keeps save-as-template out of the active-run top bar (#495)', () => {

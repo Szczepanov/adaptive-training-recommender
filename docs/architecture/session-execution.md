@@ -56,9 +56,10 @@ new revision and latest-revision header atomically.
 
 * **Save** creates a new definition at revision 1 and refreshes the session picker.
   Save is a secondary action inside the completion dialog rather than the active-run top bar,
-  so it cannot fire accidentally mid-set. Opening its title editor hands off from the completion
-  dialog rather than stacking modal layers, then returns to completion after save/cancel. The
-  saved template still derives from the raw working definition.
+  so it cannot fire accidentally mid-set. Opening its title editor keeps the completion dialog
+  mounted but hidden/inaccessible while the title editor owns the modal layer; existing sRPE,
+  completion fraction, unexpected-fatigue, notes, and tissue-feedback draft values therefore
+  survive save or cancel. The saved template still derives from the raw working definition.
 * **Edit** loads the verified latest revision and saves the same definition ID at revision N+1.
 * **Duplicate** loads the verified latest revision, assigns a new definition ID, and saves
   revision 1.

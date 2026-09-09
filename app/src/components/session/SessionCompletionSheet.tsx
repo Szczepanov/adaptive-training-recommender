@@ -42,6 +42,8 @@ interface SessionCompletionSheetProps {
     /** Optional secondary authoring action. Kept inside the completion dialog so it is not
      * a peer of in-session controls and is unavailable from the abandon confirmation. */
     onSaveTemplate?: () => void;
+    /** Keep the completion form mounted while another modal owns focus so draft feedback survives. */
+    hidden?: boolean;
     saving: boolean;
     openAbandonConfirmation?: boolean;
     error?: string | null;
@@ -55,6 +57,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     onAbandon,
     onCancel,
     onSaveTemplate,
+    hidden = false,
     saving,
     openAbandonConfirmation = false,
     error = null,
@@ -96,7 +99,13 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     };
 
     return (
-        <div className="session-completion-modal-overlay" role="dialog" aria-modal="true" aria-labelledby="completion-title">
+        <div
+            className="session-completion-modal-overlay"
+            role="dialog"
+            aria-modal={hidden ? undefined : true}
+            aria-labelledby="completion-title"
+            hidden={hidden}
+        >
             <div className="session-completion-sheet">
                 {error && <p className="session-runner-error" role="alert">{error}</p>}
                 {showAbandonConfirm ? (

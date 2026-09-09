@@ -185,6 +185,26 @@ describe('SessionCompletionSheet', () => {
         expect(html).toContain('Save as template');
     });
 
+    it('stays mounted but is hidden from the accessibility tree during template-title handoff (#495)', () => {
+        const html = renderToStaticMarkup(
+            <SessionCompletionSheet
+                startedAt={new Date().toISOString()}
+                totalSets={2}
+                steps={[]}
+                onComplete={vi.fn()}
+                onAbandon={vi.fn()}
+                onCancel={vi.fn()}
+                onSaveTemplate={vi.fn()}
+                saving={false}
+                hidden={true}
+            />,
+        );
+
+        expect(html).toContain('hidden=""');
+        expect(html).not.toContain('aria-modal="true"');
+        expect(html).toContain('Session Notes (Optional)');
+    });
+
     it('hides Save as template from the abandon confirmation (#495)', () => {
         const html = renderToStaticMarkup(
             <SessionCompletionSheet
