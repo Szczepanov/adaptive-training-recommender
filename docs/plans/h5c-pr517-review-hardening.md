@@ -84,6 +84,14 @@ The read boundary now rebuilds `TreatmentIntentReplayPayloadV1` from the stored 
 
 The design requires two concurrent confirmations of the same `(blockId, proposalId)` to produce one activation and one authored revision. A sequential retry test is useful but not equivalent. PR #517 now includes a focused real-emulator race that starts both confirmations concurrently and asserts that both resolve to the same activation/revision while exactly one reports `created: true`.
 
+### 11. A completed review can release the active experiment slot
+
+The original delivery exposed `releaseProgressionClaim` only as a service/test helper. No production surface called it, so the first confirmed experiment could hold the athlete-wide singleton indefinitely and make every later proposal fail with `active_progression_experiment_exists`.
+
+`ProgressionReviewPanel` now loads the current held claim. When the exact revision activated by that claim reaches its review, the athlete can explicitly **Complete reviewed experiment**. The action uses the existing compare-and-clear release transaction; it does not delete the immutable activation or revert the authored revision. The UI guard requires both block id and `activationRevisionId` to match the due revision, so a stale review tab or another block cannot release the slot. A later confirmation still re-acquires the singleton transactionally.
+
+Early cancellation/reversion is deliberately not invented here. Reverting accepted authored dose would need its own explicit product/authoring semantics rather than treating “release the slot” as a hidden rollback.
+
 ## Important remaining audit boundary
 
 ADR-0037 D-REPLAY asks H5 to retain the evidence lineage behind a confirmed proposal: canonical performed-fact revisions/ids, response/tissue snapshots, evidence-as-of time, action/reasons, and other bindings needed to explain/replay what was reviewed.
@@ -96,7 +104,8 @@ Therefore the precise status after PR #517 is:
 - confirmation is transactionally bounded, idempotent, revision-gated, and rechecks current restrictive injury settings;
 - accepted `IntentBlock` revisions and activation before/after values are durable;
 - persisted `IntentBlock` revision hashes are verified against their frozen replay inputs on read;
-- proposal idempotency identity covers the full proposed-change semantics; and
+- proposal idempotency identity covers the full proposed-change semantics;
+- a reviewed active experiment can release its singleton slot through compare-and-clear completion; and
 - **full immutable review/evidence replay is still a separate required delivery before H5c should be called “fully audited” against D-REPLAY.**
 
 A follow-up should introduce a write-once review snapshot (or equivalent content-addressed record) that freezes at least the source block revision/hash, review `asOfDate`, canonical fact revision and occurrence ids, linked prescription identities, response/tissue evidence, active restriction snapshot, evaluation bindings/results when present, review action/reasons/audit, and a semantic hash referenced by the activation.
