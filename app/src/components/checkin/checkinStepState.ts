@@ -35,24 +35,25 @@ const SAFETY_FLAGS = [
 ] as const;
 
 /**
- * Derives the four check-in header steps from the current daily document state.
+ * Derives the four check-in header steps from the last persisted daily document.
  * Pure and read-only: it never writes, never scores, and never feeds the engine --
  * `subjectiveBaseline.ts` keeps its own fully-scored-day authority untouched.
- * A step reads as done only when the document actually carries the answers, so a
- * partial save (e.g. a follow-up answer or an incomplete submit) shows exactly
- * what is saved versus still pending.
+ *
+ * The caller deliberately supplies the persisted snapshot rather than the editable
+ * form draft. This keeps the header honest: entering a value is not the same thing as
+ * saving it, and Back/Skip must never make an unsaved draft look persisted.
  */
 export function deriveCheckinSteps(
-  checkin: Partial<DailySubjectiveCheckin> | null,
+  savedCheckin: Partial<DailySubjectiveCheckin> | null,
   pendingFollowupCount: number,
 ): CheckinStepState[] {
-  const scoredCount = checkin
-    ? RECOVERY_KEYS.filter(key => typeof checkin[key] === 'number').length
+  const savedRecoveryCount = savedCheckin
+    ? RECOVERY_KEYS.filter(key => typeof savedCheckin[key] === 'number').length
     : 0;
-  const safetyAnsweredCount = checkin
-    ? SAFETY_FLAGS.filter(flag => checkin[flag] !== undefined).length
+  const savedSafetyCount = savedCheckin
+    ? SAFETY_FLAGS.filter(flag => savedCheckin[flag] !== undefined).length
     : 0;
-  const timeAvailable = checkin?.availability?.timeAvailableMin ?? null;
+  const savedTimeAvailable = savedCheckin?.availability?.timeAvailableMin ?? null;
 
   return [
     {
@@ -64,23 +65,23 @@ export function deriveCheckinSteps(
     {
       id: 'recovery',
       label: CHECKIN_STEP_LABELS.recovery,
-      status: scoredCount === RECOVERY_KEYS.length ? 'done' : 'pending',
-      detail: `${scoredCount}/${RECOVERY_KEYS.length} scored`,
+      status: savedRecoveryCount === RECOVERY_KEYS.length ? 'done' : 'pending',
+      detail: `${savedRecoveryCount}/${RECOVERY_KEYS.length} saved`,
     },
     {
       id: 'safety',
       label: CHECKIN_STEP_LABELS.safety,
-      status: safetyAnsweredCount === SAFETY_FLAGS.length ? 'done' : 'pending',
+      status: savedSafetyCount === SAFETY_FLAGS.length ? 'done' : 'pending',
       detail:
-        safetyAnsweredCount === SAFETY_FLAGS.length
+        savedSafetyCount === SAFETY_FLAGS.length
           ? 'Complete'
-          : `${safetyAnsweredCount}/${SAFETY_FLAGS.length} answered`,
+          : `${savedSafetyCount}/${SAFETY_FLAGS.length} saved`,
     },
     {
       id: 'availability',
       label: CHECKIN_STEP_LABELS.availability,
-      status: timeAvailable === null ? 'pending' : 'done',
-      detail: timeAvailable === null ? 'Not set' : `${timeAvailable} min`,
+      status: savedTimeAvailable === null ? 'pending' : 'done',
+      detail: savedTimeAvailable === null ? 'Not saved' : `${savedTimeAvailable} min saved`,
     },
   ];
 }
