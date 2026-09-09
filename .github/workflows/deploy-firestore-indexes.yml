@@ -57,6 +57,10 @@ jobs:
     defaults:
       run:
         working-directory: app
+    # Covers the deploy step plus the "wait for composite indexes" loop's own 20-minute
+    # internal deadline below. This workflow's concurrency group queues (cancel-in-progress:
+    # false) rather than cancels, so a hang here would otherwise block every later deploy.
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
