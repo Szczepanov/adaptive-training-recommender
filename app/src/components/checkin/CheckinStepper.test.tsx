@@ -79,6 +79,26 @@ describe('deriveCheckinSteps', () => {
     );
     expect(set[3]).toMatchObject({ status: 'done', detail: '45 min saved' });
   });
+
+  it('honors persisted missingFields even when the read model normalizes values', () => {
+    const steps = deriveCheckinSteps(
+      {
+        painOrInjury: false,
+        illnessSymptoms: false,
+        unusuallyLimitedTime: false,
+        alreadyTrainedToday: false,
+        availability: { timeAvailableMin: 45, preferredModalityToday: null, indoorOnly: false },
+        dataQuality: {
+          isComplete: false,
+          missingFields: ['illnessSymptoms', 'timeAvailableMin'],
+        },
+      },
+      0,
+    );
+
+    expect(steps[2]).toMatchObject({ status: 'pending', detail: '3/4 saved' });
+    expect(steps[3]).toMatchObject({ status: 'pending', detail: 'Not saved' });
+  });
 });
 
 describe('CheckinStepper', () => {
