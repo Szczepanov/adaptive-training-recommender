@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ExerciseDaysSlider, OnboardingWizard } from './OnboardingWizard';
-import { skipOnboardingForNow } from './onboarding/skipOnboarding';
+import { continueOnboardingSkipForSessionOnly, skipOnboardingForNow } from './onboarding/skipOnboarding';
 import { weeklyCommitmentFromExerciseDays } from './onboarding/weeklyCommitment';
 import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
@@ -54,8 +54,9 @@ describe('OnboardingWizard', () => {
     const goalWrite = vi.spyOn(goalService, 'createGoal');
     const onCompleted = vi.fn();
 
-    skipOnboardingForNow('athlete-1', 'focus', 1500, onCompleted);
+    const persisted = skipOnboardingForNow('athlete-1', 'focus', 1500, onCompleted);
 
+    expect(persisted).toBe(true);
     expect(settingsWrite).not.toHaveBeenCalled();
     expect(intentWrite).not.toHaveBeenCalled();
     expect(goalList).not.toHaveBeenCalled();
@@ -66,6 +67,30 @@ describe('OnboardingWizard', () => {
     const report = usabilityMetrics.generateSummaryReport();
     expect(report.wizardSkips).toBe(1);
     expect(report.wizardSkipsByStage).toEqual({ focus: 1 });
+  });
+
+  it('does not complete or record a blocked Skip until session-only continuation is explicit (#493)', () => {
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => { throw new Error('blocked'); },
+        removeItem: () => {},
+      },
+    });
+    const onCompleted = vi.fn();
+
+    const persisted = skipOnboardingForNow('athlete-1', 'welcome', 500, onCompleted);
+
+    expect(persisted).toBe(false);
+    expect(onCompleted).not.toHaveBeenCalled();
+    expect(usabilityMetrics.generateSummaryReport().wizardSkips).toBe(0);
+
+    continueOnboardingSkipForSessionOnly('athlete-1', 'welcome', 750, onCompleted);
+
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+    const report = usabilityMetrics.generateSummaryReport();
+    expect(report.wizardSkips).toBe(1);
+    expect(report.wizardSkipsByStage).toEqual({ welcome: 1 });
   });
 });
 

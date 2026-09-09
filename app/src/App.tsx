@@ -349,6 +349,7 @@ function App() {
                 decisionInput={decisionInput}
                 userId={userId!}
                 onBack={() => handleNavigate('home')}
+                onRetry={() => { void loadDecisionInput(); }}
                 onNavigateToBrief={() => handleNavigate('brief')}
               />
               {decisionInput && (
@@ -371,6 +372,7 @@ function App() {
               userId={userId!}
               initialTab="brief"
               onBack={() => handleNavigate('home')}
+              onRetry={() => { void loadDecisionInput(); }}
             />
           )}
 

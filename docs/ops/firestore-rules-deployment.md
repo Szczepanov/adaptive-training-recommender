@@ -52,6 +52,30 @@ Record the command output, commit, deployment time, and resulting ruleset name i
 change review. Firebase Rules releases can take several minutes to propagate, so do not
 assume an immediate client request proves the new release is active.
 
+## Known deploy flakiness: transient 409 on release update
+
+`firebase deploy --only firestore:rules` can fail with
+`Error: Request to https://firebaserules.googleapis.com/v1/projects/.../releases had HTTP
+Error: 409, Requested entity already exists`. This is a known firebase-tools limitation, not
+a rules problem: `updateOrCreateRelease` (in firebase-tools' `gcp/rules.js`) always tries to
+*update* the existing release first, and on **any** failure from that call -- a transient
+timeout or 5xx from the Firebase Rules API included, not only "release doesn't exist yet" --
+it falls back to *creating* a release with the same name. Past the very first deploy that
+release always already exists, so the fallback then 409s, turning a transient backend hiccup
+into a hard failure. It gets more likely to bite as `firestore.rules` grows -- see
+[firebase-tools#5590](https://github.com/firebase/firebase-tools/issues/5590) and
+[firebase-tools#2127](https://github.com/firebase/firebase-tools/issues/2127).
+
+`firestore:rules:deploy` (`app/scripts/deploy-firestore-rules.mjs`) retries the `firebase
+deploy` call itself (3 attempts, 15s apart) because the command is idempotent and the
+post-deploy hash check still fails the run if every attempt leaves production not matching
+`app/firestore.rules`. If it still fails after all retries -- in CI or locally -- rerun it;
+if it keeps failing, check whether `app/firestore.rules` has grown close to the [Firestore
+Security Rules size limits](https://firebase.google.com/docs/firestore/quotas#security_rules)
+(256 KB source / 250 KB compiled) and look for removable dead code first (the CLI's own
+`[W] ... Unused function: ...` compile warnings, printed during `test:rules` and the deploy
+step, point at candidates).
+
 ## Drift and remediation
 
 Run `npm run firestore:rules:drift` before any rules deployment and after any suspected

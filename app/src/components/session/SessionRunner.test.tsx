@@ -169,6 +169,42 @@ describe('SessionRunner session picker', () => {
         expect(html).not.toContain('runner-mode-assessment');
         expect(html).not.toContain('Locked assessment');
     });
+
+    it('offers a Home recovery action when the stored prescription cannot be restored (#493)', () => {
+        vi.mocked(useSessionRunner).mockReturnValueOnce({
+            activeStep: null,
+            activeBlock: null,
+            activeBlockIndex: 0,
+            activeStepIndex: 0,
+            definition: null,
+            entries: [],
+            execution: { state: 'in_progress' },
+            isRestoring: false,
+        } as unknown as ReturnType<typeof useSessionRunner>);
+        const html = renderToStaticMarkup(<SessionRunner userId="user-1" onClose={() => {}} />);
+
+        expect(html).toContain('Active session needs its stored prescription');
+        expect(html).toContain('Back to Home');
+        expect(html).toContain('Return Home, then reopen the session that started it');
+        expect(html).not.toContain('Back to Sessions');
+    });
+
+    it('keeps explicit recovery guidance in isolated harnesses without a close handler (#493)', () => {
+        vi.mocked(useSessionRunner).mockReturnValueOnce({
+            activeStep: null,
+            activeBlock: null,
+            activeBlockIndex: 0,
+            activeStepIndex: 0,
+            definition: null,
+            entries: [],
+            execution: { state: 'in_progress' },
+            isRestoring: false,
+        } as unknown as ReturnType<typeof useSessionRunner>);
+        const html = renderToStaticMarkup(<SessionRunner userId="user-1" />);
+
+        expect(html).toContain('Active session needs its stored prescription');
+        expect(html).toContain('Return Home, then reopen the session that started it');
+    });
 });
 
 describe('resolveCompanionPromptCopy', () => {
