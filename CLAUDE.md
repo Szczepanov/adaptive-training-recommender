@@ -13,7 +13,7 @@ Quick guide for building, testing, and working on `adaptive-training-recommender
 
 ### All-in-One Commands (Makefile)
 - Run All Checks, Tests, Simulations & Build: `make all`
-- Run Full Validation Suite: `make check`
+- Run Full Validation Suite: `make check` (ruff lint+format, mypy, pytest, tsc, eslint, vitest, knowledge registry, knowledge coverage, workout catalog — a superset of CI's static frontend gates; only the Firestore rules suite, `npm audit` and the policy-drift check are CI-only)
 - Run All Tests (Python + Frontend): `make test`
 - Run Linters: `make lint`
 - Auto-Format Code: `make format`

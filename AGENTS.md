@@ -23,7 +23,7 @@ This document outlines repository rules, code conventions, testing instructions,
 
 ### Full Suite (Makefile)
 * `make all` — Run all code checks, test suites, simulations, and build
-* `make check` — Run all backend and frontend checks (ruff, mypy, pytest, tsc, eslint, vitest, workout validation)
+* `make check` — the commit gate: `ruff check`, `ruff format --check`, `mypy`, `pytest`, `tsc -b`, `eslint`, `vitest`, `validate:knowledge`, `validate:knowledge-coverage`, workout validation. It covers every static frontend gate CI runs; only the Firestore rules emulator suite (`npm run test:rules`), `npm audit` and the base-SHA policy-drift check are CI-only.
 * `make test` — Run all unit test suites (pytest + vitest)
 * `make lint` — Run all linters (ruff + eslint)
 * `make format` — Auto-format Python and TypeScript code
