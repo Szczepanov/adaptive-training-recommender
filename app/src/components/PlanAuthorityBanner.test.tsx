@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { SCREEN_LABELS } from '../types/navigation';
-import {
-    PlanAuthorityBanner,
-} from './PlanAuthorityBanner';
+import { PlanAuthorityBanner } from './PlanAuthorityBanner';
 import {
     shouldShowAuthorityBanner,
     type AuthorityBannerInput,
@@ -12,8 +10,9 @@ import {
 const base: AuthorityBannerInput = {
     hasImportedPlan: true,
     coachSessionTitleToday: 'Tempo Run 40min',
-    forecastModeToday: 'train',
-    forecastTitleToday: 'Tempo Run 40min',
+    coachHasExplicitRestToday: false,
+    adaptiveModeToday: 'train',
+    adaptiveTitleToday: 'Tempo Run 40min',
     coachFlaggedToday: false,
 };
 
@@ -22,31 +21,57 @@ describe('shouldShowAuthorityBanner', () => {
         expect(shouldShowAuthorityBanner({ ...base, hasImportedPlan: false })).toBe(false);
     });
 
-    it('hides when the coach plan rests today', () => {
-        expect(shouldShowAuthorityBanner({ ...base, coachSessionTitleToday: null })).toBe(false);
+    it('hides an unplanned coach day instead of guessing that it means rest', () => {
+        expect(shouldShowAuthorityBanner({
+            ...base,
+            coachSessionTitleToday: null,
+            coachHasExplicitRestToday: false,
+        })).toBe(false);
     });
 
-    it('hides when the forecast has no day for today', () => {
-        expect(shouldShowAuthorityBanner({ ...base, forecastModeToday: null })).toBe(false);
+    it('hides when the same-day adaptive recommendation is unavailable', () => {
+        expect(shouldShowAuthorityBanner({ ...base, adaptiveModeToday: null })).toBe(false);
     });
 
-    it('hides when both sides prescribe the same session today', () => {
+    it('hides when an explicit coach rest agrees with adaptive recovery', () => {
+        expect(shouldShowAuthorityBanner({
+            ...base,
+            coachSessionTitleToday: null,
+            coachHasExplicitRestToday: true,
+            adaptiveModeToday: 'recover',
+            adaptiveTitleToday: 'Recovery Day',
+        })).toBe(false);
+    });
+
+    it('shows when an explicit coach rest conflicts with adaptive training', () => {
+        expect(shouldShowAuthorityBanner({
+            ...base,
+            coachSessionTitleToday: null,
+            coachHasExplicitRestToday: true,
+        })).toBe(true);
+    });
+
+    it('hides when both sides prescribe the same normal session today', () => {
         expect(shouldShowAuthorityBanner(base)).toBe(false);
     });
 
     it('treats titles as equal ignoring case and surrounding whitespace', () => {
         expect(
-            shouldShowAuthorityBanner({ ...base, forecastTitleToday: '  tempo run 40MIN ' }),
+            shouldShowAuthorityBanner({ ...base, adaptiveTitleToday: '  tempo run 40MIN ' }),
         ).toBe(false);
     });
 
-    it('shows when the coach prescribes work and the forecast prescribes recovery', () => {
-        expect(shouldShowAuthorityBanner({ ...base, forecastModeToday: 'recover' })).toBe(true);
+    it('shows when the adaptive path reduces load even if the title matches', () => {
+        expect(shouldShowAuthorityBanner({ ...base, adaptiveModeToday: 'modify' })).toBe(true);
     });
 
-    it('shows when both prescribe work but name different sessions', () => {
+    it('shows when the coach prescribes a session and adaptive guidance prescribes recovery', () => {
+        expect(shouldShowAuthorityBanner({ ...base, adaptiveModeToday: 'recover' })).toBe(true);
+    });
+
+    it('shows when both prescribe normal work but name different sessions', () => {
         expect(
-            shouldShowAuthorityBanner({ ...base, forecastTitleToday: 'Easy Strength 30min' }),
+            shouldShowAuthorityBanner({ ...base, adaptiveTitleToday: 'Easy Strength 30min' }),
         ).toBe(true);
     });
 
@@ -54,8 +79,8 @@ describe('shouldShowAuthorityBanner', () => {
         expect(shouldShowAuthorityBanner({ ...base, coachFlaggedToday: true })).toBe(true);
     });
 
-    it('shows when agreement cannot be confirmed without a forecast title', () => {
-        expect(shouldShowAuthorityBanner({ ...base, forecastTitleToday: null })).toBe(true);
+    it('fails closed when normal-work disagreement cannot be confirmed without an adaptive title', () => {
+        expect(shouldShowAuthorityBanner({ ...base, adaptiveTitleToday: null })).toBe(false);
     });
 });
 
@@ -71,19 +96,19 @@ describe('PlanAuthorityBanner', () => {
         const html = renderToStaticMarkup(
             <PlanAuthorityBanner
                 {...base}
-                forecastModeToday="recover"
+                adaptiveModeToday="recover"
                 onViewHome={() => undefined}
             />,
         );
         expect(html).toContain('differ today');
-        expect(html).toContain(`follow ${SCREEN_LABELS.home} for today`);
+        expect(html).toContain(`Follow the decision on ${SCREEN_LABELS.home}`);
         expect(html).toContain('safety limits still apply');
         expect(html).toContain(`View ${SCREEN_LABELS.home}`);
     });
 
     it('keeps verdict copy without a link when no navigation handler is provided', () => {
         const html = renderToStaticMarkup(
-            <PlanAuthorityBanner {...base} forecastModeToday="recover" />,
+            <PlanAuthorityBanner {...base} adaptiveModeToday="recover" />,
         );
         expect(html).toContain('differ today');
         expect(html).not.toContain('<button');
