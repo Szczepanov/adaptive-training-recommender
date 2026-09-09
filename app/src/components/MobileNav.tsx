@@ -3,7 +3,12 @@ import type { Screen } from '../types/navigation';
 import { SCREEN_LABELS } from '../types/navigation';
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
-import { DRAWER_GROUPS, type DrawerDestination } from './navigationGroups';
+import {
+  DRAWER_GROUPS,
+  PRIMARY_NAV_ITEMS,
+  isPrimaryNavigationScreen,
+  type DrawerDestination,
+} from './navigationGroups';
 import './MobileNav.css';
 
 interface MobileNavProps {
@@ -13,16 +18,6 @@ interface MobileNavProps {
   mobileMoreOpen: boolean;
   setMobileMoreOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
-
-const MOBILE_MORE_SCREENS: readonly Screen[] = [
-  'goals',
-  'constraints',
-  'preferences',
-  'data',
-  'brief',
-  'sessions',
-  'testing',
-];
 
 export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, loadDecisionInput, mobileMoreOpen, setMobileMoreOpen }) => {
   const mobileMoreBtnRef = useRef<HTMLButtonElement>(null);
@@ -89,36 +84,24 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
   return (
     <>
       <nav className="bottom-nav" aria-label="Primary">
-        <button
-          className={`nav-item ${screen === 'home' ? 'active' : ''}`}
-          onClick={() => handleNavigate('home')}
-          aria-current={screen === 'home' ? 'page' : undefined}
-        >
-          <span className="nav-icon">🏠</span>
-          <span className="nav-label">{SCREEN_LABELS.home}</span>
-        </button>
-
-        <button
-          className={`nav-item ${screen === 'checkin' ? 'active' : ''}`}
-          onClick={() => handleNavigate('checkin')}
-          aria-current={screen === 'checkin' ? 'page' : undefined}
-        >
-          <span className="nav-icon">✓</span>
-          <span className="nav-label">{SCREEN_LABELS.checkin}</span>
-        </button>
-
-        <button
-          className={`nav-item ${screen === 'plan' ? 'active' : ''}`}
-          onClick={() => handleNavigate('plan')}
-          aria-current={screen === 'plan' ? 'page' : undefined}
-        >
-          <span className="nav-icon">📋</span>
-          <span className="nav-label">{SCREEN_LABELS.plan}</span>
-        </button>
+        {PRIMARY_NAV_ITEMS.map((destination) => {
+          const active = screen === destination.screen;
+          return (
+            <button
+              key={destination.screen}
+              className={`nav-item ${active ? 'active' : ''}`}
+              onClick={() => handleNavigate(destination.screen)}
+              aria-current={active ? 'page' : undefined}
+            >
+              <span className="nav-icon">{destination.icon}</span>
+              <span className="nav-label">{SCREEN_LABELS[destination.screen]}</span>
+            </button>
+          );
+        })}
 
         <button
           ref={mobileMoreBtnRef}
-          className={`nav-item ${MOBILE_MORE_SCREENS.includes(screen) ? 'active' : ''}`}
+          className={`nav-item ${!isPrimaryNavigationScreen(screen) ? 'active' : ''}`}
           onClick={() => setMobileMoreOpen((isOpen) => !isOpen)}
           aria-expanded={mobileMoreOpen}
           aria-haspopup="dialog"

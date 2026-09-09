@@ -1,5 +1,25 @@
 import type { Screen } from '../types/navigation';
 
+export interface PrimaryNavigationDestination {
+  screen: Screen;
+  icon: string;
+}
+
+/**
+ * The daily-loop destinations promoted at the top level on every shell (#482).
+ * Both Header and MobileNav render from this list so the primary set and order
+ * cannot drift between desktop and mobile.
+ */
+export const PRIMARY_NAV_ITEMS: readonly PrimaryNavigationDestination[] = [
+  { screen: 'home', icon: '🏠' },
+  { screen: 'checkin', icon: '✓' },
+  { screen: 'plan', icon: '📋' },
+];
+
+export function isPrimaryNavigationScreen(screen: Screen): boolean {
+  return PRIMARY_NAV_ITEMS.some((destination) => destination.screen === screen);
+}
+
 export interface DrawerDestination {
   screen: Screen;
   icon: string;
@@ -16,10 +36,10 @@ export interface DrawerGroup {
 
 /**
  * Intent-grouped overflow destinations (#486), shared by the mobile
- * `MobileNav` drawer and the desktop `Header` More menu (#482) so both
+ * `MobileNav` drawer and the desktop `Header` More disclosure (#482) so both
  * shells demote the same destinations under the same group titles.
  * Destination labels still render from `navigation.ts` `SCREEN_LABELS`;
- * this model owns grouping and order only.
+ * this model owns overflow grouping and order.
  */
 export const DRAWER_GROUPS: readonly DrawerGroup[] = [
   {

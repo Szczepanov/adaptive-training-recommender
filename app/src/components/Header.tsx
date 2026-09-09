@@ -1,7 +1,12 @@
 import React, { useRef, useEffect } from 'react';
 import type { Screen } from '../types/navigation';
 import { SCREEN_LABELS } from '../types/navigation';
-import { DRAWER_GROUPS, type DrawerDestination } from './navigationGroups';
+import {
+  DRAWER_GROUPS,
+  PRIMARY_NAV_ITEMS,
+  isPrimaryNavigationScreen,
+  type DrawerDestination,
+} from './navigationGroups';
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
 import { GarminSyncBadge } from './GarminSyncBadge';
@@ -26,6 +31,7 @@ export const Header: React.FC<HeaderProps> = ({
   date,
 }) => {
   const desktopSettingsRef = useRef<HTMLDivElement>(null);
+  const desktopMoreButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const handlePointerDown = (event: MouseEvent) => {
@@ -34,8 +40,9 @@ export const Header: React.FC<HeaderProps> = ({
       }
     };
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        if (desktopSettingsOpen) setDesktopSettingsOpen(false);
+      if (event.key === 'Escape' && desktopSettingsOpen) {
+        setDesktopSettingsOpen(false);
+        desktopMoreButtonRef.current?.focus();
       }
     };
 
@@ -58,7 +65,7 @@ export const Header: React.FC<HeaderProps> = ({
   // mobile bottom bar. Every other destination lives in the More overflow
   // under the same intent groups as the mobile drawer, so muscle memory
   // transfers between form factors.
-  const moreMenuActive = screen !== 'home' && screen !== 'checkin' && screen !== 'plan';
+  const moreMenuActive = !isPrimaryNavigationScreen(screen);
 
   const navigateToOverflowDestination = (destination: DrawerDestination) => {
     if (destination.refreshDecisionInput) {
@@ -83,53 +90,58 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         <nav className="navbar-desktop-menu" aria-label="Primary">
-          <button
-            className={`nav-link ${screen === 'home' ? 'active' : ''}`}
-            onClick={() => handleNavigate('home')}
-          >
-            {SCREEN_LABELS.home}
-          </button>
-          <button
-            className={`nav-link ${screen === 'checkin' ? 'active' : ''}`}
-            onClick={() => handleNavigate('checkin')}
-          >
-            {SCREEN_LABELS.checkin}
-          </button>
-          <button
-            className={`nav-link ${screen === 'plan' ? 'active' : ''}`}
-            onClick={() => handleNavigate('plan')}
-          >
-            {SCREEN_LABELS.plan}
-          </button>
+          {PRIMARY_NAV_ITEMS.map((destination) => {
+            const active = screen === destination.screen;
+            return (
+              <button
+                key={destination.screen}
+                className={`nav-link ${active ? 'active' : ''}`}
+                onClick={() => handleNavigate(destination.screen)}
+                aria-current={active ? 'page' : undefined}
+              >
+                {SCREEN_LABELS[destination.screen]}
+              </button>
+            );
+          })}
 
           <div className="more-menu-container" ref={desktopSettingsRef}>
             <button
+              ref={desktopMoreButtonRef}
               className={`nav-link more-btn ${moreMenuActive ? 'active' : ''}`}
               onClick={() => setDesktopSettingsOpen((isOpen) => !isOpen)}
               aria-expanded={desktopSettingsOpen}
-              aria-haspopup="menu"
+              aria-controls="desktop-more-panel"
             >
               <span>More</span>
               <span className="caret">▾</span>
             </button>
 
             {desktopSettingsOpen && (
-              <div className="dropdown-menu" role="menu" aria-label="More">
-                {DRAWER_GROUPS.map((group) => (
-                  <div key={group.id} role="group" aria-label={group.title}>
-                    <div className="dropdown-group-title">{group.title}</div>
-                    {group.items.map((destination) => (
-                      <button
-                        key={destination.screen}
-                        className={`dropdown-item ${screen === destination.screen ? 'active' : ''}`}
-                        onClick={() => navigateToOverflowDestination(destination)}
-                        role="menuitem"
-                      >
-                        <span className="item-icon">{destination.icon}</span> {SCREEN_LABELS[destination.screen]}
-                      </button>
-                    ))}
-                  </div>
-                ))}
+              // This is navigation disclosure content rather than an ARIA `menu` widget.
+              // Keeping ordinary buttons in the normal Tab order avoids promising roving
+              // menu keyboard behavior that this lightweight navigation does not need.
+              <div id="desktop-more-panel" className="dropdown-menu">
+                {DRAWER_GROUPS.map((group) => {
+                  const titleId = `desktop-more-${group.id}-title`;
+                  return (
+                    <div key={group.id} role="group" aria-labelledby={titleId}>
+                      <div id={titleId} className="dropdown-group-title">{group.title}</div>
+                      {group.items.map((destination) => {
+                        const active = screen === destination.screen;
+                        return (
+                          <button
+                            key={destination.screen}
+                            className={`dropdown-item ${active ? 'active' : ''}`}
+                            onClick={() => navigateToOverflowDestination(destination)}
+                            aria-current={active ? 'page' : undefined}
+                          >
+                            <span className="item-icon">{destination.icon}</span> {SCREEN_LABELS[destination.screen]}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
                 <div className="dropdown-divider" />
                 <div
                   className="dropdown-item"
@@ -140,7 +152,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <span className="item-icon">ℹ️</span> Build {buildInfo.label}
                 </div>
                 <div className="dropdown-divider" />
-                <button className="dropdown-item logout" onClick={handleLogout} role="menuitem">
+                <button className="dropdown-item logout" onClick={handleLogout}>
                   <span className="item-icon">🚪</span> Sign Out
                 </button>
               </div>
