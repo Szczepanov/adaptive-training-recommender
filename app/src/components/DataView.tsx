@@ -8,7 +8,6 @@ import { contextBriefService, type ContextBriefResult } from '../services/contex
 import { briefWindowDaysFor, type BriefWindowPreset } from '../engine/contextBrief';
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import {
-  copyActivitiesBundleToClipboard,
   downloadActivitiesJsonFile,
   exportActivitiesBundleToJson,
 } from '../utils/activityJsonExport';
@@ -28,10 +27,9 @@ interface DataViewProps {
   userId: string;
   onBack: () => void;
   initialTab?: DataViewTab;
-  /** When provided, the duplicate export affordances (Context-brief tab content and
-   * Activities Copy All) become deep links to the canonical `brief` screen instead of
-   * reimplementing its export (#491). The `brief` screen itself omits this prop so it
-   * keeps the full export UI. */
+  /** When provided, Context-brief and AI-export affordances deep-link to the canonical
+   * `brief` screen. The canonical `brief` screen omits this prop so it renders the full
+   * brief while still routing any in-view AI export action back to that brief tab. */
   onNavigateToBrief?: () => void;
 }
 
@@ -113,7 +111,6 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
   } | null>(null);
   const [reclassifyModalOpen, setReclassifyModalOpen] = useState(false);
   const [activityOverrides, setActivityOverrides] = useState<Record<string, ActivityOverride>>({});
-  const [allActivitiesCopied, setAllActivitiesCopied] = useState(false);
   // ADR-0034 PR2: canonical Activities read model, gated by VITE_TRAINING_OCCURRENCE_ACTIVITIES_POLICY.
   // Default 'off' leaves activityWindow/ActivityTelemetry above as the sole, unchanged
   // production path -- this state and its effect are inert unless explicitly enabled.
@@ -228,21 +225,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
     }
   };
 
-  const handleCopyAllActivities = async () => {
-    if (!activityWindow || activityWindow.state.status !== 'AVAILABLE' || activityWindow.state.data.length === 0) return;
-    const startInclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), -6);
-    const throughDateExclusive = addDaysToLocalDateString(briefDate ?? getLocalDateString(), 1);
-    try {
-      await copyActivitiesBundleToClipboard(activityWindow.state.data, {
-        userId,
-        startDateInclusive: startInclusive,
-        throughDateExclusive,
-      });
-      setAllActivitiesCopied(true);
-      window.setTimeout(() => setAllActivitiesCopied(false), 2000);
-    } catch (err) {
-      console.error('Failed to copy activities bundle to clipboard', err);
+  const openCanonicalBrief = () => {
+    if (onNavigateToBrief) {
+      onNavigateToBrief();
+      return;
     }
+    setActiveTab('brief');
   };
 
   const handleDownloadActivities = () => {
@@ -1058,12 +1046,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
         </button>
         <button
           className={activeTab === 'brief' ? 'active' : ''}
-          onClick={() => {
-            // The `brief` screen is the canonical Export-for-AI surface (#491);
-            // from the Data screen this tab deep-links to it instead of duplicating it.
-            if (onNavigateToBrief) onNavigateToBrief();
-            else setActiveTab('brief');
-          }}
+          onClick={openCanonicalBrief}
         >
           Context brief
         </button>
@@ -1077,32 +1060,20 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
               <div>
                 <h3 style={{ margin: 0 }}>Recent activity telemetry</h3>
                 <p className="activities-tab-subtitle">
-                  Inspect detailed Garmin telemetry. Export structured JSON for external AI agent planning.
+                  Inspect detailed Garmin telemetry. Use the canonical context brief for AI planning; JSON download remains a data export.
                 </p>
               </div>
               {activityWindow?.state.status === 'AVAILABLE' && activityWindow.state.data.length > 0 && (
                 <div className="activities-header-actions">
-                  {onNavigateToBrief ? (
-                    <button
-                      type="button"
-                      className="quick-action-btn secondary"
-                      style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                      onClick={onNavigateToBrief}
-                      title="Open the canonical Export Context for AI surface for AI planning export"
-                    >
-                      📋 Export via {SCREEN_LABELS.brief}
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      className="quick-action-btn secondary"
-                      style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
-                      onClick={handleCopyAllActivities}
-                      title="Copy all recent activities with detailed telemetry as JSON for AI planning"
-                    >
-                      {allActivitiesCopied ? '✓ Copied All JSON' : '📋 Copy All (JSON)'}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className="quick-action-btn secondary"
+                    style={{ width: 'auto', padding: '0.4rem 0.8rem', fontSize: '0.85rem' }}
+                    onClick={openCanonicalBrief}
+                    title="Open the canonical Export Context for AI surface for AI planning export"
+                  >
+                    📋 Export via {SCREEN_LABELS.brief}
+                  </button>
                   <button
                     type="button"
                     className="quick-action-btn secondary"
