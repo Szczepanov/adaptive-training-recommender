@@ -86,11 +86,12 @@ Successful onboarding writes training settings, the training-intent profile, and
 athlete is still goal-less) an active goal before `onCompleted` stores the per-user browser
 dismissal key. Skip persists only that dismissal key — it never creates a goal and never
 writes training settings — and is logged to local usability telemetry as a skipped wizard
-completion. A skipped (goal-less, dismissed) account can re-launch the wizard from the
-Coach Preferences surface, which clears the dismissal key and reloads. A blocked
-`localStorage` write alone does
-not make a successfully onboarded athlete loop forever, because the active-goal gate also
-suppresses the overlay.
+completion with the stage where Skip was chosen. A skipped (goal-less, dismissed) account
+can re-launch the wizard from the Coach Preferences surface, which clears the dismissal key
+and reloads; the relaunch action is disabled while Coach Preferences has unsaved edits so the
+reload cannot silently discard them. A blocked `localStorage` write alone does not make a
+successfully onboarded athlete loop forever, because the active-goal gate also suppresses the
+overlay.
 
 `App` can also render two resume/cleanup banners above `<main>`:
 
@@ -274,8 +275,8 @@ periodization/taper calculations, and the screen derives the current focus event
 Two implementation details matter to navigation work:
 
 * paused goals appear only under `all`, because there is no dedicated paused filter; and
-* `GoalsProps` accepts `onNavigate`, but `Goals` currently destructures only `userId`, so the
-  navigation callback is unused.
+* `Goals` takes only `userId`; it owns no repair/deep-link navigation, and callers
+  reach it through `App.tsx` `handleNavigate`.
 
 ### 8. Training Setup versus Coach Preferences
 
@@ -391,8 +392,11 @@ living-reference section when implementing them.
 
 7. Visually pair Training Setup (hard gates) and Coach Preferences (soft preferences), with
    cross-links between overlapping equipment/time/environment concepts.
-8. Either remove `Goals.onNavigate` or use it for explicit repair/deep-link flows; an unused
-   navigation prop is misleading API surface.
+8. ~~Either remove `Goals.onNavigate` or use it for explicit repair/deep-link flows; an unused
+   navigation prop is misleading API surface.~~
+   Done (#484): removed the unused `Goals` `onNavigate` prop — no repair flow needed it —
+   and kept `constraints` as the stable route key with user-facing copy in `navigation.ts`
+   `SCREEN_LABELS` (`Training Setup`).
 9. Review immediate-persist Training Setup controls for undo/confirmation where a mistaken
    toggle can materially change feasibility/safety decisions.
 
@@ -410,11 +414,11 @@ living-reference section when implementing them.
 13. ~~Add an explicit onboarding Skip/dismiss path only if product semantics define what a
     goal-less dismissed account should do; do not implement it as a browser flag alone.~~
     Done (#490): Skip persists only the per-user dismissal key — no goal, no training-settings
-    writes — skipped completions are logged to local usability telemetry, and a goal-less
-    dismissed account can re-launch the wizard from Coach Preferences.
- 14. ~~Use distinct copy for app authentication (`Continue/Sign in with Garmin`) and wearable
-     data connection (`Connect Garmin wearable`).~~ Done (#497): `LoginScreen` garmin mode
-     uses `Sign in with Garmin`, `GarminConnectionSection` uses `Connect Garmin wearable`.
+    writes — skipped completions are logged to local usability telemetry (including skip
+    stage), and a goal-less dismissed account can re-launch the wizard from Coach Preferences.
+14. ~~Use distinct copy for app authentication (`Continue/Sign in with Garmin`) and wearable
+    data connection (`Connect Garmin wearable`).~~ Done (#497): `LoginScreen` garmin mode
+    uses `Sign in with Garmin`, `GarminConnectionSection` uses `Connect Garmin wearable`.
 15. Choose a canonical AI-export surface and make the other export affordances clearly point
     to or distinguish themselves from it.
 16. Add local retry/repair affordances to weak recovery states, starting with DataView's
