@@ -45,11 +45,41 @@ function docRef(db: Firestore, userId: string, date: string) {
     return doc(db, 'users', userId, 'intraday_bundle_placements', date);
 }
 
+function bindingsEqual(left: ResolvedWindowBinding[], right: ResolvedWindowBinding[]): boolean {
+    return left.length === right.length && left.every((binding, index) => {
+        const other = right[index];
+        return other !== undefined
+            && binding.sessionId === other.sessionId
+            && binding.windowId === other.windowId
+            && binding.boundStartLocal === other.boundStartLocal
+            && binding.boundEndLocal === other.boundEndLocal
+            && binding.startInstant === other.startInstant
+            && binding.endInstant === other.endInstant;
+    });
+}
+
+function samePlacement(
+    current: IntradayBundlePlacementRecord,
+    proposal: BundlePlacementProposal,
+): boolean {
+    const bindings = proposal.outcome === 'placed' ? (proposal.bindings ?? []) : [];
+    const reason = proposal.outcome === 'infeasible' ? (proposal.reason ?? null) : null;
+    return current.bundleId === proposal.bundleId
+        && current.outcome === proposal.outcome
+        && current.reason === reason
+        && bindingsEqual(current.bindings, bindings);
+}
+
 /**
- * Records the latest resolved placement for one date's bundle. Revision-gated (mirrors
- * `daily_ledgers`'s optimistic-concurrency rule) so a slower, stale computation can never
- * clobber a newer one that already committed -- it simply loses the race silently, which
- * is correct for passive display evidence.
+ * Records the latest resolved placement for one date's bundle.
+ *
+ * Firestore transactions retry when a document read by the transaction changes. A plain
+ * `revision + 1` therefore serializes writes but does **not** prove freshness: an older
+ * computation can retry after a newer one and otherwise become the last writer. Capture
+ * `observedAt` before entering the retriable callback and keep it fixed across retries;
+ * when a later observation has already committed, this attempt no-ops. Re-saving the
+ * exact same placement also no-ops so passive dashboard refreshes do not manufacture audit
+ * revisions with no evidence change.
  *
  * Never throws: a write failure is logged and swallowed so a display-only write can never
  * fail the caller's recommendation generation.
@@ -59,13 +89,25 @@ export async function recordIntradayBundlePlacement(
     date: string,
     proposal: BundlePlacementProposal,
 ): Promise<void> {
+    const observedAt = new Date().toISOString();
     try {
         const db = getDb();
         const ref = docRef(db, userId, date);
-        const now = new Date().toISOString();
         await runTransaction(db, async transaction => {
             const snapshot = await transaction.get(ref);
             const current = snapshot.exists() ? (snapshot.data() as IntradayBundlePlacementRecord) : null;
+
+            if (current) {
+                if (samePlacement(current, proposal)) return;
+                const currentUpdatedAt = Date.parse(current.updatedAt);
+                const observedAtMs = Date.parse(observedAt);
+                if (Number.isFinite(currentUpdatedAt)
+                    && Number.isFinite(observedAtMs)
+                    && currentUpdatedAt >= observedAtMs) {
+                    return;
+                }
+            }
+
             const record: IntradayBundlePlacementRecord = {
                 userId,
                 date,
@@ -74,8 +116,8 @@ export async function recordIntradayBundlePlacement(
                 bindings: proposal.outcome === 'placed' ? (proposal.bindings ?? []) : [],
                 reason: proposal.outcome === 'infeasible' ? (proposal.reason ?? null) : null,
                 revision: (current?.revision ?? 0) + 1,
-                createdAt: current?.createdAt ?? now,
-                updatedAt: now,
+                createdAt: current?.createdAt ?? observedAt,
+                updatedAt: observedAt,
             };
             transaction.set(ref, record);
         });
