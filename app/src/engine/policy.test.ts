@@ -3,7 +3,7 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the exact D-LEDGER planner-admission transition once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-h4-d-ledger-planner-admission-v1');
+        expect(POLICY_VERSION).toBe('2026-09-h4-d-ledger-planner-admission-v2');
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
                 (version) => version === '2026-09-h4-intraday-bundle-member-launch-v1',

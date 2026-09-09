@@ -1,5 +1,5 @@
 import type { DailySubjectiveCheckin, Recommendation } from './models';
-import { TEMPLATES } from './templates';
+import { TEMPLATES_BY_ID } from './templates';
 
 /**
  * The small, current-day safety subset required before the engine can prescribe
@@ -43,7 +43,8 @@ export function canGenerateNormalRecommendation(status: MinimumSafetyCheckinStat
 export function createProvisionalSafetyRecommendation(
     status: Exclude<MinimumSafetyCheckinStatus, 'complete'>,
 ): Recommendation {
-    const restTemplate = TEMPLATES.find(template => template.category === 'Rest');
+    // ⚡ Bolt: optimized O(N) array scan to O(1) Map lookup
+    const restTemplate = TEMPLATES_BY_ID.get('rest_01');
     if (!restTemplate) {
         throw new Error('Safety fallback requires a Rest session template.');
     }

@@ -1410,7 +1410,8 @@ export function generateWeekAheadPlan(
         const rankingResult = evaluation.rank(rankingCandidates);
         const ranked = rankingResult.accepted;
 
-        const restFallback: SessionTemplate = ENRICHED_TEMPLATES.find(t => t.category === 'Rest') ?? {
+        // ⚡ Bolt: optimized O(N) array scan to O(1) Map lookup
+        const restFallback: SessionTemplate = ENRICHED_TEMPLATES_BY_ID.get('rest_01') ?? {
             id: 'rest_01',
             category: 'Rest',
             modality: 'None',
