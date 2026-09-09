@@ -66,15 +66,15 @@ policy-alignment test (ADR-0033). Do not add one silently.
 
 **Before you call it done**
 ```bash
-make check          # ruff check/format + mypy + pytest; tsc + eslint + vitest + workouts
+make check          # ruff check/format + mypy + pytest; tsc + eslint + vitest + knowledge/workout validators
 ```
 - Docs-only change → `uv run pre-commit run --all-files`. CI uses the docs-hygiene fast path
   and skips the code test/build/simulation jobs.
 - `make check` already runs `ruff format --check` through `lint-python`; if formatting
   fails, use `make format` (or `uv run ruff format .`) and rerun the gate.
-- Knowledge-registry or coverage change → `cd app && npm run check`. `make check` runs the
-  frontend gates individually and skips `validate:knowledge` / `validate:knowledge-coverage`;
-  CI does not.
+- Knowledge-registry and coverage validation are part of `make check`; use
+  `cd app && npm run check` when you want the same frontend-only gate without the Python
+  checks.
 - Engine or policy change → `make simulate` (scenario run, aggregate-bounds gate) plus
   `cd app && npm run simulate:plan-judge` and the policy-drift check (I5). All three gate
   CI; `simulate:diff` is advisory there, so read it but do not block on it.
@@ -92,7 +92,7 @@ The full index is in [`AGENTS.md` § Commands](./AGENTS.md#commands-reference). 
 need most:
 
 ```bash
-make check                             # core local code gate; CI adds path-specific checks
+make check                             # core local code gate, including knowledge/workout validators
 make test                              # pytest + vitest only
 make simulate                          # scenario simulations + baseline diff
 uv sync                                # restore Python deps
