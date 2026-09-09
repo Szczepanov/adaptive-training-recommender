@@ -258,12 +258,16 @@ export function placedSessionForDate(
  *
  * `bundleContext`, when supplied, activates D-PLACEMENT: the primary session is chosen
  * bundle-order-aware rather than purely by priority (see `placedSessionForDate`).
- * Launching this session still goes through the single-session path unchanged; a second
- * bundle member is not independently launchable yet (no execution-binding pipeline
- * exists for external plans at all, primary included -- building one is a separate
- * future project). The resolved bundle placement is not persisted for display here --
+ * Launching this session still goes through the single-session path unchanged; a
+ * non-primary bundle member's own launch goes through issue #434's separate
+ * execution-binding pipeline (`intradayBundleMemberAdjudication.ts` /
+ * `intradayLaunchClaim.ts`), not through this function.
+ *
+ * This function does not itself persist the resolved bundle placement for display --
+ * `resolveIntradayBundlePlacement`'s result is recorded by the caller (`Home.tsx`, via
+ * `intradayBundlePlacementAuditService.ts`) into a separate sibling document, because
  * `hasValidRecommendationAudit`'s `externalPlan` shape is already at Firestore's
- * per-request rule-evaluation ceiling and has no room left for it (verified with the
+ * per-request rule-evaluation ceiling with no room left for it (verified with the
  * emulator suite); see the comment there.
  */
 export function externalPlanContextForDate(

@@ -1801,6 +1801,64 @@ emulatorDescribe('Firestore security rules', () => {
         }));
     });
 
+    it('enforces the intraday_bundle_placements display-audit contract (ADR-0036 D-PLACEMENT follow-up)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const placementPath = `users/${ownerId}/intraday_bundle_placements/2026-08-18`;
+
+        function validPlacement() {
+            return {
+                userId: ownerId, date: '2026-08-18', bundleId: 'bundle-1', outcome: 'placed',
+                bindings: [{
+                    sessionId: 'w1-am', windowId: 'win-am',
+                    boundStartLocal: '06:00', boundEndLocal: '07:00',
+                    startInstant: '2026-08-18T04:00:00.000Z', endInstant: '2026-08-18T05:00:00.000Z',
+                }],
+                reason: null,
+                revision: 1,
+                createdAt: '2026-08-18T05:00:00Z', updatedAt: '2026-08-18T05:00:00Z',
+            };
+        }
+
+        // 1. Owner can record a valid placement.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, placementPath), validPlacement())))
+            .resolves.toBeUndefined();
+
+        // 2. Cross-user read/write is denied.
+        await assertFails(getDoc(doc(otherDb, placementPath)));
+        await assertFails(setDoc(doc(otherDb, placementPath), { ...validPlacement(), userId: otherUserId }));
+
+        // 3. A revision jump greater than 1 is rejected.
+        await assertFails(setDoc(doc(ownerDb, placementPath), { ...validPlacement(), revision: 3 }));
+
+        // 4. A legitimate +1 re-proposal update succeeds.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, placementPath), {
+            ...validPlacement(), revision: 2, updatedAt: '2026-08-18T06:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        // 5. date/createdAt are immutable once created.
+        await assertFails(setDoc(doc(ownerDb, placementPath), { ...validPlacement(), revision: 3, createdAt: '2026-08-18T07:00:00Z' }));
+
+        // 6. Deletes are never allowed.
+        await assertFails(deleteDoc(doc(ownerDb, placementPath)));
+
+        // 7. An infeasible outcome with an empty bindings list and a reason is valid.
+        const infeasiblePath = `users/${ownerId}/intraday_bundle_placements/2026-08-19`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, infeasiblePath), {
+            ...validPlacement(), date: '2026-08-19', outcome: 'infeasible', bindings: [], reason: 'insufficient daily systemic-cost budget',
+        }))).resolves.toBeUndefined();
+
+        // 8. An unknown outcome value is rejected.
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intraday_bundle_placements/2026-08-20`), {
+            ...validPlacement(), date: '2026-08-20', outcome: 'maybe',
+        }));
+
+        // 9. Rejects a malformed shape (missing a required field).
+        const malformed = validPlacement() as Partial<ReturnType<typeof validPlacement>>;
+        delete malformed.bundleId;
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intraday_bundle_placements/2026-08-21`), malformed));
+    });
+
     it('allows recommendations with primarySession and additionalSessions bindings', async () => {
         const base = validRecommendation();
         const recWithBindings = {
