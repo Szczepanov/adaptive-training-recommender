@@ -269,8 +269,12 @@ When an imported plan exists, the screen presents both:
 Without an active imported plan, the evergreen/adaptive forecast remains available and the
 screen offers plan import/revision. The screen also renders schedule-overlay context.
 
-Current UX ambiguity: coach plan, adaptive week forecast, and today's Home recommendation
-can differ without one explicit "this is authoritative for today" banner.
+Current verdict banner: `WeekAheadStrip` intentionally starts at tomorrow, so `PlanView`
+keeps the same-day ranked adaptive recommendation that seeds that forecast separately. When
+that today recommendation genuinely disagrees with an occupying coach session or an explicit
+coach rest directive, `PlanAuthorityBanner` points to Home as the authoritative today-decision
+surface; agreement, unplanned coach days, and insufficient comparison data carry no verdict
+copy.
 
 ### 7. Goals and target events
 
@@ -365,11 +369,14 @@ moving an input across an authority boundary.
 3. Tissue/safety information appears in daily check-in, persistent injury constraints, and
    post-session response/follow-up flows. The layering is intentional but difficult to
    discover.
-4. Imported coach plan, adaptive week forecast, and Home recommendation can disagree without
-   a single authority explanation in the UI.
+4. Imported coach guidance and the same-day adaptive recommendation that seeds the
+   tomorrow-forward forecast show a single follow-Home banner only on genuine today
+   disagreement (`PlanAuthorityBanner` / `shouldShowAuthorityBanner`); agreement,
+   unplanned coach days, and insufficient comparison data carry no verdict copy.
 5. AI/context export has one canonical surface: the `brief` route. The DataView
    Context brief tab and Activities AI-export action route to it rather than duplicating it;
    when already inside the canonical `brief` screen, that action returns to Context brief.
+
 6. `sessions` and `testing` share `SessionRunner`, so the execution UI alone does not strongly
    communicate provenance.
 7. Several recovery states are weak rather than truly terminal: DataView's no-data state has
@@ -397,8 +404,13 @@ living-reference section when implementing them.
 
 ### Daily loop and repair
 
-4. Add an explicit authority/explanation banner when coach plan, adaptive forecast, and the
-   Home recommendation differ
+4. ~~Add an explicit authority/explanation banner when coach plan, adaptive forecast, and the
+   Home recommendation differ~~
+   Done (#487): `PlanView` renders `PlanAuthorityBanner` — a one-line follow-Home verdict
+   that compares explicit coach guidance for today (session or rest) with the same-day
+   adaptive recommendation that seeds the tomorrow-forward forecast. It is hidden for
+   agreement, unplanned coach days, or insufficient comparison data, and it never overrules
+   safety envelopes.
 5. ~~Standardize fail-closed recovery: say what is missing, link to the owning repair surface,~~
    ~~and provide retry when retry is meaningful.~~
    Done (#483): every Home and PlanView blocking state names the missing input, links to
