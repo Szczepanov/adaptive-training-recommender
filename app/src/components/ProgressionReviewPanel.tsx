@@ -107,8 +107,9 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
     <section aria-labelledby="progression-review-title" className="progression-review-panel">
       <h2 id="progression-review-title">Progression Review</h2>
       <p className="section-intro">
-        Blocks with a review due are listed below. Reviewing checks real completed work against
-        the block's bounded progression target -- nothing changes until you confirm it.
+        Blocks with a review due are listed below. Reviewing checks canonical completed work,
+        pinned execution-prescription identity, follow-up outcomes and active constraints against
+        the block&apos;s bounded progression target. Nothing changes until you confirm it.
       </p>
 
       {dueBlocks.length === 0 ? (
@@ -151,7 +152,7 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
               </p>
               {confirmedActivation ? (
                 <p role="status" className="progression-review-confirmed">
-                  {confirmedActivation.created ? 'Confirmed.' : 'Already confirmed earlier.'} New block revision {confirmedActivation.header.revision}.
+                  {confirmedActivation.created ? 'Confirmed.' : 'Already confirmed earlier.'} Authored block revision {confirmedActivation.activation.activationRevisionId}.
                 </p>
               ) : (
                 <button type="button" onClick={() => void handleConfirm()} disabled={confirming}>
