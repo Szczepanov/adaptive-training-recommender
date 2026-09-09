@@ -39,7 +39,11 @@ import { ExternalPlanWeek } from './ExternalPlanWeek';
 import { ExternalPlanImport } from './ExternalPlanImport';
 import { WeekAheadStrip } from './WeekAheadStrip';
 import { GarminSyncNowButton } from './GarminSyncNowButton';
-import type { ErrorRepairAction } from './errorRepairAction';
+import {
+  resolveDecisionCompositionRepairState,
+  resolveDecisionSourceRepairState,
+  type ErrorRepairAction,
+} from './errorRepairAction';
 import {
   resolveWearablePlanningMode,
   type WearablePlanningMode,
@@ -61,6 +65,12 @@ function formatWeekRange(startDateStr: string): string {
   return `${WEEKDAY_FORMATTER.format(start)} – ${WEEKDAY_FORMATTER.format(end)}`;
 }
 
+function formatSourceList(items: string[]): string {
+  if (items.length <= 1) return items[0] ?? '';
+  if (items.length === 2) return `${items[0]} and ${items[1]}`;
+  return `${items.slice(0, -1).join(', ')}, and ${items.at(-1)}`;
+}
+
 export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanChanged }) => {
   const today = useMemo(() => getLocalDateString(), []);
   const [activePlan, setActivePlan] = useState<ActiveExternalPlan | null>(null);
@@ -75,12 +85,14 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
   const [loadError, setLoadError] = useState<string | null>(null);
   const [forecastUnavailable, setForecastUnavailable] = useState<string | null>(null);
   const [forecastRepairTargets, setForecastRepairTargets] = useState<ErrorRepairAction[]>([]);
-  // An unverifiable (INVALID) active coach plan is repaired in the import/revise UI on
-  // this same screen -- offer opening it as a forward action beyond retry.
+  // An INVALID active coach plan cannot be reviewed in place: ExternalPlanImport starts with
+  // a blank import surface. Offer replacement with a corrected revision rather than claiming
+  // that the malformed stored plan itself will be opened for editing.
   const [planImportRepairOffered, setPlanImportRepairOffered] = useState<boolean>(false);
   const [wearableForecastBlock, setWearableForecastBlock] = useState<{
     message: string;
     canResync: boolean;
+    repairAction?: ErrorRepairAction;
   } | null>(null);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [showImport, setShowImport] = useState<boolean>(false);
@@ -112,45 +124,35 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       setDecisionInput(input);
 
       // P0: Enforce strict DataState semantics. Do NOT silently convert unavailable/invalid
-      // schedule data into empty arrays. Name which schedule input failed so the state is
-      // actionable; these inputs have no owning repair screen, so retry is the repair.
+      // schedule data into empty arrays. These inputs have no owning repair screen, so the
+      // copy names each failing status precisely and Retry remains the only local action.
       if (actState.status !== 'AVAILABLE' || blocksState.status !== 'AVAILABLE') {
-        const failedInputs: string[] = [];
-        if (actState.status !== 'AVAILABLE') failedInputs.push('fixed activities');
-        if (blocksState.status !== 'AVAILABLE') failedInputs.push('plan blocks');
-        const failedInputsLabel = failedInputs.join(' and ');
-        const unavailMsg =
-          actState.status === 'UNAVAILABLE' || blocksState.status === 'UNAVAILABLE'
-            ? `The plan week's ${failedInputsLabel} are temporarily unavailable. Check your connection and retry.`
-            : `The plan week's ${failedInputsLabel} could not be verified. Please retry before using this plan.`;
-        setForecastUnavailable(unavailMsg);
+        const invalidInputs: string[] = [];
+        const unavailableInputs: string[] = [];
+        if (actState.status === 'INVALID') invalidInputs.push('fixed activities');
+        if (blocksState.status === 'INVALID') invalidInputs.push('plan blocks');
+        if (actState.status === 'UNAVAILABLE') unavailableInputs.push('fixed activities');
+        if (blocksState.status === 'UNAVAILABLE') unavailableInputs.push('plan blocks');
+
+        const statusParts: string[] = [];
+        if (invalidInputs.length > 0) {
+          statusParts.push(`${formatSourceList(invalidInputs)} ${invalidInputs.length === 1 ? 'is' : 'are'} invalid`);
+        }
+        if (unavailableInputs.length > 0) {
+          statusParts.push(`${formatSourceList(unavailableInputs)} ${unavailableInputs.length === 1 ? 'is' : 'are'} temporarily unavailable`);
+        }
+        setForecastUnavailable(
+          `The plan week cannot be verified because ${statusParts.join('; ')}. Retry after the invalid schedule data is corrected or the unavailable source recovers.`,
+        );
         setFixedActivities([]);
         setActivePlan(null);
         return;
       }
 
-      // Check decision input source states like Home.tsx
-      const decisionSourceFailure =
-        input.sourceStates &&
-        [input.sourceStates.activeGoals, input.sourceStates.preferences, input.sourceStates.trainingSettings].find(
-          (state) => state.status === 'INVALID' || state.status === 'UNAVAILABLE',
-        );
+      const decisionSourceFailure = resolveDecisionSourceRepairState(input.sourceStates);
       if (decisionSourceFailure) {
-        if (decisionSourceFailure.status === 'INVALID') {
-          // Point the user at whichever screen owns the invalid document(s) so the error
-          // is actionable rather than a dead end -- re-saving there re-runs validation
-          // and clears the INVALID state.
-          const repairTargets: ErrorRepairAction[] = [];
-          if (input.sourceStates?.activeGoals.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'goals', label: `Review ${SCREEN_LABELS.goals}` });
-          if (input.sourceStates?.preferences.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'preferences', label: `Review ${SCREEN_LABELS.preferences}` });
-          if (input.sourceStates?.trainingSettings.status === 'INVALID') repairTargets.push({ kind: 'navigate', screen: 'constraints', label: `Review ${SCREEN_LABELS.constraints}` });
-          setForecastRepairTargets(repairTargets);
-        }
-        setForecastUnavailable(
-          decisionSourceFailure.status === 'UNAVAILABLE'
-            ? 'Decision inputs are temporarily unavailable. Please retry before generating a plan.'
-            : 'Decision inputs need repair before generating a plan.',
-        );
+        setForecastRepairTargets(decisionSourceFailure.actions);
+        setForecastUnavailable(decisionSourceFailure.message);
         return;
       }
 
@@ -181,8 +183,9 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         }
         if (wearableMode === 'unavailable') {
           setWearableForecastBlock({
-            message: 'Garmin connection status could not be verified. Retry before using wearable-free mode.',
+            message: 'Garmin connection status could not be verified. Review Coach Preferences or retry before using wearable-free mode.',
             canResync: false,
+            repairAction: { kind: 'navigate', screen: 'preferences', label: `Review ${SCREEN_LABELS.preferences}` },
           });
         }
       }
@@ -199,7 +202,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         setForecastUnavailable(
           activePlanState.status === 'UNAVAILABLE'
             ? 'Your active coach plan is temporarily unavailable. Check your connection and retry.'
-            : 'Your active coach plan could not be verified. Retry before using this schedule.',
+            : 'Your active coach plan is invalid. Import a corrected plan revision, then retry.',
         );
         setFixedActivities([]);
         setActivePlan(null);
@@ -334,7 +337,18 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       }
     } catch (err) {
       console.error('Failed to load plan or forecast in PlanView:', err);
-      setLoadError('An unexpected error occurred while generating the plan. Please retry.');
+      const compositionRepair = resolveDecisionCompositionRepairState(err);
+      if (compositionRepair) {
+        // Schedule overlays are repaired by ScheduleOverlayCard on this screen; navigating
+        // to Plan again would be a no-op, so keep the named message and Retry while exposing
+        // cross-screen repair actions (for example Training Setup) normally.
+        setForecastRepairTargets(compositionRepair.actions.filter(
+          action => action.kind !== 'navigate' || action.screen !== 'plan',
+        ));
+        setForecastUnavailable(compositionRepair.message);
+      } else {
+        setLoadError('An unexpected error occurred while generating the plan. Please retry.');
+      }
     } finally {
       setLoading(false);
     }
@@ -355,8 +369,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         { fixedActivities },
         today,
       );
-    },
-    [activePlan, fixedActivities, today],
+    }, [activePlan, fixedActivities, today],
   );
 
   const persistAssignments = useCallback(
@@ -487,7 +500,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         </div>
       ) : forecastUnavailable ? (
         <div className="plan-unavailable-card">
-          <h3>7-Day Forecast Temporarily Unavailable</h3>
+          <h3>7-Day Forecast Unavailable</h3>
           <p className="plan-unavailable-message">{forecastUnavailable}</p>
           {forecastRepairTargets.length > 0 && (
             <p className="plan-unavailable-message">
@@ -513,7 +526,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             ))}
             {planImportRepairOffered && (
               <button type="button" className="plan-retry-btn" onClick={() => setShowImport(true)}>
-                📥 Review imported plan
+                📥 Import corrected plan
               </button>
             )}
             <button type="button" className="plan-retry-btn" onClick={loadPlanData}>
@@ -564,6 +577,15 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             <div className="plan-missing-recovery-card">
               <p>📊 {wearableForecastBlock.message}</p>
               <div className="plan-unavailable-actions">
+                {wearableForecastBlock.repairAction?.kind === 'navigate' && onNavigate && (
+                  <button
+                    type="button"
+                    className="plan-retry-btn"
+                    onClick={() => onNavigate(wearableForecastBlock.repairAction!.screen)}
+                  >
+                    {wearableForecastBlock.repairAction.label} →
+                  </button>
+                )}
                 {wearableForecastBlock.canResync && (
                   <GarminSyncNowButton userId={userId} onSynced={loadPlanData} />
                 )}
