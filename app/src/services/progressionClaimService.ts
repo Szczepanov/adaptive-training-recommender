@@ -8,10 +8,11 @@
 
 import { doc, getDoc, runTransaction, type Firestore, type Transaction } from 'firebase/firestore';
 import { getDb } from '../firebase';
-import { validateIntentBlock, type IntentBlock } from '../engine/blockIntent';
+import { isValidLocalDateString, validateIntentBlock, type IntentBlock } from '../engine/blockIntent';
 import type { ProposedProgressionChange } from '../engine/progressionReview';
 import { buildTreatmentIntentReplayPayloadV1, hashTreatmentIntentReplayPayload } from '../engine/blockIntentReplay';
 import { addDaysToLocalDateString } from '../utils/localDate';
+import { parseTrainingSettings } from './trainingSettingsService';
 import {
     IntentBlockService,
     type IntentBlockHeader,
@@ -25,7 +26,9 @@ export type ProgressionConfirmationCode =
     | 'block-not-found'
     | 'no-progression-contract'
     | 'unknown-target-objective'
-    | 'invalid-proposed-change';
+    | 'invalid-proposed-change'
+    | 'review-not-due'
+    | 'active-constraint-conflict';
 
 export class ProgressionConfirmationError extends Error {
     readonly code: ProgressionConfirmationCode;
@@ -98,6 +101,10 @@ function activationRef(db: Firestore, userId: string, activationKey: string) {
     return doc(db, 'users', userId, 'progression_experiment_activations', activationKey);
 }
 
+function trainingSettingsRef(db: Firestore, userId: string) {
+    return doc(db, 'users', userId, 'trainingSettings', 'profile');
+}
+
 function settingsSnapshot(variable: string, unit: string, value: number): ProgressionSettingsSnapshot {
     return { variable, unit, value };
 }
@@ -117,6 +124,21 @@ function invalidChange(detail: string): never {
         detail,
         'This proposed change no longer matches the current progression contract. Please run the review again.',
     );
+}
+
+function assertReviewDate(current: IntentBlock, reviewAsOfDate: string): void {
+    if (!isValidLocalDateString(reviewAsOfDate)
+        || reviewAsOfDate < current.dateRange.startDate
+        || reviewAsOfDate > current.dateRange.endDate) {
+        invalidChange(`Review date '${reviewAsOfDate}' is outside block '${current.id}'`);
+    }
+    if (reviewAsOfDate < current.reviewSchedule.nextReviewDate) {
+        throw new ProgressionConfirmationError(
+            'review-not-due',
+            `Review date '${reviewAsOfDate}' precedes nextReviewDate '${current.reviewSchedule.nextReviewDate}'`,
+            `This block is not due for review until ${current.reviewSchedule.nextReviewDate}.`,
+        );
+    }
 }
 
 /** Revalidates the proposal at the mutation boundary rather than trusting UI-produced data.
@@ -175,19 +197,50 @@ function assertProposedChangeMatchesCurrentContract(
     }
 }
 
-/** Advance the review schedule with the authored progression revision. Leaving the old due
- * date in place makes the freshly-created revision immediately due again and can reuse the
- * same observation window. Anchoring to the prior scheduled review keeps cadence explicit;
- * the block end remains the final review boundary. */
-function nextReviewDate(current: IntentBlock): string {
-    const candidate = addDaysToLocalDateString(
-        current.reviewSchedule.nextReviewDate,
-        current.reviewSchedule.reviewCadenceDays,
+function assertNoNewBlockingRestriction(
+    userId: string,
+    rawSettings: unknown,
+    reviewAsOfDate: string,
+    proposedChange: ProposedProgressionChange,
+): void {
+    // A reduction is a tightening action and must remain available even when a new
+    // restriction appears. Only an increase needs this additional fail-closed gate.
+    if (proposedChange.proposedValue <= proposedChange.previousValue || rawSettings === undefined) return;
+
+    const settings = parseTrainingSettings(rawSettings, userId);
+    if (!settings) {
+        throw new ProgressionConfirmationError(
+            'active-constraint-conflict',
+            'Current training settings are invalid and cannot be safely rechecked at confirmation',
+            'Your current training restrictions could not be verified. Review Training Setup before confirming an increase.',
+        );
+    }
+    const blocking = (settings.injuries ?? []).some(injury =>
+        (injury.severity === 'limit' || injury.severity === 'exclude')
+        && (!injury.reviewBy || injury.reviewBy >= reviewAsOfDate),
     );
+    if (blocking) {
+        throw new ProgressionConfirmationError(
+            'active-constraint-conflict',
+            `A current limit/exclude injury restriction is active as of ${reviewAsOfDate}`,
+            'Your training restrictions changed since this proposal was reviewed. Run the progression review again before increasing the target.',
+        );
+    }
+}
+
+/** Advance cadence from the evidence-as-of date that produced the proposal, not from a stale
+ * historical due date. This avoids a late-confirmed revision becoming immediately due again. */
+function nextReviewDate(current: IntentBlock, reviewAsOfDate: string): string {
+    const candidate = addDaysToLocalDateString(reviewAsOfDate, current.reviewSchedule.reviewCadenceDays);
     return candidate > current.dateRange.endDate ? current.dateRange.endDate : candidate;
 }
 
-function nextBlockWithAppliedChange(current: IntentBlock, change: ProposedProgressionChange): IntentBlock {
+function nextBlockWithAppliedChange(
+    current: IntentBlock,
+    change: ProposedProgressionChange,
+    reviewAsOfDate: string,
+): IntentBlock {
+    assertReviewDate(current, reviewAsOfDate);
     assertProposedChangeMatchesCurrentContract(current, change);
     const contract = current.progressionContract!;
     const next: IntentBlock = {
@@ -195,7 +248,7 @@ function nextBlockWithAppliedChange(current: IntentBlock, change: ProposedProgre
         revision: current.revision + 1,
         reviewSchedule: {
             ...current.reviewSchedule,
-            nextReviewDate: nextReviewDate(current),
+            nextReviewDate: nextReviewDate(current, reviewAsOfDate),
         },
         progressionContract: { ...contract, currentValue: change.proposedValue },
     };
@@ -228,6 +281,8 @@ function existingActivationMatchesRequest(
 /**
  * Confirms an athlete-reviewed proposal as one new bounded IntentBlock revision, atomically
  * with acquiring the athlete-wide singleton claim and writing immutable activation evidence.
+ * `reviewAsOfDate` is the date of the review that generated the proposal and is revalidated
+ * against the transactionally-read block schedule.
  */
 export async function confirmProgressionRevision(
     userId: string,
@@ -235,6 +290,7 @@ export async function confirmProgressionRevision(
     proposalId: string,
     expectedSourcePlanRevision: number,
     proposedChange: ProposedProgressionChange,
+    reviewAsOfDate: string,
     db: Firestore = getDb(),
 ): Promise<ConfirmProgressionRevisionResult> {
     const activationKey = await deterministicActivationKey(blockId, proposalId);
@@ -245,6 +301,8 @@ export async function confirmProgressionRevision(
     let created = true;
 
     const result = await runTransaction(db, async (transaction: Transaction) => {
+        // All transactional reads occur before any write. The current settings read is part
+        // of D-AUTHORITY's confirmation-time constraint recheck, not recommendation-time I/O.
         const activationSnap = await transaction.get(activationRef(db, userId, activationKey));
         const claimSnap = await transaction.get(claimRef(db, userId));
         const headerRef = intentBlocks.headerRef(userId, blockId);
@@ -303,6 +361,7 @@ export async function confirmProgressionRevision(
         }
 
         const currentRevisionSnap = await transaction.get(intentBlocks.revisionRef(userId, blockId, header.revision));
+        const currentSettingsSnap = await transaction.get(trainingSettingsRef(db, userId));
         if (!currentRevisionSnap.exists()) {
             throw new ProgressionConfirmationError(
                 'block-not-found',
@@ -313,11 +372,15 @@ export async function confirmProgressionRevision(
         const currentRevisionDoc = currentRevisionSnap.data() as IntentBlockRevisionDocument;
         const currentBlock = currentRevisionDoc.block;
 
-        // Revalidate the exact bounded mutation against the transactionally-read current
-        // contract. This closes the authority gap where a caller could previously supply an
-        // arbitrary in-range value, mismatched target binding, or stale previousValue.
+        assertReviewDate(currentBlock, reviewAsOfDate);
         assertProposedChangeMatchesCurrentContract(currentBlock, proposedChange);
-        const nextBlock = nextBlockWithAppliedChange(currentBlock, proposedChange);
+        assertNoNewBlockingRestriction(
+            userId,
+            currentSettingsSnap.exists() ? currentSettingsSnap.data() : undefined,
+            reviewAsOfDate,
+            proposedChange,
+        );
+        const nextBlock = nextBlockWithAppliedChange(currentBlock, proposedChange, reviewAsOfDate);
 
         // A progression revision changes only the progression contract. Reuse the source
         // revision's frozen profile + source provenance rather than silently re-pinning a
