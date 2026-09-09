@@ -1,9 +1,34 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ExerciseDaysSlider, OnboardingWizard } from './OnboardingWizard';
+import { ExerciseDaysSlider, OnboardingWizard, skipOnboardingForNow } from './OnboardingWizard';
 import { weeklyCommitmentFromExerciseDays } from './onboarding/weeklyCommitment';
+import { goalService } from '../services/goalService';
+import { trainingSettingsService } from '../services/trainingSettingsService';
+import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
+import { getOnboardingDoneStorageKey } from '../utils/onboardingStorage';
+import { usabilityMetrics } from '../utils/usabilityMetrics';
 
 describe('OnboardingWizard', () => {
+  const storage = new Map<string, string>();
+
+  beforeEach(() => {
+    storage.clear();
+    vi.stubGlobal('window', {
+      localStorage: {
+        getItem: (key: string) => storage.get(key) ?? null,
+        setItem: (key: string, value: string) => storage.set(key, String(value)),
+        removeItem: (key: string) => storage.delete(key),
+      },
+    });
+    usabilityMetrics.clear();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+    usabilityMetrics.clear();
+  });
+
   it('renders Step 1 welcome screen by default', () => {
     const html = renderToStaticMarkup(
       <OnboardingWizard userId="athlete-1" onCompleted={() => {}} />
@@ -19,6 +44,27 @@ describe('OnboardingWizard', () => {
     );
 
     expect(html).toContain('Skip for now');
+  });
+
+  it('dismisses and records Skip without writing settings, intent, or goals', () => {
+    const settingsWrite = vi.spyOn(trainingSettingsService, 'updateTrainingSettings');
+    const intentWrite = vi.spyOn(trainingIntentProfileService, 'upsert');
+    const goalList = vi.spyOn(goalService, 'listGoals');
+    const goalWrite = vi.spyOn(goalService, 'createGoal');
+    const onCompleted = vi.fn();
+
+    skipOnboardingForNow('athlete-1', 'focus', 1500, onCompleted);
+
+    expect(settingsWrite).not.toHaveBeenCalled();
+    expect(intentWrite).not.toHaveBeenCalled();
+    expect(goalList).not.toHaveBeenCalled();
+    expect(goalWrite).not.toHaveBeenCalled();
+    expect(storage.get(getOnboardingDoneStorageKey('athlete-1'))).toBe('true');
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+
+    const report = usabilityMetrics.generateSummaryReport();
+    expect(report.wizardSkips).toBe(1);
+    expect(report.wizardSkipsByStage).toEqual({ focus: 1 });
   });
 });
 

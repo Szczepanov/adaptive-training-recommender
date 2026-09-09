@@ -22,6 +22,22 @@ interface ExerciseDaysSliderProps {
     disabled?: boolean;
 }
 
+/**
+ * Explicit dismissal action kept separate from the Firestore-writing completion path.
+ * This narrow seam is intentionally testable so Skip cannot regress into a partial setup
+ * write when onboarding evolves.
+ */
+export function skipOnboardingForNow(
+    userId: string,
+    stage: OnboardingWizardStage,
+    elapsedMs: number | undefined,
+    onCompleted: () => void,
+): void {
+    dismissOnboardingForUser(userId);
+    usabilityMetrics.recordWizardCompleted(userId, getLocalDateString(), 'skipped', elapsedMs, stage);
+    onCompleted();
+}
+
 export function ExerciseDaysSlider({ value, onChange, disabled = false }: ExerciseDaysSliderProps) {
     return (
         <div className="choice-group days-slider-group">
@@ -85,15 +101,7 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
         // Skip persists dismissal only: no goal is created and training
         // settings are left untouched. When browser storage is blocked the
         // dismissal is session-only and the wizard may resurface on refresh.
-        dismissOnboardingForUser(userId);
-        usabilityMetrics.recordWizardCompleted(
-            userId,
-            getLocalDateString(),
-            'skipped',
-            wizardElapsedMs(),
-            currentWizardStage,
-        );
-        onCompleted();
+        skipOnboardingForNow(userId, currentWizardStage, wizardElapsedMs(), onCompleted);
     };
 
     const handleFinish = async () => {
