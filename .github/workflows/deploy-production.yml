@@ -46,6 +46,7 @@ jobs:
   preflight:
     name: Production ref guard
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Require main branch
         run: |
@@ -153,6 +154,7 @@ jobs:
     name: Release summary
     needs: deploy-hosting
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     steps:
       - name: Record promoted revision
         env:

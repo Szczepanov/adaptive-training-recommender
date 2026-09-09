@@ -119,6 +119,9 @@ jobs:
   deploy:
     name: Deploy
     runs-on: ubuntu-latest
+    # This workflow's own concurrency group above queues (cancel-in-progress: false) rather
+    # than cancels, so a hung step would otherwise block every later deploy indefinitely.
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
 
