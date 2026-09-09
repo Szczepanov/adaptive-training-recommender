@@ -4,10 +4,10 @@
 backend (`src/garmin_sync/`) and a React + TypeScript + Firebase app (`app/`) whose engine
 turns recovery snapshots into adaptive training recommendations.
 
-**This file is the rules. [`AGENTS.md`](./AGENTS.md) is the reference** — the command
-reference and package routing map. Commands are listed there once, on purpose: when they
-lived in both files they drifted. Read `AGENTS.md` before concluding that a module, CLI
-subcommand or npm script does not exist.
+**This file is the rules. [`AGENTS.md`](./AGENTS.md) is the reference** — the complete
+command reference and package routing map. This file keeps only the minimal working-loop
+subset; when full inventories lived in both files they drifted. Read `AGENTS.md` before
+concluding that a module, CLI subcommand or npm script does not exist.
 
 ---
 
