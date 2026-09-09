@@ -5,6 +5,8 @@ import { deriveGoalCategory, deriveEventPriority, getDaysToEvent, goalToUserEven
 import { EVENT_PRESETS } from '../engine/eventPresets';
 import { getLocalDateString } from '../utils/localDate';
 import { getErrorMessage } from '../utils/errors';
+import { SCREEN_LABELS } from '../types/navigation';
+import './Goals.css';
 
 const EVENT_CATEGORY_LABELS: Record<UserEvent['category'], string> = {
   cycling_event: 'Cycling event',
@@ -25,7 +27,6 @@ const EVENT_LIFECYCLE_LABELS: Record<NonNullable<UserGoal['eventLifecycle']>, st
 type UserGoalWithId = UserGoal & { id: string };
 /** Fields the add/edit goal form collects; matches goalService.createGoal's input. */
 type GoalInput = Omit<UserGoal, 'userId' | 'createdAt' | 'updatedAt' | 'schemaVersion'>;
-import './Goals.css';
 
 interface GoalsProps {
   userId: string;
@@ -173,7 +174,7 @@ export function Goals({ userId }: GoalsProps) {
     <div className="goals-container">
       <div className="goals-header">
         <div>
-          <h1>Goals</h1>
+          <h1>{SCREEN_LABELS.goals}</h1>
           <p className="header-subtitle">Manage short-term targets, race milestones, and long-term athletic goals.</p>
         </div>
         <button

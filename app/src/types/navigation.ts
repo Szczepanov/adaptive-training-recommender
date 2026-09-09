@@ -5,8 +5,8 @@ export type Screen = 'home' | 'checkin' | 'goals' | 'constraints' | 'preferences
  * Header, MobileNav, and each screen's heading all render from this map
  * so the same Screen is never labeled differently across surfaces.
  *
- * Route keys are stable code identifiers, not user-facing copy: `constraints`
- * stays as the key while its label reads 'Training Setup' (#484).
+ * Screen values are stable internal identifiers, not user-facing copy: `constraints`
+ * stays as the identifier while its canonical label reads 'Training Setup' (#484).
  */
 export const SCREEN_LABELS: Record<Screen, string> = {
   home: 'Home',
