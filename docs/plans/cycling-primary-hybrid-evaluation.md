@@ -12,17 +12,24 @@ post-AM `SessionResponse` completion facts, while multi-region tissue feedback r
 the daily check-in as the canonical tissue authority. Phase 6 applies the cumulative
 `2026-09-h4-intraday-bundle-member-launch-v1` policy transition, completing the H4 release;
 dependent members still require the response and separation checks before they become
-launchable. The broader ledger-based ranking/admission unification
-and persistence of a bundle's resolved placement for display also remain; H5 design is
+launchable. The rolling planner's ledger-based ranking/admission gating is also delivered
+(PR #474, `2026-09-h4-d-ledger-planner-admission-v2`); still open are unifying three
+narrower ad hoc fixed-activity dedup mechanisms onto that same ledger identity, and
+persisting a bundle's resolved placement for display. H5 design is
 accepted as ADR-0037 with H5a/H5b delivered (H5c and cumulative `external-plan@5` unstarted).
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
 confirmation; H4's live release is delivered through PR 3 Phase 6, recorded in
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's remaining non-gating
-work also needs its own decision-affecting PR(s): unifying `planner.ts`'s three ad hoc dedup
-mechanisms onto the ledger's remainder/admission semantics as a real ranking input, and
-persisting a bundle's resolved placement for display. The latter was previously blocked by
-`firestore.rules`' per-request expression ceiling, but #468 reduced recommendation-audit
-validation cost and closed #435, so it is now unblocked rather than complete. H5c needs the
+work needs its own decision-affecting PR(s): unifying `applyFixedActivityStimulusCredit`'s,
+`generateWeekAheadPlan`'s and `unrepresentedFixedActivityProjection`'s three separate ad hoc
+occurrence-dedup key schemes onto the ledger's `occurrenceId`/`revision` identity (narrower
+than, and not to be confused with, the ranking/admission gating PR #474 already delivered),
+and persisting a bundle's resolved placement for display. The latter was previously blocked
+by `firestore.rules`' per-request expression ceiling; #468 reduced recommendation-audit
+validation cost and closed #435, but re-testing with the emulator suite confirmed that
+reduction still is not enough headroom for even a minimal `intradayBundle` field on
+`recommendationAudit` -- the follow-up therefore needs a separate sibling document rather
+than another `recommendationAudit` budget attempt. H5c needs the
 athlete-scoped singleton progression-claim transaction design, and cumulative
 `external-plan@5` acceptance is unblocked now that H4's v4 contract has landed.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
