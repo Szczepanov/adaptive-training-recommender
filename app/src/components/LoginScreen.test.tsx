@@ -51,7 +51,7 @@ describe('LoginScreen', () => {
     expect(html).toContain('Sign In');
     expect(html).toContain('Create Account');
     expect(html).toContain('Forgot password?');
-    expect(html).toContain('Continue with Garmin');
+    expect(html).toContain('Sign in with Garmin');
   });
 
   it('returns null when authPhase is AUTHENTICATED', () => {

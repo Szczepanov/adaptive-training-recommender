@@ -237,13 +237,13 @@ export const LoginScreen: React.FC = () => {
     );
   }
 
-  // Mode: Continue with Garmin
+  // Mode: Sign in with Garmin
   if (mode === 'garmin') {
     return (
       <div className="app-container auth-container">
         <div className="auth-card">
           <form onSubmit={handleGarminLogin}>
-            <h1>{challengeId ? 'Verify Garmin login' : 'Continue with Garmin'}</h1>
+            <h1>{challengeId ? 'Verify Garmin login' : 'Sign in with Garmin'}</h1>
             <p>
               {challengeId
                 ? 'Enter the verification code requested by Garmin.'
@@ -423,7 +423,7 @@ export const LoginScreen: React.FC = () => {
             className="auth-secondary-btn"
             onClick={() => switchMode('garmin')}
           >
-            Continue with Garmin
+            Sign in with Garmin
           </button>
         </form>
       </div>

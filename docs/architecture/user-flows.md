@@ -166,7 +166,7 @@ Entry is automatic whenever auth is not authenticated.
 
 Success is observed by Firebase auth; no explicit screen navigation is required.
 
-Potential confusion: "Continue with Garmin" is an app-authentication method, while Garmin
+Potential confusion: "Sign in with Garmin" is an app-authentication method, while Garmin
 connection controls under Preferences link wearable data for sync. They are separate tasks.
 
 ### 2. First run / onboarding
@@ -404,8 +404,9 @@ living-reference section when implementing them.
 
 13. Add an explicit onboarding Skip/dismiss path only if product semantics define what a
     goal-less dismissed account should do; do not implement it as a browser flag alone.
-14. Use distinct copy for app authentication (`Continue/Sign in with Garmin`) and wearable
-    data connection (`Connect Garmin wearable`).
+ 14. ~~Use distinct copy for app authentication (`Continue/Sign in with Garmin`) and wearable
+     data connection (`Connect Garmin wearable`).~~ Done (#497): `LoginScreen` garmin mode
+     uses `Sign in with Garmin`, `GarminConnectionSection` uses `Connect Garmin wearable`.
 15. Choose a canonical AI-export surface and make the other export affordances clearly point
     to or distinguish themselves from it.
 16. Add local retry/repair affordances to weak recovery states, starting with DataView's

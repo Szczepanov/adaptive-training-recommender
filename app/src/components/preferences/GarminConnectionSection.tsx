@@ -110,9 +110,9 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
 
   return (
     <section className="preference-section">
-      <h2>Garmin account</h2>
+      <h2>Garmin wearable</h2>
       <p className="preference-desc">
-        Connect Garmin to this app account. Your password is used only for Garmin authentication;
+        Connect Garmin wearable to this app account for sync. Your password is used only for Garmin authentication;
         the app keeps the resulting refreshable session token, not the password.
       </p>
 
@@ -129,7 +129,7 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
 
       {!loadingConnection && isConnected && !showForm && (
         <button type="button" className="auth-secondary-btn" onClick={() => setShowForm(true)}>
-          Reconnect Garmin
+          Reconnect Garmin wearable
         </button>
       )}
 
@@ -172,9 +172,9 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
             </>
           )}
           {error && <p className="error-message">{error}</p>}
-          {success && <p className="preference-success-note">Garmin is connected to this app account.</p>}
+          {success && <p className="preference-success-note">Garmin wearable is connected to this app account.</p>}
           <button type="submit" className="login-btn" disabled={loading}>
-            {loading ? 'Connecting...' : challengeId ? 'Verify Garmin' : 'Connect Garmin'}
+            {loading ? 'Connecting...' : challengeId ? 'Verify Garmin wearable' : 'Connect Garmin wearable'}
           </button>
           {challengeId && (
             <button
