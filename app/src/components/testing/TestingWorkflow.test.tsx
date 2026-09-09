@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { describeAbandonedAssessment } from './TestingWorkflow';
+import {
+    canStartFreshAssessmentAttempt,
+    describeAbandonedAssessment,
+} from './TestingWorkflow';
 
 describe('describeAbandonedAssessment', () => {
     it('names the lost attempt and protocol lock (#494)', () => {
@@ -24,5 +27,15 @@ describe('describeAbandonedAssessment', () => {
         expect(copy).toContain('terminal');
         expect(copy).toContain('cannot be resumed');
         expect(copy).toContain('start a fresh attempt');
+    });
+});
+
+describe('canStartFreshAssessmentAttempt', () => {
+    it('allows a fresh attempt only after terminal abandonment is persisted (#494)', () => {
+        expect(canStartFreshAssessmentAttempt({ state: 'abandoned' })).toBe(true);
+        expect(canStartFreshAssessmentAttempt({ state: 'scheduled' })).toBe(false);
+        expect(canStartFreshAssessmentAttempt({ state: 'in_progress' })).toBe(false);
+        expect(canStartFreshAssessmentAttempt({ state: 'completed' })).toBe(false);
+        expect(canStartFreshAssessmentAttempt(null)).toBe(false);
     });
 });
