@@ -1,8 +1,9 @@
-import React, { useRef, useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import type { Screen } from '../types/navigation';
 import { SCREEN_LABELS } from '../types/navigation';
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
+import './MobileNav.css';
 
 interface MobileNavProps {
   screen: Screen;
@@ -12,20 +13,95 @@ interface MobileNavProps {
   setMobileMoreOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
-/**
- * Group heading style for the More drawer sections (#486). Item sub-copy reuses the
- * existing `item-sub` class so group descriptions match the per-item pattern; only the
- * uppercase section title needs an inline style to stay inside the MobileNav lane
- * (no shared-stylesheet change).
- */
-const GROUP_TITLE_STYLE: React.CSSProperties = {
-  fontSize: '0.75rem',
-  fontWeight: 700,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
-  color: 'var(--text-secondary)',
-  padding: '0 0.25rem',
-};
+interface DrawerDestination {
+  screen: Screen;
+  icon: string;
+  description: string;
+  refreshDecisionInput?: boolean;
+}
+
+interface DrawerGroup {
+  id: string;
+  title: string;
+  description: string;
+  items: readonly DrawerDestination[];
+}
+
+const MOBILE_MORE_SCREENS: readonly Screen[] = [
+  'goals',
+  'constraints',
+  'preferences',
+  'data',
+  'brief',
+  'sessions',
+  'testing',
+];
+
+const DRAWER_GROUPS: readonly DrawerGroup[] = [
+  {
+    id: 'train',
+    title: 'Train',
+    description: 'Sessions, assessments, and the week-ahead plan',
+    items: [
+      {
+        screen: 'sessions',
+        icon: '🚀',
+        description: 'Run a multidomain fixture and record native measures',
+      },
+      {
+        screen: 'testing',
+        icon: '🧪',
+        description: 'Run a locked assessment and record comparable raw outcomes',
+      },
+      {
+        screen: 'plan',
+        icon: '📋',
+        description: 'Compare the coach plan against the adaptive forecast',
+      },
+    ],
+  },
+  {
+    id: 'configure',
+    title: 'Configure',
+    description: 'Goals, setup, and coaching preferences',
+    items: [
+      {
+        screen: 'goals',
+        icon: '🎯',
+        description: 'Manage events and target milestones',
+      },
+      {
+        screen: 'constraints',
+        icon: '⚠️',
+        description: 'Manage physical cautions & equipment',
+      },
+      {
+        screen: 'preferences',
+        icon: '⚙️',
+        description: 'Configure modalities & strain caps',
+      },
+    ],
+  },
+  {
+    id: 'understand',
+    title: 'Understand',
+    description: 'Data review and AI context export',
+    items: [
+      {
+        screen: 'data',
+        icon: '📊',
+        description: 'View analytics and snapshot telemetry',
+        refreshDecisionInput: true,
+      },
+      {
+        screen: 'brief',
+        icon: '📤',
+        description: 'Compile recent metrics & prompt for your AI',
+        refreshDecisionInput: true,
+      },
+    ],
+  },
+];
 
 export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, loadDecisionInput, mobileMoreOpen, setMobileMoreOpen }) => {
   const mobileMoreBtnRef = useRef<HTMLButtonElement>(null);
@@ -82,12 +158,20 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
 
   const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}`;
 
+  const navigateToDrawerDestination = (destination: DrawerDestination) => {
+    if (destination.refreshDecisionInput) {
+      loadDecisionInput();
+    }
+    handleNavigate(destination.screen);
+  };
+
   return (
     <>
-      <nav className="bottom-nav">
+      <nav className="bottom-nav" aria-label="Primary">
         <button
           className={`nav-item ${screen === 'home' ? 'active' : ''}`}
           onClick={() => handleNavigate('home')}
+          aria-current={screen === 'home' ? 'page' : undefined}
         >
           <span className="nav-icon">🏠</span>
           <span className="nav-label">{SCREEN_LABELS.home}</span>
@@ -96,6 +180,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
         <button
           className={`nav-item ${screen === 'checkin' ? 'active' : ''}`}
           onClick={() => handleNavigate('checkin')}
+          aria-current={screen === 'checkin' ? 'page' : undefined}
         >
           <span className="nav-icon">✓</span>
           <span className="nav-label">{SCREEN_LABELS.checkin}</span>
@@ -104,6 +189,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
         <button
           className={`nav-item ${screen === 'plan' ? 'active' : ''}`}
           onClick={() => handleNavigate('plan')}
+          aria-current={screen === 'plan' ? 'page' : undefined}
         >
           <span className="nav-icon">📋</span>
           <span className="nav-label">{SCREEN_LABELS.plan}</span>
@@ -111,7 +197,7 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
 
         <button
           ref={mobileMoreBtnRef}
-          className={`nav-item ${['goals', 'constraints', 'preferences', 'data', 'brief', 'sessions', 'testing'].includes(screen) ? 'active' : ''}`}
+          className={`nav-item ${MOBILE_MORE_SCREENS.includes(screen) ? 'active' : ''}`}
           onClick={() => setMobileMoreOpen((isOpen) => !isOpen)}
           aria-expanded={mobileMoreOpen}
           aria-haspopup="dialog"
@@ -129,111 +215,42 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               <button className="close-drawer-btn" onClick={() => setMobileMoreOpen(false)} aria-label="Close navigation and settings">✕</button>
             </div>
             <div className="drawer-items">
-              <div className="drawer-group" role="presentation">
-                <span style={GROUP_TITLE_STYLE}>Train</span>
-                <span className="item-sub">Sessions, assessments, and the week-ahead plan</span>
-              </div>
-              <button
-                className={`drawer-item ${screen === 'sessions' ? 'active' : ''}`}
-                onClick={() => handleNavigate('sessions')}
-              >
-                <span className="item-icon">🚀</span>
-                <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.sessions}</span>
-                  <span className="item-sub">Run a multidomain fixture and record native measures</span>
-                </div>
-              </button>
+              {DRAWER_GROUPS.map((group) => {
+                const titleId = `mobile-more-${group.id}-title`;
+                const descriptionId = `mobile-more-${group.id}-description`;
 
-              <button
-                className={`drawer-item ${screen === 'testing' ? 'active' : ''}`}
-                onClick={() => handleNavigate('testing')}
-              >
-                <span className="item-icon">🧪</span>
-                <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.testing}</span>
-                  <span className="item-sub">Run a locked assessment and record comparable raw outcomes</span>
-                </div>
-              </button>
-
-              <button
-                className={`drawer-item ${screen === 'plan' ? 'active' : ''}`}
-                onClick={() => handleNavigate('plan')}
-              >
-                <span className="item-icon">📋</span>
-                <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.plan}</span>
-                  <span className="item-sub">Compare the coach plan against the adaptive forecast</span>
-                </div>
-              </button>
-
-              <div className="drawer-group" role="presentation">
-                <span style={GROUP_TITLE_STYLE}>Configure</span>
-                <span className="item-sub">Goals, setup, and coaching preferences</span>
-              </div>
-              <button
-                className={`drawer-item ${screen === 'goals' ? 'active' : ''}`}
-                onClick={() => handleNavigate('goals')}
-              >
-                <span className="item-icon">🎯</span>
-                <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.goals}</span>
-                  <span className="item-sub">Manage events and target milestones</span>
-                </div>
-              </button>
-
-              <button
-                className={`drawer-item ${screen === 'constraints' ? 'active' : ''}`}
-                onClick={() => handleNavigate('constraints')}
-              >
-                <span className="item-icon">⚠️</span>
-                <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.constraints}</span>
-                  <span className="item-sub">Manage physical cautions & equipment</span>
-                </div>
-              </button>
-
-              <button
-                className={`drawer-item ${screen === 'preferences' ? 'active' : ''}`}
-                onClick={() => handleNavigate('preferences')}
-              >
-                <span className="item-icon">⚙️</span>
-                <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.preferences}</span>
-                  <span className="item-sub">Configure modalities & strain caps</span>
-                </div>
-              </button>
-
-              <div className="drawer-group" role="presentation">
-                <span style={GROUP_TITLE_STYLE}>Understand</span>
-                <span className="item-sub">Data review and AI context export</span>
-              </div>
-              <button
-                className={`drawer-item ${screen === 'data' ? 'active' : ''}`}
-                onClick={() => {
-                  loadDecisionInput();
-                  handleNavigate('data');
-                }}
-              >
-                <span className="item-icon">📊</span>
-                <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.data}</span>
-                  <span className="item-sub">View analytics and snapshot telemetry</span>
-                </div>
-              </button>
-
-              <button
-                className={`drawer-item ${screen === 'brief' ? 'active' : ''}`}
-                onClick={() => {
-                  loadDecisionInput();
-                  handleNavigate('brief');
-                }}
-              >
-                <span className="item-icon">📤</span>
-                <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.brief}</span>
-                  <span className="item-sub">Compile recent metrics & prompt for your AI</span>
-                </div>
-              </button>
+                return (
+                  <div
+                    key={group.id}
+                    className="drawer-group"
+                    role="group"
+                    aria-labelledby={titleId}
+                    aria-describedby={descriptionId}
+                  >
+                    <div className="drawer-group-header">
+                      <h4 id={titleId} className="drawer-group-title">{group.title}</h4>
+                      <span id={descriptionId} className="drawer-group-description">{group.description}</span>
+                    </div>
+                    {group.items.map((destination) => {
+                      const active = screen === destination.screen;
+                      return (
+                        <button
+                          key={destination.screen}
+                          className={`drawer-item ${active ? 'active' : ''}`}
+                          onClick={() => navigateToDrawerDestination(destination)}
+                          aria-current={active ? 'page' : undefined}
+                        >
+                          <span className="item-icon">{destination.icon}</span>
+                          <div className="item-text">
+                            <span className="item-title">{SCREEN_LABELS[destination.screen]}</span>
+                            <span className="item-sub">{destination.description}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })}
 
               <div className="drawer-divider" />
 
