@@ -1,0 +1,79 @@
+/* Check-in progress stepper: saved vs pending state for the four check-in groups. */
+
+.checkin-stepper {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.5rem;
+  margin: 0 0 1.25rem 0;
+  padding: 0;
+}
+
+@media (max-width: 520px) {
+  .checkin-stepper {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.checkin-stepper-step {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-control, 10px);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  min-height: var(--touch-target-min, 44px);
+  box-sizing: border-box;
+}
+
+.checkin-stepper-step.status-pending {
+  border-style: dashed;
+  border-color: rgba(148, 163, 184, 0.28);
+}
+
+.checkin-stepper-step.status-done {
+  border-color: rgba(16, 185, 129, 0.35);
+  background: rgba(16, 185, 129, 0.06);
+}
+
+.checkin-stepper-step[aria-current='step'] {
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.checkin-stepper-marker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  font-size: 0.78rem;
+  font-weight: 700;
+  flex-shrink: 0;
+  background: rgba(148, 163, 184, 0.15);
+  color: #94a3b8;
+}
+
+.checkin-stepper-step.status-done .checkin-stepper-marker {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.checkin-stepper-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+  min-width: 0;
+}
+
+.checkin-stepper-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #f1f5f9;
+}
+
+.checkin-stepper-detail {
+  font-size: 0.7rem;
+  color: var(--text-secondary, #94a3b8);
+}
