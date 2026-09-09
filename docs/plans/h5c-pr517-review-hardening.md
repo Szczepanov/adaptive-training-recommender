@@ -58,17 +58,24 @@ This is a targeted constraint recheck, not a claim that every future-session cap
 
 On an idempotent replay, the current block header may already be newer than the revision created by the original activation. The review UI now reports `activationRevisionId`, not the possibly-newer current header revision.
 
+### 7. Proposal identity is canonical and content-addressed
+
+The original UI helper derived a readable id from only source revision, review date, variable and proposed value. Different target bindings or before/after semantics could therefore alias the same idempotency identity. Proposal identity is now a 64-hex SHA-256 of a canonical projection containing the source block revision, review `asOfDate`, complete target binding, variable/unit, previous/proposed values and derived delta. The confirmation service recomputes that identity before opening the transaction, so a caller cannot reuse an id for different proposal semantics.
+
+This is deliberately proposal identity, not review-evidence identity. Two same-day reviews against the same source revision that produce exactly the same proposed change still resolve to the same proposal id even if newly synced evidence changed the path to that result.
+
 ## Important remaining audit boundary
 
 ADR-0037 D-REPLAY asks H5 to retain the evidence lineage behind a confirmed proposal: canonical performed-fact revisions/ids, response/tissue snapshots, evidence-as-of time, action/reasons, and other bindings needed to explain/replay what was reviewed.
 
-PR #517 does **not yet persist an immutable progression-review evidence snapshot**. The activation document records deterministic proposal/experiment identity and before/after settings, but it does not freeze the complete `ProgressionReviewInput`/result provenance. Likewise, `deriveProposalId` is a logical confirmation id (`source revision + review date + variable + proposed value`), not an evidence hash. A same-day review rerun after newly synced/edited evidence can derive the same proposal id if the proposed value is unchanged.
+PR #517 does **not yet persist an immutable progression-review evidence snapshot**. The activation document records deterministic proposal/experiment identity and before/after settings, but it does not freeze the complete `ProgressionReviewInput`/result provenance. The canonical proposal id now hashes all proposal semantics plus source revision and review date, but it intentionally does **not** hash the underlying evidence snapshot. A same-day review rerun after newly synced/edited evidence can therefore retain the same proposal id when it produces the same semantic change.
 
 Therefore the precise status after PR #517 is:
 
 - real review evidence is assembled and evaluated fail-closed;
 - confirmation is transactionally bounded, idempotent, revision-gated, and rechecks current restrictive injury settings;
 - accepted `IntentBlock` revisions and activation before/after values are durable;
+- proposal idempotency identity covers the full proposed-change semantics;
 - **full immutable review/evidence replay is still a separate required delivery before H5c should be called “fully audited” against D-REPLAY.**
 
 A follow-up should introduce a write-once review snapshot (or equivalent content-addressed record) that freezes at least the source block revision/hash, review `asOfDate`, canonical fact revision and occurrence ids, linked prescription identities, response/tissue evidence, active restriction snapshot, evaluation bindings/results when present, review action/reasons/audit, and a semantic hash referenced by the activation.
