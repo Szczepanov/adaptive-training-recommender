@@ -6,18 +6,20 @@
  * computed by `PlanView` -- this module adds no engine logic.
  */
 
-/** Forecast intent for today. `train` means the forecast prescribes work. */
-export type ForecastModeToday = 'train' | 'recover';
+/** Same-day adaptive intent that seeds the tomorrow-forward week forecast. */
+export type AdaptiveModeToday = 'train' | 'modify' | 'recover';
 
 export interface AuthorityBannerInput {
     /** An imported coach plan is active for this week. */
     hasImportedPlan: boolean;
-    /** Title of the coach session occupying today, or null when the plan rests today. */
+    /** Title of the coach session occupying today, or null when no session occupies today. */
     coachSessionTitleToday: string | null;
-    /** Forecast mode for today, or null when the forecast has no day for today. */
-    forecastModeToday: ForecastModeToday | null;
-    /** Forecast template title for today (null when unknown). */
-    forecastTitleToday: string | null;
+    /** True only for an explicit imported rest directive, not merely an unplanned day. */
+    coachHasExplicitRestToday: boolean;
+    /** Same-day adaptive mode, or null when today's adaptive recommendation is unavailable. */
+    adaptiveModeToday: AdaptiveModeToday | null;
+    /** Same-day adaptive template title (null when unavailable). */
+    adaptiveTitleToday: string | null;
     /** The engine critique carries a finding dated today. */
     coachFlaggedToday: boolean;
 }
@@ -27,20 +29,32 @@ function normalizeTitle(title: string): string {
 }
 
 /**
- * Shown only on genuine disagreement for today; hidden whenever either side is
- * missing or both sides agree.
+ * Show only when both sides have an explicit today prescription and they genuinely
+ * disagree. An unplanned coach day is not silently treated as a rest day, and missing
+ * adaptive comparison data fails closed (no banner) rather than inventing a verdict.
  */
 export function shouldShowAuthorityBanner(input: AuthorityBannerInput): boolean {
-    if (!input.hasImportedPlan) return false;
-    if (input.coachSessionTitleToday === null) return false;
-    if (input.forecastModeToday === null) return false;
-    // The coach prescribes work while the adaptive forecast prescribes recovery:
-    // genuine disagreement for today.
-    if (input.forecastModeToday === 'recover') return true;
-    // Both prescribe work: disagree only when the engine's own critique flags
-    // today's coach session or the two sides name different sessions. Agreement
-    // cannot be confirmed without a forecast title, so stay visible toward Home.
+    if (!input.hasImportedPlan || input.adaptiveModeToday === null) return false;
+
+    const coachHasSession = input.coachSessionTitleToday !== null;
+    if (!coachHasSession && !input.coachHasExplicitRestToday) return false;
+
+    // Explicit coach rest versus adaptive work is a real disagreement. If the
+    // adaptive path also says recover, the two sources agree at the authority level.
+    if (!coachHasSession && input.coachHasExplicitRestToday) {
+        return input.adaptiveModeToday !== 'recover';
+    }
+
+    // A dated critique means the coach session itself conflicts with a rule the
+    // adaptive engine applies to its own candidates, even when display titles match.
     if (input.coachFlaggedToday) return true;
-    if (input.forecastTitleToday === null) return true;
-    return normalizeTitle(input.coachSessionTitleToday) !== normalizeTitle(input.forecastTitleToday);
+
+    // Reduced-load/recovery modes are materially different from following the coach
+    // session as authored, regardless of whether the selected template name matches.
+    if (input.adaptiveModeToday === 'modify' || input.adaptiveModeToday === 'recover') return true;
+
+    // Both sides prescribe normal work. Compare their concrete session titles when
+    // available; without an adaptive title, disagreement cannot be proven.
+    if (input.adaptiveTitleToday === null) return false;
+    return normalizeTitle(input.coachSessionTitleToday) !== normalizeTitle(input.adaptiveTitleToday);
 }
