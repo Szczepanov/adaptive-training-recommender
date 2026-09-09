@@ -810,6 +810,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             setSaveTemplateSuccess(`Saved as template "${title}"!`);
             setTimeout(() => {
                 setShowSaveTemplateModal(false);
+                setShowCompletionSheet(true);
                 setSaveTemplateSuccess(null);
             }, 1600);
         } catch (error) {
@@ -1144,25 +1145,10 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
             </div>
 
             {/* Completion Sheet */}
-            {/* #495: save-as-template lives here, next to the finish/abandon decision,
-                instead of the active-run top bar -- reaching it requires opening the
-                completion flow, so it cannot fire accidentally mid-set. It still derives
-                from the raw working definition, so template semantics are unchanged. */}
+            {/* #495: save-as-template is a secondary action inside the modal completion flow,
+                instead of a peer active-run action. Opening the title editor temporarily hands
+                off from this dialog to the save dialog, avoiding simultaneous aria-modal layers. */}
             {showCompletionSheet && (
-                <>
-                    <div className="session-authoring-actions">
-                        <button
-                            type="button"
-                            className="preview-fixture-btn"
-                            onClick={() => {
-                                setCustomTemplateTitle(definition.title);
-                                setShowSaveTemplateModal(true);
-                            }}
-                            title="Save adjusted workout as a new template"
-                        >
-                            💾 Save as template
-                        </button>
-                    </div>
                 <SessionCompletionSheet
                     startedAt={runner.execution.startedAt}
                     totalSets={entries.length}
@@ -1175,6 +1161,13 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         setShowAbandonConfirmation(false);
                         setCompletionError(null);
                     }}
+                    onSaveTemplate={() => {
+                        setShowCompletionSheet(false);
+                        setCustomTemplateTitle(definition.title);
+                        setSaveTemplateError(null);
+                        setSaveTemplateSuccess(null);
+                        setShowSaveTemplateModal(true);
+                    }}
                     onComplete={payload => finishSession(
                         () => runner.completeSession(payload),
                         'Could not save completion feedback. Your session is still open, so you can retry.',
@@ -1184,7 +1177,6 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                         'Could not abandon the session. It remains open, so you can retry.',
                     )}
                 />
-                </>
             )}
 
             {/* Exercise Swap Modal */}
@@ -1205,7 +1197,18 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                     <div className="exercise-swap-modal save-template-modal">
                         <div className="swap-modal-header">
                             <h3 id="save-template-modal-title">Save as Custom Template</h3>
-                            <button type="button" className="close-btn" onClick={() => setShowSaveTemplateModal(false)} aria-label="Close">✕</button>
+                            <button
+                                type="button"
+                                className="close-btn"
+                                onClick={() => {
+                                    setShowSaveTemplateModal(false);
+                                    setShowCompletionSheet(true);
+                                }}
+                                disabled={isSavingTemplate || Boolean(saveTemplateSuccess)}
+                                aria-label="Close"
+                            >
+                                ✕
+                            </button>
                         </div>
                         <p className="swap-subtitle">
                             Save your adjusted workout (including any swapped exercises) so you can start it again anytime.
@@ -1224,16 +1227,24 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
                             />
                         </label>
                         <div className="swap-modal-actions">
-                            <button type="button" className="cancel-swap-btn" onClick={() => setShowSaveTemplateModal(false)}>
+                            <button
+                                type="button"
+                                className="cancel-swap-btn"
+                                onClick={() => {
+                                    setShowSaveTemplateModal(false);
+                                    setShowCompletionSheet(true);
+                                }}
+                                disabled={isSavingTemplate || Boolean(saveTemplateSuccess)}
+                            >
                                 Cancel
                             </button>
                             <button
                                 type="button"
                                 className="confirm-swap-btn"
-                                disabled={isSavingTemplate || !customTemplateTitle.trim()}
+                                disabled={isSavingTemplate || !customTemplateTitle.trim() || Boolean(saveTemplateSuccess)}
                                 onClick={handleSaveCustomTemplate}
                             >
-                                {isSavingTemplate ? 'Saving…' : 'Save Template'}
+                                {isSavingTemplate ? 'Saving…' : saveTemplateSuccess ? 'Saved' : 'Save Template'}
                             </button>
                         </div>
                     </div>
