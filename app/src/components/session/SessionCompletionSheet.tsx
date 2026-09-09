@@ -39,6 +39,9 @@ interface SessionCompletionSheetProps {
     onComplete: (payload: SessionCompletionPayload) => Promise<void>;
     onAbandon: () => Promise<void>;
     onCancel: () => void;
+    /** Optional secondary authoring action. Kept inside the completion dialog so it is not
+     * a peer of in-session controls and is unavailable from the abandon confirmation. */
+    onSaveTemplate?: () => void;
     saving: boolean;
     openAbandonConfirmation?: boolean;
     error?: string | null;
@@ -51,6 +54,7 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
     onComplete,
     onAbandon,
     onCancel,
+    onSaveTemplate,
     saving,
     openAbandonConfirmation = false,
     error = null,
@@ -290,6 +294,21 @@ export const SessionCompletionSheet: React.FC<SessionCompletionSheetProps> = ({
                                 Keep Training
                             </button>
                         </div>
+
+                        {onSaveTemplate && (
+                            <div className="sheet-actions">
+                                <button
+                                    type="button"
+                                    className="btn-secondary"
+                                    onClick={onSaveTemplate}
+                                    disabled={saving}
+                                    title="Save adjusted workout as a new template"
+                                    data-testid="completion-save-template-button"
+                                >
+                                    💾 Save as template
+                                </button>
+                            </div>
+                        )}
 
                         <div className="danger-zone-divider">
                             <button
