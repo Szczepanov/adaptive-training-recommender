@@ -230,7 +230,7 @@
   position: absolute;
   top: calc(100% + 0.5rem);
   right: 0;
-  width: 200px;
+  width: 248px;
   background: #1e293b;
   border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 12px;
@@ -249,6 +249,15 @@
     opacity: 1;
     transform: translateY(0);
   }
+}
+
+.dropdown-group-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+  padding: 0.5rem 0.75rem 0.25rem;
 }
 
 .dropdown-item {

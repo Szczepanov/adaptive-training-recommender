@@ -1,6 +1,7 @@
 import React, { useRef, useEffect } from 'react';
 import type { Screen } from '../types/navigation';
 import { SCREEN_LABELS } from '../types/navigation';
+import { DRAWER_GROUPS, type DrawerDestination } from './navigationGroups';
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
 import { GarminSyncBadge } from './GarminSyncBadge';
@@ -53,6 +54,19 @@ export const Header: React.FC<HeaderProps> = ({
 
   const buildTitle = `Git commit ${buildInfo.gitSha}${buildInfo.dirty ? ' (local working tree has uncommitted changes)' : ''}`;
 
+  // Daily-loop primaries own the desktop top level (#482), mirroring the
+  // mobile bottom bar. Every other destination lives in the More overflow
+  // under the same intent groups as the mobile drawer, so muscle memory
+  // transfers between form factors.
+  const moreMenuActive = screen !== 'home' && screen !== 'checkin' && screen !== 'plan';
+
+  const navigateToOverflowDestination = (destination: DrawerDestination) => {
+    if (destination.refreshDecisionInput) {
+      loadDecisionInput();
+    }
+    handleNavigate(destination.screen);
+  };
+
   return (
     <header className="global-navbar">
       <div className="navbar-container">
@@ -68,7 +82,7 @@ export const Header: React.FC<HeaderProps> = ({
           {userId && <GarminSyncBadge userId={userId} date={date} onSynced={loadDecisionInput} />}
         </div>
 
-        <nav className="navbar-desktop-menu">
+        <nav className="navbar-desktop-menu" aria-label="Primary">
           <button
             className={`nav-link ${screen === 'home' ? 'active' : ''}`}
             onClick={() => handleNavigate('home')}
@@ -82,77 +96,40 @@ export const Header: React.FC<HeaderProps> = ({
             {SCREEN_LABELS.checkin}
           </button>
           <button
-            className={`nav-link ${screen === 'sessions' ? 'active' : ''}`}
-            onClick={() => handleNavigate('sessions')}
+            className={`nav-link ${screen === 'plan' ? 'active' : ''}`}
+            onClick={() => handleNavigate('plan')}
           >
-            {SCREEN_LABELS.sessions}
-          </button>
-          <button
-            className={`nav-link ${screen === 'testing' ? 'active' : ''}`}
-            onClick={() => handleNavigate('testing')}
-          >
-            {SCREEN_LABELS.testing}
-          </button>
-          <button
-            className={`nav-link ${screen === 'goals' ? 'active' : ''}`}
-            onClick={() => handleNavigate('goals')}
-          >
-            {SCREEN_LABELS.goals}
-          </button>
-          <button
-            className={`nav-link ${screen === 'data' ? 'active' : ''}`}
-            onClick={() => {
-              loadDecisionInput();
-              handleNavigate('data');
-            }}
-          >
-            {SCREEN_LABELS.data}
+            {SCREEN_LABELS.plan}
           </button>
 
           <div className="more-menu-container" ref={desktopSettingsRef}>
             <button
-              className={`nav-link more-btn ${['constraints', 'preferences', 'plan', 'brief'].includes(screen) ? 'active' : ''}`}
+              className={`nav-link more-btn ${moreMenuActive ? 'active' : ''}`}
               onClick={() => setDesktopSettingsOpen((isOpen) => !isOpen)}
               aria-expanded={desktopSettingsOpen}
               aria-haspopup="menu"
             >
-              <span>Settings</span>
+              <span>More</span>
               <span className="caret">▾</span>
             </button>
 
             {desktopSettingsOpen && (
-              <div className="dropdown-menu" role="menu" aria-label="Settings">
-                <button
-                  className={`dropdown-item ${screen === 'plan' ? 'active' : ''}`}
-                  onClick={() => handleNavigate('plan')}
-                  role="menuitem"
-                >
-                  <span className="item-icon">📋</span> {SCREEN_LABELS.plan}
-                </button>
-                <button
-                  className={`dropdown-item ${screen === 'brief' ? 'active' : ''}`}
-                  onClick={() => {
-                    loadDecisionInput();
-                    handleNavigate('brief');
-                  }}
-                  role="menuitem"
-                >
-                  <span className="item-icon">📤</span> {SCREEN_LABELS.brief}
-                </button>
-                <button
-                  className={`dropdown-item ${screen === 'constraints' ? 'active' : ''}`}
-                  onClick={() => handleNavigate('constraints')}
-                  role="menuitem"
-                >
-                  <span className="item-icon">⚙️</span> {SCREEN_LABELS.constraints}
-                </button>
-                <button
-                  className={`dropdown-item ${screen === 'preferences' ? 'active' : ''}`}
-                  onClick={() => handleNavigate('preferences')}
-                  role="menuitem"
-                >
-                  <span className="item-icon">⚙️</span> {SCREEN_LABELS.preferences}
-                </button>
+              <div className="dropdown-menu" role="menu" aria-label="More">
+                {DRAWER_GROUPS.map((group) => (
+                  <div key={group.id} role="group" aria-label={group.title}>
+                    <div className="dropdown-group-title">{group.title}</div>
+                    {group.items.map((destination) => (
+                      <button
+                        key={destination.screen}
+                        className={`dropdown-item ${screen === destination.screen ? 'active' : ''}`}
+                        onClick={() => navigateToOverflowDestination(destination)}
+                        role="menuitem"
+                      >
+                        <span className="item-icon">{destination.icon}</span> {SCREEN_LABELS[destination.screen]}
+                      </button>
+                    ))}
+                  </div>
+                ))}
                 <div className="dropdown-divider" />
                 <div
                   className="dropdown-item"

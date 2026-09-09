@@ -125,35 +125,43 @@ There are no dedicated `login` or `onboarding` routes; both are conditional rend
 
 ## Navigation chrome
 
-Desktop and mobile expose all ten `Screen` values, but with different prominence.
+Desktop and mobile share the same top-level destinations (#482): the daily-loop
+primaries `home`, `checkin`, and `plan`, plus a `More` overflow. Every `Screen`
+remains reachable on both form factors; only prominence differs by placement.
 
 | Screen | Desktop `Header` | Mobile `MobileNav` |
 |---|---|---|
 | `home` | `Home` plus brand → Home | Bottom `Home` |
 | `checkin` | `Check-in` | Bottom `Check-in` |
-| `plan` | Settings → `Plan` | Bottom `Plan`, also listed under More → Train |
-| `sessions` | `Sessions` | More → `Sessions` |
-| `testing` | `Testing` | More → `Testing` |
-| `goals` | `Goals` | More → `Goals` |
-| `data` | `Data` (refreshes decision input first) | More → `Data` (refreshes first) |
-| `brief` | Settings → `Export Context for AI` | More → `Export Context for AI` |
-| `constraints` | Settings → `Training Setup` | More → `Training Setup` |
-| `preferences` | Settings → `Coach Preferences` | More → `Coach Preferences` |
+| `plan` | `Plan` | Bottom `Plan`, also listed under More → Train |
+| `sessions` | More → `Sessions` | More → `Sessions` |
+| `testing` | More → `Testing` | More → `Testing` |
+| `goals` | More → `Goals` | More → `Goals` |
+| `data` | More → `Data` (refreshes decision input first) | More → `Data` (refreshes first) |
+| `brief` | More → `Export Context for AI` (refreshes first) | More → `Export Context for AI` (refreshes first) |
+| `constraints` | More → `Training Setup` | More → `Training Setup` |
+| `preferences` | More → `Coach Preferences` | More → `Coach Preferences` |
 
 Every label above renders from `navigation.ts` `SCREEN_LABELS`, the single source of
 truth shared by `Header`, `MobileNav`, and each screen's heading (#485).
 
 Current chrome details worth preserving when changing navigation:
 
-* The mobile More drawer groups its destinations by intent — Train (`Sessions`,
-  `Testing`, `Plan`), Configure (`Goals`, `Training Setup`, `Coach Preferences`),
-  Understand (`Data`, `Export Context for AI`). Each group is a programmatically labelled
-  `role="group"` with short descriptive sub-copy whose typography matches the existing
-  drawer `item-sub` pattern; destination labels still render from `navigation.ts`
-  `SCREEN_LABELS`.
+* Both shells demote the same seven destinations into the same intent groups —
+  Train (`Sessions`, `Testing`, plus `Plan` for group completeness), Configure
+  (`Goals`, `Training Setup`, `Coach Preferences`), Understand (`Data`,
+  `Export Context for AI`). The grouping model is `navigationGroups.ts`
+  `DRAWER_GROUPS`, shared by `Header` and `MobileNav`, so group titles and order cannot drift
+  between shells; destination labels still render from `navigation.ts`
+  `SCREEN_LABELS`. The mobile drawer shows short descriptive sub-copy per
+  destination; the desktop More menu omits it for compactness. `Plan` stays
+  listed under Train in the overflow on both shells so the Train group reads
+  complete; the primary tab owns the active affordance on `plan`.
 * Desktop active-state rule (`Header`): top-level links are active on their exact
-  `Screen`; the Settings button is active for `constraints`, `preferences`, `plan`, and
-  `brief`; each Settings dropdown item is active on its exact `Screen`.
+  `Screen`; the More button is active for every overflow destination
+  (`sessions`, `testing`, `goals`, `constraints`, `preferences`, `data`,
+  `brief`) but not on `home`, `checkin`, or `plan`; each More menu item is
+  active on its exact `Screen`.
 * Mobile active-state rule (`MobileNav`): bottom tabs are active on their exact
   `Screen` (`home`, `checkin`, `plan`); the More tab is active for every other drawer
   destination (`goals`, `constraints`, `preferences`, `data`, `brief`, `sessions`,
@@ -419,6 +427,9 @@ living-reference section when implementing them.
 3. ~~Group Mobile More by intent (train / configure / understand) rather than one flat list.~~
    Done (#486): Train, Configure, and Understand are labelled drawer groups with short
    descriptions and per-destination visible/current state.
+   Done (#482): the same three groups are now the shared cross-shell overflow model —
+   `navigationGroups.ts` `DRAWER_GROUPS` renders in the mobile drawer and the desktop `Header`
+    More menu, so both shells demote the same destinations under the same titles.
 
 ### Daily loop and repair
 

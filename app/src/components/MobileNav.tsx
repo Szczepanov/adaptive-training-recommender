@@ -3,6 +3,7 @@ import type { Screen } from '../types/navigation';
 import { SCREEN_LABELS } from '../types/navigation';
 import { getAuthInstance } from '../firebase';
 import { buildInfo } from '../buildInfo';
+import { DRAWER_GROUPS, type DrawerDestination } from './navigationGroups';
 import './MobileNav.css';
 
 interface MobileNavProps {
@@ -13,20 +14,6 @@ interface MobileNavProps {
   setMobileMoreOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
-interface DrawerDestination {
-  screen: Screen;
-  icon: string;
-  description: string;
-  refreshDecisionInput?: boolean;
-}
-
-interface DrawerGroup {
-  id: string;
-  title: string;
-  description: string;
-  items: readonly DrawerDestination[];
-}
-
 const MOBILE_MORE_SCREENS: readonly Screen[] = [
   'goals',
   'constraints',
@@ -35,72 +22,6 @@ const MOBILE_MORE_SCREENS: readonly Screen[] = [
   'brief',
   'sessions',
   'testing',
-];
-
-const DRAWER_GROUPS: readonly DrawerGroup[] = [
-  {
-    id: 'train',
-    title: 'Train',
-    description: 'Sessions, assessments, and the week-ahead plan',
-    items: [
-      {
-        screen: 'sessions',
-        icon: '🚀',
-        description: 'Run a multidomain fixture and record native measures',
-      },
-      {
-        screen: 'testing',
-        icon: '🧪',
-        description: 'Run a locked assessment and record comparable raw outcomes',
-      },
-      {
-        screen: 'plan',
-        icon: '📋',
-        description: 'Compare the coach plan against the adaptive forecast',
-      },
-    ],
-  },
-  {
-    id: 'configure',
-    title: 'Configure',
-    description: 'Goals, setup, and coaching preferences',
-    items: [
-      {
-        screen: 'goals',
-        icon: '🎯',
-        description: 'Manage events and target milestones',
-      },
-      {
-        screen: 'constraints',
-        icon: '⚠️',
-        description: 'Manage physical cautions & equipment',
-      },
-      {
-        screen: 'preferences',
-        icon: '⚙️',
-        description: 'Configure modalities & strain caps',
-      },
-    ],
-  },
-  {
-    id: 'understand',
-    title: 'Understand',
-    description: 'Data review and AI context export',
-    items: [
-      {
-        screen: 'data',
-        icon: '📊',
-        description: 'View analytics and snapshot telemetry',
-        refreshDecisionInput: true,
-      },
-      {
-        screen: 'brief',
-        icon: '📤',
-        description: 'Compile recent metrics & prompt for your AI',
-        refreshDecisionInput: true,
-      },
-    ],
-  },
 ];
 
 export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, loadDecisionInput, mobileMoreOpen, setMobileMoreOpen }) => {

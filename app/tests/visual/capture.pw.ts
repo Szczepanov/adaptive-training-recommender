@@ -117,9 +117,9 @@ test('captures navigation interaction states', async ({ page }) => {
     await expect(page.getByRole('dialog', { name: 'Navigation & Settings' })).toBeVisible();
     await capture(page, scenario, 'more-drawer-open', ['The mobile drawer is distinct from the page beneath it and presents secondary destinations clearly.']);
   } else {
-    await page.getByRole('button', { name: 'Settings' }).click();
-    await expect(page.getByRole('menu', { name: 'Settings' })).toBeVisible();
-    await capture(page, scenario, 'settings-menu-open', ['Desktop Settings opens an anchored menu without activating the mobile drawer.']);
+    await page.getByRole('button', { name: 'More' }).click();
+    await expect(page.getByRole('menu', { name: 'More' })).toBeVisible();
+    await capture(page, scenario, 'more-menu-open', ['Desktop More opens an anchored menu without activating the mobile drawer.']);
   }
 });
 
