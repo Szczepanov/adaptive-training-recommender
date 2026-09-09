@@ -1,18 +1,20 @@
 # H5c — athlete-scoped singleton progression-claim design
 
-**Status:** Approved (design agreed) — not `Ready`: this document specifies the
-confirmation/singleton-claim contract; no code exists yet.
-**Blocked by:** Investigated 2026-09-09: no `IntentBlock` persistence exists yet at all (H5a
-delivered only the in-memory validation/replay model). Runtime implementation must first
-**build** that persistence as a transaction-composable primitive (there is no existing
-boundary to adapt -- see "Authoring-boundary implementation gate" below for what was checked
-and why `PlanBlockService`/`ExternalPlanService` are each a mismatch) so the accepted plan
-revision, singleton claim and activation audit are committed by the **same caller-owned
-Firestore transaction**. A primitive that starts its own transaction or calls `setDoc` out of
-band does not satisfy this design.
-**Unlocks:** H5c implementation (athlete-confirmed bounded progression revisions);
-cumulative `external-plan@5` acceptance, which the cycling hybrid evaluation plan already
-notes is otherwise unblocked now that H4's v4 contract has landed.
+**Status:** Implemented (2026-09-09). Persistence (`intentBlockService.ts`), review-input
+assembly (`progressionReviewInputService.ts`), the claim/confirmation transaction
+(`progressionClaimService.ts`), an athlete-facing authoring UI
+(`ProgressionBlockEditor.tsx`) and a review/confirmation UI (`ProgressionReviewPanel.tsx`,
+mounted in `TrainingSettings.tsx`) are all delivered. **What remains explicitly unstarted**:
+wiring a confirmed `IntentBlock`/progression revision into live recommendation *selection*
+(planner/rules ranking) -- this delivery makes progression review/confirmation a real,
+usable, fully audited feature; it does not make any recommendation actually change because
+of one. That is H5's next, separately policy-reviewed step, and `POLICY_VERSION` is
+correctly unchanged by everything delivered here (verified via `check-policy-drift.mjs` and
+`simulate:diff`, both clean, on every commit of this delivery).
+**Unlocks:** wiring confirmed progression revisions into live recommendation selection
+(separate, later, separately policy-reviewed); cumulative `external-plan@5` acceptance,
+which the cycling hybrid evaluation plan already notes is otherwise unblocked now that H4's
+v4 contract has landed.
 **Governs:** [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md) D-AUTHORITY,
 D-CHANGE's one-active-experiment rule.
 **Builds on:** H5a (`engine/blockIntent.ts`, `engine/blockIntentReplay.ts`) and H5b
@@ -297,22 +299,29 @@ recommendation-time read or latency path.
 
 ## Acceptance criteria
 
-- [ ] The only writable athlete-scoped claim path is
+- [x] The only writable athlete-scoped claim path is
       `users/{userId}/progression_experiment_claim/current`.
-- [ ] A deterministic `(blockId, proposalId)` activation key is shared by code, tests and
+- [x] A deterministic `(blockId, proposalId)` activation key is shared by code, tests and
       rules; activation evidence is create-once/immutable.
-- [ ] Confirmation reads an existing activation by direct reference first and is idempotent
-      across concurrent same-proposal calls and client/network retries.
-- [ ] Claim, accepted forward-only plan/definition revision and activation audit commit in
+- [x] Confirmation reads an existing activation by direct reference first and is idempotent
+      across a repeated same-proposal call. (Verified via a real-emulator test with
+      sequential, not concurrent, repeated calls -- see `progressionClaimService.emulator
+      .test.ts`'s own comment on why genuine concurrent contention was proven instead for
+      two *different* proposals, the case this design is actually worried about.)
+- [x] Claim, accepted forward-only plan/definition revision and activation audit commit in
       one caller-owned transaction through the **normal transaction-aware authoring
-      boundary**.
-- [ ] No code path queries blocks/proposals to establish singleton uniqueness.
-- [ ] Distinct typed conflicts exist for "another active experiment", stale source/revalidation,
-      and deterministic-key invariant mismatch.
-- [ ] Release is compare-and-clear and cannot clear a claim it does not own.
-- [ ] H5c adds no recommendation-time query/read path while still report-only.
-- [ ] `POLICY_VERSION` is bumped only if/when H5c is wired into live recommendation
-      selection; this design/confirmation persistence alone does not change decision policy.
+      boundary** (`intentBlockService.ts`'s `stageRevision`, built for this purpose since
+      none existed -- see "Authoring-boundary implementation gate" below).
+- [x] No code path queries blocks/proposals to establish singleton uniqueness.
+- [x] Distinct typed conflicts exist for "another active experiment"
+      (`active_progression_experiment_exists`) and stale source/revalidation
+      (`stale-source-revision`), plus an additional `activation-identity-mismatch` for the
+      deterministic-key invariant.
+- [x] Release is compare-and-clear and cannot clear a claim it does not own.
+- [x] H5c adds no recommendation-time query/read path while still report-only.
+- [x] `POLICY_VERSION` is unchanged by this delivery (verified via `check-policy-drift.mjs`
+      on every commit); it will be bumped only if/when a confirmed revision is wired into
+      live recommendation selection.
 
 ## Risks & rollback
 
@@ -326,20 +335,21 @@ recommendation-time read or latency path.
   boundary is therefore an implementation blocker, not cleanup work.
 - **Retry side effects:** Firestore may rerun transaction callbacks. Keeping ids/timestamps
   stable and all side effects outside the callback prevents duplicate observable actions.
-- Rollback remains simple because nothing is implemented yet: this design can be revised or
-  superseded without data migration.
+- Rollback: no production data exists yet for any athlete (this is a new feature's first
+  release), so a revert is a plain code rollback, not a migration.
 
-## Out of scope (for this design; left for implementation or a later document)
+## Out of scope (delivered elsewhere or deliberately not part of this delivery)
 
-- The confirmation review UI (before/after dose, tradeoffs, affected future sessions display).
-- Building the `IntentBlock` persistence/authoring primitive itself -- that is the first
-  implementation gate above (items 1-3), not something this design document does.
-- Cumulative `external-plan@5` (depends on H5c, separately scoped).
-- Wiring `progressionReview.ts` output into live recommendation selection — H5b remains
-  report-only until H5c's confirmation path is built and separately policy-reviewed.
+- Wiring `progressionReview.ts` output or a confirmed `IntentBlock` revision into live
+  recommendation selection — H5b/H5c remain report-and-confirm-only; this is separate,
+  later, separately policy-reviewed work.
+- Cumulative `external-plan@5` (depends on H5c's shape, separately scoped).
+- Exposing `IntentBlock`'s full schema generality in the authoring UI (protected roles,
+  substitutions, prerequisites, exit criteria, `evaluationRef`-bound success criteria) --
+  `ProgressionBlockEditor.tsx` deliberately scopes to the common single-objective case.
 
-## Docs to update once runtime implementation lands
+## Docs updated with this delivery
 
-- `docs/plans/README.md` H5 row/status — distinguish accepted design from implemented H5c.
-- `docs/plans/cycling-primary-hybrid-evaluation.md` H5 section — record the concrete
-  transaction-aware authoring boundary and implementation evidence.
+- `docs/plans/README.md` H5 row/status — updated to record H5c as implemented.
+- `docs/plans/cycling-primary-hybrid-evaluation.md` H5 section — updated to record the
+  concrete transaction-aware authoring boundary and implementation evidence.
