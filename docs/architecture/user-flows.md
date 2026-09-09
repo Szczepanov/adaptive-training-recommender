@@ -131,7 +131,7 @@ Desktop and mobile expose all ten `Screen` values, but with different prominence
 |---|---|---|
 | `home` | `Home` plus brand → Home | Bottom `Home` |
 | `checkin` | `Check-in` | Bottom `Check-in` |
-| `plan` | Settings → `Plan` | Bottom `Plan` |
+| `plan` | Settings → `Plan` | Bottom `Plan`, also listed under More → Train |
 | `sessions` | `Sessions` | More → `Sessions` |
 | `testing` | `Testing` | More → `Testing` |
 | `goals` | `Goals` | More → `Goals` |
@@ -145,10 +145,20 @@ truth shared by `Header`, `MobileNav`, and each screen's heading (#485).
 
 Current chrome details worth preserving when changing navigation:
 
-* Desktop Settings is marked active for `constraints`, `preferences`, and `plan`, but not
-  `brief`.
-* Mobile More is marked active for `goals`, `constraints`, `preferences`, `data`, `brief`,
-  `sessions`, and `testing`.
+* The mobile More drawer groups its destinations by intent — Train (`Sessions`,
+  `Testing`, `Plan`), Configure (`Goals`, `Training Setup`, `Coach Preferences`),
+  Understand (`Data`, `Export Context for AI`) — and each group carries short sub-copy
+  in the existing `MobileNav` `item-sub` pattern. Every label renders from
+  `navigation.ts` `SCREEN_LABELS`; only the group names come from the drawer itself.
+* Desktop active-state rule (`Header`): top-level links are active on their exact
+  `Screen`; the Settings button is active for `constraints`, `preferences`, `plan`, and
+  `brief`; each Settings dropdown item is active on its exact `Screen`.
+* Mobile active-state rule (`MobileNav`): bottom tabs are active on their exact
+  `Screen` (`home`, `checkin`, `plan`); the More tab is active for every other drawer
+  destination (`goals`, `constraints`, `preferences`, `data`, `brief`, `sessions`,
+  `testing`); each drawer item is active on its exact `Screen` within its group, so the
+  athlete always sees both the section and the selected destination. Opening the drawer
+  while on `plan` shows the Train → `Plan` item active alongside the bottom tab.
 * Only desktop renders `GarminSyncBadge` beside the brand.
 * Both menus show a non-clickable `Build {label}` entry followed by a clickable `Sign Out`.
 
@@ -383,9 +393,16 @@ living-reference section when implementing them.
 1. ~~Use one user-facing name per `Screen` across Header, MobileNav, and screen titles.~~
    Done (#485): one canonical label per `Screen` renders from `navigation.ts`
    `SCREEN_LABELS` in Header, MobileNav, and each screen heading.
-2. Make desktop and mobile primary destinations more symmetrical, or document a deliberate
-   reason for the difference. A daily-loop set such as Today / Check-in / Plan is the most
-   obvious candidate.
+2. ~~Make desktop and mobile primary destinations more symmetrical, or document a deliberate~~
+   ~~reason for the difference. A daily-loop set such as Today / Check-in / Plan is the most~~
+   ~~obvious candidate.~~
+   Done (#486): the mobile More drawer is grouped by intent — Train, Configure,
+   Understand — with per-item active highlighting inside each group, and the desktop and
+   mobile active-state rules are documented in the Navigation chrome section above. The
+   desktop Settings lump now covers `brief` alongside `constraints`, `preferences`, and
+   `plan`. Full destination symmetry between desktop and mobile remains a deliberate
+   non-goal: desktop promotes Sessions, Testing, Goals, and Data while mobile promotes
+   Plan (see confusing spot 1).
 3. Group Mobile More by intent (train / configure / understand) rather than one flat list.
 
 ### Daily loop and repair

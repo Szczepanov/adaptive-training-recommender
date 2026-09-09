@@ -12,6 +12,21 @@ interface MobileNavProps {
   setMobileMoreOpen: React.Dispatch<React.SetStateAction<boolean>>;
 }
 
+/**
+ * Group heading style for the More drawer sections (#486). Item sub-copy reuses the
+ * existing `item-sub` class so group descriptions match the per-item pattern; only the
+ * uppercase section title needs an inline style to stay inside the MobileNav lane
+ * (no shared-stylesheet change).
+ */
+const GROUP_TITLE_STYLE: React.CSSProperties = {
+  fontSize: '0.75rem',
+  fontWeight: 700,
+  letterSpacing: '0.08em',
+  textTransform: 'uppercase',
+  color: 'var(--text-secondary)',
+  padding: '0 0.25rem',
+};
+
 export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, loadDecisionInput, mobileMoreOpen, setMobileMoreOpen }) => {
   const mobileMoreBtnRef = useRef<HTMLButtonElement>(null);
   const mobileDrawerRef = useRef<HTMLDivElement>(null);
@@ -114,6 +129,47 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
               <button className="close-drawer-btn" onClick={() => setMobileMoreOpen(false)} aria-label="Close navigation and settings">✕</button>
             </div>
             <div className="drawer-items">
+              <div className="drawer-group" role="presentation">
+                <span style={GROUP_TITLE_STYLE}>Train</span>
+                <span className="item-sub">Sessions, assessments, and the week-ahead plan</span>
+              </div>
+              <button
+                className={`drawer-item ${screen === 'sessions' ? 'active' : ''}`}
+                onClick={() => handleNavigate('sessions')}
+              >
+                <span className="item-icon">🚀</span>
+                <div className="item-text">
+                  <span className="item-title">{SCREEN_LABELS.sessions}</span>
+                  <span className="item-sub">Run a multidomain fixture and record native measures</span>
+                </div>
+              </button>
+
+              <button
+                className={`drawer-item ${screen === 'testing' ? 'active' : ''}`}
+                onClick={() => handleNavigate('testing')}
+              >
+                <span className="item-icon">🧪</span>
+                <div className="item-text">
+                  <span className="item-title">{SCREEN_LABELS.testing}</span>
+                  <span className="item-sub">Run a locked assessment and record comparable raw outcomes</span>
+                </div>
+              </button>
+
+              <button
+                className={`drawer-item ${screen === 'plan' ? 'active' : ''}`}
+                onClick={() => handleNavigate('plan')}
+              >
+                <span className="item-icon">📋</span>
+                <div className="item-text">
+                  <span className="item-title">{SCREEN_LABELS.plan}</span>
+                  <span className="item-sub">Compare the coach plan against the adaptive forecast</span>
+                </div>
+              </button>
+
+              <div className="drawer-group" role="presentation">
+                <span style={GROUP_TITLE_STYLE}>Configure</span>
+                <span className="item-sub">Goals, setup, and coaching preferences</span>
+              </div>
               <button
                 className={`drawer-item ${screen === 'goals' ? 'active' : ''}`}
                 onClick={() => handleNavigate('goals')}
@@ -122,20 +178,6 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
                 <div className="item-text">
                   <span className="item-title">{SCREEN_LABELS.goals}</span>
                   <span className="item-sub">Manage events and target milestones</span>
-                </div>
-              </button>
-
-              <button
-                className={`drawer-item ${screen === 'data' ? 'active' : ''}`}
-                onClick={() => {
-                  loadDecisionInput();
-                  handleNavigate('data');
-                }}
-              >
-                <span className="item-icon">📊</span>
-                <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.data}</span>
-                  <span className="item-sub">View analytics and snapshot telemetry</span>
                 </div>
               </button>
 
@@ -161,25 +203,21 @@ export const MobileNav: React.FC<MobileNavProps> = ({ screen, handleNavigate, lo
                 </div>
               </button>
 
+              <div className="drawer-group" role="presentation">
+                <span style={GROUP_TITLE_STYLE}>Understand</span>
+                <span className="item-sub">Data review and AI context export</span>
+              </div>
               <button
-                className={`drawer-item ${screen === 'sessions' ? 'active' : ''}`}
-                onClick={() => handleNavigate('sessions')}
+                className={`drawer-item ${screen === 'data' ? 'active' : ''}`}
+                onClick={() => {
+                  loadDecisionInput();
+                  handleNavigate('data');
+                }}
               >
-                <span className="item-icon">🚀</span>
+                <span className="item-icon">📊</span>
                 <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.sessions}</span>
-                  <span className="item-sub">Run a multidomain fixture and record native measures</span>
-                </div>
-              </button>
-
-              <button
-                className={`drawer-item ${screen === 'testing' ? 'active' : ''}`}
-                onClick={() => handleNavigate('testing')}
-              >
-                <span className="item-icon">🧪</span>
-                <div className="item-text">
-                  <span className="item-title">{SCREEN_LABELS.testing}</span>
-                  <span className="item-sub">Run a locked assessment and record comparable raw outcomes</span>
+                  <span className="item-title">{SCREEN_LABELS.data}</span>
+                  <span className="item-sub">View analytics and snapshot telemetry</span>
                 </div>
               </button>
 
