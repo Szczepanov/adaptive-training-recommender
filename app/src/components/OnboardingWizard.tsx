@@ -3,7 +3,7 @@ import { goalService } from '../services/goalService';
 import { trainingSettingsService } from '../services/trainingSettingsService';
 import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
 import { dismissOnboardingForUser } from '../utils/onboardingStorage';
-import { usabilityMetrics } from '../utils/usabilityMetrics';
+import { usabilityMetrics, type OnboardingWizardStage } from '../utils/usabilityMetrics';
 import { getLocalDateString } from '../utils/localDate';
 import { weeklyCommitmentFromExerciseDays } from './onboarding/weeklyCommitment';
 import './OnboardingWizard.css';
@@ -74,13 +74,25 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
         return Math.round(performance.now() - wizardStartMs);
     };
 
+    const currentWizardStage: OnboardingWizardStage = step === 1
+        ? 'welcome'
+        : step === 2
+            ? 'focus'
+            : 'equipment';
+
     const handleSkip = () => {
         if (saving) return;
         // Skip persists dismissal only: no goal is created and training
         // settings are left untouched. When browser storage is blocked the
         // dismissal is session-only and the wizard may resurface on refresh.
         dismissOnboardingForUser(userId);
-        usabilityMetrics.recordWizardCompleted(userId, getLocalDateString(), 'skipped', wizardElapsedMs());
+        usabilityMetrics.recordWizardCompleted(
+            userId,
+            getLocalDateString(),
+            'skipped',
+            wizardElapsedMs(),
+            currentWizardStage,
+        );
         onCompleted();
     };
 
@@ -147,7 +159,13 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                 });
             }
 
-            usabilityMetrics.recordWizardCompleted(userId, getLocalDateString(), 'completed', wizardElapsedMs());
+            usabilityMetrics.recordWizardCompleted(
+                userId,
+                getLocalDateString(),
+                'completed',
+                wizardElapsedMs(),
+                'equipment',
+            );
             onCompleted();
         } catch (err) {
             console.error('Failed to complete rapid onboarding:', err);

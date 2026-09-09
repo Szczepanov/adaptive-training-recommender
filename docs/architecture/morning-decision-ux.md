@@ -74,7 +74,7 @@ That last distinction is intentional documentation of current behavior; the UI m
 
 The rapid wizard persists training settings before creating the active goal. The active goal is used by the app as an onboarding-complete signal, so creating it first could suppress the wizard after a partial write failure while leaving equipment/time settings at defaults.
 
-Skip is the deliberate exception to that write order: it persists only the per-user browser dismissal key and never creates a goal or writes training settings, so there is no partial-write state to order. A skipped goal-less account can re-launch the wizard from the Coach Preferences surface.
+Skip is the deliberate exception to that write order: it persists only the per-user browser dismissal key and never creates a goal or writes training settings, so there is no partial-write state to order. A skipped goal-less account can re-launch the wizard from the Coach Preferences surface. Because re-launch reloads the page to discard stale onboarding-dependent state, the action is disabled while Coach Preferences has unsaved edits.
 
 Failures remain in the wizard with the athlete's current selections intact so completion can be retried safely.
 
@@ -83,12 +83,12 @@ Failures remain in the wizard with the athlete's current selections intact so co
 `usabilityMetrics.ts` is local task telemetry, not a remote analytics pipeline.
 
 - events are stored in browser `localStorage` when available;
-- storage is capped to the most recent 200 persisted events;
+- storage is capped to the most recent 200 persisted events and the current-runtime memory buffer is capped to the same size;
 - recommendation TTR is measured from the **first recorded view** to the **first deliberate action** for that user/date;
-- wizard completion is recorded as a `wizard_completed` event with a `completed` / `skipped` outcome and the elapsed time since the wizard mounted;
+- wizard completion is recorded as a `wizard_completed` event with a `completed` / `skipped` outcome, the elapsed time since the wizard mounted, and the wizard stage (`welcome`, `focus`, or `equipment`); skip summaries retain a per-stage breakdown;
 - repeated renders before that action do not restart the clock;
 - later actions are recorded but are not assigned the original first-action TTR;
-- browser-storage failure is non-fatal and falls back to in-memory collection for the current runtime.
+- browser-storage failure is non-fatal and falls back to in-memory collection for the current runtime; reports merge persisted and in-memory events by event id so a readable-but-unwritable `localStorage` does not hide current-session telemetry.
 
 Do not interpret these events as server-side population telemetry unless a future backend pipeline is added explicitly.
 
@@ -101,7 +101,8 @@ Keyboard shortcuts `[1]`, `[2]`, and `[3]` are convenience controls. A synchrono
 The change set is covered by:
 
 - decision-evidence unit tests for safety locks, confidence, deltas, and alternative IDs;
-- usability-metrics unit tests for first-action timing behavior;
+- usability-metrics unit tests for first-action timing, wizard outcome/stage reporting, malformed outcomes, and storage-write fallback behavior;
+- onboarding-storage and relaunch-section tests for per-user dismissal/relaunch state and protection against discarding unsaved Coach Preferences;
 - Firestore emulator tests for activity-override owner CRUD, cross-user denial, malformed writes, and immutable identity/date/creation fields;
 - the repository CI typecheck, lint, unit-test, catalog-validation, and production-build gates.
 

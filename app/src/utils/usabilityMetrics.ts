@@ -9,11 +9,14 @@ export interface UsabilitySessionEvent {
     details?: Record<string, unknown>;
 }
 
+export type OnboardingWizardStage = 'welcome' | 'focus' | 'equipment';
+
 export interface UsabilitySummaryReport {
     totalViews: number;
     totalActions: number;
     wizardCompletions: number;
     wizardSkips: number;
+    wizardSkipsByStage: Record<string, number>;
     averageTtrMs: number;
     medianTtrMs: number;
     overrideRate: number;
@@ -47,23 +50,33 @@ class UsabilityMetricsTracker {
     }
 
     private getStoredEvents(): UsabilitySessionEvent[] {
-        return this.readPersistedEvents() ?? this.memoryEvents;
+        const persisted = this.readPersistedEvents();
+        if (persisted === null) return this.memoryEvents;
+        if (this.memoryEvents.length === 0) return persisted;
+
+        // Session events are also kept in memory so telemetry still works when a
+        // browser permits reads but rejects localStorage writes. Merge by id to avoid
+        // double-counting events that were persisted successfully.
+        const merged = new Map(persisted.map(event => [event.id, event]));
+        for (const event of this.memoryEvents) merged.set(event.id, event);
+        return [...merged.values()];
     }
 
     private saveEvent(event: UsabilitySessionEvent): void {
-        this.memoryEvents.push(event);
+        this.memoryEvents = [...this.memoryEvents, event].slice(-200);
         if (typeof window === 'undefined') return;
 
         try {
-            // Read storage directly instead of getStoredEvents(). getStoredEvents() falls
-            // back to memory, which already contains `event` and would duplicate the first
-            // browser event when localStorage is initially empty.
+            // Read storage directly instead of getStoredEvents(). getStoredEvents() merges
+            // memory, which already contains `event` and would duplicate the first browser
+            // event when localStorage is initially empty without the id de-duplication above.
             const persisted = this.readPersistedEvents();
             if (persisted === null) return;
             const trimmed = [...persisted, event].slice(-200);
             window.localStorage?.setItem(this.storageKey, JSON.stringify(trimmed));
         } catch {
-            // Non-critical local instrumentation failure.
+            // Non-critical local instrumentation failure. The current session still retains
+            // the event in memory and generateSummaryReport() will include it.
         }
     }
 
@@ -147,7 +160,13 @@ class UsabilityMetricsTracker {
         });
     }
 
-    recordWizardCompleted(userId: string, date: string, outcome: 'completed' | 'skipped', durationMs?: number): void {
+    recordWizardCompleted(
+        userId: string,
+        date: string,
+        outcome: 'completed' | 'skipped',
+        durationMs?: number,
+        stage?: OnboardingWizardStage,
+    ): void {
         this.saveEvent({
             id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
             timestamp: new Date().toISOString(),
@@ -155,7 +174,7 @@ class UsabilityMetricsTracker {
             userId,
             date,
             durationMs,
-            details: { outcome },
+            details: { outcome, stage },
         });
     }
 
@@ -164,6 +183,7 @@ class UsabilityMetricsTracker {
         const views = events.filter(e => e.eventType === 'recommendation_view');
         const actions = events.filter(e => e.eventType === 'action_selected');
         const wizardOutcomes = events.filter(e => e.eventType === 'wizard_completed');
+        const wizardSkips = wizardOutcomes.filter(e => e.details?.outcome === 'skipped');
         const overrides = events.filter(e => e.eventType === 'override_attempt');
         const blockedOverrides = overrides.filter(e => e.details?.blockedByGate === true);
 
@@ -186,14 +206,24 @@ class UsabilityMetricsTracker {
             actionBreakdown[key] = (actionBreakdown[key] ?? 0) + 1;
         }
 
+        const wizardSkipsByStage: Record<string, number> = {};
+        for (const event of wizardSkips) {
+            const stage = event.details?.stage;
+            const key = stage === 'welcome' || stage === 'focus' || stage === 'equipment'
+                ? stage
+                : 'unknown';
+            wizardSkipsByStage[key] = (wizardSkipsByStage[key] ?? 0) + 1;
+        }
+
         const overrideRate = actions.length > 0 ? overrides.length / actions.length : 0;
         const errorRate = overrides.length > 0 ? blockedOverrides.length / overrides.length : 0;
 
         return {
             totalViews: views.length,
             totalActions: actions.length,
-            wizardCompletions: wizardOutcomes.filter(e => e.details?.outcome !== 'skipped').length,
-            wizardSkips: wizardOutcomes.filter(e => e.details?.outcome === 'skipped').length,
+            wizardCompletions: wizardOutcomes.filter(e => e.details?.outcome === 'completed').length,
+            wizardSkips: wizardSkips.length,
+            wizardSkipsByStage,
             averageTtrMs: Math.round(avgTtr),
             medianTtrMs: Math.round(medianTtr),
             overrideRate: Math.round(overrideRate * 100) / 100,

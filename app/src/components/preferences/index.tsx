@@ -86,7 +86,7 @@ export function Preferences({ userId }: PreferencesProps) {
           onApplied={loadPreferences}
         />
 
-        <OnboardingRelaunchSection userId={userId} />
+        <OnboardingRelaunchSection userId={userId} disabled={hasChanges} />
 
         <TrainingPlanSection
           trainingIntentProfile={trainingIntentProfile}
