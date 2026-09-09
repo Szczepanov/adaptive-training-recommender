@@ -36,7 +36,8 @@ function normalizeTitle(title: string): string {
 export function shouldShowAuthorityBanner(input: AuthorityBannerInput): boolean {
     if (!input.hasImportedPlan || input.adaptiveModeToday === null) return false;
 
-    const coachHasSession = input.coachSessionTitleToday !== null;
+    const coachSessionTitleToday = input.coachSessionTitleToday;
+    const coachHasSession = coachSessionTitleToday !== null;
     if (!coachHasSession && !input.coachHasExplicitRestToday) return false;
 
     // Explicit coach rest versus adaptive work is a real disagreement. If the
@@ -55,6 +56,6 @@ export function shouldShowAuthorityBanner(input: AuthorityBannerInput): boolean 
 
     // Both sides prescribe normal work. Compare their concrete session titles when
     // available; without an adaptive title, disagreement cannot be proven.
-    if (input.adaptiveTitleToday === null) return false;
-    return normalizeTitle(input.coachSessionTitleToday) !== normalizeTitle(input.adaptiveTitleToday);
+    if (input.adaptiveTitleToday === null || coachSessionTitleToday === null) return false;
+    return normalizeTitle(coachSessionTitleToday) !== normalizeTitle(input.adaptiveTitleToday);
 }
