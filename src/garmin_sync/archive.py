@@ -143,7 +143,7 @@ class LocalRawArchiveStore:
                             f"Skipping archive for {record.endpoint}/{record.logical_date}: identical payload already archived."
                         )
                         return None
-                except Exception:
+                except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                     continue
 
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -193,7 +193,7 @@ class LocalRawArchiveStore:
                             f"Skipping health archive for {log_label}/{record.logical_date}: identical payload already archived."
                         )
                         return None
-                except Exception:
+                except (json.JSONDecodeError, OSError, UnicodeDecodeError):
                     continue
 
         target_dir.mkdir(parents=True, exist_ok=True)
