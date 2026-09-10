@@ -185,8 +185,10 @@ class HealthObservationService:
                         stored_ref = self.archive_store.archive_health(archive_rec)
                         if stored_ref:
                             archive_ref = stored_ref
-                    except Exception as arch_err:
-                        logger.warning("Failed to archive raw health observations: %s", arch_err)
+                    except (OSError, ValueError, TypeError, AttributeError) as arch_err:
+                        logger.warning(
+                            "Failed to archive raw health observations: %s", arch_err, exc_info=True
+                        )
 
                 provider_results: dict[str, Any] = {}
                 for (obs_provider, obs_transport), source_obs in grouped.items():

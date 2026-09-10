@@ -365,7 +365,7 @@ def test_health_observation_service_archive_exception_handled(
     )
 
     mock_archive_store = MagicMock(spec=RawArchiveStore)
-    mock_archive_store.archive_health.side_effect = Exception("Simulated archive error")
+    mock_archive_store.archive_health.side_effect = OSError("Simulated archive error")
     service = HealthObservationService(
         user_id="test_uid",
         repository=mock_repo,
