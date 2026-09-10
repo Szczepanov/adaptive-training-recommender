@@ -512,6 +512,165 @@ def summarize_garmin_payload(
     }
 
 
+def _build_block_repeat_group(
+    block: dict[str, Any],
+    default_step_type: dict[str, Any],
+    modality: str,
+    ftp: float | None,
+    step_order: int,
+) -> dict[str, Any]:
+    """Build a RepeatGroupDTO for a multi-step block with repetitions > 1."""
+    block_steps = block.get("steps", [])
+    block_reps = block.get("repetitions") or block.get("sets")
+    child_steps: list[dict[str, Any]] = []
+    child_order = 1
+    for step in block_steps:
+        main_dto, rest_dto = _build_step_dto(
+            step, child_order, default_step_type, modality, ftp=ftp
+        )
+        main_dto["stepOrder"] = child_order
+        child_steps.append(main_dto)
+        child_order += 1
+        if rest_dto:
+            rest_dto["stepOrder"] = child_order
+            child_steps.append(rest_dto)
+            child_order += 1
+
+    block_rest_sec = block.get("restAfterSec")
+    if block_rest_sec and block_rest_sec > 0:
+        child_steps.append(
+            {
+                "type": "ExecutableStepDTO",
+                "stepId": None,
+                "stepOrder": child_order,
+                "stepType": STEP_TYPE_MAP["recovery"],
+                "childStepId": None,
+                "description": "Block recovery",
+                "endCondition": END_CONDITION_MAP["time"],
+                "endConditionValue": block_rest_sec,
+                "targetType": {
+                    "workoutTargetTypeId": 1,
+                    "workoutTargetTypeKey": "no.target",
+                },
+                "targetValueOne": None,
+                "targetValueTwo": None,
+                "zoneNumber": None,
+            }
+        )
+
+    return {
+        "type": "RepeatGroupDTO",
+        "stepId": None,
+        "stepOrder": step_order,
+        "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
+        "childStepId": 1,
+        "numberOfIterations": block_reps,
+        "smartRepeat": False,
+        "workoutSteps": child_steps,
+    }
+
+
+def _process_block_step(
+    step: dict[str, Any],
+    step_order: int,
+    default_step_type: dict[str, Any],
+    modality: str,
+    ftp: float | None,
+    workout_steps: list[dict[str, Any]],
+) -> int:
+    """Process a single step inside a block and append result DTOs to workout_steps."""
+    if modality == "strength":
+        # Strength has its own sets/reps/rest semantics and is
+        # handled by a dedicated builder rather than the
+        # endurance repeat-group cases below.
+        garmin_step, step_order = _build_strength_step_or_group(step, step_order, default_step_type)
+        workout_steps.append(garmin_step)
+        return step_order
+
+    sets = step.get("sets")
+    reps = step.get("repetitions")
+    set_recovery_sec = step.get("setRecoverySec")
+    if not set_recovery_sec and (sets or "between sets" in str(step.get("notes", "")).lower()):
+        set_recovery_sec = _extract_set_recovery_seconds(step)
+
+    # Case A: Multi-set intervals (e.g. 3 sets of 10 reps)
+    if sets and sets > 1 and reps and reps > 1:
+        for s in range(1, sets + 1):
+            main_dto, rest_dto = _build_step_dto(step, 1, default_step_type, modality, ftp=ftp)
+            repeat_child_steps = [main_dto]
+            if rest_dto:
+                rest_dto["stepOrder"] = 2
+                repeat_child_steps.append(rest_dto)
+
+            repeat_group = {
+                "type": "RepeatGroupDTO",
+                "stepId": None,
+                "stepOrder": step_order,
+                "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
+                "childStepId": 1,
+                "numberOfIterations": reps,
+                "smartRepeat": False,
+                "workoutSteps": repeat_child_steps,
+            }
+            workout_steps.append(repeat_group)
+            step_order += 1
+
+            if s < sets and set_recovery_sec and set_recovery_sec > 0:
+                set_rest_dto = {
+                    "type": "ExecutableStepDTO",
+                    "stepId": None,
+                    "stepOrder": step_order,
+                    "stepType": STEP_TYPE_MAP["recovery"],
+                    "childStepId": None,
+                    "description": "Set recovery",
+                    "endCondition": END_CONDITION_MAP["time"],
+                    "endConditionValue": set_recovery_sec,
+                    "targetType": {
+                        "workoutTargetTypeId": 1,
+                        "workoutTargetTypeKey": "no.target",
+                    },
+                    "targetValueOne": None,
+                    "targetValueTwo": None,
+                    "zoneNumber": None,
+                }
+                workout_steps.append(set_rest_dto)
+                step_order += 1
+
+    # Case B: Single-set repeat (repetitions > 1 or sets > 1)
+    elif (reps and reps > 1) or (sets and sets > 1):
+        iteration_count = reps if (reps and reps > 1) else sets
+        main_dto, rest_dto = _build_step_dto(step, 1, default_step_type, modality, ftp=ftp)
+        repeat_child_steps = [main_dto]
+        if rest_dto:
+            rest_dto["stepOrder"] = 2
+            repeat_child_steps.append(rest_dto)
+
+        repeat_group = {
+            "type": "RepeatGroupDTO",
+            "stepId": None,
+            "stepOrder": step_order,
+            "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
+            "childStepId": 1,
+            "numberOfIterations": iteration_count,
+            "smartRepeat": False,
+            "workoutSteps": repeat_child_steps,
+        }
+        workout_steps.append(repeat_group)
+        step_order += 1
+
+    # Case C: Sequential execution
+    else:
+        main_dto, rest_dto = _build_step_dto(step, step_order, default_step_type, modality, ftp=ftp)
+        workout_steps.append(main_dto)
+        step_order += 1
+        if rest_dto:
+            rest_dto["stepOrder"] = step_order
+            workout_steps.append(rest_dto)
+            step_order += 1
+
+    return step_order
+
+
 def canonical_workout_to_garmin_payload(
     workout: dict[str, Any], athlete_ftp: float | None = None
 ) -> dict[str, Any]:
@@ -539,157 +698,17 @@ def canonical_workout_to_garmin_payload(
 
         # 1. Block-level repeat: when a multi-step block has repetitions > 1
         if block_reps and block_reps > 1 and modality != "strength" and len(block_steps) > 1:
-            child_steps: list[dict[str, Any]] = []
-            child_order = 1
-            for step in block_steps:
-                main_dto, rest_dto = _build_step_dto(
-                    step, child_order, default_step_type, modality, ftp=ftp
-                )
-                main_dto["stepOrder"] = child_order
-                child_steps.append(main_dto)
-                child_order += 1
-                if rest_dto:
-                    rest_dto["stepOrder"] = child_order
-                    child_steps.append(rest_dto)
-                    child_order += 1
-
-            block_rest_sec = block.get("restAfterSec")
-            if block_rest_sec and block_rest_sec > 0:
-                child_steps.append(
-                    {
-                        "type": "ExecutableStepDTO",
-                        "stepId": None,
-                        "stepOrder": child_order,
-                        "stepType": STEP_TYPE_MAP["recovery"],
-                        "childStepId": None,
-                        "description": "Block recovery",
-                        "endCondition": END_CONDITION_MAP["time"],
-                        "endConditionValue": block_rest_sec,
-                        "targetType": {
-                            "workoutTargetTypeId": 1,
-                            "workoutTargetTypeKey": "no.target",
-                        },
-                        "targetValueOne": None,
-                        "targetValueTwo": None,
-                        "zoneNumber": None,
-                    }
-                )
-                child_order += 1
-
-            repeat_group: dict[str, Any] = {
-                "type": "RepeatGroupDTO",
-                "stepId": None,
-                "stepOrder": step_order,
-                "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
-                "childStepId": 1,
-                "numberOfIterations": block_reps,
-                "smartRepeat": False,
-                "workoutSteps": child_steps,
-            }
+            repeat_group = _build_block_repeat_group(
+                block, default_step_type, modality, ftp, step_order
+            )
             workout_steps.append(repeat_group)
             step_order += 1
-
         else:
             # 2. Step-level repeat or sequential execution
             for step in block_steps:
-                if modality == "strength":
-                    # Strength has its own sets/reps/rest semantics and is
-                    # handled by a dedicated builder rather than the
-                    # endurance repeat-group cases below.
-                    garmin_step, step_order = _build_strength_step_or_group(
-                        step, step_order, default_step_type
-                    )
-                    workout_steps.append(garmin_step)
-                    continue
-
-                sets = step.get("sets")
-                reps = step.get("repetitions")
-                set_recovery_sec = step.get("setRecoverySec")
-                if not set_recovery_sec and (
-                    sets or "between sets" in str(step.get("notes", "")).lower()
-                ):
-                    set_recovery_sec = _extract_set_recovery_seconds(step)
-
-                # Case A: Multi-set intervals (e.g. 3 sets of 10 reps)
-                if sets and sets > 1 and reps and reps > 1 and modality != "strength":
-                    for s in range(1, sets + 1):
-                        main_dto, rest_dto = _build_step_dto(
-                            step, 1, default_step_type, modality, ftp=ftp
-                        )
-                        repeat_child_steps = [main_dto]
-                        if rest_dto:
-                            rest_dto["stepOrder"] = 2
-                            repeat_child_steps.append(rest_dto)
-
-                        repeat_group = {
-                            "type": "RepeatGroupDTO",
-                            "stepId": None,
-                            "stepOrder": step_order,
-                            "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
-                            "childStepId": 1,
-                            "numberOfIterations": reps,
-                            "smartRepeat": False,
-                            "workoutSteps": repeat_child_steps,
-                        }
-                        workout_steps.append(repeat_group)
-                        step_order += 1
-
-                        if s < sets and set_recovery_sec and set_recovery_sec > 0:
-                            set_rest_dto = {
-                                "type": "ExecutableStepDTO",
-                                "stepId": None,
-                                "stepOrder": step_order,
-                                "stepType": STEP_TYPE_MAP["recovery"],
-                                "childStepId": None,
-                                "description": "Set recovery",
-                                "endCondition": END_CONDITION_MAP["time"],
-                                "endConditionValue": set_recovery_sec,
-                                "targetType": {
-                                    "workoutTargetTypeId": 1,
-                                    "workoutTargetTypeKey": "no.target",
-                                },
-                                "targetValueOne": None,
-                                "targetValueTwo": None,
-                                "zoneNumber": None,
-                            }
-                            workout_steps.append(set_rest_dto)
-                            step_order += 1
-
-                # Case B: Single-set repeat (repetitions > 1 or sets > 1)
-                elif ((reps and reps > 1) or (sets and sets > 1)) and modality != "strength":
-                    iteration_count = reps if (reps and reps > 1) else sets
-                    main_dto, rest_dto = _build_step_dto(
-                        step, 1, default_step_type, modality, ftp=ftp
-                    )
-                    repeat_child_steps = [main_dto]
-                    if rest_dto:
-                        rest_dto["stepOrder"] = 2
-                        repeat_child_steps.append(rest_dto)
-
-                    repeat_group = {
-                        "type": "RepeatGroupDTO",
-                        "stepId": None,
-                        "stepOrder": step_order,
-                        "stepType": {"stepTypeId": 6, "stepTypeKey": "repeat"},
-                        "childStepId": 1,
-                        "numberOfIterations": iteration_count,
-                        "smartRepeat": False,
-                        "workoutSteps": repeat_child_steps,
-                    }
-                    workout_steps.append(repeat_group)
-                    step_order += 1
-
-                # Case C: Sequential execution
-                else:
-                    main_dto, rest_dto = _build_step_dto(
-                        step, step_order, default_step_type, modality, ftp=ftp
-                    )
-                    workout_steps.append(main_dto)
-                    step_order += 1
-                    if rest_dto:
-                        rest_dto["stepOrder"] = step_order
-                        workout_steps.append(rest_dto)
-                        step_order += 1
+                step_order = _process_block_step(
+                    step, step_order, default_step_type, modality, ftp, workout_steps
+                )
 
     if not workout_steps:
         workout_steps.append(
