@@ -26,7 +26,7 @@ import type {
 import type { ExternalRestDecisionProvenance } from './externalRestProvenance';
 import { TEMPLATES, ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID, TEMPLATES_BY_ID } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
-import { buildOptimizationContext, computeRankingCounterfactual, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
+import { buildOptimizationContext, computeRankingCounterfactual, materializeEffectiveDose, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -52,6 +52,7 @@ import { isSevereAdverseRecoveryReadiness } from './evergreenStrategy';
 import { buildCoverageState, resolveCoverageHistory } from './coverage';
 import { applyPlanningOverlays } from './planningOverlays';
 import { mergeKnowledgeRefs, readinessKnowledgeRefs, trainingIntentKnowledgeRefs } from './knowledgeLineage';
+import { progressionDoseForTemplate } from './confirmedProgressionOverrides';
 
 function pickTemplate(options: SessionTemplate[], seedDate: string): SessionTemplate | undefined {
     if (options.length === 0) return undefined;
@@ -114,10 +115,6 @@ function calibrationTrace(
             count: todayActivities.length,
             cost,
             stimulus,
-            // Per-occurrence identity alongside the aggregate above so a later date's
-            // projection (`unrepresentedFixedActivityProjection`) can diff by
-            // `occurrenceId` instead of inferring an unrepresented activity from a bare
-            // count/aggregate-profile subtraction.
             entries: todayActivities.map(activity => ({
                 occurrenceId: fixedActivityOccurrenceKey(activity),
                 cost: { systemic: 0, cardiovascular: 0, lowerBody: 0, upperBody: 0, impactTissue: 0, neuromuscular: 0, ...(activity.expectedCost ?? {}) },
@@ -164,18 +161,10 @@ function applyModalityPreference(
 const HRV_STRAIN_WEIGHT = 0.5;
 const RHR_STRAIN_WEIGHT = 0.3;
 const SLEEP_STRAIN_WEIGHT = 0.2;
-// A sustained nocturnal/resting respiration-rate rise can precede respiratory infection,
-// including in athlete wearable cohorts, and can also reflect other physiological stress.
-// It is intentionally treated as contextual rather than diagnostic: intense exercise,
-// poor sleep, emotional stress, alcohol, altitude/environment and measurement conditions
-// can also shift the signal. The 0.3 weight remains product calibration, not an
-// evidence-derived illness or readiness coefficient.
 const RESPIRATION_STRAIN_WEIGHT = 0.3;
 const HRV_STDEV_FLOOR_MS = 3;
 const RHR_STDEV_FLOOR_BPM = 1.5;
 const SLEEP_STDEV_FLOOR_PTS = 4;
-// 1 br/min is a product variability floor chosen to avoid overreacting to small wearable
-// fluctuations; it is not an evidence-derived illness or training-action threshold.
 const RESPIRATION_MAD_FLOOR_BR = 1.0;
 const STRAIN_Z_CAP = 2.0;
 const CHRONIC_STRAIN_MULTIPLIER = 1.5;
@@ -191,62 +180,17 @@ const STRAIN_MODIFY_THRESHOLD = 1.0;
 const STRAIN_RECOVER_THRESHOLD = 2.2;
 const MODIFY_MAX_SYSTEMIC_COST = 0.5;
 
-// --- Phase 9.3: subjective drift, behind a default-off selector ---------------------------
-
-/**
- * `'off'` (the default at every production call site) is bit-identical to pre-Phase-9
- * behaviour. The other member of this union is unreachable from production callers -- see
- * `rules.test.ts`'s architecture guard -- and exists only for the 9.6 simulation
- * comparison harness to measure. Mirrors `FatigueFusionPolicy`'s plumbing pattern: a
- * selector threaded through the real evaluator, not a second implementation.
- */
 export type SubjectiveDriftPolicy = 'off' | 'drift';
-
-/** Experimental per-metric weights (D-SUBJCAL: "fatigue, soreness, sleepQuality,
- *  readiness, motivation, and stress need not share weights or even all participate").
- *  Equal weighting is the reference starting point for 9.6 to challenge, not a considered
- *  choice -- a weight of 0 excludes a metric from the aggregate entirely. */
 export type SubjectiveDriftWeights = Record<SubjectiveBaselineMetric, number>;
-
 export const REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS: SubjectiveDriftWeights = {
     readiness: 1, sleepQuality: 1, fatigue: 1, soreness: 1, mentalStress: 1, motivation: 1,
 };
-
-/** Phase 9.7/D-SUBJAUDIT: identifies the *scoring* policy (weights + cap-source convention)
- *  that turns a `SubjectiveBaseline` into a strain contribution, independent of a baseline's
- *  own `estimatorId` (which identifies the baseline estimator's windows/floor/coverage --
- *  see the 9.6 sensitivity configs, which mint a new `estimatorId` per baseline variant).
- *  Bump this when the drift-scoring arithmetic, cap source, or reference weights change, so
- *  a persisted audit can distinguish a scoring-policy change from a baseline-estimator
- *  change. */
 export const SUBJECTIVE_DRIFT_ESTIMATOR_POLICY_VERSION = 'subjective-drift-score-v1-equal-weights-strain-z-cap';
-
-/** Adverse movement is signed positive for every metric regardless of scale direction --
- *  duplicated from `contextBrief.ts`'s equivalent `higherIsBetter` table rather than
- *  imported, the same reasoning `subjectiveBaseline.ts`'s own header comment gives for
- *  keeping this module free of a dependency on the brief renderer. */
 const SUBJECTIVE_DRIFT_HIGHER_IS_BETTER: Record<SubjectiveBaselineMetric, boolean> = {
     readiness: true, sleepQuality: true, motivation: true,
     fatigue: false, soreness: false, mentalStress: false,
 };
 
-/**
- * The 9.1 reference estimator's drift term (D-SUBJDRIFT / D-SUBJEST): recent-vs-long
- * prior history only -- today never enters this comparison, `computeSubjectiveBaseline`
- * already enforces that (D-SUBJHIST). Every per-metric contribution is floored at zero
- * before weighting and summed -- there is structurally **no subtraction path** (D-SUBJADD):
- * a `Math.max(weight, 0) * clamp(z, 0, cap)` term can only ever add to the total, for any
- * baseline and any weight, including a hypothetical negative weight. `'off'` or a missing
- * baseline (D-SUBJCOV: below-floor coverage already resolves to `null` in
- * `computeSubjectiveBaseline`) both return exactly `0` -- no relative subjective signal is
- * the same as today's behaviour, never a fabricated neutral value.
- *
- * The cap reuses `STRAIN_Z_CAP` -- matching `SubjectiveBaselinePolicy.contributionCap`'s
- * reference value by convention (9.1's own comment), not by runtime reference: the
- * baseline this function receives carries `estimatorId` for provenance, not the policy
- * object that produced it. If 9.6 needs the cap to vary independently of `STRAIN_Z_CAP`,
- * thread it explicitly rather than assuming this coupling.
- */
 export function subjectiveDriftStrain(
     baseline: SubjectiveBaseline | null | undefined,
     policy: SubjectiveDriftPolicy,
@@ -288,9 +232,6 @@ function metricStrain(
 }
 
 export interface EvaluateReadinessOptions {
-    /** ADR-0036 (H4) D-LEDGER/D-REASSESS: an intraday bundle member whose predecessor
-     * completed as planned accounts for its same-day load via the shared daily ledger debit,
-     * rather than tripping the single-session-per-day alreadyTrainedOverride fail-stop. */
     ignoreAlreadyTrainedOverride?: boolean;
 }
 
@@ -299,11 +240,7 @@ export function evaluateReadinessAndSafetyEnvelope(
     context: UserContext,
     _date?: string,
     previousMode?: 'train' | 'modify' | 'recover',
-    /** Phase 9.3: defaults to `'off'` at every call site -- see `SubjectiveDriftPolicy`'s
-     *  doc comment. Only a future 9.6 comparison harness passes the other member of that union. */
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
-    /** Phase 9.3/D-SUBJCAL: experimental, not yet tuned. Only reachable by explicitly
-     *  passing a non-default value -- no production call site does. */
     subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     options?: EvaluateReadinessOptions,
 ): {
@@ -322,9 +259,6 @@ export function evaluateReadinessAndSafetyEnvelope(
     const invertedSleepQual = 10 - subjective.sleepQuality;
     const invertedReadiness = 10 - subjective.readiness;
 
-    // SEP-C2: Motivation is excluded from the physical fatigue composite.
-    // When answeredDimensions is provided (e.g. from check-in), average only the answered physical dimensions.
-    // When omitted/undefined (e.g. in legacy fixtures), average all 4 physical dimensions.
     let overallFatigueScore: number;
     if (subjective.answeredDimensions && subjective.answeredDimensions.length > 0) {
         const physicalEntries: number[] = [];
@@ -342,9 +276,6 @@ export function evaluateReadinessAndSafetyEnvelope(
     const hrvStrain = metricStrain(objective.hrv_delta, objective.hrv_delta_28d, objective.hrv_stdev_28d, HRV_STDEV_FLOOR_MS, HRV_STRAIN_WEIGHT, 1);
     const rhrStrain = metricStrain(objective.rhr_delta, objective.rhr_delta_28d, objective.rhr_stdev_28d, RHR_STDEV_FLOOR_BPM, RHR_STRAIN_WEIGHT, -1);
     const sleepStrain = metricStrain(objective.sleep_score_delta_7d, objective.sleep_score_delta_28d, objective.sleep_score_stdev_28d, SLEEP_STDEV_FLOOR_PTS, SLEEP_STRAIN_WEIGHT, 1);
-    // Elevated respiration is worse (sign -1, same convention as RHR); the MAD arg is a
-    // robust spread estimator, not the population stdev metricStrain's name suggests --
-    // see RESPIRATION_MAD_FLOOR_BR above. ?? null covers documents predating this field.
     const respirationStrain = metricStrain(objective.respiration_delta ?? null, objective.respiration_delta_28d ?? null, objective.respiration_mad_28d ?? null, RESPIRATION_MAD_FLOOR_BR, RESPIRATION_STRAIN_WEIGHT, -1);
     const totalAcuteDeviation = hrvStrain.acuteDeviation + rhrStrain.acuteDeviation + sleepStrain.acuteDeviation + respirationStrain.acuteDeviation;
     const totalMultiDayDrift = hrvStrain.multiDayDrift + rhrStrain.multiDayDrift + sleepStrain.multiDayDrift + respirationStrain.multiDayDrift;
@@ -360,9 +291,6 @@ export function evaluateReadinessAndSafetyEnvelope(
     }
     const conservativeBias = context.preferences.conservativeBias ? CONSERVATIVE_BIAS_STRAIN_OFFSET : 0;
     const clinicalRecoverOverride = subjective.painFlag;
-    // SEP-C2 absolute override: an 8/10 or higher fatigue/soreness report (>= 8)
-    // independently forces recovery even when other answered physical dimensions are green.
-    // Floating-point profile fixtures with baseline 7 + noise stay below 8.
     const severeFatigue = subjective.fatigue >= 8 || subjective.soreness >= 8;
     const extremeFatigue = severeFatigue || clinicalRecoverOverride;
     const severeSubjectiveDistress = (subjective.fatigue >= 8 && subjective.readiness <= 4) ||
@@ -386,13 +314,6 @@ export function evaluateReadinessAndSafetyEnvelope(
     const recentHardSessionsCount = objective.last_3_days_hard_sessions_count || 0;
     const recentHardSessionsPenalty = recentHardSessionsCount >= 2 ? RECENT_HARD_SESSIONS_STRAIN : 0;
     const objectiveStrain = totalMetricStrain + sleepFloorPenalty + bodyBatteryDeficit + conservativeBias + recentHardSessionsPenalty;
-
-    // Phase 9.3 (D-SUBJADD): a separate, structurally non-negative contribution -- see
-    // subjectiveDriftStrain's own doc comment for why no baseline/weight can subtract from
-    // it. Under 'off' (every production call site today) this is always exactly 0, so
-    // strainForThresholds below is byte-identical to objectiveStrain and every absolute
-    // subjective trigger (overallFatigueScore/soreness, checked separately below) stays
-    // untouched either way (D-SUBJFLOOR).
     const subjectiveDrift = subjectiveDriftStrain(readiness.subjectiveBaseline, subjectiveDriftPolicy, subjectiveDriftWeights);
     const strainForThresholds = objectiveStrain + subjectiveDrift;
 
@@ -412,11 +333,6 @@ export function evaluateReadinessAndSafetyEnvelope(
     const counterfactualModeWithoutDrift = counterfactualRecover ? 'recover' : (counterfactualModify ? 'modify' : 'train');
     const multiDayDriftIsDecisionRelevant = (mode !== 'train') && (mode !== counterfactualModeWithoutDrift);
 
-    // Phase 9.7: the analogous counterfactual for the *subjective* term above -- computed
-    // from objectiveStrain alone (not strainWithoutDrift, which subtracts the unrelated
-    // objective multi-day-drift axis) through the same threshold logic, so a caller can tell
-    // whether subjective drift specifically changed the mode. Inert under 'off' (subjectiveDrift
-    // is always 0 there, so modeWithoutSubjectiveDrift always equals mode).
     const recoverWithoutSubjectiveDrift = overallFatigueScore > 7 || extremeFatigue || severeSubjectiveDistress || lowBodyBatteryRecovery || combinedAcuteBiometricRecover || physicalWorkRecover || objectiveStrain >= STRAIN_RECOVER_THRESHOLD;
     const modifyWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift || overallFatigueScore > 5 || subjective.soreness > 6 || acuteSubjectiveModify || physicalWorkModify || acuteBiometricStrainFloor || objectiveStrain >= STRAIN_MODIFY_THRESHOLD;
     const modeWithoutSubjectiveDrift = recoverWithoutSubjectiveDrift ? 'recover' : (modifyWithoutSubjectiveDrift ? 'modify' : 'train');
@@ -427,9 +343,6 @@ export function evaluateReadinessAndSafetyEnvelope(
     const alreadyTrainedOverride = options?.ignoreAlreadyTrainedOverride === true
         ? false
         : (subjective.alreadyTrainedToday === true || objective.today_training !== null);
-    // Mirror evaluateEnvelopes' red-flag predicate: a disclosed red flag that resolved to
-    // no findings still surfaces as clinicalEnvelopeSources: ['red_flag'] and must force
-    // recover, not just a non-empty redFlagFindings list.
     const redFlagOverride =
         (subjective.redFlagFindings?.length ?? 0) > 0
         || subjective.clinicalEnvelopeSources?.includes('red_flag') === true;
@@ -448,9 +361,6 @@ export function evaluateReadinessAndSafetyEnvelope(
             sleepFloorPenalty: round2(sleepFloorPenalty),
             conservativeBias: round2(conservativeBias),
         },
-        // Phase 9.7: reconciles metricStrain.totalMetricStrain + contextPenalties.* +
-        // subjectiveDrift === totalDecisionScore. subjectiveDrift is always 0 under the
-        // production 'off' default, so this stays byte-identical to pre-Phase-9.7 output.
         subjectiveDrift: round2(subjectiveDrift),
         totalDecisionScore: round2(objectiveStrain + subjectiveDrift),
     };
@@ -484,9 +394,6 @@ function hasWearableObjectiveData(objective: EngineObjectiveInput): boolean {
         objective.body_battery_wake,
         objective.yesterday_training,
         objective.today_training,
-        // sleep_score_delta_7d, not sleep_score itself: metricStrain() short-circuits to
-        // zero strain whenever deltaVs7d is null (see metricStrain above), so a delta-only
-        // snapshot with sleep_score already null can still move the mode via sleepStrain.
         objective.sleep_score_delta_7d,
     ].some(value => value !== null && value !== undefined)
         || objective.last_3_days_hard_sessions_count > 0;
@@ -580,28 +487,18 @@ export function evaluateTraining(
     return { template: selectedTemplate, rationale, mode, envelopes, telemetry, knowledgeRefs: state.knowledgeRefs };
 }
 
-/** Identifies which imported session is placed on the evaluation date. */
 export interface ExternalPlanContext {
     planId: string;
     revision: number;
     session: ExternalPlanSession;
-    /** SHA-256 of the stored revision this session was read from (ADR-0019 D-IMMUT).
-     * Recorded on the decision audit so replay verifies against the same bytes. */
     contentHash: string;
 }
 
-/** ADR-0035: identifies the authored rest directive resolved for the evaluation date.
- * Resolved by the caller through `externalPlacement.ts`'s `resolveRestDatesByDate`, the
- * same way `externalPlan` above is resolved through placement -- this function performs
- * no placement/resolution itself. Mutually exclusive with `externalPlan` by construction:
- * a date cannot carry both a placed session and a rest directive (validated at import). */
 export interface ExternalRestContext {
     planId: string;
     revision: number;
     directive: ExternalRestDirective;
     date: string;
-    /** SHA-256 of the stored revision this directive was read from, same role as
-     * `ExternalPlanContext.contentHash`. */
     contentHash: string;
 }
 
@@ -635,11 +532,6 @@ function externalPrescriptionFor(externalPlan: ExternalPlanContext): NonNullable
     };
 }
 
-/**
- * Builds the recommendation for an imported prescribed session. Events deliberately do
- * not use this path: D-EVENT reconciles them onto FixedActivity and keeps their verdict as
- * advice alongside the normal recommendation rather than recommending the event itself.
- */
 function adjudicatedExternalRecommendation(
     externalPlan: ExternalPlanContext,
     readiness: DailyReadiness,
@@ -652,9 +544,6 @@ function adjudicatedExternalRecommendation(
 ): Recommendation {
     const { session, planId, revision, contentHash } = externalPlan;
     const availability = resolveAvailability(date, readiness.subjective, fixedActivities, context, scheduleOverlays);
-    // Keep the adjudicator responsible for validating the raw authored dose before it can
-    // be reduced by an overlay. The recommendation surface still records the same adjusted
-    // planned dose that catalog planning would expose for this date.
     const adjustedPlannedDose = applyPlanningOverlays(
         intent.plannedDose,
         date,
@@ -664,7 +553,6 @@ function adjudicatedExternalRecommendation(
     );
     const verdict = adjudicateExternalSession(session, readiness, context, envelopeState, intent.plannedDose, date, availability);
     const actionable = verdict.decision === 'proceed' || verdict.decision === 'scale';
-
     const restTemplate = getCanonicalRestTemplate();
 
     return {
@@ -690,20 +578,6 @@ function adjudicatedExternalRecommendation(
     };
 }
 
-/**
- * ADR-0035: builds the recommendation for a date an authored rest directive closed to
- * discretionary planning. Deliberately does **not** run eligibility/ranking -- there is
- * nothing to rank against; the plan's own instruction is the decision.
- *
- * `mode` is set to the genuine `envelopeState.mode` (the readiness/safety envelope's own
- * train/modify/recover classification), not forced to `'recover'`, even though the
- * recommended template is Rest. The ADR is explicit that authored rest must not fabricate
- * a physiological `recover` verdict: `previousMode` is threaded into tomorrow's evaluation
- * (see the `evaluateNextDayPlanWithIntent` call site) and drives things like
- * `postRecoverBufferApplied` -- reporting `'recover'` here when readiness was actually
- * `'train'` would falsely trigger tomorrow's "ease back in after a mandated recovery day"
- * behavior for an athlete whose own readiness never called for it.
- */
 function authoredRestRecommendation(
     externalRest: ExternalRestContext,
     envelopeState: ReturnType<typeof evaluateReadinessAndSafetyEnvelope>,
@@ -749,22 +623,12 @@ export async function evaluateTrainingWithIntent(
     preferences: UserPreferences | null = null,
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
     externalPlan: ExternalPlanContext | null = null,
-    /** Phase 9.6: only the simulation comparison harness overrides this. Every production
-     *  entry point uses the default 'off', mirroring `fatigueFusionPolicy` above. */
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
-    /** ADR-0035: the rest directive resolved for `date` by the caller (mirrors how
-     *  `externalPlan` above is resolved through placement), or null when none applies. */
     externalRest: ExternalRestContext | null = null,
-    /** ADR-0035: an explicit, athlete-initiated request to train despite an authored rest
-     *  directive. Never inferred from favorable readiness. Production also treats a non-empty
-     *  same-day `preferredModalityToday` check-in answer as an explicit workout request.
-     *  Either route still passes every normal safety/clinical/availability/equipment/readiness
-     *  gate below and is retained in provenance as an explicit override. */
     athleteOverridesAuthoredRest: boolean = false,
     scheduleOverlays: readonly ScheduleOverlay[] = [],
-    /** ADR-0037 D-DOSE: a confirmed `IntentBlock` progression's per-session duration
-     * (`engine/confirmedProgressionOverrides.ts`), keyed by coverage role id. */
+    /** ADR-0037 D-DOSE: exact-workout duration authority derived for `date`. */
     confirmedProgressionOverrides: ReadonlyMap<string, number> = new Map(),
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode, subjectiveDriftPolicy, subjectiveDriftWeights);
@@ -916,20 +780,37 @@ export async function evaluateTrainingWithIntent(
         ? 'You explicitly overrode a protected rest day; normal safety, availability, readiness, and ranking still apply. '
         : '';
     const pick = rankingResult.accepted[0];
-    // A 'modify' mode whose top-ranked candidate is already low-cost enough to survive
-    // the modify ceiling unchanged (a bad subjective checkin on an already-easy day, most
-    // commonly) previously fell through as a same-template, same-duration recommendation
-    // -- 'modify' meant nothing an athlete could see. Auto-applying the template's own
-    // easier dose (the same mechanism `adjustSessionRecommendation('easier', ...)` uses
-    // for an explicit athlete request) keeps 'modify' visibly distinct from 'train'
-    // whenever the template offers a lighter variant, without inventing a second
-    // eligibility/ranking path. It also covers the time-cap case: see
-    // resolveTimeCapDoseAdjustment for why eligibility alone cannot guarantee the
-    // recommended duration respects a hard cap. This same helper is used for forecast days
-    // in planner.ts -- keep the two call sites in sync.
+    const progressionDose = pick
+        ? progressionDoseForTemplate(pick.template, confirmedProgressionOverrides)
+        : null;
+    const progressionDoseAllowed = progressionDose && pick
+        && progressionDose.durationMin <= availability.maxTimeMinutes
+        && !exceedsPlanCeiling(pick.template.systemicCost * progressionDose.doseRatio, envelopes.plan)
+        ? progressionDose
+        : null;
     const doseAdjustment = pick
         ? resolveTimeCapDoseAdjustment(pick.template, availability.maxTimeMinutes, mode === 'modify')
         : null;
+    const appliedProgressionDose = progressionDoseAllowed
+        && (!doseAdjustment || progressionDoseAllowed.durationMin <= doseAdjustment.activeDose.durationMin)
+        ? progressionDoseAllowed
+        : null;
+    const effectiveDoseAdjustment = doseAdjustment && appliedProgressionDose
+        ? {
+            ...doseAdjustment,
+            activeDose: appliedProgressionDose,
+            adjustment: {
+                ...doseAdjustment.adjustment,
+                adjustedDoseLabel: appliedProgressionDose.label,
+                rationale: `Today's readiness/time ceiling still applies; the confirmed progression dose (${appliedProgressionDose.label}) is no larger than that reduced ceiling, so the lower confirmed dose is used.`,
+            },
+        }
+        : doseAdjustment;
+    const progressionConstrained = Boolean(
+        progressionDose
+        && (!progressionDoseAllowed || (doseAdjustment && progressionDose.durationMin > doseAdjustment.activeDose.durationMin)),
+    );
+
     if (!pick) {
         const safeRecovery = candidates.find(template => template.category === 'Rest' || template.category === 'Mobility/Recovery')
             ?? getCanonicalRestTemplate();
@@ -949,9 +830,6 @@ export async function evaluateTrainingWithIntent(
                 policyVersion: POLICY_VERSION,
                 candidateScores: rankingResult.all.map(candidate => ({ templateId: candidate.template.id, utilityScore: candidate.utilityScore, benefitScore: candidate.benefitScore, costPenalty: candidate.costPenalty, excludedReasons: candidate.excludedReasons })),
                 droppedContributorObjectives: intent.droppedContributorObjectives,
-                // No candidate survived the hard constraints (rankingResult.accepted is
-                // empty in this branch -- see `if (!pick)` above), so there is no
-                // counterfactual to report.
                 rankingAudit: null,
                 calibration,
                 ...(externalEventAdvisory ? { externalPlan: externalEventAdvisory.provenance } : {}),
@@ -959,11 +837,16 @@ export async function evaluateTrainingWithIntent(
             },
         };
     }
+    const progressionRationale = progressionConstrained
+        ? ' The confirmed progression remains the authored target, but today’s readiness/time ceiling is lower, so it is not forced above that ceiling.'
+        : appliedProgressionDose && !effectiveDoseAdjustment
+            ? ` ${appliedProgressionDose.prescriptionSummary}`
+            : '';
     const finalRationale = envelopes.safety.redFlagActive
         ? `${authoredRestOverridePrefix}${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`
-        : doseAdjustment
-            ? `${authoredRestOverridePrefix}${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${doseAdjustment.adjustment.rationale}`
-            : `${authoredRestOverridePrefix}${externalFallbackPrefix}${phaseContext} ${pick.rationale}`;
+        : effectiveDoseAdjustment
+            ? `${authoredRestOverridePrefix}${externalFallbackPrefix}${phaseContext} ${pick.rationale} ${effectiveDoseAdjustment.adjustment.rationale}${progressionRationale}`
+            : `${authoredRestOverridePrefix}${externalFallbackPrefix}${phaseContext} ${pick.rationale}${progressionRationale}`;
     return {
         template: pick.template,
         plannedDose: intent.plannedDose,
@@ -971,7 +854,7 @@ export async function evaluateTrainingWithIntent(
         rationale: finalRationale,
         mode, envelopes, telemetry,
         knowledgeRefs: decisionKnowledgeRefs,
-        ...(doseAdjustment ?? {}),
+        ...(effectiveDoseAdjustment ?? (appliedProgressionDose ? { activeDose: appliedProgressionDose } : {})),
         ...(externalEventAdvisory ? {
             externalPrescription: externalEventAdvisory.prescription,
             externalVerdict: externalEventAdvisory.verdict,
@@ -997,8 +880,6 @@ export function evaluateEnvelopes(
     const restrictedModalities = [...(context.constraints.restrictedModalities ?? [])];
     const hasActiveInjury = restrictedModalities.length > 0 || (context.constraints.impliedGuardrails ?? []).length > 0 || (context.constraints.restrictedCategories ?? []).length > 0;
 
-    // `painFlag` is retained as a backward-compatible aggregate. New inputs name their
-    // clinical origin explicitly; a legacy true flag with no source fails closed as pain/injury.
     const sources: NonNullable<typeof readiness.subjective.clinicalEnvelopeSources> =
         readiness.subjective.clinicalEnvelopeSources ?? (legacyClinicalFlag ? ['pain_or_injury'] : []);
     const hasPainOrInjury = sources.includes('pain_or_injury');
@@ -1009,10 +890,6 @@ export function evaluateEnvelopes(
     const redFlagCategories = redFlagFindings.map(f => f.category);
     const hasCurrentClinicalSymptoms = legacyClinicalFlag || sources.length > 0 || redFlagActive;
 
-    // The generic Running restriction belongs to the pain/injury branch only. Current
-    // structured tissue-response regions may contextualize that fallback; standing injury
-    // trace facts are intentionally NOT consulted because provenance must not become policy
-    // authority and an unrelated old shoulder/hip/back constraint cannot locate today's pain.
     const currentPainFamilies = readiness.subjective.painOrInjuryRegionFamilies ?? [];
     const hasStructuredCurrentPainLocation = currentPainFamilies.length > 0;
     const hasLowerLimbImpactPain = currentPainFamilies.includes('lower_limb_impact');
@@ -1259,17 +1136,18 @@ const ZERO_STIMULUS: WorkoutStimulusProfile = { aerobicEndurance: 0, thresholdPo
 
 function recommendationProjection(date: string, rec: Recommendation): CompletedExposure {
     const workoutId = workoutForTemplate(rec.template.id)?.id;
+    const effectiveTemplate = materializeEffectiveDose(rec.template, rec.activeDose);
     return {
         occurrenceKey: `recommendation:${date}`,
         date,
-        costProfile: rec.template.costProfile ?? ZERO_COST,
-        stimulusProfile: rec.template.stimulusProfile,
+        costProfile: effectiveTemplate.costProfile ?? ZERO_COST,
+        stimulusProfile: effectiveTemplate.stimulusProfile,
         stimulusConfidence: 'exact',
         templateId: rec.template.id,
         ...(workoutId ? { workoutId } : {}),
         modality: rec.template.modality,
         category: rec.template.category,
-        trainingRecordLike: { type: `${rec.template.modality} ${rec.template.category}`, duration_min: rec.template.durationMin, training_effect: 0, intensity_tag: '' },
+        trainingRecordLike: { type: `${rec.template.modality} ${rec.template.category}`, duration_min: effectiveTemplate.durationMin, training_effect: 0, intensity_tag: '' },
     };
 }
 
@@ -1283,14 +1161,6 @@ function fixedActivityProjection(activity: FixedActivity): CompletedExposure | n
     };
 }
 
-/**
- * `evaluateTrainingWithIntent` may synthesize an in-memory FixedActivity for an imported
- * target event. That object deliberately is not persisted and therefore is not in the
- * caller's `fixedActivities` array when Home asks for tomorrow's forecast. The decision
- * trace already records the aggregate fixed-activity profiles that today's ranking saw.
- * Project only the positive delta between that trace and the caller-owned activities, so
- * the event load survives into tomorrow without double-counting ordinary commitments.
- */
 function unrepresentedFixedActivityProjection(
     date: string,
     rec: Recommendation,
@@ -1299,10 +1169,6 @@ function unrepresentedFixedActivityProjection(
     const trace = rec.decisionTrace?.calibration?.fixedActivity;
     if (!trace) return null;
     const represented = fixedActivities.filter(activity => activity.date === date && !activity.isCompleted);
-    // Identity-based diff (ADR-0036 D-LEDGER's occurrenceId model) rather than a
-    // count-triggered aggregate-profile subtraction: exactly the occurrences today's
-    // ranking saw but that are absent from the caller's own array are unrepresented,
-    // regardless of whether an unrelated activity was also added or removed meanwhile.
     const representedIds = new Set(represented.map(fixedActivityOccurrenceKey));
     const unrepresentedEntries = trace.entries.filter(entry => !representedIds.has(entry.occurrenceId));
     if (unrepresentedEntries.length === 0) return null;
@@ -1343,10 +1209,6 @@ function unrepresentedFixedActivityProjection(
     };
 }
 
-/** Carries the non-training load reserved by schedule overlays on a completed forecast
- * date into the next date's history. Same-day availability already reserves this cost, so
- * the projection is added only after that date has passed and never to the current-day
- * availability ledger itself. */
 function scheduleOverlayProjection(
     date: string,
     scheduleOverlays: readonly ScheduleOverlay[],
@@ -1419,7 +1281,6 @@ export async function evaluateNextDayPlanWithIntent(
     trainingIntentProfile: TrainingIntentProfile | null = null,
     preferences: UserPreferences | null = null,
     fatigueFusionPolicy: FatigueFusionPolicy = 'max',
-    /** Phase 9.6: only the simulation comparison harness overrides this. */
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     scheduleOverlays: readonly ScheduleOverlay[] = [],
@@ -1435,11 +1296,6 @@ export async function evaluateNextDayPlanWithIntent(
         historyProvider,
         preparedHistorySnapshot,
     );
-    // ADR-0037 D-DOSE: no confirmedProgressionOverrides here -- a confirmed progression's
-    // duration override is date-scoped to a single day, and this evaluates *tomorrow*'s
-    // scenarios from *today*'s call. Progression influence is deliberately scoped to
-    // same-day planning (evaluateTrainingWithIntent's own confirmedProgressionOverrides
-    // parameter) until the packer has a date-scoped resolver.
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
         await evaluateTrainingWithIntent(

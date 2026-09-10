@@ -111,10 +111,6 @@ describe('deriveDurationOverridesForDate', () => {
     });
 
     it('rejects a confirmed value no real catalog workout can physically represent, rather than crediting it', () => {
-        // cycling_controlled_threshold_4x8_01's real maximumMin is 90; clamping alone would
-        // let 999 through as 90 (matching the objective envelope's max), but 90 does still
-        // fit that workout -- push the envelope itself past the workout's ceiling so the
-        // clamped value has nothing left it can represent.
         const outOfRange = block(
             { progressionContract: { ...block().progressionContract!, currentValue: 999, permittedRange: { min: 45, max: 200 } } },
             { doseEnvelope: { min: 45, target: 70, max: 200, unit: 'minutes', floorSemantics: 'hard_floor' } },
@@ -173,9 +169,6 @@ describe('deriveDurationOverridesForDate -> packWeeklyDose (production key contr
             adaptation: 'aerobic_endurance', priority: 'required',
             floor: { dose: { unit: 'minutes', value: 150 }, semantics: 'guideline_recommended_minimum' },
             target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 },
-            // Restricted to cycling only, so the packer's eligible-workout set for this
-            // requirement is exactly the one workout the confirmed progression targets --
-            // not the sibling running/walking workouts also on the aerobic_volume role.
             substitutionPolicy: { equivalentModalitiesAllowed: false, permittedModalities: ['Cycling'] },
             knowledgeRefs: ['test.claim'],
             evidence: {
@@ -195,28 +188,23 @@ describe('deriveDurationOverridesForDate -> packWeeklyDose (production key contr
         const baseline = packWeeklyDose(strategy, capacity, EVERGREEN_PACKING_COVERAGE);
         const withConfirmedProgression = packWeeklyDose(strategy, capacity, EVERGREEN_PACKING_COVERAGE, overrides.overrides);
 
-        // cycling_zone2_standard_01's catalog duration is 60 min; 2 sessions credit 120 min,
-        // below the 150-minute floor. The confirmed 70-minute progression raises that to 140
-        // -- still short, but the two budgets must differ, proving the exact-scoped key the
-        // real helper emits is understood by the packer, not silently ignored.
         expect(baseline.shortfalls).toEqual([expect.objectContaining({ code: 'below_guideline_range' })]);
         expect(withConfirmedProgression.shortfalls).toEqual([expect.objectContaining({ code: 'below_guideline_range', message: expect.stringContaining('140') })]);
         expect(withConfirmedProgression).not.toEqual(baseline);
     });
 
-    it('does not apply the override when the eligible workout set for the requirement is not the one the progression was confirmed against', () => {
+    it('keeps a production-derived cycling progression authoritative even when the evergreen requirement also permits running/walking substitutes', () => {
         const confirmedBlock = block({}, { adaptationScope: 'zone2_aerobic', coverageKey: 'aerobic_volume', sport: 'cycling' });
         const overrides = deriveDurationOverridesForDate([confirmedBlock], '2026-09-08');
-
-        // Widen the requirement's permitted modalities so the packer's eligible set for
-        // aerobic_volume also includes the running/walking workouts the progression was
-        // never confirmed against -- the override must not leak onto those.
         const multiModalStrategy: EvidenceBackedStrategy = {
             ...strategy,
             requirements: [{ ...strategy.requirements[0], substitutionPolicy: { equivalentModalitiesAllowed: true, permittedModalities: ['Cycling', 'Running', 'Walking'] } }],
         };
         const withConfirmedProgression = packWeeklyDose(multiModalStrategy, capacity, EVERGREEN_PACKING_COVERAGE, overrides.overrides);
-        const baseline = packWeeklyDose(multiModalStrategy, capacity, EVERGREEN_PACKING_COVERAGE);
-        expect(withConfirmedProgression).toEqual(baseline);
+
+        expect(withConfirmedProgression.requiredRoles).toHaveLength(2);
+        expect(withConfirmedProgression.requiredRoles.every(role => role.exactWorkoutIds.includes('cycling_zone2_standard_01'))).toBe(true);
+        expect(withConfirmedProgression.requiredRoles.every(role => role.exactWorkoutIds.length === 1)).toBe(true);
+        expect(withConfirmedProgression.shortfalls).toEqual([expect.objectContaining({ code: 'below_guideline_range', message: expect.stringContaining('140') })]);
     });
 });

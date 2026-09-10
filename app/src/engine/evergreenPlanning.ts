@@ -33,8 +33,9 @@ export function resolveEvergreenPlan(
     days: number = 7,
     isAdverseRecovery: boolean = false,
     scheduleOverlays: readonly ScheduleOverlay[] = [],
-    /** ADR-0037 D-DOSE: a confirmed `IntentBlock` progression's per-session duration
-     * (`engine/confirmedProgressionOverrides.ts`), keyed by coverage role id. */
+    /** ADR-0037 D-DOSE: exact-workout duration authority derived for `date` only. The
+     * weekly packer receives `date` separately so this map cannot alter sibling dates in
+     * the rolling horizon. */
     progressionOverrides: ReadonlyMap<string, number> = new Map(),
 ): ResolvedEvergreenPlan | null {
     if (planningContext.mode !== 'evergreen' || !preferences) return null;
@@ -54,7 +55,7 @@ export function resolveEvergreenPlan(
             stateEvidence?.observedWindowDays ?? historySnapshot?.windowDays ?? 0,
         ),
     );
-    const budget = packWeeklyDose(strategy, capacity, EVERGREEN_PACKING_COVERAGE, progressionOverrides);
+    const budget = packWeeklyDose(strategy, capacity, EVERGREEN_PACKING_COVERAGE, progressionOverrides, date);
     const result = buildEvergreenPlanDefinition(strategy, capacity, budget, date);
     if (result.status !== 'AVAILABLE') return null;
     return {
