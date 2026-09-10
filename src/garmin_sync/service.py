@@ -10,7 +10,13 @@ from pathlib import Path
 from typing import Any
 
 from firebase_admin import firestore
-from garminconnect import GarminConnectTooManyRequestsError
+from garminconnect import (
+    GarminConnectAuthenticationError,
+    GarminConnectConnectionError,
+    GarminConnectInvalidFileFormatError,
+    GarminConnectNotFoundError,
+    GarminConnectTooManyRequestsError,
+)
 
 from .archive import ArchiveRecord, RawArchiveStore, create_archive_store
 from .canonical import (
@@ -856,7 +862,16 @@ class GarminSyncService:
             )
             logger.info(f"[{target_iso}] Backfill sync completed.")
             return True, True
-        except Exception as e:
+        except (
+            GarminConnectAuthenticationError,
+            GarminConnectConnectionError,
+            GarminConnectInvalidFileFormatError,
+            GarminConnectNotFoundError,
+            GarminConnectTooManyRequestsError,
+            OSError,
+            KeyError,
+            ValueError,
+        ) as e:
             logger.error(f"[{target_iso}] Backfill failed: {e}")
             return False, True
 

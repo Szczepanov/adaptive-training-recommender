@@ -1,4 +1,5 @@
 from datetime import datetime, timedelta
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -1591,3 +1592,25 @@ def test_sync_service_builds_target_snapshot_after_lookback_dates_are_corrected(
     # Target's 7d baseline -- (60 + 50 + 50 + 50) / 4 -- used the corrected D-1 value
     # because D-1 was rebuilt and stored before the target snapshot was.
     assert repo.snapshots["2026-08-06"]["derived"]["restingHr7dAvg"] == 52.5
+
+
+def test_backfill_single_date_failure_handling() -> None:
+    """_process_single_backfill_date catches API/runtime exceptions and records date failure."""
+    from garminconnect import GarminConnectConnectionError
+
+    settings = Settings(app_user_id="test_uid_789")
+    repo = MagicMock()
+    repo.get_historical_snapshots.return_value = {}
+
+    provider = DetailFakeProvider()
+
+    def raise_connection_error(target_date_iso: str, yesterday_iso: str) -> Any:
+        if target_date_iso == "2026-08-07":
+            raise GarminConnectConnectionError("Connection timeout")
+        return provider.fetch_daily_metrics(target_date_iso, yesterday_iso)
+
+    failing_provider = MagicMock(wraps=provider)
+    failing_provider.fetch_daily_metrics.side_effect = raise_connection_error
+
+    service = GarminSyncService(settings=settings, repository=repo, provider=failing_provider)
+    assert not service.backfill(start_date_str="2026-08-06", end_date_str="2026-08-08", force=True)
