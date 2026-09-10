@@ -79,6 +79,9 @@ interface MutableOccurrence extends PackedRoleOccurrence {
 interface EligibleCandidate {
     role: CoverageRoleDescriptor;
     permitted: string[];
+    /** True when `role.durationMinutes` was narrowed by an active exact/direct override
+     * for the slot's effective date, rather than the authored baseline descriptor. */
+    isActiveOverride: boolean;
 }
 
 const NO_DURATION_OVERRIDES: ReadonlyMap<string, number> = new Map();
@@ -120,23 +123,24 @@ function eligibleCandidateForRole(
 ): EligibleCandidate | null {
     const permitted = permittedWorkoutIds(role, requirement);
     if (permitted.length === 0) return null;
-    if (overrides.size === 0) return { role, permitted };
+    if (overrides.size === 0) return { role, permitted, isActiveOverride: false };
 
     const direct = overrides.get(role.id);
-    if (direct !== undefined) return { role: { ...role, durationMinutes: direct }, permitted };
+    if (direct !== undefined) return { role: { ...role, durationMinutes: direct }, permitted, isActiveOverride: true };
 
     const exact = permitted.flatMap(workoutId => {
         const duration = overrides.get(progressionOverrideKey(role.id, workoutId));
         return duration === undefined ? [] : [{ workoutId, duration }];
     });
-    if (exact.length === 0) return { role, permitted };
+    if (exact.length === 0) return { role, permitted, isActiveOverride: false };
 
     const values = new Set(exact.map(entry => entry.duration));
-    if (values.size !== 1) return { role, permitted };
+    if (values.size !== 1) return { role, permitted, isActiveOverride: false };
 
     return {
         role: { ...role, durationMinutes: exact[0].duration },
         permitted: exact.map(entry => entry.workoutId),
+        isActiveOverride: true,
     };
 }
 
@@ -308,11 +312,17 @@ export function packWeeklyDose(
                 ).filter(candidate => slot.availableMinutes >= candidate.role.durationMinutes)
                     .map(candidate => ({ ...candidate, slot })))
                 .sort((left, right) =>
+                    // An active exact effective-date override represents a confirmed
+                    // progression bound to this occurrence; it must win placement even when
+                    // a shorter-window baseline candidate would otherwise best-fit first,
+                    // or the override's date-scoped session is silently dropped in favor of
+                    // an interchangeable baseline one, reporting a false shortfall.
+                    (right.isActiveOverride ? 1 : 0) - (left.isActiveOverride ? 1 : 0)
                     // Best-fit placement is the primary constraint: consume the shortest
                     // window that can host the current requirement before preferring a
                     // larger-dose role. This preserves scarce long windows for later roles
                     // that have no short-window alternative.
-                    left.slot.availableMinutes - right.slot.availableMinutes
+                    || left.slot.availableMinutes - right.slot.availableMinutes
                     || right.role.durationMinutes - left.role.durationMinutes
                     || (penaltyByDate.get(left.slot.date) ?? 0)
                         - (penaltyByDate.get(right.slot.date) ?? 0)

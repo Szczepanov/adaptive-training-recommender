@@ -26,7 +26,7 @@ import type {
 import type { ExternalRestDecisionProvenance } from './externalRestProvenance';
 import { TEMPLATES, ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID, TEMPLATES_BY_ID } from './templates';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
-import { buildOptimizationContext, computeRankingCounterfactual, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
+import { buildOptimizationContext, computeRankingCounterfactual, materializeEffectiveDose, rankCandidates, resolveRecoveryStyle, resolveTimeCapDoseAdjustment } from './optimizer';
 import { addDaysToLocalDateString } from '../utils/localDate';
 import type { CompletedExposure, TrainingHistoryProvider } from './trainingHistory';
 import type { TrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -1136,17 +1136,18 @@ const ZERO_STIMULUS: WorkoutStimulusProfile = { aerobicEndurance: 0, thresholdPo
 
 function recommendationProjection(date: string, rec: Recommendation): CompletedExposure {
     const workoutId = workoutForTemplate(rec.template.id)?.id;
+    const effectiveTemplate = materializeEffectiveDose(rec.template, rec.activeDose);
     return {
         occurrenceKey: `recommendation:${date}`,
         date,
-        costProfile: rec.template.costProfile ?? ZERO_COST,
-        stimulusProfile: rec.template.stimulusProfile,
+        costProfile: effectiveTemplate.costProfile ?? ZERO_COST,
+        stimulusProfile: effectiveTemplate.stimulusProfile,
         stimulusConfidence: 'exact',
         templateId: rec.template.id,
         ...(workoutId ? { workoutId } : {}),
         modality: rec.template.modality,
         category: rec.template.category,
-        trainingRecordLike: { type: `${rec.template.modality} ${rec.template.category}`, duration_min: rec.activeDose?.durationMin ?? rec.template.durationMin, training_effect: 0, intensity_tag: '' },
+        trainingRecordLike: { type: `${rec.template.modality} ${rec.template.category}`, duration_min: effectiveTemplate.durationMin, training_effect: 0, intensity_tag: '' },
     };
 }
 

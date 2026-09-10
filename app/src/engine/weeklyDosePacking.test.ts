@@ -339,5 +339,36 @@ describe('weekly dose packing', () => {
             expect(packWeeklyDose(stricter, windows, coverage, override, '2026-08-10').shortfalls)
                 .toEqual([expect.objectContaining({ code: 'goal_requirement_shortfall', message: expect.stringContaining('130') })]);
         });
+
+        it('prioritizes an active exact effective-date override over a shorter best-fit baseline candidate, avoiding a false shortfall', () => {
+            // A single-session budget spans a 90-minute window (the override's effective
+            // date) and a shorter 60-minute sibling-date window that only the unprogressed
+            // baseline role fits. Best-fit-by-availableMinutes alone would place the 60-min
+            // baseline first and strand the confirmed 90-min override, under-delivering the
+            // floor even though the override's own window can satisfy it exactly.
+            const scopedStrategy: EvidenceBackedStrategy = {
+                ...healthStrategy,
+                requirements: [{
+                    ...healthStrategy.requirements[0],
+                    floor: { dose: { unit: 'minutes', value: 90 }, semantics: 'goal_required_minimum' },
+                    target: { unit: 'minutes', minimum: 90, target: 90, maximum: 90 },
+                }],
+            };
+            const tightCapacity: ResolvedTrainingCapacity = {
+                ...capacity(90, 2),
+                minSessions: 1, targetSessions: 1, maxSessions: 1,
+                usableWindows: [
+                    { date: '2026-08-10', availableMinutes: 60 },
+                    { date: '2026-08-11', availableMinutes: 90 },
+                ],
+            };
+            const override = new Map([[progressionOverrideKey('aerobic-ride', 'cycling_zone2_standard_01'), 90]]);
+
+            const budget = packWeeklyDose(scopedStrategy, tightCapacity, coverage, override, '2026-08-11');
+
+            expect(budget.requiredRoles).toHaveLength(1);
+            expect(budget.requiredRoles[0].date).toBe('2026-08-11');
+            expect(budget.shortfalls).toEqual([]);
+        });
     });
 });
