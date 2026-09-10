@@ -22,7 +22,7 @@
  * time. This module only ever consumes whatever the currently-confirmed value is.
  */
 
-import type { BlockObjectiveDefinition, IntentBlock } from './blockIntent';
+import type { BlockObjectiveDefinition, BlockProgressionContract, IntentBlock } from './blockIntent';
 import { EVERGREEN_PACKING_COVERAGE } from './weeklyDosePacking';
 import type { ObjectiveKey } from './models';
 import type { PlanCoverageKey } from '../workouts/event-plan';
@@ -57,10 +57,35 @@ function isWiredCoverageKey(coverageKey: PlanCoverageKey): boolean {
     return SELECTION_WIRED_COVERAGE_KEYS.includes(coverageKey);
 }
 
-/** Defense-in-depth only: `validateProgressionContract` already enforces this range at
- * confirm time. */
-function clampToEnvelope(value: number, objective: BlockObjectiveDefinition): number {
-    return Math.min(objective.doseEnvelope.max, Math.max(objective.doseEnvelope.min, value));
+/**
+ * Defense-in-depth only: `validateProgressionContract` already enforces `currentValue`
+ * against `permittedRange` at author/confirm/read time. The objective dose envelope is a
+ * second bound only when it uses the *same unit* as the progression variable. ADR-0037
+ * deliberately allows an objective to be expressed in (for example) sessions while the
+ * one registered progression variable changes per-session duration in minutes; clamping a
+ * minute value against a session-count envelope would be a unit error.
+ */
+function clampConfirmedDuration(
+    contract: BlockProgressionContract,
+    objective: BlockObjectiveDefinition,
+): number {
+    let lower = contract.permittedRange.min;
+    let upper = contract.permittedRange.max;
+
+    if (objective.doseEnvelope.unit === contract.unit) {
+        lower = Math.max(lower, objective.doseEnvelope.min);
+        upper = Math.min(upper, objective.doseEnvelope.max);
+    }
+
+    // A validated block cannot produce an inverted intersection. Keep this helper total for
+    // defense-in-depth callers nevertheless: fall back to the progression contract's own
+    // validated range instead of inventing a cross-unit/objective bound.
+    if (lower > upper) {
+        lower = contract.permittedRange.min;
+        upper = contract.permittedRange.max;
+    }
+
+    return Math.min(upper, Math.max(lower, contract.currentValue));
 }
 
 /** Pure. No Firestore, no `Date.now()` -- `blocks` and `date` are both caller-supplied. */
@@ -90,6 +115,11 @@ export function deriveDurationOverridesForDate(
             continue;
         }
 
+        // The persisted service revalidates this before returning a block, but keep the
+        // selection boundary fail-closed if a non-service caller supplies malformed runtime
+        // data. `duration_min` is the only registered variable and it is minute-valued.
+        if (contract.variable !== 'duration_min' || contract.unit !== 'minutes') continue;
+
         // Deterministic collision handling: an athlete is expected to have at most one
         // active block per objective coverage key. If two collide, the lexicographically
         // first blockId wins (stable given the sort above) and the loser is dropped from
@@ -97,7 +127,7 @@ export function deriveDurationOverridesForDate(
         // something this module needs to arbitrate further.
         if (overrides.has(objective.coverageKey)) continue;
 
-        overrides.set(objective.coverageKey, clampToEnvelope(contract.currentValue, objective));
+        overrides.set(objective.coverageKey, clampConfirmedDuration(contract, objective));
     }
 
     return { overrides, unsupported };
