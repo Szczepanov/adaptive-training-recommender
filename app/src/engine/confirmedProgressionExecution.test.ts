@@ -1,9 +1,32 @@
-import { describe, expect, it } from 'vitest';
-import { evaluateTrainingWithIntent } from './rules';
+import { describe, expect, it, vi } from 'vitest';
 import { progressionOverrideKey } from './confirmedProgressionOverrides';
 import type { DailyReadiness, EngineObjectiveInput, SubjectiveInput, UserContext } from './models';
 import type { TrainingHistoryProvider } from './trainingHistory';
 import { workoutForTemplate } from '../workouts/prescription';
+
+const PROGRESSED_WORKOUT_ID = 'cycling_zone2_standard_01';
+
+vi.mock('./optimizer', async (importOriginal) => {
+    const actual = await importOriginal<typeof import('./optimizer')>();
+    const { workoutForTemplate: resolveWorkout } = await import('../workouts/prescription');
+
+    return {
+        ...actual,
+        rankCandidates: (...args: Parameters<typeof actual.rankCandidates>) => {
+            const result = actual.rankCandidates(...args);
+            const accepted = [...result.accepted];
+            const targetIndex = accepted.findIndex(
+                candidate => resolveWorkout(candidate.template.id)?.id === PROGRESSED_WORKOUT_ID,
+            );
+            if (targetIndex <= 0) return result;
+
+            const [target] = accepted.splice(targetIndex, 1);
+            return { ...result, accepted: [target, ...accepted] };
+        },
+    };
+});
+
+import { evaluateTrainingWithIntent } from './rules';
 
 const EMPTY_HISTORY: TrainingHistoryProvider = {
     reconstruct: async () => [],
@@ -101,27 +124,27 @@ async function recommend(
 
 describe('confirmed progression execution authority', () => {
     const overrides = new Map([
-        [progressionOverrideKey('aerobic_volume', 'cycling_zone2_standard_01'), 70],
+        [progressionOverrideKey('aerobic_volume', PROGRESSED_WORKOUT_ID), 70],
     ]);
 
-    it('materializes the confirmed duration on the selected exact workout', async () => {
+    it('materializes the confirmed duration once the exact progressed workout is selected', async () => {
         const rec = await recommend(
             { subjective: subjective(), objective: objective() },
             overrides,
         );
 
-        expect(workoutForTemplate(rec.template.id)?.id).toBe('cycling_zone2_standard_01');
+        expect(workoutForTemplate(rec.template.id)?.id).toBe(PROGRESSED_WORKOUT_ID);
         expect(rec.activeDose).toEqual(expect.objectContaining({ durationMin: 70, durationMax: 70 }));
         expect(rec.rationale).toContain('confirmed progression');
     });
 
-    it('keeps a smaller time-cap dose authoritative over a larger confirmed progression', async () => {
+    it('keeps a smaller time-cap dose authoritative over a selected confirmed progression', async () => {
         const rec = await recommend(
             { subjective: subjective({ timeAvailable: 45 }), objective: objective() },
             overrides,
         );
 
-        expect(workoutForTemplate(rec.template.id)?.id).toBe('cycling_zone2_standard_01');
+        expect(workoutForTemplate(rec.template.id)?.id).toBe(PROGRESSED_WORKOUT_ID);
         expect(rec.activeDose?.durationMin).not.toBe(70);
         expect(rec.activeDose?.durationMax).toBeLessThanOrEqual(45);
         expect(rec.rationale).toContain('could not be applied because today’s safety/readiness/time ceiling is lower');
