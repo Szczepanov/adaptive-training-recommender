@@ -26,3 +26,18 @@ def test_local_token_store_persist_returns_false_when_source_missing(tmp_path: P
     store = LocalTokenStore(local_path=tmp_path / "store" / "tokens.json")
 
     assert store.persist(tmp_path / "missing.json") is False
+
+
+def test_set_secure_permissions_handles_os_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    from garmin_sync.token_store import _set_secure_permissions
+
+    target_file = tmp_path / "tokens.json"
+    target_file.write_text("{}")
+
+    def mock_chmod_secure(path: Path, mode: int) -> None:
+        raise OSError("Permission denied")
+
+    monkeypatch.setattr("garmin_sync.token_store._chmod_secure", mock_chmod_secure)
+
+    # Should catch OSError and log debug without raising exception
+    _set_secure_permissions(target_file)
