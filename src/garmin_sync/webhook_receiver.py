@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_KEYSET_URL = "https://health.googleapis.com/v4/webhooks/public_keyset.json"
 KEYSET_CACHE_TTL_SECONDS = 86400  # 24 hours
+MAX_PAYLOAD_SIZE_BYTES = 1_048_576  # 1 MB
 
 
 @dataclass
@@ -108,6 +109,9 @@ class GoogleHealthWebhookHandler:
         signature: str | None,
     ) -> tuple[int, dict[str, Any]]:
         """Validate signature, parse event, and enqueue task. Returns (status_code, response_body)."""
+        if len(raw_body) > MAX_PAYLOAD_SIZE_BYTES:
+            return 413, {"error": "Payload exceeds maximum allowed size"}
+
         if not self.verifier.verify_signature(raw_body, signature):
             return 401, {"error": "Invalid signature"}
 
