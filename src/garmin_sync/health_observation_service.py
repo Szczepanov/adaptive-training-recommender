@@ -48,6 +48,18 @@ def observation_to_dto(
     )
 
 
+def _index_bundles_by_logical_date(
+    bundles: list[dict[str, Any]],
+) -> dict[str, list[dict[str, Any]]]:
+    """Index a prefetched bundle range once so per-date reconciliation is O(1)."""
+    by_date: dict[str, list[dict[str, Any]]] = {}
+    for bundle in bundles:
+        logical_date = bundle.get("logicalDate")
+        if isinstance(logical_date, str):
+            by_date.setdefault(logical_date, []).append(bundle)
+    return by_date
+
+
 class HealthObservationService:
     """Service orchestrating recovery observation ingestion and persistence."""
 
@@ -77,6 +89,7 @@ class HealthObservationService:
         logical_date_iso: str,
         provider_transports: set[str],
         current_keys: set[tuple[str, str]],
+        existing_bundles_by_date: dict[str, list[dict[str, Any]]] | None = None,
     ) -> list[str]:
         """Delete previously stored day-source bundles whose (provider, transport) key
         falls under this recovery provider's own transport(s) but is absent from the
@@ -94,9 +107,12 @@ class HealthObservationService:
 
         stale_ids: list[str] = []
         keys_to_delete: list[tuple[str, str, str]] = []
-        existing = self.repository.get_health_observation_bundles_in_range(
-            logical_date_iso, logical_date_iso
-        )
+        if existing_bundles_by_date is None:
+            existing = self.repository.get_health_observation_bundles_in_range(
+                logical_date_iso, logical_date_iso
+            )
+        else:
+            existing = existing_bundles_by_date.get(logical_date_iso, [])
 
         for doc in existing:
             doc_provider = doc.get("provider")
@@ -128,6 +144,7 @@ class HealthObservationService:
         self,
         logical_date_iso: str,
         previous_date_iso: str | None = None,
+        existing_bundles_by_date: dict[str, list[dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         """Ingest and persist observations for one logical date from all registered providers."""
         if not previous_date_iso:
@@ -147,6 +164,7 @@ class HealthObservationService:
                         logical_date_iso,
                         provider_transports=self._provider_transports.get(provider_name, set()),
                         current_keys=set(),
+                        existing_bundles_by_date=existing_bundles_by_date,
                     )
                     results[provider_name] = {
                         "status": "empty",
@@ -219,6 +237,7 @@ class HealthObservationService:
                     logical_date_iso,
                     provider_transports=current_transports,
                     current_keys=set(grouped.keys()),
+                    existing_bundles_by_date=existing_bundles_by_date,
                 )
 
                 results[provider_name] = {
@@ -246,13 +265,24 @@ class HealthObservationService:
     ) -> list[dict[str, Any]]:
         """Run scheduled repair sync for [target_date - days_lookback, target_date]."""
         target_dt = datetime.strptime(target_date_iso, "%Y-%m-%d")
+        start_dt = target_dt - timedelta(days=days_lookback)
+        start_date_iso = start_dt.strftime("%Y-%m-%d")
+
+        existing_bundles_by_date = _index_bundles_by_logical_date(
+            self.repository.get_health_observation_bundles_in_range(start_date_iso, target_date_iso)
+        )
+
         summary: list[dict[str, Any]] = []
 
         for i in range(days_lookback + 1):
             date_dt = target_dt - timedelta(days=i)
             date_iso = date_dt.strftime("%Y-%m-%d")
             prev_iso = (date_dt - timedelta(days=1)).strftime("%Y-%m-%d")
-            date_result = self.sync_date(date_iso, prev_iso)
+            date_result = self.sync_date(
+                date_iso,
+                prev_iso,
+                existing_bundles_by_date=existing_bundles_by_date,
+            )
             summary.append({"date": date_iso, "results": date_result})
 
         return summary
@@ -269,6 +299,10 @@ class HealthObservationService:
         if start_dt > end_dt:
             raise ValueError(f"Start date {start_date_iso} is after end date {end_date_iso}")
 
+        existing_bundles_by_date = _index_bundles_by_logical_date(
+            self.repository.get_health_observation_bundles_in_range(start_date_iso, end_date_iso)
+        )
+
         summary: list[dict[str, Any]] = []
         curr_dt = start_dt
 
@@ -282,7 +316,11 @@ class HealthObservationService:
             date_iso = curr_dt.strftime("%Y-%m-%d")
             prev_iso = (curr_dt - timedelta(days=1)).strftime("%Y-%m-%d")
 
-            date_result = self.sync_date(date_iso, prev_iso)
+            date_result = self.sync_date(
+                date_iso,
+                prev_iso,
+                existing_bundles_by_date=existing_bundles_by_date,
+            )
             summary.append({"date": date_iso, "results": date_result})
             curr_dt += timedelta(days=1)
 
