@@ -97,13 +97,22 @@ describe('deriveDurationOverridesForDate', () => {
         }
     });
 
-    it('clamps currentValue into the objective dose envelope defensively', () => {
+    it('clamps currentValue into the objective dose envelope defensively when units match', () => {
         const outOfRange = block(
             { progressionContract: { ...block().progressionContract!, currentValue: 999 } },
             { doseEnvelope: { min: 60, target: 90, max: 120, unit: 'minutes', floorSemantics: 'hard_floor' } },
         );
         const result = deriveDurationOverridesForDate([outOfRange], '2026-09-10');
         expect(result.overrides.get('sustained_quality')).toBe(120);
+    });
+
+    it('does not clamp minute progression against an objective envelope expressed in sessions', () => {
+        const mixedUnits = block(
+            {},
+            { doseEnvelope: { min: 2, target: 3, max: 4, unit: 'sessions', floorSemantics: 'hard_floor' } },
+        );
+        const result = deriveDurationOverridesForDate([mixedUnits], '2026-09-10');
+        expect(result.overrides.get('sustained_quality')).toBe(100);
     });
 
     it('resolves a same-coverage-key collision deterministically by lexicographically smaller blockId', () => {
