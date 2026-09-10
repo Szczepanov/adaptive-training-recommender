@@ -27,44 +27,37 @@ def _chmod_secure(path: Path, mode: int) -> None:
         return
 
     # Fallback to fchmod using file descriptors with O_NOFOLLOW if available
-    if hasattr(os, "fchmod"):
-        try:
-            flags = os.O_RDONLY
-            if hasattr(os, "O_NOFOLLOW"):
-                flags |= getattr(os, "O_NOFOLLOW", 0)
-            if path.is_dir() and hasattr(os, "O_DIRECTORY"):
-                flags |= getattr(os, "O_DIRECTORY", 0)
+    if hasattr(os, "fchmod") and hasattr(os, "O_NOFOLLOW"):
+        flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
+        if path.is_dir() and hasattr(os, "O_DIRECTORY"):
+            flags |= getattr(os, "O_DIRECTORY", 0)
 
+        try:
             fd = os.open(path, flags)
             try:
-                fchmod_fn = getattr(os, "fchmod", None)
-                if fchmod_fn is not None:
-                    fchmod_fn(fd, mode)
+                os.fchmod(fd, mode)
+                return
             finally:
                 os.close(fd)
-            return
-        except OSError:
-            pass
+        except OSError as exc:
+            raise RuntimeError(
+                f"Failed to set secure permissions on '{path}': {exc}"
+            ) from exc
 
-    # Fallback if fchmod/O_NOFOLLOW isn't supported and symlinks exist
-    logger.warning(
-        f"Secure file permission setting (fchmod/O_NOFOLLOW) is not supported on this platform. "
-        f"Skipping chmod for '{path}' to avoid TOCTOU vulnerability."
+    raise RuntimeError(
+        f"Secure file permission setting (fchmod/O_NOFOLLOW or follow_symlinks=False) "
+        f"is not supported on this platform for '{path}'."
     )
-    return
 
 
 def _set_secure_permissions(file_path: Path) -> None:
     """Ensure token file permissions are 0600 and parent directory is 0700 where OS permits."""
-    try:
-        parent = file_path.parent
-        parent.mkdir(parents=True, exist_ok=True)
-        if hasattr(os, "chmod"):
-            _chmod_secure(parent, 0o700)
-            if file_path.exists():
-                _chmod_secure(file_path, 0o600)
-    except Exception as e:
-        logger.debug(f"Failed to set permissions on '{file_path}': {type(e).__name__}")
+    parent = file_path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    if hasattr(os, "chmod"):
+        _chmod_secure(parent, 0o700)
+        if file_path.exists():
+            _chmod_secure(file_path, 0o600)
 
 
 class TokenStore(Protocol):
