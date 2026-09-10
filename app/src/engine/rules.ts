@@ -763,6 +763,9 @@ export async function evaluateTrainingWithIntent(
      *  gate below and is retained in provenance as an explicit override. */
     athleteOverridesAuthoredRest: boolean = false,
     scheduleOverlays: readonly ScheduleOverlay[] = [],
+    /** ADR-0037 D-DOSE: a confirmed `IntentBlock` progression's per-session duration
+     * (`engine/confirmedProgressionOverrides.ts`), keyed by coverage role id. */
+    confirmedProgressionOverrides: ReadonlyMap<string, number> = new Map(),
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode, subjectiveDriftPolicy, subjectiveDriftWeights);
     const { mode, envelopes, telemetry } = envelopeState;
@@ -830,6 +833,7 @@ export async function evaluateTrainingWithIntent(
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,
+        confirmedProgressionOverrides,
     );
     if (evergreen) {
         const unresolvedObjectives = getUnresolvedObjectives(evergreen.microcycle);
@@ -1419,6 +1423,9 @@ export async function evaluateNextDayPlanWithIntent(
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     scheduleOverlays: readonly ScheduleOverlay[] = [],
+    /** ADR-0037 D-DOSE: a confirmed `IntentBlock` progression's per-session duration
+     * (`engine/confirmedProgressionOverrides.ts`), keyed by coverage role id. */
+    confirmedProgressionOverrides: ReadonlyMap<string, number> = new Map(),
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const projectedProvider = await projectedProviderForTomorrow(
@@ -1436,7 +1443,7 @@ export async function evaluateNextDayPlanWithIntent(
         await evaluateTrainingWithIntent(
             userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null,
             fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences, fatigueFusionPolicy, null,
-            subjectiveDriftPolicy, subjectiveDriftWeights, null, false, scheduleOverlays,
+            subjectiveDriftPolicy, subjectiveDriftWeights, null, false, scheduleOverlays, confirmedProgressionOverrides,
         ),
     );
     const [green, yellow, red] = await Promise.all([

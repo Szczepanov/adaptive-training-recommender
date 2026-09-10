@@ -220,6 +220,31 @@ export class IntentBlockService {
     }
 
     /**
+     * Convenience read for engine wiring (ADR-0037 D-DOSE,
+     * `engine/confirmedProgressionOverrides.ts`): every block whose latest revision reads
+     * back `AVAILABLE` (validated shape and content-hash, per `getRevisionState`) and whose
+     * `dateRange` covers `date`. A block whose header or latest revision is missing,
+     * unavailable, or fails its own hash/shape check is skipped rather than failing the
+     * whole read -- one athlete's corrupted block must never blank out every other block's
+     * confirmed progression.
+     */
+    async getActiveBlocks(userId: string, date: string): Promise<DataState<IntentBlock[]>> {
+        const idsState = await this.listBlockIds(userId);
+        if (idsState.status !== 'AVAILABLE') return idsState;
+
+        const blocks = await Promise.all(idsState.data.map(async blockId => {
+            const headerState = await this.getHeaderState(userId, blockId);
+            if (headerState.status !== 'AVAILABLE') return null;
+            const revisionState = await this.getRevisionState(userId, blockId, headerState.data.revision);
+            return revisionState.status === 'AVAILABLE' ? revisionState.data.block : null;
+        }));
+
+        const activeBlocks = blocks.filter((block): block is IntentBlock =>
+            block !== null && date >= block.dateRange.startDate && date <= block.dateRange.endDate);
+        return { status: 'AVAILABLE', data: activeBlocks, revision: null };
+    }
+
+    /**
      * Transaction-composable primitive. `existingHeader` must already have been read via
      * `transaction.get` in the *same* transaction (Firestore's reads-before-writes rule) --
      * this re-verifies the revision-not-newer precondition from that transactional read

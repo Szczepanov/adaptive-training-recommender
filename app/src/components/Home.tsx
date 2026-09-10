@@ -23,6 +23,9 @@ import { fixedActivityService } from '../services/fixedActivityService';
 import { scheduleWindowService } from '../services/scheduleWindowService';
 import { computeDailyLedger } from '../engine/dailyLedger';
 import { planBlockService } from '../services/planBlockService';
+import { intentBlockService } from '../services/intentBlockService';
+import { deriveDurationOverridesForDate } from '../engine/confirmedProgressionOverrides';
+import type { IntentBlock } from '../engine/blockIntent';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
@@ -362,6 +365,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         yesterdaySnapState,
         todayAndTomorrowFixedActivities,
         todayAndTomorrowPlanBlocks,
+        activeIntentBlocks,
         loadedOverrides,
         activitiesState,
       ] = await Promise.all([
@@ -387,11 +391,31 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             console.warn('Failed to load authored plan blocks for today/tomorrow:', err);
             return [];
           }),
+        // ADR-0037 D-DOSE: confirmed IntentBlock progressions active on input.date, used
+        // below to derive per-role duration overrides for evergreen selection. A read
+        // failure here must never block today's recommendation -- it just means no
+        // confirmed progression affects today's selection.
+        intentBlockService.getActiveBlocks(userId, input.date)
+          .then(state => {
+            if (state.status === 'AVAILABLE') return state.data;
+            if (state.status !== 'MISSING') console.warn(`Failed to load confirmed intent blocks: ${state.status}`);
+            return [];
+          })
+          .catch(err => {
+            console.warn('Failed to load confirmed intent blocks:', err);
+            return [];
+          }),
         activityOverrideService.getAllOverrides(userId).catch(() => ({})),
         activityService.getActivitiesInRange(userId, addDaysToLocalDateString(input.date, -6), addDaysToLocalDateString(input.date, 1)).catch(() => ({ status: 'MISSING' as const })),
       ]);
 
       if (!isCurrent()) return;
+
+      const { overrides: confirmedProgressionOverrides, unsupported: unsupportedProgressionObjectives } =
+        deriveDurationOverridesForDate(activeIntentBlocks, input.date);
+      if (unsupportedProgressionObjectives.length > 0) {
+        console.warn('Confirmed progression(s) bound to a coverage key not yet wired into selection:', unsupportedProgressionObjectives);
+      }
 
       setYesterdayRecommendation(yesterdayRec);
       setYesterdaySnapshot(yesterdaySnapState.status === 'AVAILABLE' ? yesterdaySnapState.data : null);
@@ -514,6 +538,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           userId, { subjective, objective, subjectiveBaseline: input.subjectiveBaseline }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
           'max', externalContext, undefined, undefined, externalRestContext, false, input.scheduleOverlays,
+          confirmedProgressionOverrides,
         );
         if (!isCurrent()) return;
         const recommendationWithPrescription = {
@@ -748,7 +773,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
-          'max', undefined, undefined, input.scheduleOverlays,
+          'max', undefined, undefined, input.scheduleOverlays, confirmedProgressionOverrides,
         );
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
@@ -1112,6 +1137,32 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     [planBlocksState]
   );
 
+  // ADR-0037 D-DOSE: confirmed IntentBlock progressions active over the week-ahead window,
+  // used below to derive per-role duration overrides for evergreen selection.
+  const [confirmedBlocksState, setConfirmedBlocksState] = useState<DataState<IntentBlock[]>>({ status: 'AVAILABLE', data: [], revision: null });
+  useEffect(() => {
+    let cancelled = false;
+    if (!decisionInput) {
+      setConfirmedBlocksState({ status: 'AVAILABLE', data: [], revision: null });
+      return () => { cancelled = true; };
+    }
+    intentBlockService.getActiveBlocks(userId, decisionInput.date)
+      .then(state => { if (!cancelled) setConfirmedBlocksState(state); })
+      .catch(err => {
+        console.warn('Failed to load confirmed intent blocks:', err);
+        if (!cancelled) setConfirmedBlocksState({ status: 'UNAVAILABLE', operation: 'read confirmed intent blocks', retryable: true });
+      });
+    return () => { cancelled = true; };
+  }, [userId, decisionInput]);
+  const weekAheadProgressionOverrides = useMemo((): ReadonlyMap<string, number> => {
+    if (confirmedBlocksState.status !== 'AVAILABLE' || !decisionInput) return new Map();
+    const { overrides, unsupported } = deriveDurationOverridesForDate(confirmedBlocksState.data, decisionInput.date);
+    if (unsupported.length > 0) {
+      console.warn('Confirmed progression(s) bound to a coverage key not yet wired into selection:', unsupported);
+    }
+    return overrides;
+  }, [confirmedBlocksState, decisionInput]);
+
   const [selectedNextDayTier, setSelectedNextDayTier] = useState<'green' | 'yellow' | 'red'>('green');
   const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
   useEffect(() => {
@@ -1138,7 +1189,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       decisionInput.date,
       activeRec,
       tomorrowRec,
-      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks, scheduleOverlays: decisionInput.scheduleOverlays },
+      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks, scheduleOverlays: decisionInput.scheduleOverlays, progressionOverrides: weekAheadProgressionOverrides },
       undefined,
       historySnapshot,
       decisionInput.trainingIntentProfile,
@@ -1151,7 +1202,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       }
     });
     return () => { cancelled = true; };
-  }, [userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities, planBlocksState, authoredPlanBlocks]);
+  }, [userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities, planBlocksState, authoredPlanBlocks, weekAheadProgressionOverrides]);
 
   if (loading) {
     return (

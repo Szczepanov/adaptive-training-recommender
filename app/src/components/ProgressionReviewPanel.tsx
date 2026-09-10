@@ -12,7 +12,7 @@ import {
   type ProgressionExperimentClaim,
 } from '../services/progressionClaimService';
 import { getLocalDateString } from '../utils/localDate';
-import { claimBelongsToReviewedRevision, deriveProposalId } from './progressionReviewPanelLogic';
+import { claimBelongsToReviewedRevision, deriveProposalId, isProgressionSelectionUnsupported } from './progressionReviewPanelLogic';
 import './ProgressionReviewPanel.css';
 
 interface ProgressionReviewPanelProps {
@@ -89,6 +89,11 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
     activeClaim,
     selectedBlockId,
     selectedDue?.header.revision ?? null,
+  );
+
+  const selectionUnsupported = useMemo(
+    () => isProgressionSelectionUnsupported(selectedDue?.block),
+    [selectedDue],
   );
 
   const runReview = useCallback(async (blockId: string) => {
@@ -205,6 +210,12 @@ export function ProgressionReviewPanel({ userId }: ProgressionReviewPanelProps) 
       {result && (
         <div className="progression-review-result">
           <h3>{ACTION_LABELS[result.action]}</h3>
+          {selectionUnsupported && (
+            <p role="status" className="progression-review-selection-unsupported">
+              Confirmed changes to this objective are recorded but do not yet affect today&apos;s or this
+              week&apos;s recommendations.
+            </p>
+          )}
           {result.reasons.length > 0 && (
             <ul className="progression-review-reasons">
               {result.reasons.map((reason, index) => <li key={index}>{reason}</li>)}

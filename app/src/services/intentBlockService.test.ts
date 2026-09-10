@@ -184,3 +184,32 @@ describe('IntentBlockService.getHeaderState / getRevisionState', () => {
         expect(state.status).toBe('INVALID');
     });
 });
+
+describe('IntentBlockService.getActiveBlocks', () => {
+    it('keeps only blocks whose latest revision is AVAILABLE and whose dateRange covers the date', async () => {
+        firestore.getDocs.mockResolvedValue({ docs: [{ id: 'active' }, { id: 'expired' }, { id: 'header_missing' }, { id: 'revision_invalid' }] });
+        const service = new IntentBlockService();
+        const activeBlock = block({ id: 'active', dateRange: { startDate: '2026-09-01', endDate: '2026-09-30' } });
+        const expiredBlock = block({ id: 'expired', dateRange: { startDate: '2026-01-01', endDate: '2026-01-31' } });
+        vi.spyOn(service, 'getHeaderState').mockImplementation(async (_userId, blockId) => {
+            if (blockId === 'header_missing') return { status: 'MISSING' };
+            return { status: 'AVAILABLE', data: { revision: 1 } as unknown as IntentBlockHeader, revision: 'x' };
+        });
+        vi.spyOn(service, 'getRevisionState').mockImplementation(async (_userId, blockId) => {
+            if (blockId === 'active') return { status: 'AVAILABLE', data: { block: activeBlock } as never, revision: '1' };
+            if (blockId === 'expired') return { status: 'AVAILABLE', data: { block: expiredBlock } as never, revision: '1' };
+            return { status: 'INVALID', issues: [] };
+        });
+
+        const result = await service.getActiveBlocks(USER_ID, '2026-09-10');
+        expect(result.status).toBe('AVAILABLE');
+        expect(result.status === 'AVAILABLE' && result.data.map(b => b.id)).toEqual(['active']);
+    });
+
+    it('passes through a non-AVAILABLE listBlockIds result unchanged', async () => {
+        firestore.getDocs.mockRejectedValue(new Error('offline'));
+        const service = new IntentBlockService();
+        const result = await service.getActiveBlocks(USER_ID, '2026-09-10');
+        expect(result.status).toBe('UNAVAILABLE');
+    });
+});

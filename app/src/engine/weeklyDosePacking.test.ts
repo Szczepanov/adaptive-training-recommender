@@ -256,4 +256,33 @@ describe('weekly dose packing', () => {
         expect(budget.requiredRoles.map(role => role.date)).toEqual(['2026-08-10', '2026-08-13']);
         expect(budget.shortfalls).toEqual([]);
     });
+
+    describe('durationOverridesByRoleId (ADR-0037 D-DOSE confirmed progression)', () => {
+        it('credits the overridden per-session minutes instead of the role\'s catalog duration, closing a floor shortfall', () => {
+            const wideWindows = capacity(90, 2);
+            const baseline = packWeeklyDose(healthStrategy, wideWindows, coverage);
+            expect(baseline.requiredRoles).toHaveLength(2);
+            expect(baseline.shortfalls).toEqual([expect.objectContaining({ code: 'below_guideline_range' })]);
+
+            const withOverride = packWeeklyDose(healthStrategy, wideWindows, coverage, new Map([['aerobic-ride', 90]]));
+            expect(withOverride.requiredRoles).toHaveLength(2);
+            expect(withOverride.shortfalls).toEqual([]);
+        });
+
+        it('leaves packing unchanged when the override key does not match any role id', () => {
+            const withUnmatchedOverride = packWeeklyDose(healthStrategy, capacity(60, 2), coverage, new Map([['no-such-role', 999]]));
+            const withoutOverride = packWeeklyDose(healthStrategy, capacity(60, 2), coverage);
+            expect(withUnmatchedOverride).toEqual(withoutOverride);
+        });
+
+        it('never changes the requirement-level guideline floor/target, only the role\'s per-session credit', () => {
+            const wideWindows = capacity(200, 1);
+            const budget = packWeeklyDose(healthStrategy, wideWindows, coverage, new Map([['aerobic-ride', 200]]));
+            // A single 200-minute session now fully covers the 150-minute floor -- but the
+            // floor value itself (from `strategy.requirements[0].floor`) is untouched; only
+            // the role's delivered-dose credit changed.
+            expect(budget.requirements[0].floor?.dose.value).toBe(150);
+            expect(budget.shortfalls).toEqual([]);
+        });
+    });
 });

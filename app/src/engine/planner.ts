@@ -170,6 +170,9 @@ export interface WeekAheadOptions {
     planDefinition?: PlanDefinition | null;
     /** Simulation-only fatigue comparison. Live callers use the default `max`. */
     fatigueFusionPolicy?: FatigueFusionPolicy;
+    /** ADR-0037 D-DOSE: a confirmed `IntentBlock` progression's per-session duration
+     * (`engine/confirmedProgressionOverrides.ts`), keyed by coverage role id. */
+    progressionOverrides?: ReadonlyMap<string, number>;
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -1612,7 +1615,7 @@ export async function generateWeekAheadPlanWithIntent(
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
-        isAdverseRecovery, options.scheduleOverlays ?? [],
+        isAdverseRecovery, options.scheduleOverlays ?? [], options.progressionOverrides ?? new Map(),
     );
     return generateWeekAheadPlan(
         todayReadiness,

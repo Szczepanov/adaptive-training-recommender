@@ -123,12 +123,28 @@ function warningFor(requirement: AdaptationDoseRequirement, delivered: number): 
 /** Converts evidence-derived dose into exact authored roles. Every selected occurrence is
  * attached to one real availability date and one authored descriptor. A role may satisfy
  * more than one adaptation only when that descriptor explicitly grants each adaptation;
- * no modality/category similarity is used for bundling. */
+ * no modality/category similarity is used for bundling.
+ *
+ * `durationOverridesByRoleId` (ADR-0037 D-DOSE): a confirmed `IntentBlock` progression's
+ * per-session `currentValue` (`engine/confirmedProgressionOverrides.ts`), keyed by role id.
+ * It substitutes for a role's catalog-derived `durationMinutes` everywhere below -- both the
+ * capacity-fit estimate and the literal delivered-dose accounting -- without touching
+ * `requirement.floor`/`requirement.target`, which stay WHO-guideline-owned one level above
+ * this function. An id with no matching role is simply inert. */
 export function packWeeklyDose(
     strategy: EvidenceBackedStrategy,
     capacity: ResolvedTrainingCapacity,
     coverage: CoverageSetDescriptor,
+    durationOverridesByRoleId: ReadonlyMap<string, number> = new Map(),
 ): WeeklyBudget {
+    const effectiveCoverage: CoverageSetDescriptor = durationOverridesByRoleId.size === 0
+        ? coverage
+        : {
+            id: coverage.id,
+            roles: coverage.roles.map(role => durationOverridesByRoleId.has(role.id)
+                ? { ...role, durationMinutes: durationOverridesByRoleId.get(role.id)! }
+                : role),
+        };
     const slots = capacity.usableWindows.map(window => ({ ...window, used: false }));
     const packed: MutableOccurrence[] = [];
     const shortfalls: PackingWarning[] = [];
@@ -146,7 +162,7 @@ export function packWeeklyDose(
      * the best dose each individual window can actually host instead of assuming the role's
      * globally best per-session dose fits every window. */
     const sessionsNeededFor = (requirement: AdaptationDoseRequirement): number => {
-        const candidates = coverage.roles.filter(role =>
+        const candidates = effectiveCoverage.roles.filter(role =>
             role.adaptations.includes(requirement.adaptation)
             && permittedWorkoutIds(role, requirement).length > 0,
         );
@@ -176,7 +192,7 @@ export function packWeeklyDose(
     };
 
     for (const requirement of requirements) {
-        const adaptationCandidates = coverage.roles.filter(role => role.adaptations.includes(requirement.adaptation));
+        const adaptationCandidates = effectiveCoverage.roles.filter(role => role.adaptations.includes(requirement.adaptation));
         const permittedByRole = new Map<CoverageRoleDescriptor, string[]>();
         for (const role of adaptationCandidates) {
             const permitted = permittedWorkoutIds(role, requirement);
