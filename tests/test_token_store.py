@@ -28,7 +28,9 @@ def test_local_token_store_persist_returns_false_when_source_missing(tmp_path: P
     assert store.persist(tmp_path / "missing.json") is False
 
 
-def test_chmod_secure_raises_when_unsupported(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chmod_secure_raises_when_unsupported(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from garmin_sync.token_store import _chmod_secure
 
     target = tmp_path / "test.txt"
@@ -42,7 +44,9 @@ def test_chmod_secure_raises_when_unsupported(tmp_path: Path, monkeypatch: pytes
         _chmod_secure(target, 0o600)
 
 
-def test_chmod_secure_raises_on_open_oserror(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_chmod_secure_raises_on_open_oserror(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from garmin_sync.token_store import _chmod_secure
 
     target = tmp_path / "test.txt"
@@ -60,7 +64,9 @@ def test_chmod_secure_raises_on_open_oserror(tmp_path: Path, monkeypatch: pytest
         _chmod_secure(target, 0o600)
 
 
-def test_set_secure_permissions_propagates_exception(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_set_secure_permissions_propagates_exception(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     from garmin_sync.token_store import _set_secure_permissions
 
     target = tmp_path / "subdir" / "tokens.json"

@@ -40,9 +40,7 @@ def _chmod_secure(path: Path, mode: int) -> None:
             finally:
                 os.close(fd)
         except OSError as exc:
-            raise RuntimeError(
-                f"Failed to set secure permissions on '{path}': {exc}"
-            ) from exc
+            raise RuntimeError(f"Failed to set secure permissions on '{path}': {exc}") from exc
 
     raise RuntimeError(
         f"Secure file permission setting (fchmod/O_NOFOLLOW or follow_symlinks=False) "
