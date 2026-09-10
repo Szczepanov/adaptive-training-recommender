@@ -1,4 +1,5 @@
 from dataclasses import FrozenInstanceError
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -7,13 +8,20 @@ from garmin_sync.canonical import (
     CanonicalDailyMetrics,
     CanonicalPerformanceTargets,
 )
+from garmin_sync.eight_sleep_provider import EightSleepDirectProvider
+from garmin_sync.garmin_provider import GarminProviderAdapter
+from garmin_sync.google_health_provider import GoogleHealthProvider
 from garmin_sync.provider import (
+    ActivityProvider,
+    ProfileProvider,
     ProviderActivitiesResult,
     ProviderActivityDetailResult,
     ProviderCapabilities,
     ProviderFetchResult,
     ProviderGearResult,
     ProviderPerformanceTargetsResult,
+    RecoveryObservationProvider,
+    WearableProvider,
 )
 
 
@@ -136,3 +144,47 @@ def test_provider_gear_result_instantiation() -> None:
 
     assert result.canonical == []
     assert result.raw_payloads == {}
+
+
+def test_garmin_provider_adapter_runtime_protocol_conformance() -> None:
+    mock_client = MagicMock()
+    adapter = GarminProviderAdapter(mock_client)
+
+    # GarminProviderAdapter must satisfy ProfileProvider, WearableProvider, ActivityProvider
+    assert isinstance(adapter, ProfileProvider)
+    assert isinstance(adapter, WearableProvider)
+    assert isinstance(adapter, ActivityProvider)
+    assert not isinstance(adapter, RecoveryObservationProvider)
+
+
+def test_eight_sleep_provider_runtime_protocol_conformance() -> None:
+    mock_client = MagicMock()
+    provider = EightSleepDirectProvider(mock_client)
+
+    # EightSleepDirectProvider satisfies RecoveryObservationProvider, but not ProfileProvider or WearableProvider
+    assert isinstance(provider, RecoveryObservationProvider)
+    assert not isinstance(provider, ProfileProvider)
+    assert not isinstance(provider, WearableProvider)
+
+
+def test_google_health_provider_runtime_protocol_conformance() -> None:
+    mock_client = MagicMock()
+    mock_mapper = MagicMock()
+    provider = GoogleHealthProvider(client=mock_client, mapper=mock_mapper)
+
+    # GoogleHealthProvider satisfies RecoveryObservationProvider, but not ProfileProvider or WearableProvider
+    assert isinstance(provider, RecoveryObservationProvider)
+    assert not isinstance(provider, ProfileProvider)
+    assert not isinstance(provider, WearableProvider)
+
+
+def test_runtime_checkable_protocol_rejections() -> None:
+    class IncompleteProfileProvider:
+        def fetch_performance_targets(self) -> ProviderPerformanceTargetsResult:
+            raise NotImplementedError
+
+    incomplete = IncompleteProfileProvider()
+    assert not isinstance(incomplete, ProfileProvider)
+    assert not isinstance(incomplete, WearableProvider)
+    assert not isinstance(incomplete, ActivityProvider)
+    assert not isinstance(incomplete, RecoveryObservationProvider)
