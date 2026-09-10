@@ -151,3 +151,51 @@ def test_create_archive_store_gcs_requires_bucket() -> None:
 
     with pytest.raises(ValueError, match="bucket"):
         create_archive_store(enabled=True, store_type="gcs", bucket_name=None)
+
+
+def test_local_archive_handles_corrupt_meta_json(tmp_path: Path) -> None:
+    store = LocalRawArchiveStore(base_dir=tmp_path)
+    payload = {"restingHeartRate": 50}
+
+    # First archive creates valid metadata
+    first = store.archive(ArchiveRecord("stats", "2026-08-06", payload, "run-1", "0.3.8"))
+    assert first is not None
+
+    # Corrupt the meta file
+    target_dir = store._dir("stats", "2026-08-06")
+    meta_file = target_dir / "run-1.meta.json"
+    meta_file.write_text("invalid json {")
+
+    # Second archive should handle the JSONDecodeError gracefully and complete archive
+    second = store.archive(ArchiveRecord("stats", "2026-08-06", payload, "run-2", "0.3.8"))
+    assert second is not None
+
+
+def test_local_archive_health_handles_corrupt_meta_json(tmp_path: Path) -> None:
+    store = LocalRawArchiveStore(base_dir=tmp_path)
+    record1 = HealthArchiveRecord(
+        user_id="user123",
+        provider="google_health",
+        transport="bundle",
+        logical_date="2026-08-07",
+        payload=[{"metric": "sleep_duration_seconds", "value": 27000}],
+        revision=1,
+    )
+
+    first = store.archive_health(record1)
+    assert first is not None
+
+    target_dir = Path(first).parent
+    meta_file = target_dir / "rev_1.meta.json"
+    meta_file.write_text("invalid json {")
+
+    record2 = HealthArchiveRecord(
+        user_id="user123",
+        provider="google_health",
+        transport="bundle",
+        logical_date="2026-08-07",
+        payload=[{"metric": "sleep_duration_seconds", "value": 27000}],
+        revision=2,
+    )
+    second = store.archive_health(record2)
+    assert second is not None

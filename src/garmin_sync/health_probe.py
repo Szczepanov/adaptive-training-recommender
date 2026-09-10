@@ -10,7 +10,11 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime, timezone
 from typing import Any
 
-from .google_health_client import GoogleHealthAccountNotLinkedError, GoogleHealthClient
+from .google_health_client import (
+    GoogleHealthAccountNotLinkedError,
+    GoogleHealthClient,
+    GoogleHealthError,
+)
 from .google_health_mapper import resolve_provider_from_package
 
 logger = logging.getLogger(__name__)
@@ -120,7 +124,7 @@ class HealthProvenanceProbe:
                     notes.append(
                         f"ACCOUNT_NOT_LINKED: Google account has not completed Google Health onboarding. Complete setup at: {e.redirect_uri or 'https://fitbit.google.com/auth/signup'}"
                     )
-            except Exception as e:
+            except GoogleHealthError as e:
                 logger.warning("Probe query failed for %s: %s", dtype, e)
                 notes.append(f"Query failed for {dtype}: {e}")
 

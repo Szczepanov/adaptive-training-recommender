@@ -14,7 +14,7 @@ import type { SessionTemplate, EvidenceTier, NormalizedGarminActivity, Completed
 import type { CoverageSetId, PlanCoverageKey, CoverageSetDescriptor } from '../workouts/event-plan';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { workoutForTemplate } from '../workouts/prescription';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import type { PerformedTrainingOccurrence } from '../training-occurrence/models';
 import { getLocalDateString } from '../utils/localDate';
 import { classifyGarminTier } from './completedTraining';
@@ -213,7 +213,7 @@ export function deriveFactsFromOccurrence(
 
     const workoutId = hydrated.structured?.workoutId;
     const explicitTemplate = hydrated.structured?.templateId
-        ? ENRICHED_TEMPLATES.find(template => template.id === hydrated.structured?.templateId)
+        ? ENRICHED_TEMPLATES_BY_ID.get(hydrated.structured?.templateId)
         : undefined;
     const templateId = hydrated.structured?.templateId ?? (workoutId ? templateIdForWorkoutId(workoutId) : undefined);
     const category = normalizeCategory(

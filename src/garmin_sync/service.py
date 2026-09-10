@@ -121,7 +121,7 @@ class GarminSyncService:
         )
         try:
             self.garminconnect_version: str | None = importlib.metadata.version("garminconnect")
-        except Exception:
+        except importlib.metadata.PackageNotFoundError:
             self.garminconnect_version = None
 
     def _init_garmin_client(self) -> GarminClientWrapper:
@@ -542,6 +542,7 @@ class GarminSyncService:
         except Exception as e:
             # Performance targets enrich prescription but are never allowed to make a
             # recovery snapshot fail after its core data was safely persisted.
+            # Intentionally non-fatal: catch all standard exceptions from provider/repository/token_store.
             logger.warning(
                 f"[{target_iso}] Garmin performance-target import failed, continuing: {e}"
             )
@@ -562,6 +563,7 @@ class GarminSyncService:
             persist_gear(result.canonical)
             self.token_store.persist(self.token_file_path)
         except Exception as e:
+            # Best-effort gear import is deliberately non-fatal to allow recovery sync completion.
             logger.warning(f"[{target_iso}] Garmin gear import failed, continuing: {e}")
 
     def sync_daily(

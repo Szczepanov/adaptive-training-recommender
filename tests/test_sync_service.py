@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
@@ -1591,3 +1592,50 @@ def test_sync_service_builds_target_snapshot_after_lookback_dates_are_corrected(
     # Target's 7d baseline -- (60 + 50 + 50 + 50) / 4 -- used the corrected D-1 value
     # because D-1 was rebuilt and stored before the target snapshot was.
     assert repo.snapshots["2026-08-06"]["derived"]["restingHr7dAvg"] == 52.5
+
+
+def test_sync_current_performance_targets_handles_exception(caplog):
+    settings = Settings(app_user_id="test_uid_789")
+    repo = MagicMock()
+    failing_provider = FakeTestProvider()
+    failing_provider.fetch_performance_targets = MagicMock(side_effect=RuntimeError("API error"))  # type: ignore[attr-defined]
+
+    service = GarminSyncService(settings=settings, repository=repo, provider=failing_provider)
+    with caplog.at_level(logging.WARNING):
+        service._sync_current_performance_targets("2026-08-06")
+
+    assert "Garmin performance-target import failed, continuing: API error" in caplog.text
+
+
+def test_sync_current_gear_handles_exception(caplog):
+    settings = Settings(app_user_id="test_uid_789")
+    repo = MagicMock()
+    failing_provider = FakeTestProvider()
+    failing_provider.fetch_gear = MagicMock(side_effect=RuntimeError("Gear API error"))  # type: ignore[attr-defined]
+
+    service = GarminSyncService(settings=settings, repository=repo, provider=failing_provider)
+    with caplog.at_level(logging.WARNING):
+        service._sync_current_gear("2026-08-06")
+
+    assert "Garmin gear import failed, continuing: Gear API error" in caplog.text
+
+
+def test_garminconnect_version_initialization(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.metadata
+
+    settings = Settings(app_user_id="test_uid_version")
+
+    # Case 1: garminconnect package version available
+    monkeypatch.setattr(
+        "importlib.metadata.version", lambda pkg: "0.2.1" if pkg == "garminconnect" else "0.0.0"
+    )
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=None))
+    assert service.garminconnect_version == "0.2.1"
+
+    # Case 2: PackageNotFoundError raised when retrieving version
+    def mock_version_not_found(pkg: str) -> str:
+        raise importlib.metadata.PackageNotFoundError(pkg)
+
+    monkeypatch.setattr("importlib.metadata.version", mock_version_not_found)
+    service_missing = GarminSyncService(settings=settings, repository=MagicMock(db=None))
+    assert service_missing.garminconnect_version is None

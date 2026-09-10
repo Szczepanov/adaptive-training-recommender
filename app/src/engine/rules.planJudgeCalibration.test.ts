@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { evaluateEnvelopes, evaluateReadinessAndSafetyEnvelope, evaluateTrainingWithIntent } from './rules';
 import { evaluateRecoveryConstraints, rankCandidates } from './optimizer';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import type { DailyReadiness, EngineObjectiveInput, FatigueState, SubjectiveInput, UserContext, UserEvent, UserPreferences } from './models';
 import type { ResolvedAvailability } from './schedule';
 import type { TrainingHistoryProvider } from './trainingHistory';
@@ -311,7 +311,7 @@ describe('plan-judge calibration policy guards', () => {
     });
 
     it('modulates Priority B event race-specific session benefits when 1 is already in recent history', () => {
-        const critSurgeTemplate = ENRICHED_TEMPLATES.find(t => t.id === 'end_crit_surges_01')!;
+        const critSurgeTemplate = ENRICHED_TEMPLATES_BY_ID.get('end_crit_surges_01')!;
         const focusEventB: UserEvent = {
             id: 'race-b',
             title: 'Local Crit',
@@ -367,7 +367,7 @@ describe('plan-judge calibration policy guards', () => {
     });
 
     it('boosts upper-body and core strength sessions when lower-body guardrail is active', () => {
-        const upperStrengthTemplate = ENRICHED_TEMPLATES.find(t => t.id === 'str_upper_01' || t.category === 'Upper-body Strength')!;
+        const upperStrengthTemplate = (ENRICHED_TEMPLATES_BY_ID.get('str_upper_01') ?? ENRICHED_TEMPLATES.find(t => t.category === 'Upper-body Strength'))!;
         const result = rankCandidates(
             [upperStrengthTemplate],
             [{ id: 'obj-str', key: 'strength_maintenance', title: 'Strength Maintenance', targetExposures: 2, completedExposures: 0, targetStimulus: { maxStrength: 0.8 } }],
