@@ -1,6 +1,9 @@
 from unittest.mock import MagicMock
 
-from garmin_sync.google_health_client import GoogleHealthClient
+from garmin_sync.google_health_client import (
+    GoogleHealthAccountNotLinkedError,
+    GoogleHealthClient,
+)
 from garmin_sync.health_probe import HealthProvenanceProbe
 
 
@@ -66,3 +69,43 @@ def test_health_provenance_probe_eight_sleep_fail():
 
     assert result.garminStatus == "PRESENT"
     assert result.eightSleepStatus == "FAIL"
+
+
+def test_health_provenance_probe_account_not_linked_error():
+    mock_client = MagicMock(spec=GoogleHealthClient)
+    mock_client.list_data_points.side_effect = GoogleHealthAccountNotLinkedError(
+        "Account not linked", redirect_uri="https://custom.redirect.uri/auth"
+    )
+
+    probe = HealthProvenanceProbe(client=mock_client)
+    result = probe.run_probe()
+
+    assert any(
+        "ACCOUNT_NOT_LINKED" in note and "https://custom.redirect.uri/auth" in note
+        for note in result.notes
+    )
+
+
+def test_health_provenance_probe_account_not_linked_error_default_redirect():
+    mock_client = MagicMock(spec=GoogleHealthClient)
+    mock_client.list_data_points.side_effect = GoogleHealthAccountNotLinkedError(
+        "Account not linked", redirect_uri=None
+    )
+
+    probe = HealthProvenanceProbe(client=mock_client)
+    result = probe.run_probe()
+
+    assert any(
+        "ACCOUNT_NOT_LINKED" in note and "https://fitbit.google.com/auth/signup" in note
+        for note in result.notes
+    )
+
+
+def test_health_provenance_probe_generic_exception():
+    mock_client = MagicMock(spec=GoogleHealthClient)
+    mock_client.list_data_points.side_effect = RuntimeError("API connection timeout")
+
+    probe = HealthProvenanceProbe(client=mock_client)
+    result = probe.run_probe()
+
+    assert any("Query failed for sleep: API connection timeout" in note for note in result.notes)
