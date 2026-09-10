@@ -135,7 +135,7 @@ describe('confirmed progression execution authority', () => {
 
         expect(workoutForTemplate(rec.template.id)?.id).toBe(PROGRESSED_WORKOUT_ID);
         expect(rec.activeDose).toEqual(expect.objectContaining({ durationMin: 70, durationMax: 70 }));
-        expect(rec.rationale).toContain('confirmed progression');
+        expect(rec.rationale).toContain('Use the confirmed 70-minute progression dose');
     });
 
     it('keeps a smaller time-cap dose authoritative over a selected confirmed progression', async () => {
@@ -147,6 +147,7 @@ describe('confirmed progression execution authority', () => {
         expect(workoutForTemplate(rec.template.id)?.id).toBe(PROGRESSED_WORKOUT_ID);
         expect(rec.activeDose?.durationMin).not.toBe(70);
         expect(rec.activeDose?.durationMax).toBeLessThanOrEqual(45);
-        expect(rec.rationale).toContain('could not be applied because today’s safety/readiness/time ceiling is lower');
+        expect(rec.rationale).toContain('The confirmed progression remains the authored target');
+        expect(rec.rationale).toContain('today’s readiness/time ceiling is lower');
     });
 });
