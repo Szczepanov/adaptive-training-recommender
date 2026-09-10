@@ -583,9 +583,7 @@ def _process_block_step(
         # Strength has its own sets/reps/rest semantics and is
         # handled by a dedicated builder rather than the
         # endurance repeat-group cases below.
-        garmin_step, step_order = _build_strength_step_or_group(
-            step, step_order, default_step_type
-        )
+        garmin_step, step_order = _build_strength_step_or_group(step, step_order, default_step_type)
         workout_steps.append(garmin_step)
         return step_order
 
@@ -662,9 +660,7 @@ def _process_block_step(
 
     # Case C: Sequential execution
     else:
-        main_dto, rest_dto = _build_step_dto(
-            step, step_order, default_step_type, modality, ftp=ftp
-        )
+        main_dto, rest_dto = _build_step_dto(step, step_order, default_step_type, modality, ftp=ftp)
         workout_steps.append(main_dto)
         step_order += 1
         if rest_dto:
