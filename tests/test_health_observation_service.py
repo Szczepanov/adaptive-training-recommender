@@ -405,7 +405,9 @@ def test_health_observation_service_archive_success_updates_raw_archive_ref() ->
     )
 
     mock_archive_store = MagicMock(spec=RawArchiveStore)
-    mock_archive_store.archive_health.return_value = "gs://my-bucket/raw/health/test_uid/rev_1.json.gz"
+    mock_archive_store.archive_health.return_value = (
+        "gs://my-bucket/raw/health/test_uid/rev_1.json.gz"
+    )
     service = HealthObservationService(
         user_id="test_uid",
         repository=mock_repo,
