@@ -45,3 +45,26 @@ def test_provider_propagates_failure() -> None:
     p = EightSleepDirectProvider(FakeClient(error=EightSleepApiError("down")))  # type: ignore[arg-type]
     with pytest.raises(EightSleepApiError):
         p.fetch_observations("2026-08-28", "2026-08-27")
+
+
+def test_clear_cache_clears_internal_cache_and_invokes_client_clear_token() -> None:
+    c = FakeClient(
+        {
+            "days": [
+                {
+                    "day": "2026-08-28",
+                    "presenceStart": "2026-08-27T22:00:00+02:00",
+                    "sleepDurationSeconds": 27000,
+                }
+            ]
+        }
+    )
+    p = EightSleepDirectProvider(c)  # type: ignore[arg-type]
+    p.fetch_observations("2026-08-28", "2026-08-27")
+    assert "2026-08-28" in p._cache
+
+    p.clear_cache()
+
+    assert "2026-08-28" not in p._cache
+    assert len(p._cache) == 0
+    assert c.cleared == 1
