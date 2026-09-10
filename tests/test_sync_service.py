@@ -1,3 +1,4 @@
+import logging
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock
 
@@ -1591,6 +1592,32 @@ def test_sync_service_builds_target_snapshot_after_lookback_dates_are_corrected(
     # Target's 7d baseline -- (60 + 50 + 50 + 50) / 4 -- used the corrected D-1 value
     # because D-1 was rebuilt and stored before the target snapshot was.
     assert repo.snapshots["2026-08-06"]["derived"]["restingHr7dAvg"] == 52.5
+
+
+def test_sync_current_performance_targets_handles_exception(caplog):
+    settings = Settings(app_user_id="test_uid_789")
+    repo = MagicMock()
+    failing_provider = FakeTestProvider()
+    failing_provider.fetch_performance_targets = MagicMock(side_effect=RuntimeError("API error"))  # type: ignore[attr-defined]
+
+    service = GarminSyncService(settings=settings, repository=repo, provider=failing_provider)
+    with caplog.at_level(logging.WARNING):
+        service._sync_current_performance_targets("2026-08-06")
+
+    assert "Garmin performance-target import failed, continuing: API error" in caplog.text
+
+
+def test_sync_current_gear_handles_exception(caplog):
+    settings = Settings(app_user_id="test_uid_789")
+    repo = MagicMock()
+    failing_provider = FakeTestProvider()
+    failing_provider.fetch_gear = MagicMock(side_effect=RuntimeError("Gear API error"))  # type: ignore[attr-defined]
+
+    service = GarminSyncService(settings=settings, repository=repo, provider=failing_provider)
+    with caplog.at_level(logging.WARNING):
+        service._sync_current_gear("2026-08-06")
+
+    assert "Garmin gear import failed, continuing: Gear API error" in caplog.text
 
 
 def test_garminconnect_version_initialization(monkeypatch: pytest.MonkeyPatch) -> None:
