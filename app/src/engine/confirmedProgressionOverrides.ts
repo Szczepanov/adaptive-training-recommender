@@ -1,48 +1,61 @@
 /**
  * ADR-0037 D-DOSE: translates confirmed `IntentBlock` progression revisions (H5c,
- * `services/progressionClaimService.ts`) into per-role duration overrides for evergreen
- * weekly dose packing (`weeklyDosePacking.ts`).
+ * `services/progressionClaimService.ts`) into exact-workout-scoped duration overrides for
+ * evergreen weekly dose packing (`weeklyDosePacking.ts`).
  *
- * `BlockObjectiveDefinition.coverageKey` (`blockIntent.ts`) already binds an objective to a
- * concrete coverage role, using the same `PlanCoverageKey` vocabulary
- * `EVERGREEN_PACKING_COVERAGE` uses to bind a role to an `AdaptationKey` -- there is no
- * separate `ObjectiveKey -> AdaptationKey` table to maintain here. The real constraint is
- * that `EVERGREEN_PACKING_COVERAGE` only defines roles for 3 of the 18 `PlanCoverageKey`s.
- * A confirmed progression bound to any other coverage key has no role to attach to in
- * evergreen packing yet, so it is reported as `unsupported` rather than silently dropped --
- * a decision-affecting change must fail visibly, never invisibly (CLAUDE.md I5).
+ * `BlockObjectiveDefinition.coverageKey` already binds an objective to the same
+ * `PlanCoverageKey` vocabulary used by evergreen packing. That is necessary, but not
+ * sufficient: ADR-0037 also makes objective sport plus optional session/step bindings part
+ * of prescription authority. Collapsing those facts to only `coverageKey -> minutes` can
+ * accidentally apply a cycling progression to a running substitute, or a session-specific
+ * progression to every workout in a role. This module therefore retains exact catalog
+ * workout identity in the map key (`<coverageRoleId>::<workoutId>`).
  *
- * `requirement.floor`/`requirement.target` (the WHO-guideline numbers in
- * `evergreenStrategy.ts`) are one level above `CoverageRoleDescriptor.durationMinutes` and
- * are never touched here -- overriding a role's assumed per-session minutes never lowers or
- * bypasses a guideline floor.
- *
- * `develop` vs `maintain` needs no special-casing here: that distinction lives entirely in
- * `progressionReview.ts` (H5b), which governs how `currentValue` is proposed to move over
- * time. This module only ever consumes whatever the currently-confirmed value is.
+ * `requirement.floor`/`requirement.target` (the guideline/product-policy numbers in
+ * `evergreenStrategy.ts`) remain one level above this adapter and are never modified.
  */
 
-import type { BlockObjectiveDefinition, BlockProgressionContract, IntentBlock } from './blockIntent';
+import type {
+    BlockObjectiveDefinition,
+    BlockProgressionContract,
+    BlockSport,
+    IntentBlock,
+} from './blockIntent';
 import { EVERGREEN_PACKING_COVERAGE } from './weeklyDosePacking';
-import type { ObjectiveKey } from './models';
+import type { DoseVariation, ObjectiveKey, SessionTemplate } from './models';
 import type { PlanCoverageKey } from '../workouts/event-plan';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
+import { workoutForTemplate } from '../workouts/prescription';
 
-/** Derived, not hardcoded, so it can never drift out of sync with the roles the packer
- * actually iterates over. Every `EVERGREEN_PACKING_COVERAGE` role's `id` today is identical
- * to its `PlanCoverageKey`. */
+/** Derived, not hardcoded, so it cannot drift from the roles the packer actually iterates. */
 export const SELECTION_WIRED_COVERAGE_KEYS: readonly PlanCoverageKey[] =
     EVERGREEN_PACKING_COVERAGE.roles.map(role => role.id as PlanCoverageKey);
+
+export type UnsupportedProgressionReason =
+    | 'coverage_not_wired'
+    | 'no_exact_prescription_target'
+    | 'ambiguous_active_role_progression';
 
 export interface UnsupportedProgressionObjective {
     blockId: string;
     objectiveId: string;
     coverageKey: PlanCoverageKey;
     adaptationScope: ObjectiveKey;
+    reason?: UnsupportedProgressionReason;
 }
 
 export interface DerivedProgressionOverrides {
-    overrides: ReadonlyMap<PlanCoverageKey, number>;
+    /**
+     * Production derivation uses exact scoped keys (`role::workoutId`). `packWeeklyDose`
+     * intentionally still accepts a legacy direct role key for deterministic unit tests and
+     * backwards-compatible injected callers.
+     */
+    overrides: ReadonlyMap<string, number>;
     unsupported: readonly UnsupportedProgressionObjective[];
+}
+
+export function progressionOverrideKey(coverageRoleId: string, workoutId: string): string {
+    return `${coverageRoleId}::${workoutId}`;
 }
 
 function isActiveOn(block: IntentBlock, date: string): boolean {
@@ -53,17 +66,23 @@ function findBoundObjective(block: IntentBlock, objectiveId: string): BlockObjec
     return block.objectives.find(objective => objective.id === objectiveId) ?? null;
 }
 
+function roleFor(coverageKey: PlanCoverageKey) {
+    return EVERGREEN_PACKING_COVERAGE.roles.find(role => role.id === coverageKey) ?? null;
+}
+
 function isWiredCoverageKey(coverageKey: PlanCoverageKey): boolean {
     return SELECTION_WIRED_COVERAGE_KEYS.includes(coverageKey);
 }
 
+function workoutModalityMatchesSport(modality: string, sport: BlockSport): boolean {
+    if (sport === 'multisport') return true;
+    return modality === sport;
+}
+
 /**
- * Defense-in-depth only: `validateProgressionContract` already enforces `currentValue`
- * against `permittedRange` at author/confirm/read time. The objective dose envelope is a
- * second bound only when it uses the *same unit* as the progression variable. ADR-0037
- * deliberately allows an objective to be expressed in (for example) sessions while the
- * one registered progression variable changes per-session duration in minutes; clamping a
- * minute value against a session-count envelope would be a unit error.
+ * Defense-in-depth only: persisted blocks are already validated. The objective envelope is
+ * a second numeric bound only when it uses the same unit as the progression variable; an
+ * objective may validly be expressed in sessions while `duration_min` remains minutes.
  */
 function clampConfirmedDuration(
     contract: BlockProgressionContract,
@@ -77,9 +96,6 @@ function clampConfirmedDuration(
         upper = Math.min(upper, objective.doseEnvelope.max);
     }
 
-    // A validated block cannot produce an inverted intersection. Keep this helper total for
-    // defense-in-depth callers nevertheless: fall back to the progression contract's own
-    // validated range instead of inventing a cross-unit/objective bound.
     if (lower > upper) {
         lower = contract.permittedRange.min;
         upper = contract.permittedRange.max;
@@ -88,13 +104,94 @@ function clampConfirmedDuration(
     return Math.min(upper, Math.max(lower, contract.currentValue));
 }
 
-/** Pure. No Firestore, no `Date.now()` -- `blocks` and `date` are both caller-supplied. */
+function exactWorkoutTargets(
+    objective: BlockObjectiveDefinition,
+    contract: BlockProgressionContract,
+): string[] {
+    const role = roleFor(objective.coverageKey);
+    if (!role) return [];
+    const duration = clampConfirmedDuration(contract, objective);
+    const { sessionId, stepId } = contract.targetBinding;
+
+    return role.exactWorkoutIds.filter(workoutId => {
+        const workout = WORKOUTS_BY_ID.get(workoutId);
+        if (!workout || workout.status !== 'active') return false;
+        if (!workoutModalityMatchesSport(workout.modality, objective.sport)) return false;
+        // In generated evergreen planning, a session binding can only be honored without
+        // guessing when it names the exact catalog workout identity used by coverage.
+        if (sessionId && sessionId !== workoutId) return false;
+        if (stepId && !workout.blocks.some(block => block.steps.some(step => step.id === stepId))) return false;
+        // A confirmed authored target that no exact prescription can physically represent
+        // must not be credited merely as accounting metadata.
+        if (duration < workout.duration.minimumMin || duration > workout.duration.maximumMin) return false;
+        return true;
+    });
+}
+
+export function progressionSelectionUnsupportedReason(
+    block: IntentBlock | null | undefined,
+): UnsupportedProgressionReason | null {
+    const contract = block?.progressionContract;
+    if (!block || !contract) return null;
+    const objective = findBoundObjective(block, contract.targetBinding.objectiveId);
+    if (!objective) return null;
+    if (!isWiredCoverageKey(objective.coverageKey)) return 'coverage_not_wired';
+    if (contract.variable !== 'duration_min' || contract.unit !== 'minutes') return 'no_exact_prescription_target';
+    return exactWorkoutTargets(objective, contract).length > 0 ? null : 'no_exact_prescription_target';
+}
+
+/**
+ * Returns an executable dose only when the selected template resolves to one of the exact
+ * workout identities authorized by the progression override. Runtime availability/safety
+ * still decides whether callers actually use this dose on a given date.
+ */
+export function progressionDoseForTemplate(
+    template: SessionTemplate,
+    overrides: ReadonlyMap<string, number>,
+): DoseVariation | null {
+    const workout = workoutForTemplate(template.id);
+    if (!workout) return null;
+    const role = EVERGREEN_PACKING_COVERAGE.roles.find(item => item.exactWorkoutIds.includes(workout.id));
+    if (!role) return null;
+    const duration = overrides.get(progressionOverrideKey(role.id, workout.id)) ?? overrides.get(role.id);
+    if (duration === undefined || !Number.isFinite(duration)) return null;
+    if (duration < workout.duration.minimumMin || duration > workout.duration.maximumMin) return null;
+    const fullDuration = workout.variants.find(variant => variant.id === 'full')?.targetDurationMin
+        ?? workout.duration.defaultMin
+        ?? template.durationMin;
+    const doseRatio = fullDuration > 0 ? duration / fullDuration : 1;
+    return {
+        label: `Confirmed progression · ${duration} min`,
+        durationMin: duration,
+        durationMax: duration,
+        doseRatio,
+        prescriptionSummary: `Use the confirmed ${duration}-minute progression dose for ${workout.name}.`,
+    };
+}
+
+function unsupportedEntry(
+    block: IntentBlock,
+    objective: BlockObjectiveDefinition,
+    reason: UnsupportedProgressionReason,
+): UnsupportedProgressionObjective {
+    return {
+        blockId: block.id,
+        objectiveId: objective.id,
+        coverageKey: objective.coverageKey,
+        adaptationScope: objective.adaptationScope,
+        reason,
+    };
+}
+
+/** Pure. No Firestore, no `Date.now()` -- `blocks` and `date` are caller-supplied. */
 export function deriveDurationOverridesForDate(
     blocks: readonly IntentBlock[],
     date: string,
 ): DerivedProgressionOverrides {
-    const overrides = new Map<PlanCoverageKey, number>();
+    const overrides = new Map<string, number>();
     const unsupported: UnsupportedProgressionObjective[] = [];
+    const claimedRoles = new Map<string, { block: IntentBlock; objective: BlockObjectiveDefinition; keys: string[] }>();
+    const conflictedRoles = new Set<string>();
 
     const activeWithContract = blocks
         .filter(block => block.progressionContract && isActiveOn(block, date))
@@ -105,29 +202,31 @@ export function deriveDurationOverridesForDate(
         const objective = findBoundObjective(block, contract.targetBinding.objectiveId);
         if (!objective) continue;
 
-        if (!isWiredCoverageKey(objective.coverageKey)) {
-            unsupported.push({
-                blockId: block.id,
-                objectiveId: objective.id,
-                coverageKey: objective.coverageKey,
-                adaptationScope: objective.adaptationScope,
-            });
+        const reason = progressionSelectionUnsupportedReason(block);
+        if (reason) {
+            unsupported.push(unsupportedEntry(block, objective, reason));
             continue;
         }
 
-        // The persisted service revalidates this before returning a block, but keep the
-        // selection boundary fail-closed if a non-service caller supplies malformed runtime
-        // data. `duration_min` is the only registered variable and it is minute-valued.
-        if (contract.variable !== 'duration_min' || contract.unit !== 'minutes') continue;
+        const roleId = objective.coverageKey;
+        if (conflictedRoles.has(roleId)) {
+            unsupported.push(unsupportedEntry(block, objective, 'ambiguous_active_role_progression'));
+            continue;
+        }
+        const prior = claimedRoles.get(roleId);
+        if (prior) {
+            prior.keys.forEach(key => overrides.delete(key));
+            unsupported.push(unsupportedEntry(prior.block, prior.objective, 'ambiguous_active_role_progression'));
+            unsupported.push(unsupportedEntry(block, objective, 'ambiguous_active_role_progression'));
+            claimedRoles.delete(roleId);
+            conflictedRoles.add(roleId);
+            continue;
+        }
 
-        // Deterministic collision handling: an athlete is expected to have at most one
-        // active block per objective coverage key. If two collide, the lexicographically
-        // first blockId wins (stable given the sort above) and the loser is dropped from
-        // selection without erroring -- a pre-existing data-modeling edge case, not
-        // something this module needs to arbitrate further.
-        if (overrides.has(objective.coverageKey)) continue;
-
-        overrides.set(objective.coverageKey, clampConfirmedDuration(contract, objective));
+        const duration = clampConfirmedDuration(contract, objective);
+        const keys = exactWorkoutTargets(objective, contract).map(workoutId => progressionOverrideKey(roleId, workoutId));
+        keys.forEach(key => overrides.set(key, duration));
+        claimedRoles.set(roleId, { block, objective, keys });
     }
 
     return { overrides, unsupported };
