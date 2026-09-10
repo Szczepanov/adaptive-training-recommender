@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { EvidenceBackedStrategy } from './evergreenStrategy';
 import { packWeeklyDose, type CoverageSetDescriptor } from './weeklyDosePacking';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
+import { progressionOverrideKey } from './progressionOverrideKey';
 
 const healthStrategy: EvidenceBackedStrategy = {
     requirements: [{
@@ -107,10 +108,6 @@ describe('weekly dose packing', () => {
     });
 
     it('splits a shared required-tier ceiling fairly across peers instead of letting the first one exhaust it', () => {
-        // Regression for the former-elite-return persona: 'endurance' and 'strength_muscle'
-        // both resolve to 'required' priority (see evergreenStrategy.ts), and previously the
-        // first requirement processed (aerobic) claimed the whole minSessions ceiling,
-        // leaving strength — a second 'required' requirement — with zero packed sessions.
         const strategy: EvidenceBackedStrategy = {
             requirements: [
                 { ...healthStrategy.requirements[0], target: { unit: 'minutes', minimum: 150, target: 150, maximum: 300 } },
@@ -278,11 +275,69 @@ describe('weekly dose packing', () => {
         it('never changes the requirement-level guideline floor/target, only the role\'s per-session credit', () => {
             const wideWindows = capacity(200, 1);
             const budget = packWeeklyDose(healthStrategy, wideWindows, coverage, new Map([['aerobic-ride', 200]]));
-            // A single 200-minute session now fully covers the 150-minute floor -- but the
-            // floor value itself (from `strategy.requirements[0].floor`) is untouched; only
-            // the role's delivered-dose credit changed.
             expect(budget.requirements[0].floor?.dose.value).toBe(150);
             expect(budget.shortfalls).toEqual([]);
+        });
+
+        it('keeps an exact progression on its confirmed workout instead of transferring it to cross-modal substitutes', () => {
+            const multiModalStrategy: EvidenceBackedStrategy = {
+                ...healthStrategy,
+                requirements: [{
+                    ...healthStrategy.requirements[0],
+                    floor: { dose: { unit: 'minutes', value: 70 }, semantics: 'goal_required_minimum' },
+                    target: { unit: 'minutes', minimum: 70, target: 70, maximum: 120 },
+                    substitutionPolicy: { equivalentModalitiesAllowed: true, permittedModalities: ['Cycling', 'Running'] },
+                }],
+            };
+            const mixedCoverage: CoverageSetDescriptor = {
+                id: 'mixed-progressed-role',
+                roles: [{
+                    id: 'aerobic', adaptations: ['aerobic_endurance'],
+                    exactWorkoutIds: ['cycling_zone2_standard_01', 'running_easy_continuous_01'],
+                    durationMinutes: 60,
+                }],
+            };
+            const override = new Map([[progressionOverrideKey('aerobic', 'cycling_zone2_standard_01'), 70]]);
+            const budget = packWeeklyDose(multiModalStrategy, capacity(90, 1), mixedCoverage, override);
+
+            expect(budget.requiredRoles).toHaveLength(1);
+            expect(budget.requiredRoles[0].exactWorkoutIds).toEqual(['cycling_zone2_standard_01']);
+            expect(budget.shortfalls).toEqual([]);
+        });
+
+        it('applies a date-derived override only on its effective date inside a multi-day horizon', () => {
+            const scopedStrategy: EvidenceBackedStrategy = {
+                ...healthStrategy,
+                requirements: [{
+                    ...healthStrategy.requirements[0],
+                    floor: { dose: { unit: 'minutes', value: 130 }, semantics: 'goal_required_minimum' },
+                    target: { unit: 'minutes', minimum: 130, target: 130, maximum: 180 },
+                }],
+            };
+            const windows: ResolvedTrainingCapacity = {
+                ...capacity(90, 2),
+                usableWindows: [
+                    { date: '2026-08-10', availableMinutes: 90 },
+                    { date: '2026-08-11', availableMinutes: 90 },
+                ],
+            };
+            const override = new Map([[progressionOverrideKey('aerobic-ride', 'cycling_zone2_standard_01'), 70]]);
+            const global = packWeeklyDose(scopedStrategy, windows, coverage, override);
+            const dateScoped = packWeeklyDose(scopedStrategy, windows, coverage, override, '2026-08-10');
+
+            expect(global.shortfalls).toEqual([]); // 70 + 70
+            expect(dateScoped.shortfalls).toEqual([]); // 70 + baseline 60 = 130
+            const stricter = {
+                ...scopedStrategy,
+                requirements: [{
+                    ...scopedStrategy.requirements[0],
+                    floor: { dose: { unit: 'minutes', value: 140 }, semantics: 'goal_required_minimum' as const },
+                    target: { unit: 'minutes' as const, minimum: 140, target: 140, maximum: 180 },
+                }],
+            };
+            expect(packWeeklyDose(stricter, windows, coverage, override).shortfalls).toEqual([]);
+            expect(packWeeklyDose(stricter, windows, coverage, override, '2026-08-10').shortfalls)
+                .toEqual([expect.objectContaining({ code: 'goal_requirement_shortfall', message: expect.stringContaining('130') })]);
         });
     });
 });

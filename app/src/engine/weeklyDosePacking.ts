@@ -76,6 +76,13 @@ interface MutableOccurrence extends PackedRoleOccurrence {
     descriptor: CoverageRoleDescriptor;
 }
 
+interface EligibleCandidate {
+    role: CoverageRoleDescriptor;
+    permitted: string[];
+}
+
+const NO_DURATION_OVERRIDES: ReadonlyMap<string, number> = new Map();
+
 function doseFor(role: CoverageRoleDescriptor, requirement: AdaptationDoseRequirement): number {
     return requirement.target.unit === 'minutes' ? role.durationMinutes : 1;
 }
@@ -95,54 +102,61 @@ function permittedWorkoutIds(role: CoverageRoleDescriptor, requirement: Adaptati
 }
 
 /**
- * A confirmed progression is scoped to the exact workout(s)
- * `confirmedProgressionOverrides.ts` validated it against (matching sport, session binding
- * and duration bounds) -- never to the whole role, whose `exactWorkoutIds` can span multiple
- * sports (e.g. `aerobic_volume` covers cycling, running and walking). Applying it here only
- * when *every* currently-eligible workout for this specific requirement shares the exact
- * same override value means a role whose substitution policy still allows a non-progression
- * modality is left at its catalog duration rather than crediting a workout the progression
- * was never validated against.
+ * Resolve an authored progression at the same identity granularity it was confirmed at.
+ * A role can span several sports, but an exact `role::workout` key authorizes only those
+ * exact workouts. Once at least one exact key matches the requirement, non-authorized
+ * substitutes are deliberately removed from this occurrence instead of inheriting the
+ * progressed duration or silently defeating the progression by winning as a shorter
+ * baseline alternative. Production derivation emits one value per claimed role; if an
+ * injected caller supplies conflicting exact values we fail closed to baseline role
+ * semantics rather than guessing which confirmed value owns the role.
+ *
+ * The plain role-id key remains an explicit unconditional legacy/test override.
  */
-function resolveExactOverrideDuration(
+function eligibleCandidateForRole(
     role: CoverageRoleDescriptor,
-    eligibleWorkoutIds: readonly string[],
+    requirement: AdaptationDoseRequirement,
     overrides: ReadonlyMap<string, number>,
-): number | null {
-    if (eligibleWorkoutIds.length === 0) return null;
-    const values = eligibleWorkoutIds.map(workoutId => overrides.get(progressionOverrideKey(role.id, workoutId)));
-    if (values.some(value => value === undefined)) return null;
-    const [first, ...rest] = values as number[];
-    return rest.every(value => value === first) ? first : null;
+): EligibleCandidate | null {
+    const permitted = permittedWorkoutIds(role, requirement);
+    if (permitted.length === 0) return null;
+    if (overrides.size === 0) return { role, permitted };
+
+    const direct = overrides.get(role.id);
+    if (direct !== undefined) return { role: { ...role, durationMinutes: direct }, permitted };
+
+    const exact = permitted.flatMap(workoutId => {
+        const duration = overrides.get(progressionOverrideKey(role.id, workoutId));
+        return duration === undefined ? [] : [{ workoutId, duration }];
+    });
+    if (exact.length === 0) return { role, permitted };
+
+    const values = new Set(exact.map(entry => entry.duration));
+    if (values.size !== 1) return { role, permitted };
+
+    return {
+        role: { ...role, durationMinutes: exact[0].duration },
+        permitted: exact.map(entry => entry.workoutId),
+    };
 }
 
-/** The plain role-id key is an explicit, unconditional "override this whole role" signal --
- * kept for deterministic unit tests and backwards-compatible injected callers (see
- * `confirmedProgressionOverrides.ts`'s own doc comment) -- and always wins over the
- * exact-scoped key. */
-function effectiveRole(
-    role: CoverageRoleDescriptor,
-    eligibleWorkoutIds: readonly string[],
-    overrides: ReadonlyMap<string, number>,
-): CoverageRoleDescriptor {
-    if (overrides.size === 0) return role;
-    if (overrides.has(role.id)) return { ...role, durationMinutes: overrides.get(role.id)! };
-    const exact = resolveExactOverrideDuration(role, eligibleWorkoutIds, overrides);
-    return exact === null ? role : { ...role, durationMinutes: exact };
-}
-
-/** Roles matching the requirement's adaptation, with at least one permitted exact workout,
- * resolved to their effective (possibly overridden) duration for this specific requirement. */
 function eligibleCandidates(
     roles: readonly CoverageRoleDescriptor[],
     requirement: AdaptationDoseRequirement,
     overrides: ReadonlyMap<string, number>,
-): Array<{ role: CoverageRoleDescriptor; permitted: string[] }> {
+): EligibleCandidate[] {
     return roles
         .filter(role => role.adaptations.includes(requirement.adaptation))
-        .map(role => ({ role, permitted: permittedWorkoutIds(role, requirement) }))
-        .filter((entry): entry is { role: CoverageRoleDescriptor; permitted: string[] } => entry.permitted.length > 0)
-        .map(entry => ({ role: effectiveRole(entry.role, entry.permitted, overrides), permitted: entry.permitted }));
+        .map(role => eligibleCandidateForRole(role, requirement, overrides))
+        .filter((entry): entry is EligibleCandidate => entry !== null);
+}
+
+function overridesForSlot(
+    overrides: ReadonlyMap<string, number>,
+    effectiveDate: string | undefined,
+    slotDate: string,
+): ReadonlyMap<string, number> {
+    return effectiveDate === undefined || effectiveDate === slotDate ? overrides : NO_DURATION_OVERRIDES;
 }
 
 function placementTieBreakerPenalty(
@@ -177,20 +191,20 @@ function warningFor(requirement: AdaptationDoseRequirement, delivered: number): 
  * more than one adaptation only when that descriptor explicitly grants each adaptation;
  * no modality/category similarity is used for bundling.
  *
- * `durationOverridesByRoleId` (ADR-0037 D-DOSE): a confirmed `IntentBlock` progression's
- * per-session `currentValue` (`engine/confirmedProgressionOverrides.ts`), keyed either by
- * plain role id (legacy/back-compat, applies to the whole role unconditionally) or by
- * `progressionOverrideKey(roleId, workoutId)` (production; see `effectiveRole` below for how
- * an exact-scoped key is resolved per requirement rather than applied to the whole role). It
- * substitutes for a role's catalog-derived `durationMinutes` -- both the capacity-fit
- * estimate and the literal delivered-dose accounting -- without touching
- * `requirement.floor`/`requirement.target`, which stay WHO-guideline-owned one level above
- * this function. A key with no matching role/workout is simply inert. */
+ * `durationOverridesByRoleId` (ADR-0037 D-DOSE) accepts either a plain role id
+ * (legacy/test: unconditional role override) or production exact keys from
+ * `progressionOverrideKey(roleId, workoutId)`. Exact keys narrow the occurrence to the
+ * confirmed workout identities and never transfer duration credit onto a sibling sport.
+ * `overrideEffectiveDate` scopes those overrides to one calendar date inside a multi-day
+ * packing horizon; production callers must supply it when their map was derived for one
+ * active date. Omitting it preserves the legacy injected whole-horizon behavior used by
+ * deterministic unit tests. Requirement floors/targets are never changed. */
 export function packWeeklyDose(
     strategy: EvidenceBackedStrategy,
     capacity: ResolvedTrainingCapacity,
     coverage: CoverageSetDescriptor,
     durationOverridesByRoleId: ReadonlyMap<string, number> = new Map(),
+    overrideEffectiveDate?: string,
 ): WeeklyBudget {
     const slots = capacity.usableWindows.map(window => ({ ...window, used: false }));
     const packed: MutableOccurrence[] = [];
@@ -205,12 +219,11 @@ export function packWeeklyDose(
 
     /** Estimate how many of the *remaining feasible windows* a requirement can still use.
      * This feeds only fair-share reservation; it must not reserve capacity for a later peer
-     * whose role cannot fit any remaining window. For minute-based requirements, calculate
-     * the best dose each individual window can actually host instead of assuming the role's
-     * globally best per-session dose fits every window. */
+     * whose role cannot fit any remaining window. Candidates are resolved per slot because
+     * a confirmed progression may be active on exactly one date inside the weekly horizon. */
     const sessionsNeededFor = (requirement: AdaptationDoseRequirement): number => {
-        const candidates = eligibleCandidates(coverage.roles, requirement, durationOverridesByRoleId).map(entry => entry.role);
-        if (candidates.length === 0) return 0;
+        const hasBaselineCandidate = eligibleCandidates(coverage.roles, requirement, NO_DURATION_OVERRIDES).length > 0;
+        if (!hasBaselineCandidate) return 0;
         const delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
             .reduce((total, occurrence) => total + doseFor(occurrence.descriptor, requirement), 0);
@@ -219,9 +232,16 @@ export function packWeeklyDose(
 
         const feasibleDoseBySlot = slots
             .filter(slot => !slot.used)
-            .map(slot => candidates
-                .filter(role => slot.availableMinutes >= role.durationMinutes)
-                .reduce((bestDose, role) => Math.max(bestDose, doseFor(role, requirement)), 0))
+            .map(slot => {
+                const candidates = eligibleCandidates(
+                    coverage.roles,
+                    requirement,
+                    overridesForSlot(durationOverridesByRoleId, overrideEffectiveDate, slot.date),
+                ).map(entry => entry.role);
+                return candidates
+                    .filter(role => slot.availableMinutes >= role.durationMinutes)
+                    .reduce((bestDose, role) => Math.max(bestDose, doseFor(role, requirement)), 0);
+            })
             .filter(dose => dose > 0)
             .sort((left, right) => right - left);
 
@@ -237,10 +257,8 @@ export function packWeeklyDose(
 
     for (const requirement of requirements) {
         const adaptationCandidates = coverage.roles.filter(role => role.adaptations.includes(requirement.adaptation));
-        const eligible = eligibleCandidates(coverage.roles, requirement, durationOverridesByRoleId);
-        const permittedByRole = new Map<CoverageRoleDescriptor, string[]>(eligible.map(entry => [entry.role, entry.permitted]));
-        const candidates = eligible.map(entry => entry.role);
-        if (candidates.length === 0) {
+        const baselineEligible = eligibleCandidates(coverage.roles, requirement, NO_DURATION_OVERRIDES);
+        if (baselineEligible.length === 0) {
             const code = adaptationCandidates.length > 0 ? 'goal_constraint_conflict' : 'no_exact_eligible_role';
             shortfalls.push({ code, adaptation: requirement.adaptation, message: code === 'goal_constraint_conflict'
                 ? `The available exact roles cannot satisfy ${requirement.adaptation} within its permitted modalities.`
@@ -282,9 +300,13 @@ export function packWeeklyDose(
                 }
             }
 
-            const assignment = candidates
-                .flatMap(role => unusedSlots.filter(slot => slot.availableMinutes >= role.durationMinutes)
-                    .map(slot => ({ role, slot })))
+            const assignment = unusedSlots
+                .flatMap(slot => eligibleCandidates(
+                    coverage.roles,
+                    requirement,
+                    overridesForSlot(durationOverridesByRoleId, overrideEffectiveDate, slot.date),
+                ).filter(candidate => slot.availableMinutes >= candidate.role.durationMinutes)
+                    .map(candidate => ({ ...candidate, slot })))
                 .sort((left, right) =>
                     // Best-fit placement is the primary constraint: consume the shortest
                     // window that can host the current requirement before preferring a
@@ -304,7 +326,7 @@ export function packWeeklyDose(
                 coverageSetId: coverage.id,
                 coverageRoleId: assignment.role.id,
                 date: assignment.slot.date,
-                exactWorkoutIds: permittedByRole.get(assignment.role) ?? permittedWorkoutIds(assignment.role, requirement),
+                exactWorkoutIds: assignment.permitted,
                 adaptations: assignment.role.adaptations,
                 priority: requirement.priority,
                 descriptor: assignment.role,
