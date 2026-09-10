@@ -7,7 +7,9 @@ from garmin_sync.canonical import (
     CanonicalDailyMetrics,
     CanonicalPerformanceTargets,
 )
+from garmin_sync.garmin_provider import GarminProviderAdapter
 from garmin_sync.provider import (
+    ProfileProvider,
     ProviderActivitiesResult,
     ProviderActivityDetailResult,
     ProviderCapabilities,
@@ -136,3 +138,46 @@ def test_provider_gear_result_instantiation() -> None:
 
     assert result.canonical == []
     assert result.raw_payloads == {}
+
+
+class DummyProfileProvider:
+    """Test double implementing ProfileProvider protocol."""
+
+    def fetch_performance_targets(self) -> ProviderPerformanceTargetsResult:
+        canonical_mock = CanonicalPerformanceTargets(
+            cycling_ftp_watts=None,
+            running_threshold_pace_sec_per_km=None,
+            running_lthr_bpm=None,
+            weight_kg=None,
+            body_fat_pct=None,
+            race_predictions=None,
+            ftp_measured_at=None,
+            threshold_measured_at=None,
+            lthr_measured_at=None,
+            weight_measured_at=None,
+        )
+        return ProviderPerformanceTargetsResult(canonical=canonical_mock, raw_payloads={})
+
+    def fetch_gear(self) -> ProviderGearResult:
+        return ProviderGearResult(canonical=[], raw_payloads={"gear": []})
+
+
+def test_profile_provider_fetch_gear() -> None:
+    provider = DummyProfileProvider()
+    assert isinstance(provider, ProfileProvider)
+    result = provider.fetch_gear()
+    assert isinstance(result, ProviderGearResult)
+    assert result.canonical == []
+    assert result.raw_payloads == {"gear": []}
+
+
+def test_profile_provider_fetch_performance_targets() -> None:
+    provider = DummyProfileProvider()
+    assert isinstance(provider, ProfileProvider)
+    result = provider.fetch_performance_targets()
+    assert isinstance(result, ProviderPerformanceTargetsResult)
+    assert result.raw_payloads == {}
+
+
+def test_garmin_provider_adapter_satisfies_profile_provider_protocol() -> None:
+    assert issubclass(GarminProviderAdapter, ProfileProvider)

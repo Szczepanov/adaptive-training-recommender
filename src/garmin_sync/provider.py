@@ -3,7 +3,7 @@ eventually the recommendation engine) depends on instead of any single vendor's 
 A second provider (real or fake-for-tests) only needs to satisfy WearableProvider."""
 
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, runtime_checkable
 
 from .canonical import (
     CanonicalActivity,
@@ -119,6 +119,7 @@ class ActivityProvider(Protocol):
     ) -> ProviderActivitiesResult: ...
 
 
+@runtime_checkable
 class ProfileProvider(Protocol):
     """Capability-specific provider boundary for user performance targets and gear."""
 
