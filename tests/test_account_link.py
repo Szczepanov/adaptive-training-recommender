@@ -651,3 +651,43 @@ def test_finalize_does_not_stomp_a_live_in_flight_sync_request(
     )
     # Untouched: still the live worker's claim, not the queued initial_backfill.
     assert sync_req == live_request
+
+
+def test_delete_token_object_handles_google_cloud_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+    import sys
+
+    from google.cloud.exceptions import GoogleCloudError
+
+    service = GarminAccountLinkService("bucket", repository=DummyRepository())  # type: ignore[arg-type]
+
+    class FailingStorageModule:
+        class Client:
+            def bucket(self, name: str) -> Any:
+                raise GoogleCloudError("GCS deletion failed")
+
+    monkeypatch.setitem(sys.modules, "google.cloud.storage", FailingStorageModule)
+
+    with caplog.at_level(logging.WARNING):
+        service._delete_token_object("test-object.json")
+
+    assert "Failed to remove orphaned Garmin token object after link error:" in caplog.text
+    assert "GCS deletion failed" in caplog.text
+
+
+def test_delete_token_object_handles_import_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    import logging
+    import sys
+
+    service = GarminAccountLinkService("bucket", repository=DummyRepository())  # type: ignore[arg-type]
+
+    monkeypatch.setitem(sys.modules, "google.cloud.storage", None)
+
+    with caplog.at_level(logging.WARNING):
+        service._delete_token_object("test-object.json")
+
+    assert "Failed to remove orphaned Garmin token object after link error" in caplog.text

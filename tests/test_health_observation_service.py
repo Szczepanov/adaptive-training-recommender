@@ -365,7 +365,7 @@ def test_health_observation_service_archive_exception_handled(
     )
 
     mock_archive_store = MagicMock(spec=RawArchiveStore)
-    mock_archive_store.archive_health.side_effect = Exception("Simulated archive error")
+    mock_archive_store.archive_health.side_effect = OSError("Simulated archive error")
     service = HealthObservationService(
         user_id="test_uid",
         repository=mock_repo,
@@ -380,3 +380,79 @@ def test_health_observation_service_archive_exception_handled(
     assert result["google_health"]["status"] == "success"
     assert result["google_health"]["totalObservations"] == 1
     mock_repo.save_health_observation_day_bundle.assert_called_once()
+
+
+def test_health_observation_service_archive_success_updates_raw_archive_ref() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_repo.save_health_observation_day_bundle.return_value = (True, 1)
+    mock_repo.get_health_observation_bundles_in_range.return_value = []
+
+    mock_provider = MagicMock(spec=RecoveryObservationProvider)
+    now = datetime.now(timezone.utc)
+    observation = CanonicalHealthObservation(
+        metric="sleep_duration_seconds",
+        value=28000,
+        unit="seconds",
+        source=ObservationSource(provider="garmin", transport="google_health"),
+        observed_start=now,
+        observed_end=now,
+        logical_date="2026-08-27",
+    )
+    mock_provider.fetch_observations.return_value = ObservationBatch(
+        logical_date="2026-08-27",
+        observations=[observation],
+        source_payload_hash="sha256:garmin_only",
+    )
+
+    mock_archive_store = MagicMock(spec=RawArchiveStore)
+    mock_archive_store.archive_health.return_value = (
+        "gs://my-bucket/raw/health/test_uid/rev_1.json.gz"
+    )
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=mock_archive_store,
+        providers={"google_health": mock_provider},
+    )
+
+    result = service.sync_date("2026-08-27")
+
+    assert result["google_health"]["status"] == "success"
+    mock_repo.save_health_observation_day_bundle.assert_called_once()
+    saved_bundle = mock_repo.save_health_observation_day_bundle.call_args[0][0]
+    assert saved_bundle.rawArchiveRef == "gs://my-bucket/raw/health/test_uid/rev_1.json.gz"
+
+
+def test_health_observation_service_backfill_invalid_range() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+    )
+
+    with pytest.raises(ValueError, match="Start date 2026-08-25 is after end date 2026-08-20"):
+        service.backfill_range("2026-08-25", "2026-08-20")
+
+
+def test_health_observation_service_reconcile_missing_sources_ignores_invalid_docs() -> None:
+    mock_repo = MagicMock(spec=FirestoreRecoveryRepository)
+    mock_repo.get_health_observation_bundles_in_range.return_value = [
+        {"provider": None, "transport": "google_health"},
+        {"provider": "garmin", "transport": None},
+        {},
+    ]
+    service = HealthObservationService(
+        user_id="test_uid",
+        repository=mock_repo,
+        archive_store=NullArchiveStore(),
+    )
+
+    reconciled = service._reconcile_missing_sources(
+        logical_date_iso="2026-08-27",
+        provider_transports={"google_health"},
+        current_keys=set(),
+    )
+
+    assert reconciled == []
+    mock_repo.delete_health_observation_day_bundles_batch.assert_not_called()

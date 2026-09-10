@@ -63,7 +63,7 @@ def _set_secure_permissions(file_path: Path) -> None:
             _chmod_secure(parent, 0o700)
             if file_path.exists():
                 _chmod_secure(file_path, 0o600)
-    except Exception as e:
+    except OSError as e:
         logger.debug(f"Failed to set permissions on '{file_path}': {type(e).__name__}")
 
 

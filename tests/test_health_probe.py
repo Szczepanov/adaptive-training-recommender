@@ -1,6 +1,10 @@
 from unittest.mock import MagicMock
 
-from garmin_sync.google_health_client import GoogleHealthClient
+from garmin_sync.google_health_client import (
+    GoogleHealthAccountNotLinkedError,
+    GoogleHealthClient,
+    GoogleHealthError,
+)
 from garmin_sync.health_probe import HealthProvenanceProbe
 
 
@@ -66,3 +70,25 @@ def test_health_provenance_probe_eight_sleep_fail():
 
     assert result.garminStatus == "PRESENT"
     assert result.eightSleepStatus == "FAIL"
+
+
+def test_health_provenance_probe_account_not_linked_error():
+    mock_client = MagicMock(spec=GoogleHealthClient)
+    mock_client.list_data_points.side_effect = GoogleHealthAccountNotLinkedError(
+        "Account not linked", redirect_uri="https://fitbit.google.com/auth/signup"
+    )
+
+    probe = HealthProvenanceProbe(client=mock_client)
+    result = probe.run_probe()
+
+    assert any("ACCOUNT_NOT_LINKED" in note for note in result.notes)
+
+
+def test_health_provenance_probe_google_health_error():
+    mock_client = MagicMock(spec=GoogleHealthClient)
+    mock_client.list_data_points.side_effect = GoogleHealthError("API failure")
+
+    probe = HealthProvenanceProbe(client=mock_client)
+    result = probe.run_probe()
+
+    assert any("Query failed for sleep: API failure" in note for note in result.notes)

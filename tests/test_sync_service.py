@@ -1618,3 +1618,24 @@ def test_sync_current_gear_handles_exception(caplog):
         service._sync_current_gear("2026-08-06")
 
     assert "Garmin gear import failed, continuing: Gear API error" in caplog.text
+
+
+def test_garminconnect_version_initialization(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.metadata
+
+    settings = Settings(app_user_id="test_uid_version")
+
+    # Case 1: garminconnect package version available
+    monkeypatch.setattr(
+        "importlib.metadata.version", lambda pkg: "0.2.1" if pkg == "garminconnect" else "0.0.0"
+    )
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=None))
+    assert service.garminconnect_version == "0.2.1"
+
+    # Case 2: PackageNotFoundError raised when retrieving version
+    def mock_version_not_found(pkg: str) -> str:
+        raise importlib.metadata.PackageNotFoundError(pkg)
+
+    monkeypatch.setattr("importlib.metadata.version", mock_version_not_found)
+    service_missing = GarminSyncService(settings=settings, repository=MagicMock(db=None))
+    assert service_missing.garminconnect_version is None

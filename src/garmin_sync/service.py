@@ -121,7 +121,7 @@ class GarminSyncService:
         )
         try:
             self.garminconnect_version: str | None = importlib.metadata.version("garminconnect")
-        except Exception:
+        except importlib.metadata.PackageNotFoundError:
             self.garminconnect_version = None
 
     def _init_garmin_client(self) -> GarminClientWrapper:

@@ -70,7 +70,8 @@ def run_audit(
     if callable(get_historical):
         try:
             snapshots_by_date = repository.get_historical_snapshots(start_iso, end_iso)
-        except Exception:
+        except Exception as exc:
+            logger.warning("Historical snapshot retrieval failed in audit, falling back: %s", exc)
             snapshots_by_date = None
 
     if snapshots_by_date is None:
@@ -79,7 +80,11 @@ def run_audit(
             date_isos = [get_date_string(d) for d in expected_dates]
             try:
                 snapshots_by_date = repository.get_snapshots_batch(date_isos)
-            except Exception:
+            except Exception as exc:
+                logger.warning(
+                    "Batch snapshot retrieval failed in audit, falling back to point reads: %s",
+                    exc,
+                )
                 # Preserve the pre-batching behavior when the optimized read is unavailable:
                 # an audit should remain useful even if it has to fall back to point reads.
                 snapshots_by_date = {}
