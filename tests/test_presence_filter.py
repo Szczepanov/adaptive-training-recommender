@@ -151,3 +151,16 @@ def test_co_presence_quarantines_equally_regardless_of_divergence_magnitude() ->
     assert extreme.concordanceStatus == "DISCORDANT_SECONDARY"
     assert moderate.verifiedAthlete is False
     assert extreme.verifiedAthlete is False
+
+
+def test_calculate_session_overlap_minutes_invalid_inputs() -> None:
+    from garmin_sync.presence_filter import _calculate_session_overlap_minutes
+
+    # Invalid ISO date format strings
+    assert _calculate_session_overlap_minutes("invalid-date", "2026-08-28T06:30:00Z", "2026-08-27T22:45:00Z", "2026-08-28T06:15:00Z") == 0
+
+    # Non-string inputs (e.g. integer or None)
+    assert _calculate_session_overlap_minutes(12345, "2026-08-28T06:30:00Z", "2026-08-27T22:45:00Z", "2026-08-28T06:15:00Z") == 0  # type: ignore[arg-type]
+
+    # Mixed naive and aware datetimes leading to TypeError/AttributeError
+    assert _calculate_session_overlap_minutes("2026-08-27 22:30:00", "2026-08-28T06:30:00Z", "2026-08-27T22:45:00Z", "2026-08-28T06:15:00Z") == 0
