@@ -327,12 +327,12 @@ describe('weekly dose packing', () => {
 
             expect(global.shortfalls).toEqual([]); // 70 + 70
             expect(dateScoped.shortfalls).toEqual([]); // 70 + baseline 60 = 130
-            const stricter = {
+            const stricter: EvidenceBackedStrategy = {
                 ...scopedStrategy,
                 requirements: [{
                     ...scopedStrategy.requirements[0],
-                    floor: { dose: { unit: 'minutes', value: 140 }, semantics: 'goal_required_minimum' as const },
-                    target: { unit: 'minutes' as const, minimum: 140, target: 140, maximum: 180 },
+                    floor: { dose: { unit: 'minutes', value: 140 }, semantics: 'goal_required_minimum' },
+                    target: { unit: 'minutes', minimum: 140, target: 140, maximum: 180 },
                 }],
             };
             expect(packWeeklyDose(stricter, windows, coverage, override).shortfalls).toEqual([]);
