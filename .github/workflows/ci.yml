@@ -343,7 +343,7 @@ jobs:
       # Distinct `scope` values keep this cache and the frontend image's below from colliding
       # -- they'd otherwise share the same default GHA cache scope and evict each other.
       - name: Build root Garmin sync Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           tags: adaptive-training-garmin-sync:latest
@@ -357,7 +357,7 @@ jobs:
       # context/Dockerfile/build-arg combination, so the "Build Docker Compose services" step
       # below rebuilds the same frontend image as a fast cache hit instead of from scratch.
       - name: Build frontend Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: app
           file: app/Dockerfile
