@@ -26,6 +26,9 @@ import type { DoseVariation, ObjectiveKey, SessionTemplate } from './models';
 import type { PlanCoverageKey } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
+import { progressionOverrideKey } from './progressionOverrideKey';
+
+export { progressionOverrideKey };
 
 /** Derived, not hardcoded, so it cannot drift from the roles the packer actually iterates. */
 export const SELECTION_WIRED_COVERAGE_KEYS: readonly PlanCoverageKey[] =
@@ -52,10 +55,6 @@ export interface DerivedProgressionOverrides {
      */
     overrides: ReadonlyMap<string, number>;
     unsupported: readonly UnsupportedProgressionObjective[];
-}
-
-export function progressionOverrideKey(coverageRoleId: string, workoutId: string): string {
-    return `${coverageRoleId}::${workoutId}`;
 }
 
 function isActiveOn(block: IntentBlock, date: string): boolean {

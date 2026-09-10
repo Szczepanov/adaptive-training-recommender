@@ -25,7 +25,6 @@ import { computeDailyLedger } from '../engine/dailyLedger';
 import { planBlockService } from '../services/planBlockService';
 import { intentBlockService } from '../services/intentBlockService';
 import { deriveDurationOverridesForDate } from '../engine/confirmedProgressionOverrides';
-import type { IntentBlock } from '../engine/blockIntent';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
@@ -770,10 +769,15 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         };
         setRecommendation(todayRec);
 
+        // ADR-0037 D-DOSE: confirmedProgressionOverrides is derived for input.date only
+        // (today) and deliberately not passed to tomorrow's forecast here -- a block whose
+        // active window ends today must not leak into tomorrow's evaluation, and one
+        // starting tomorrow was never loaded for today's date. Progression influence is
+        // scoped to same-day planning until the packer has a date-scoped resolver.
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
-          'max', undefined, undefined, input.scheduleOverlays, confirmedProgressionOverrides,
+          'max', undefined, undefined, input.scheduleOverlays,
         );
         if (!isCurrent()) return;
         setNextDayPlan(tomorrowPlan);
@@ -1137,32 +1141,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     [planBlocksState]
   );
 
-  // ADR-0037 D-DOSE: confirmed IntentBlock progressions active over the week-ahead window,
-  // used below to derive per-role duration overrides for evergreen selection.
-  const [confirmedBlocksState, setConfirmedBlocksState] = useState<DataState<IntentBlock[]>>({ status: 'AVAILABLE', data: [], revision: null });
-  useEffect(() => {
-    let cancelled = false;
-    if (!decisionInput) {
-      setConfirmedBlocksState({ status: 'AVAILABLE', data: [], revision: null });
-      return () => { cancelled = true; };
-    }
-    intentBlockService.getActiveBlocks(userId, decisionInput.date)
-      .then(state => { if (!cancelled) setConfirmedBlocksState(state); })
-      .catch(err => {
-        console.warn('Failed to load confirmed intent blocks:', err);
-        if (!cancelled) setConfirmedBlocksState({ status: 'UNAVAILABLE', operation: 'read confirmed intent blocks', retryable: true });
-      });
-    return () => { cancelled = true; };
-  }, [userId, decisionInput]);
-  const weekAheadProgressionOverrides = useMemo((): ReadonlyMap<string, number> => {
-    if (confirmedBlocksState.status !== 'AVAILABLE' || !decisionInput) return new Map();
-    const { overrides, unsupported } = deriveDurationOverridesForDate(confirmedBlocksState.data, decisionInput.date);
-    if (unsupported.length > 0) {
-      console.warn('Confirmed progression(s) bound to a coverage key not yet wired into selection:', unsupported);
-    }
-    return overrides;
-  }, [confirmedBlocksState, decisionInput]);
-
   const [selectedNextDayTier, setSelectedNextDayTier] = useState<'green' | 'yellow' | 'red'>('green');
   const [weekAheadPlan, setWeekAheadPlan] = useState<WeekAheadPlan | null>(null);
   useEffect(() => {
@@ -1189,7 +1167,11 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       decisionInput.date,
       activeRec,
       tomorrowRec,
-      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks, scheduleOverlays: decisionInput.scheduleOverlays, progressionOverrides: weekAheadProgressionOverrides },
+      // ADR-0037 D-DOSE: no progressionOverrides here -- a confirmed progression's duration
+      // override is date-scoped to a single day, but week-ahead packs the whole horizon in
+      // one call. Progression influence is scoped to same-day planning until the packer has
+      // a date-scoped resolver (see the same-day evaluateTrainingWithIntent call above).
+      { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks, scheduleOverlays: decisionInput.scheduleOverlays },
       undefined,
       historySnapshot,
       decisionInput.trainingIntentProfile,
@@ -1202,7 +1184,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       }
     });
     return () => { cancelled = true; };
-  }, [userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities, planBlocksState, authoredPlanBlocks, weekAheadProgressionOverrides]);
+  }, [userId, forecastEngineInputs, decisionInput, activeRec, canGenerateNormalPlan, nextDayPlan, selectedNextDayTier, eventPeriodization, historySnapshot, fixedActivitiesState, fixedActivities, planBlocksState, authoredPlanBlocks]);
 
   if (loading) {
     return (

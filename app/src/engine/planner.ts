@@ -170,9 +170,6 @@ export interface WeekAheadOptions {
     planDefinition?: PlanDefinition | null;
     /** Simulation-only fatigue comparison. Live callers use the default `max`. */
     fatigueFusionPolicy?: FatigueFusionPolicy;
-    /** ADR-0037 D-DOSE: a confirmed `IntentBlock` progression's per-session duration
-     * (`engine/confirmedProgressionOverrides.ts`), keyed by coverage role id. */
-    progressionOverrides?: ReadonlyMap<string, number>;
 }
 
 const ZERO_COST: WorkoutCostProfile = {
@@ -1612,10 +1609,14 @@ export async function generateWeekAheadPlanWithIntent(
     const fatigueFusionPolicy = options.fatigueFusionPolicy ?? 'max';
     const intent = await resolveTrainingIntent(userId, events, todayDate, todayReadiness, 7, historyProvider, preparedHistorySnapshot, options.authoredPlanBlocks, trainingIntentProfile, fatigueFusionPolicy);
     const isAdverseRecovery = isSevereAdverseRecoveryReadiness(todayReadiness, todayRec.mode);
+    // ADR-0037 D-DOSE: no progressionOverrides here -- a confirmed progression's duration
+    // override is date-scoped to a single day, but this packs the whole week-ahead horizon
+    // in one call. Progression influence is deliberately scoped to same-day planning
+    // (rules.ts's evaluateTrainingWithIntent) until the packer has a date-scoped resolver.
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, todayDate, options.fixedActivities ?? [], options.days ?? 7,
-        isAdverseRecovery, options.scheduleOverlays ?? [], options.progressionOverrides ?? new Map(),
+        isAdverseRecovery, options.scheduleOverlays ?? [],
     );
     return generateWeekAheadPlan(
         todayReadiness,

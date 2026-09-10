@@ -1423,9 +1423,6 @@ export async function evaluateNextDayPlanWithIntent(
     subjectiveDriftPolicy: SubjectiveDriftPolicy = 'off',
     subjectiveDriftWeights: SubjectiveDriftWeights = REFERENCE_SUBJECTIVE_DRIFT_WEIGHTS,
     scheduleOverlays: readonly ScheduleOverlay[] = [],
-    /** ADR-0037 D-DOSE: a confirmed `IntentBlock` progression's per-session duration
-     * (`engine/confirmedProgressionOverrides.ts`), keyed by coverage role id. */
-    confirmedProgressionOverrides: ReadonlyMap<string, number> = new Map(),
 ): Promise<NextDayPotentialPlan> {
     const scenarios = buildNextDayScenarios(todayReadiness, context, todayDate, todayRec);
     const projectedProvider = await projectedProviderForTomorrow(
@@ -1438,12 +1435,17 @@ export async function evaluateNextDayPlanWithIntent(
         historyProvider,
         preparedHistorySnapshot,
     );
+    // ADR-0037 D-DOSE: no confirmedProgressionOverrides here -- a confirmed progression's
+    // duration override is date-scoped to a single day, and this evaluates *tomorrow*'s
+    // scenarios from *today*'s call. Progression influence is deliberately scoped to
+    // same-day planning (evaluateTrainingWithIntent's own confirmedProgressionOverrides
+    // parameter) until the packer has a date-scoped resolver.
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
         await evaluateTrainingWithIntent(
             userId, scenario.readiness, context, events, scenarios.date, todayRec.mode, projectedProvider, null,
             fixedActivities, authoredPlanBlocks, trainingIntentProfile, preferences, fatigueFusionPolicy, null,
-            subjectiveDriftPolicy, subjectiveDriftWeights, null, false, scheduleOverlays, confirmedProgressionOverrides,
+            subjectiveDriftPolicy, subjectiveDriftWeights, null, false, scheduleOverlays,
         ),
     );
     const [green, yellow, red] = await Promise.all([
