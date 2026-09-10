@@ -1591,3 +1591,24 @@ def test_sync_service_builds_target_snapshot_after_lookback_dates_are_corrected(
     # Target's 7d baseline -- (60 + 50 + 50 + 50) / 4 -- used the corrected D-1 value
     # because D-1 was rebuilt and stored before the target snapshot was.
     assert repo.snapshots["2026-08-06"]["derived"]["restingHr7dAvg"] == 52.5
+
+
+def test_garminconnect_version_initialization(monkeypatch: pytest.MonkeyPatch) -> None:
+    import importlib.metadata
+
+    settings = Settings(app_user_id="test_uid_version")
+
+    # Case 1: garminconnect package version available
+    monkeypatch.setattr(
+        "importlib.metadata.version", lambda pkg: "0.2.1" if pkg == "garminconnect" else "0.0.0"
+    )
+    service = GarminSyncService(settings=settings, repository=MagicMock(db=None))
+    assert service.garminconnect_version == "0.2.1"
+
+    # Case 2: PackageNotFoundError raised when retrieving version
+    def mock_version_not_found(pkg: str) -> str:
+        raise importlib.metadata.PackageNotFoundError(pkg)
+
+    monkeypatch.setattr("importlib.metadata.version", mock_version_not_found)
+    service_missing = GarminSyncService(settings=settings, repository=MagicMock(db=None))
+    assert service_missing.garminconnect_version is None
