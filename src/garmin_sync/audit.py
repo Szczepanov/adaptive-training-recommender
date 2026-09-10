@@ -71,9 +71,7 @@ def run_audit(
         try:
             snapshots_by_date = repository.get_historical_snapshots(start_iso, end_iso)
         except Exception as exc:
-            logger.warning(
-                "Historical snapshot retrieval failed in audit, falling back: %s", exc
-            )
+            logger.warning("Historical snapshot retrieval failed in audit, falling back: %s", exc)
             snapshots_by_date = None
 
     if snapshots_by_date is None:
