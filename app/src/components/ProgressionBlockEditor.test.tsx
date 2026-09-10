@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { ProgressionBlockEditor } from './ProgressionBlockEditor';
 import { buildBlock, defaultDraft } from './progressionBlockDraft';
 import { validateIntentBlock } from '../engine/blockIntent';
+import { SELECTION_WIRED_COVERAGE_KEYS } from '../engine/confirmedProgressionOverrides';
 
 const TODAY = '2026-09-01';
 
@@ -42,5 +43,9 @@ describe('ProgressionBlockEditor', () => {
         const block = buildBlock(draft);
         expect(block.progressionContract?.reviewCadenceDays).toBe(21);
         expect(validateIntentBlock(block).valid).toBe(true);
+    });
+
+    it('defaults to a coverage key already wired into evergreen selection, so the unsupported notice does not fire unprompted', () => {
+        expect(SELECTION_WIRED_COVERAGE_KEYS).toContain(defaultDraft(TODAY).coverageKey);
     });
 });

@@ -39,6 +39,16 @@
   color: #1e7e34;
 }
 
+.progression-block-unsupported-notice {
+  margin: 4px 0 0;
+  padding: 6px 10px;
+  border: 1px solid #b98900;
+  border-radius: 4px;
+  background: #fff8e1;
+  color: #7a5c00;
+  font-size: 0.9em;
+}
+
 .progression-block-list .setting-row {
   padding: 6px 0;
   border-bottom: 1px solid #eee;

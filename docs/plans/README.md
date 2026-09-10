@@ -98,10 +98,15 @@ H5a intent contracts and canonical replay (`engine/blockIntent.ts`,
 `progressionReviewInputService.ts` (real evidence assembly), `progressionClaimService.ts`
 (the athlete-scoped singleton claim/confirmation transaction), and an athlete-facing
 authoring + review UI (`ProgressionBlockEditor.tsx`/`ProgressionReviewPanel.tsx`, mounted in
-`TrainingSettings.tsx`). None of it is wired into daily recommendation selection --
-confirming a progression revision persists an audited `IntentBlock` revision but does not
-yet change any recommendation; that wiring, and cumulative `external-plan@5`, remain
-separate, later, separately policy-reviewed work.
+`TrainingSettings.tsx`). A confirmed progression revision is now also wired into live
+evergreen selection (`engine/confirmedProgressionOverrides.ts`, `POLICY_VERSION`
+`2026-09-progression-confirmed-selection-wiring-v1`) for the 4 `ObjectiveKey`s whose
+`coverageKey` has a packed evergreen role (`zone2_aerobic`, `strength_maintenance`,
+`strength_development`, `threshold_quality`); `surge_repeatability`,
+`race_specific_endurance` and `vo2_max` are explicitly flagged unsupported-for-selection
+rather than silently ignored -- see
+[the cycling hybrid evaluation plan](./cycling-primary-hybrid-evaluation.md)'s H5 section.
+Cumulative `external-plan@5` remains separate, later, unstarted work.
 H4's same-day canonical performed-fact boundary is verified;
 H5 runtime needs validated intent mappings and linked response evidence. H5
 delivers intent authoring, report-only review, then confirmed bounded revisions. The work

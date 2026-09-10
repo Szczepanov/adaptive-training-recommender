@@ -763,6 +763,9 @@ export async function evaluateTrainingWithIntent(
      *  gate below and is retained in provenance as an explicit override. */
     athleteOverridesAuthoredRest: boolean = false,
     scheduleOverlays: readonly ScheduleOverlay[] = [],
+    /** ADR-0037 D-DOSE: a confirmed `IntentBlock` progression's per-session duration
+     * (`engine/confirmedProgressionOverrides.ts`), keyed by coverage role id. */
+    confirmedProgressionOverrides: ReadonlyMap<string, number> = new Map(),
 ): Promise<Recommendation> {
     const envelopeState = evaluateReadinessAndSafetyEnvelope(readiness, context, date, previousMode, subjectiveDriftPolicy, subjectiveDriftWeights);
     const { mode, envelopes, telemetry } = envelopeState;
@@ -830,6 +833,7 @@ export async function evaluateTrainingWithIntent(
     const evergreen = resolveEvergreenPlan(
         intent.planningContext, intent.periodization.phase, intent.history, intent.historySnapshot,
         preferences, context, date, fixedActivities, 7, isAdverseRecovery, scheduleOverlays,
+        confirmedProgressionOverrides,
     );
     if (evergreen) {
         const unresolvedObjectives = getUnresolvedObjectives(evergreen.microcycle);
@@ -1431,6 +1435,11 @@ export async function evaluateNextDayPlanWithIntent(
         historyProvider,
         preparedHistorySnapshot,
     );
+    // ADR-0037 D-DOSE: no confirmedProgressionOverrides here -- a confirmed progression's
+    // duration override is date-scoped to a single day, and this evaluates *tomorrow*'s
+    // scenarios from *today*'s call. Progression influence is deliberately scoped to
+    // same-day planning (evaluateTrainingWithIntent's own confirmedProgressionOverrides
+    // parameter) until the packer has a date-scoped resolver.
     const evaluate = async (scenario: NextDayScenario) => evaluatedBranch(
         scenario,
         await evaluateTrainingWithIntent(

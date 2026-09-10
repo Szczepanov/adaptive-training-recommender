@@ -3,6 +3,7 @@ import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import { EVERGREEN_GENERAL_COVERAGE_SET } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { getDayDiff } from '../utils/localDate';
+import { progressionOverrideKey } from './progressionOverrideKey';
 
 export interface CoverageRoleDescriptor {
     /** Stable authored identity; never a category/modality similarity match. */
@@ -93,6 +94,57 @@ function permittedWorkoutIds(role: CoverageRoleDescriptor, requirement: Adaptati
     });
 }
 
+/**
+ * A confirmed progression is scoped to the exact workout(s)
+ * `confirmedProgressionOverrides.ts` validated it against (matching sport, session binding
+ * and duration bounds) -- never to the whole role, whose `exactWorkoutIds` can span multiple
+ * sports (e.g. `aerobic_volume` covers cycling, running and walking). Applying it here only
+ * when *every* currently-eligible workout for this specific requirement shares the exact
+ * same override value means a role whose substitution policy still allows a non-progression
+ * modality is left at its catalog duration rather than crediting a workout the progression
+ * was never validated against.
+ */
+function resolveExactOverrideDuration(
+    role: CoverageRoleDescriptor,
+    eligibleWorkoutIds: readonly string[],
+    overrides: ReadonlyMap<string, number>,
+): number | null {
+    if (eligibleWorkoutIds.length === 0) return null;
+    const values = eligibleWorkoutIds.map(workoutId => overrides.get(progressionOverrideKey(role.id, workoutId)));
+    if (values.some(value => value === undefined)) return null;
+    const [first, ...rest] = values as number[];
+    return rest.every(value => value === first) ? first : null;
+}
+
+/** The plain role-id key is an explicit, unconditional "override this whole role" signal --
+ * kept for deterministic unit tests and backwards-compatible injected callers (see
+ * `confirmedProgressionOverrides.ts`'s own doc comment) -- and always wins over the
+ * exact-scoped key. */
+function effectiveRole(
+    role: CoverageRoleDescriptor,
+    eligibleWorkoutIds: readonly string[],
+    overrides: ReadonlyMap<string, number>,
+): CoverageRoleDescriptor {
+    if (overrides.size === 0) return role;
+    if (overrides.has(role.id)) return { ...role, durationMinutes: overrides.get(role.id)! };
+    const exact = resolveExactOverrideDuration(role, eligibleWorkoutIds, overrides);
+    return exact === null ? role : { ...role, durationMinutes: exact };
+}
+
+/** Roles matching the requirement's adaptation, with at least one permitted exact workout,
+ * resolved to their effective (possibly overridden) duration for this specific requirement. */
+function eligibleCandidates(
+    roles: readonly CoverageRoleDescriptor[],
+    requirement: AdaptationDoseRequirement,
+    overrides: ReadonlyMap<string, number>,
+): Array<{ role: CoverageRoleDescriptor; permitted: string[] }> {
+    return roles
+        .filter(role => role.adaptations.includes(requirement.adaptation))
+        .map(role => ({ role, permitted: permittedWorkoutIds(role, requirement) }))
+        .filter((entry): entry is { role: CoverageRoleDescriptor; permitted: string[] } => entry.permitted.length > 0)
+        .map(entry => ({ role: effectiveRole(entry.role, entry.permitted, overrides), permitted: entry.permitted }));
+}
+
 function placementTieBreakerPenalty(
     date: string,
     packed: readonly MutableOccurrence[],
@@ -123,11 +175,22 @@ function warningFor(requirement: AdaptationDoseRequirement, delivered: number): 
 /** Converts evidence-derived dose into exact authored roles. Every selected occurrence is
  * attached to one real availability date and one authored descriptor. A role may satisfy
  * more than one adaptation only when that descriptor explicitly grants each adaptation;
- * no modality/category similarity is used for bundling. */
+ * no modality/category similarity is used for bundling.
+ *
+ * `durationOverridesByRoleId` (ADR-0037 D-DOSE): a confirmed `IntentBlock` progression's
+ * per-session `currentValue` (`engine/confirmedProgressionOverrides.ts`), keyed either by
+ * plain role id (legacy/back-compat, applies to the whole role unconditionally) or by
+ * `progressionOverrideKey(roleId, workoutId)` (production; see `effectiveRole` below for how
+ * an exact-scoped key is resolved per requirement rather than applied to the whole role). It
+ * substitutes for a role's catalog-derived `durationMinutes` -- both the capacity-fit
+ * estimate and the literal delivered-dose accounting -- without touching
+ * `requirement.floor`/`requirement.target`, which stay WHO-guideline-owned one level above
+ * this function. A key with no matching role/workout is simply inert. */
 export function packWeeklyDose(
     strategy: EvidenceBackedStrategy,
     capacity: ResolvedTrainingCapacity,
     coverage: CoverageSetDescriptor,
+    durationOverridesByRoleId: ReadonlyMap<string, number> = new Map(),
 ): WeeklyBudget {
     const slots = capacity.usableWindows.map(window => ({ ...window, used: false }));
     const packed: MutableOccurrence[] = [];
@@ -146,10 +209,7 @@ export function packWeeklyDose(
      * the best dose each individual window can actually host instead of assuming the role's
      * globally best per-session dose fits every window. */
     const sessionsNeededFor = (requirement: AdaptationDoseRequirement): number => {
-        const candidates = coverage.roles.filter(role =>
-            role.adaptations.includes(requirement.adaptation)
-            && permittedWorkoutIds(role, requirement).length > 0,
-        );
+        const candidates = eligibleCandidates(coverage.roles, requirement, durationOverridesByRoleId).map(entry => entry.role);
         if (candidates.length === 0) return 0;
         const delivered = packed
             .filter(occurrence => occurrence.adaptations.includes(requirement.adaptation))
@@ -177,14 +237,9 @@ export function packWeeklyDose(
 
     for (const requirement of requirements) {
         const adaptationCandidates = coverage.roles.filter(role => role.adaptations.includes(requirement.adaptation));
-        const permittedByRole = new Map<CoverageRoleDescriptor, string[]>();
-        for (const role of adaptationCandidates) {
-            const permitted = permittedWorkoutIds(role, requirement);
-            if (permitted.length > 0) {
-                permittedByRole.set(role, permitted);
-            }
-        }
-        const candidates = adaptationCandidates.filter(role => permittedByRole.has(role));
+        const eligible = eligibleCandidates(coverage.roles, requirement, durationOverridesByRoleId);
+        const permittedByRole = new Map<CoverageRoleDescriptor, string[]>(eligible.map(entry => [entry.role, entry.permitted]));
+        const candidates = eligible.map(entry => entry.role);
         if (candidates.length === 0) {
             const code = adaptationCandidates.length > 0 ? 'goal_constraint_conflict' : 'no_exact_eligible_role';
             shortfalls.push({ code, adaptation: requirement.adaptation, message: code === 'goal_constraint_conflict'

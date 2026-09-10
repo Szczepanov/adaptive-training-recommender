@@ -2,11 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION } from './policy';
 
 describe('isHistoricalPolicyVersion', () => {
-    it('records the exact fixed-activity dedup-identity-unification transition once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-fixed-activity-dedup-identity-unification-v1');
+    it('records the exact progression-confirmed-selection-wiring transition once', () => {
+        expect(POLICY_VERSION).toBe('2026-09-progression-confirmed-selection-wiring-v1');
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
-                (version) => version === '2026-09-h4-d-ledger-planner-admission-v2',
+                (version) => version === '2026-09-fixed-activity-dedup-identity-unification-v1',
             ),
         ).toHaveLength(1);
     });

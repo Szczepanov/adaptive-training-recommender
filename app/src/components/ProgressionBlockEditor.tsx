@@ -15,6 +15,7 @@ import {
   type IntentBlockHeader,
 } from '../services/intentBlockService';
 import { getLocalDateString } from '../utils/localDate';
+import { SELECTION_WIRED_COVERAGE_KEYS } from '../engine/confirmedProgressionOverrides';
 import {
   defaultDraft,
   buildBlock,
@@ -176,6 +177,13 @@ export function ProgressionBlockEditor({ userId, onBlockSaved }: ProgressionBloc
               bound to this block&apos;s source revision. This manual form does not create those session prescriptions;
               without a compatible binding, reviews hold rather than guessing that performed work matched the target.
             </p>
+            {!SELECTION_WIRED_COVERAGE_KEYS.includes(draft.coverageKey) && (
+              <p role="status" className="progression-block-unsupported-notice">
+                Confirmed changes to this objective are recorded but do not yet affect today&apos;s or this
+                week&apos;s recommendations — &quot;{coverageKeyLabels[draft.coverageKey]}&quot; has no evergreen
+                selection role wired up yet.
+              </p>
+            )}
             <div className="form-row">
               <label>Increment per step (min)
                 <input type="number" min={1} value={draft.progressionIncrement} onChange={event => setDraft(current => ({ ...current, progressionIncrement: Number(event.target.value) }))} />

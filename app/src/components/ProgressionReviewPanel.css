@@ -42,3 +42,13 @@
 .progression-review-confirmed {
   color: #1e7e34;
 }
+
+.progression-review-selection-unsupported {
+  margin: 8px 0;
+  padding: 6px 10px;
+  border: 1px solid #b98900;
+  border-radius: 4px;
+  background: #fff8e1;
+  color: #7a5c00;
+  font-size: 0.9em;
+}

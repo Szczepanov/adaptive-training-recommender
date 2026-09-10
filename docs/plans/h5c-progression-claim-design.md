@@ -4,17 +4,15 @@
 assembly (`progressionReviewInputService.ts`), the claim/confirmation transaction
 (`progressionClaimService.ts`), an athlete-facing authoring UI
 (`ProgressionBlockEditor.tsx`) and a review/confirmation UI (`ProgressionReviewPanel.tsx`,
-mounted in `TrainingSettings.tsx`) are all delivered. **What remains explicitly unstarted**:
-wiring a confirmed `IntentBlock`/progression revision into live recommendation *selection*
-(planner/rules ranking) -- this delivery makes progression review/confirmation a real,
-usable, fully audited feature; it does not make any recommendation actually change because
-of one. That is H5's next, separately policy-reviewed step, and `POLICY_VERSION` is
-correctly unchanged by everything delivered here (verified via `check-policy-drift.mjs` and
-`simulate:diff`, both clean, on every commit of this delivery).
-**Unlocks:** wiring confirmed progression revisions into live recommendation selection
-(separate, later, separately policy-reviewed); cumulative `external-plan@5` acceptance,
-which the cycling hybrid evaluation plan already notes is otherwise unblocked now that H4's
-v4 contract has landed.
+mounted in `TrainingSettings.tsx`) are all delivered. `POLICY_VERSION` was correctly
+unchanged by everything delivered here (verified via `check-policy-drift.mjs` and
+`simulate:diff`, both clean, on every commit of this delivery). **Wiring a confirmed
+revision into live recommendation selection was the next step below this document's original
+scope -- it is now also delivered (2026-09-10)**, for the `ObjectiveKey`s whose `coverageKey`
+has a packed evergreen role; see `docs/plans/cycling-primary-hybrid-evaluation.md`'s H5
+section for that delivery's own detail and its `POLICY_VERSION` bump.
+**Unlocks:** cumulative `external-plan@5` acceptance, which the cycling hybrid evaluation
+plan already notes is otherwise unblocked now that H4's v4 contract has landed.
 **Governs:** [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md) D-AUTHORITY,
 D-CHANGE's one-active-experiment rule.
 **Builds on:** H5a (`engine/blockIntent.ts`, `engine/blockIntentReplay.ts`) and H5b
@@ -341,8 +339,9 @@ recommendation-time read or latency path.
 ## Out of scope (delivered elsewhere or deliberately not part of this delivery)
 
 - Wiring `progressionReview.ts` output or a confirmed `IntentBlock` revision into live
-  recommendation selection — H5b/H5c remain report-and-confirm-only; this is separate,
-  later, separately policy-reviewed work.
+  recommendation selection was out of scope for H5c itself (H5b/H5c remain
+  report-and-confirm-only) — that separate, later, separately policy-reviewed step is now
+  also delivered; see `docs/plans/cycling-primary-hybrid-evaluation.md`'s H5 section.
 - Cumulative `external-plan@5` (depends on H5c's shape, separately scoped).
 - Exposing `IntentBlock`'s full schema generality in the authoring UI (protected roles,
   substitutions, prerequisites, exit criteria, `evaluationRef`-bound success criteria) --

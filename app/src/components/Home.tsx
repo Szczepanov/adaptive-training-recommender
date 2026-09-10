@@ -23,6 +23,8 @@ import { fixedActivityService } from '../services/fixedActivityService';
 import { scheduleWindowService } from '../services/scheduleWindowService';
 import { computeDailyLedger } from '../engine/dailyLedger';
 import { planBlockService } from '../services/planBlockService';
+import { intentBlockService } from '../services/intentBlockService';
+import { deriveDurationOverridesForDate } from '../engine/confirmedProgressionOverrides';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { resolveEngineShadowVerdict } from '../engine/shadowAgreement';
 import { getPreviousLocalDateString, addDaysToLocalDateString } from '../utils/localDate';
@@ -362,6 +364,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         yesterdaySnapState,
         todayAndTomorrowFixedActivities,
         todayAndTomorrowPlanBlocks,
+        activeIntentBlocks,
         loadedOverrides,
         activitiesState,
       ] = await Promise.all([
@@ -387,11 +390,31 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
             console.warn('Failed to load authored plan blocks for today/tomorrow:', err);
             return [];
           }),
+        // ADR-0037 D-DOSE: confirmed IntentBlock progressions active on input.date, used
+        // below to derive per-role duration overrides for evergreen selection. A read
+        // failure here must never block today's recommendation -- it just means no
+        // confirmed progression affects today's selection.
+        intentBlockService.getActiveBlocks(userId, input.date)
+          .then(state => {
+            if (state.status === 'AVAILABLE') return state.data;
+            if (state.status !== 'MISSING') console.warn(`Failed to load confirmed intent blocks: ${state.status}`);
+            return [];
+          })
+          .catch(err => {
+            console.warn('Failed to load confirmed intent blocks:', err);
+            return [];
+          }),
         activityOverrideService.getAllOverrides(userId).catch(() => ({})),
         activityService.getActivitiesInRange(userId, addDaysToLocalDateString(input.date, -6), addDaysToLocalDateString(input.date, 1)).catch(() => ({ status: 'MISSING' as const })),
       ]);
 
       if (!isCurrent()) return;
+
+      const { overrides: confirmedProgressionOverrides, unsupported: unsupportedProgressionObjectives } =
+        deriveDurationOverridesForDate(activeIntentBlocks, input.date);
+      if (unsupportedProgressionObjectives.length > 0) {
+        console.warn('Confirmed progression(s) bound to a coverage key not yet wired into selection:', unsupportedProgressionObjectives);
+      }
 
       setYesterdayRecommendation(yesterdayRec);
       setYesterdaySnapshot(yesterdaySnapState.status === 'AVAILABLE' ? yesterdaySnapState.data : null);
@@ -514,6 +537,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           userId, { subjective, objective, subjectiveBaseline: input.subjectiveBaseline }, context, events, input.date, yesterdayRec?.mode, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
           'max', externalContext, undefined, undefined, externalRestContext, false, input.scheduleOverlays,
+          confirmedProgressionOverrides,
         );
         if (!isCurrent()) return;
         const recommendationWithPrescription = {
@@ -745,6 +769,11 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         };
         setRecommendation(todayRec);
 
+        // ADR-0037 D-DOSE: confirmedProgressionOverrides is derived for input.date only
+        // (today) and deliberately not passed to tomorrow's forecast here -- a block whose
+        // active window ends today must not leak into tomorrow's evaluation, and one
+        // starting tomorrow was never loaded for today's date. Progression influence is
+        // scoped to same-day planning until the packer has a date-scoped resolver.
         const tomorrowPlan = await evaluateNextDayPlanWithIntent(
           userId, events, { subjective, objective }, forecastContext, input.date, todayRec, undefined, preparedSnapshot,
           todayAndTomorrowFixedActivities, todayAndTomorrowPlanBlocks, input.trainingIntentProfile, input.preferences,
@@ -1138,6 +1167,10 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       decisionInput.date,
       activeRec,
       tomorrowRec,
+      // ADR-0037 D-DOSE: no progressionOverrides here -- a confirmed progression's duration
+      // override is date-scoped to a single day, but week-ahead packs the whole horizon in
+      // one call. Progression influence is scoped to same-day planning until the packer has
+      // a date-scoped resolver (see the same-day evaluateTrainingWithIntent call above).
       { days: WEEK_AHEAD_DAYS, fixedActivities, authoredPlanBlocks, scheduleOverlays: decisionInput.scheduleOverlays },
       undefined,
       historySnapshot,
