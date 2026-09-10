@@ -18,6 +18,7 @@ from garminconnect import (
     GarminConnectTooManyRequestsError,
 )
 from google.cloud import firestore as google_firestore
+from google.cloud.exceptions import GoogleCloudError
 
 from .firestore_repository import init_firestore_client
 from .token_store import GcsTokenStore
@@ -395,8 +396,10 @@ class GarminAccountLinkService:
             from google.cloud import storage  # type: ignore[attr-defined]
 
             storage.Client().bucket(self.token_bucket).blob(token_object).delete()
-        except Exception:
-            logger.warning("Failed to remove orphaned Garmin token object after link error.")
+        except (GoogleCloudError, ImportError) as exc:
+            logger.warning(
+                "Failed to remove orphaned Garmin token object after link error: %s", exc
+            )
 
     def _finalize(
         self,
