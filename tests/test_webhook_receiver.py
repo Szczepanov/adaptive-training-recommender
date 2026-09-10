@@ -66,6 +66,17 @@ def test_handle_request_payload_too_large() -> None:
     assert body == {"error": "Payload exceeds maximum allowed size"}
 
 
+def test_handle_request_payload_at_limit_still_reaches_signature_check() -> None:
+    verifier = WebhookSignatureVerifier(static_shared_secret="secret")
+    handler = GoogleHealthWebhookHandler(verifier=verifier)
+
+    payload_at_limit = b"a" * (1024 * 1024)
+    status, body = handler.handle_request(payload_at_limit, "invalid_sig")
+
+    assert status == 401
+    assert body == {"error": "Invalid signature"}
+
+
 def test_handle_request_invalid_signature_before_json_parse() -> None:
     verifier = WebhookSignatureVerifier(static_shared_secret="secret")
     handler = GoogleHealthWebhookHandler(verifier=verifier)
