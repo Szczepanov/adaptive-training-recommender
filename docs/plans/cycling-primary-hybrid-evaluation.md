@@ -22,9 +22,10 @@ not persisted). A bundle's resolved placement is also now persisted for
 display, at `users/{userId}/intraday_bundle_placements/{date}` -- a separate sibling
 document rather than a `recommendationAudit.externalPlan` field, since that document's
 rule-evaluation budget was re-verified insufficient. H5 design is
-accepted as ADR-0037 with H5a/H5b/H5c now all delivered -- see below for what H5c's
-delivery does and deliberately does not cover; only cumulative `external-plan@5` remains
-unstarted.
+accepted as ADR-0037 with H5a/H5b/H5c now all delivered, and a confirmed progression
+revision now wired into live evergreen selection for 4 of 7 `ObjectiveKey`s -- see below for
+what H5c's delivery and the selection-wiring delivery each do and deliberately do not
+cover; only cumulative `external-plan@5` remains unstarted.
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
 confirmation; H4's live release is delivered through PR 3 Phase 6, recorded in
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's non-gating follow-up work
@@ -582,8 +583,11 @@ unscoped follow-up.
 ## H5 — Explicit develop/maintain intent and progression
 
 **Status:** Accepted design in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md);
-**H5a, H5b and H5c all delivered as of 2026-09-09**. Only cumulative `external-plan@5`
-remains unstarted.
+**H5a, H5b and H5c all delivered as of 2026-09-09; a confirmed progression revision is now
+wired into live evergreen selection as of 2026-09-10** for the 4 `ObjectiveKey`s whose
+`coverageKey` already has a packed evergreen role (`zone2_aerobic`,
+`strength_maintenance`, `strength_development`, `threshold_quality`). Only cumulative
+`external-plan@5` remains unstarted.
 **Dependencies:** `external-plan@5` acceptance depends on the landed H4 v4 contract (landed)
 and on H5c's shape (now delivered); it remains separately scoped work.
 
@@ -622,9 +626,35 @@ delivery therefore built the full chain, per
 
 `POLICY_VERSION` is unchanged by all of H5c (verified via `check-policy-drift.mjs` and
 `simulate:diff` on every commit): confirming a progression revision persists an audited
-`IntentBlock` revision, but nothing yet reads that revision from any recommendation
-selection path. Wiring a confirmed revision into live selection is separate, later,
-separately policy-reviewed work -- not part of this delivery.
+`IntentBlock` revision, but nothing read that revision from any recommendation selection
+path.
+
+**Wiring into live selection (2026-09-10, `2026-09-progression-confirmed-selection-wiring-v1`):**
+a `BlockObjectiveDefinition.coverageKey` already binds an objective directly onto
+`weeklyDosePacking.ts`'s coverage-role vocabulary -- the same `PlanCoverageKey` values
+`EVERGREEN_PACKING_COVERAGE` uses to bind a role to an `AdaptationKey` -- so there was no
+separate `ObjectiveKey -> AdaptationKey` table to build. The real constraint is that
+`EVERGREEN_PACKING_COVERAGE` only defines roles for 3 of the 18 `PlanCoverageKey`s
+(`aerobic_volume`, `primary_strength`, `sustained_quality`). This delivery:
+
+- `engine/confirmedProgressionOverrides.ts` (new) derives a per-role duration-minutes
+  override from an athlete's active confirmed `IntentBlock`s for a given date, classified
+  against `SELECTION_WIRED_COVERAGE_KEYS` (derived from `EVERGREEN_PACKING_COVERAGE`, so it
+  cannot drift out of sync with it).
+- `weeklyDosePacking.ts`'s `packWeeklyDose` takes the override map, substituting a role's
+  catalog-derived `durationMinutes` for capacity-fit and delivered-dose accounting only --
+  `requirement.floor`/`requirement.target` (the WHO-guideline numbers from
+  `evergreenStrategy.ts`) are never touched, so a guideline floor can never be lowered or
+  bypassed by a confirmed progression.
+- `zone2_aerobic`, `strength_maintenance`, `strength_development` and `threshold_quality`
+  are wired (their natural `coverageKey` has a packed role). `surge_repeatability`,
+  `race_specific_endurance` and `vo2_max` are explicitly classified unsupported-for-selection
+  -- a visible notice in `ProgressionBlockEditor.tsx`/`ProgressionReviewPanel.tsx`, not a
+  silent no-op -- pending a future evergreen coverage-role expansion, which is separate,
+  unscoped work.
+- `develop` vs. `maintain` needed no new packing logic: that distinction already lives
+  entirely in `engine/progressionReview.ts` (H5b), governing how `currentValue` is proposed
+  to move over time: the packer only ever consumes whatever value is currently confirmed.
 
 ## Reproduction and verification
 
@@ -666,6 +696,10 @@ archived that version and activated `2026-09-h4-d-ledger-planner-admission-v1`, 
 superseded by `-v2` for the fixed-activity cost-reduce reduce consolidation. The
 fixed-activity dedup-identity unification then archived `-v2` and activated
 `2026-09-fixed-activity-dedup-identity-unification-v1` -- another mechanical bump, not a
-behavior change (`simulate:diff` clean). H5c will require normal policy review when it
-changes decision behavior. Do not enable experimental personalization simply to improve a
-judge score.
+behavior change (`simulate:diff` clean). H5c itself required no policy bump (report-and-
+confirm-only, no selection-time read). Wiring a confirmed progression into live evergreen
+selection then archived `-v1` and activated
+`2026-09-progression-confirmed-selection-wiring-v1` -- a real behavior change gated on an
+athlete actually confirming a progression (`simulate:diff` clean against the committed
+baseline, since no simulation fixture has one). Do not enable experimental personalization
+simply to improve a judge score.
