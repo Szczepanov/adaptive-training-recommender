@@ -71,7 +71,7 @@ def _calculate_session_overlap_minutes(start_a: str, end_a: str, start_b: str, e
         overlap_end = min(dt_end_a, dt_end_b)
         diff = (overlap_end - overlap_start).total_seconds()
         return max(0, int(diff // 60))
-    except Exception:
+    except (ValueError, TypeError, AttributeError):
         return 0
 
 
