@@ -19,6 +19,7 @@ from garminconnect import (
 )
 from google.cloud import firestore as google_firestore
 from google.cloud.exceptions import GoogleCloudError
+from google.cloud.firestore_v1.base_query import FieldFilter
 
 from .firestore_repository import init_firestore_client
 from .token_store import GcsTokenStore
@@ -259,8 +260,15 @@ class GarminConnectionRepository:
         """
         connections: list[tuple[str, str | None]] = []
         seen: set[str] = set()
-        for snapshot in self.db.collection("garminConnections").stream():
+        snapshots = (
+            self.db.collection("garminConnections")
+            .where(filter=FieldFilter("status", "==", "active"))
+            .stream()
+        )
+        for snapshot in snapshots:
             data = snapshot.to_dict() or {}
+            # Defense in depth for mocks/emulators and malformed documents; the Firestore
+            # query is authoritative for production-side filtering.
             if data.get("status") != "active":
                 continue
             uid = data.get("userId") or snapshot.id
