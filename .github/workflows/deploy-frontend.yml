@@ -175,7 +175,7 @@ jobs:
       # step and https://github.com/Szczepanov/adaptive-training-recommender/pull/515).
       - name: Cache Firestore emulator
         if: ${{ inputs.deploy_rules }}
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/firebase/emulators
           key: firebase-emulators-${{ runner.os }}-${{ hashFiles('app/package-lock.json') }}
