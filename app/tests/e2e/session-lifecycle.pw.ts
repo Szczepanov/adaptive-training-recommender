@@ -24,12 +24,21 @@ test('a rapid duplicate start leaves exactly one in-progress execution', async (
   await openFixturePicker(page);
   const start = page.getByRole('button', { name: 'Start Session →', exact: true }).first();
   await start.evaluate(button => {
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    // Session execution ids currently include Date.now(). Make every synchronous clock read
+    // distinct while dispatching both clicks so a broken launch guard cannot be hidden by
+    // two writes accidentally targeting the same Firestore document id.
+    const realDateNow = Date.now;
+    let syntheticNow = realDateNow();
+    Date.now = () => ++syntheticNow;
+    try {
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+      button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    } finally {
+      Date.now = realDateNow;
+    }
   });
 
-  await expect.poll(async () => {
-    const executions = await readSessionExecutions(athlete);
-    return executions.filter(execution => execution.state === 'in_progress').length;
-  }).toBe(1);
+  await expect.poll(async () => (await readSessionExecutions(athlete)).length).toBe(1);
+  const [execution] = await readSessionExecutions(athlete);
+  expect(execution?.state).toBe('in_progress');
 });
