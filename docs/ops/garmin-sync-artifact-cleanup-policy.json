@@ -1,0 +1,17 @@
+[
+  {
+    "name": "keep-most-recent-garmin-sync-images",
+    "action": { "type": "Keep" },
+    "mostRecentVersions": {
+      "keepCount": 30
+    }
+  },
+  {
+    "name": "delete-garmin-sync-images-older-than-30-days",
+    "action": { "type": "Delete" },
+    "condition": {
+      "tagState": "any",
+      "olderThan": "30d"
+    }
+  }
+]

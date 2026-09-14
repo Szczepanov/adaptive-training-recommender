@@ -86,11 +86,29 @@ jobs:
 
       # Deliberately do not pass --force. The pipeline may add/update repository-owned indexes,
       # but it must not silently delete a production index that exists outside the file. Such a
-      # cleanup remains an explicit operator action after reviewing the difference.
+      # cleanup remains an explicit operator action after reviewing the difference. Firebase
+      # also compiles firestore.rules before deploying indexes; its Rules API can transiently
+      # return a 5xx before any index mutation. Repeating this idempotent, non-force deploy is
+      # safe and mirrors app/scripts/deploy-firestore-rules.mjs's retry policy.
       - name: Deploy Firestore indexes
+        shell: bash
         run: |
-          npm exec --no -- firebase deploy --only firestore:indexes \
-            --project "${GCP_PROJECT}" --non-interactive
+          readonly MAX_ATTEMPTS=3
+          for attempt in $(seq 1 "${MAX_ATTEMPTS}"); do
+            if npm exec --no -- firebase deploy --only firestore:indexes \
+              --project "${GCP_PROJECT}" --non-interactive; then
+              exit 0
+            fi
+
+            if (( attempt == MAX_ATTEMPTS )); then
+              echo "Firestore index deployment failed after ${MAX_ATTEMPTS} attempts." >&2
+              exit 1
+            fi
+
+            delay=$((attempt * 15))
+            echo "Firestore index deployment failed on attempt ${attempt}/${MAX_ATTEMPTS}; retrying in ${delay}s." >&2
+            sleep "${delay}"
+          done
 
       # firebase deploy returns after index creation has been requested, not necessarily after
       # the indexes are usable. Block the client rollout until all composite indexes settle.

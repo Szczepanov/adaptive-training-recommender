@@ -93,11 +93,11 @@ describe('isSyncRequestStale', () => {
     });
 
     it('measures a processing request from claimedAt, not requestedAt', () => {
-        // garmin-manual-sync-poll only ticks every 3 minutes, so a request can sit
-        // 'pending' for a couple of those minutes before a worker claims it.
+        // garmin-manual-sync-poll only ticks every 15 minutes, so a request can sit
+        // 'pending' for almost that long before a worker claims it.
         // Measuring staleness from requestedAt once claimed would eat into the same
         // budget twice; claimedAt is when the worker actually started.
-        const claimedAtMs = requestedAtMs + 2 * 60 * 1000;
+        const claimedAtMs = requestedAtMs + 14 * 60 * 1000;
         const request = baseRequest({
             status: 'processing',
             claimedAt: new Date(claimedAtMs).toISOString(),

@@ -90,7 +90,8 @@ describe('garminSyncStaleness', () => {
 
         it('returns false if within stale window', () => {
             const req = { userId: 'u1', status: 'pending' as const, requestedAt: '2026-08-23T08:00:00.000Z' };
-            expect(isSyncRequestStale(req, baseMs + 60_000)).toBe(false);
+            // A worker may not see this request until the next 15-minute poll.
+            expect(isSyncRequestStale(req, baseMs + 15 * 60 * 1000)).toBe(false);
         });
 
         it('returns true if beyond stale window', () => {
@@ -108,8 +109,8 @@ describe('garminSyncStaleness', () => {
             };
             // 2 minutes after claimedAt -> not stale even though requestedAt was 12 min ago
             expect(isSyncRequestStale(req, baseMs + 2 * 60 * 1000)).toBe(false);
-            // 6 minutes after claimedAt -> stale
-            expect(isSyncRequestStale(req, baseMs + 6 * 60 * 1000)).toBe(true);
+            // 21 minutes after claimedAt -> stale
+            expect(isSyncRequestStale(req, baseMs + 21 * 60 * 1000)).toBe(true);
         });
 
         it('keeps a claimed backfill live for the backend execution-lease window', () => {
@@ -136,7 +137,7 @@ describe('garminSyncStaleness', () => {
                 days: 56,
             };
 
-            expect(isSyncRequestStale(req, baseMs + 6 * 60 * 1000, STALE_AFTER_MS)).toBe(true);
+            expect(isSyncRequestStale(req, baseMs + STALE_AFTER_MS + 1000, STALE_AFTER_MS)).toBe(true);
         });
     });
 
