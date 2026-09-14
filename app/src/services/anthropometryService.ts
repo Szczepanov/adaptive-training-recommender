@@ -33,13 +33,14 @@ function validationFieldSummary(errors: readonly { field: string }[]): string {
  */
 export class AnthropometryDataValidationError extends Error {
     readonly code = 'invalid-anthropometry-data' as const;
+    readonly entryId: string;
+    readonly fields: readonly string[];
 
-    constructor(
-        readonly entryId: string,
-        readonly fields: readonly string[],
-    ) {
+    constructor(entryId: string, fields: readonly string[]) {
         super(`Invalid anthropometry data for entry ${entryId}; fields: ${fields.join(', ')}`);
         this.name = 'AnthropometryDataValidationError';
+        this.entryId = entryId;
+        this.fields = fields;
     }
 }
 
