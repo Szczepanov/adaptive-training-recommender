@@ -368,6 +368,37 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
     const physicalWork = validatePhysicalWork(raw.physicalWork, errors);
     const occupationalBaseline = validateOccupationalBaseline(raw.occupationalBaseline, errors);
 
+    // Hunger 1-10 & timing context (ADR-0039 D-BC-HUNGER)
+    let hunger1To10: number | null | undefined = undefined;
+    if (raw.hunger1To10 !== undefined) {
+        hunger1To10 = normalizeEmptyToNull(raw.hunger1To10);
+        if (hunger1To10 !== null) {
+            if (typeof hunger1To10 !== 'number' || !isInRange(hunger1To10, 1, 10) || !Number.isInteger(hunger1To10)) {
+                errors.push({ field: 'hunger1To10', message: 'hunger1To10 must be a whole number between 1 and 10 or empty', value: hunger1To10 });
+            }
+        }
+    }
+
+    let hungerTiming: DailySubjectiveCheckin['hungerTiming'] = undefined;
+    if (raw.hungerTiming !== undefined) {
+        hungerTiming = normalizeEmptyToNull(raw.hungerTiming);
+        if (hungerTiming !== null && hungerTiming !== 'morning_pre_breakfast' && hungerTiming !== 'other') {
+            errors.push({ field: 'hungerTiming', message: "hungerTiming must be 'morning_pre_breakfast', 'other', or empty", value: hungerTiming });
+        }
+    }
+
+    if (typeof hunger1To10 === 'number') {
+        if (!hungerTiming) {
+            errors.push({ field: 'hungerTiming', message: 'hungerTiming is required when hunger1To10 is provided' });
+        }
+    } else if (hunger1To10 === null) {
+        if (hungerTiming !== null && hungerTiming !== undefined) {
+            errors.push({ field: 'hungerTiming', message: 'hungerTiming must be cleared when hunger1To10 is cleared' });
+        }
+    } else if (hunger1To10 === undefined && hungerTiming !== undefined && hungerTiming !== null) {
+        errors.push({ field: 'hunger1To10', message: 'hunger1To10 is required when hungerTiming is provided' });
+    }
+
     if (errors.length > 0) {
         return { isValid: false, errors };
     }
@@ -389,6 +420,8 @@ export function validateCheckin(raw: any): ValidationResult<DailySubjectiveCheck
         ...(tissueResponses && Object.keys(tissueResponses).length > 0 ? { tissueResponses } : {}),
         ...(physicalWork ? { physicalWork } : {}),
         ...(occupationalBaseline ? { occupationalBaseline } : {}),
+        ...(hunger1To10 !== undefined ? { hunger1To10 } : {}),
+        ...(hungerTiming !== undefined ? { hungerTiming } : {}),
         availability: {
             timeAvailableMin: normalizeEmptyToNull(raw.availability?.timeAvailableMin),
             preferredModalityToday: normalizeEmptyToNull(raw.availability?.preferredModalityToday),

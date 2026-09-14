@@ -152,14 +152,50 @@ export function parseSubjectiveCheckin(raw: unknown, documentPath: string, userI
         };
     }
 
+    let hunger1To10: number | null | undefined = undefined;
+    if (raw.hunger1To10 !== undefined) {
+        if (raw.hunger1To10 !== null && (typeof raw.hunger1To10 !== 'number' || !Number.isInteger(raw.hunger1To10) || raw.hunger1To10 < 1 || raw.hunger1To10 > 10)) {
+            return issue(documentPath, 'invalid-hunger', 'hunger1To10');
+        }
+        hunger1To10 = raw.hunger1To10;
+    }
+
+    let hungerTiming: DailySubjectiveCheckin['hungerTiming'] = undefined;
+    if (raw.hungerTiming !== undefined) {
+        if (raw.hungerTiming !== null && raw.hungerTiming !== 'morning_pre_breakfast' && raw.hungerTiming !== 'other') {
+            return issue(documentPath, 'invalid-hunger', 'hungerTiming');
+        }
+        hungerTiming = raw.hungerTiming;
+    }
+
+    if (typeof hunger1To10 === 'number') {
+        if (!hungerTiming) {
+            return issue(documentPath, 'invalid-hunger', 'hungerTiming');
+        }
+    } else if (hunger1To10 === null) {
+        if (hungerTiming !== null && hungerTiming !== undefined) {
+            return issue(documentPath, 'invalid-hunger', 'hungerTiming');
+        }
+    } else if (hunger1To10 === undefined && hungerTiming !== undefined && hungerTiming !== null) {
+        return issue(documentPath, 'invalid-hunger', 'hunger1To10');
+    }
+
     const normalized: DailySubjectiveCheckin = {
         ...(raw as unknown as DailySubjectiveCheckin),
         illnessSymptoms: resolveLegacyIllnessSymptoms(raw.illnessSymptoms, healthContext),
         ...(healthContext ? { healthContext } : {}),
         ...(physicalWork ? { physicalWork } : {}),
+        ...(hunger1To10 !== undefined ? { hunger1To10 } : {}),
+        ...(hungerTiming !== undefined ? { hungerTiming } : {}),
     };
     if (!physicalWork) {
         delete (normalized as { physicalWork?: unknown }).physicalWork;
+    }
+    if (hunger1To10 === undefined) {
+        delete (normalized as { hunger1To10?: unknown }).hunger1To10;
+    }
+    if (hungerTiming === undefined) {
+        delete (normalized as { hungerTiming?: unknown }).hungerTiming;
     }
     return {
         status: 'AVAILABLE',

@@ -2248,4 +2248,187 @@ emulatorDescribe('Firestore security rules', () => {
             occurrenceId: 'occ-unplanned-1',
         }))).resolves.toBeUndefined();
     });
+
+    // --- ADR-0039: Hunger 1-10 on check-in ---
+    it('allows valid check-in with hunger and timing, and rejects malformed hunger', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        // Valid hunger endpoints 1 and 10 with timing
+        await expect(assertSucceeds(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            hunger1To10: 1,
+            hungerTiming: 'morning_pre_breakfast',
+        }))).resolves.toBeUndefined();
+
+        await expect(assertSucceeds(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            hunger1To10: 10,
+            hungerTiming: 'other',
+        }))).resolves.toBeUndefined();
+
+        // Valid cleared state
+        await expect(assertSucceeds(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            hunger1To10: null,
+            hungerTiming: null,
+        }))).resolves.toBeUndefined();
+
+        // Out of bounds: 0, 11, non-integer
+        await assertFails(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            hunger1To10: 0,
+            hungerTiming: 'morning_pre_breakfast',
+        }));
+        await assertFails(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            hunger1To10: 11,
+            hungerTiming: 'morning_pre_breakfast',
+        }));
+        await assertFails(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            hunger1To10: 5.5,
+            hungerTiming: 'morning_pre_breakfast',
+        }));
+
+        // Hunger without timing
+        await assertFails(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            hunger1To10: 5,
+        }));
+
+        // Timing without hunger
+        await assertFails(setDoc(doc(ownerDb, checkinPath), {
+            ...validCheckinWithSessionResponse(),
+            hungerTiming: 'morning_pre_breakfast',
+        }));
+    });
+
+    // --- ADR-0039: Anthropometry entries ---
+    const anthropometryPath = `users/${ownerId}/anthropometry_entries/entry-1`;
+
+    function validAnthropometryEntryDoc() {
+        return {
+            id: 'entry-1',
+            userId: ownerId,
+            date: '2026-09-14',
+            observedAt: '2026-09-14T06:00:00Z',
+            protocol: 'home_anthropometry@1',
+            context: {
+                morningPostVoidPreIntake: true,
+                trainingBeforeMeasurement: false,
+                respiratoryState: 'relaxed_normal_expiration',
+                posture: 'standing_relaxed',
+                clothing: 'minimal_or_bare_skin',
+            },
+            measurements: [
+                { metricId: 'waist_minimum_cm', unit: 'cm', readings: [82.0, 82.4], value: 82.2 },
+            ],
+            schemaVersion: 1,
+            revision: 1,
+            createdAt: '2026-09-14T06:00:00Z',
+            updatedAt: '2026-09-14T06:00:00Z',
+        };
+    }
+
+    it('allows owner to create, update with revision +1, and delete an anthropometry entry', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, anthropometryPath), validAnthropometryEntryDoc()))).resolves.toBeUndefined();
+        await expect(assertSucceeds(getDoc(doc(ownerDb, anthropometryPath)))).resolves.toBeDefined();
+
+        // Update advancing revision
+        await expect(assertSucceeds(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            revision: 2,
+            updatedAt: '2026-09-14T06:30:00Z',
+        }))).resolves.toBeUndefined();
+
+        // Deletion by owner
+        await expect(assertSucceeds(deleteDoc(doc(ownerDb, anthropometryPath)))).resolves.toBeUndefined();
+    });
+
+    it('rejects an anthropometry entry with invalid initial revision or invalid revision advance', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        // Initial revision must be 1
+        await assertFails(setDoc(doc(ownerDb, `${anthropometryPath}-rev2`), {
+            ...validAnthropometryEntryDoc(),
+            id: 'entry-1-rev2',
+            revision: 2,
+        }));
+
+        // Set revision 1
+        await expect(assertSucceeds(setDoc(doc(ownerDb, anthropometryPath), validAnthropometryEntryDoc()))).resolves.toBeUndefined();
+
+        // Cannot update without bumping revision
+        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            revision: 1,
+        }));
+
+        // Cannot skip revision (+2)
+        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            revision: 3,
+        }));
+    });
+
+    it('rejects cross-user anthropometry access', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), anthropometryPath), validAnthropometryEntryDoc());
+        });
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        await assertFails(getDoc(doc(otherDb, anthropometryPath)));
+        await assertFails(setDoc(doc(otherDb, anthropometryPath), validAnthropometryEntryDoc()));
+        await assertFails(deleteDoc(doc(otherDb, anthropometryPath)));
+    });
+
+    it('rejects an anthropometry entry with a malformed measurement item', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+
+        // Unknown metricId
+        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            measurements: [{ metricId: 'neck_cm', unit: 'cm', readings: [40.0, 40.2], value: 40.1 }],
+        }));
+
+        // Unit mismatch for the given metric
+        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            measurements: [{ metricId: 'waist_minimum_cm', unit: 'kg', readings: [82.0, 82.4], value: 82.2 }],
+        }));
+
+        // Value out of the broad corruption bounds
+        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            measurements: [{ metricId: 'waist_minimum_cm', unit: 'cm', readings: [82.0, 999.0], value: 999.0 }],
+        }));
+
+        // Wrong reading count (circumference requires 2-3, not 1)
+        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            measurements: [{ metricId: 'waist_minimum_cm', unit: 'cm', readings: [82.0], value: 82.0 }],
+        }));
+
+        // body_mass_kg requires exactly 1 reading, not 2
+        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            measurements: [{ metricId: 'body_mass_kg', unit: 'kg', readings: [70.0, 70.2], value: 70.1 }],
+        }));
+
+        // Laterality on a non-limb metric
+        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            measurements: [{ metricId: 'waist_minimum_cm', laterality: 'left', unit: 'cm', readings: [82.0, 82.4], value: 82.2 }],
+        }));
+
+        // Invalid laterality value on a limb metric
+        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            measurements: [{ metricId: 'thigh_mid_cm', laterality: 'both', unit: 'cm', readings: [55.0, 55.2], value: 55.1 }],
+        }));
+
+        // Valid laterality on a limb metric succeeds
+        await expect(assertSucceeds(setDoc(doc(ownerDb, anthropometryPath), {
+            ...validAnthropometryEntryDoc(),
+            measurements: [{ metricId: 'thigh_mid_cm', laterality: 'left', unit: 'cm', readings: [55.0, 55.2], value: 55.1 }],
+        }))).resolves.toBeUndefined();
+    });
 });
