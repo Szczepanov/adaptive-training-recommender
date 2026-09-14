@@ -16,6 +16,7 @@ import { ActivityReclassificationModal } from './ActivityReclassificationModal';
 import { StrengthOverloadHistory } from './StrengthOverloadHistory';
 import { CompletedWorkoutList } from './CompletedWorkoutList';
 import { unlinkCompletedWorkoutSource } from './completedWorkoutActions';
+import { BodyCompositionPanel } from './anthropometry/BodyCompositionPanel';
 import { configuredActivitiesReadModelPolicy } from '../training-occurrence/activitiesReadModelPolicy';
 import { getCompletedWorkoutsInRange } from '../training-occurrence/activitiesReadModelService';
 import type { CompletedWorkoutView } from '../training-occurrence/completedWorkoutView';
@@ -37,7 +38,7 @@ interface DataViewProps {
   onNavigateToBrief?: () => void;
 }
 
-type DataViewTab = 'recovery' | 'activities' | 'strength' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
+type DataViewTab = 'recovery' | 'activities' | 'strength' | 'body' | 'checkin' | 'goals' | 'constraints' | 'preferences' | 'adherence' | 'brief';
 
 type AdherenceStats = Awaited<ReturnType<typeof recommendationService.getAdherenceStats>>;
 
@@ -1030,6 +1031,12 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
           Strength History
         </button>
         <button
+          className={activeTab === 'body' ? 'active' : ''}
+          onClick={() => setActiveTab('body')}
+        >
+          Body & Fueling
+        </button>
+        <button
           className={activeTab === 'checkin' ? 'active' : ''}
           onClick={() => setActiveTab('checkin')}
         >
@@ -1145,6 +1152,9 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
           <div className="data-section">
             <StrengthOverloadHistory userId={userId} />
           </div>
+        )}
+        {activeTab === 'body' && (
+          <BodyCompositionPanel userId={userId} asOfDate={briefDate} />
         )}
         {activeTab === 'checkin' && renderCheckinData()}
         {activeTab === 'goals' && renderGoalsData()}

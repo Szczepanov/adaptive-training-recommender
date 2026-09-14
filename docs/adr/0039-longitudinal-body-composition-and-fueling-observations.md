@@ -1,6 +1,6 @@
 # ADR-0039: Longitudinal Body-Composition and Fueling Observations
 
-* **Status:** Proposed
+* **Status:** Accepted
 * **Date:** 2026-09-14
 * **Deciders:** Repository owner
 * **Source analysis:** [Body-composition and fueling observations analysis](../analysis/2026-09-14-body-composition-and-fueling-observations.md)

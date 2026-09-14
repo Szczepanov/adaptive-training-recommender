@@ -1335,6 +1335,10 @@ export interface DailySubjectiveCheckin {
     physicalWork?: PhysicalWorkCheckin;
     /** Athlete-authored or conservatively inferred usual occupational load context. */
     occupationalBaseline?: OccupationalLoadBaseline;
+    /** Optional within-person appetite rating 1-10 (ADR-0039 D-BC-HUNGER). Zero recommendation authority. */
+    hunger1To10?: number | null;
+    /** Context timing for the hunger rating. Preferred comparison series is morning_pre_breakfast. */
+    hungerTiming?: 'morning_pre_breakfast' | 'other' | null;
     // Availability block
     availability: {
         timeAvailableMin: number | null;

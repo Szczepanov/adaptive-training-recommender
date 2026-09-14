@@ -18,6 +18,7 @@ import { SCREEN_LABELS } from '../types/navigation';
 import { HealthContextSection } from './checkin/HealthContextSection';
 import { PhysicalWorkSection } from './checkin/PhysicalWorkSection';
 import { SubjectiveScaleRow } from './checkin/SubjectiveScaleRow';
+import { HungerSection } from './checkin/HungerSection';
 import { CheckinStepper } from './checkin/CheckinStepper';
 import { deriveCheckinSteps } from './checkin/checkinStepState';
 import './DailyCheckin.css';
@@ -315,6 +316,15 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
     // pain toggle off must not erase an explicitly disclosed neurological/systemic/trauma
     // red flag, just as it must not erase a valid graded tissue observation.
     setCheckin({ ...checkin, [field]: next });
+  };
+
+  const handleHungerChange = (hunger1To10: number | null, hungerTiming: DailySubjectiveCheckin['hungerTiming']) => {
+    if (!checkin) return;
+    setCheckin({
+      ...checkin,
+      hunger1To10,
+      hungerTiming,
+    });
   };
 
   const handleRedFlagToggle = (category: RedFlagCategory) => {
@@ -895,6 +905,13 @@ export function DailyCheckin({ userId, onNavigate, onBack, onCheckinSaved }: Dai
             })}
           </div>
         </section>
+
+        {/* Section: Hunger & Fueling (ADR-0039 D-BC-HUNGER) */}
+        <HungerSection
+          hunger1To10={checkin.hunger1To10}
+          hungerTiming={checkin.hungerTiming}
+          onChange={handleHungerChange}
+        />
 
         {/* Section 3: Availability & Notes */}
         <section className="checkin-section" aria-label="Session availability">
