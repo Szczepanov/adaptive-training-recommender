@@ -1,519 +1,508 @@
 # Body-composition and fueling observations — implementation plan
 
-**Status:** Draft  
-**Blocked by:** acceptance of [ADR-0039](../adr/0039-longitudinal-body-composition-and-fueling-observations.md) for implementation work  
-**Unlocks:** standardized manual anthropometry, optional hunger history, source-aware body-mass trends, and a real longitudinal evidence set for a later fueling/body-composition coaching decision  
+**Status:** Draft
+**Blocked by:** acceptance of [ADR-0039](../adr/0039-longitudinal-body-composition-and-fueling-observations.md) for implementation work
+**Unlocks:** protocol-aware manual anthropometry, optional hunger history, source-aware body-mass trends, and a real longitudinal evidence set for a later fueling/body-composition coaching decision
 **Source analysis:** [2026-09-14 body-composition and fueling observations](../analysis/2026-09-14-body-composition-and-fueling-observations.md)
 
 ## Goal
 
-Deliver a small, coherent observation-first capability that lets an athlete record standardized
-body measurements and hunger, review body-mass/circumference/appetite trends in **Data**, and
-preserve source/measurement provenance without changing any training recommendation.
+Deliver a small observation-first capability that lets an athlete record repeatable home body
+measurements and hunger context, review source-aware trends in **Data**, and preserve provenance
+without changing any training recommendation.
 
-The implementation must make manual measurement useful **without** turning imperfect home
-anthropometry into a body-fat estimator, a RED-S screen, or an automatic training-control signal.
+The implementation must make manual measurement useful without turning imperfect home
+anthropometry into a body-fat estimator, an energy-availability / RED-S screen, or an automatic
+training-control signal.
 
 ---
 
 ## Objectives
 
-- [ ] Persist user-authored, protocol-versioned body mass and circumference measurements under a
-  dedicated owner-scoped collection.
-- [ ] Preserve existing Garmin/provider weight rather than replacing or averaging it.
-- [ ] Add an optional 0–100 morning hunger observation to the daily check-in with no completion or
+- [ ] Persist athlete-authored, protocol-versioned body mass and circumference sessions in a
+  dedicated owner-scoped domain.
+- [ ] Preserve existing provider body mass rather than replacing, averaging or silently splicing
+  it with manual values.
+- [ ] Add optional timing-aware 0–100 hunger VAS context to the daily check-in with no completion or
   readiness authority.
-- [ ] Add an in-Data body-composition/fueling surface with source-specific trend math, provenance
-  and coverage visibility.
-- [ ] Make measurement quality explicit: fixed landmarks, repeat readings, protocol context and
+- [ ] Add an in-Data body-composition/fueling surface with source-specific trend math, provenance,
+  context and coverage visibility.
+- [ ] Make measurement quality explicit through named landmarks, repeat readings, context and
   correction/deletion.
 - [ ] Keep every v1 signal out of recommendation selection, safety, fatigue and audit inputs.
-- [ ] Add security, parser, migration and UI tests before shipping.
+- [ ] Add persistence validation, Firestore rules, parsers, migration compatibility and UI tests.
 - [ ] Document retention/account-deletion behavior before this plan can be marked `Implemented`.
-- [ ] Collect enough real longitudinal data to support a later evidence review; do not pre-approve
-  recommendation authority in this plan.
+- [ ] Collect real longitudinal observations before any future coaching-authority decision.
 
 ---
 
-## Default assumptions
+## Default contracts
 
-Unless implementation evidence forces a change, use these defaults:
+Unless implementation evidence forces a reviewed change:
 
-1. **No new top-level screen.** Entry/trends live under `Data`; hunger is collected in `Check-in`.
+1. **No new top-level screen.** Entry/trends live under Data; hunger is collected in Check-in.
 2. **Manual collection:** `users/{userId}/anthropometry_entries/{entryId}`.
 3. **Protocol:** `home_anthropometry@1`.
-4. **Body mass:** a manual entry and provider weight remain distinct sources.
-5. **Circumferences:** two readings are requested; a large mismatch prompts a third; the retained
-   summary is the median of entered readings.
-6. **Repeatability tolerance:** implement as a named/versioned UI quality constant, initially
-   `max(1.0 cm, 1% of the pair mean)` for circumference entries. This is a product heuristic only,
-   not a physiological rule. If usability testing shows the prompt is too sensitive/insensitive,
-   change the protocol/quality-policy revision rather than silently changing historical meaning.
-7. **Body-mass 7-day display:** require at least 4 valid days in the selected source series before
-   displaying a weekly mean/change label.
-8. **Hunger:** 0–100 VAS, optional, intended pre-breakfast, no neutral default.
-9. **No backfill:** existing users start with empty manual anthropometry history.
-10. **Recommendation authority:** none. No `POLICY_VERSION` change unless implementation scope
-    expands to decision-affecting behavior.
+4. **Protocol language:** the named non-waist sites are app-defined repeatable home landmarks, not
+   claims of clinical/ISAK standardization.
+5. **Body mass:** manual and provider observations remain distinct source series.
+6. **Body-mass readings:** one retained reading per manual session; one deterministic derived point
+   per source/local date before weekly trend math.
+7. **Circumferences:** request two readings; when the pair exceeds the versioned repeatability
+   tolerance, request a third; retained summary is the median.
+8. **Initial circumference quality tolerance:** `max(1.0 cm, 1% of the pair mean)`. This is a
+   product measurement-quality heuristic, not a physiological rule. If changed in a way that
+   changes accepted/summarized values, bump the protocol/quality-policy revision.
+9. **Body-mass 7-day display:** require at least 4 distinct valid local dates in the selected source
+   series before displaying a weekly mean/change label.
+10. **Hunger fields:** `hungerVas0To100` plus `hungerTiming = morning_pre_breakfast | other`.
+11. **Hunger comparison series:** morning/pre-breakfast is the default retrospective series;
+    `other` remains visible but is not silently mixed into it.
+12. **No backfill:** existing users start with empty manual anthropometry history and no synthetic
+    hunger history.
+13. **Recommendation authority:** none. No `POLICY_VERSION` change unless scope expands to behavior
+    that can alter a recommendation.
 
-The numeric values in items 6–7 are transparent product/display heuristics. They must not be
-registered or presented as sports-science thresholds unless a later decision gives them that
-role.
+Items 8–9 are transparent product/display heuristics. They must not be presented as sports-science
+or health thresholds.
 
 ---
 
 ## Do not do these things
 
 - [ ] Do **not** make the client writable to `health_observation_days`.
-- [ ] Do **not** reuse `AssessmentAttempt` for routine weekly tape measurements.
-- [ ] Do **not** add hunger to the current readiness/fatigue formula.
+- [ ] Do **not** force routine tape/scale tracking through `AssessmentAttempt` or Testing.
+- [ ] Do **not** create a second generic observation framework from the anthropometry package.
+- [ ] Do **not** add hunger to readiness, strain, fatigue or candidate ranking.
 - [ ] Do **not** make hunger mandatory for check-in completion.
-- [ ] Do **not** use `Date.toISOString().split('T')[0]` for measurement dates.
-- [ ] Do **not** average manual and Garmin/provider weight.
-- [ ] Do **not** silently switch weight sources inside one trend line.
+- [ ] Do **not** use `Date.toISOString().split('T')[0]` for logical measurement dates.
+- [ ] Do **not** count two measurements on one date as two coverage days.
+- [ ] Do **not** average manual and provider weight.
+- [ ] Do **not** silently change a user-selected weight source when coverage becomes sparse.
+- [ ] Do **not** mix `hungerTiming = other` into a pre-breakfast appetite trend.
 - [ ] Do **not** calculate body-fat percentage from tape measurements.
 - [ ] Do **not** label circumference loss as muscle loss.
 - [ ] Do **not** diagnose low energy availability or RED-S.
-- [ ] Do **not** emit raw body/hunger values to analytics/error logging.
+- [ ] Do **not** emit raw body/hunger values to analytics, console logs or error reports.
 - [ ] Do **not** duplicate raw anthropometry history into `RecommendationAudit`.
 - [ ] Do **not** add a top-level navigation item in v1.
-- [ ] Do **not** create a recommendation policy constant without ADR-0033 claim/coverage/alignment
-  ownership and a policy-version bump.
+- [ ] Do **not** add a decision threshold without ADR-0033 lineage/alignment ownership and a
+  policy-version bump.
 
 ---
 
 # Delivery sequence
 
-The preferred implementation is a sequence of reviewable PRs. Each PR must leave the application
-in a valid state and should be independently revertible.
+Prefer small reviewable PRs. Every PR must leave the application in a valid state and be
+independently revertible.
 
-## BC0 — contracts, validation and persistence
+## BC0 — domain contracts, validation, persistence and security
 
-**Status:** Blocked by ADR-0039 acceptance  
-**Dependencies:** none after ADR acceptance  
+**Status:** Blocked by ADR-0039 acceptance
+**Dependencies:** none after ADR acceptance
 **Unlocks:** BC1 and BC3
 
-### BC0.1 Define the domain contracts
+### BC0.1 Define the focused domain
 
-Create a focused package such as `app/src/anthropometry/` rather than expanding
-`engine/models.ts` with a non-engine domain.
-
-Suggested files:
+Create a package such as:
 
 ```text
 app/src/anthropometry/models.ts
 app/src/anthropometry/protocol.ts
 app/src/anthropometry/validation.ts
-app/src/anthropometry/trends.ts        # may start in BC3 if preferred
+app/src/anthropometry/trends.ts        # may land with BC3 instead
 ```
 
 Tasks:
 
-- [ ] Define `AnthropometryMetricId` with the ADR-0039 landmark-specific metric IDs.
-- [ ] Define `AnthropometryLaterality` and make it part of limb-series identity.
-- [ ] Define `AnthropometryMeasurement` with `readings`, deterministic `value`, unit and
-  `repeatabilityWarning`.
-- [ ] Define `AnthropometryEntry` with user/date/protocol/context/revision/schema metadata.
-- [ ] Define `HOME_ANTHROPOMETRY_PROTOCOL` revision 1 with user-facing instructions and the named
-  repeatability-quality policy.
-- [ ] Keep dates Warsaw-local using `getLocalDateString()` / existing date validation.
-- [ ] Keep `observedAt` as an instant/timestamp distinct from logical local date.
+- [ ] Define the ADR-0039 `AnthropometryMetricId` vocabulary.
+- [ ] Define laterality only for supported limb measurements and include it in series identity.
+- [ ] Define `AnthropometryMeasurement` with unit, retained readings, deterministic `value` and
+  repeatability warning.
+- [ ] Define `AnthropometryEntry` with `entryId`, user/date/observedAt/protocol/context,
+  current-record revision and schema metadata.
+- [ ] Document in code that `revision` is stale-write/correction protection, not immutable history.
+- [ ] Define `HOME_ANTHROPOMETRY_PROTOCOL` revision 1 and a named/versioned quality policy.
+- [ ] Use the existing Warsaw-local date helpers and validate that `observedAt` resolves to the
+  entry's logical local `date`.
 
 ### BC0.2 Validation
 
-- [ ] Reject unsupported metric IDs/units.
+- [ ] Reject unsupported metric IDs and units.
 - [ ] Require kg for `body_mass_kg` and cm for circumference metrics.
-- [ ] Enforce finite, positive, bounded values using broad corruption/safety bounds rather than
-  narrow “healthy” ranges.
-- [ ] Bound readings per metric (v1: 1 for body mass, 2–3 for circumference).
-- [ ] Require laterality only where supported; never compare different laterality as one series.
-- [ ] Require `value` to equal the deterministic summary of stored readings so clients cannot
-  persist an unrelated display value.
-- [ ] Validate `schemaVersion === 1`, `revision >= 1`, protocol id/revision and timestamps.
-- [ ] Add tests for malformed/legacy/edge inputs and measurement-summary determinism.
+- [ ] Use broad finite corruption/safety bounds, not narrow “healthy” ranges.
+- [ ] Require exactly one retained reading for body mass and 2–3 for circumference.
+- [ ] Require laterality only where the metric supports it.
+- [ ] Require `value` to equal the deterministic median/summary of retained readings.
+- [ ] Derive/validate `repeatabilityWarning` from the versioned quality policy; do not trust an
+  arbitrary client boolean.
+- [ ] Validate `schemaVersion === 1`, protocol id/revision, timestamps and monotonic revision.
+- [ ] Add edge/malformed tests, including NaN/infinite values and invalid metric/unit pairings.
 
 ### BC0.3 Firestore service
 
-Add `app/src/services/anthropometryService.ts` (or an equivalent domain-owned persistence service).
+Add `app/src/services/anthropometryService.ts` or an equivalent domain-owned service.
 
-- [ ] Create entry with generated collision-safe `entryId`.
+- [ ] Create entries with collision-safe IDs.
 - [ ] Read one entry.
-- [ ] Query a bounded date range ordered deterministically.
-- [ ] Correct/update an entry with monotonic revision and immutable ownership/id/createdAt.
+- [ ] Query a bounded local-date range with deterministic ordering.
+- [ ] Correct an entry with optimistic/monotonic revision semantics while preserving
+  `userId`, `entryId` and `createdAt`.
 - [ ] Delete an athlete-authored entry explicitly.
-- [ ] Return `DataState`-style unavailable/invalid states where this improves consistency; do not
-  collapse permission/network errors into an empty valid history.
-- [ ] Never write manual records into `daily_recovery_snapshots` or
-  `health_observation_days`.
+- [ ] Return `DataState`-style invalid/unavailable states rather than collapsing read failures into
+  an empty valid history.
+- [ ] Never write manual records into `daily_recovery_snapshots`, `health_observation_days`, or
+  `metric_observations`.
 
-### BC0.4 Firestore security rules
+### BC0.4 Firestore rules
 
 Add rules for `users/{userId}/anthropometry_entries/{entryId}`.
 
 - [ ] Owner-only read/create/update/delete.
-- [ ] `userId` and `entryId` match the authenticated path/document identity.
-- [ ] Bound top-level keys and nested collection/list sizes.
-- [ ] Bound string lengths, units, protocol values, numeric values and reading counts.
-- [ ] Preserve immutable fields on update and require schema/revision monotonicity.
-- [ ] Reject attempts to write another user's id.
-- [ ] Add Firebase emulator rule tests for valid create/correct/delete and malformed/cross-user
-  writes.
+- [ ] Require document `userId` / `entryId` to match path identity.
+- [ ] Bound top-level keys, nested keys, list sizes, string lengths, enum values and reading counts.
+- [ ] Enforce broad numeric corruption bounds that mirror application validation.
+- [ ] Preserve immutable identity fields and require revision advancement on update.
+- [ ] Reject cross-user writes and malformed nested data.
+- [ ] Add Firebase emulator tests for valid create/correct/delete, stale revision, malformed data and
+  cross-user attempts.
 
 ### BC0 acceptance
 
-- [ ] Domain tests pass.
+- [ ] Domain unit tests pass.
 - [ ] `npm run test:rules` passes.
-- [ ] Existing provider ingestion paths are untouched.
-- [ ] A code-search/architecture test proves `app/src/engine/` does not import from the new
-  anthropometry package/service.
+- [ ] Existing provider/testing ingestion paths are untouched.
+- [ ] An architecture/import test proves `app/src/engine/` does not consume the anthropometry
+  package/service.
 
 ---
 
-## BC1 — standardized anthropometry entry UX inside Data
+## BC1 — protocol-aware measurement UX inside Data
 
-**Status:** Blocked by BC0  
-**Dependencies:** BC0  
-**Unlocks:** real manual measurement history and BC3 trend UX
+**Status:** Blocked by BC0
+**Dependencies:** BC0
+**Unlocks:** real manual history and BC3 trend UX
 
-### BC1.1 Entry form
+### BC1.1 Entry flow
 
-Create a focused component under `app/src/components/` or a `body-composition/` subdirectory and
-mount it from `DataView`.
+Mount a focused component from `DataView`.
 
-- [ ] Add a `Log measurements` action.
-- [ ] Show the protocol context before entry: preferred timing, no prior training, fixed landmark,
-  tape/posture guidance.
-- [ ] Default the logical date with `getLocalDateString()`.
-- [ ] Allow body mass plus any subset of circumference metrics; do not require all nine at once.
-- [ ] Replace ambiguous user labels with ADR-0039 terminology (`abdomen at navel`, `relaxed upper
-  arm`).
-- [ ] For limb measurements, expose laterality and default to the most recent choice for that
-  metric when available; never silently change side.
+- [ ] Add `Log measurements`.
+- [ ] Show preferred context before entry: morning when practical, post-void, pre-intake,
+  pre-training, same landmark/posture and relaxed protocol-defined respiratory state.
+- [ ] Default logical date with the existing Warsaw-local helper.
+- [ ] Allow body mass plus any subset of circumferences; never require all metrics in one session.
+- [ ] Use precise labels such as `abdomen at navel` and `relaxed upper arm`.
+- [ ] For limbs, expose laterality and remember the most recent side only as an explicit
+  convenience; never silently switch side.
 - [ ] Request two circumference readings and apply the named repeatability check.
-- [ ] Request a third reading only when the v1 quality tolerance is exceeded.
-- [ ] Display the median summary while retaining raw entered readings.
-- [ ] Make the difference between “preferred protocol followed” and “other context” visible rather
-  than rejecting useful real-world entries.
+- [ ] Request a third only when the first pair exceeds the v1 tolerance.
+- [ ] Display the deterministic median while retaining entered readings.
+- [ ] Make preferred versus other measurement context visible instead of rejecting real-world
+  non-preferred entries.
 
-### BC1.2 Correction and deletion
+### BC1.2 Correction/deletion
 
-- [ ] Allow a user to open a prior manual session.
-- [ ] Correct via revisioned update rather than editing ownership/time provenance invisibly.
-- [ ] Delete only after an explicit confirmation.
-- [ ] Ensure an entry disappearing from history invalidates/recomputes derived UI trends rather
-  than leaving cached summaries.
+- [ ] Open prior manual sessions from history.
+- [ ] Correct the existing logical entry and increment its current-record revision rather than
+  creating a duplicate merely to replace a mistake.
+- [ ] Confirm deletion explicitly.
+- [ ] Invalidate/recompute derived UI trends after correction/deletion.
 
 ### BC1.3 UX/accessibility tests
 
-- [ ] Keyboard-accessible form controls.
-- [ ] Numeric mobile input modes.
-- [ ] Unit labels are explicit.
-- [ ] Error messages identify the field and preserve entered values where safe.
-- [ ] Component tests cover partial measurement sessions, laterality, repeatability prompt,
-  correction and deletion.
-- [ ] No values are written to console/analytics as part of event tracking.
+- [ ] Keyboard-accessible controls and labels.
+- [ ] Appropriate mobile numeric input modes.
+- [ ] Explicit unit labels.
+- [ ] Field-specific errors that preserve safe entered values.
+- [ ] Component tests for partial sessions, laterality, quality prompt, correction and deletion.
+- [ ] No raw values in analytics/console telemetry.
 
 ### BC1 acceptance
 
-- [ ] Athlete can record a protocol-aware weekly measurement session without leaving Data.
-- [ ] Existing Data sections still render with no anthropometry history.
-- [ ] No new `Screen` value or navigation group is introduced.
+- [ ] Athlete can record a protocol-aware manual session without leaving Data.
+- [ ] Existing Data content renders correctly with no anthropometry history.
+- [ ] No new `Screen` value or top-level navigation group exists.
 
 ---
 
-## BC2 — optional hunger observation in the daily check-in
+## BC2 — optional timing-aware hunger in Check-in
 
-**Status:** Blocked by ADR-0039 acceptance; independent of BC0/BC1  
-**Dependencies:** accepted ADR-0039  
-**Unlocks:** appetite trend history for BC3
+**Status:** Blocked by ADR-0039 acceptance; independent of BC0/BC1
+**Dependencies:** accepted ADR-0039
+**Unlocks:** appetite history for BC3
 
-### BC2.1 Schema/model/parser
+### BC2.1 Model/parser/validation
 
-- [ ] Add nullable/optional `hunger` (0–100) to `DailySubjectiveCheckin`.
-- [ ] Preserve existing check-in schema compatibility; decide whether the additive field requires a
-  schema bump based on current parser/rules version strategy and document the choice in code.
-- [ ] Update validation/parser/service merge semantics so clearing hunger does not resurrect a stale
-  value.
-- [ ] Do not add hunger to `SubjectiveDimensionKey` or `SubjectiveInput`.
-- [ ] Do not add hunger to `isCompletedSubjectiveCheckin` requirements.
-- [ ] Add parsing tests proving legacy check-ins without hunger remain valid.
+- [ ] Add optional/nullable `hungerVas0To100` and
+  `hungerTiming: morning_pre_breakfast | other` to `DailySubjectiveCheckin`.
+- [ ] New-write invariant: numeric hunger requires valid timing; clearing hunger clears both.
+- [ ] Preserve legacy documents with neither field.
+- [ ] Decide/document whether the additive fields require a check-in schema bump under the current
+  parser/version strategy.
+- [ ] Update application validation to require finite values in 0–100.
+- [ ] Update persistence/parser code so explicit clearing cannot leave stale merged values.
+- [ ] Do not add hunger to `SubjectiveDimensionKey`, `SubjectiveInput`, check-in completeness or
+  readiness composition.
 
-### BC2.2 Check-in UX
+### BC2.2 Firestore persistence boundary
+
+The current daily-check-in rules do not validate these new fields. Do not rely on TypeScript alone.
+
+- [ ] Update `firestore.rules` to allow legacy docs with no hunger fields.
+- [ ] For new hunger values, enforce 0–100 and the timing enum.
+- [ ] Enforce consistent value/timing presence or supported explicit-null semantics.
+- [ ] Ensure update/clear behavior cannot retain a stale timing or value.
+- [ ] Add emulator tests for missing, valid endpoints (0/100), invalid negative/>100/non-number,
+  invalid timing and clear/update transitions.
+
+### BC2.3 Check-in UX
 
 - [ ] Add `Hunger right now` as a 0–100 VAS/slider with endpoint labels.
-- [ ] Make it visually optional.
-- [ ] Do not pre-fill a neutral score.
-- [ ] Record the initial response before any retrospective hunger context is displayed.
-- [ ] Do not show previous hunger/trend values in the pre-submit check-in flow, preserving
-  ADR-0020 `D-SUBJANCHOR`.
-- [ ] If the user edits the check-in later, preserve the existing first-submission/wearable-reveal
-  semantics rather than pretending the edited value was the original one.
+- [ ] Mark it optional and do not pre-fill a neutral value.
+- [ ] Capture preferred `morning_pre_breakfast` versus `other` timing without adding heavy burden.
+- [ ] Do not show previous hunger/trends before today's initial submission (`D-SUBJANCHOR`).
+- [ ] Preserve existing `initialSubmittedAt` / wearable-reveal editing semantics.
 
-### BC2.3 Structural no-authority tests
+### BC2.4 Structural no-authority tests
 
-- [ ] Existing recommendation fixtures remain bit-identical when the only input difference is
-  hunger.
-- [ ] Add an architecture/import test proving readiness/fatigue/rules do not consume hunger.
-- [ ] `POLICY_VERSION` remains unchanged because this PR cannot alter recommendations.
+- [ ] Recommendation fixtures are bit-identical when the only input difference is hunger/timing.
+- [ ] Add an architecture/import or focused mapping test proving rules/fatigue/optimizer do not
+  consume hunger.
+- [ ] `POLICY_VERSION` remains unchanged.
 
 ### BC2 acceptance
 
-- [ ] Daily check-in can be completed with hunger missing.
-- [ ] Hunger values persist/reload/correct correctly.
-- [ ] Recommendation output is unchanged for all hunger values 0–100.
+- [ ] Check-in remains completable with hunger absent.
+- [ ] Hunger value/timing persist, reload, clear and correct without stale-field resurrection.
+- [ ] Recommendation output is unchanged for hunger values 0 through 100 and both timing contexts.
 
 ---
 
 ## BC3 — source-aware trend composition and Data dashboard
 
-**Status:** Blocked by BC0 + BC1; hunger panels additionally require BC2  
-**Dependencies:** BC0, BC1, BC2 for the complete dashboard  
-**Unlocks:** usable retrospective monitoring and the future evidence review
+**Status:** Blocked by BC0 + BC1; complete hunger panel additionally requires BC2
+**Dependencies:** BC0, BC1, BC2 for full dashboard
+**Unlocks:** usable retrospective monitoring and future evidence review
 
-### BC3.1 Body-mass source adapter
+### BC3.1 Read-model source adapters
 
-Create a pure/read-model boundary that can receive:
+Compose, but do not persist as one fused measurement:
 
-- manual `body_mass_kg` entries;
-- existing provider/recovery weight observations.
+- manual `body_mass_kg` sessions;
+- existing provider/recovery body-mass observations;
+- manual circumference series;
+- check-in hunger series.
 
-It must produce **separate source series**, not one merged scalar stream.
+- [ ] Give each body-mass source stable identity and visible label.
+- [ ] Preserve logical date, observed time/context and source metadata.
+- [ ] If v1 reads provider weight only from `DailyRecoverySnapshot`, document that as a provider
+  compatibility projection rather than pretending it is a manual record.
+- [ ] Keep composition API source-aware so ADR-0027-style provider evolution does not require a UI
+  rewrite.
 
-- [ ] Define a stable source identity for manual and provider values.
-- [ ] Preserve logical date, observed time and source metadata.
-- [ ] Deduplicate only true duplicate records from the same source/identity; never deduplicate solely
-  because values match.
-- [ ] Do not make the React client write a provider-compatible observation document.
-- [ ] If the implementation reads only `DailyRecoverySnapshot` rather than raw
-  `health_observation_days` for Garmin v1, document that compatibility projection explicitly and
-  keep the composition API provider-neutral enough to migrate later.
+### BC3.2 Deterministic daily body-mass reduction
 
-### BC3.2 Trend math
+Implement a pure function **before** weekly trend calculation.
 
-Implement pure functions with deterministic tests.
+For each selected source/local date:
+
+- [ ] Manual: prefer `morning_post_void_pre_intake && !trainingBeforeMeasurement`.
+- [ ] Manual: choose earliest `observedAt` in the preferred set; otherwise earliest valid same-day
+  entry and mark non-preferred context.
+- [ ] Use stable entry identity as timestamp tie-break.
+- [ ] Keep all raw sessions visible in history even though only one point represents the date.
+- [ ] Provider adapter emits at most one deterministic point per source/local date; any provider
+  deduplication belongs in that adapter.
+- [ ] Coverage counts distinct dates after reduction, never raw record count.
+
+### BC3.3 Pure trend math
 
 Body mass:
 
-- [ ] raw selected-source points;
-- [ ] 7-day mean only with >=4 valid local dates;
-- [ ] adjacent-window week-over-week absolute change;
-- [ ] adjacent-window percentage change;
+- [ ] raw selected-source daily points;
+- [ ] 7-day arithmetic mean only with >=4 distinct valid local dates;
+- [ ] adjacent-window week-over-week absolute and percentage change only when both windows qualify;
 - [ ] explicit `recordedDays/7` coverage;
 - [ ] no interpolation/carry-forward.
 
 Circumference:
 
 - [ ] series key includes metric + laterality + protocol revision;
-- [ ] latest valid vs previous valid delta;
+- [ ] latest valid versus previous valid delta;
 - [ ] no interpolation;
-- [ ] entries with repeatability warnings remain visible and identified rather than silently
-  dropped unless the user marks/corrects them invalid in a future revision.
+- [ ] retain repeatability/context indicators rather than silently hiding warned measurements.
 
 Hunger:
 
-- [ ] 7-day and 28-day retrospective summary;
-- [ ] recorded-day counts;
-- [ ] insufficient-coverage state instead of neutral padding;
-- [ ] no diagnostic label.
+- [ ] default trend uses `morning_pre_breakfast` only;
+- [ ] `other` remains a separate/raw context and does not increase preferred-series coverage;
+- [ ] 7-day and 28-day arithmetic means with recorded-day counts;
+- [ ] insufficient-history state instead of neutral padding;
+- [ ] no good/bad fueling or diagnostic label.
 
-### BC3.3 Source selection
+### BC3.4 Source selection
 
-- [ ] Show which body-mass source currently drives the displayed trend.
-- [ ] Allow explicit source selection when more than one source exists.
-- [ ] If a default source is automatically selected, use a deterministic policy based on recent
-  coverage and stable tie-break ordering.
-- [ ] Never splice sources within a trend window.
-- [ ] When selected source changes, visually mark the source change rather than rendering it as
-  continuous measurement equivalence.
+- [ ] Show which body-mass source drives the trend.
+- [ ] Allow explicit selection when multiple sources exist.
+- [ ] With no explicit selection, an initial default may use recent coverage plus a stable tie-break.
+- [ ] An explicit user selection is sticky; do not silently auto-switch it because coverage changes.
+- [ ] Never splice different sources inside one trend window.
+- [ ] Source changes are visually explicit and are not rendered as continuous measurement
+  equivalence.
 
-### BC3.4 Data UI
+### BC3.5 Data UI
 
 Suggested order:
 
-1. **Body mass** — latest, 7-day mean, WoW change, coverage, source.
-2. **Waist & abdomen** — latest + previous delta.
-3. **Hunger** — 7d/28d retrospective summary + coverage.
+1. **Body mass** — source, latest point/context, 7-day mean, WoW change, coverage.
+2. **Waist & abdomen** — latest + prior delta.
+3. **Hunger** — timing-aware 7d/28d summary + coverage.
 4. **Other circumferences** — expandable cards/series.
-5. Measurement-history table with protocol/repeatability/source details on demand.
+5. Measurement history with protocol/context/repeatability/source details on demand.
 
-- [ ] Use neutral observational copy.
-- [ ] Do not make a green/red “good/bad” body-weight score in v1.
-- [ ] Do not foreground provider `bodyFatPct`; if displayed, label source and treat as contextual.
-- [ ] Ensure no-history, sparse-history, unavailable-provider and mixed-source states are all
-  deliberate UI states.
-
-### BC3.5 Optional cycling W/kg context
-
-This can be split into a separate PR if the canonical FTP/performance authority is not obvious.
-
-- [ ] Identify the current canonical power/FTP-like value rather than adding a second FTP field.
-- [ ] Derive W/kg only from explicit power evidence + selected source-specific body-mass summary.
-- [ ] Show both provenance inputs.
-- [ ] Keep context-only and out of goals/recommendations.
-- [ ] Skip this item rather than guessing the power authority.
+- [ ] Neutral observational copy only.
+- [ ] No green/red “good/bad body weight” score.
+- [ ] Do not foreground provider `bodyFatPct`; if shown, label source and contextual status.
+- [ ] No-history, sparse-history, unavailable-provider and mixed-source states are intentional UI
+  states rather than empty fallbacks.
 
 ### BC3 acceptance
 
-- [ ] Two simultaneous weight sources do not get averaged.
-- [ ] Sparse weeks do not get labelled as complete weekly trends.
-- [ ] Source changes are visible.
-- [ ] A user can understand what changed without the UI claiming why it changed biologically.
+- [ ] Two same-day manual weights count as one coverage date and one daily trend point.
+- [ ] Two simultaneous sources never get averaged/spliced.
+- [ ] Sparse weeks never get labelled complete.
+- [ ] Explicit source selection never auto-switches silently.
+- [ ] Hunger timing contexts never merge silently.
+- [ ] Athlete can inspect provenance/context behind every displayed trend.
 
 ---
 
-## BC4 — privacy, lifecycle, documentation and release hardening
+## BC4 — privacy, lifecycle, docs and release gate
 
-**Status:** Blocked by BC1–BC3  
-**Dependencies:** BC1, BC2, BC3  
-**Unlocks:** production release of the observation/reporting capability
+**Status:** Blocked by BC0–BC3
+**Dependencies:** BC0, BC1, BC2, BC3
+**Unlocks:** production rollout of the observation-only capability
 
 ### BC4.1 Privacy/lifecycle
 
-- [ ] Verify the repository's current account-deletion/user-data deletion path and add
-  `anthropometry_entries` to it if necessary.
-- [ ] Document retention: manual entries remain until the athlete deletes them or account/user-data
-  deletion removes them; do not invent a silent short TTL for longitudinal measurements.
-- [ ] Verify error reporting/logging cannot include raw measurements or hunger values.
-- [ ] Verify analytics events contain only action metadata (for example `measurement_saved`) and
-  never the value, if analytics are used at all.
-- [ ] Ensure export/context features include body data only through an explicit user-invoked export
-  path and with clear units/source/coverage; do not automatically enlarge recommendation audits.
+- [ ] Confirm account deletion removes `anthropometry_entries` according to repository deletion
+  semantics; add implementation if the current deletion path does not cover it.
+- [ ] Document retention behavior for athlete-authored measurements.
+- [ ] Verify analytics/error reporting contains no raw anthropometry/hunger values.
+- [ ] Verify recommendation audits do not contain raw values or derived trend payloads.
+- [ ] Keep history queries bounded.
 
 ### BC4.2 Documentation
 
-Once implementation lands, update living docs to describe what exists **then**, not before:
+- [ ] Move plan status through the normal lifecycle only when implementation evidence supports it.
+- [ ] Update the docs ADR/index/navigation references required by repository conventions.
+- [ ] Document the home protocol, source semantics, trend coverage and non-diagnostic boundary in
+  user-facing help where applicable.
+- [ ] Record any implementation deviations from ADR-0039 explicitly rather than silently changing
+  the contract.
 
-- [ ] `docs/architecture/` appropriate current-state page or add a focused body-observation section
-  to the relevant health/data architecture page.
-- [ ] `docs/README.md` ADR/analysis/plan indexes.
-- [ ] `docs/plans/README.md` status board.
-- [ ] root `README.md` Technical Features only after the capability actually exists.
-- [ ] any data-model/privacy docs affected by the new collection.
+### BC4.3 Release evidence
 
-### BC4.3 Verification
-
-Run and report actual results:
-
-```bash
-make check
-cd app && npm run test:rules
-```
-
-Because the implementation changes frontend models, Firestore rules and UI, the code PRs also need
-normal CI gates rather than the docs-only fast path.
-
-- [ ] TypeScript typecheck clean.
-- [ ] ESLint clean.
-- [ ] Vitest clean.
-- [ ] Firestore emulator rule suite clean.
-- [ ] Knowledge/workout validators unchanged/clean.
-- [ ] No policy-drift failure; if the checker reports a decision-path change, stop and investigate
-  rather than bypassing it.
-- [ ] Visual/mobile smoke review of Data and Check-in.
+- [ ] `npm run check` passes.
+- [ ] `npm run test:rules` passes.
+- [ ] Relevant visual/component tests pass on desktop and mobile.
+- [ ] Architecture/no-authority tests pass.
+- [ ] Legacy check-ins and users with no anthropometry history remain compatible.
+- [ ] Rollback can remove the UI/read path without touching provider data or recommendation policy.
 
 ### BC4 acceptance
 
-- [ ] Privacy/lifecycle behavior is documented and tested where practical.
-- [ ] Architecture docs describe the implemented state.
-- [ ] Status board reflects what actually shipped.
-- [ ] Observation/reporting release can be rolled back without affecting recommendations.
+- [ ] Observation-only feature can ship without recommendation changes.
+- [ ] Security/privacy/lifecycle behavior is documented and tested.
+- [ ] No `POLICY_VERSION` bump is necessary because output is recommendation-invariant.
 
 ---
 
-## BC5 — prospective evidence review; no automatic implementation
+## BC5 — optional cycling W/kg context
 
-**Status:** Blocked by real usage  
-**Dependencies:** BC4 plus sufficient longitudinal history  
-**Usage trigger:** enough real measurements to evaluate whether body-mass/hunger/circumference
-trends add useful context beyond existing performance/recovery signals  
-**Unlocks:** possibly a separate future fueling-advisory ADR
+**Status:** Optional follow-up, not required for BC4
+**Dependencies:** BC3 and a clearly identified canonical cycling power/FTP-like authority
 
-This is intentionally an **evidence task**, not a promised feature phase.
-
-- [ ] Review completion/coverage rates: daily weight, weekly anthropometry, hunger.
-- [ ] Quantify measurement repeatability warnings and correction frequency.
-- [ ] Check source discontinuities and whether manual/provider weight are equivalent enough for any
-  future presentation simplification; do not assume equivalence.
-- [ ] Compare body-mass trend with waist/abdomen and available performance trends.
-- [ ] Examine whether hunger adds information beyond fatigue/sleep/stress/load rather than simply
-  correlating with them.
-- [ ] Record false-positive examples where weight/hunger changed transiently but performance and
-  recovery stayed normal.
-- [ ] Record cases where multiple signals deteriorated together.
-- [ ] Decide whether the correct next step is:
-  - keep the capability informational only;
-  - add a non-training “review fueling” advisory;
-  - investigate a coach-facing body-composition goal loop;
-  - or stop because the signal quality/adherence is insufficient.
-
-Any advisory or recommendation authority requires a **new analysis + ADR**, with ADR-0033
-knowledge ownership and `POLICY_VERSION` semantics if training decisions can change.
+- [ ] Identify the existing canonical power value rather than adding another FTP field.
+- [ ] Derive W/kg only from explicit power evidence plus the selected source-specific body-mass
+  summary.
+- [ ] Show provenance for both inputs.
+- [ ] Keep the derived value context-only and out of goals/recommendations.
+- [ ] Skip BC5 if canonical power authority is ambiguous; do not guess.
 
 ---
 
-# Data-contract checklist
+# Cross-cutting tests
 
-Before BC0 is merged, reviewers should be able to answer all of these from code/tests:
+## Persistence and migration
 
-- [ ] What is the stable document identity?
-- [ ] Which local date owns an entry?
-- [ ] Which instant records when it was actually measured?
-- [ ] Which protocol revision defines the landmark?
-- [ ] Which side was measured for limb circumferences?
-- [ ] What raw repeats produced the stored summary?
-- [ ] Was repeatability questionable?
-- [ ] Who can read/write/correct/delete the record?
-- [ ] What happens when a write/read fails?
-- [ ] How does an old user with no record behave?
-- [ ] How is a provider weight kept distinct from a manual weight?
-- [ ] Can any of this data change a recommendation? The v1 answer must be **no**.
+- [ ] Existing users with no manual measurements remain valid.
+- [ ] Legacy check-ins without hunger fields parse and save.
+- [ ] Explicit hunger clearing removes both value and timing.
+- [ ] Anthropometry stale revisions fail rather than silently overwriting a newer correction.
+- [ ] Delete/correction immediately changes derived Data trends.
 
----
+## Time semantics
 
-# Rollout and rollback
+- [ ] Logical dates use Europe/Warsaw helpers.
+- [ ] DST boundary tests prove local-date grouping is stable.
+- [ ] `observedAt`/logical-date consistency is validated.
+- [ ] Distinct-date coverage is correct across month/year boundaries.
 
-## Rollout
+## Measurement integrity
 
-1. Ship persistence/rules/tests first.
-2. Ship manual entry UX.
-3. Ship optional hunger collection with no authority.
-4. Ship retrospective trends.
-5. Observe real data quality/adherence before any coaching interpretation.
+- [ ] Different landmarks never compare as one series.
+- [ ] Different laterality never compares as one series.
+- [ ] Different protocol revisions never silently compare as one series.
+- [ ] Repeatability tolerance and median summary are deterministic.
+- [ ] Multiple same-day manual sessions never increase weekly coverage count.
 
-A feature flag is optional for BC1/BC3 if the UI can remain hidden safely, but the underlying data
-contract must not depend on a process-local flag for correctness.
+## Recommendation isolation
 
-## Rollback
-
-Because v1 has no engine authority, rollback is deliberately cheap:
-
-- remove/hide the entry/trend UI;
-- stop new manual writes;
-- leave existing owner-scoped records intact unless the athlete deletes them;
-- provider recovery ingestion continues unchanged;
-- hunger can remain an ignored backward-compatible field if rolling back UI is safer than a schema
-  deletion;
-- recommendations remain unaffected throughout.
-
-Do not perform destructive bulk deletion as part of a product rollback.
+- [ ] Engine/recommender imports do not depend on anthropometry trend code.
+- [ ] Hunger does not map into `SubjectiveInput`.
+- [ ] Recommendation outputs are invariant to anthropometry/hunger presence and values.
+- [ ] Raw values do not enter `RecommendationAudit`.
 
 ---
 
-# Definition of done
+# Evidence/decision review after real use
 
-This plan is `Implemented` only when all of the following are true:
+Do **not** schedule automatic recommendation activation as part of this plan.
 
-- [ ] ADR-0039 is accepted (or superseded by an accepted replacement).
-- [ ] Manual anthropometry persistence + validation + owner-only Firestore rules are live.
-- [ ] Standardized measurement UX is available in Data.
-- [ ] Hunger is optional, nullable, anti-anchored and recommendation-neutral.
-- [ ] Body-mass trends are source-specific and coverage-aware.
-- [ ] Circumference trends preserve landmark/protocol/laterality identity.
-- [ ] No tape-derived body-fat/lean-mass/RED-S claims exist.
-- [ ] Correction and deletion work for manual records.
-- [ ] Account/user-data deletion and retention behavior are verified/documented.
-- [ ] Raw values are absent from analytics/error telemetry and recommendation audits.
-- [ ] All applicable unit/component/rules tests and `make check` pass.
-- [ ] Living architecture/index/status docs have been updated to the implemented state.
-- [ ] No body-composition/hunger signal can alter a recommendation without a later explicit
-  activation decision.
+After a meaningful real-world observation period, a separate analysis may ask:
+
+- Are measurements adhered to under the intended protocol?
+- How often do repeatability warnings occur?
+- Does manual/provider source disagreement create user confusion?
+- Is morning pre-breakfast hunger completion high enough to support a stable trend?
+- Do body-mass/waist/hunger trends add information beyond existing recovery/performance data?
+- Can any candidate advisory be validated prospectively without encouraging unnecessary weight
+  loss or overreacting to noisy measurements?
+
+Only if a concrete decision-affecting use case survives that review should a new ADR define claim
+lineage, thresholds, `POLICY_VERSION`, simulation/replay evidence and bounded activation.
+
+---
+
+# Validation for this documentation PR
+
+Because PR #568 remains documentation-only, the repository-level validation target is:
+
+```bash
+uv run pre-commit run --all-files
+```
+
+The current PR must also end every new Markdown file with a newline and contain no trailing
+whitespace so repository hygiene hooks pass.
+
+---
+
+## Completion definition
+
+This plan can move to `Implemented` only when BC0–BC4 are complete and evidenced. BC5 is optional.
+
+Implementation completion means the app can collect and review protocol-aware manual body
+measurements and timing-aware hunger context with explicit provenance, coverage and privacy while
+remaining structurally incapable of changing a training recommendation from those v1 signals.
