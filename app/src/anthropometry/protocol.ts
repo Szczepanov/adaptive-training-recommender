@@ -101,8 +101,15 @@ export function summarizeMeasurementItem(
     }
 
     const roundedReadings = rawReadings.map(roundTo1Decimal);
-    const medianVal = roundTo1Decimal(calculateMedian(roundedReadings));
     const pairExceeded = exceedsCircumferenceTolerance(roundedReadings[0], roundedReadings[1]);
+    if (pairExceeded && roundedReadings.length !== 3) {
+        throw new Error(`Circumference ${metricId} requires a third reading when the first pair exceeds protocol tolerance`);
+    }
+    if (!pairExceeded && roundedReadings.length !== 2) {
+        throw new Error(`Circumference ${metricId} only accepts a third reading when the first pair exceeds protocol tolerance`);
+    }
+
+    const medianVal = roundTo1Decimal(calculateMedian(roundedReadings));
 
     return {
         metricId,

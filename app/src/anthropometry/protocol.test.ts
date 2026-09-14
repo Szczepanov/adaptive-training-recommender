@@ -11,31 +11,24 @@ import { getLocalDateString } from '../utils/localDate';
 describe('anthropometry protocol (home_anthropometry@1)', () => {
     describe('calculateCircumferenceTolerance', () => {
         it('uses 1.0 cm minimum floor when 1% of mean is less than 1.0 cm', () => {
-            // Mean 80 cm -> 1% is 0.8 cm -> tolerance is 1.0 cm
             expect(calculateCircumferenceTolerance(80, 80)).toBe(1.0);
             expect(calculateCircumferenceTolerance(79.5, 80.5)).toBe(1.0);
         });
 
         it('uses 1% of mean when mean exceeds 100 cm', () => {
-            // Mean 120 cm -> 1% is 1.2 cm
             expect(calculateCircumferenceTolerance(120, 120)).toBe(1.2);
-            // Mean 150 cm -> 1% is 1.5 cm
             expect(calculateCircumferenceTolerance(150, 150)).toBe(1.5);
         });
     });
 
     describe('exceedsCircumferenceTolerance', () => {
         it('returns false when pair difference is within tolerance', () => {
-            // Mean 80 cm, diff 0.5 cm <= 1.0 cm
             expect(exceedsCircumferenceTolerance(80.0, 80.5)).toBe(false);
-            // Mean 80 cm, diff exactly 1.0 cm <= 1.0 cm
             expect(exceedsCircumferenceTolerance(80.0, 81.0)).toBe(false);
         });
 
         it('returns true when pair difference exceeds tolerance', () => {
-            // Mean 80 cm, diff 1.2 cm > 1.0 cm
             expect(exceedsCircumferenceTolerance(80.0, 81.2)).toBe(true);
-            // Mean 120 cm, tolerance 1.2 cm, diff 1.5 cm > 1.2 cm
             expect(exceedsCircumferenceTolerance(120.0, 121.5)).toBe(true);
         });
     });
@@ -82,7 +75,6 @@ describe('anthropometry protocol (home_anthropometry@1)', () => {
         });
 
         it('summarizes circumference with 3 readings when 3rd reading was prompted', () => {
-            // Pair [82.0, 83.5] diff is 1.5 cm > 1.0 cm -> warning flag true
             const item = summarizeMeasurementItem('waist_minimum_cm', [82.0, 83.5, 82.6]);
             expect(item).toEqual({
                 metricId: 'waist_minimum_cm',
@@ -91,6 +83,14 @@ describe('anthropometry protocol (home_anthropometry@1)', () => {
                 value: 82.6,
                 repeatabilityWarning: true,
             });
+        });
+
+        it('requires the prompted third reading when the first pair exceeds tolerance', () => {
+            expect(() => summarizeMeasurementItem('waist_minimum_cm', [82.0, 83.5])).toThrow('requires a third reading');
+        });
+
+        it('rejects an unnecessary third reading when the first pair is within tolerance', () => {
+            expect(() => summarizeMeasurementItem('waist_minimum_cm', [82.0, 82.4, 82.2])).toThrow('only accepts a third reading');
         });
 
         it('attaches laterality for limb measurements', () => {
@@ -104,7 +104,7 @@ describe('anthropometry protocol (home_anthropometry@1)', () => {
 
     describe('deriveObservedAtForLocalDate', () => {
         it('uses the real current instant when the date is today in Warsaw local time', () => {
-            const now = new Date('2026-09-14T20:00:00Z'); // 22:00 Warsaw (summer, UTC+2)
+            const now = new Date('2026-09-14T20:00:00Z');
             const today = getLocalDateString(now);
             const observedAt = deriveObservedAtForLocalDate(today, now);
             expect(observedAt).toBe(now.toISOString());
@@ -118,7 +118,6 @@ describe('anthropometry protocol (home_anthropometry@1)', () => {
         });
 
         it('the synthesized instant resolves back to the same Warsaw date across a DST boundary', () => {
-            // 2026-10-25 is the last Sunday of October -- Warsaw's CEST->CET transition.
             const now = new Date('2026-11-01T09:00:00Z');
             const observedAt = deriveObservedAtForLocalDate('2026-10-25', now);
             expect(getLocalDateString(new Date(observedAt))).toBe('2026-10-25');
