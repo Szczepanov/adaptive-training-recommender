@@ -19,6 +19,10 @@ import { getDb } from '../firebase';
 import type { AnthropometryEntry } from '../anthropometry/models';
 import { validateAnthropometryEntry } from '../anthropometry/validation';
 
+function validationFieldSummary(errors: readonly { field: string }[]): string {
+    return Array.from(new Set(errors.map(error => error.field))).join(', ');
+}
+
 export class AnthropometryService {
     private collectionPath(userId: string): string {
         return `users/${userId}/anthropometry_entries`;
@@ -34,8 +38,6 @@ export class AnthropometryService {
 
         const validation = validateAnthropometryEntry(snap.data());
         if (!validation.isValid || !validation.data) {
-            // D-BC-PRIVACY: log only field paths, never validation.errors' message text --
-            // those embed the raw out-of-bounds body/circumference value.
             console.warn(`[anthropometry] Malformed entry ${entryId} for user ${userId}, fields:`, validation.errors.map(e => e.field));
             return null;
         }
@@ -67,7 +69,6 @@ export class AnthropometryService {
             if (validation.isValid && validation.data) {
                 entries.push(validation.data);
             } else {
-                // D-BC-PRIVACY: field paths only, see getEntry above.
                 console.warn(`[anthropometry] Omitting invalid entry ${docSnap.id}, fields:`, validation.errors.map(e => e.field));
             }
         }
@@ -81,11 +82,10 @@ export class AnthropometryService {
     async createEntry(userId: string, entry: AnthropometryEntry): Promise<AnthropometryEntry> {
         const validation = validateAnthropometryEntry(entry);
         if (!validation.isValid || !validation.data) {
-            const msg = validation.errors.map(e => `${e.field}: ${e.message}`).join('; ');
-            throw new Error(`Anthropometry validation failed: ${msg}`);
+            throw new Error(`Anthropometry validation failed for fields: ${validationFieldSummary(validation.errors)}`);
         }
         if (entry.userId !== userId) {
-            throw new Error(`User ID mismatch: expected ${userId}, got ${entry.userId}`);
+            throw new Error('Anthropometry user ID mismatch');
         }
         if (entry.revision !== 1) {
             throw new Error(`Initial entry revision must be 1, got ${entry.revision}`);
@@ -102,11 +102,10 @@ export class AnthropometryService {
     async correctEntry(userId: string, entry: AnthropometryEntry): Promise<AnthropometryEntry> {
         const validation = validateAnthropometryEntry(entry);
         if (!validation.isValid || !validation.data) {
-            const msg = validation.errors.map(e => `${e.field}: ${e.message}`).join('; ');
-            throw new Error(`Anthropometry validation failed: ${msg}`);
+            throw new Error(`Anthropometry validation failed for fields: ${validationFieldSummary(validation.errors)}`);
         }
         if (entry.userId !== userId) {
-            throw new Error(`User ID mismatch: expected ${userId}, got ${entry.userId}`);
+            throw new Error('Anthropometry user ID mismatch');
         }
 
         const docRef = doc(getDb(), this.collectionPath(userId), entry.id);

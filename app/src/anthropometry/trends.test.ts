@@ -40,8 +40,8 @@ function sampleEntry(
 describe('anthropometry trend math', () => {
     describe('reduceDailyManualBodyMass', () => {
         it('prefers morning_post_void_pre_intake without prior training over other same-day entries', () => {
-            const e1 = sampleEntry('e1', '2026-09-14', '2026-09-14T06:00:00Z', 75.5, false, false); // non-preferred
-            const e2 = sampleEntry('e2', '2026-09-14', '2026-09-14T07:00:00Z', 75.0, true, false); // preferred
+            const e1 = sampleEntry('e1', '2026-09-14', '2026-09-14T06:00:00Z', 75.5, false, false);
+            const e2 = sampleEntry('e2', '2026-09-14', '2026-09-14T07:00:00Z', 75.0, true, false);
             const map = reduceDailyManualBodyMass([e1, e2]);
 
             expect(map.size).toBe(1);
@@ -116,12 +116,10 @@ describe('anthropometry trend math', () => {
 
         it('computes WoW absolute and % change only when both windows qualify', () => {
             const points = new Map([
-                // prior: 4 days at 76.0
                 ['2026-09-01', { date: '2026-09-01', weightKg: 76.0, source: 'provider' as const }],
                 ['2026-09-02', { date: '2026-09-02', weightKg: 76.0, source: 'provider' as const }],
                 ['2026-09-03', { date: '2026-09-03', weightKg: 76.0, source: 'provider' as const }],
                 ['2026-09-04', { date: '2026-09-04', weightKg: 76.0, source: 'provider' as const }],
-                // current: 4 days at 75.0
                 ['2026-09-08', { date: '2026-09-08', weightKg: 75.0, source: 'provider' as const }],
                 ['2026-09-09', { date: '2026-09-09', weightKg: 75.0, source: 'provider' as const }],
                 ['2026-09-10', { date: '2026-09-10', weightKg: 75.0, source: 'provider' as const }],
@@ -135,10 +133,8 @@ describe('anthropometry trend math', () => {
 
         it('returns null WoW change when one window fails coverage threshold', () => {
             const points = new Map([
-                // prior: only 2 days
                 ['2026-09-01', { date: '2026-09-01', weightKg: 76.0, source: 'provider' as const }],
                 ['2026-09-02', { date: '2026-09-02', weightKg: 76.0, source: 'provider' as const }],
-                // current: 4 days
                 ['2026-09-08', { date: '2026-09-08', weightKg: 75.0, source: 'provider' as const }],
                 ['2026-09-09', { date: '2026-09-09', weightKg: 75.0, source: 'provider' as const }],
                 ['2026-09-10', { date: '2026-09-10', weightKg: 75.0, source: 'provider' as const }],
@@ -203,6 +199,32 @@ describe('anthropometry trend math', () => {
             expect(rightThighTrend?.previousPoint).toBeNull();
             expect(rightThighTrend?.deltaCm).toBeNull();
         });
+
+        it('uses entry identity as a stable tie-break when same-day observations share observedAt', () => {
+            const makeWaistEntry = (id: string, value: number): AnthropometryEntry => ({
+                id,
+                userId: 'u1',
+                date: '2026-09-14',
+                observedAt: '2026-09-14T12:00:00.000Z',
+                protocol: 'home_anthropometry@1',
+                context: { morningPostVoidPreIntake: true, trainingBeforeMeasurement: false },
+                measurements: [{ metricId: 'waist_minimum_cm', unit: 'cm', readings: [value, value], value }],
+                schemaVersion: 1,
+                revision: 1,
+                createdAt: '2026-09-14T12:00:00.000Z',
+                updatedAt: '2026-09-14T12:00:00.000Z',
+            });
+
+            const e1 = makeWaistEntry('e1', 82.0);
+            const e2 = makeWaistEntry('e2', 81.5);
+            const forward = computeCircumferenceTrends([e1, e2]).get('waist_minimum_cm:unspecified:home_anthropometry@1');
+            const reversed = computeCircumferenceTrends([e2, e1]).get('waist_minimum_cm:unspecified:home_anthropometry@1');
+
+            expect(forward?.latestPoint?.entryId).toBe('e2');
+            expect(reversed?.latestPoint?.entryId).toBe('e2');
+            expect(forward?.previousPoint?.entryId).toBe('e1');
+            expect(reversed?.previousPoint?.entryId).toBe('e1');
+        });
     });
 
     describe('computeHungerRetrospectiveSummary', () => {
@@ -213,15 +235,15 @@ describe('anthropometry trend math', () => {
             const records = [
                 { date: '2026-09-12', hunger1To10: 6, hungerTiming: 'morning_pre_breakfast' as const },
                 { date: '2026-09-13', hunger1To10: 4, hungerTiming: 'morning_pre_breakfast' as const },
-                { date: '2026-09-14', hunger1To10: 8, hungerTiming: 'other' as const }, // separate timing
+                { date: '2026-09-14', hunger1To10: 8, hungerTiming: 'other' as const },
                 { date: '2026-09-01', hunger1To10: 5, hungerTiming: 'morning_pre_breakfast' as const },
             ];
 
             const summary = computeHungerRetrospectiveSummary(records, 'morning_pre_breakfast', dates7d, dates28d);
             expect(summary.recordedDays7d).toBe(2);
-            expect(summary.mean7d).toBe(5.0); // (6 + 4) / 2
+            expect(summary.mean7d).toBe(5.0);
             expect(summary.recordedDays28d).toBe(3);
-            expect(summary.mean28d).toBe(5.0); // (6 + 4 + 5) / 3
+            expect(summary.mean28d).toBe(5.0);
             expect(summary.latestValue).toBe(4);
             expect(summary.latestDate).toBe('2026-09-13');
         });

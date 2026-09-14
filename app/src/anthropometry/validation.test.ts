@@ -76,33 +76,87 @@ describe('anthropometry entry validation', () => {
     });
 
     it('rejects an entry where observedAt resolves to a different Warsaw calendar date', () => {
-        // 2026-09-14T23:30:00Z is 2026-09-15 01:30 in Warsaw (UTC+2 in summer)
         const entry = { ...validSampleEntry(), date: '2026-09-14', observedAt: '2026-09-14T23:30:00.000Z' };
         const result = validateAnthropometryEntry(entry);
         expect(result.isValid).toBe(false);
         expect(result.errors.some(e => e.field === 'observedAt')).toBe(true);
     });
 
-    it('rejects an entry with out-of-bounds readings', () => {
+    it('rejects an entry with out-of-bounds readings without echoing raw biometric values', () => {
         const entry = validSampleEntry();
-        entry.measurements[0].readings = [10.0, 12.0]; // waist min is 40 cm
-        entry.measurements[0].value = 11.0;
+        entry.measurements[0].readings = [39.123, 39.456];
+        entry.measurements[0].value = 39.2895;
         const result = validateAnthropometryEntry(entry);
         expect(result.isValid).toBe(false);
         expect(result.errors.some(e => e.field.startsWith('measurements[0]'))).toBe(true);
+        const messages = result.errors.map(e => e.message).join(' | ');
+        expect(messages).not.toContain('39.123');
+        expect(messages).not.toContain('39.456');
+        expect(messages).not.toContain('39.2895');
     });
 
     it('rejects non-limb metric with laterality specified', () => {
         const entry = validSampleEntry();
-        entry.measurements[0].laterality = 'left'; // waist cannot have laterality
+        entry.measurements[0].laterality = 'left';
         const result = validateAnthropometryEntry(entry);
         expect(result.isValid).toBe(false);
         expect(result.errors.some(e => e.field === 'measurements[0].laterality')).toBe(true);
     });
 
+    it('rejects a retained circumference value that does not equal the deterministic protocol median', () => {
+        const entry = validSampleEntry();
+        entry.measurements[0].value = 81.0;
+        const result = validateAnthropometryEntry(entry);
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'measurements[0].value' && e.message.includes('protocol median'))).toBe(true);
+    });
+
+    it('requires a third reading when the first pair exceeds repeatability tolerance', () => {
+        const entry = validSampleEntry();
+        entry.measurements[0] = {
+            metricId: 'waist_minimum_cm',
+            unit: 'cm',
+            readings: [80.0, 82.0],
+            value: 81.0,
+            repeatabilityWarning: true,
+        };
+        const result = validateAnthropometryEntry(entry);
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'measurements[0].readings' && e.message.includes('third'))).toBe(true);
+    });
+
+    it('rejects a third reading when the first pair is within repeatability tolerance', () => {
+        const entry = validSampleEntry();
+        entry.measurements[0] = {
+            metricId: 'waist_minimum_cm',
+            unit: 'cm',
+            readings: [80.0, 80.4, 80.2],
+            value: 80.2,
+            repeatabilityWarning: false,
+        };
+        const result = validateAnthropometryEntry(entry);
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'measurements[0].readings' && e.message.includes('only retained'))).toBe(true);
+    });
+
+    it('rejects a repeatability warning that contradicts the first pair', () => {
+        const entry = validSampleEntry();
+        entry.measurements[0].repeatabilityWarning = true;
+        const result = validateAnthropometryEntry(entry);
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'measurements[0].repeatabilityWarning')).toBe(true);
+    });
+
+    it('normalizes a missing circumference warning from the retained readings', () => {
+        const entry = validSampleEntry();
+        delete entry.measurements[0].repeatabilityWarning;
+        const result = validateAnthropometryEntry(entry);
+        expect(result.isValid).toBe(true);
+        expect(result.data?.measurements[0].repeatabilityWarning).toBe(false);
+    });
+
     it('rejects duplicate series keys in one session', () => {
         const entry = validSampleEntry();
-        // Add a second right thigh
         entry.measurements.push({
             metricId: 'thigh_mid_cm',
             laterality: 'right',

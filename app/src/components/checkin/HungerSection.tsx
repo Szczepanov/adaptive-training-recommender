@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import type { DailySubjectiveCheckin } from '../../engine/models';
 
 export interface HungerSectionProps {
@@ -7,26 +7,34 @@ export interface HungerSectionProps {
   onChange: (hunger1To10: number | null, hungerTiming: DailySubjectiveCheckin['hungerTiming']) => void;
 }
 
+type HungerTiming = Exclude<DailySubjectiveCheckin['hungerTiming'], null | undefined>;
+
 export const HungerSection: React.FC<HungerSectionProps> = ({
   hunger1To10,
   hungerTiming,
   onChange,
 }) => {
   const isSet = typeof hunger1To10 === 'number';
-  const currentTiming = hungerTiming || 'morning_pre_breakfast';
+  const [pendingTiming, setPendingTiming] = useState<HungerTiming | null>(hungerTiming ?? null);
+
+  useEffect(() => {
+    setPendingTiming(hungerTiming ?? null);
+  }, [hungerTiming]);
 
   const handleSelectScore = (val: number) => {
-    // If selecting a score when none was set, default timing to morning_pre_breakfast
-    onChange(val, hungerTiming ?? 'morning_pre_breakfast');
+    if (!pendingTiming) return;
+    onChange(val, pendingTiming);
   };
 
-  const handleTimingChange = (timing: 'morning_pre_breakfast' | 'other') => {
+  const handleTimingChange = (timing: HungerTiming) => {
+    setPendingTiming(timing);
     if (isSet) {
       onChange(hunger1To10, timing);
     }
   };
 
   const handleClear = () => {
+    setPendingTiming(null);
     onChange(null, null);
   };
 
@@ -61,6 +69,39 @@ export const HungerSection: React.FC<HungerSectionProps> = ({
       </div>
 
       <div className="hunger-scale-container" style={{ marginTop: '0.75rem' }}>
+        <div className="hunger-timing-group" style={{ marginBottom: '0.75rem', padding: '0.75rem', borderRadius: '6px', backgroundColor: 'var(--surface-bg, rgba(255, 255, 255, 0.03))' }}>
+          <span style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', fontWeight: 600 }}>
+            Measurement Timing
+          </span>
+          <div style={{ display: 'flex', gap: '1.5rem' }} role="radiogroup" aria-label="Hunger measurement timing">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+              <input
+                type="radio"
+                name="hungerTiming"
+                value="morning_pre_breakfast"
+                checked={pendingTiming === 'morning_pre_breakfast'}
+                onChange={() => handleTimingChange('morning_pre_breakfast')}
+              />
+              Morning (pre-breakfast)
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.9rem' }}>
+              <input
+                type="radio"
+                name="hungerTiming"
+                value="other"
+                checked={pendingTiming === 'other'}
+                onChange={() => handleTimingChange('other')}
+              />
+              Other timing
+            </label>
+          </div>
+          {!pendingTiming && (
+            <p style={{ margin: '0.5rem 0 0 0', fontSize: '0.78rem', color: 'var(--text-secondary, #aaa)' }}>
+              Choose timing context before rating so the longitudinal series is not mislabeled.
+            </p>
+          )}
+        </div>
+
         <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem', fontSize: '0.85rem', color: 'var(--text-secondary, #aaa)' }}>
           <span>1 = Not hungry at all</span>
           <span>5 = Moderate / typical</span>
@@ -86,6 +127,7 @@ export const HungerSection: React.FC<HungerSectionProps> = ({
                 role="radio"
                 aria-checked={isSelected}
                 aria-label={`Hunger ${val} of 10`}
+                disabled={!pendingTiming}
                 onClick={() => handleSelectScore(val)}
                 className={`hunger-rating-btn ${isSelected ? 'is-selected' : ''}`}
                 style={{
@@ -96,7 +138,8 @@ export const HungerSection: React.FC<HungerSectionProps> = ({
                   backgroundColor: isSelected ? 'var(--primary-accent-bg, rgba(59, 130, 246, 0.2))' : 'var(--card-bg, #1e1e1e)',
                   color: isSelected ? 'var(--primary-accent-text, #60a5fa)' : 'var(--text-primary, #e5e5e5)',
                   fontWeight: isSelected ? 'bold' : 'normal',
-                  cursor: 'pointer',
+                  cursor: pendingTiming ? 'pointer' : 'not-allowed',
+                  opacity: pendingTiming ? 1 : 0.55,
                   fontSize: '1rem',
                   transition: 'all 0.15s ease',
                 }}
@@ -106,36 +149,6 @@ export const HungerSection: React.FC<HungerSectionProps> = ({
             );
           })}
         </div>
-
-        {isSet && (
-          <div className="hunger-timing-group" style={{ marginTop: '0.75rem', padding: '0.75rem', borderRadius: '6px', backgroundColor: 'var(--surface-bg, rgba(255, 255, 255, 0.03))' }}>
-            <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.85rem', fontWeight: 600 }}>
-              Measurement Timing
-            </label>
-            <div style={{ display: 'flex', gap: '1.5rem' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.9rem' }}>
-                <input
-                  type="radio"
-                  name="hungerTiming"
-                  value="morning_pre_breakfast"
-                  checked={currentTiming === 'morning_pre_breakfast'}
-                  onChange={() => handleTimingChange('morning_pre_breakfast')}
-                />
-                Morning (pre-breakfast)
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer', fontSize: '0.9rem' }}>
-                <input
-                  type="radio"
-                  name="hungerTiming"
-                  value="other"
-                  checked={currentTiming === 'other'}
-                  onChange={() => handleTimingChange('other')}
-                />
-                Other timing
-              </label>
-            </div>
-          </div>
-        )}
       </div>
     </section>
   );

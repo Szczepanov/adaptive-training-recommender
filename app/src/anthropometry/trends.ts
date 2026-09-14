@@ -12,7 +12,7 @@ import type {
 import { roundTo1Decimal, roundTo2Decimals } from './protocol';
 
 export interface DailyBodyMassPoint {
-    date: string; // YYYY-MM-DD
+    date: string;
     observedAt?: string;
     source: 'provider' | 'manual';
     weightKg: number;
@@ -24,7 +24,7 @@ export interface BodyMassWindowSummary {
     windowDays: 7;
     endDate: string;
     distinctRecordedDates: number;
-    qualifiesForMean: boolean; // distinctRecordedDates >= 4
+    qualifiesForMean: boolean;
     meanWeightKg: number | null;
 }
 
@@ -43,7 +43,7 @@ export interface CircumferencePoint {
     metricId: AnthropometryMetricId;
     laterality: Laterality;
     protocol: string;
-    value: number; // cm
+    value: number;
     repeatabilityWarning: boolean;
     isPreferredContext: boolean;
     entryId: string;
@@ -126,20 +126,20 @@ export function reduceDailyManualBodyMass(entries: readonly AnthropometryEntry[]
 }
 
 export interface RawProviderWeightRecord {
-    date: string; // YYYY-MM-DD
+    date: string;
     weightKg: number;
     observedAt?: string;
 }
 
 /**
- * Deterministically emits at most one provider body mass point per date.
+ * Emits at most one provider body-mass point per date. Provider adapters are responsible
+ * for provider-specific same-day deduplication before this source-neutral projection.
  */
 export function reduceDailyProviderBodyMass(records: readonly RawProviderWeightRecord[]): Map<string, DailyBodyMassPoint> {
     const result = new Map<string, DailyBodyMassPoint>();
     for (const rec of records) {
         if (typeof rec.weightKg !== 'number' || !Number.isFinite(rec.weightKg) || rec.weightKg <= 0) continue;
         const existing = result.get(rec.date);
-        // If multiple on same date, prefer earliest or keep first deterministic
         if (!existing) {
             result.set(rec.date, {
                 date: rec.date,
@@ -199,7 +199,6 @@ export function computeBodyMassTrend(
     const current7d = compute7dBodyMassSummary(current7dDates, pointsByDate);
     const prior7d = compute7dBodyMassSummary(prior7dDates, pointsByDate);
 
-    // Find the latest recorded point across all dates
     const allDates = Array.from(pointsByDate.keys()).sort();
     const latestDate = allDates.length > 0 ? allDates[allDates.length - 1] : null;
     const latestPoint = latestDate ? pointsByDate.get(latestDate) ?? null : null;
@@ -258,7 +257,8 @@ export function computeCircumferenceTrends(entries: readonly AnthropometryEntry[
     for (const [key, points] of seriesPoints.entries()) {
         const sorted = [...points].sort((a, b) => {
             if (a.date !== b.date) return a.date.localeCompare(b.date);
-            return a.observedAt.localeCompare(b.observedAt);
+            if (a.observedAt !== b.observedAt) return a.observedAt.localeCompare(b.observedAt);
+            return a.entryId.localeCompare(b.entryId);
         });
 
         const latest = sorted[sorted.length - 1];
@@ -310,7 +310,6 @@ export function computeHungerRetrospectiveSummary(
         ? roundTo1Decimal(in28d.reduce((acc, r) => acc + (r.hunger1To10 ?? 0), 0) / in28d.length)
         : null;
 
-    // Find the latest recorded entry for this timing
     const sorted = [...matchingRecords].sort((a, b) => a.date.localeCompare(b.date));
     const latest = sorted.length > 0 ? sorted[sorted.length - 1] : null;
 

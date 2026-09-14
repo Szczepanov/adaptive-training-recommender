@@ -17,6 +17,12 @@ import {
     LATERALITY_OPTIONS,
     LIMB_METRIC_IDS,
 } from './models';
+import {
+    calculateMedian,
+    exceedsCircumferenceTolerance,
+    roundTo1Decimal,
+    roundTo2Decimals,
+} from './protocol';
 import { getLocalDateString } from '../utils/localDate';
 
 export interface ValidationIssue {
@@ -58,6 +64,10 @@ export function isValidDateFormat(date: string): boolean {
         && d.getUTCDate() === day;
 }
 
+function nearlyEqual(a: number, b: number): boolean {
+    return Math.abs(a - b) <= 1e-9;
+}
+
 export function validateMeasurementItem(item: unknown, index: number, errors: ValidationIssue[]): AnthropometryMeasurementItem | null {
     if (!item || typeof item !== 'object') {
         errors.push({ field: `measurements[${index}]`, message: 'Measurement item must be an object' });
@@ -73,7 +83,7 @@ export function validateMeasurementItem(item: unknown, index: number, errors: Va
 
     const bound = METRIC_BOUNDS[metricId];
     if (raw.unit !== bound.unit) {
-        errors.push({ field: `measurements[${index}].unit`, message: `Unit for ${metricId} must be '${bound.unit}', got '${raw.unit}'` });
+        errors.push({ field: `measurements[${index}].unit`, message: `Unit for ${metricId} must be '${bound.unit}'` });
     }
 
     const isLimb = LIMB_METRIC_IDS.includes(metricId);
@@ -81,17 +91,15 @@ export function validateMeasurementItem(item: unknown, index: number, errors: Va
     if (isLimb) {
         if (raw.laterality !== undefined) {
             if (typeof raw.laterality !== 'string' || !LATERALITY_OPTIONS.includes(raw.laterality as Laterality)) {
-                errors.push({ field: `measurements[${index}].laterality`, message: `Invalid laterality '${raw.laterality}' for limb metric` });
+                errors.push({ field: `measurements[${index}].laterality`, message: 'Invalid laterality for limb metric' });
             } else {
                 laterality = raw.laterality as Laterality;
             }
         } else {
             laterality = 'unspecified';
         }
-    } else {
-        if (raw.laterality !== undefined && raw.laterality !== null) {
-            errors.push({ field: `measurements[${index}].laterality`, message: `Non-limb metric ${metricId} cannot specify laterality` });
-        }
+    } else if (raw.laterality !== undefined && raw.laterality !== null) {
+        errors.push({ field: `measurements[${index}].laterality`, message: `Non-limb metric ${metricId} cannot specify laterality` });
     }
 
     if (!Array.isArray(raw.readings)) {
@@ -99,35 +107,96 @@ export function validateMeasurementItem(item: unknown, index: number, errors: Va
         return null;
     }
 
-    if (metricId === 'body_mass_kg') {
-        if (raw.readings.length !== 1) {
-            errors.push({ field: `measurements[${index}].readings`, message: 'body_mass_kg requires exactly 1 reading' });
-        }
-    } else {
-        if (raw.readings.length < 2 || raw.readings.length > 3) {
-            errors.push({ field: `measurements[${index}].readings`, message: `Circumference requires 2 to 3 readings, got ${raw.readings.length}` });
-        }
+    const hasExpectedReadingCount = metricId === 'body_mass_kg'
+        ? raw.readings.length === 1
+        : raw.readings.length >= 2 && raw.readings.length <= 3;
+
+    if (!hasExpectedReadingCount) {
+        errors.push({
+            field: `measurements[${index}].readings`,
+            message: metricId === 'body_mass_kg'
+                ? 'body_mass_kg requires exactly 1 reading'
+                : 'Circumference requires 2 to 3 readings',
+        });
     }
 
+    let readingsAreValid = true;
     for (let rIdx = 0; rIdx < raw.readings.length; rIdx++) {
         const r = raw.readings[rIdx];
         if (typeof r !== 'number' || !Number.isFinite(r) || r < bound.min || r > bound.max) {
+            readingsAreValid = false;
             errors.push({
                 field: `measurements[${index}].readings[${rIdx}]`,
-                message: `Reading ${r} is out of broad corruption bounds [${bound.min}, ${bound.max}]`,
+                message: `Reading is outside broad corruption bounds for ${metricId}`,
             });
         }
     }
 
-    if (typeof raw.value !== 'number' || !Number.isFinite(raw.value) || raw.value < bound.min || raw.value > bound.max) {
+    const valueIsValid = typeof raw.value === 'number'
+        && Number.isFinite(raw.value)
+        && raw.value >= bound.min
+        && raw.value <= bound.max;
+    if (!valueIsValid) {
         errors.push({
             field: `measurements[${index}].value`,
-            message: `Retained value ${raw.value} is out of bounds [${bound.min}, ${bound.max}]`,
+            message: `Retained value is outside broad corruption bounds for ${metricId}`,
         });
     }
 
     if (raw.repeatabilityWarning !== undefined && typeof raw.repeatabilityWarning !== 'boolean') {
         errors.push({ field: `measurements[${index}].repeatabilityWarning`, message: 'repeatabilityWarning must be a boolean' });
+    }
+
+    let normalizedRepeatabilityWarning: boolean | undefined;
+    if (hasExpectedReadingCount && readingsAreValid && valueIsValid) {
+        const numericReadings = raw.readings as number[];
+        if (metricId === 'body_mass_kg') {
+            const expectedValue = roundTo2Decimals(numericReadings[0]);
+            if (!nearlyEqual(raw.value as number, expectedValue)) {
+                errors.push({
+                    field: `measurements[${index}].value`,
+                    message: 'Retained body-mass value must equal the protocol-rounded reading',
+                });
+            }
+            if (raw.repeatabilityWarning !== undefined) {
+                errors.push({
+                    field: `measurements[${index}].repeatabilityWarning`,
+                    message: 'repeatabilityWarning is not valid for body mass',
+                });
+            }
+        } else {
+            const roundedReadings = numericReadings.map(roundTo1Decimal);
+            const pairExceeded = exceedsCircumferenceTolerance(roundedReadings[0], roundedReadings[1]);
+            normalizedRepeatabilityWarning = pairExceeded;
+
+            if (pairExceeded && roundedReadings.length !== 3) {
+                errors.push({
+                    field: `measurements[${index}].readings`,
+                    message: 'A third circumference reading is required when the first pair exceeds protocol tolerance',
+                });
+            }
+            if (!pairExceeded && roundedReadings.length !== 2) {
+                errors.push({
+                    field: `measurements[${index}].readings`,
+                    message: 'A third circumference reading is only retained when the first pair exceeds protocol tolerance',
+                });
+            }
+
+            const expectedValue = roundTo1Decimal(calculateMedian(roundedReadings));
+            if (!nearlyEqual(raw.value as number, expectedValue)) {
+                errors.push({
+                    field: `measurements[${index}].value`,
+                    message: 'Retained circumference value must equal the protocol median of the retained readings',
+                });
+            }
+
+            if (typeof raw.repeatabilityWarning === 'boolean' && raw.repeatabilityWarning !== pairExceeded) {
+                errors.push({
+                    field: `measurements[${index}].repeatabilityWarning`,
+                    message: 'repeatabilityWarning must match the first-pair protocol tolerance result',
+                });
+            }
+        }
     }
 
     if (errors.some(e => e.field.startsWith(`measurements[${index}]`))) {
@@ -140,7 +209,9 @@ export function validateMeasurementItem(item: unknown, index: number, errors: Va
         ...(laterality ? { laterality } : {}),
         readings: raw.readings as number[],
         value: raw.value as number,
-        ...(typeof raw.repeatabilityWarning === 'boolean' ? { repeatabilityWarning: raw.repeatabilityWarning } : {}),
+        ...(normalizedRepeatabilityWarning !== undefined
+            ? { repeatabilityWarning: normalizedRepeatabilityWarning }
+            : {}),
     };
 }
 
@@ -212,7 +283,6 @@ export function validateAnthropometryEntry(raw: unknown): ValidationResult<Anthr
     if (typeof data.observedAt !== 'string' || isNaN(Date.parse(data.observedAt))) {
         errors.push({ field: 'observedAt', message: 'observedAt must be a valid ISO 8601 timestamp' });
     } else if (typeof data.date === 'string' && isValidDateFormat(data.date)) {
-        // Validate Warsaw local calendar date consistency
         const warsawDate = getLocalDateString(new Date(data.observedAt));
         if (warsawDate !== data.date) {
             errors.push({
