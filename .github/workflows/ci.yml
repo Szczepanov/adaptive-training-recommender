@@ -214,14 +214,14 @@ jobs:
         run: npm run build:bundle
 
   frontend-tests:
-    name: Frontend Unit Tests & Firestore Rules
+    name: Frontend Unit Tests, Firestore Rules & Browser E2E
     if: needs.detect-changes.outputs.code_changed == 'true'
     needs: detect-changes
     runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: app
-    timeout-minutes: 15
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
         with:
@@ -242,6 +242,17 @@ jobs:
 
       - name: Install Node dependencies
         run: npm ci
+
+      - name: Cache Playwright Chromium
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-chromium-${{ runner.os }}-${{ hashFiles('app/package-lock.json') }}
+          restore-keys: |
+            playwright-chromium-${{ runner.os }}-
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
 
       - name: Cache Firestore emulator
         uses: actions/cache@v6
@@ -264,6 +275,17 @@ jobs:
 
       - name: Run Firestore security-rule emulator suite
         run: npm run test:rules
+
+      - name: Run browser E2E emulator suite
+        run: npm run test:e2e
+
+      - name: Upload Playwright E2E artifacts
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-e2e-artifacts
+          path: app/artifacts/playwright
+          if-no-files-found: warn
 
   engine-simulations:
     name: Engine Simulations & AI Gates

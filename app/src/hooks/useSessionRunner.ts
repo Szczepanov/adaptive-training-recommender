@@ -124,6 +124,11 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const [isRestoring, setIsRestoring] = useState<boolean>(true);
     const [syncStatus, setSyncStatus] = useState<'synced' | 'pending' | 'unavailable'>('synced');
     const [lastRemovedEntry, setLastRemovedEntry] = useState<SessionEntry | null>(null);
+    // A React state update is not synchronous. Keep this separate from `execution` so a
+    // double-tap in the gap before the start write resolves cannot create two executions.
+    // The H4 claim transaction remains the cross-tab authority for claimed intraday members;
+    // this guard protects the ordinary runner's local launch affordances too.
+    const startInFlightRef = useRef(false);
 
     // PR 3 (training-occurrence plan): the currently-running rest's durable start state,
     // if any. A ref (not state) because closing it must read the latest value
@@ -289,7 +294,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         source: SessionSourceRef,
         options: { occurrenceId?: string; prescriptionHash?: string } = {},
     ) => {
-        if (isRestoring || execution?.state === 'in_progress') return;
+        if (isRestoring || execution?.state === 'in_progress' || startInFlightRef.current) return;
+        startInFlightRef.current = true;
         activeRestRef.current = null;
         setRawDefinition(nextDefinition);
         setActiveBlockIndex(0);
@@ -314,6 +320,8 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
             setRawDefinition(null);
             setSyncStatus('unavailable');
             throw error;
+        } finally {
+            startInFlightRef.current = false;
         }
     }, [execution?.state, isRestoring, userId]);
 
