@@ -195,7 +195,7 @@ service cloud.firestore {
           // default (non-overridden) protected-rest path.
           && audit.externalRest.keys().hasOnly(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date', 'overridden'])
           && audit.externalRest.keys().hasAll(['planId', 'revision', 'contentHash', 'restDirectiveId', 'date'])
-          && audit.externalRest.planId is string && audit.externalRest.planId.size() <= 64
+          && audit.externalRest.planId is string && audit.externalPlan.planId.size() <= 64
           && audit.externalRest.revision is int && audit.externalRest.revision >= 1
           && audit.externalRest.contentHash is string && audit.externalRest.contentHash.size() <= 128
           && audit.externalRest.restDirectiveId is string && audit.externalRest.restDirectiveId.size() <= 64
@@ -2352,13 +2352,19 @@ service cloud.firestore {
     }
 
     // Kept structurally bounded per the repository's rule-budget invariant (see PR #468 /
-    // issue #435): per-metric fine tolerance / median / repeatability validation lives at
-    // the TypeScript persistence boundary (`validateAnthropometryEntry`). Rules enforce
-    // structural shape, broad sanity bounds, and list capacity to prevent exhausting
-    // Firestore's 1000-expression ceiling during writes with multiple measurements (e.g. core
-    // weekly set or full 10-item protocol).
+    // issue #435): per-metric fine tolerance / median / repeatability / duplicate-series
+    // validation lives at the TypeScript persistence boundary (`validateAnthropometryEntry`).
+    // Rules still validate every bounded list element plus every retained reading's broad
+    // sanity range so direct SDK writes cannot create parser-invalid tail elements while
+    // staying comfortably below Firestore's 1000-expression ceiling at the 10-item cap.
     function isLimbAnthropometryMetric(metricId) {
       return metricId in ['upper_arm_relaxed_mid_cm', 'forearm_max_cm', 'thigh_mid_cm', 'calf_max_cm'];
+    }
+
+    function isValidAnthropometryReading(reading, isMass) {
+      return reading is number
+        && reading >= (isMass ? 20.0 : 10.0)
+        && reading <= 350.0;
     }
 
     function isValidAnthropometryMeasurement(item) {
@@ -2376,6 +2382,9 @@ service cloud.firestore {
           || (isLimbAnthropometryMetric(item.metricId) && item.laterality in ['left', 'right', 'unspecified']))
         && item.readings is list
         && (isMass ? item.readings.size() == 1 : (item.readings.size() >= 2 && item.readings.size() <= 3))
+        && isValidAnthropometryReading(item.readings[0], isMass)
+        && (item.readings.size() < 2 || isValidAnthropometryReading(item.readings[1], isMass))
+        && (item.readings.size() < 3 || isValidAnthropometryReading(item.readings[2], isMass))
         && item.value is number && item.value >= (isMass ? 20.0 : 10.0) && item.value <= 350.0
         && (!('repeatabilityWarning' in item) || item.repeatabilityWarning is bool);
     }
@@ -2383,7 +2392,16 @@ service cloud.firestore {
     function hasValidAnthropometryMeasurements(measurements) {
       let sz = measurements.size();
       return measurements is list && sz > 0 && sz <= 10
-        && isValidAnthropometryMeasurement(measurements[0]);
+        && isValidAnthropometryMeasurement(measurements[0])
+        && (sz <= 1 || isValidAnthropometryMeasurement(measurements[1]))
+        && (sz <= 2 || isValidAnthropometryMeasurement(measurements[2]))
+        && (sz <= 3 || isValidAnthropometryMeasurement(measurements[3]))
+        && (sz <= 4 || isValidAnthropometryMeasurement(measurements[4]))
+        && (sz <= 5 || isValidAnthropometryMeasurement(measurements[5]))
+        && (sz <= 6 || isValidAnthropometryMeasurement(measurements[6]))
+        && (sz <= 7 || isValidAnthropometryMeasurement(measurements[7]))
+        && (sz <= 8 || isValidAnthropometryMeasurement(measurements[8]))
+        && (sz <= 9 || isValidAnthropometryMeasurement(measurements[9]));
     }
 
     function hasValidAnthropometryEntry(userId, entryId) {
