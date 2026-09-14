@@ -236,7 +236,13 @@ In-depth technical design documents covering system subsystems:
 * [**External Plan Import Schema**](./external-plan-schema.md) — *Implemented.* JSON contract for importing an externally-authored plan, plus the placement/revision scheduling model.
 * [**Sustained Multidirectional Field Macrocycle (v5)**](./macrocycle-v5.md) — Target multidirectional speed, strength, and endurance field macrocycle specification.
 * [**Visual Review Workflow**](./visual-review.md) — Visual regression and layout review test harness using Playwright.
+* [**Account-Scoped UI State**](./architecture/account-scoped-ui-state.md) — Invariants for isolating authenticated browser state by Firebase Authentication UID.
+* [**Canonical Weekly Coverage Credit Authority**](./architecture/canonical-coverage-credit.md) — Implementation details for canonical weekly coverage credit from ADR-0034.
+* [**Catalogue Lookup Indexes**](./architecture/catalogue-lookup-indexes.md) — Static catalogue access patterns for templates, exercises, and workouts.
+* [**Morning Decision UX Contracts**](./architecture/morning-decision-ux.md) — Implementation contracts for the morning-decision progressive-disclosure UI.
+* [**Session Execution and Saved-Template Lifecycle**](./architecture/session-execution.md) — Living reference for source-neutral session execution and template behavior.
 * [**Sports Knowledge Registry**](./architecture/sports-knowledge-registry.md) — Implementation details of the versioned sports knowledge layer.
+* [**Canonical Strength Spacing Policy**](./architecture/strength-spacing-policy.md) — Implementation details for canonical strength spacing policy from ADR-0034.
 * [**User Flows**](./architecture/user-flows.md) — Current navigation, per-screen flows, and flow-improvement recommendations.
 
 ---
