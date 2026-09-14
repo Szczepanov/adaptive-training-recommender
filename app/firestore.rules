@@ -872,7 +872,7 @@ service cloud.firestore {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
         && data.keys().hasOnly(['userId', 'activationKey', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationRevisionId', 'claimRevision', 'activatedAt', 'priorSettings', 'acceptedSettings'])
-        && data.keys().hasAll(['userId', 'activationKey', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationKey', 'activationRevisionId', 'claimRevision', 'activatedAt', 'priorSettings', 'acceptedSettings'])
+        && data.keys().hasAll(['userId', 'activationKey', 'experimentId', 'blockId', 'proposalId', 'sourcePlanRevision', 'activationRevisionId', 'claimRevision', 'activatedAt', 'priorSettings', 'acceptedSettings'])
         && data.activationKey == activationKey
         && data.activationKey is string && data.activationKey.size() == 64
         && data.experimentId is string && data.experimentId.size() > 0
