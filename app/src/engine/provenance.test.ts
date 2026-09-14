@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Recommendation } from './models';
 import type { IdentityDecisionProvenance } from '../observations/identityModels';
 import type { AthleteEvidenceRecord } from '../knowledge/athleteEvidence';
-import { TEMPLATES } from './templates';
+import { TEMPLATES, TEMPLATES_BY_ID } from './templates';
 import { POLICY_VERSION } from './policy';
 import { buildRecommendationAudit } from './provenance';
 import { buildTrainingHistorySnapshot } from './trainingHistorySnapshot';
@@ -61,7 +61,7 @@ describe('recommendation provenance', () => {
     });
 
     it('carries external plan provenance verbatim, and omits the field entirely otherwise', () => {
-        const template = TEMPLATES.find(item => item.category === 'Rest');
+        const template = TEMPLATES_BY_ID.get('rest_01');
         if (!template) throw new Error('Test fixture requires a rest template');
         const base: Recommendation = {
             template,
@@ -119,7 +119,7 @@ describe('recommendation provenance', () => {
     });
 
     it('persists resolved SEP-B lineage identities without the runtime symptom trace', () => {
-        const template = TEMPLATES.find(item => item.category === 'Rest');
+        const template = TEMPLATES_BY_ID.get('rest_01');
         if (!template) throw new Error('Test fixture requires a rest template');
         const recommendation: Recommendation = {
             template,
@@ -197,7 +197,7 @@ describe('recommendation provenance', () => {
     });
 
     it('carries compact identity evidence into the recommendation audit verbatim', () => {
-        const template = TEMPLATES.find(item => item.category === 'Rest');
+        const template = TEMPLATES_BY_ID.get('rest_01');
         if (!template) throw new Error('Test fixture requires a rest template');
         const recommendation: Recommendation = {
             template,

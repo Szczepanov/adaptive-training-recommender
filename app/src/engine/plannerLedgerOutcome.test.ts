@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { projectedDateOutcomeFrom, type ProjectedDateEvaluation } from './planner';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 
 describe('projected D-LEDGER outcome classification', () => {
     it('does not relabel a ledger-capacity rejection as projected fatigue', () => {
-        const rest = ENRICHED_TEMPLATES.find(template => template.category === 'Rest');
+        const rest = ENRICHED_TEMPLATES_BY_ID.get('rest_01');
         const ledgerBlocked = ENRICHED_TEMPLATES.find(template => template.category !== 'Rest');
         expect(rest).toBeDefined();
         expect(ledgerBlocked).toBeDefined();
