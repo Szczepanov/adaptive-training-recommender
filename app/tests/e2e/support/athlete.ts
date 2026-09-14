@@ -4,6 +4,7 @@ import { deleteApp, initializeApp } from 'firebase/app';
 import { connectAuthEmulator, getAuth, signInWithEmailAndPassword } from 'firebase/auth';
 import { collection, connectFirestoreEmulator, doc, getDocs, getFirestore, setDoc, type Firestore } from 'firebase/firestore';
 import type { Page } from '@playwright/test';
+import { getLocalDateString } from '../../../src/utils/localDate';
 
 export const E2E_PROJECT_ID = 'demo-adaptive-training-e2e';
 const EMULATOR_HOST = '127.0.0.1';
@@ -27,17 +28,6 @@ export interface E2EAthlete {
 export interface PersistedSessionExecution {
   executionId: string;
   state: string;
-}
-
-function warsawDate(): string {
-  const parts = new Intl.DateTimeFormat('en-GB', {
-    timeZone: 'Europe/Warsaw',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(new Date());
-  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
 }
 
 async function authEmulatorRequest<T>(path: string, body: Record<string, unknown>): Promise<T> {
@@ -66,7 +56,7 @@ export async function provisionAthlete(): Promise<E2EAthlete> {
 }
 
 export async function seedRecoverySnapshot(athlete: E2EAthlete): Promise<string> {
-  const date = warsawDate();
+  const date = getLocalDateString();
   const environment = await initializeTestEnvironment({
     projectId: E2E_PROJECT_ID,
     firestore: { host: EMULATOR_HOST, port: FIRESTORE_EMULATOR_PORT },
@@ -144,7 +134,11 @@ export async function signInThroughUi(page: Page, athlete: E2EAthlete): Promise<
   // User initialization is intentionally backgrounded. A fresh account may reach Check-in
   // before onboarding mounts, or display onboarding above it once composition catches up.
   const skipOnboarding = page.getByRole('button', { name: 'Skip for now' });
-  if (await skipOnboarding.isVisible({ timeout: 1_000 })) {
+  const onboardingVisible = await skipOnboarding
+    .waitFor({ state: 'visible', timeout: 2_000 })
+    .then(() => true)
+    .catch(() => false);
+  if (onboardingVisible) {
     await skipOnboarding.click();
   }
 }
