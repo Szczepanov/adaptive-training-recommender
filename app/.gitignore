@@ -23,6 +23,7 @@ artifacts/sequence-search-comparison/
 artifacts/ai-plan-judge/
 artifacts/persona-plan-judge/
 artifacts/hybrid-persona-plan-judge/
+artifacts/playwright/
 test-results/
 playwright-report/
 *.local
@@ -30,6 +31,7 @@ playwright-report/
 .env.*
 !.env.example
 !.env.visual
+!.env.e2e
 
 # Editor directories and files
 .vscode/*

@@ -96,13 +96,18 @@ Parses the input JSON payload, feeds the historical recovery snapshot and athlet
 | `npm run deploy:all` | Full Firebase deploy | Builds production bundle and deploys Hosting, Rules, and Indexes. |
 | `npm run deploy:indexes` | Firestore indexes deploy | Deploys composite index definitions from `firestore.indexes.json`. |
 
-### 6. Visual Review Harness & Playwright
+### 6. Visual Review Harness & Browser E2E
 
 | Command | Action | Description |
 |---|---|---|
 | `npm run visual:install` | Install browser binaries | Installs Playwright Chromium browser binary needed for visual regression testing and screenshot capture. |
 | `npm run visual:serve` | Visual harness server | Starts Vite in visual testing mode (`.env.visual`, entry point `visual.html`) rendering synthetic athlete fixtures on `http://127.0.0.1:4174`. |
 | `npm run visual:refresh` | Refresh review screenshots | Prepares workspace, executes Playwright visual screenshot tests across desktop (1440x1000) and mobile (390x844) viewports against synthetic fixtures, and finalizes review artifacts. |
+| `npm run test:e2e` | Browser journey suite | Starts disposable Firebase Auth and Firestore emulators, serves the normal application in e2e mode, and runs the Chromium sign-in, check-in/recommendation, session lifecycle, and duplicate-start journeys. |
+
+`test:e2e` reads the checked-in `.env.e2e` demo configuration only. It never accesses a
+production Firebase project or Garmin account. Playwright saves a trace, screenshot, video,
+and HTML report under `artifacts/playwright/` when a journey fails; CI uploads that directory.
 
 #### Visual Review Artifacts
 Regenerated into `artifacts/visual-review/latest/`:

@@ -2,11 +2,12 @@ import { initializeApp, type FirebaseApp } from 'firebase/app';
 import {
   initializeFirestore,
   getFirestore,
+  connectFirestoreEmulator,
   persistentLocalCache,
   persistentMultipleTabManager,
   type Firestore,
 } from 'firebase/firestore';
-import { getAuth, type Auth } from 'firebase/auth';
+import { connectAuthEmulator, getAuth, type Auth } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -17,6 +18,26 @@ const firebaseConfig = {
   appId: import.meta.env.VITE_FIREBASE_APP_ID,
   measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
+
+type FirebaseEmulatorConfig = {
+  host: string;
+  authPort: number;
+  firestorePort: number;
+};
+
+function configuredFirebaseEmulators(): FirebaseEmulatorConfig | null {
+  if (import.meta.env.VITE_USE_FIREBASE_EMULATORS !== 'true') return null;
+
+  const host = import.meta.env.VITE_FIREBASE_EMULATOR_HOST;
+  const authPort = Number(import.meta.env.VITE_FIREBASE_AUTH_EMULATOR_PORT);
+  const firestorePort = Number(import.meta.env.VITE_FIREBASE_FIRESTORE_EMULATOR_PORT);
+  if (!host || !Number.isInteger(authPort) || !Number.isInteger(firestorePort)) {
+    throw new Error('Firebase emulator mode requires host, Auth port, and Firestore port configuration.');
+  }
+  return { host, authPort, firestorePort };
+}
+
+const firebaseEmulators = configuredFirebaseEmulators();
 
 let _app: FirebaseApp | undefined;
 export function getApp(): FirebaseApp {
@@ -47,11 +68,24 @@ export function getDb(): Firestore {
       );
       _db = getFirestore(getApp());
     }
+    if (firebaseEmulators) {
+      connectFirestoreEmulator(_db, firebaseEmulators.host, firebaseEmulators.firestorePort);
+    }
   }
   return _db;
 }
 
 let _auth: Auth | undefined;
 export function getAuthInstance(): Auth {
-  return (_auth ??= getAuth(getApp()));
+  if (!_auth) {
+    _auth = getAuth(getApp());
+    if (firebaseEmulators) {
+      connectAuthEmulator(
+        _auth,
+        `http://${firebaseEmulators.host}:${firebaseEmulators.authPort}`,
+        { disableWarnings: true },
+      );
+    }
+  }
+  return _auth;
 }
