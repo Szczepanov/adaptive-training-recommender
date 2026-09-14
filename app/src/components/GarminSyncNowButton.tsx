@@ -29,7 +29,7 @@ export function GarminSyncNowButton({ userId, onSynced }: GarminSyncNowButtonPro
     const title = isStale
         ? 'The last sync request is taking longer than expected — click to request it again'
         : isBusy
-        ? 'Requesting the latest Garmin data — usually resolves within a few minutes'
+        ? 'Requesting the latest Garmin data — usually resolves within 15 minutes'
         : 'Force an immediate Garmin sync instead of waiting for the next scheduled poll';
 
     return (

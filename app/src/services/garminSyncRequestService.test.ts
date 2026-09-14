@@ -87,7 +87,7 @@ describe('GarminSyncRequestService.requestSync', () => {
     });
 
     it('does not overwrite a processing request claimed recently, even if requestedAt is old', async () => {
-        // garmin-manual-sync-poll only ticks every 3 minutes, so a request can sit
+        // garmin-manual-sync-poll only ticks every 15 minutes, so a request can sit
         // 'pending' for a while before a worker claims it -- staleness must be judged
         // from claimedAt (when the worker actually started), not the older
         // requestedAt, or a retry could stomp a claim that just started running.

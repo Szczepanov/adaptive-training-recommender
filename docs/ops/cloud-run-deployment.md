@@ -7,11 +7,11 @@ This guide containerizes the Python Garmin ingestion/sync package and deploys a 
   polled every 15 min through a morning wake window rather than run once at a
   fixed time (see step 6) -- most ticks are a free Firestore freshness check,
   not a Garmin call
-* **`garmin-push-pending-workouts`** -- polls the Firestore workout queue every few
+* **`garmin-push-pending-workouts`** -- polls the Firestore workout queue every 15
   minutes and pushes anything queued by "Sync to Garmin" in the web app
   (`python -m garmin_sync push-pending-workouts-all`)
-* **`garmin-manual-sync`** -- polls for a "Sync Now" request queued by the web app's
-  clickable Garmin sync badge in the navigation bar (or the inline sync trigger)
+* **`garmin-manual-sync`** -- polls every 15 minutes for a "Sync Now" request queued by the
+  web app's clickable Garmin sync badge in the navigation bar (or the inline sync trigger)
   and runs an immediate forced sync if one is pending
   (`python -m garmin_sync poll-manual-sync-all`)
 
@@ -243,24 +243,23 @@ that raises the real-call count to maybe 6-8 across the window, still light.
 ```bash
 gcloud scheduler jobs create http garmin-push-pending-workouts-poll \
   --location=${REGION} \
-  --schedule="*/3 * * * *" \
+  --schedule="*/15 * * * *" \
   --time-zone="Europe/Warsaw" \
   --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-push-pending-workouts:run" \
   --http-method=POST \
   --oauth-service-account-email=${SCHEDULER_SA_EMAIL}
 ```
 
-`garmin-manual-sync` polls all day (not just the 5-9am window) at the same cadence as
-the workout-queue poll, so clicking **Sync Now** in the web app -- e.g. because you're
-up before the morning window, or just want the latest numbers mid-afternoon -- reaches
-Garmin within a few minutes instead of waiting for the next `garmin-sync-morning-poll`
-tick. Same cheap-Firestore-read-first shape: most ticks find no pending request and
-never call Garmin.
+`garmin-manual-sync` polls all day (not just the 5-9am window) at the same 15-minute
+cadence as the workout-queue poll, so clicking **Sync Now** in the web app -- e.g. because
+you're up before the morning window, or just want the latest numbers mid-afternoon -- reaches
+Garmin within 15 minutes instead of waiting for the next `garmin-sync-morning-poll` tick.
+Same cheap-Firestore-read-first shape: most ticks find no pending request and never call Garmin.
 
 ```bash
 gcloud scheduler jobs create http garmin-manual-sync-poll \
   --location=${REGION} \
-  --schedule="*/3 * * * *" \
+  --schedule="*/15 * * * *" \
   --time-zone="Europe/Warsaw" \
   --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
   --http-method=POST \
@@ -270,8 +269,9 @@ gcloud scheduler jobs create http garmin-manual-sync-poll \
 Cloud Scheduler's free tier is 3 jobs **per billing account**, not per project --
 these three exactly use it up, so a billing account already running other Scheduler
 jobs elsewhere (a different project, an unrelated app) will incur Scheduler's
-per-job charge on top. Cloud Run Jobs bill per second of actual execution
-regardless, which for this workload is pennies a month.
+per-job charge on top. Cloud Run Jobs bill each execution for at least one minute,
+so the 15-minute cadence bounds recurring job spend while keeping user-triggered
+work responsive enough for this asynchronous workflow.
 
 ---
 
@@ -279,7 +279,7 @@ regardless, which for this workload is pennies a month.
 
 1. In the web app, open a workout and click **Sync to Garmin Connect** -- this
    writes `status: 'pending'` to `users/{uid}/garmin_workout_queue/{date}`.
-2. Either wait up to 3 minutes for the next poll, or trigger it immediately:
+2. Either wait up to 15 minutes for the next poll, or trigger it immediately:
    `gcloud scheduler jobs run garmin-push-pending-workouts-poll --location=${REGION}`.
 3. Confirm the queue doc flips to `status: 'synced'` with a `garminWorkoutId`, and
    the workout shows up on your Garmin Connect calendar for that date.
@@ -293,7 +293,7 @@ weeks later.
 
 4. On the Home screen, click **🔄 Sync now** in the "Today's Recovery" card -- this
    writes `status: 'pending'` to `users/{uid}/garmin_sync_requests/latest`.
-5. Either wait up to 3 minutes for the next poll, or trigger it immediately:
+5. Either wait up to 15 minutes for the next poll, or trigger it immediately:
    `gcloud scheduler jobs run garmin-manual-sync-poll --location=${REGION}`.
 6. Confirm the request doc flips to `status: 'completed'` and today's recovery
    snapshot refreshes in the app.

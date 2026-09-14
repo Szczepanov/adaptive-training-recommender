@@ -20,7 +20,7 @@ export interface GarminSyncRequest {
 /**
  * Manual "Sync Now" trigger for the Garmin recovery poll (D-GARMINSYNC): writes a
  * single fixed-id doc the garmin_sync Cloud Run Job's poll_manual_sync_requests polls
- * frequently (every few minutes, all day -- see docs/ops/cloud-run-deployment.md),
+ * every 15 minutes, all day -- see docs/ops/cloud-run-deployment.md),
  * atomically claiming it and running an immediate forced sync when it sees
  * `status: 'pending'`. Mirrors garminWorkoutQueueService's queue-and-poll shape, just
  * with a single fixed doc instead of one per date -- only one manual sync can usefully

@@ -9,6 +9,8 @@ set -euo pipefail
 : "${GCP_PROJECT:?Set GCP_PROJECT to your GCP/Firebase project id}"
 : "${GITHUB_REPO:?Set GITHUB_REPO to owner/repo}"
 REGION="${REGION:-europe-central2}"
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ARTIFACT_CLEANUP_POLICY="${SCRIPT_DIR}/garmin-sync-artifact-cleanup-policy.json"
 
 POOL_ID="github-pool"
 PROVIDER_ID="github-provider"
@@ -120,6 +122,14 @@ echo "==> Creating Artifact Registry repository"
 gcloud artifacts repositories describe garmin-sync --location="${REGION}" >/dev/null 2>&1 || \
   gcloud artifacts repositories create garmin-sync \
     --repository-format=docker --location="${REGION}"
+
+echo "==> Applying Artifact Registry retention policy"
+if [ ! -f "${ARTIFACT_CLEANUP_POLICY}" ]; then
+  echo "ERROR: missing Artifact Registry cleanup policy: ${ARTIFACT_CLEANUP_POLICY}" >&2
+  exit 1
+fi
+gcloud artifacts repositories set-cleanup-policies garmin-sync --location="${REGION}" \
+  --policy="${ARTIFACT_CLEANUP_POLICY}" --quiet
 
 echo "==> Creating github-deployer"
 if ! gcloud iam service-accounts describe "${DEPLOYER_SA_EMAIL}" >/dev/null 2>&1; then

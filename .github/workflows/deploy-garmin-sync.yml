@@ -303,20 +303,20 @@ jobs:
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
 
           gcloud scheduler jobs update http garmin-push-pending-workouts-poll --location="${REGION}" \
-            --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
+            --schedule="*/15 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-push-pending-workouts:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}" \
           || gcloud scheduler jobs create http garmin-push-pending-workouts-poll --location="${REGION}" \
-            --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
+            --schedule="*/15 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-push-pending-workouts:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
 
           gcloud scheduler jobs update http garmin-manual-sync-poll --location="${REGION}" \
-            --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
+            --schedule="*/15 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}" \
           || gcloud scheduler jobs create http garmin-manual-sync-poll --location="${REGION}" \
-            --schedule="*/3 * * * *" --time-zone="Europe/Warsaw" \
+            --schedule="*/15 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
 

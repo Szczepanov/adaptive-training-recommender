@@ -11,9 +11,9 @@ const BACKFILL_REQUEST_TYPES: ReadonlySet<NonNullable<GarminSyncRequest['request
  * considered stale: GarminSyncNowButton gives up waiting and offers a retry, and
  * garminSyncRequestService.requestSync() treats an existing request past this age as
  * no longer blocking a fresh one. Generous relative to the garmin-manual-sync-poll's
- * 3-minute cadence, but bounded so a dead poller execution (deploy missing, crashed
+ * 15-minute cadence, but bounded so a dead poller execution (deploy missing, crashed
  * mid-run) doesn't leave a request stuck forever. */
-export const STALE_AFTER_MS = 5 * 60 * 1000;
+export const STALE_AFTER_MS = 20 * 60 * 1000;
 
 /** A claimed historical backfill is materially longer-running than a normal daily sync.
  * Keep its client-side stale threshold aligned with the backend's 30-minute per-user
@@ -36,8 +36,8 @@ export const INCOMPLETE_SNAPSHOT_STALE_AFTER_MS = 5 * 60 * 1000;
  * click can't stomp a request that's still genuinely in flight).
  *
  * Measures from `claimedAt` once a request is 'processing', not `requestedAt`:
- * garmin-manual-sync-poll only ticks every 3 minutes, so a request can sit
- * 'pending' for a couple of those minutes before a worker ever claims it. Measuring
+ * garmin-manual-sync-poll only ticks every 15 minutes, so a request can sit
+ * 'pending' for almost that long before a worker ever claims it. Measuring
  * a 'processing' request's staleness from `requestedAt` would eat into that same
  * budget twice -- shrinking the actual in-flight margin to as little as
  * STALE_AFTER_MS minus the poll interval before a client retry is allowed to treat a
@@ -45,8 +45,9 @@ export const INCOMPLETE_SNAPSHOT_STALE_AFTER_MS = 5 * 60 * 1000;
  * started, so it's the correct clock for "how long has this claim been running."
  *
  * Historical backfills get a longer processing window because they intentionally make
- * many more Garmin calls than a daily sync. Pending requests still use the normal
- * five-minute threshold: if no worker has claimed them by then, retrying is reasonable.
+ * many more Garmin calls than a daily sync. Pending requests use the normal 20-minute
+ * threshold: that covers the poll interval plus a five-minute execution margin before a
+ * retry is reasonable.
  */
 export function isSyncRequestStale(
     request: GarminSyncRequest | null,
