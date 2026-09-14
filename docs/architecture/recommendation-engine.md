@@ -191,6 +191,28 @@ ADR-0029. A connected account with a missing snapshot is directed to sync; an un
 connection state fails closed. Training history, clinical/injury restrictions, equipment,
 availability, post-recovery buffering, and the normal planner remain unchanged.
 
+### Anthropometry and fueling observation boundary (ADR-0039)
+
+`app/src/anthropometry/` (protocol-versioned home tape measurements, body-mass source
+reduction/trends) and the check-in's optional `hunger1To10`/`hungerTiming` fields are
+observation-only per D-BC-AUTH: `engineIsolation.test.ts` asserts zero imports of
+`app/src/anthropometry/` from `app/src/engine/`, `hungerRecommendationInvariance.test.ts`
+asserts identical recommendation output across every hunger value/timing/absence, and
+`mapCheckinToSubjectiveInput` never reads the hunger fields. Neither signal reaches
+`SubjectiveInput`, readiness, fatigue, safety envelopes, candidate ranking or
+`RecommendationAudit`, and no raw measurement/hunger value is written to analytics, console
+telemetry or error reports. `POLICY_VERSION` is unaffected (verified by
+`scripts/check-policy-drift.mjs`).
+
+Storage is `users/{userId}/anthropometry_entries/{entryId}`, owner-scoped exactly like every
+other `users/{uid}/...` collection, with corrections tracked by a monotonic `revision` rather
+than duplicate documents. Retention/export/deletion follows the same account-deletion path as
+every other `users/{uid}/...` document (see
+[`physiological-identity-passport.md`](./physiological-identity-passport.md)'s equivalent
+note) — no separate retention policy exists yet and should be revisited before this data grows
+large enough to matter. `migrate_user_data.py`'s generic subcollection walk covers this
+collection without code changes.
+
 ---
 
 ## Mode selection (`rules.ts`)

@@ -122,6 +122,10 @@ export class CheckinService {
             if (!validatedCheckin.physicalWork || !validatedCheckin.physicalWork.performed) {
                 payload.physicalWork = deleteField();
             }
+            if (validatedCheckin.hunger1To10 === null) {
+                payload.hunger1To10 = deleteField();
+                payload.hungerTiming = deleteField();
+            }
 
             // `setDoc(..., { merge: true })` recursively preserves omitted nested fields.
             // Treat this daily context as replace-on-answer: an omitted whole block deletes

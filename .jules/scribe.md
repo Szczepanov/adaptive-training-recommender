@@ -9,3 +9,7 @@
 ## 2026-09-02 - docs/README.md Index Missing Recent Analysis Documents
 **Learning:** The documentation hub (docs/README.md) acts as the routing table but can easily fall out of sync with newly added review/analysis files in docs/analysis/.
 **Action:** Always verify that newly added files in docs/analysis/ are indexed in the root docs/README.md.
+
+## 2026-09-07 - Root README.md Missing Technical Features
+**Learning:** `README.md` was missing several features corresponding to ADRs 0019-0038 from the 'Technical Features' section. These include Explicit Rest-Day Authoring, Source-Aware Multisource Health, and Canonical Performed Training Occurrence.
+**Action:** When auditing documentation drift, always compare feature lists in READMEs against the accepted Architectural Decision Records (ADRs) to ensure the high-level documentation reflects recent architectural additions.

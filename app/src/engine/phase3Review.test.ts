@@ -4,7 +4,7 @@ import type { ResolvedAvailability } from './schedule';
 import type { CompletedExposure } from './trainingHistory';
 import { rankCandidates, type RecentHistoryEntry } from './optimizer';
 import { prepareWeekAheadPlanSeed, projectFatigueForRankingDate, realizedSessionRole } from './planner';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 
 const ZERO_DIMS = {
     systemic: 0,
@@ -89,7 +89,7 @@ const FRESH_READINESS: DailyReadiness = {
 
 describe('Phase 3 review regressions', () => {
     it('does not make every candidate an anchor just because the date is a nominated quality day', () => {
-        const rest = ENRICHED_TEMPLATES.find(template => template.category === 'Rest')!;
+        const rest = ENRICHED_TEMPLATES_BY_ID.get('rest_01')!;
         const history: RecentHistoryEntry[] = [{
             date: '2026-03-01',
             templateId: 'prior-key-session',
@@ -179,7 +179,7 @@ describe('Phase 3 review regressions', () => {
             eventSpecificAnchorDate: '2026-03-05',
             qualityAnchorDate: '2026-03-03',
         };
-        const rest = ENRICHED_TEMPLATES.find(template => template.category === 'Rest')!;
+        const rest = ENRICHED_TEMPLATES_BY_ID.get('rest_01')!;
         const raceSpecific = ENRICHED_TEMPLATES.find(template =>
             template.modality === 'Cycling' && template.category === 'Race-Specific Endurance'
         )!;

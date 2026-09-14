@@ -23,7 +23,7 @@ import { applyCompletedSessionLoad, createEmptyFatigue } from './fatigue';
 import { generateWeeklyObjectives, getUnresolvedObjectives } from './microcycle';
 import { buildOptimizationContext, rankCandidates, resolveRecoveryStyle, type RecentHistoryEntry } from './optimizer';
 import { coverageNeedTierForTemplate } from './coverage';
-import { ENRICHED_TEMPLATES } from './templates';
+import { ENRICHED_TEMPLATES, ENRICHED_TEMPLATES_BY_ID } from './templates';
 import { resolvePlanDefinitionForEvent } from './planSchedule';
 import { deriveObjectiveCreditFromProfile } from './stimulus';
 import { resolveMinimumDaysAfterHardLowerBody, resolveRecoveryHoursForTemplate } from './planningCandidate';
@@ -296,7 +296,8 @@ export function beamSearchWeekAheadPlan(
 
     let beam: SearchBranch[] = [seedBranch];
     let branchDaysScored = 0;
-    const restFallback = ENRICHED_TEMPLATES.find(t => t.category === 'Rest');
+    // ⚡ Bolt: O(1) Map lookup rather than ENRICHED_TEMPLATES.find(t => t.category === 'Rest')
+    const restFallback = ENRICHED_TEMPLATES_BY_ID.get('rest_01');
 
     for (let offset = confirmedDays.length + 1; offset <= totalDays; offset++) {
         const date = addDaysToLocalDateString(todayDate, offset);

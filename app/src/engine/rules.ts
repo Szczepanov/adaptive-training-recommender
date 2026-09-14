@@ -416,7 +416,8 @@ export function evaluateTraining(
         return true;
     });
 
-    let selectedTemplate = availableTemplates.find(t => t.category === 'Rest') || getCanonicalRestTemplate();
+    // ⚡ Bolt: O(1) map lookup for canonical rest template instead of availableTemplates.find(t => t.category === 'Rest')
+    let selectedTemplate = getCanonicalRestTemplate();
     let rationale = '';
     let modalityNote: string | null = null;
 
@@ -432,7 +433,8 @@ export function evaluateTraining(
         });
         if (rankedRecoverOptions.length > 0) selectedTemplate = pickTemplate(rankedRecoverOptions, date)!;
         if (envelopes.safety.redFlagActive) {
-            selectedTemplate = availableTemplates.find(t => t.category === 'Rest') || getCanonicalRestTemplate();
+            // ⚡ Bolt: Fetch via O(1) canonical rest template lookup
+            selectedTemplate = getCanonicalRestTemplate();
             rationale = `${envelopes.safety.clinicalReason ?? 'Clinical evaluation recommended: red-flag findings reported.'} All training prescriptions are paused.`;
         } else if (alreadyTrainedOverride) {
             const loggedSession = objective.today_training;
@@ -457,7 +459,8 @@ export function evaluateTraining(
         const preferenceResult = applyModalityPreference(modifyOptions, modifyOptions, subjective.preferredModalityToday);
         modalityNote = preferenceResult.note;
         const rankedModifyOptions = rankByModalityPreference(preferenceResult.options, context.preferences.preferredModalities, context.preferences.deprioritizedModalities);
-        selectedTemplate = rankedModifyOptions.length > 0 ? pickTemplate(rankedModifyOptions, date)! : (availableTemplates.find(t => t.category === 'Rest') ?? getCanonicalRestTemplate());
+        // ⚡ Bolt: Prefer getCanonicalRestTemplate() over availableTemplates.find(t => t.category === 'Rest') for O(1) map lookup
+        selectedTemplate = rankedModifyOptions.length > 0 ? pickTemplate(rankedModifyOptions, date)! : getCanonicalRestTemplate();
         rationale = !hasWearableObjectiveData(objective)
             ? "You're showing moderate soreness or elevated fatigue in your morning check-in. We're capping today's systemic load rather than ruling out a whole modality."
             : "You're showing moderate soreness or slight downward trends in Garmin baselines. We're capping today's systemic/autonomic load rather than ruling out a whole modality.";
