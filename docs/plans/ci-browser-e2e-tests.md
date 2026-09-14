@@ -22,7 +22,7 @@ visual-fixture entry point, while keeping the visual-review harness separate and
 | Work item | Status | Done when |
 |---|:---:|---|
 | Emulator-aware browser runtime | [x] | A dedicated Playwright config starts the ordinary app against Auth and Firestore emulators without changing the visual harness. |
-| Core journeys | [x] | Sign-in, check-in to recommendation, session launch/completion, and duplicate launch protection run through visible UI. |
+| Core journeys | [x] | Sign-in, check-in to recommendation, session launch/completion, and duplicate launch protection run through visible UI and assert durable emulator state. |
 | CI integration | [x] | The code-path CI job installs Chromium, runs the suite, and uploads Playwright failure artifacts. |
 | Documentation and verification | [x] | The app command reference documents local execution and targeted/full checks pass. |
 
@@ -46,8 +46,11 @@ visual-fixture entry point, while keeping the visual-review harness separate and
      screenshots/videos/traces on failure.
    - Add helpers that create unique Auth Emulator identities, sign in through the rendered
      Login screen, dismiss onboarding deliberately, and inspect same-user emulator state
-     through an authenticated Firebase client. Tests do not use production credentials or
-     raw health fixtures.
+     through an authenticated Firebase client. Reuse the application's Warsaw-local date
+     helper so browser tests cannot drift from production calendar-day semantics. Tests do
+     not use production credentials or raw health fixtures.
+   - Wait for asynchronously mounted onboarding with Playwright's retrying `waitFor`; do not
+     rely on `isVisible({ timeout })`, whose timeout is ignored by Playwright.
    - Risk: a UI-only fixture can hide failed persistence. Mitigation: assert durable
      check-in/session execution state after the corresponding browser actions.
 
@@ -56,8 +59,11 @@ visual-fixture entry point, while keeping the visual-review harness separate and
      `app/tests/e2e/session-lifecycle.pw.ts`.
    - Cover sign-in with a pre-created emulator account; a complete typical check-in that
      returns to a visible recommendation; starting a reviewed fixture and completing it;
-     and two rapid attempts to launch the same session, asserting exactly one in-progress
-     execution persists.
+     and two rapid attempts to launch the same session, asserting exactly one execution
+     persists and that it remains `in_progress`.
+   - Make synchronous clock reads distinct while issuing the duplicate clicks. Session ids
+     currently include `Date.now()`, so this prevents a same-millisecond document-id
+     collision from masking a regressed launch guard.
    - The duplicate-start journey is the browser-level regression for the intraday
      double-start invariant. It complements, rather than replaces,
      `intradayLaunchClaim.emulator.test.ts`'s transaction/rules contention coverage.
@@ -81,7 +87,7 @@ visual-fixture entry point, while keeping the visual-review harness separate and
 - Run `npm run test:e2e` from `app/` to verify Auth + Firestore emulator wiring and all
   browser journeys.
 - Run `npm run check` from `app/` for type, lint, unit, knowledge, and catalog gates.
-- Run `npm run test:rules` to retain the Firestore rule emulator suite; run `make check`
+- Retain the Firestore rule emulator suite with `npm run test:rules`; run `make check`
   before delivery when local time permits.
 
 ## Out of scope
@@ -95,7 +101,7 @@ visual-fixture entry point, while keeping the visual-review harness separate and
 
 - [x] `npm run test:e2e` starts Auth and Firestore emulators and runs the browser suite.
 - [x] Browser tests cover sign-in, check-in to a visible recommendation, session completion,
-  and a duplicate-start attempt that leaves one active execution.
+  and a duplicate-start attempt that leaves exactly one active execution total.
 - [x] CI runs the new gate for code changes and preserves actionable failure artifacts.
 - [x] The visual Playwright commands and default Firebase application configuration retain
   their existing behavior.
