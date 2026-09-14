@@ -39,6 +39,10 @@ test('a rapid duplicate start leaves exactly one in-progress execution', async (
   });
 
   await expect.poll(async () => (await readSessionExecutions(athlete)).length).toBe(1);
-  const [execution] = await readSessionExecutions(athlete);
-  expect(execution?.state).toBe('in_progress');
+  // The first write can become visible before a broken second concurrent write. Give the
+  // local emulator a short quiescence window, then assert the complete durable invariant.
+  await page.waitForTimeout(500);
+  const executions = await readSessionExecutions(athlete);
+  expect(executions).toHaveLength(1);
+  expect(executions[0]?.state).toBe('in_progress');
 });
