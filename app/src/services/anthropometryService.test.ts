@@ -16,7 +16,7 @@ const firestore = vi.hoisted(() => ({
 vi.mock('firebase/firestore', () => firestore);
 vi.mock('../firebase', () => ({ getDb: vi.fn(() => ({})) }));
 
-import { AnthropometryService } from './anthropometryService';
+import { AnthropometryDataValidationError, AnthropometryService } from './anthropometryService';
 
 function sampleEntry(): AnthropometryEntry {
     return {
@@ -84,7 +84,7 @@ describe('AnthropometryService', () => {
     });
 
     it('rejects correction with stale or skipping revision', async () => {
-        const existing = sampleEntry(); // revision 1
+        const existing = sampleEntry();
         firestore.getDoc.mockResolvedValue({
             exists: () => true,
             data: () => existing,
@@ -97,6 +97,37 @@ describe('AnthropometryService', () => {
         await expect(service.correctEntry('u1', jumping)).rejects.toThrow('Revision conflict');
     });
 
+    it('returns null only for an actually missing entry', async () => {
+        firestore.getDoc.mockResolvedValue({ exists: () => false });
+        await expect(service.getEntry('u1', 'entry-1')).resolves.toBeNull();
+    });
+
+    it('surfaces malformed persisted entries explicitly without echoing raw biometric values', async () => {
+        const malformed = sampleEntry();
+        malformed.measurements[0] = {
+            metricId: 'waist_minimum_cm',
+            unit: 'cm',
+            readings: [39.123, 39.456],
+            value: 39.2895,
+        };
+        firestore.getDoc.mockResolvedValue({
+            exists: () => true,
+            data: () => malformed,
+        });
+
+        try {
+            await service.getEntry('u1', 'entry-1');
+            throw new Error('Expected invalid persisted anthropometry to reject');
+        } catch (error) {
+            expect(error).toBeInstanceOf(AnthropometryDataValidationError);
+            const message = (error as Error).message;
+            expect(message).toContain('measurements[0]');
+            expect(message).not.toContain('39.123');
+            expect(message).not.toContain('39.456');
+            expect(message).not.toContain('39.2895');
+        }
+    });
+
     it('fetches entries in a bounded range with deterministic ordering', async () => {
         const e1 = sampleEntry();
         firestore.getDocs.mockResolvedValue({
@@ -107,6 +138,17 @@ describe('AnthropometryService', () => {
         expect(results).toHaveLength(1);
         expect(results[0].id).toBe('entry-1');
         expect(firestore.query).toHaveBeenCalledTimes(1);
+    });
+
+    it('fails the range read instead of silently dropping a malformed row', async () => {
+        const invalid = sampleEntry();
+        invalid.measurements[0].value = 90.0;
+        firestore.getDocs.mockResolvedValue({
+            docs: [{ id: 'entry-corrupt', data: () => invalid }],
+        });
+
+        await expect(service.getEntriesInRange('u1', '2026-09-01', '2026-09-14'))
+            .rejects.toBeInstanceOf(AnthropometryDataValidationError);
     });
 
     it('deletes an entry', async () => {

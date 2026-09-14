@@ -19,8 +19,28 @@ import { getDb } from '../firebase';
 import type { AnthropometryEntry } from '../anthropometry/models';
 import { validateAnthropometryEntry } from '../anthropometry/validation';
 
+function validationFields(errors: readonly { field: string }[]): string[] {
+    return Array.from(new Set(errors.map(error => error.field)));
+}
+
 function validationFieldSummary(errors: readonly { field: string }[]): string {
-    return Array.from(new Set(errors.map(error => error.field))).join(', ');
+    return validationFields(errors).join(', ');
+}
+
+/**
+ * Explicit malformed-persistence signal. It deliberately carries only structural field
+ * paths, never raw anthropometric values (ADR-0039 D-BC-PRIVACY).
+ */
+export class AnthropometryDataValidationError extends Error {
+    readonly code = 'invalid-anthropometry-data' as const;
+
+    constructor(
+        readonly entryId: string,
+        readonly fields: readonly string[],
+    ) {
+        super(`Invalid anthropometry data for entry ${entryId}; fields: ${fields.join(', ')}`);
+        this.name = 'AnthropometryDataValidationError';
+    }
 }
 
 export class AnthropometryService {
@@ -29,7 +49,8 @@ export class AnthropometryService {
     }
 
     /**
-     * Get a specific entry by entryId.
+     * Get a specific entry by entryId. Missing is null; malformed persistence is an
+     * explicit error and is never collapsed into the same state as missing data.
      */
     async getEntry(userId: string, entryId: string): Promise<AnthropometryEntry | null> {
         const docRef = doc(getDb(), this.collectionPath(userId), entryId);
@@ -38,14 +59,14 @@ export class AnthropometryService {
 
         const validation = validateAnthropometryEntry(snap.data());
         if (!validation.isValid || !validation.data) {
-            console.warn(`[anthropometry] Malformed entry ${entryId} for user ${userId}, fields:`, validation.errors.map(e => e.field));
-            return null;
+            throw new AnthropometryDataValidationError(entryId, validationFields(validation.errors));
         }
         return validation.data;
     }
 
     /**
      * Query entries within a bounded date range [startDateInclusive, endDateInclusive].
+     * A malformed row invalidates the read rather than being silently omitted from a trend.
      */
     async getEntriesInRange(
         userId: string,
@@ -66,11 +87,10 @@ export class AnthropometryService {
 
         for (const docSnap of snap.docs) {
             const validation = validateAnthropometryEntry(docSnap.data());
-            if (validation.isValid && validation.data) {
-                entries.push(validation.data);
-            } else {
-                console.warn(`[anthropometry] Omitting invalid entry ${docSnap.id}, fields:`, validation.errors.map(e => e.field));
+            if (!validation.isValid || !validation.data) {
+                throw new AnthropometryDataValidationError(docSnap.id, validationFields(validation.errors));
             }
+            entries.push(validation.data);
         }
 
         return entries;
