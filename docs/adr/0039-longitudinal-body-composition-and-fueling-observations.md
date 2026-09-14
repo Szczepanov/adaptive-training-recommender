@@ -16,11 +16,19 @@ The application already has several nearby concepts, but none is a generic home-
   `AssessmentAttempt`, comparison-series identity and testing workflow;
 - `DailySubjectiveCheckin` owns the athlete's date-scoped subjective check-in.
 
-What is missing is a coherent way to collect and review longitudinal manual body measurements and
-low-burden appetite context without pretending that they are formal performance tests, provider
-records, or recommendation inputs.
+A real deployment pattern also matters: an athlete may already weigh on a connected bathroom scale,
+with the scale/vendor application forwarding data into Garmin Connect and the application ingesting
+that provider data. Requiring a second manual weight entry would create unnecessary burden and a
+second competing copy of the same measurement event.
 
-V1 therefore separates three steps explicitly:
+What is missing is a coherent way to collect and review:
+
+1. repeatable athlete-authored tape measurements;
+2. existing provider body mass without duplicating it manually;
+3. optional appetite context;
+4. provider-reported body-composition estimates without pretending they are criterion measures.
+
+V1 separates three steps explicitly:
 
 ```text
 measurement
@@ -32,19 +40,11 @@ possible future training authority
 
 This ADR approves the first two only. It does not approve the third.
 
-The capability must also avoid false precision. Lower body mass is not inherently better,
-circumference change does not identify tissue type, hunger is not a direct measure of energy
-availability, and consumer body-fat estimates are not interchangeable with criterion methods.
+Lower body mass is not inherently better, circumference change does not identify tissue type,
+hunger is not a direct measure of energy availability, and consumer BIA outputs such as body-fat,
+muscle, water or bone estimates are not interchangeable with criterion body-composition methods.
 
-This ADR complements:
-
-- ADR-0002 — user-scoped Firestore isolation;
-- ADR-0003 — Warsaw-local calendar semantics;
-- ADR-0010 — decision provenance and policy-version semantics;
-- ADR-0020 — subjective baselines and anti-anchoring;
-- ADR-0024 — metric-specific baseline estimators;
-- ADR-0027 — source-aware multisource health observations;
-- ADR-0033 — sports-knowledge/evidence lineage.
+This ADR complements ADR-0002, ADR-0003, ADR-0010, ADR-0020, ADR-0024, ADR-0027 and ADR-0033.
 
 ---
 
@@ -65,23 +65,30 @@ Relevant evidence reviewed for this proposal:
   https://pubmed.ncbi.nlm.nih.gov/36678176/
 - smartphone appetite measurement has been evaluated in free-living conditions:
   https://pubmed.ncbi.nlm.nih.gov/34503591/
-- the IOC RED-S consensus treats low energy availability as a complex exposure and does not reduce
-  diagnosis to hunger or body-mass change:
+- the IOC RED-S consensus does not reduce low energy availability to hunger or body-mass change:
   https://pubmed.ncbi.nlm.nih.gov/37752011/
-- the 2026 UCI Sports Nutrition Project highlights the body-composition / energy-availability
-  tension in cyclists and the difficulty of field assessment:
+- the 2026 UCI Sports Nutrition Project highlights body-composition / energy-availability tension
+  in cyclists and the difficulty of field assessment:
   https://pubmed.ncbi.nlm.nih.gov/41911915/
-- field and laboratory body-composition methods have different validity/error characteristics:
-  https://pubmed.ncbi.nlm.nih.gov/36369621/
+- a 2026 systematic review found BIA body-fat and fat-free-mass estimates generally non-equivalent
+  to a four-compartment model at the individual level:
+  https://pubmed.ncbi.nlm.nih.gov/41718193/
+- an athlete systematic review/meta-analysis found material disagreement between BIA and DXA for
+  fat-free mass:
+  https://pubmed.ncbi.nlm.nih.gov/36853902/
+- BIA devices can differ materially in raw impedance and resulting body-composition estimates:
+  https://pubmed.ncbi.nlm.nih.gov/39047869/
 
-The named non-waist landmarks below are **app-defined repeatable home landmarks**. This evidence
-does not establish every listed site as a clinical, ISAK-certified, or universally standardized
-anthropometric protocol. V1 uses protocol locking for longitudinal consistency, not diagnostic
-comparability with another method or practitioner.
+The named non-waist tape landmarks below are **app-defined repeatable home landmarks**. V1 uses
+protocol locking for longitudinal consistency, not clinical/ISAK equivalence.
 
-The v1 coverage and repeatability rules are product measurement/reporting semantics, not
-physiological thresholds. Any future decision-affecting rule requires its own evidence lineage
-under ADR-0033.
+The research above commonly uses VAS-style appetite instruments. V1 deliberately chooses a simpler
+1–10 product rating because the purpose is low-burden within-person longitudinal context, not
+laboratory comparability. The application must not claim that the 1–10 rating is numerically
+interchangeable with a validated 0–100 VAS.
+
+Coverage, repeatability and cadence rules are product measurement/reporting semantics, not
+physiological thresholds. Any future decision-affecting rule requires separate ADR-0033 lineage.
 
 ---
 
@@ -89,36 +96,25 @@ under ADR-0033.
 
 ### Option A — put all measurements on `DailySubjectiveCheckin`
 
-This gives one familiar document but makes a daily safety/readiness record own weekly or
-fortnightly anthropometry and complicates completion, parser and migration semantics.
-
-**Rejected.** Only the genuinely daily hunger observation belongs near the daily check-in.
+**Rejected.** Weekly/fortnightly anthropometry does not belong in a daily safety/readiness record.
+Only the genuinely daily optional hunger observation belongs near the check-in.
 
 ### Option B — make the React client write to `health_observation_days`
 
-This would make manual values look like provider observations, but ADR-0027 deliberately keeps
-that collection server-managed and `firestore.rules` denies client writes.
-
-**Rejected.** Do not weaken the provider-ingestion boundary for convenience.
+**Rejected.** ADR-0027 deliberately keeps that collection server-managed. Do not weaken the
+provider-ingestion boundary for convenience.
 
 ### Option C — reuse `MetricObservationRevision` / `AssessmentAttempt`
 
-The existing performance-observation store accepts manual values, but it is not a generic scalar
-store. Its logical identity requires a formal testing `MeasurementProtocol`, an
-`AssessmentAttempt`, comparison-series identity and a revision chain. A morning scale reading or
-weekly tape session is not a performance-test attempt.
+**Rejected for v1.** Morning scale/tape tracking is not a performance testing attempt. Reuse the
+principles of metric identity, protocol revisioning and correction semantics, not the Testing
+lifecycle.
 
-Broadening those contracts to make routine wellness tracking fit would blur the existing Testing
-architecture and create migration/replay implications beyond this feature.
+### Option D — focused athlete-authored anthropometry plus composed provider display
 
-**Rejected for v1.** Reuse the principles of explicit metric identity, protocol revisioning and
-correction semantics, not the formal testing lifecycle or persistence model.
-
-### Option D — dedicated user-authored anthropometry plus composed source-specific display
-
-Persist manual body measurements in a small owner-writable collection. Keep provider body mass in
-its existing provider/recovery ingestion path. Compose source-specific series for display without
-persisting a fused measurement. Add hunger as optional check-in context.
+Persist manual home measurements in a small owner-writable domain. Keep provider body mass and any
+provider body-composition estimates in their existing provider path. Compose source-specific
+series for display without persisting a fused measurement. Add hunger as optional check-in context.
 
 **Adopt.**
 
@@ -128,23 +124,26 @@ persisting a fused measurement. Add hunger as optional check-in context.
 
 ### D-BC-SCOPE — longitudinal observation, not diagnosis
 
-V1 records and displays:
+V1 may record/display:
 
-- manual body mass;
-- provider body mass when already available through the existing provider path;
-- morning hunger/appetite VAS context;
+- provider body mass already available through the existing ingestion path;
+- manual body mass only as an explicit fallback when provider weight is unavailable or the athlete
+  intentionally records a separate measurement;
 - protocol-locked home circumference measurements;
-- simple source-specific trends and measurement coverage.
+- optional morning hunger context;
+- provider body-composition estimates only when the provider actually exposes an unambiguous metric
+  with source/provenance.
 
-It does **not** diagnose energy availability, RED-S, loss of lean mass, adiposity, or any medical
-condition. It does not prescribe a calorie deficit and does not autonomously alter training.
+It does **not** diagnose energy availability, RED-S, loss of lean mass, adiposity, hydration status
+or any medical condition. It does not prescribe a calorie deficit and does not autonomously alter
+training.
 
-### D-BC-METRICS — metric identity includes the landmark and side
+### D-BC-METRICS — manual metric identity includes landmark and side
 
 The v1 manual measurement vocabulary is:
 
 ```text
-body_mass_kg
+body_mass_kg                 # optional fallback, not the default when provider weight is present
 waist_minimum_cm
 abdomen_umbilicus_cm
 hips_max_cm
@@ -155,44 +154,52 @@ thigh_mid_cm
 calf_max_cm
 ```
 
-These IDs define the app's home protocol. They are not claims that every site is a universally
-accepted clinical standard.
-
 Limb measurements additionally carry `laterality = left | right | unspecified` as part of series
-identity. The UI may remember a prior side as a convenience, but may not silently compare left and
-right measurements as one series.
+identity. Left and right measurements are never silently merged.
 
-User-facing labels use precise wording. In particular:
+User-facing labels use precise wording:
 
-- “stomach” becomes **abdomen at navel**;
-- “biceps” becomes **relaxed upper arm**.
+- “stomach” → **abdomen at navel**;
+- “biceps” → **relaxed upper arm**.
 
-A future protocol revision may refine a landmark. Historical observations retain their original
-metric/protocol identity and are never silently reclassified.
+Historical observations retain their original metric/protocol identity if a future protocol
+revision refines a landmark.
+
+### D-BC-CADENCE — prioritize useful measurements rather than requiring everything
+
+The product must not imply that every supported circumference should be measured every week.
+Suggested home tracking defaults are:
+
+- **core weekly:** waist minimum, abdomen at navel, hips;
+- **useful weekly/fortnightly:** fixed-site thigh;
+- **optional weekly/fortnightly:** chest and relaxed upper arm;
+- **optional fortnightly:** forearm and calf.
+
+A baseline session may record both sides for limb measurements. Ongoing tracking may use one fixed
+side or both, but the UI must preserve laterality and never silently switch series.
+
+Cadence is guidance, not a completion requirement.
 
 ### D-BC-PERSIST — manual measurements are a user-owned domain
 
-Manual body-measurement sessions persist at:
+Manual sessions persist at:
 
 ```text
 users/{userId}/anthropometry_entries/{entryId}
 ```
 
-V1 uses one logical entry per measurement session. `entryId` must be collision-safe and stable for
-correction; more than one session may exist on the same local date.
+One logical entry represents one measurement session. Multiple sessions may exist on the same
+local date.
 
-The conceptual shape is:
+Conceptual shape:
 
 ```ts
 interface AnthropometryEntry {
   userId: string;
   entryId: string;
   date: string; // Europe/Warsaw local date
-  observedAt: string; // instant; its Warsaw-local date must equal `date`
-  protocolRef: {
-    id: 'home_anthropometry';
-    revision: 1;
-  };
+  observedAt: string;
+  protocolRef: { id: 'home_anthropometry'; revision: 1 };
   context: {
     timing: 'morning_post_void_pre_intake' | 'other';
     trainingBeforeMeasurement: boolean;
@@ -212,269 +219,233 @@ interface AnthropometryEntry {
 }
 ```
 
-`revision` is the monotonic revision of the **current mutable manual record**, used for stale-write
-protection/correction semantics. V1 does not promise an immutable archive of every erroneous prior
-value. If immutable anthropometry revision history becomes a requirement, that is a separate
-persistence decision rather than an implication of this integer field.
+`revision` protects the current mutable manual record against stale writes/corrections. V1 does not
+promise immutable history of every erroneous prior value.
 
-The document is owner-readable/writable under ADR-0002. Security rules must bound field names,
-units, array sizes and broad corruption/safety ranges. Bounds are storage-integrity controls, not
-“healthy body” thresholds. Updates preserve `userId`, `entryId`, `createdAt`, schema identity and
-monotonic revision semantics.
+The document is owner-readable/writable under ADR-0002. Security rules must bound keys, units,
+array sizes and broad corruption/safety ranges. Updates preserve identity and monotonic revision.
 
 ### D-BC-PROTOCOL — home measurement is protocol-versioned
 
-`home_anthropometry@1` is an app-owned home-measurement protocol, not a formal
-`AssessmentAttempt`.
-
-The UI teaches and records whether the preferred context was followed:
+`home_anthropometry@1` teaches/records the preferred context:
 
 - morning when practical;
 - after toilet/voiding;
 - before food/drink;
 - before training;
-- same landmark and posture each time;
-- protocol-defined relaxed respiratory state for trunk measurements;
+- same landmark/posture each time;
+- relaxed protocol-defined respiratory state for trunk measurements;
 - tape horizontal and snug without compressing tissue.
 
-V1 stores one reading for body mass. For circumferences it requests two readings. If the first pair
-exceeds the versioned repeatability tolerance, the UI requests a third reading. `value` is a
-deterministic median of retained readings. A repeatability warning is derived deterministically
-from the retained readings and versioned quality policy.
+Circumferences request two readings. If the pair exceeds the versioned repeatability tolerance, the
+UI requests a third. `value` is the deterministic median of retained readings. The tolerance is a
+measurement-quality heuristic, not a physiological threshold.
 
-The discrepancy tolerance is a **measurement-quality heuristic**, not a physiological threshold.
-Changing it later must change the quality-policy/protocol revision when it would change accepted
-or summarized values.
+Manual body mass, when used, stores one reading per session.
 
-### D-BC-WEIGHT — provider and manual body mass remain separate series
+### D-BC-WEIGHT — provider-first body mass, explicit manual fallback
 
-A provider body-mass value and manual `body_mass_kg` value on the same date are not duplicates
-merely because they share units or happen to match.
+When a usable provider body-mass series already exists, that series is the default body-mass source
+and the athlete should not be asked to re-enter the same weight manually.
 
-V1 preserves source discipline:
+Manual `body_mass_kg` remains available because not every athlete has connected-provider weight and
+because explicit correction/fallback workflows may be useful.
 
-- provider weight remains in the existing provider/recovery ingestion path; if/when it is exposed
-  through ADR-0027 health observations, ADR-0027 provenance rules continue to apply;
-- manual weight remains in the anthropometry path;
+Source discipline is strict:
+
+- provider and manual weight remain separate observations;
 - raw values are never averaged across sources;
-- trend calculation uses one explicit source series at a time;
-- source switching is visible and never implies measurement equivalence.
+- trend calculation uses one explicit source at a time;
+- the selected source is visible;
+- explicit user source selection is sticky;
+- the app never assumes a manual value duplicates a provider value merely because date/value match.
 
-If the athlete explicitly selects a source, v1 must not silently auto-switch away from it because
-coverage changes. If no source has been selected, the UI may choose a deterministic initial
-default from recent coverage and a stable tie-break, but must label the chosen source.
+If provider coverage disappears, show insufficient/unavailable state rather than silently splicing
+manual values into the same trend.
 
-### D-BC-DAILY — one deterministic body-mass point per local date
+### D-BC-DAILY — one deterministic body-mass point per source/local date
 
-Coverage is defined in **distinct local dates**, not number of records. Multiple manual entries on
-one date must never give that day extra weight in a 7-day summary.
+Coverage counts **distinct local dates**, not records.
 
-For a selected manual source/date, the derived daily body-mass point is chosen as follows:
+For manual weight on a selected date:
 
-1. consider valid entries containing `body_mass_kg` for that local date;
-2. prefer entries with `timing = morning_post_void_pre_intake` and
-   `trainingBeforeMeasurement = false`;
-3. within the preferred set choose the earliest `observedAt`;
-4. if no preferred-context entry exists, choose the earliest valid entry for the date and label the
-   point as non-preferred context;
-5. use stable identity as the final tie-break if timestamps are equal.
+1. consider valid entries containing `body_mass_kg`;
+2. prefer `morning_post_void_pre_intake && !trainingBeforeMeasurement`;
+3. choose earliest `observedAt` within the preferred set;
+4. otherwise choose earliest valid same-day entry and label non-preferred context;
+5. use stable identity only as a timestamp tie-break.
 
-All raw sessions remain visible. A mistaken first entry should be corrected rather than “fixed” by
-adding a duplicate session and relying on selection order.
+Provider adapters likewise expose at most one deterministic point per provider/source/local date.
+Provider-specific deduplication belongs in the adapter.
 
-Provider projections must likewise expose at most one deterministic point per source/local date to
-the trend function; if a provider can produce multiple same-day records, its adapter owns the
-deduplication policy rather than the generic trend function averaging them.
+### D-BC-PROVIDER-COMPOSITION — smart-scale composition stays device-estimated telemetry
 
-### D-BC-HUNGER — hunger is optional context, not readiness authority
+A connected scale may expose body fat, muscle, water, bone or related values through a provider.
+Those values are not directly measured tissue compartments simply because they appear in Garmin or
+another provider.
+
+V1 rules:
+
+- only ingest/display fields actually present in the provider payload;
+- preserve exact metric semantics, units, provider/origin and transport provenance;
+- label BIA-derived values as **device/scale estimates** in user-facing copy;
+- do not invent a value for a Xiaomi/vendor metric that Garmin does not expose;
+- do not manually copy missing composition values merely to make the dashboard complete;
+- do not normalize differently named vendor metrics into one series until semantic equivalence is
+  explicitly established;
+- do not average composition estimates across devices/providers;
+- do not promote body-fat, muscle, water or bone estimates to recommendation authority.
+
+`bodyFatPct` already present in provider telemetry may therefore be displayed contextually with
+provenance, but it remains secondary to measured body mass + repeatable circumference trends for
+v1 longitudinal review.
+
+### D-BC-HUNGER — optional 1–10 context, not readiness authority
 
 Add two optional fields to `DailySubjectiveCheckin`:
 
 ```ts
-hungerVas0To100?: number | null;
+hunger1To10?: number | null;
 hungerTiming?: 'morning_pre_breakfast' | 'other' | null;
 ```
 
-The question is a 0–100 VAS:
+Scale:
 
 ```text
-0   = Not hungry at all
-100 = Extremely hungry
+1  = Not hungry at all
+5  = Moderate / typical hunger
+10 = Extremely hungry
 ```
 
-New writes obey an invariant: a numeric hunger value requires a timing context; clearing hunger
+`5` is explanatory copy only; it is **not** a prefilled neutral value.
+
+New writes obey an invariant: a numeric hunger rating requires a timing context; clearing hunger
 clears both fields. Legacy check-ins with neither field remain valid.
 
-The preferred observation is `morning_pre_breakfast`. `other` values remain valid raw context but
-must not be silently merged into the default pre-breakfast trend because appetite depends on
-measurement timing.
+Preferred observation is `morning_pre_breakfast`. `other` values remain valid raw context but are
+not silently merged into the morning trend.
 
-Hunger has the following v1 semantics:
+Hunger semantics:
 
-- missing is valid and does not affect `dataQuality.isComplete`;
-- it is not added to `SubjectiveDimensionKey`;
-- it is not mapped into `SubjectiveInput`, `metricStrain`, fatigue, eligibility or candidate
-  ranking;
-- it has no neutral default;
-- parser, service and Firestore-rule validation bound the value to 0–100 and validate the timing
-  enum;
-- clearing a previously stored value must not resurrect stale value/context through merge writes;
-- previous hunger values/trends are not shown before today's initial submission, preserving
-  ADR-0020 `D-SUBJANCHOR`;
+- integer 1–10 only;
+- missing is valid and does not affect check-in completeness;
+- not added to `SubjectiveDimensionKey`;
+- not mapped into `SubjectiveInput`, `metricStrain`, fatigue, eligibility or ranking;
+- no default value;
+- parser, service and Firestore rules validate range/timing and clear semantics;
+- previous hunger values/trends remain hidden before today's initial response under ADR-0020
+  anti-anchoring;
 - retrospective trends may be shown after submission and in Data.
 
-A future decision to use hunger in training or fueling advice requires a separate activation
-analysis and decision.
+The 1–10 rating is a product tracking scale. V1 must not claim numeric equivalence to research VAS
+instruments.
 
-### D-BC-TRENDS — summaries are simple, coverage-aware and auditable
+### D-BC-TRENDS — summaries are transparent, coverage-aware and source-specific
 
-V1 uses transparent derivations rather than a proprietary body-composition/fueling score.
+Body mass:
 
-For body mass:
+- show raw points for the selected source;
+- reduce to one deterministic point per source/local date;
+- 7-day arithmetic mean only with at least **4 of 7 distinct dates**;
+- week-over-week absolute/% change only when both adjacent windows qualify;
+- show coverage;
+- never interpolate/carry forward.
 
-- show raw points for the selected source series;
-- reduce to one deterministic point per local date before summary math;
-- calculate a 7-day arithmetic mean only when at least **4 of 7 distinct local dates** have a valid
-  daily point;
-- calculate week-over-week change only when both adjacent 7-day windows satisfy that coverage;
-- show absolute and percentage change plus `recordedDays/7` coverage;
-- never interpolate or carry forward missing dates.
+Circumferences:
 
-The `4 of 7` rule is a **display-quality heuristic**, not a physiology threshold. It is versioned
-in trend implementation/tests.
+- series identity includes metric + laterality + protocol revision;
+- latest valid value versus previous valid same-series observation;
+- no interpolation;
+- repeatability/context remain inspectable;
+- never infer tissue type from direction of change.
 
-For circumferences:
+Hunger:
 
-- series identity includes metric, laterality and protocol revision;
-- default to latest valid value versus the previous valid observation in the same series;
-- do not interpolate missing weeks;
-- retain repeatability-quality visibility;
-- do not infer tissue type from direction of change.
-
-For hunger:
-
-- the default retrospective trend uses only `morning_pre_breakfast` observations;
-- `other` observations remain visible separately and do not increase preferred-series coverage;
-- 7-day and 28-day arithmetic means may be displayed with recorded-day counts;
-- sparse history is labelled insufficient rather than padded with neutral values;
-- copy may say **higher/lower than the recent recorded pattern** but must not label a value as
-  inherently favourable/adverse or adequately/poorly fueled.
+- default trend uses `morning_pre_breakfast` only;
+- `other` stays separate;
+- 7-day and 28-day arithmetic means may be shown with recorded-day counts;
+- sparse history is insufficient rather than neutral-filled;
+- copy may say higher/lower than the recent recorded pattern but not good/bad or adequately/poorly
+  fueled.
 
 ### D-BC-NOFAT — no synthetic body-fat or lean-mass inference
 
-V1 must not calculate a custom body-fat percentage from circumference measurements.
+V1 does not calculate body-fat percentage from tape measurements and does not label arm/thigh/calf
+change as muscle gained/lost.
 
-Provider `bodyFatPct` may be displayed as a provider observation with explicit provenance, but it
-is not treated as equivalent to a criterion body-composition assessment and is not promoted to a
-primary body-composition authority.
-
-A change in arm, thigh or calf circumference must not be labelled “muscle gained/lost” without
-independent evidence.
+Provider BIA composition may be shown only as device-estimated context with provenance. It is not a
+criterion assessment and is not the primary authority for body-composition change.
 
 ### D-BC-NOEA — no energy-availability or RED-S diagnosis
 
-The application must not derive numeric energy availability from body mass, hunger or training
-load unless required intake, expenditure and fat-free-mass inputs exist and a separately accepted
-evidence model authorizes that calculation.
+The application does not derive numeric energy availability from body mass, hunger or training load
+without required intake/expenditure/fat-free-mass inputs and a separately accepted evidence model.
 
 V1 must not emit statements such as:
 
 ```text
 You have RED-S.
 You are in low energy availability.
-Hunger 80 means you are under-fueled.
+Hunger 9 means you are under-fueled.
+Your smart scale says you lost 1 kg of muscle, so reduce training.
 ```
 
-Allowed language is observational, for example:
+Allowed language remains observational.
 
-```text
-Your 7-day body-mass average changed from the previous complete window.
-Morning pre-breakfast hunger has been higher than your recent recorded pattern.
-Measurement coverage is insufficient for a weekly trend.
-```
+### D-BC-DATA — Data owns retrospective display
 
-### D-BC-DATA — Data owns retrospective display; navigation does not grow
+V1 stays inside the existing **Data** screen:
 
-V1 is surfaced inside the existing **Data** screen. It provides:
+- body mass from the selected provider/manual source;
+- waist/abdomen prominence;
+- optional hunger trend;
+- expandable secondary circumference history;
+- contextual device-estimated body-composition metrics when available;
+- `Log measurements` for tape measurements and explicit manual-weight fallback.
 
-- `Log measurements`;
-- body-mass source/value/coverage/trend;
-- waist and abdomen trend prominence;
-- hunger retrospective trend;
-- expandable secondary circumference history.
-
-No new top-level `Screen`/navigation item is introduced.
+No new top-level navigation item is introduced.
 
 ### D-BC-WKG — cycling W/kg is context-only if added
 
-A later v1.x Data enhancement may combine an explicit canonical cycling power/FTP-like value with
-the selected source-specific 7-day body-mass mean to display W/kg.
-
-That derived number is **context-only**. It retains both source references and does not create an
-incentive rule that rewards lower mass independent of absolute performance, recovery or health.
-If the canonical power authority is ambiguous, this enhancement is skipped rather than inventing a
-second FTP field.
+A later v1.x enhancement may combine one canonical cycling power value with the selected
+source-specific body-mass mean. It must retain both provenances and remain context-only.
 
 ### D-BC-AUTH — v1 has zero recommendation authority
 
-No body-composition or hunger trend may affect:
+No body-composition, body-mass, circumference or hunger trend may affect readiness/safety, fatigue,
+weekly objectives, session eligibility/ranking, dose adjustment or recommendation-audit decision
+inputs.
 
-- readiness mode or safety envelopes;
-- fatigue state;
-- weekly objectives/coverage;
-- session eligibility/ranking;
-- dose adjustment;
-- recommendation audit decision inputs.
+No `POLICY_VERSION` bump is required for observation-only implementation.
 
-Because v1 cannot alter a recommendation, implementing it does **not** by itself require a
-`POLICY_VERSION` bump.
-
-Any future decision-authority activation requires:
-
-1. a separate accepted activation decision/ADR;
-2. prospective evidence that the signal adds value beyond existing recovery/performance context;
-3. ADR-0033 claim/coverage/alignment-test ownership for every decision threshold;
-4. a `POLICY_VERSION` bump;
-5. simulation/replay/regression evidence showing bounded behavior.
+Any future decision-authority activation requires a separate accepted decision/ADR, prospective
+evidence, ADR-0033 claim/alignment ownership, a policy-version bump and replay/simulation evidence.
 
 ### D-BC-FAIL — missingness stays missing and failures degrade locally
-
-A missing anthropometry entry, missing hunger response, or unavailable provider body-mass read
-must not invalidate the day's training recommendation.
 
 ```text
 measurement/source unavailable
 → preserve missing/unavailable state
-→ omit the affected trend when coverage is insufficient
-→ do not carry the last value forward as today's observation
-→ do not fabricate a neutral value
-→ leave the recommendation path unchanged
+→ omit affected trend when coverage is insufficient
+→ no carry-forward / neutral fabrication / cross-source substitution
+→ recommendation path unchanged
 ```
 
 ### D-BC-PRIVACY — minimize and isolate sensitive body data
 
-Anthropometry and appetite values are sensitive wellness data. V1 requires:
+V1 requires strict `users/{userId}/...` ownership, bounded reads, no raw body/hunger values in
+analytics/console/error telemetry, no raw-history duplication into recommendation audits, no
+free-text body notes by default, explicit correction/deletion, and documented retention/account
+removal behavior.
 
-- strict `users/{userId}/...` ownership;
-- no raw values in application analytics, console telemetry or error reports;
-- no duplication of raw history into recommendation audits;
-- no free-text notes in the core anthropometry record;
-- explicit correction and delete operations for manual entries;
-- documented retention and account-deletion behavior before implementation is marked complete;
-- bounded history queries rather than unbounded collection reads.
+### D-BC-MIGRATE — additive migration
 
-### D-BC-MIGRATE — migration is additive and fail-open to absence
-
-V1 introduces no required historical backfill.
-
-- Existing users have no `anthropometry_entries` and remain valid.
-- Existing `DailySubjectiveCheckin` documents without hunger fields remain valid.
-- Provider body-mass history is not copied into manual records.
-- No synthetic historical hunger/circumference values are generated.
-- Calendar dates use the existing Warsaw-local helpers under ADR-0003.
-
-If `DailySubjectiveCheckin` schema version changes, parsers and rules remain backward compatible
-with supported historical versions.
+- existing users with no `anthropometry_entries` remain valid;
+- existing check-ins without hunger remain valid;
+- provider body-mass/composition history is not copied into manual records;
+- no synthetic historical hunger/circumference/composition values are generated;
+- dates use existing Europe/Warsaw helpers;
+- any check-in schema bump remains backward compatible with supported historical versions.
 
 ---
 
@@ -482,57 +453,44 @@ with supported historical versions.
 
 ### Positive
 
-- Gives the athlete one coherent place to track relevant manual measurements.
-- Preserves provider/manual provenance instead of inventing a fused “truth”.
-- Keeps the daily check-in lightweight: only optional hunger context is daily.
-- Gives repeated home measurements stable protocol and landmark identity without overstating their
-  clinical standardization.
-- Creates an evidence corpus for later coaching research without changing current recommendations.
-- Fits the existing Data surface and avoids another top-level navigation destination.
+- avoids duplicate manual weight entry when connected-scale data already exists;
+- preserves provider/manual provenance rather than inventing fused truth;
+- treats BIA body-composition numbers conservatively without discarding potentially useful context;
+- keeps daily burden to one optional 1–10 hunger rating;
+- prioritizes a practical tape workflow instead of requiring every circumference every week;
+- creates an evidence corpus for later coaching research without changing recommendations.
 
 ### Negative
 
-- Adds a new owner-writable collection and Firestore-rule/test surface.
-- Requires a composition read model because provider, manual and check-in records remain separate.
-- Protocol-versioned home measurement is more complex than an unqualified list of number inputs.
-- Users can still over-interpret trends, so product copy must remain conservative.
+- adds one owner-writable collection and Firestore-rule/test surface;
+- requires a composition read model across provider/manual/check-in records;
+- provider composition semantics can vary and therefore need careful adapter-level typing;
+- protocol-versioned home measurement is more complex than unqualified number inputs.
 
 ### Neutral
 
-- Provider `weightKg` / `bodyFatPct` behavior does not change.
-- `health_observation_days` remains server-managed.
-- Performance `MetricObservationRevision` / `AssessmentAttempt` contracts remain unchanged.
-- `POLICY_VERSION` and recommendation output remain unchanged until a separate activation decision.
+- existing provider `weightKg` / `bodyFatPct` ingestion does not change merely by accepting this ADR;
+- `health_observation_days` remains server-managed;
+- Testing contracts remain unchanged;
+- recommendation output/policy version remain unchanged.
 
 ---
 
 ## Explicit non-goals
 
-This ADR does not approve:
-
-- calorie/macro logging or automatic calorie targets;
-- food-photo recognition;
-- inferred energy availability or RED-S diagnosis/screening;
-- tape-derived body-fat equations;
-- DEXA/BIA equivalence claims;
-- automatic training reduction based on hunger or body-mass change;
-- mandatory bilateral limb measurements;
-- circumference-asymmetry corrective training;
-- new top-level navigation;
-- cross-provider raw body-mass averaging;
-- synthetic historical backfill.
-
-Those may be evaluated independently if a real product need and evidence base emerge.
+This ADR does not approve calorie/macro logging, automatic calorie targets, food-photo recognition,
+inferred energy availability, RED-S diagnosis/screening, tape-derived body-fat equations,
+DEXA/BIA-equivalence claims, automatic training reduction from hunger/weight, mandatory bilateral
+measurement, asymmetry correction, new top-level navigation, cross-provider averaging, synthetic
+backfill, or reconstructing provider composition metrics that the provider does not actually expose.
 
 ---
 
 ## Acceptance / activation boundary
 
-Accepting this ADR approves the **observation and retrospective-reporting architecture** only.
+Accepting this ADR approves **observation and retrospective reporting only**.
 
 A subsequent implementation may ship when it satisfies the linked plan's persistence, security,
-measurement-integrity, UX, privacy and rollback requirements while remaining
-recommendation-neutral.
+measurement-integrity, UX, privacy and rollback requirements while remaining recommendation-neutral.
 
-Any transition from “observe/report” to “coach/decide” is a new architectural/evidence decision,
-not an implementation detail of ADR-0039.
+Any transition from “observe/report” to “coach/decide” is a new architecture/evidence decision.
