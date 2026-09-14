@@ -2430,5 +2430,54 @@ emulatorDescribe('Firestore security rules', () => {
             ...validAnthropometryEntryDoc(),
             measurements: [{ metricId: 'thigh_mid_cm', laterality: 'left', unit: 'cm', readings: [55.0, 55.2], value: 55.1 }],
         }))).resolves.toBeUndefined();
+
+        // Test core weekly set (waist, abdomen, hips)
+        const coreWeeklyPath = `users/${ownerId}/anthropometry_entries/entry-core-weekly`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, coreWeeklyPath), {
+            ...validAnthropometryEntryDoc(),
+            id: 'entry-core-weekly',
+            measurements: [
+                {
+                    metricId: 'waist_minimum_cm',
+                    unit: 'cm',
+                    readings: [82.0, 82.0],
+                    value: 82.0,
+                    repeatabilityWarning: false,
+                },
+                {
+                    metricId: 'abdomen_umbilicus_cm',
+                    unit: 'cm',
+                    readings: [85.0, 85.0],
+                    value: 85.0,
+                    repeatabilityWarning: false,
+                },
+                {
+                    metricId: 'hips_max_cm',
+                    unit: 'cm',
+                    readings: [95.0, 95.0],
+                    value: 95.0,
+                    repeatabilityWarning: false,
+                },
+            ],
+        }))).resolves.toBeUndefined();
+
+        // Test maximum allowed measurements (10 items) under expression budget
+        const maxPath = `users/${ownerId}/anthropometry_entries/entry-max-items`;
+        await expect(assertSucceeds(setDoc(doc(ownerDb, maxPath), {
+            ...validAnthropometryEntryDoc(),
+            id: 'entry-max-items',
+            measurements: [
+                { metricId: 'body_mass_kg', unit: 'kg', readings: [74.5], value: 74.5 },
+                { metricId: 'waist_minimum_cm', unit: 'cm', readings: [82.0, 82.0], value: 82.0 },
+                { metricId: 'abdomen_umbilicus_cm', unit: 'cm', readings: [85.0, 85.0], value: 85.0 },
+                { metricId: 'hips_max_cm', unit: 'cm', readings: [95.0, 95.0], value: 95.0 },
+                { metricId: 'chest_nipple_line_cm', unit: 'cm', readings: [98.0, 98.0], value: 98.0 },
+                { metricId: 'upper_arm_relaxed_mid_cm', laterality: 'right', unit: 'cm', readings: [32.0, 32.0], value: 32.0 },
+                { metricId: 'forearm_max_cm', laterality: 'right', unit: 'cm', readings: [28.0, 28.0], value: 28.0 },
+                { metricId: 'thigh_mid_cm', laterality: 'left', unit: 'cm', readings: [55.0, 55.0], value: 55.0 },
+                { metricId: 'thigh_mid_cm', laterality: 'right', unit: 'cm', readings: [55.2, 55.2], value: 55.2 },
+                { metricId: 'calf_max_cm', laterality: 'left', unit: 'cm', readings: [37.0, 37.0], value: 37.0 },
+            ],
+        }))).resolves.toBeUndefined();
     });
 });

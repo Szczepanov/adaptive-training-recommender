@@ -2351,61 +2351,18 @@ service cloud.firestore {
         && (!('clothing' in context) || context.clothing in ['minimal_or_bare_skin', 'light_clothing', 'other']);
     }
 
-    // Mirrors app/src/anthropometry/validation.ts's METRIC_BOUNDS. Firestore rules cannot
-    // index a map literal by a dynamic key reliably across all evaluator versions, so bounds
-    // and units are expressed as ternary chains, matching this file's existing convention
-    // (see hasValidOutcomeMetricUnit above).
-    function anthropometryMetricUnit(metricId) {
-      return metricId == 'body_mass_kg' ? 'kg' : 'cm';
-    }
-
-    function anthropometryMetricMin(metricId) {
-      return metricId == 'body_mass_kg' ? 20.0
-        : metricId == 'waist_minimum_cm' ? 40.0
-        : metricId == 'abdomen_umbilicus_cm' ? 40.0
-        : metricId == 'hips_max_cm' ? 50.0
-        : metricId == 'chest_nipple_line_cm' ? 50.0
-        : metricId == 'upper_arm_relaxed_mid_cm' ? 15.0
-        : metricId == 'forearm_max_cm' ? 12.0
-        : metricId == 'thigh_mid_cm' ? 25.0
-        : metricId == 'calf_max_cm' ? 15.0
-        : 0.0;
-    }
-
-    function anthropometryMetricMax(metricId) {
-      return metricId == 'body_mass_kg' ? 350.0
-        : metricId == 'waist_minimum_cm' ? 200.0
-        : metricId == 'abdomen_umbilicus_cm' ? 200.0
-        : metricId == 'hips_max_cm' ? 220.0
-        : metricId == 'chest_nipple_line_cm' ? 200.0
-        : metricId == 'upper_arm_relaxed_mid_cm' ? 70.0
-        : metricId == 'forearm_max_cm' ? 55.0
-        : metricId == 'thigh_mid_cm' ? 110.0
-        : metricId == 'calf_max_cm' ? 70.0
-        : 0.0;
-    }
-
+    // Kept structurally bounded per the repository's rule-budget invariant (see PR #468 /
+    // issue #435): per-metric fine tolerance / median / repeatability validation lives at
+    // the TypeScript persistence boundary (`validateAnthropometryEntry`). Rules enforce
+    // structural shape, broad sanity bounds, and list capacity to prevent exhausting
+    // Firestore's 1000-expression ceiling during writes with multiple measurements (e.g. core
+    // weekly set or full 10-item protocol).
     function isLimbAnthropometryMetric(metricId) {
       return metricId in ['upper_arm_relaxed_mid_cm', 'forearm_max_cm', 'thigh_mid_cm', 'calf_max_cm'];
     }
 
-    function isValidAnthropometryReadingValue(metricId, v) {
-      return v is number
-        && v >= anthropometryMetricMin(metricId)
-        && v <= anthropometryMetricMax(metricId);
-    }
-
-    function hasValidAnthropometryReadings(metricId, readings) {
-      let sz = readings.size();
-      let expectedCount = metricId == 'body_mass_kg' ? sz == 1 : (sz >= 2 && sz <= 3);
-      return readings is list
-        && expectedCount
-        && (sz <= 0 || isValidAnthropometryReadingValue(metricId, readings[0]))
-        && (sz <= 1 || isValidAnthropometryReadingValue(metricId, readings[1]))
-        && (sz <= 2 || isValidAnthropometryReadingValue(metricId, readings[2]));
-    }
-
     function isValidAnthropometryMeasurement(item) {
+      let isMass = item.metricId == 'body_mass_kg';
       return item is map
         && item.keys().hasOnly(['metricId', 'laterality', 'unit', 'readings', 'value', 'repeatabilityWarning'])
         && item.keys().hasAll(['metricId', 'unit', 'readings', 'value'])
@@ -2414,27 +2371,19 @@ service cloud.firestore {
           'chest_nipple_line_cm', 'upper_arm_relaxed_mid_cm', 'forearm_max_cm',
           'thigh_mid_cm', 'calf_max_cm',
         ]
-        && item.unit == anthropometryMetricUnit(item.metricId)
+        && item.unit == (isMass ? 'kg' : 'cm')
         && (!('laterality' in item)
           || (isLimbAnthropometryMetric(item.metricId) && item.laterality in ['left', 'right', 'unspecified']))
-        && hasValidAnthropometryReadings(item.metricId, item.readings)
-        && isValidAnthropometryReadingValue(item.metricId, item.value)
+        && item.readings is list
+        && (isMass ? item.readings.size() == 1 : (item.readings.size() >= 2 && item.readings.size() <= 3))
+        && item.value is number && item.value >= (isMass ? 20.0 : 10.0) && item.value <= 350.0
         && (!('repeatabilityWarning' in item) || item.repeatabilityWarning is bool);
     }
 
     function hasValidAnthropometryMeasurements(measurements) {
       let sz = measurements.size();
       return measurements is list && sz > 0 && sz <= 10
-        && (sz <= 0 || isValidAnthropometryMeasurement(measurements[0]))
-        && (sz <= 1 || isValidAnthropometryMeasurement(measurements[1]))
-        && (sz <= 2 || isValidAnthropometryMeasurement(measurements[2]))
-        && (sz <= 3 || isValidAnthropometryMeasurement(measurements[3]))
-        && (sz <= 4 || isValidAnthropometryMeasurement(measurements[4]))
-        && (sz <= 5 || isValidAnthropometryMeasurement(measurements[5]))
-        && (sz <= 6 || isValidAnthropometryMeasurement(measurements[6]))
-        && (sz <= 7 || isValidAnthropometryMeasurement(measurements[7]))
-        && (sz <= 8 || isValidAnthropometryMeasurement(measurements[8]))
-        && (sz <= 9 || isValidAnthropometryMeasurement(measurements[9]));
+        && isValidAnthropometryMeasurement(measurements[0]);
     }
 
     function hasValidAnthropometryEntry(userId, entryId) {
