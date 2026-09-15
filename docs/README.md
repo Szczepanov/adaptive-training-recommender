@@ -92,6 +92,7 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0036: Intraday Training Windows and Post-Session Reassessment**](./adr/0036-intraday-training-windows-and-reassessment.md) — *Accepted.* Explicit windows, v4-authored sequencing, shared daily accounting and post-AM reassessment; implementation unstarted, automatic doubles deferred until execution acceptance.
 * [**ADR-0037: Block Intent and Controlled Progression**](./adr/0037-block-intent-and-controlled-progression.md) — *Accepted.* Explicit develop/maintain objectives, v5 import authority, report-only progression review and confirmed bounded revisions; implementation unstarted, unattended progression deferred.
 * [**ADR-0038: Engine-Generated Recovery Placement as a Requirement**](./adr/0038-engine-generated-recovery-placement.md) — *Proposed.* Proposes a plan-independent product-policy recovery exposure requirement (one qualifying exact recovery identity within every seven local calendar dates), with deadline escalation and explicit historical provenance; raised by [PR #453](https://github.com/Szczepanov/adaptive-training-recommender/pull/453), implementation unstarted.
+* [**ADR-0039: Longitudinal Body-Composition and Fueling Observations**](./adr/0039-longitudinal-body-composition-and-fueling-observations.md) — *Accepted.* Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
 ---
 
 ### 🔍 Reviews & Analysis
@@ -186,6 +187,7 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-05 Local AI-judge throughput tuning**](./analysis/2026-09-05-local-judge-vram-tuning.md) — Local GPU VRAM headroom analysis and adjustments to sample counts, context windows, and concurrency for AI-judge tools.
 * [**2026-09-07 ADR-0038 Recovery Placement Implementation Analysis**](./analysis/2026-09-07-adr-0038-recovery-placement-implementation-analysis.md) — Analysis of recovery placement options for external plans under ADR-0038.
 * [**2026-09-07 Recommender Optimization Analysis**](./analysis/2026-09-07-recommender-optimization-opportunities.md) — Investigation into potential optimization strategies for the core recommender engine.
+* [**2026-09-14 Body-composition and fueling observations analysis**](./analysis/2026-09-14-body-composition-and-fueling-observations.md) — Point-in-time analysis of how longitudinal body mass, home tape measurements, connected scale estimates and subjective hunger fit the recommender without recommending authority.
 
 ---
 
