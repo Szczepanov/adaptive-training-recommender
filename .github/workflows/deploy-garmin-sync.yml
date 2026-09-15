@@ -171,6 +171,7 @@ jobs:
           GARMIN_TOKEN_BUCKET: "${TOKEN_BUCKET}"
           GARMIN_ALLOW_CREDENTIAL_LOGIN: "false"
           GARMIN_ACTIVITY_DETAIL_ENABLED: "true"
+          GARMIN_ACTIVITY_HR_FIDELITY_ENABLED: "true"
           GCP_PROJECT_ID: "${GCP_PROJECT}"
           EOF
 

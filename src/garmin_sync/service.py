@@ -658,7 +658,7 @@ class GarminSyncService:
                     lookback_date,
                     lookback_iso,
                     include_activity_details=self.settings.garmin_activity_detail_enabled,
-                    include_activity_hr_fidelity=False,
+                    include_activity_hr_fidelity=self.settings.garmin_activity_hr_fidelity_enabled,
                 )
             except Exception as e:
                 logger.error(f"[{lookback_iso}] Lookback resync failed: {e}")
