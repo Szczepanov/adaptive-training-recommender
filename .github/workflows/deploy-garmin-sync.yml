@@ -126,6 +126,24 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: Guard against a region mismatch with the Hosting rewrites
+        run: |
+          # app/firebase.json's Hosting rewrites hardcode a region per Cloud Run service
+          # (garmin-account-link, google-health-account-link, anthropometry-write-api), but
+          # `region` here is a free-text override (workflow_dispatch/workflow_call). Deploying
+          # to any other region would leave those rewrites pointing at a region the service no
+          # longer runs in, silently breaking routing -- fail fast instead, before we spend any
+          # GCP credentials or build time.
+          MISMATCHED=$(jq -r --arg region "${REGION}" \
+            '.hosting.rewrites[] | select(.run != null and .run.region != $region) | "\(.run.serviceId): \(.run.region)"' \
+            app/firebase.json)
+          if [ -n "${MISMATCHED}" ]; then
+            echo "region input (${REGION}) does not match app/firebase.json's Hosting rewrite region(s):" >&2
+            echo "${MISMATCHED}" >&2
+            echo "Update the rewrite region(s) in app/firebase.json before deploying to a different region." >&2
+            exit 1
+          fi
+
       - name: Authenticate to GCP (Workload Identity Federation, no key)
         uses: google-github-actions/auth@v3
         with:

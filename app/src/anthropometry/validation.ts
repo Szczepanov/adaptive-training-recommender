@@ -83,6 +83,18 @@ function nearlyEqual(a: number, b: number): boolean {
     return Math.abs(a - b) <= 1e-9;
 }
 
+// Mirrors the server's `_as_utc_datetime` (src/garmin_sync/anthropometry.py), which requires
+// an explicit UTC offset and rejects offset-less/naive timestamps. `Date.parse` alone accepts
+// offset-less strings and interprets them as the runtime's local time, which would let this
+// client-side check pass a value the server-authoritative write path rejects, and would make
+// the observedAt-to-Warsaw-date check below depend on the browser's own timezone instead of
+// resolving a fixed instant.
+function isUtcOffsetTimestamp(value: unknown): value is string {
+    return typeof value === 'string'
+        && /(?:Z|[+-]\d{2}:\d{2})$/.test(value)
+        && !isNaN(Date.parse(value));
+}
+
 export function validateMeasurementItem(item: unknown, index: number, errors: ValidationIssue[]): AnthropometryMeasurementItem | null {
     if (!item || typeof item !== 'object') {
         errors.push({ field: `measurements[${index}]`, message: 'Measurement item must be an object' });
@@ -306,8 +318,8 @@ export function validateAnthropometryEntry(raw: unknown): ValidationResult<Anthr
         errors.push({ field: 'date', message: 'date must be a valid YYYY-MM-DD calendar date' });
     }
 
-    if (typeof data.observedAt !== 'string' || isNaN(Date.parse(data.observedAt))) {
-        errors.push({ field: 'observedAt', message: 'observedAt must be a valid ISO 8601 timestamp' });
+    if (!isUtcOffsetTimestamp(data.observedAt)) {
+        errors.push({ field: 'observedAt', message: 'observedAt must be an ISO 8601 timestamp with an explicit UTC offset' });
     } else if (typeof data.date === 'string' && isValidDateFormat(data.date)) {
         const warsawDate = getLocalDateString(new Date(data.observedAt));
         if (warsawDate !== data.date) {
@@ -330,12 +342,12 @@ export function validateAnthropometryEntry(raw: unknown): ValidationResult<Anthr
         errors.push({ field: 'revision', message: 'revision must be an integer >= 1' });
     }
 
-    if (typeof data.createdAt !== 'string' || isNaN(Date.parse(data.createdAt))) {
-        errors.push({ field: 'createdAt', message: 'createdAt must be an ISO timestamp' });
+    if (!isUtcOffsetTimestamp(data.createdAt)) {
+        errors.push({ field: 'createdAt', message: 'createdAt must be an ISO timestamp with an explicit UTC offset' });
     }
 
-    if (typeof data.updatedAt !== 'string' || isNaN(Date.parse(data.updatedAt))) {
-        errors.push({ field: 'updatedAt', message: 'updatedAt must be an ISO timestamp' });
+    if (!isUtcOffsetTimestamp(data.updatedAt)) {
+        errors.push({ field: 'updatedAt', message: 'updatedAt must be an ISO timestamp with an explicit UTC offset' });
     }
 
     const validatedContext = validateMeasurementContext(data.context, errors);

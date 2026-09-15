@@ -122,6 +122,20 @@
       }
     },
     {
+      "name": "offset-less observedAt is rejected",
+      "expectedValid": false,
+      "overrides": {
+        "observedAt": "2026-09-14T06:00:00"
+      }
+    },
+    {
+      "name": "offset-less createdAt is rejected",
+      "expectedValid": false,
+      "overrides": {
+        "createdAt": "2026-09-14T06:00:00"
+      }
+    },
+    {
       "name": "rounded readings require rounded median",
       "expectedValid": false,
       "overrides": {
