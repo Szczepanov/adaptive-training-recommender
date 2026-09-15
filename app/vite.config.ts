@@ -181,6 +181,9 @@ export default defineConfig({
   test: {
     hookTimeout: 30000,
     testTimeout: 15000,
+    // Persists transformed modules under node_modules/.vitest-cache (already gitignored)
+    // so repeat `vitest run` invocations skip re-transforming the whole module graph.
+    fsModuleCache: true,
     coverage: {
       provider: 'v8',
       include: ['src/**/*.{ts,tsx}'],
