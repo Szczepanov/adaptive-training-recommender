@@ -303,6 +303,48 @@ def test_sync_daily_lookback_resync_forwards_activity_detail_flag():
     assert provider.detail_calls == ["lookback-day", "target-day"]
 
 
+def test_sync_daily_lookback_resync_forwards_hr_fidelity_flag():
+    """Lookback resync (D-1) must forward garmin_activity_hr_fidelity_enabled so a
+    same-day activity that only shows up via the next day's lookback -- e.g. an evening
+    workout uploaded after that day's own sync already ran -- still gets assessed,
+    instead of being silently skipped forever."""
+    provider = HrFidelityFakeProvider()
+    provider.activities = [
+        CanonicalActivity(
+            activity_id="lookback-day",
+            date="2026-08-07",
+            type="cycling",
+            duration_min=60,
+            duration_seconds=3600,
+            training_effect_aerobic=3.2,
+            training_effect_anaerobic=0.4,
+            average_hr=145,
+            training_load=110.0,
+            intensity_tag="moderate",
+        ),
+        CanonicalActivity(
+            activity_id="target-day",
+            date="2026-08-08",
+            type="cycling",
+            duration_min=60,
+            duration_seconds=3600,
+            training_effect_aerobic=3.2,
+            training_effect_anaerobic=0.4,
+            average_hr=145,
+            training_load=110.0,
+            intensity_tag="moderate",
+        ),
+    ]
+    settings = Settings(app_user_id="test_uid_789", garmin_activity_hr_fidelity_enabled=True)
+    repo = MagicMock()
+    repo.is_fresh.return_value = False
+    repo.get_historical_snapshots.return_value = {}
+    service = GarminSyncService(settings=settings, repository=repo, provider=provider)
+
+    assert service.sync_daily("2026-08-08", force=True, resync_lookback_days=1)
+    assert provider.hr_fidelity_calls == ["lookback-day", "target-day"]
+
+
 def test_backfill_issues_no_detail_calls_even_when_enabled():
     provider = DetailFakeProvider()
     service, repo = _detail_service(provider)
