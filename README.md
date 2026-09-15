@@ -86,6 +86,8 @@ Adaptive Training Recommendations & Native Session Execution
 27. **Advanced Execution Scheduling (ADR-0035, ADR-0036, ADR-0037, ADR-0038)**: Explicit rest-day authoring in external plans, intraday training windows, block intent progression, and engine-generated recovery placement.
 28. **Longitudinal Body-Composition and Fueling Observations (ADR-0039)**: Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
 
+29. **Server-Authoritative Anthropometry Writes (ADR-0040)**: Dedicated Python Cloud Run API that validates protocol, bounds, and identity for anthropometry observations before persisting them, superseding direct client Firestore writes.
+
 ---
 
 ## Training Settings and Recommendation Safety
