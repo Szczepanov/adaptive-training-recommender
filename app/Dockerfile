@@ -53,7 +53,8 @@ COPY nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY security-headers.conf /etc/nginx/security-headers.conf
 ENV BACKEND_HOST=backend \
     BACKEND_PORT=8080 \
-    GOOGLE_HEALTH_BACKEND_HOST=google-health-backend
+    GOOGLE_HEALTH_BACKEND_HOST=google-health-backend \
+    ANTHROPOMETRY_BACKEND_HOST=anthropometry-backend
 
 # nginx needs write access to these paths (including the templated conf dir + generated
 # conf) even when running as a non-root user; nginx's entrypoint envsubst step needs to

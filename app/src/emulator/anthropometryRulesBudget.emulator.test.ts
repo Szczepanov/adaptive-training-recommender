@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, it } from 'vitest';
 import {
     assertFails,
-    assertSucceeds,
     initializeTestEnvironment,
     type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
@@ -47,7 +46,10 @@ const validWaist = {
     value: 93.1,
 };
 
-emulatorDescribe('Firestore anthropometry rule budget', () => {
+// Anthropometry writes are now server-authoritative (ADR-0040): the client SDK path is
+// denied unconditionally, so this no longer probes the rule-expression budget ceiling.
+// Kept as a regression guard that a full ten-item payload is still rejected outright.
+emulatorDescribe('Firestore anthropometry direct-write denial', () => {
     beforeAll(async () => {
         testEnvironment = await initializeTestEnvironment({
             projectId: 'demo-anthropometry-rule-budget',
@@ -63,25 +65,9 @@ emulatorDescribe('Firestore anthropometry rule budget', () => {
         await testEnvironment.cleanup();
     });
 
-    it('rejects a malformed measurement after a valid first item', async () => {
+    it('rejects a full ten-item direct SDK payload under the unconditional deny rule', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, entryPath), entry([
-            validMass,
-            { ...validWaist, metricId: 'unknown_metric' },
-        ])));
-    });
-
-    it('rejects a corrupt retained reading after a valid first item', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertFails(setDoc(doc(ownerDb, entryPath), entry([
-            validMass,
-            { ...validWaist, readings: [93.0, 999.0] },
-        ])));
-    });
-
-    it('accepts the full ten-item bounded payload without exhausting rule expressions', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await assertSucceeds(setDoc(doc(ownerDb, entryPath), entry([
             validMass,
             validWaist,
             { metricId: 'abdomen_umbilicus_cm', unit: 'cm', readings: [96.0, 96.2], value: 96.1 },

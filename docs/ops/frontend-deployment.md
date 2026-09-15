@@ -26,10 +26,11 @@ surface used here:
 - `roles/serviceusage.serviceUsageConsumer`
 
 There is a narrow Cloud Run exception inherited from the existing Hosting deployment path:
-`app/firebase.json` rewrites `/api/garmin/**` to `garmin-account-link` and `/api/google-health/**`
-to `google-health-account-link`, and Firebase Hosting needs `run.services.get` on each service
-while finalizing the Hosting release. `setup-workload-identity.sh` therefore grants
-`github-frontend-deployer` `roles/run.viewer` **only on those two specific Cloud Run services**,
+`app/firebase.json` rewrites `/api/garmin/**`, `/api/google-health/**`, and
+`/api/anthropometry/**` to dedicated Cloud Run services, and Firebase Hosting needs
+`run.services.get` on each service while finalizing the Hosting release.
+`setup-workload-identity.sh` therefore grants `github-frontend-deployer` `roles/run.viewer`
+**only on those specific Cloud Run services**,
 not at project level. It still cannot deploy or modify Cloud Run and cannot inspect unrelated
 services. Any future Hosting rewrite target added to `firebase.json` needs the same per-service
 binding added to the script, or Hosting deploys will fail with a 403 on `run.services.get` for
@@ -47,11 +48,11 @@ export GITHUB_REPO=Szczepanov/adaptive-training-recommender
 bash docs/ops/setup-workload-identity.sh
 ```
 
-Each binding is applied only when that Cloud Run service already exists. If either hasn't been
-deployed yet, the script prints a `NOTE:` for it; run **Deploy Garmin Sync** first (it deploys
-both `garmin-account-link` and, once `GOOGLE_HEALTH_CLIENT_ID`/`GOOGLE_HEALTH_CLIENT_SECRET`
-secrets are configured, `google-health-account-link`) and rerun the setup script afterward. In
-the normal E2E setup this is a one-time bootstrap concern, not a per-release step.
+Each binding is applied only when that Cloud Run service already exists. If one has not been
+deployed yet, the script prints a `NOTE:` for it; run **Deploy Garmin Sync** first (it always
+deploys `anthropometry-write-api` and `garmin-account-link`, and deploys
+`google-health-account-link` once its OAuth secrets are configured) and rerun the setup script
+afterward. In the normal E2E setup this is a one-time bootstrap concern, not a per-release step.
 
 The script prints the required repository secrets. Hosting builds also need the production
 Firebase web config (`VITE_FIREBASE_*`). Those values are client configuration embedded in the
@@ -76,10 +77,9 @@ pre-deployment mismatch is acknowledged; the deployment script still saves rollb
 runs the mandatory Firestore emulator suite, deploys only rules, and verifies the deployed
 source hash against `app/firestore.rules`.
 
-Hosting deploys are followed by two smoke checks: the Firebase Hosting root must be reachable,
-and the `/api/garmin/**` Hosting rewrite must reach the Cloud Run account-link backend. The
-rewrite probe uses a credential-free unsupported GET path and expects the backend's JSON 404,
-so it does not submit Garmin credentials or consume a login-rate-limit attempt.
+Hosting deploys are followed by rewrite smoke checks for the root, Garmin, and anthropometry API
+paths. The API probes use credential-free unsupported GET paths and expect structured JSON 404s,
+so they do not submit Garmin credentials, Firebase tokens, or measurement data.
 
 For a normal release, do not run Hosting before new backend/index/rules dependencies are ready;
 use **Deploy Production E2E**, which always cuts Hosting last.

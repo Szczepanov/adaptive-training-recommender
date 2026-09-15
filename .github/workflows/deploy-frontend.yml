@@ -9,8 +9,8 @@ name: Deploy Frontend & Firestore Rules
 #
 # Deliberately a SEPARATE identity from garmin-sync's github-deployer: github-frontend-deployer
 # holds Firebase Hosting/Rules plus the dedicated Firestore index role used by the separate
-# deploy-firestore-indexes.yml workflow, and roles/run.viewer scoped only to the
-# garmin-account-link service so Hosting can validate its rewrite. It has nothing about
+# deploy-firestore-indexes.yml workflow, and roles/run.viewer scoped only to each service
+# referenced by Hosting rewrites so Hosting can validate them. It has nothing about
 # Artifact Registry or Cloud Scheduler -- see docs/ops/frontend-deployment.md.
 #
 # Firestore indexes remain a separate deployment unit because index construction is
@@ -277,6 +277,22 @@ jobs:
             "https://${GCP_PROJECT}.web.app/api/garmin/login")"
           if [ "${STATUS}" != "404" ] || ! grep -q '"errorCode":"garmin_link.not_found"' "${BODY_FILE}"; then
             echo "Expected Cloud Run JSON 404 through Firebase Hosting rewrite; got HTTP ${STATUS}." >&2
+            cat "${BODY_FILE}" >&2
+            exit 1
+          fi
+
+      # GET is intentionally unsupported by the authenticated anthropometry mutation API. Its
+      # structured 404 confirms this Hosting path reached Cloud Run without sending a Firebase
+      # token or any personal measurement data.
+      - name: Smoke test Hosting to anthropometry API rewrite
+        if: ${{ inputs.deploy_hosting }}
+        run: |
+          BODY_FILE="$(mktemp)"
+          STATUS="$(curl --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
+            --output "${BODY_FILE}" --write-out '%{http_code}' \
+            "https://${GCP_PROJECT}.web.app/api/anthropometry/entries")"
+          if [ "${STATUS}" != "404" ] || ! grep -q '"errorCode":"anthropometry.not_found"' "${BODY_FILE}"; then
+            echo "Expected Cloud Run JSON 404 through anthropometry Hosting rewrite; got HTTP ${STATUS}." >&2
             cat "${BODY_FILE}" >&2
             exit 1
           fi

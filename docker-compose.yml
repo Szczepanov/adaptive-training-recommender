@@ -75,9 +75,39 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  # Separate, least-privilege write authority for athlete-authored anthropometry. The
+  # frontend retains direct Firestore reads, but mutations are token-authenticated here.
+  anthropometry-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: adaptive-training-recommender-anthropometry-backend:local
+    entrypoint: ["python"]
+    command: ["-m", "garmin_sync.anthropometry_api"]
+    ports:
+      - "${COMPOSE_BIND_ADDRESS:-127.0.0.1}:8083:8080"
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PORT: "8080"
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-adaptive-training-recommender}
+      GOOGLE_APPLICATION_CREDENTIALS: /app/firebase-service-account.json
+      FIREBASE_CREDENTIALS_PATH: /app/firebase-service-account.json
+    volumes:
+      - *firebase-credentials
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health', timeout=3).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
   # Production build of the React/Vite app, served by nginx. The reverse proxies mirror
-  # Firebase Hosting's two Cloud Run rewrites: Garmin -> backend, Google Health -> the
-  # distinct google-health-backend service. Browser traffic stays same-origin on :8080.
+  # Firebase Hosting's three Cloud Run rewrites: Garmin -> backend, Google Health -> the
+  # distinct google-health-backend service, anthropometry -> anthropometry-backend. Browser
+  # traffic stays same-origin on :8080.
   frontend:
     build:
       context: ./app
@@ -99,10 +129,13 @@ services:
       BACKEND_HOST: backend
       BACKEND_PORT: "8080"
       GOOGLE_HEALTH_BACKEND_HOST: google-health-backend
+      ANTHROPOMETRY_BACKEND_HOST: anthropometry-backend
     depends_on:
       backend:
         condition: service_healthy
       google-health-backend:
+        condition: service_healthy
+      anthropometry-backend:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:80/"]

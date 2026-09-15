@@ -20,6 +20,16 @@ check() {
   fi
 }
 
+check_output() {
+  local desc="$1"; shift
+  local output
+  if output="$("$@")" && [ -n "${output}" ]; then
+    echo "OK    ${desc}"
+  else
+    echo "MISSING  ${desc}"
+  fi
+}
+
 echo "Checking project: ${GCP_PROJECT}, region: ${REGION}"
 echo
 
@@ -31,6 +41,15 @@ check "Token object gs://${GCP_PROJECT}-garmin-tokens/garmin/garmin_tokens.json 
 
 check "Service account garmin-sync-job@${GCP_PROJECT}.iam.gserviceaccount.com" \
   gcloud iam service-accounts describe "garmin-sync-job@${GCP_PROJECT}.iam.gserviceaccount.com"
+
+check "Service account anthropometry-write-api@${GCP_PROJECT}.iam.gserviceaccount.com" \
+  gcloud iam service-accounts describe "anthropometry-write-api@${GCP_PROJECT}.iam.gserviceaccount.com"
+
+check_output "Anthropometry write API has the revoked-token verifier role" \
+  gcloud projects get-iam-policy "${GCP_PROJECT}" \
+    --flatten="bindings[].members" \
+    --filter="bindings.role:anthropometryTokenVerifier AND bindings.members:anthropometry-write-api@${GCP_PROJECT}.iam.gserviceaccount.com" \
+    --format="value(bindings.role)"
 
 check "Service account garmin-scheduler-invoker@${GCP_PROJECT}.iam.gserviceaccount.com" \
   gcloud iam service-accounts describe "garmin-scheduler-invoker@${GCP_PROJECT}.iam.gserviceaccount.com"
@@ -46,6 +65,9 @@ check "Cloud Run Job garmin-push-pending-workouts in ${REGION}" \
 
 check "Cloud Run Job garmin-manual-sync in ${REGION}" \
   gcloud run jobs describe garmin-manual-sync --region="${REGION}"
+
+check "Cloud Run service anthropometry-write-api in ${REGION}" \
+  gcloud run services describe anthropometry-write-api --region="${REGION}"
 
 check "Cloud Scheduler job garmin-sync-morning-poll in ${REGION}" \
   gcloud scheduler jobs describe garmin-sync-morning-poll --location="${REGION}"

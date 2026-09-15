@@ -54,6 +54,21 @@ export const METRIC_BOUNDS: Record<AnthropometryMetricId, MetricBound> = {
     calf_max_cm: { min: 15.0, max: 70.0, unit: 'cm' },
 };
 
+const ENTRY_KEYS = new Set([
+    'id', 'userId', 'date', 'observedAt', 'protocol', 'context', 'measurements',
+    'schemaVersion', 'revision', 'createdAt', 'updatedAt',
+]);
+const CONTEXT_KEYS = new Set([
+    'morningPostVoidPreIntake', 'trainingBeforeMeasurement', 'respiratoryState', 'posture', 'clothing',
+]);
+const MEASUREMENT_KEYS = new Set([
+    'metricId', 'laterality', 'unit', 'readings', 'value', 'repeatabilityWarning',
+]);
+
+function hasOnlyKeys(raw: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+    return Object.keys(raw).every(key => allowed.has(key));
+}
+
 export function isValidDateFormat(date: string): boolean {
     const regex = /^\d{4}-\d{2}-\d{2}$/;
     if (!regex.test(date)) return false;
@@ -74,6 +89,10 @@ export function validateMeasurementItem(item: unknown, index: number, errors: Va
         return null;
     }
     const raw = item as Record<string, unknown>;
+    if (!hasOnlyKeys(raw, MEASUREMENT_KEYS)) {
+        errors.push({ field: `measurements[${index}]`, message: 'Measurement item has unsupported fields' });
+        return null;
+    }
 
     const metricId = raw.metricId as AnthropometryMetricId;
     if (typeof metricId !== 'string' || !ANTHROPOMETRY_METRIC_IDS.includes(metricId)) {
@@ -221,6 +240,10 @@ export function validateMeasurementContext(ctx: unknown, errors: ValidationIssue
         return null;
     }
     const raw = ctx as Record<string, unknown>;
+    if (!hasOnlyKeys(raw, CONTEXT_KEYS)) {
+        errors.push({ field: 'context', message: 'Context has unsupported fields' });
+        return null;
+    }
 
     if (typeof raw.morningPostVoidPreIntake !== 'boolean') {
         errors.push({ field: 'context.morningPostVoidPreIntake', message: 'morningPostVoidPreIntake must be a boolean' });
@@ -267,6 +290,9 @@ export function validateAnthropometryEntry(raw: unknown): ValidationResult<Anthr
         return { isValid: false, errors: [{ field: 'entry', message: 'Entry must be an object' }] };
     }
     const data = raw as Record<string, unknown>;
+    if (!hasOnlyKeys(data, ENTRY_KEYS)) {
+        return { isValid: false, errors: [{ field: 'entry', message: 'Entry has unsupported fields' }] };
+    }
 
     if (typeof data.id !== 'string' || !data.id.trim() || data.id.length > 160) {
         errors.push({ field: 'id', message: 'id must be a non-empty string up to 160 characters' });

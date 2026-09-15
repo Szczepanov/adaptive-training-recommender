@@ -1,6 +1,24 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import type { AnthropometryEntry } from './models';
 import { validateAnthropometryEntry } from './validation';
+
+interface ConformanceCase {
+    name: string;
+    expectedValid: boolean;
+    overrides: Record<string, unknown>;
+    removals?: string[];
+}
+
+interface ConformanceCorpus {
+    baseEntry: Record<string, unknown>;
+    cases: ConformanceCase[];
+}
+
+const conformance = JSON.parse(readFileSync(
+    new URL('../../../contracts/anthropometry-validation-v1.json', import.meta.url),
+    'utf8',
+)) as ConformanceCorpus;
 
 function validSampleEntry(): AnthropometryEntry {
     return {
@@ -61,6 +79,20 @@ function validSampleEntry(): AnthropometryEntry {
 }
 
 describe('anthropometry entry validation', () => {
+    for (const testCase of conformance.cases) {
+        it(`matches the shared v1 conformance case: ${testCase.name}`, () => {
+            const entry: Record<string, unknown> = {
+                ...conformance.baseEntry,
+                ...testCase.overrides,
+            };
+            for (const field of testCase.removals ?? []) {
+                delete entry[field];
+            }
+            const result = validateAnthropometryEntry(entry);
+            expect(result.isValid).toBe(testCase.expectedValid);
+        });
+    }
+
     it('validates a complete, well-formed entry', () => {
         const result = validateAnthropometryEntry(validSampleEntry());
         expect(result.isValid).toBe(true);
