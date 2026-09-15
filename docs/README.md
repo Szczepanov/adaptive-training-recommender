@@ -93,6 +93,8 @@ Architectural choices, system invariants, and technical trade-offs are documente
 * [**ADR-0037: Block Intent and Controlled Progression**](./adr/0037-block-intent-and-controlled-progression.md) — *Accepted.* Explicit develop/maintain objectives, v5 import authority, report-only progression review and confirmed bounded revisions; implementation unstarted, unattended progression deferred.
 * [**ADR-0038: Engine-Generated Recovery Placement as a Requirement**](./adr/0038-engine-generated-recovery-placement.md) — *Proposed.* Proposes a plan-independent product-policy recovery exposure requirement (one qualifying exact recovery identity within every seven local calendar dates), with deadline escalation and explicit historical provenance; raised by [PR #453](https://github.com/Szczepanov/adaptive-training-recommender/pull/453), implementation unstarted.
 * [**ADR-0039: Longitudinal Body-Composition and Fueling Observations**](./adr/0039-longitudinal-body-composition-and-fueling-observations.md) — *Accepted.* Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
+* [**ADR-0040: Server-Authoritative Anthropometry Writes**](./adr/0040-server-authoritative-anthropometry-writes.md) — *Accepted.* A verified server is the sole mutation authority for anthropometry writes, closing direct SDK mutations to prevent Rules expression-budget exhaustion while enforcing full protocol validation.
+
 ---
 
 ### 🔍 Reviews & Analysis
@@ -222,6 +224,8 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Sports Knowledge Registry Follow-up**](./plans/sports-knowledge-registry-follow-up.md) — *In progress.* Follow-up to ADR-0033.
 * [**Training occurrence reconciliation & structured strength unification**](./plans/training-occurrence-reconciliation-and-strength-session-unification.md) — *In progress.* ADR-0034: canonical `PerformedTrainingOccurrence` reconciling structured execution and Garmin evidence, a gated Activities read model, durable performed-rest timing, a history shadow diff, and FIT workout-identity decoding — all five scoped slices merged in [PR #324](https://github.com/Szczepanov/adaptive-training-recommender/pull/324) on 2026-09-02; weekly coverage credit later cut over via [PR #331](https://github.com/Szczepanov/adaptive-training-recommender/pull/331), while the Activities read model remains flag-gated. See the [implementation checklist](./plans/training-occurrence-implementation-checklist.md) and [architecture summary](./plans/training-occurrence-summary.md) for the companion docs.
 * [**Safety evidence pack — subjective readiness, injury/pain**](./plans/2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md) — *Implemented.* P0 evidence/policy migration for the four previously-unresolved high-safety Sports Knowledge Registry families; SEP-A, SEP-B, and SEP-C1–C4 (clinical envelope decoupling, running-restriction contextualization, tissue-response latency, fail-closed clinical escalation) are all merged to `main` via PRs #317–#320.
+
+* [**Server-authoritative anthropometry writes**](./plans/anthropometry-server-authoritative-writes.md) — *In progress.* Dedicated Python Cloud Run API that verifies Firebase ID tokens, replacing the user-owned mutable observations from ADR-0039 with strict, validated server-side writes.
 
 ---
 
