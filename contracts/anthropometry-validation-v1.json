@@ -136,6 +136,13 @@
       }
     },
     {
+      "name": "invalid calendar date (Feb 30) in createdAt is rejected",
+      "expectedValid": false,
+      "overrides": {
+        "createdAt": "2026-02-30T06:00:00.000Z"
+      }
+    },
+    {
       "name": "rounded readings require rounded median",
       "expectedValid": false,
       "overrides": {

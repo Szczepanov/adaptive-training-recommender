@@ -30,6 +30,10 @@ from .anthropometry_repository import (
 from .base_api import BaseJSONRequestHandler
 from .firestore_repository import init_firestore_client
 
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
 logger = logging.getLogger("anthropometry_api")
 MAX_BODY_BYTES = 32 * 1024
 ENTRIES_PATH = "/api/anthropometry/entries"
@@ -118,6 +122,12 @@ class AnthropometryWriteHandler(BaseJSONRequestHandler):
     """Token-authenticated request adapter. It never logs request bodies or health values."""
 
     server_version = "AnthropometryWrite/1"
+    # Bounds self.rfile.read(length) in _request_entry(): ThreadingHTTPServer sets no
+    # per-connection timeout on its own, so a client that declares a Content-Length but
+    # withholds the body would otherwise block a request thread indefinitely. Half of Cloud
+    # Run's own --timeout=30 for this service, leaving room for auth verification and the
+    # Firestore transaction.
+    timeout = 15
     repository: ClassVar[EntryRepository | None] = None
 
     def log_message(self, format: str, *args: Any) -> None:

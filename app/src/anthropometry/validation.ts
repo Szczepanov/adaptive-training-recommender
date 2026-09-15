@@ -89,10 +89,17 @@ function nearlyEqual(a: number, b: number): boolean {
 // client-side check pass a value the server-authoritative write path rejects, and would make
 // the observedAt-to-Warsaw-date check below depend on the browser's own timezone instead of
 // resolving a fixed instant.
+//
+// `Date.parse` also silently rolls an invalid calendar date over into the next month (e.g.
+// "2026-02-30" becomes March 2) instead of rejecting it, while Python's `fromisoformat` raises
+// on it -- the same client/server acceptance gap as the offset check above, just for calendar
+// validity. Month/hour/minute overflow are already caught by `Date.parse` returning NaN; only
+// day-of-month rollover needs an explicit check, done the same way `isValidDateFormat` does.
 function isUtcOffsetTimestamp(value: unknown): value is string {
-    return typeof value === 'string'
-        && /(?:Z|[+-]\d{2}:\d{2})$/.test(value)
-        && !isNaN(Date.parse(value));
+    if (typeof value !== 'string' || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value) || isNaN(Date.parse(value))) {
+        return false;
+    }
+    return isValidDateFormat(value.slice(0, 10));
 }
 
 export function validateMeasurementItem(item: unknown, index: number, errors: ValidationIssue[]): AnthropometryMeasurementItem | null {
