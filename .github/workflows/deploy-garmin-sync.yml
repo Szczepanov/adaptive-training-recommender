@@ -358,21 +358,24 @@ jobs:
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-sync:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
 
+          # Stagger polling schedules by 5 minutes so garmin-sync (0,15,30,45 5-9am),
+          # garmin-manual-sync (5,20,35,50), and garmin-push-pending-workouts (10,25,40,55)
+          # never collide on the shared per-user Firestore GarminExecutionLease.
           gcloud scheduler jobs update http garmin-push-pending-workouts-poll --location="${REGION}" \
-            --schedule="*/15 * * * *" --time-zone="Europe/Warsaw" \
+            --schedule="10,25,40,55 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-push-pending-workouts:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}" \
           || gcloud scheduler jobs create http garmin-push-pending-workouts-poll --location="${REGION}" \
-            --schedule="*/15 * * * *" --time-zone="Europe/Warsaw" \
+            --schedule="10,25,40,55 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-push-pending-workouts:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
 
           gcloud scheduler jobs update http garmin-manual-sync-poll --location="${REGION}" \
-            --schedule="*/15 * * * *" --time-zone="Europe/Warsaw" \
+            --schedule="5,20,35,50 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}" \
           || gcloud scheduler jobs create http garmin-manual-sync-poll --location="${REGION}" \
-            --schedule="*/15 * * * *" --time-zone="Europe/Warsaw" \
+            --schedule="5,20,35,50 * * * *" --time-zone="Europe/Warsaw" \
             --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
             --http-method=POST --oauth-service-account-email="${SCHEDULER_SA_EMAIL}"
 

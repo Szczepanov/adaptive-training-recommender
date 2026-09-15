@@ -243,23 +243,29 @@ that raises the real-call count to maybe 6-8 across the window, still light.
 ```bash
 gcloud scheduler jobs create http garmin-push-pending-workouts-poll \
   --location=${REGION} \
-  --schedule="*/15 * * * *" \
+  --schedule="10,25,40,55 * * * *" \
   --time-zone="Europe/Warsaw" \
   --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-push-pending-workouts:run" \
   --http-method=POST \
   --oauth-service-account-email=${SCHEDULER_SA_EMAIL}
 ```
 
-`garmin-manual-sync` polls all day (not just the 5-9am window) at the same 15-minute
-cadence as the workout-queue poll, so clicking **Sync Now** in the web app -- e.g. because
-you're up before the morning window, or just want the latest numbers mid-afternoon -- reaches
-Garmin within 15 minutes instead of waiting for the next `garmin-sync-morning-poll` tick.
-Same cheap-Firestore-read-first shape: most ticks find no pending request and never call Garmin.
+`garmin-manual-sync` polls all day (not just the 5-9am window) at a 15-minute
+cadence, staggered 5 minutes apart from the workout-queue poll (at minutes `:05`, `:20`, `:35`, `:50`),
+so clicking **Sync Now** in the web app -- e.g. because you're up before the morning window, or
+just want the latest numbers mid-afternoon -- reaches Garmin within 15 minutes instead of waiting
+for the next `garmin-sync-morning-poll` tick. Same cheap-Firestore-read-first shape: most ticks find
+no pending request and never call Garmin.
+
+The 5-minute offset between `garmin-sync-morning-poll` (`:00`, `:15`, `:30`, `:45`),
+`garmin-manual-sync-poll` (`:05`, `:20`, `:35`, `:50`), and `garmin-push-pending-workouts-poll`
+(`:10`, `:25`, `:40`, `:55`) ensures that concurrent runs never contend for the shared per-user
+Firestore `GarminExecutionLease`.
 
 ```bash
 gcloud scheduler jobs create http garmin-manual-sync-poll \
   --location=${REGION} \
-  --schedule="*/15 * * * *" \
+  --schedule="5,20,35,50 * * * *" \
   --time-zone="Europe/Warsaw" \
   --uri="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-manual-sync:run" \
   --http-method=POST \
