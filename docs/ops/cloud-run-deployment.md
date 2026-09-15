@@ -355,7 +355,8 @@ will be dropped on that first run.
    bash docs/ops/setup-workload-identity.sh
    ```
    This creates the Workload Identity Pool + OIDC Provider (restricted to that one repo's
-   `main` branch), the token bucket, both runtime service accounts, the Artifact Registry
+   `main` branch), the token bucket, the Garmin, scheduler, and dedicated anthropometry runtime
+   service accounts, the Artifact Registry
    repo, and the narrowly-scoped `github-deployer` identity the workflows authenticate as. It
    prints three values at the end.
 3. Add those three, plus your Firebase UID and Garmin credentials, as **repo secrets**
@@ -377,8 +378,9 @@ will be dropped on that first run.
 
 Run the **Deploy Garmin Sync** workflow (Actions tab -> select it -> Run workflow). This
 builds the container with plain `docker build`/`docker push` against Artifact Registry (not
-Cloud Build -- see the workflow's own comments for why) and redeploys all three Cloud Run Jobs
-against the infra `setup-workload-identity.sh` already created. Leave `run_smoke_test` off (its default) until
+Cloud Build -- see the workflow's own comments for why), redeploys `anthropometry-write-api`, and
+redeploys all three Cloud Run Jobs against the infra `setup-workload-identity.sh` already created.
+Leave `run_smoke_test` off (its default) until
 you've confirmed a Garmin token already exists in the bucket
 (`docs/ops/verify-existing-deploy.sh` checks this) -- otherwise the smoke test fails for lack
 of one, which is expected on a first deploy.
@@ -409,8 +411,9 @@ actually logs in and pulls data end to end.
 
 ### Re-deploying after a code change
 
-Run **Deploy Garmin Sync** again -- it rebuilds the image and redeploys all three Jobs
-(`gcloud run jobs deploy` upserts) without touching anything already configured.
+Run **Deploy Garmin Sync** again -- it rebuilds the image, redeploys the anthropometry write API,
+and redeploys all three Jobs (`gcloud run jobs deploy` upserts) without touching anything already
+configured.
 
 ### Optional: `eight-sleep-direct-sync` (ES9, daily-scheduled)
 

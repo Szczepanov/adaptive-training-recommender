@@ -125,22 +125,31 @@ export async function seedRecoverySnapshot(athlete: E2EAthlete): Promise<string>
   return date;
 }
 
+// User initialization is intentionally backgrounded: the onboarding wizard's own visibility
+// (App.tsx) is gated on the same async decision-input composition as the rest of the app, so
+// it can mount well after Check-in first renders -- including, for an athlete with no goals
+// yet, right as a later decisionInput refresh (e.g. after saving a check-in) makes it eligible
+// to show again. Call this at any point in a test where that composition may just have settled,
+// not only once at sign-in, or a still-pending wizard can intercept a click on whatever it
+// happens to render over.
+export async function dismissOnboardingIfVisible(page: Page, timeoutMs = 2_000): Promise<void> {
+  const skipOnboarding = page.getByRole('button', { name: 'Skip for now' });
+  const onboardingVisible = await skipOnboarding
+    .waitFor({ state: 'visible', timeout: timeoutMs })
+    .then(() => true)
+    .catch(() => false);
+  if (onboardingVisible) {
+    await skipOnboarding.click();
+  }
+}
+
 export async function signInThroughUi(page: Page, athlete: E2EAthlete): Promise<void> {
   await page.goto('/');
   await page.getByPlaceholder('Email address').fill(athlete.email);
   await page.getByPlaceholder('Password').fill(athlete.password);
   await page.getByRole('button', { name: 'Sign In', exact: true }).click();
   await page.getByRole('heading', { name: 'Check-in', exact: true }).waitFor();
-  // User initialization is intentionally backgrounded. A fresh account may reach Check-in
-  // before onboarding mounts, or display onboarding above it once composition catches up.
-  const skipOnboarding = page.getByRole('button', { name: 'Skip for now' });
-  const onboardingVisible = await skipOnboarding
-    .waitFor({ state: 'visible', timeout: 2_000 })
-    .then(() => true)
-    .catch(() => false);
-  if (onboardingVisible) {
-    await skipOnboarding.click();
-  }
+  await dismissOnboardingIfVisible(page);
 }
 
 export async function openFixturePicker(page: Page): Promise<void> {

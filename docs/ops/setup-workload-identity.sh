@@ -19,10 +19,13 @@ DEPLOYER_SA_EMAIL="${DEPLOYER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com"
 FRONTEND_DEPLOYER_SA_NAME="github-frontend-deployer"
 FRONTEND_DEPLOYER_SA_EMAIL="${FRONTEND_DEPLOYER_SA_NAME}@${GCP_PROJECT}.iam.gserviceaccount.com"
 JOB_SA_EMAIL="garmin-sync-job@${GCP_PROJECT}.iam.gserviceaccount.com"
+ANTHROPOMETRY_WRITE_SA_EMAIL="anthropometry-write-api@${GCP_PROJECT}.iam.gserviceaccount.com"
 SCHEDULER_SA_EMAIL="garmin-scheduler-invoker@${GCP_PROJECT}.iam.gserviceaccount.com"
 TOKEN_BUCKET="${GCP_PROJECT}-garmin-tokens"
 AUTH_USER_ROLE_ID="garminLinkAuthUsers"
 AUTH_USER_ROLE="projects/${GCP_PROJECT}/roles/${AUTH_USER_ROLE_ID}"
+AUTH_TOKEN_VERIFIER_ROLE_ID="anthropometryTokenVerifier"
+AUTH_TOKEN_VERIFIER_ROLE="projects/${GCP_PROJECT}/roles/${AUTH_TOKEN_VERIFIER_ROLE_ID}"
 
 export CLOUDSDK_CORE_PROJECT="${GCP_PROJECT}"
 
@@ -67,6 +70,10 @@ if ! gcloud iam service-accounts describe "${JOB_SA_EMAIL}" >/dev/null 2>&1; the
   gcloud iam service-accounts create garmin-sync-job \
     --display-name="Garmin sync/link Cloud Run runtime identity"
 fi
+if ! gcloud iam service-accounts describe "${ANTHROPOMETRY_WRITE_SA_EMAIL}" >/dev/null 2>&1; then
+  gcloud iam service-accounts create anthropometry-write-api \
+    --display-name="Anthropometry write API Cloud Run runtime identity"
+fi
 if ! gcloud iam service-accounts describe "${SCHEDULER_SA_EMAIL}" >/dev/null 2>&1; then
   gcloud iam service-accounts create garmin-scheduler-invoker \
     --display-name="Cloud Scheduler -> Cloud Run Jobs invoker"
@@ -77,6 +84,9 @@ fi
 echo "==> Granting runtime Firestore access"
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --member="serviceAccount:${JOB_SA_EMAIL}" --role="roles/datastore.user" \
+  --condition=None >/dev/null
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${ANTHROPOMETRY_WRITE_SA_EMAIL}" --role="roles/datastore.user" \
   --condition=None >/dev/null
 
 # Self-service Garmin onboarding creates an internal Firebase Auth user only for a genuinely
@@ -101,6 +111,29 @@ fi
 
 gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
   --member="serviceAccount:${JOB_SA_EMAIL}" --role="${AUTH_USER_ROLE}" \
+  --condition=None >/dev/null
+
+# verify_id_token(..., check_revoked=True) resolves the Firebase Auth user record. The
+# anthropometry API needs only that read, never account create/delete or Auth configuration.
+echo "==> Creating/updating least-privilege Firebase token verifier role"
+if gcloud iam roles describe "${AUTH_TOKEN_VERIFIER_ROLE_ID}" --project="${GCP_PROJECT}" >/dev/null 2>&1; then
+  gcloud iam roles update "${AUTH_TOKEN_VERIFIER_ROLE_ID}" \
+    --project="${GCP_PROJECT}" \
+    --title="Anthropometry Firebase Token Verifier" \
+    --description="Read Firebase Auth users solely to enforce revoked-token checks" \
+    --permissions="firebaseauth.users.get" \
+    --stage="GA" --quiet >/dev/null
+else
+  gcloud iam roles create "${AUTH_TOKEN_VERIFIER_ROLE_ID}" \
+    --project="${GCP_PROJECT}" \
+    --title="Anthropometry Firebase Token Verifier" \
+    --description="Read Firebase Auth users solely to enforce revoked-token checks" \
+    --permissions="firebaseauth.users.get" \
+    --stage="GA" --quiet >/dev/null
+fi
+
+gcloud projects add-iam-policy-binding "${GCP_PROJECT}" \
+  --member="serviceAccount:${ANTHROPOMETRY_WRITE_SA_EMAIL}" --role="${AUTH_TOKEN_VERIFIER_ROLE}" \
   --condition=None >/dev/null
 
 # Firebase Admin custom tokens are signed through IAM when running with ADC on Cloud Run.
@@ -152,6 +185,10 @@ gcloud iam service-accounts add-iam-policy-binding "${JOB_SA_EMAIL}" \
   --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
   --role="roles/iam.serviceAccountUser" >/dev/null
 
+gcloud iam service-accounts add-iam-policy-binding "${ANTHROPOMETRY_WRITE_SA_EMAIL}" \
+  --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
+  --role="roles/iam.serviceAccountUser" >/dev/null
+
 gcloud iam service-accounts add-iam-policy-binding "${SCHEDULER_SA_EMAIL}" \
   --member="serviceAccount:${DEPLOYER_SA_EMAIL}" \
   --role="roles/iam.serviceAccountUser" >/dev/null
@@ -180,14 +217,13 @@ for ROLE in \
     --condition=None >/dev/null
 done
 
-# app/firebase.json rewrites /api/garmin/** to the garmin-account-link Cloud Run service, and
-# (as of the Google Health account-linking feature) /api/google-health/** to
-# google-health-account-link. Finalizing a Hosting version that references either calls
+# app/firebase.json rewrites Garmin, Google Health, and anthropometry API paths to their
+# dedicated Cloud Run services. Finalizing a Hosting version that references any of them calls
 # run.services.get on it, so github-frontend-deployer needs read access there -- but only
 # there. Bind roles/run.viewer per-service (not at project level) so this identity still can't
 # see or touch any other Cloud Run service, preserving the isolation from github-deployer
 # described above.
-for SERVICE in garmin-account-link google-health-account-link; do
+for SERVICE in garmin-account-link google-health-account-link anthropometry-write-api; do
   if gcloud run services describe "${SERVICE}" --region="${REGION}" >/dev/null 2>&1; then
     gcloud run services add-iam-policy-binding "${SERVICE}" \
       --region="${REGION}" \

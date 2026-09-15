@@ -2340,133 +2340,13 @@ service cloud.firestore {
       allow update, delete: if false;
     }
 
-    function hasValidAnthropometryContext(context) {
-      return context is map
-        && context.keys().hasOnly(['morningPostVoidPreIntake', 'trainingBeforeMeasurement', 'respiratoryState', 'posture', 'clothing'])
-        && context.keys().hasAll(['morningPostVoidPreIntake', 'trainingBeforeMeasurement'])
-        && context.morningPostVoidPreIntake is bool
-        && context.trainingBeforeMeasurement is bool
-        && (!('respiratoryState' in context) || context.respiratoryState in ['relaxed_normal_expiration', 'other'])
-        && (!('posture' in context) || context.posture in ['standing_relaxed', 'other'])
-        && (!('clothing' in context) || context.clothing in ['minimal_or_bare_skin', 'light_clothing', 'other']);
-    }
-
-    // Mirrors app/src/anthropometry/validation.ts's METRIC_BOUNDS. Firestore rules cannot
-    // index a map literal by a dynamic key reliably across all evaluator versions, so bounds
-    // and units are expressed as ternary chains, matching this file's existing convention
-    // (see hasValidOutcomeMetricUnit above).
-    function anthropometryMetricUnit(metricId) {
-      return metricId == 'body_mass_kg' ? 'kg' : 'cm';
-    }
-
-    function anthropometryMetricMin(metricId) {
-      return metricId == 'body_mass_kg' ? 20.0
-        : metricId == 'waist_minimum_cm' ? 40.0
-        : metricId == 'abdomen_umbilicus_cm' ? 40.0
-        : metricId == 'hips_max_cm' ? 50.0
-        : metricId == 'chest_nipple_line_cm' ? 50.0
-        : metricId == 'upper_arm_relaxed_mid_cm' ? 15.0
-        : metricId == 'forearm_max_cm' ? 12.0
-        : metricId == 'thigh_mid_cm' ? 25.0
-        : metricId == 'calf_max_cm' ? 15.0
-        : 0.0;
-    }
-
-    function anthropometryMetricMax(metricId) {
-      return metricId == 'body_mass_kg' ? 350.0
-        : metricId == 'waist_minimum_cm' ? 200.0
-        : metricId == 'abdomen_umbilicus_cm' ? 200.0
-        : metricId == 'hips_max_cm' ? 220.0
-        : metricId == 'chest_nipple_line_cm' ? 200.0
-        : metricId == 'upper_arm_relaxed_mid_cm' ? 70.0
-        : metricId == 'forearm_max_cm' ? 55.0
-        : metricId == 'thigh_mid_cm' ? 110.0
-        : metricId == 'calf_max_cm' ? 70.0
-        : 0.0;
-    }
-
-    function isLimbAnthropometryMetric(metricId) {
-      return metricId in ['upper_arm_relaxed_mid_cm', 'forearm_max_cm', 'thigh_mid_cm', 'calf_max_cm'];
-    }
-
-    function isValidAnthropometryReadingValue(metricId, v) {
-      return v is number
-        && v >= anthropometryMetricMin(metricId)
-        && v <= anthropometryMetricMax(metricId);
-    }
-
-    function hasValidAnthropometryReadings(metricId, readings) {
-      let sz = readings.size();
-      let expectedCount = metricId == 'body_mass_kg' ? sz == 1 : (sz >= 2 && sz <= 3);
-      return readings is list
-        && expectedCount
-        && (sz <= 0 || isValidAnthropometryReadingValue(metricId, readings[0]))
-        && (sz <= 1 || isValidAnthropometryReadingValue(metricId, readings[1]))
-        && (sz <= 2 || isValidAnthropometryReadingValue(metricId, readings[2]));
-    }
-
-    function isValidAnthropometryMeasurement(item) {
-      return item is map
-        && item.keys().hasOnly(['metricId', 'laterality', 'unit', 'readings', 'value', 'repeatabilityWarning'])
-        && item.keys().hasAll(['metricId', 'unit', 'readings', 'value'])
-        && item.metricId in [
-          'body_mass_kg', 'waist_minimum_cm', 'abdomen_umbilicus_cm', 'hips_max_cm',
-          'chest_nipple_line_cm', 'upper_arm_relaxed_mid_cm', 'forearm_max_cm',
-          'thigh_mid_cm', 'calf_max_cm',
-        ]
-        && item.unit == anthropometryMetricUnit(item.metricId)
-        && (!('laterality' in item)
-          || (isLimbAnthropometryMetric(item.metricId) && item.laterality in ['left', 'right', 'unspecified']))
-        && hasValidAnthropometryReadings(item.metricId, item.readings)
-        && isValidAnthropometryReadingValue(item.metricId, item.value)
-        && (!('repeatabilityWarning' in item) || item.repeatabilityWarning is bool);
-    }
-
-    function hasValidAnthropometryMeasurements(measurements) {
-      let sz = measurements.size();
-      return measurements is list && sz > 0 && sz <= 10
-        && (sz <= 0 || isValidAnthropometryMeasurement(measurements[0]))
-        && (sz <= 1 || isValidAnthropometryMeasurement(measurements[1]))
-        && (sz <= 2 || isValidAnthropometryMeasurement(measurements[2]))
-        && (sz <= 3 || isValidAnthropometryMeasurement(measurements[3]))
-        && (sz <= 4 || isValidAnthropometryMeasurement(measurements[4]))
-        && (sz <= 5 || isValidAnthropometryMeasurement(measurements[5]))
-        && (sz <= 6 || isValidAnthropometryMeasurement(measurements[6]))
-        && (sz <= 7 || isValidAnthropometryMeasurement(measurements[7]))
-        && (sz <= 8 || isValidAnthropometryMeasurement(measurements[8]))
-        && (sz <= 9 || isValidAnthropometryMeasurement(measurements[9]));
-    }
-
-    function hasValidAnthropometryEntry(userId, entryId) {
-      let data = request.resource.data;
-      return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['id', 'userId', 'date', 'observedAt', 'protocol', 'context', 'measurements', 'schemaVersion', 'revision', 'createdAt', 'updatedAt'])
-        && data.keys().hasAll(['id', 'userId', 'date', 'observedAt', 'protocol', 'context', 'measurements', 'schemaVersion', 'revision', 'createdAt', 'updatedAt'])
-        && data.id == entryId
-        && data.id is string && data.id.size() > 0 && data.id.size() <= 160
-        && isValidActivityDate(data.date)
-        && data.observedAt is string && data.observedAt.size() > 0 && data.observedAt.size() <= 64
-        && data.protocol == 'home_anthropometry@1'
-        && data.schemaVersion == 1
-        && data.revision is int && data.revision >= 1
-        && data.createdAt is string && data.createdAt.size() > 0 && data.createdAt.size() <= 64
-        && data.updatedAt is string && data.updatedAt.size() > 0 && data.updatedAt.size() <= 64
-        && hasValidAnthropometryContext(data.context)
-        && hasValidAnthropometryMeasurements(data.measurements);
-    }
-
     // --- ADR-0039: athlete-authored home anthropometry entries
     match /users/{userId}/anthropometry_entries/{entryId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId)
-        && hasValidAnthropometryEntry(userId, entryId)
-        && request.resource.data.revision == 1;
-      allow update: if keepsOwnership(userId)
-        && hasValidAnthropometryEntry(userId, entryId)
-        && request.resource.data.id == resource.data.id
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.revision == resource.data.revision + 1;
-      allow delete: if isOwner(userId);
+      // Nested protocol validation now runs in the token-authenticated Cloud Run service.
+      // Keeping client writes closed eliminates Firestore's per-request rule-expression
+      // ceiling for the ten-measurement payload and prevents direct SDK bypasses.
+      allow write: if false;
     }
 
     // --- MS2/ADR-0027: server-owned multisource health observation day bundles.

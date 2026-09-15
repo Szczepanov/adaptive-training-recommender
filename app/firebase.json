@@ -50,6 +50,13 @@
         }
       },
       {
+        "source": "/api/anthropometry/**",
+        "run": {
+          "serviceId": "anthropometry-write-api",
+          "region": "europe-central2"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

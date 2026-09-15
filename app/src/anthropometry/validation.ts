@@ -54,6 +54,21 @@ export const METRIC_BOUNDS: Record<AnthropometryMetricId, MetricBound> = {
     calf_max_cm: { min: 15.0, max: 70.0, unit: 'cm' },
 };
 
+const ENTRY_KEYS = new Set([
+    'id', 'userId', 'date', 'observedAt', 'protocol', 'context', 'measurements',
+    'schemaVersion', 'revision', 'createdAt', 'updatedAt',
+]);
+const CONTEXT_KEYS = new Set([
+    'morningPostVoidPreIntake', 'trainingBeforeMeasurement', 'respiratoryState', 'posture', 'clothing',
+]);
+const MEASUREMENT_KEYS = new Set([
+    'metricId', 'laterality', 'unit', 'readings', 'value', 'repeatabilityWarning',
+]);
+
+function hasOnlyKeys(raw: Record<string, unknown>, allowed: ReadonlySet<string>): boolean {
+    return Object.keys(raw).every(key => allowed.has(key));
+}
+
 export function isValidDateFormat(date: string): boolean {
     const regex = /^\d{4}-\d{2}-\d{2}$/;
     if (!regex.test(date)) return false;
@@ -68,12 +83,35 @@ function nearlyEqual(a: number, b: number): boolean {
     return Math.abs(a - b) <= 1e-9;
 }
 
+// Mirrors the server's `_as_utc_datetime` (src/garmin_sync/anthropometry.py), which requires
+// an explicit UTC offset and rejects offset-less/naive timestamps. `Date.parse` alone accepts
+// offset-less strings and interprets them as the runtime's local time, which would let this
+// client-side check pass a value the server-authoritative write path rejects, and would make
+// the observedAt-to-Warsaw-date check below depend on the browser's own timezone instead of
+// resolving a fixed instant.
+//
+// `Date.parse` also silently rolls an invalid calendar date over into the next month (e.g.
+// "2026-02-30" becomes March 2) instead of rejecting it, while Python's `fromisoformat` raises
+// on it -- the same client/server acceptance gap as the offset check above, just for calendar
+// validity. Month/hour/minute overflow are already caught by `Date.parse` returning NaN; only
+// day-of-month rollover needs an explicit check, done the same way `isValidDateFormat` does.
+function isUtcOffsetTimestamp(value: unknown): value is string {
+    if (typeof value !== 'string' || !/(?:Z|[+-]\d{2}:\d{2})$/.test(value) || isNaN(Date.parse(value))) {
+        return false;
+    }
+    return isValidDateFormat(value.slice(0, 10));
+}
+
 export function validateMeasurementItem(item: unknown, index: number, errors: ValidationIssue[]): AnthropometryMeasurementItem | null {
     if (!item || typeof item !== 'object') {
         errors.push({ field: `measurements[${index}]`, message: 'Measurement item must be an object' });
         return null;
     }
     const raw = item as Record<string, unknown>;
+    if (!hasOnlyKeys(raw, MEASUREMENT_KEYS)) {
+        errors.push({ field: `measurements[${index}]`, message: 'Measurement item has unsupported fields' });
+        return null;
+    }
 
     const metricId = raw.metricId as AnthropometryMetricId;
     if (typeof metricId !== 'string' || !ANTHROPOMETRY_METRIC_IDS.includes(metricId)) {
@@ -221,6 +259,10 @@ export function validateMeasurementContext(ctx: unknown, errors: ValidationIssue
         return null;
     }
     const raw = ctx as Record<string, unknown>;
+    if (!hasOnlyKeys(raw, CONTEXT_KEYS)) {
+        errors.push({ field: 'context', message: 'Context has unsupported fields' });
+        return null;
+    }
 
     if (typeof raw.morningPostVoidPreIntake !== 'boolean') {
         errors.push({ field: 'context.morningPostVoidPreIntake', message: 'morningPostVoidPreIntake must be a boolean' });
@@ -267,6 +309,9 @@ export function validateAnthropometryEntry(raw: unknown): ValidationResult<Anthr
         return { isValid: false, errors: [{ field: 'entry', message: 'Entry must be an object' }] };
     }
     const data = raw as Record<string, unknown>;
+    if (!hasOnlyKeys(data, ENTRY_KEYS)) {
+        return { isValid: false, errors: [{ field: 'entry', message: 'Entry has unsupported fields' }] };
+    }
 
     if (typeof data.id !== 'string' || !data.id.trim() || data.id.length > 160) {
         errors.push({ field: 'id', message: 'id must be a non-empty string up to 160 characters' });
@@ -280,8 +325,8 @@ export function validateAnthropometryEntry(raw: unknown): ValidationResult<Anthr
         errors.push({ field: 'date', message: 'date must be a valid YYYY-MM-DD calendar date' });
     }
 
-    if (typeof data.observedAt !== 'string' || isNaN(Date.parse(data.observedAt))) {
-        errors.push({ field: 'observedAt', message: 'observedAt must be a valid ISO 8601 timestamp' });
+    if (!isUtcOffsetTimestamp(data.observedAt)) {
+        errors.push({ field: 'observedAt', message: 'observedAt must be an ISO 8601 timestamp with an explicit UTC offset' });
     } else if (typeof data.date === 'string' && isValidDateFormat(data.date)) {
         const warsawDate = getLocalDateString(new Date(data.observedAt));
         if (warsawDate !== data.date) {
@@ -304,12 +349,12 @@ export function validateAnthropometryEntry(raw: unknown): ValidationResult<Anthr
         errors.push({ field: 'revision', message: 'revision must be an integer >= 1' });
     }
 
-    if (typeof data.createdAt !== 'string' || isNaN(Date.parse(data.createdAt))) {
-        errors.push({ field: 'createdAt', message: 'createdAt must be an ISO timestamp' });
+    if (!isUtcOffsetTimestamp(data.createdAt)) {
+        errors.push({ field: 'createdAt', message: 'createdAt must be an ISO timestamp with an explicit UTC offset' });
     }
 
-    if (typeof data.updatedAt !== 'string' || isNaN(Date.parse(data.updatedAt))) {
-        errors.push({ field: 'updatedAt', message: 'updatedAt must be an ISO timestamp' });
+    if (!isUtcOffsetTimestamp(data.updatedAt)) {
+        errors.push({ field: 'updatedAt', message: 'updatedAt must be an ISO timestamp with an explicit UTC offset' });
     }
 
     const validatedContext = validateMeasurementContext(data.context, errors);

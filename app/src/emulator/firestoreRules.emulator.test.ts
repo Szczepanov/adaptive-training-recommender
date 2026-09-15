@@ -2329,45 +2329,22 @@ emulatorDescribe('Firestore security rules', () => {
         };
     }
 
-    it('allows owner to create, update with revision +1, and delete an anthropometry entry', async () => {
+    it('allows owner-scoped reads but denies every direct SDK mutation', async () => {
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await setDoc(doc(context.firestore(), anthropometryPath), validAnthropometryEntryDoc());
+        });
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        await expect(assertSucceeds(setDoc(doc(ownerDb, anthropometryPath), validAnthropometryEntryDoc()))).resolves.toBeUndefined();
         await expect(assertSucceeds(getDoc(doc(ownerDb, anthropometryPath)))).resolves.toBeDefined();
 
-        // Update advancing revision
-        await expect(assertSucceeds(setDoc(doc(ownerDb, anthropometryPath), {
+        await assertFails(setDoc(doc(ownerDb, `${anthropometryPath}-new`), {
             ...validAnthropometryEntryDoc(),
-            revision: 2,
-            updatedAt: '2026-09-14T06:30:00Z',
-        }))).resolves.toBeUndefined();
-
-        // Deletion by owner
-        await expect(assertSucceeds(deleteDoc(doc(ownerDb, anthropometryPath)))).resolves.toBeUndefined();
-    });
-
-    it('rejects an anthropometry entry with invalid initial revision or invalid revision advance', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-        // Initial revision must be 1
-        await assertFails(setDoc(doc(ownerDb, `${anthropometryPath}-rev2`), {
-            ...validAnthropometryEntryDoc(),
-            id: 'entry-1-rev2',
-            revision: 2,
+            id: 'entry-new',
         }));
-
-        // Set revision 1
-        await expect(assertSucceeds(setDoc(doc(ownerDb, anthropometryPath), validAnthropometryEntryDoc()))).resolves.toBeUndefined();
-
-        // Cannot update without bumping revision
         await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
             ...validAnthropometryEntryDoc(),
-            revision: 1,
+            revision: 2,
         }));
-
-        // Cannot skip revision (+2)
-        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
-            ...validAnthropometryEntryDoc(),
-            revision: 3,
-        }));
+        await assertFails(deleteDoc(doc(ownerDb, anthropometryPath)));
     });
 
     it('rejects cross-user anthropometry access', async () => {
@@ -2380,55 +2357,4 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(deleteDoc(doc(otherDb, anthropometryPath)));
     });
 
-    it('rejects an anthropometry entry with a malformed measurement item', async () => {
-        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
-
-        // Unknown metricId
-        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
-            ...validAnthropometryEntryDoc(),
-            measurements: [{ metricId: 'neck_cm', unit: 'cm', readings: [40.0, 40.2], value: 40.1 }],
-        }));
-
-        // Unit mismatch for the given metric
-        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
-            ...validAnthropometryEntryDoc(),
-            measurements: [{ metricId: 'waist_minimum_cm', unit: 'kg', readings: [82.0, 82.4], value: 82.2 }],
-        }));
-
-        // Value out of the broad corruption bounds
-        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
-            ...validAnthropometryEntryDoc(),
-            measurements: [{ metricId: 'waist_minimum_cm', unit: 'cm', readings: [82.0, 999.0], value: 999.0 }],
-        }));
-
-        // Wrong reading count (circumference requires 2-3, not 1)
-        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
-            ...validAnthropometryEntryDoc(),
-            measurements: [{ metricId: 'waist_minimum_cm', unit: 'cm', readings: [82.0], value: 82.0 }],
-        }));
-
-        // body_mass_kg requires exactly 1 reading, not 2
-        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
-            ...validAnthropometryEntryDoc(),
-            measurements: [{ metricId: 'body_mass_kg', unit: 'kg', readings: [70.0, 70.2], value: 70.1 }],
-        }));
-
-        // Laterality on a non-limb metric
-        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
-            ...validAnthropometryEntryDoc(),
-            measurements: [{ metricId: 'waist_minimum_cm', laterality: 'left', unit: 'cm', readings: [82.0, 82.4], value: 82.2 }],
-        }));
-
-        // Invalid laterality value on a limb metric
-        await assertFails(setDoc(doc(ownerDb, anthropometryPath), {
-            ...validAnthropometryEntryDoc(),
-            measurements: [{ metricId: 'thigh_mid_cm', laterality: 'both', unit: 'cm', readings: [55.0, 55.2], value: 55.1 }],
-        }));
-
-        // Valid laterality on a limb metric succeeds
-        await expect(assertSucceeds(setDoc(doc(ownerDb, anthropometryPath), {
-            ...validAnthropometryEntryDoc(),
-            measurements: [{ metricId: 'thigh_mid_cm', laterality: 'left', unit: 'cm', readings: [55.0, 55.2], value: 55.1 }],
-        }))).resolves.toBeUndefined();
-    });
 });

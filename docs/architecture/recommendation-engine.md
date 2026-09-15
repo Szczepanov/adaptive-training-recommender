@@ -191,7 +191,7 @@ ADR-0029. A connected account with a missing snapshot is directed to sync; an un
 connection state fails closed. Training history, clinical/injury restrictions, equipment,
 availability, post-recovery buffering, and the normal planner remain unchanged.
 
-### Anthropometry and fueling observation boundary (ADR-0039)
+### Anthropometry and fueling observation boundary (ADR-0039 / ADR-0040)
 
 `app/src/anthropometry/` (protocol-versioned home tape measurements, body-mass source
 reduction/trends) and the check-in's optional `hunger1To10`/`hungerTiming` fields are
@@ -206,7 +206,10 @@ telemetry or error reports. `POLICY_VERSION` is unaffected (verified by
 
 Storage is `users/{userId}/anthropometry_entries/{entryId}`, owner-scoped exactly like every
 other `users/{uid}/...` collection, with corrections tracked by a monotonic `revision` rather
-than duplicate documents. Retention/export/deletion follows the same account-deletion path as
+than duplicate documents. Per ADR-0040, the Firestore client can read its owner-scoped rows but
+cannot mutate them directly: a token-verified, server-authoritative API validates/canonicalizes
+the full protocol and owns create/correct/delete transactions. Retention/export/deletion follows
+the same account-deletion path as
 every other `users/{uid}/...` document (see
 [`physiological-identity-passport.md`](./physiological-identity-passport.md)'s equivalent
 note) — no separate retention policy exists yet and should be revisited before this data grows

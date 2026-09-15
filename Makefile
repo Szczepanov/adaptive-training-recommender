@@ -3,7 +3,7 @@
         lint lint-python lint-frontend \
         format format-check format-python-check format-python format-frontend \
         typecheck typecheck-python typecheck-frontend \
-        test test-python test-frontend test-coverage \
+        test test-python test-frontend test-coverage test-rules \
         validate-workouts validate-knowledge validate-knowledge-coverage \
         simulate simulate-scenarios simulate-diff \
         simulate-calibrate simulate-fatigue-fusion simulate-subjective-drift \
@@ -16,8 +16,8 @@
 # Main Verification Targets
 # -----------------------------------------------------------------------------
 
-## Run all code checks, test suites, simulations, and production build
-all: check simulate build
+## Run all code checks, test suites (including Firestore rules), simulations, and production build
+all: check test-rules simulate build
 	@echo ================================================================================
 	@echo [OK] All checks, tests, simulations, and build passed successfully!
 	@echo ================================================================================
@@ -131,6 +131,11 @@ format-frontend:
 test-frontend:
 	npm --prefix app run test
 
+## Run Firestore security-rule tests against the emulator (needs Java; not part of `check`
+## since it's slower to spin up than the rest of the frontend gate)
+test-rules:
+	npm --prefix app run test:rules
+
 ## Validate sports knowledge registry claims and evidence lineage
 validate-knowledge:
 	npm --prefix app run validate:knowledge
@@ -168,8 +173,10 @@ compare-sequence-search:
 	npm --prefix app run compare:sequence-search
 
 ## Build frontend production bundle
+## Calls build:bundle directly (skipping npm run build's own `check` pre-step) since
+## `make all`/`make check` already ran the full frontend gate before this target runs.
 build-frontend:
-	npm --prefix app run build
+	npm --prefix app run build:bundle
 
 # -----------------------------------------------------------------------------
 # Setup and Utility Targets
@@ -212,9 +219,10 @@ help:
 	@echo Adaptive Training Recommender - Makefile Commands
 	@echo --------------------------------------------------------------------------------
 	@echo Main Targets:
-	@echo   make all               - Run all code checks, test suites, simulations, and build
+	@echo   make all               - Run all code checks, test suites (incl. Firestore rules), simulations, and build
 	@echo   make check             - Run all Python and Frontend checks and tests
 	@echo   make test              - Run backend and frontend test suites
+	@echo   make test-rules        - Run Firestore security-rule tests against the emulator
 	@echo   make lint              - Run backend and frontend linters
 	@echo   make typecheck         - Run backend and frontend type checks
 	@echo   make format            - Auto-format code across Python and Frontend

@@ -1,0 +1,164 @@
+{
+  "baseEntry": {
+    "id": "conformance-entry",
+    "userId": "conformance-user",
+    "date": "2026-09-14",
+    "observedAt": "2026-09-14T06:00:00.000Z",
+    "protocol": "home_anthropometry@1",
+    "context": {
+      "morningPostVoidPreIntake": true,
+      "trainingBeforeMeasurement": false
+    },
+    "measurements": [
+      {
+        "metricId": "waist_minimum_cm",
+        "unit": "cm",
+        "readings": [82.0, 82.4],
+        "value": 82.2
+      }
+    ],
+    "schemaVersion": 1,
+    "revision": 1,
+    "createdAt": "2026-09-14T06:00:00.000Z",
+    "updatedAt": "2026-09-14T06:00:00.000Z"
+  },
+  "cases": [
+    {
+      "name": "base entry",
+      "expectedValid": true,
+      "overrides": {}
+    },
+    {
+      "name": "every supported metric",
+      "expectedValid": true,
+      "overrides": {
+        "measurements": [
+          { "metricId": "body_mass_kg", "unit": "kg", "readings": [80.12], "value": 80.12 },
+          { "metricId": "waist_minimum_cm", "unit": "cm", "readings": [82.0, 82.4], "value": 82.2 },
+          { "metricId": "abdomen_umbilicus_cm", "unit": "cm", "readings": [90.0, 90.2], "value": 90.1 },
+          { "metricId": "hips_max_cm", "unit": "cm", "readings": [100.0, 100.2], "value": 100.1 },
+          { "metricId": "chest_nipple_line_cm", "unit": "cm", "readings": [105.0, 105.2], "value": 105.1 },
+          { "metricId": "upper_arm_relaxed_mid_cm", "unit": "cm", "readings": [35.0, 35.2], "value": 35.1 },
+          { "metricId": "forearm_max_cm", "unit": "cm", "readings": [28.0, 28.2], "value": 28.1 },
+          { "metricId": "thigh_mid_cm", "unit": "cm", "readings": [55.0, 55.2], "value": 55.1 },
+          { "metricId": "calf_max_cm", "unit": "cm", "readings": [38.0, 38.2], "value": 38.1 }
+        ]
+      }
+    },
+    {
+      "name": "maximum ten measurement series",
+      "expectedValid": true,
+      "overrides": {
+        "measurements": [
+          { "metricId": "body_mass_kg", "unit": "kg", "readings": [80.12], "value": 80.12 },
+          { "metricId": "waist_minimum_cm", "unit": "cm", "readings": [82.0, 82.4], "value": 82.2 },
+          { "metricId": "abdomen_umbilicus_cm", "unit": "cm", "readings": [90.0, 90.2], "value": 90.1 },
+          { "metricId": "hips_max_cm", "unit": "cm", "readings": [100.0, 100.2], "value": 100.1 },
+          { "metricId": "chest_nipple_line_cm", "unit": "cm", "readings": [105.0, 105.2], "value": 105.1 },
+          { "metricId": "upper_arm_relaxed_mid_cm", "laterality": "left", "unit": "cm", "readings": [35.0, 35.2], "value": 35.1 },
+          { "metricId": "upper_arm_relaxed_mid_cm", "laterality": "right", "unit": "cm", "readings": [35.2, 35.4], "value": 35.3 },
+          { "metricId": "forearm_max_cm", "unit": "cm", "readings": [28.0, 28.2], "value": 28.1 },
+          { "metricId": "thigh_mid_cm", "unit": "cm", "readings": [55.0, 55.2], "value": 55.1 },
+          { "metricId": "calf_max_cm", "unit": "cm", "readings": [38.0, 38.2], "value": 38.1 }
+        ]
+      }
+    },
+    {
+      "name": "required third reading and median",
+      "expectedValid": true,
+      "overrides": {
+        "measurements": [
+          { "metricId": "waist_minimum_cm", "unit": "cm", "readings": [80.0, 81.2, 80.5], "value": 80.5, "repeatabilityWarning": true }
+        ]
+      }
+    },
+    {
+      "name": "null limb laterality",
+      "expectedValid": false,
+      "overrides": {
+        "measurements": [
+          { "metricId": "thigh_mid_cm", "laterality": null, "unit": "cm", "readings": [55.0, 55.2], "value": 55.1 }
+        ]
+      }
+    },
+    {
+      "name": "unknown nested field",
+      "expectedValid": false,
+      "overrides": {
+        "measurements": [
+          { "metricId": "waist_minimum_cm", "unit": "cm", "readings": [82.0, 82.4], "value": 82.2, "untrusted": true }
+        ]
+      }
+    },
+    {
+      "name": "unknown entry field",
+      "expectedValid": false,
+      "overrides": {
+        "untrusted": true
+      }
+    },
+    {
+      "name": "missing required entry field",
+      "expectedValid": false,
+      "overrides": {},
+      "removals": ["revision"]
+    },
+    {
+      "name": "duplicate series",
+      "expectedValid": false,
+      "overrides": {
+        "measurements": [
+          { "metricId": "waist_minimum_cm", "unit": "cm", "readings": [82.0, 82.4], "value": 82.2 },
+          { "metricId": "waist_minimum_cm", "unit": "cm", "readings": [83.0, 83.4], "value": 83.2 }
+        ]
+      }
+    },
+    {
+      "name": "Warsaw DST date mismatch",
+      "expectedValid": false,
+      "overrides": {
+        "date": "2026-03-29",
+        "observedAt": "2026-03-29T22:30:00.000Z"
+      }
+    },
+    {
+      "name": "offset-less observedAt is rejected",
+      "expectedValid": false,
+      "overrides": {
+        "observedAt": "2026-09-14T06:00:00"
+      }
+    },
+    {
+      "name": "offset-less createdAt is rejected",
+      "expectedValid": false,
+      "overrides": {
+        "createdAt": "2026-09-14T06:00:00"
+      }
+    },
+    {
+      "name": "invalid calendar date (Feb 30) in createdAt is rejected",
+      "expectedValid": false,
+      "overrides": {
+        "createdAt": "2026-02-30T06:00:00.000Z"
+      }
+    },
+    {
+      "name": "rounded readings require rounded median",
+      "expectedValid": false,
+      "overrides": {
+        "measurements": [
+          { "metricId": "waist_minimum_cm", "unit": "cm", "readings": [82.04, 82.04], "value": 82.1 }
+        ]
+      }
+    },
+    {
+      "name": "missing prompted third reading",
+      "expectedValid": false,
+      "overrides": {
+        "measurements": [
+          { "metricId": "waist_minimum_cm", "unit": "cm", "readings": [80.0, 81.2], "value": 80.6, "repeatabilityWarning": true }
+        ]
+      }
+    }
+  ]
+}

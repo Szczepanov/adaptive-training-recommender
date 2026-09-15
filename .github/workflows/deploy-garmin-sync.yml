@@ -95,6 +95,7 @@ env:
   CLOUDSDK_CORE_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
   REGION: ${{ inputs.region }}
   JOB_SA_EMAIL: garmin-sync-job@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
+  ANTHROPOMETRY_WRITE_SA_EMAIL: anthropometry-write-api@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   SCHEDULER_SA_EMAIL: garmin-scheduler-invoker@${{ secrets.GCP_PROJECT_ID }}.iam.gserviceaccount.com
   TOKEN_BUCKET: ${{ secrets.GCP_PROJECT_ID }}-garmin-tokens
   IMAGE_TAG: ${{ inputs.region }}-docker.pkg.dev/${{ secrets.GCP_PROJECT_ID }}/garmin-sync/garmin-sync:${{ github.sha }}
@@ -124,6 +125,24 @@ jobs:
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
+
+      - name: Guard against a region mismatch with the Hosting rewrites
+        run: |
+          # app/firebase.json's Hosting rewrites hardcode a region per Cloud Run service
+          # (garmin-account-link, google-health-account-link, anthropometry-write-api), but
+          # `region` here is a free-text override (workflow_dispatch/workflow_call). Deploying
+          # to any other region would leave those rewrites pointing at a region the service no
+          # longer runs in, silently breaking routing -- fail fast instead, before we spend any
+          # GCP credentials or build time.
+          MISMATCHED=$(jq -r --arg region "${REGION}" \
+            '.hosting.rewrites[] | select(.run != null and .run.region != $region) | "\(.run.serviceId): \(.run.region)"' \
+            app/firebase.json)
+          if [ -n "${MISMATCHED}" ]; then
+            echo "region input (${REGION}) does not match app/firebase.json's Hosting rewrite region(s):" >&2
+            echo "${MISMATCHED}" >&2
+            echo "Update the rewrite region(s) in app/firebase.json before deploying to a different region." >&2
+            exit 1
+          fi
 
       - name: Authenticate to GCP (Workload Identity Federation, no key)
         uses: google-github-actions/auth@v3
@@ -198,6 +217,31 @@ jobs:
             --min-instances=0 --max-instances=10 \
             --allow-unauthenticated
 
+      - name: Deploy server-authoritative anthropometry write API
+        run: |
+          # This service is deliberately separate from garmin-sync-job: it only verifies
+          # Firebase ID tokens and writes validated owner-scoped anthropometry documents.
+          # Cloud Run remains publicly invokable because Firebase Hosting proxies browser
+          # traffic; every mutation is independently authenticated in the handler.
+          gcloud run deploy anthropometry-write-api \
+            --image="${IMAGE_TAG}" --region="${REGION}" \
+            --service-account="${ANTHROPOMETRY_WRITE_SA_EMAIL}" \
+            --command=python --args=-m,garmin_sync.anthropometry_api \
+            --port=8080 --timeout=30 --concurrency=20 \
+            --min-instances=0 --max-instances=5 \
+            --allow-unauthenticated
+
+      - name: Grant Hosting deployer access to the anthropometry rewrite target
+        run: |
+          # The setup script applies the same narrow binding, but it cannot bind a service
+          # that does not yet exist on a first deployment. Do it immediately after this
+          # deploy so the following Hosting stage can validate its new rewrite without a
+          # manual second setup run. This is one service-level viewer binding only.
+          gcloud run services add-iam-policy-binding anthropometry-write-api \
+            --region="${REGION}" \
+            --member="serviceAccount:github-frontend-deployer@${GCP_PROJECT}.iam.gserviceaccount.com" \
+            --role="roles/run.viewer" >/dev/null
+
       - name: Smoke test google-health-account-link service health
         if: env.GOOGLE_HEALTH_LINKING_ENABLED == 'true'
         run: |
@@ -205,6 +249,17 @@ jobs:
             --region="${REGION}" --format='value(status.url)')"
           if [ -z "${SERVICE_URL}" ]; then
             echo "Cloud Run did not return a URL for google-health-account-link." >&2
+            exit 1
+          fi
+          curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
+            "${SERVICE_URL}/health"
+
+      - name: Smoke test anthropometry-write-api service health
+        run: |
+          SERVICE_URL="$(gcloud run services describe anthropometry-write-api \
+            --region="${REGION}" --format='value(status.url)')"
+          if [ -z "${SERVICE_URL}" ]; then
+            echo "Cloud Run did not return a URL for anthropometry-write-api." >&2
             exit 1
           fi
           curl --fail --silent --show-error --retry 5 --retry-delay 3 --retry-all-errors \
