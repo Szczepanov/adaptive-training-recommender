@@ -168,8 +168,10 @@ compare-sequence-search:
 	npm --prefix app run compare:sequence-search
 
 ## Build frontend production bundle
+## Calls build:bundle directly (skipping npm run build's own `check` pre-step) since
+## `make all`/`make check` already ran the full frontend gate before this target runs.
 build-frontend:
-	npm --prefix app run build
+	npm --prefix app run build:bundle
 
 # -----------------------------------------------------------------------------
 # Setup and Utility Targets
