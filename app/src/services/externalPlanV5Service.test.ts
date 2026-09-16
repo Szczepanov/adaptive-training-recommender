@@ -127,6 +127,67 @@ describe('ExternalPlanService external-plan@5 integration', () => {
         expect(await computeContentHash(original)).not.toBe(await computeContentHash(changed));
     });
 
+    it('treats an identical already-stored revision as an idempotent success so activation can be retried', async () => {
+        const stored = v5Plan();
+        const contentHash = await computeContentHash(stored);
+        const storedHeader = {
+            userId: 'u1',
+            planId: 'v5-service-integration',
+            revision: 2,
+            title: 'V5 service integration',
+            startDate: '2026-08-17',
+            weekCount: 4,
+            contentHash,
+            importedAt: '2026-08-17T00:00:00.000Z',
+            supersededFrom: '2026-08-17',
+            updatedAt: '2026-08-17T00:00:00.000Z',
+        };
+        firestore.getDoc
+            .mockResolvedValueOnce({ exists: () => true, data: () => storedHeader })
+            .mockResolvedValueOnce({ exists: () => true, data: () => stored });
+
+        const result = await new ExternalPlanService().import('u1', stored);
+
+        expect(result.status).toBe('AVAILABLE');
+        if (result.status !== 'AVAILABLE') throw new Error('unreachable');
+        expect(result.data.header).toEqual(storedHeader);
+        expect(result.revision).toBe(contentHash);
+        expect(firestore.writeBatch).not.toHaveBeenCalled();
+    });
+
+    it('rejects different bytes presented under an already-stored immutable revision', async () => {
+        const stored = v5Plan();
+        const contentHash = await computeContentHash(stored);
+        firestore.getDoc
+            .mockResolvedValueOnce({
+                exists: () => true,
+                data: () => ({
+                    userId: 'u1',
+                    planId: 'v5-service-integration',
+                    revision: 2,
+                    title: 'V5 service integration',
+                    startDate: '2026-08-17',
+                    weekCount: 4,
+                    contentHash,
+                    importedAt: '2026-08-17T00:00:00.000Z',
+                    supersededFrom: '2026-08-17',
+                    updatedAt: '2026-08-17T00:00:00.000Z',
+                }),
+            })
+            .mockResolvedValueOnce({ exists: () => true, data: () => stored });
+
+        const result = await new ExternalPlanService().import('u1', v5Plan({ title: 'Changed bytes' }));
+
+        expect(result.status).toBe('INVALID');
+        if (result.status !== 'INVALID') throw new Error('unreachable');
+        expect(result.issues).toContainEqual(expect.objectContaining({
+            code: 'immutable-revision-conflict',
+            field: 'revision',
+            documentPath: 'users/u1/external_plans/v5-service-integration/revisions/2',
+        }));
+        expect(firestore.writeBatch).not.toHaveBeenCalled();
+    });
+
     it('allows a newer v5 revision to supersede an existing block when its stable id is retained', async () => {
         firestore.getDoc
             .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
