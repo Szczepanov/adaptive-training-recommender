@@ -381,7 +381,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         selectedOptionId?: string,
     ) => {
         if (!execution || execution.state !== 'in_progress' || !activeStep) return;
-        const entryId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const entryId = `entry-${Date.now()}-${crypto.randomUUID()}`;
         const now = new Date().toISOString();
         const entry: SessionEntry = {
             id: entryId,
@@ -441,7 +441,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
         if (!execution || execution.state !== 'in_progress' || !activeBlock) return;
         const choice = activeBlock.optionSets?.find(candidate => candidate.id === choiceId);
         if (!choice) return;
-        const entryId = `entry-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+        const entryId = `entry-${Date.now()}-${crypto.randomUUID()}`;
         const now = new Date().toISOString();
         const entry: SessionEntry = {
             id: entryId,
