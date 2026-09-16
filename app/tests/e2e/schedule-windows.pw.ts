@@ -45,16 +45,18 @@ test('an athlete can manage same-day training windows from the Plan screen', asy
   await expect(page.getByRole('heading', { name: 'Edit Training Window' })).toBeVisible();
   await page.getByLabel('End Time').fill('17:30');
   await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
-  await expect(page.getByRole('alert')).toContainText('Overlapping schedule windows');
+  await expect(page.getByRole('dialog').getByRole('alert')).toContainText('Overlapping schedule windows');
 
-  // Restore a valid edit and confirm the change persists and re-renders.
+  // Restore a valid edit, clear the optional label, and confirm both changes persist.
   await page.getByLabel('End Time').fill('09:00');
+  await page.getByLabel('Label (optional)').fill('');
   await page.getByRole('button', { name: 'Save Changes', exact: true }).click();
   await expect(page.getByText('07:00–09:00')).toBeVisible();
-
-  // Delete it and confirm only the remaining window is left.
-  await page.getByText('AM ride').click();
-  await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByText('AM ride')).toBeHidden();
+
+  // Delete the edited window and confirm only the remaining window is left.
+  await page.getByText('07:00–09:00').click();
+  await page.getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.getByText('07:00–09:00')).toBeHidden();
   await expect(page.getByText('PM strength')).toBeVisible();
 });

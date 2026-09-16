@@ -134,11 +134,14 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
 
         setSaving(true);
         try {
+            // Keep `label` present in the partial update even when the field was cleared.
+            // Firestore is configured with `ignoreUndefinedProperties`, so `undefined`
+            // removes the optional nested field instead of preserving the old label.
             const payload = {
                 date,
                 startLocal,
                 endLocal,
-                ...(label.trim() ? { label: label.trim() } : {}),
+                label: label.trim() || undefined,
             };
 
             if (existingWindow) {
