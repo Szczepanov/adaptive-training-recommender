@@ -13,8 +13,25 @@
   display: flex;
   gap: 0.5rem;
   overflow-x: auto;
-  padding-bottom: 0.25rem;
+  -webkit-overflow-scrolling: touch;
+  scroll-snap-type: x mandatory;
+  padding-bottom: 0.5rem;
   margin-bottom: 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.week-ahead-strip::-webkit-scrollbar {
+  height: 4px;
+}
+
+.week-ahead-strip::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.week-ahead-strip::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
 }
 
 .week-purpose {
@@ -81,6 +98,7 @@
   background: rgba(255, 255, 255, 0.03);
   color: var(--text-primary);
   cursor: pointer;
+  scroll-snap-align: start;
   transition: all 0.15s;
 }
 

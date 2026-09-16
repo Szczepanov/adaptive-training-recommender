@@ -118,6 +118,46 @@
     line-height: 1.45;
 }
 
+.why-technical-details {
+    margin-top: 0.5rem;
+    font-size: 0.78rem;
+    color: var(--text-muted, #94a3b8);
+}
+
+.why-technical-summary {
+    cursor: pointer;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--primary, #38bdf8);
+    opacity: 0.85;
+    user-select: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    background: rgba(56, 189, 248, 0.08);
+    transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.why-technical-summary:hover {
+    opacity: 1;
+    background: rgba(56, 189, 248, 0.15);
+}
+
+.why-technical-content {
+    display: block;
+    margin-top: 0.35rem;
+    padding: 0.35rem 0.5rem;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    font-size: 0.75rem;
+    color: var(--text-muted, #cbd5e1);
+    overflow-wrap: break-word;
+}
+
 .hero-cta-wrap {
     display: flex;
     align-items: center;

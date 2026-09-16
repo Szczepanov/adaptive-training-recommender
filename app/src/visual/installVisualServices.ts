@@ -18,6 +18,12 @@ import { executionPrescriptionService } from '../services/executionPrescriptionS
 import { externalPlanService } from '../services/externalPlanService';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
+import { scheduleWindowService } from '../services/scheduleWindowService';
+import { intentBlockService } from '../services/intentBlockService';
+import { performedTrainingOccurrenceRepository } from '../training-occurrence/repository';
+import { garminConnectionService } from '../services/garminConnectionService';
+import { garminSyncRequestService } from '../services/garminSyncRequestService';
+import type { SessionOccurrence, ExternalPlanSessionOccurrence } from '../sessions/models';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import type { DecisionJournalEntry } from '../engine/models';
@@ -71,6 +77,13 @@ export function installVisualServices(fixture: VisualFixture): void {
       ? { status: 'AVAILABLE', data: fixture.recovery, revision: null }
       : { status: 'MISSING' }
   );
+  garminConnectionService.getConnectionState = async () => ({ state: 'connected', linkedAt: fixture.input.date });
+  garminConnectionService.subscribeToGarminConnection = (_userId, callback) => {
+    callback({ state: 'connected', linkedAt: fixture.input.date });
+    return () => {};
+  };
+  garminSyncRequestService.subscribeToRequest = () => () => {};
+  garminSyncRequestService.requestSync = async () => new Date().toISOString();
   activityOverrideService.getAllOverrides = async () => ({});
   activityOverrideService.getOverride = async () => null;
   activityOverrideService.saveOverride = async () => true;
@@ -117,6 +130,14 @@ export function installVisualServices(fixture: VisualFixture): void {
   }));
   fixedActivityService.getActivitiesInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   planBlockService.getBlocksInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  intentBlockService.getActiveBlocks = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  intentBlockService.listBlockIds = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  intentBlockService.getHeaderState = async () => ({ status: 'MISSING' });
+  intentBlockService.getRevisionState = async () => ({ status: 'MISSING' });
+  scheduleWindowService.getWindowsForDateState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  scheduleWindowService.getWindowsForDate = async () => [];
+  scheduleWindowService.listAll = async () => [];
+  scheduleWindowService.getWindow = async () => null;
   const plan = fixture.externalPlan;
   externalPlanService.listPlanIds = async () => (plan
     ? { status: 'AVAILABLE', data: [plan.planId], revision: null }
@@ -197,6 +218,10 @@ export function installVisualServices(fixture: VisualFixture): void {
   sessionExecutionService.findInProgressExecution = async () => null;
   sessionExecutionService.getEntries = async () => [];
   sessionExecutionService.getExecutionsInRange = async () => ({ executions: [], invalidRecords: 0 });
+  sessionExecutionService.getExecution = async () => ({ status: 'MISSING' });
+  performedTrainingOccurrenceRepository.queryActiveInDateWindow = async () => [];
+  performedTrainingOccurrenceRepository.getById = async () => null;
+  performedTrainingOccurrenceRepository.getBySourceKey = async () => null;
   sessionExecutionService.startExecution = async (_userId, executionId, params) => ({
     userId: fixture.input.userId,
     executionId,
@@ -237,11 +262,85 @@ export function installVisualServices(fixture: VisualFixture): void {
   // Keep that evidence write inside the visual harness rather than waiting on real Firestore.
   executionPrescriptionService.savePrescription = async () => {};
 
+  const visualOccurrences = new Map<string, SessionOccurrence>();
+  const sortOccurrences = <T extends SessionOccurrence>(occurrences: T[]): T[] => occurrences.sort((a, b) =>
+    (a.placementOrder ?? 0) - (b.placementOrder ?? 0)
+    || a.occurrenceId.localeCompare(b.occurrenceId));
+
   sessionOccurrenceService.getReplaceOccurrenceForDate = async () => null;
   sessionOccurrenceService.getAdditionalOccurrencesForDate = async () => [];
-  sessionOccurrenceService.getOccurrencesForDate = async () => [];
-  sessionOccurrenceService.getOccurrence = async () => ({ status: 'MISSING' });
-  sessionOccurrenceService.saveOccurrence = async () => {};
+  sessionOccurrenceService.getOccurrencesForDate = async (_userId, date) => {
+    return sortOccurrences(Array.from(visualOccurrences.values()).filter(occ => occ.date === date));
+  };
+  sessionOccurrenceService.getExternalPlanOccurrencesForDate = async (_userId, date) => {
+    return sortOccurrences(Array.from(visualOccurrences.values()).filter(
+      (occ): occ is ExternalPlanSessionOccurrence => (
+        occ.date === date
+        && occ.authority === 'external_plan'
+        && occ.state !== 'superseded'
+        && occ.state !== 'skipped'
+      ),
+    ));
+  };
+  sessionOccurrenceService.getOrCreateExternalPlanOccurrence = async (userId, date, externalPlanRef, options = {}) => {
+    const occurrenceId = `visual-external-occurrence-${externalPlanRef.sessionId}`;
+    const existing = visualOccurrences.get(occurrenceId);
+    if (existing) {
+      return existing;
+    }
+    const occurrence: SessionOccurrence = {
+      userId,
+      occurrenceId,
+      date,
+      authority: 'external_plan',
+      externalPlanRef,
+      state: 'scheduled',
+      ...(options.placementOrder !== undefined ? { placementOrder: options.placementOrder } : {}),
+      ...(options.windowBinding !== undefined ? { windowBinding: options.windowBinding } : {}),
+      createdAt: fixture.input.date,
+      updatedAt: fixture.input.date,
+    };
+    visualOccurrences.set(occurrenceId, occurrence);
+    return occurrence;
+  };
+  sessionOccurrenceService.claimOccurrenceLaunch = async (_userId, occurrenceId, nowOrOptions) => {
+    const existing = visualOccurrences.get(occurrenceId);
+    if (!existing) {
+      throw new Error(`Occurrence ${occurrenceId} not found.`);
+    }
+    if (existing.state !== 'scheduled') {
+      throw new Error(`Occurrence ${occurrenceId} cannot be claimed; state is '${existing.state}', expected 'scheduled'.`);
+    }
+    const now = (typeof nowOrOptions === 'string' ? nowOrOptions : nowOrOptions?.now) ?? fixture.input.date;
+    const activeOccurrence: SessionOccurrence = {
+      ...existing,
+      state: 'active',
+      updatedAt: now,
+    };
+    visualOccurrences.set(occurrenceId, activeOccurrence);
+    return activeOccurrence;
+  };
+  sessionOccurrenceService.releaseOccurrenceClaim = async (_userId, occurrenceId, options = {}) => {
+    const existing = visualOccurrences.get(occurrenceId);
+    if (!existing) return null;
+    if (existing.state !== 'active') return existing;
+    const releasedOccurrence: SessionOccurrence = {
+      ...existing,
+      state: 'scheduled',
+      updatedAt: options.now ?? fixture.input.date,
+    };
+    visualOccurrences.set(occurrenceId, releasedOccurrence);
+    return releasedOccurrence;
+  };
+  sessionOccurrenceService.getOccurrence = async (_userId, occurrenceId) => {
+    const occ = visualOccurrences.get(occurrenceId);
+    return occ
+      ? { status: 'AVAILABLE', data: occ, revision: null }
+      : { status: 'MISSING' };
+  };
+  sessionOccurrenceService.saveOccurrence = async (occurrence: SessionOccurrence) => {
+    visualOccurrences.set(occurrence.occurrenceId, occurrence);
+  };
 
   decisionJournalService.getEntryState = async () => (
     journalEntry

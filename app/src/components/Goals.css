@@ -386,10 +386,26 @@
   color: var(--text-secondary);
 }
 
+.form-group input:disabled,
+.form-group textarea:disabled,
+.form-group select:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  background: rgba(0, 0, 0, 0.5);
+  border-color: rgba(255, 255, 255, 0.05);
+}
+
 .form-actions {
   display: flex;
   gap: 1rem;
   margin-top: 2rem;
+  position: sticky;
+  bottom: 0;
+  background: rgba(18, 18, 24, 0.95);
+  backdrop-filter: blur(8px);
+  padding-top: 1rem;
+  padding-bottom: 0.25rem;
+  z-index: 10;
 }
 
 .cancel-btn {

@@ -274,11 +274,35 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                             </>
                         )}
 
-                        <div className="hero-why-callout" role="note">
-                            <p className="why-text">
-                                <strong>Why today:</strong> {clinicalEscalationActive ? clinicalReason : recommendation.rationale}
-                            </p>
-                        </div>
+                        {(() => {
+                            const rawRationale = clinicalEscalationActive ? clinicalReason : recommendation.rationale;
+                            // Check if rationale contains technical scoring telemetry (e.g., "Coverage tier: X. Benefit score: Y, Fatigue cost penalty: Z.")
+                            const scoreMatch = rawRationale.match(/Coverage tier:\s*\d+\.\s*Benefit score:\s*[\d.]+(?:,\s*Fatigue cost penalty:\s*[\d.]+)?\.?/i);
+                            let coachingNarrative = rawRationale;
+                            let technicalScore: string | null = null;
+                            if (scoreMatch && scoreMatch.index !== undefined) {
+                                technicalScore = scoreMatch[0].trim();
+                                // Remove the score formula from narrative, cleaning up any double spaces
+                                coachingNarrative = (rawRationale.slice(0, scoreMatch.index) + rawRationale.slice(scoreMatch.index + scoreMatch[0].length)).trim();
+                                if (!coachingNarrative) {
+                                    coachingNarrative = 'Optimized for current weekly phase and recovery balance.';
+                                }
+                            }
+
+                            return (
+                                <div className="hero-why-callout" role="note">
+                                    <p className="why-text">
+                                        <strong>Why today:</strong> {coachingNarrative}
+                                    </p>
+                                    {technicalScore && (
+                                        <details className="why-technical-details">
+                                            <summary className="why-technical-summary">Engine scoring telemetry</summary>
+                                            <span className="why-technical-content">{technicalScore}</span>
+                                        </details>
+                                    )}
+                                </div>
+                            );
+                        })()}
 
                         <div className="hero-cta-wrap">
                             {!clinicalEscalationActive && (

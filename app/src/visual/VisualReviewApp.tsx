@@ -28,6 +28,7 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
   const [screen, setScreen] = useState<VisualScreen>(scenario.screen);
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
+  const [sessionExecution, setSessionExecution] = useState<{ state: string } | null>(null);
 
   const navigate = (next: VisualScreen) => {
     setScreen(next);
@@ -39,16 +40,20 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
   };
 
   const appScreen: Screen = screen === 'session' ? 'sessions' : screen;
+  const isWorkoutRunnerActive = screen === 'session' && sessionExecution?.state === 'in_progress';
+  const isCheckin = screen === 'checkin';
 
   return (
     <div className="app-container" data-visual-scenario={scenario.id}>
-      <Header
-        screen={appScreen}
-        handleNavigate={handleAppNavigate}
-        loadDecisionInput={() => {}}
-        desktopSettingsOpen={desktopSettingsOpen}
-        setDesktopSettingsOpen={setDesktopSettingsOpen}
-      />
+      {!isWorkoutRunnerActive && (
+        <Header
+          screen={appScreen}
+          handleNavigate={handleAppNavigate}
+          loadDecisionInput={() => {}}
+          desktopSettingsOpen={desktopSettingsOpen}
+          setDesktopSettingsOpen={setDesktopSettingsOpen}
+        />
+      )}
 
       <main className="app-content">
         {screen === 'home' && <Home userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} onViewData={() => navigate('data')} />}
@@ -61,18 +66,21 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
         {screen === 'session' && (
           <SessionRunner
             userId={VISUAL_USER_ID}
+            onSessionStateChange={setSessionExecution}
             onClose={() => navigate('home')}
           />
         )}
       </main>
 
-      <MobileNav
-        screen={appScreen}
-        handleNavigate={handleAppNavigate}
-        loadDecisionInput={() => {}}
-        mobileMoreOpen={mobileMoreOpen}
-        setMobileMoreOpen={setMobileMoreOpen}
-      />
+      {!(isCheckin || isWorkoutRunnerActive) && (
+        <MobileNav
+          screen={appScreen}
+          handleNavigate={handleAppNavigate}
+          loadDecisionInput={() => {}}
+          mobileMoreOpen={mobileMoreOpen}
+          setMobileMoreOpen={setMobileMoreOpen}
+        />
+      )}
     </div>
   );
 }

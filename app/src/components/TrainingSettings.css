@@ -208,3 +208,244 @@ fieldset input[type="radio"] {
   font-weight: 600;
   font-size: 0.9rem;
 }
+
+/* Injury constraint form & card styles */
+.injury-form {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  padding: 1.25rem;
+  margin: 1.25rem 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.injury-form-title {
+  margin: 0;
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.injury-fields-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 1rem;
+}
+
+.injury-form-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.injury-form-label select,
+.injury-form-label input[type="date"],
+.injury-form-label textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  padding: 0.65rem 0.8rem;
+  color: white;
+  font-size: 0.95rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.2s ease;
+}
+
+.injury-form-label select:focus,
+.injury-form-label input[type="date"]:focus,
+.injury-form-label textarea:focus {
+  border-color: var(--primary-color);
+}
+
+.injury-modalities-fieldset {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  background: rgba(0, 0, 0, 0.15);
+}
+
+.injury-modalities-fieldset legend {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  padding: 0 0.35rem;
+}
+
+.injury-modalities-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  margin-top: 0.25rem;
+}
+
+.injury-modality-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.85rem;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.injury-form-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+  flex-wrap: wrap;
+}
+
+.btn-injury-submit {
+  background: var(--primary-color, #38bdf8);
+  color: #09090b;
+  font-weight: 700;
+  font-size: 0.9rem;
+  padding: 0.65rem 1.25rem;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s ease, transform 0.1s ease;
+}
+
+.btn-injury-submit:hover {
+  background: #7dd3fc;
+  transform: translateY(-1px);
+}
+
+.btn-injury-cancel {
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 0.65rem 1.1rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.85rem;
+  transition: background 0.15s ease;
+}
+
+.btn-injury-cancel:hover {
+  background: rgba(255, 255, 255, 0.15);
+  color: var(--text-primary);
+}
+
+.injury-card-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 1rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 10px;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.injury-card-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.injury-card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.injury-card-region {
+  font-size: 0.95rem;
+  color: var(--text-primary);
+}
+
+.injury-severity-pill {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.15rem 0.45rem;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.injury-severity-pill.severity-monitor {
+  background: rgba(59, 130, 246, 0.2);
+  color: #93c5fd;
+  border: 1px solid rgba(59, 130, 246, 0.35);
+}
+
+.injury-severity-pill.severity-limit {
+  background: rgba(234, 179, 8, 0.2);
+  color: #fde047;
+  border: 1px solid rgba(234, 179, 8, 0.35);
+}
+
+.injury-severity-pill.severity-exclude {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border: 1px solid rgba(239, 68, 68, 0.35);
+}
+
+.injury-card-review,
+.injury-card-note {
+  font-size: 0.82rem;
+  color: var(--text-secondary);
+}
+
+.injury-card-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-injury-action {
+  padding: 0.4rem 0.8rem;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  cursor: pointer;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+  transition: all 0.15s ease;
+}
+
+.btn-injury-action.edit:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.btn-injury-action.remove:hover {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fca5a5;
+  border-color: rgba(239, 68, 68, 0.4);
+}
+
+.no-injuries-text {
+  color: var(--text-secondary);
+  font-size: 0.875rem;
+}
+
+/* TrainingSettings.tsx still carries legacy inline spacing/background on this block.
+   Override only the theme surface here so the read-only derived state remains legible
+   in the app's dark theme until that inline layout is removed. */
+.derived-restrictions {
+  background: rgba(59, 130, 246, 0.08) !important;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  color: var(--text-primary);
+}
+
+.derived-restrictions h4 {
+  margin: 0 0 0.5rem;
+  color: #bfdbfe;
+  font-size: 0.9rem;
+}
+
+.derived-restrictions p {
+  margin: 0.25rem 0;
+  color: var(--text-secondary);
+}

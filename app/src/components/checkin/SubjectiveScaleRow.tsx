@@ -31,6 +31,12 @@ export const SubjectiveScaleRow: React.FC<SubjectiveScaleRowProps> = ({
       ? value >= 8 ? 'status-severe' : value >= 6 ? 'status-warning' : 'status-normal'
       : value <= 3 ? 'status-severe' : value === 4 ? 'status-warning' : 'status-normal';
 
+  const qualitativeText = value === null
+    ? 'Not answered'
+    : isInverted
+      ? value <= 2 ? `${value} out of 10, low strain` : value <= 5 ? `${value} out of 10, moderate strain` : value <= 7 ? `${value} out of 10, elevated strain` : `${value} out of 10, severe strain`
+      : value <= 3 ? `${value} out of 10, low` : value <= 6 ? `${value} out of 10, moderate` : `${value} out of 10, optimal`;
+
   return (
     <div className={`subjective-scale-row ${severityClass}`} data-scale={id} data-answered={value !== null}>
       <div className="scale-row-header">
@@ -75,7 +81,7 @@ export const SubjectiveScaleRow: React.FC<SubjectiveScaleRowProps> = ({
           aria-valuemin={1}
           aria-valuemax={10}
           aria-valuenow={value ?? undefined}
-          aria-valuetext={value === null ? 'Not answered' : `${value} out of 10`}
+          aria-valuetext={qualitativeText}
           aria-label={label}
           aria-description={desc}
         />
