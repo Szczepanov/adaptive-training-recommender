@@ -117,8 +117,10 @@ describe('ExternalPlanService external-plan@4 integration', () => {
         expect(await computeContentHash(original)).not.toBe(await computeContentHash(moved));
     });
 
-    it('accepts a newer v4 revision when a lower revision is already active', async () => {
-        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ revision: 1 }) });
+    it('accepts a newer v4 revision when a lower revision and its immutable bytes are already active', async () => {
+        firestore.getDoc
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 1 }) })
+            .mockResolvedValueOnce({ exists: () => true, data: () => v4Plan({ revision: 1 }) });
 
         const result = await new ExternalPlanService().import('u1', v4Plan({ revision: 2 }));
 
