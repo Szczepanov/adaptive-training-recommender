@@ -41,17 +41,33 @@ def test_matches_manufacturer() -> None:
 
 def test_is_cycling_head_unit() -> None:
     assert is_cycling_head_unit(None) is False
-    assert is_cycling_head_unit(FitDeviceInventoryEntry(0, "garmin", "edge_840", None, "local")) is True
-    assert is_cycling_head_unit(FitDeviceInventoryEntry(0, 1, 4062, None, "local")) is True  # Edge 840 ID
-    assert is_cycling_head_unit(FitDeviceInventoryEntry(0, "wahoo", "elemnt_bolt", None, "local")) is True
-    assert is_cycling_head_unit(FitDeviceInventoryEntry(0, "garmin", "forerunner_965", None, "local")) is False
+    assert (
+        is_cycling_head_unit(FitDeviceInventoryEntry(0, "garmin", "edge_840", None, "local"))
+        is True
+    )
+    assert (
+        is_cycling_head_unit(FitDeviceInventoryEntry(0, 1, 4062, None, "local")) is True
+    )  # Edge 840 ID
+    assert (
+        is_cycling_head_unit(FitDeviceInventoryEntry(0, "wahoo", "elemnt_bolt", None, "local"))
+        is True
+    )
+    assert (
+        is_cycling_head_unit(FitDeviceInventoryEntry(0, "garmin", "forerunner_965", None, "local"))
+        is False
+    )
 
 
 def test_is_watch_device() -> None:
     assert is_watch_device(None) is False
-    assert is_watch_device(FitDeviceInventoryEntry(0, "garmin", "forerunner_955", None, "local")) is True
+    assert (
+        is_watch_device(FitDeviceInventoryEntry(0, "garmin", "forerunner_955", None, "local"))
+        is True
+    )
     assert is_watch_device(FitDeviceInventoryEntry(0, "garmin", "fenix_7", None, "local")) is True
-    assert is_watch_device(FitDeviceInventoryEntry(0, "garmin", "edge_1030", None, "local")) is False
+    assert (
+        is_watch_device(FitDeviceInventoryEntry(0, "garmin", "edge_1030", None, "local")) is False
+    )
 
 
 def test_classify_hr_sensor_technology() -> None:
@@ -66,7 +82,9 @@ def test_classify_hr_sensor_technology() -> None:
     hrm_garmin_name = FitDeviceInventoryEntry(1, "garmin", "hrm_pro", "heart_rate", "antplus")
     assert classify_hr_sensor_technology(hrm_garmin_name) == "electrode_chest_strap"
 
-    hrm_dynastream = FitDeviceInventoryEntry(1, "dynastream", "chest_strap", "heart_rate", "antplus")
+    hrm_dynastream = FitDeviceInventoryEntry(
+        1, "dynastream", "chest_strap", "heart_rate", "antplus"
+    )
     assert classify_hr_sensor_technology(hrm_dynastream) == "electrode_chest_strap"
 
     garmin_non_strap = FitDeviceInventoryEntry(1, "garmin", "vector_3", "heart_rate", "antplus")
@@ -203,7 +221,9 @@ def test_source_evidence_unindexed_external_sensor() -> None:
 
 def test_source_evidence_broadcasting_watch() -> None:
     edge = FitDeviceInventoryEntry(0, "garmin", "edge_840", None, "local")
-    broadcasting_watch = FitDeviceInventoryEntry(1, "garmin", "forerunner_255", "heart_rate", "antplus")
+    broadcasting_watch = FitDeviceInventoryEntry(
+        1, "garmin", "forerunner_255", "heart_rate", "antplus"
+    )
     source = source_evidence_from_fit_devices((edge, broadcasting_watch))
     assert source.external_hr_sensor_present is True
     assert source.source_for_activity == "external"
@@ -259,7 +279,9 @@ def test_source_evidence_unknown_recorder_with_chest_strap() -> None:
 
 def test_source_evidence_unrecognized_external_sensor() -> None:
     watch = FitDeviceInventoryEntry(0, "garmin", "forerunner_955", None, "local")
-    unknown_ext = FitDeviceInventoryEntry(1, "unknown_mfg", "unknown_device", "heart_rate", "antplus")
+    unknown_ext = FitDeviceInventoryEntry(
+        1, "unknown_mfg", "unknown_device", "heart_rate", "antplus"
+    )
     source = source_evidence_from_fit_devices((watch, unknown_ext))
     assert source.external_hr_sensor_present is True
     assert source.source_for_activity == "mixed_possible"
