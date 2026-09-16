@@ -142,6 +142,12 @@ test('captures grouped session runner rotation without horizontal overflow', asy
   await expect(page.locator('.session-runner-container')).toBeVisible();
   expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);
 
+  const newSessionBtn = page.getByRole('button', { name: '＋ New session' });
+  if (await newSessionBtn.count()) {
+    await newSessionBtn.click();
+    await page.getByRole('button', { name: 'From fixture' }).click();
+  }
+
   const groupedFixture = page.locator('.fixture-card').filter({ hasText: 'Upper-Body Absorption & Field-Readiness Support' });
   await groupedFixture.getByRole('button', { name: 'Start Session →' }).click();
   await expect(page.locator('.group-progress')).toContainText('Circuit');
@@ -170,6 +176,12 @@ test('captures saved custom-template preview and archived-library states', async
   if (!scenario) throw new Error('Missing saved custom-template library visual scenario');
   await visitScenario(page, scenario);
 
+  const newSessionBtn = page.getByRole('button', { name: '＋ New session' });
+  if (await newSessionBtn.count()) {
+    await newSessionBtn.click();
+    await page.getByRole('button', { name: 'From template' }).click();
+  }
+
   await expect(page.getByRole('heading', { name: 'Your custom templates' })).toBeVisible();
   const customTemplate = page.locator('.fixture-card').filter({ hasText: 'Upper-Body Strength Maintenance' });
   await customTemplate.getByRole('button', { name: 'Preview' }).click();
@@ -179,7 +191,7 @@ test('captures saved custom-template preview and archived-library states', async
     'A saved custom template opens in the same structured preview used by catalog sessions.',
   ]);
 
-  await page.getByRole('button', { name: 'All structured sessions' }).click();
+  await page.getByRole('button', { name: /All Sessions/i }).click();
   await page.getByRole('button', { name: /Show archived templates \(1\)/ }).click();
   await expect(page.getByText('Shoulder Care Circuit')).toBeVisible();
   expect(await page.locator('body').evaluate(body => body.scrollWidth <= window.innerWidth)).toBe(true);

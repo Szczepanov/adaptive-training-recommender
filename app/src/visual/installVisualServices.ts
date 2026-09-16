@@ -18,6 +18,11 @@ import { executionPrescriptionService } from '../services/executionPrescriptionS
 import { externalPlanService } from '../services/externalPlanService';
 import { fixedActivityService } from '../services/fixedActivityService';
 import { sessionOccurrenceService } from '../services/sessionOccurrenceService';
+import { scheduleWindowService } from '../services/scheduleWindowService';
+import { intentBlockService } from '../services/intentBlockService';
+import { performedTrainingOccurrenceRepository } from '../training-occurrence/repository';
+import { garminConnectionService } from '../services/garminConnectionService';
+import { garminSyncRequestService } from '../services/garminSyncRequestService';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import type { DecisionJournalEntry } from '../engine/models';
@@ -71,6 +76,13 @@ export function installVisualServices(fixture: VisualFixture): void {
       ? { status: 'AVAILABLE', data: fixture.recovery, revision: null }
       : { status: 'MISSING' }
   );
+  garminConnectionService.getConnectionState = async () => ({ state: 'connected', linkedAt: fixture.input.date });
+  garminConnectionService.subscribeToGarminConnection = (_userId, callback) => {
+    callback({ state: 'connected', linkedAt: fixture.input.date });
+    return () => {};
+  };
+  garminSyncRequestService.subscribeToRequest = () => () => {};
+  garminSyncRequestService.requestSync = async () => new Date().toISOString();
   activityOverrideService.getAllOverrides = async () => ({});
   activityOverrideService.getOverride = async () => null;
   activityOverrideService.saveOverride = async () => true;
@@ -117,6 +129,14 @@ export function installVisualServices(fixture: VisualFixture): void {
   }));
   fixedActivityService.getActivitiesInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
   planBlockService.getBlocksInRangeState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  intentBlockService.getActiveBlocks = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  intentBlockService.listBlockIds = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  intentBlockService.getHeaderState = async () => ({ status: 'MISSING' });
+  intentBlockService.getRevisionState = async () => ({ status: 'MISSING' });
+  scheduleWindowService.getWindowsForDateState = async () => ({ status: 'AVAILABLE', data: [], revision: null });
+  scheduleWindowService.getWindowsForDate = async () => [];
+  scheduleWindowService.listAll = async () => [];
+  scheduleWindowService.getWindow = async () => null;
   const plan = fixture.externalPlan;
   externalPlanService.listPlanIds = async () => (plan
     ? { status: 'AVAILABLE', data: [plan.planId], revision: null }
@@ -197,6 +217,10 @@ export function installVisualServices(fixture: VisualFixture): void {
   sessionExecutionService.findInProgressExecution = async () => null;
   sessionExecutionService.getEntries = async () => [];
   sessionExecutionService.getExecutionsInRange = async () => ({ executions: [], invalidRecords: 0 });
+  sessionExecutionService.getExecution = async () => ({ status: 'MISSING' });
+  performedTrainingOccurrenceRepository.queryActiveInDateWindow = async () => [];
+  performedTrainingOccurrenceRepository.getById = async () => null;
+  performedTrainingOccurrenceRepository.getBySourceKey = async () => null;
   sessionExecutionService.startExecution = async (_userId, executionId, params) => ({
     userId: fixture.input.userId,
     executionId,
@@ -240,6 +264,29 @@ export function installVisualServices(fixture: VisualFixture): void {
   sessionOccurrenceService.getReplaceOccurrenceForDate = async () => null;
   sessionOccurrenceService.getAdditionalOccurrencesForDate = async () => [];
   sessionOccurrenceService.getOccurrencesForDate = async () => [];
+  sessionOccurrenceService.getExternalPlanOccurrencesForDate = async () => [];
+  sessionOccurrenceService.getOrCreateExternalPlanOccurrence = async (userId, date, externalPlanRef, options = {}) => ({
+    userId,
+    occurrenceId: `visual-external-occurrence-${externalPlanRef.sessionId}`,
+    date,
+    authority: 'external_plan',
+    externalPlanRef,
+    state: 'scheduled',
+    ...(options.placementOrder !== undefined ? { placementOrder: options.placementOrder } : {}),
+    ...(options.windowBinding !== undefined ? { windowBinding: options.windowBinding } : {}),
+    createdAt: fixture.input.date,
+    updatedAt: fixture.input.date,
+  });
+  sessionOccurrenceService.claimOccurrenceLaunch = async (_userId, occurrenceId) => ({
+    userId: fixture.input.userId,
+    occurrenceId,
+    date: fixture.input.date,
+    authority: 'external_plan',
+    externalPlanRef: { planId: 'visual-plan', revision: 1, sessionId: 's1', contentHash: 'ch' },
+    state: 'active',
+    createdAt: fixture.input.date,
+    updatedAt: fixture.input.date,
+  });
   sessionOccurrenceService.getOccurrence = async () => ({ status: 'MISSING' });
   sessionOccurrenceService.saveOccurrence = async () => {};
 
