@@ -44,7 +44,7 @@ export async function prepareUnplannedSessionLaunch(
         prescriptionHash,
     });
 
-    const occurrenceId = `occ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const occurrenceId = `occ-${Date.now()}-${crypto.randomUUID()}`;
     await sessionOccurrenceService.saveOccurrence({
         userId,
         occurrenceId,
