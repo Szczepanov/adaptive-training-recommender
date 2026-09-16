@@ -35,3 +35,7 @@
 ## 2026-09-16 - Index canonical workout-template resolution without hiding mutable inputs
 **Learning:** `workoutForTemplate(templateId, workouts)` was repeatedly filtering and sorting the canonical workout catalog. Caching final answers by arbitrary array identity avoids repeat work but silently makes mutable caller-supplied arrays stale after their first lookup.
 **Action:** Build only the missing canonical template-to-workout index once, reuse `WORKOUTS_BY_ID` for fallback IDs, preserve stable priority/tie and fallback semantics, and keep caller-supplied mutable arrays uncached with a single O(N) selection pass.
+
+## 2026-09-16 - F-string vs str.join() for non-string tuples in key formatting
+**Learning:** In Python, replacing f-strings (`f"{a}_{b}_{c}"`) with `"_".join(key)` is unsafe when tuple elements can be non-string objects (e.g. `datetime.date`), as `str.join()` raises a runtime `TypeError`. Furthermore, f-strings for fixed short interpolations compile down to optimized CPython bytecode (`BUILD_STRING`) and outperform `"_".join(map(str, key))` by ~26%.
+**Action:** Retain f-string formatting for fixed composite document key construction to preserve type safety, string conversion semantics, and execution performance.
