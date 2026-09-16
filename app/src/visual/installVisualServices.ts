@@ -23,6 +23,7 @@ import { intentBlockService } from '../services/intentBlockService';
 import { performedTrainingOccurrenceRepository } from '../training-occurrence/repository';
 import { garminConnectionService } from '../services/garminConnectionService';
 import { garminSyncRequestService } from '../services/garminSyncRequestService';
+import type { SessionOccurrence, ExternalPlanSessionOccurrence } from '../sessions/models';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { computeContentHash } from '../engine/externalPlanHash';
 import type { DecisionJournalEntry } from '../engine/models';
@@ -261,34 +262,73 @@ export function installVisualServices(fixture: VisualFixture): void {
   // Keep that evidence write inside the visual harness rather than waiting on real Firestore.
   executionPrescriptionService.savePrescription = async () => {};
 
+  const visualOccurrences = new Map<string, SessionOccurrence>();
+
   sessionOccurrenceService.getReplaceOccurrenceForDate = async () => null;
   sessionOccurrenceService.getAdditionalOccurrencesForDate = async () => [];
-  sessionOccurrenceService.getOccurrencesForDate = async () => [];
-  sessionOccurrenceService.getExternalPlanOccurrencesForDate = async () => [];
-  sessionOccurrenceService.getOrCreateExternalPlanOccurrence = async (userId, date, externalPlanRef, options = {}) => ({
-    userId,
-    occurrenceId: `visual-external-occurrence-${externalPlanRef.sessionId}`,
-    date,
-    authority: 'external_plan',
-    externalPlanRef,
-    state: 'scheduled',
-    ...(options.placementOrder !== undefined ? { placementOrder: options.placementOrder } : {}),
-    ...(options.windowBinding !== undefined ? { windowBinding: options.windowBinding } : {}),
-    createdAt: fixture.input.date,
-    updatedAt: fixture.input.date,
-  });
-  sessionOccurrenceService.claimOccurrenceLaunch = async (_userId, occurrenceId) => ({
-    userId: fixture.input.userId,
-    occurrenceId,
-    date: fixture.input.date,
-    authority: 'external_plan',
-    externalPlanRef: { planId: 'visual-plan', revision: 1, sessionId: 's1', contentHash: 'ch' },
-    state: 'active',
-    createdAt: fixture.input.date,
-    updatedAt: fixture.input.date,
-  });
-  sessionOccurrenceService.getOccurrence = async () => ({ status: 'MISSING' });
-  sessionOccurrenceService.saveOccurrence = async () => {};
+  sessionOccurrenceService.getOccurrencesForDate = async (_userId, date) => {
+    return Array.from(visualOccurrences.values()).filter(occ => occ.date === date);
+  };
+  sessionOccurrenceService.getExternalPlanOccurrencesForDate = async (_userId, date) => {
+    return Array.from(visualOccurrences.values()).filter(
+      (occ): occ is ExternalPlanSessionOccurrence => occ.date === date && occ.authority === 'external_plan',
+    );
+  };
+  sessionOccurrenceService.getOrCreateExternalPlanOccurrence = async (userId, date, externalPlanRef, options = {}) => {
+    const occurrenceId = `visual-external-occurrence-${externalPlanRef.sessionId}`;
+    const existing = visualOccurrences.get(occurrenceId);
+    if (existing) {
+      return existing;
+    }
+    const occurrence: SessionOccurrence = {
+      userId,
+      occurrenceId,
+      date,
+      authority: 'external_plan',
+      externalPlanRef,
+      state: 'scheduled',
+      ...(options.placementOrder !== undefined ? { placementOrder: options.placementOrder } : {}),
+      ...(options.windowBinding !== undefined ? { windowBinding: options.windowBinding } : {}),
+      createdAt: fixture.input.date,
+      updatedAt: fixture.input.date,
+    };
+    visualOccurrences.set(occurrenceId, occurrence);
+    return occurrence;
+  };
+  sessionOccurrenceService.claimOccurrenceLaunch = async (_userId, occurrenceId, nowOrOptions) => {
+    const existing = visualOccurrences.get(occurrenceId);
+    const now = (typeof nowOrOptions === 'string' ? nowOrOptions : nowOrOptions?.now) ?? fixture.input.date;
+    if (existing) {
+      const activeOccurrence: SessionOccurrence = {
+        ...existing,
+        state: 'active',
+        updatedAt: now,
+      };
+      visualOccurrences.set(occurrenceId, activeOccurrence);
+      return activeOccurrence;
+    }
+    const fallbackOccurrence: SessionOccurrence = {
+      userId: fixture.input.userId,
+      occurrenceId,
+      date: fixture.input.date,
+      authority: 'external_plan',
+      externalPlanRef: { planId: 'visual-plan', revision: 1, sessionId: 's1', contentHash: 'ch' },
+      state: 'active',
+      createdAt: fixture.input.date,
+      updatedAt: now,
+    };
+    visualOccurrences.set(occurrenceId, fallbackOccurrence);
+    return fallbackOccurrence;
+  };
+  sessionOccurrenceService.getOccurrence = async (_userId, occurrenceId) => {
+    const occ = visualOccurrences.get(occurrenceId);
+    return occ
+      ? { status: 'AVAILABLE', data: occ, revision: null }
+      : { status: 'MISSING' };
+  };
+  sessionOccurrenceService.saveOccurrence = async (occurrence: SessionOccurrence) => {
+    visualOccurrences.set(occurrence.occurrenceId, occurrence);
+  };
 
   decisionJournalService.getEntryState = async () => (
     journalEntry

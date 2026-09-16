@@ -151,12 +151,15 @@ describe('MorningDecisionCard clinical escalation', () => {
             />,
         );
 
+        const whyCallout = html.match(/<div class="hero-why-callout"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? '';
+        const whyText = whyCallout.match(/<p class="why-text">([\s\S]*?)<\/p>/)?.[1] ?? '';
+        const technicalDetails = whyCallout.match(/<details class="why-technical-details">([\s\S]*?)<\/details>/)?.[1] ?? '';
+
         // Coaching narrative contains the human-facing text
-        expect(html).toContain('(Advances an explicit required weekly programming role.)');
+        expect(whyText).toContain('(Advances an explicit required weekly programming role.)');
         // Technical scoring formula is rendered inside the dedicated details disclosure
-        expect(html).toContain('why-technical-details');
-        expect(html).toContain('Engine scoring telemetry');
-        expect(html).toContain('Coverage tier: 1. Benefit score: 3.40, Fatigue cost penalty: 0.12.');
+        expect(technicalDetails).toContain('Engine scoring telemetry');
+        expect(technicalDetails).toContain('Coverage tier: 1. Benefit score: 3.40, Fatigue cost penalty: 0.12.');
     });
 
     it('provides fallback coaching narrative when rationale consists solely of scoring formulas', () => {
@@ -196,7 +199,12 @@ describe('MorningDecisionCard clinical escalation', () => {
             />,
         );
 
-        expect(html).toContain('Optimized for current weekly phase and recovery balance.');
-        expect(html).toContain('Coverage tier: 2. Benefit score: 2.10, Fatigue cost penalty: 0.05.');
+        const whyCallout = html.match(/<div class="hero-why-callout"[^>]*>([\s\S]*?)<\/div>/)?.[1] ?? '';
+        const whyText = whyCallout.match(/<p class="why-text">([\s\S]*?)<\/p>/)?.[1] ?? '';
+        const technicalDetails = whyCallout.match(/<details class="why-technical-details">([\s\S]*?)<\/details>/)?.[1] ?? '';
+
+        expect(whyText).toContain('Optimized for current weekly phase and recovery balance.');
+        expect(technicalDetails).toContain('Engine scoring telemetry');
+        expect(technicalDetails).toContain('Coverage tier: 2. Benefit score: 2.10, Fatigue cost penalty: 0.05.');
     });
 });

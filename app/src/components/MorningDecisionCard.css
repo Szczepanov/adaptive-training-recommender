@@ -155,7 +155,7 @@
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
     font-size: 0.75rem;
     color: var(--text-muted, #cbd5e1);
-    word-break: break-word;
+    overflow-wrap: break-word;
 }
 
 .hero-cta-wrap {
