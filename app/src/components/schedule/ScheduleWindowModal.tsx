@@ -1,5 +1,4 @@
-import { useState, useEffect, memo } from 'react';
-import type { TrainingEnvironment } from '../../engine/models';
+import { useEffect, useRef, useState, memo } from 'react';
 import { scheduleWindowService, type ScheduleWindowWithId } from '../../services/scheduleWindowService';
 import { getLocalDateString } from '../../utils/localDate';
 import './ScheduleWindowModal.css';
@@ -18,12 +17,14 @@ interface ScheduleWindowModalProps {
     onSaved: () => void;
 }
 
-const ENVIRONMENT_OPTIONS: Array<{ value: TrainingEnvironment | ''; label: string }> = [
-    { value: '', label: 'No restriction' },
-    { value: 'outdoor', label: 'Outdoor only' },
-    { value: 'indoor', label: 'Indoor only' },
-    { value: 'either', label: 'Either' },
-];
+const FOCUSABLE_SELECTOR = [
+    'button:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    'textarea:not([disabled])',
+    'a[href]',
+    '[tabindex]:not([tabindex="-1"])',
+].join(',');
 
 export const ScheduleWindowModal = memo(function ScheduleWindowModal({
     userId,
@@ -38,9 +39,16 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
     const [startLocal, setStartLocal] = useState('07:00');
     const [endLocal, setEndLocal] = useState('08:00');
     const [label, setLabel] = useState('');
-    const [environment, setEnvironment] = useState<TrainingEnvironment | ''>('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
+    const dialogRef = useRef<HTMLDivElement>(null);
+    const initialFocusRef = useRef<HTMLInputElement>(null);
+    const previousFocusRef = useRef<HTMLElement | null>(null);
+    const onCloseRef = useRef(onClose);
+
+    useEffect(() => {
+        onCloseRef.current = onClose;
+    }, [onClose]);
 
     useEffect(() => {
         if (!isOpen) return;
@@ -49,16 +57,65 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
             setStartLocal(existingWindow.startLocal);
             setEndLocal(existingWindow.endLocal);
             setLabel(existingWindow.label ?? '');
-            setEnvironment(existingWindow.environment ?? '');
         } else {
             setDate(defaultDate ?? today);
             setStartLocal('07:00');
             setEndLocal('08:00');
             setLabel('');
-            setEnvironment('');
         }
         setError(null);
     }, [isOpen, existingWindow, defaultDate, today]);
+
+    useEffect(() => {
+        if (!isOpen) return;
+
+        previousFocusRef.current = document.activeElement instanceof HTMLElement
+            ? document.activeElement
+            : null;
+
+        const frame = window.requestAnimationFrame(() => {
+            initialFocusRef.current?.focus();
+        });
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                event.preventDefault();
+                onCloseRef.current();
+                return;
+            }
+            if (event.key !== 'Tab') return;
+
+            const dialog = dialogRef.current;
+            if (!dialog) return;
+            const focusable = Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR))
+                .filter(element => !element.hasAttribute('hidden') && element.tabIndex !== -1);
+            if (focusable.length === 0) {
+                event.preventDefault();
+                dialog.focus();
+                return;
+            }
+
+            const first = focusable[0];
+            const last = focusable[focusable.length - 1];
+            const active = document.activeElement;
+            if (event.shiftKey && (active === first || !dialog.contains(active))) {
+                event.preventDefault();
+                last.focus();
+            } else if (!event.shiftKey && active === last) {
+                event.preventDefault();
+                first.focus();
+            }
+        };
+
+        document.addEventListener('keydown', handleKeyDown);
+        return () => {
+            window.cancelAnimationFrame(frame);
+            document.removeEventListener('keydown', handleKeyDown);
+            const previous = previousFocusRef.current;
+            if (previous?.isConnected) previous.focus();
+            previousFocusRef.current = null;
+        };
+    }, [isOpen]);
 
     if (!isOpen) return null;
 
@@ -82,7 +139,6 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
                 startLocal,
                 endLocal,
                 ...(label.trim() ? { label: label.trim() } : {}),
-                ...(environment ? { environment } : {}),
             };
 
             if (existingWindow) {
@@ -116,12 +172,21 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
     };
 
     return (
-        <div className="modal-backdrop" onClick={onClose} role="dialog" aria-modal="true">
-            <div className="schedule-window-modal-card" onClick={e => e.stopPropagation()}>
+        <div className="modal-backdrop" onClick={onClose}>
+            <div
+                ref={dialogRef}
+                className="schedule-window-modal-card"
+                onClick={e => e.stopPropagation()}
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="schedule-window-modal-title"
+                aria-describedby="schedule-window-modal-description"
+                tabIndex={-1}
+            >
                 <div className="modal-header">
                     <div>
-                        <h3>{existingWindow ? 'Edit Training Window' : 'Add Training Window'}</h3>
-                        <p className="modal-subtitle">
+                        <h3 id="schedule-window-modal-title">{existingWindow ? 'Edit Training Window' : 'Add Training Window'}</h3>
+                        <p id="schedule-window-modal-description" className="modal-subtitle">
                             A window is a real block of clock time on one day, such as an AM slot before
                             work and a PM slot after. Training twice in a day only becomes possible once
                             both windows exist here.
@@ -136,6 +201,7 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
                     <div className="form-group">
                         <label htmlFor="window-date">Date</label>
                         <input
+                            ref={initialFocusRef}
                             id="window-date"
                             type="date"
                             className="text-input"
@@ -183,22 +249,7 @@ export const ScheduleWindowModal = memo(function ScheduleWindowModal({
                         />
                     </div>
 
-                    <div className="form-group">
-                        <label htmlFor="window-environment">Environment (optional)</label>
-                        <select
-                            id="window-environment"
-                            className="select-input"
-                            value={environment}
-                            onChange={e => setEnvironment(e.target.value as TrainingEnvironment | '')}
-                        >
-                            {ENVIRONMENT_OPTIONS.map(opt => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                            ))}
-                        </select>
-                        <span className="field-hint">Only set this when the window itself restricts where you can train (e.g. a hotel gym).</span>
-                    </div>
-
-                    {error && <div className="modal-error-banner">{error}</div>}
+                    {error && <div className="modal-error-banner" role="alert">{error}</div>}
 
                     <div className="modal-actions">
                         {existingWindow && (

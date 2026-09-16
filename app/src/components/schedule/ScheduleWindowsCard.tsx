@@ -128,35 +128,20 @@ export const ScheduleWindowsCard = memo(function ScheduleWindowsCard({
                                 </div>
                                 <div className="window-list">
                                     {group.windows.map(window => (
-                                        <div
+                                        <button
                                             key={window.id}
+                                            type="button"
                                             className="window-item"
-                                            role="button"
-                                            tabIndex={0}
                                             onClick={() => handleOpenEdit(window)}
-                                            onKeyDown={e => {
-                                                if (e.key === 'Enter' || e.key === ' ') {
-                                                    e.preventDefault();
-                                                    handleOpenEdit(window);
-                                                }
-                                            }}
+                                            aria-label={`Edit ${window.label ? `${window.label}, ` : ''}${window.startLocal} to ${window.endLocal}`}
                                         >
-                                            <div className="item-main">
+                                            <span className="item-main">
                                                 <span className="item-time">{window.startLocal}–{window.endLocal}</span>
                                                 {window.label && <span className="item-label">{window.label}</span>}
                                                 {window.environment && <span className="item-env-tag">{window.environment}</span>}
-                                            </div>
-                                            <button
-                                                type="button"
-                                                className="btn-edit-item"
-                                                onClick={e => {
-                                                    e.stopPropagation();
-                                                    handleOpenEdit(window);
-                                                }}
-                                            >
-                                                Edit
-                                            </button>
-                                        </div>
+                                            </span>
+                                            <span className="btn-edit-item" aria-hidden="true">Edit</span>
+                                        </button>
                                     ))}
                                 </div>
                             </div>
