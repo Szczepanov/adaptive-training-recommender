@@ -13,3 +13,7 @@
 ## 2026-09-07 - Root README.md Missing Technical Features
 **Learning:** `README.md` was missing several features corresponding to ADRs 0019-0038 from the 'Technical Features' section. These include Explicit Rest-Day Authoring, Source-Aware Multisource Health, and Canonical Performed Training Occurrence.
 **Action:** When auditing documentation drift, always compare feature lists in READMEs against the accepted Architectural Decision Records (ADRs) to ensure the high-level documentation reflects recent architectural additions.
+
+## 2026-09-15 - Missing Root Documentation for ADR-0040
+**Learning:** Accepted ADRs need to be documented not only in the main README's feature list but also indexed properly in the central documentation hub (`docs/README.md`) under both the Decision Log and Implementation Plans if applicable.
+**Action:** When adding or auditing ADRs, ensure they are represented in the root `README.md` Technical Features section and correctly indexed in `docs/README.md`.
