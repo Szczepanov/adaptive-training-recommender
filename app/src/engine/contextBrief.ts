@@ -30,6 +30,42 @@ export interface ContextBriefInput {
     preferences: UserPreferences | null;
     intentProfile: TrainingIntentProfile | null;
     goals?: readonly UserGoal[];
+    /** Pre-computed by the service layer (`contextBriefService.ts`), never fetched or
+     * imported here: ADR-0039 D-BC-AUTH bars `engine/` from importing anthropometry at
+     * all (enforced by `anthropometry/engineIsolation.test.ts`), so this is a plain,
+     * already-summarized shape rather than raw `AnthropometryEntry[]`. */
+    bodyComposition?: BodyCompositionBriefInput;
+}
+
+/** See the isolation note on `ContextBriefInput.bodyComposition` above: intentionally not
+ * `AnthropometryMetricId`/`AnthropometryEntry` from `../anthropometry/models`. */
+export interface BodyCompositionBriefInput {
+    bodyMass: {
+        source: 'provider' | 'manual';
+        latestKg: number | null;
+        latestDate: string | null;
+        current7dMeanKg: number | null;
+        prior7dMeanKg: number | null;
+        weekOverWeekKg: number | null;
+        weekOverWeekPercent: number | null;
+    } | null;
+    circumferences: ReadonlyArray<{
+        label: string;
+        latestCm: number | null;
+        latestDate: string | null;
+        /** vs the previous recorded session for this exact metric/laterality/protocol, not a calendar window. */
+        deltaCm: number | null;
+        repeatabilityWarning: boolean;
+    }>;
+    bodyFatPct: {
+        latestPct: number | null;
+        latestDate: string | null;
+        mean7dPct: number | null;
+        /** Distinct recorded days feeding `mean7dPct`, out of 7. `mean7dPct` is null below
+         * the 4-day coverage floor; carried through so the brief can say why rather than
+         * rendering a bare "—" that reads the same as "no data at all". */
+        recordedDays7d: number;
+    } | null;
 }
 
 /** Trailing days the subjective window average is compared against. Matches the 28-day
@@ -138,6 +174,13 @@ function candidateBaselineLine(
 
 function withinWindow(date: string, startDate: string, asOfDate: string): boolean {
     return date >= startDate && date <= asOfDate;
+}
+
+/** Ascending list of the `days` calendar dates ending on and including `endDateInclusive`. */
+function lastNDates(endDateInclusive: string, days: number): string[] {
+    const dates: string[] = [];
+    for (let i = days - 1; i >= 0; i--) dates.push(addDaysToLocalDateString(endDateInclusive, -i));
+    return dates;
 }
 
 function renderConstraints(settings: TrainingSettings | null, preferences: UserPreferences | null, asOfDate: string): string[] {
@@ -295,6 +338,60 @@ function renderObjective(snapshots: readonly DailyRecoverySnapshot[], windowDays
         lines.push('');
         lines.push('> Caution: the 28-day baseline is not yet mature, so the "vs 28d" deltas above are computed from partial history and should be weighted lightly.');
     }
+    return lines;
+}
+
+/** Ownership: ADR-0039 (body-composition and fueling observations). Zero recommendation
+ * authority in the engine — see the isolation note on `ContextBriefInput.bodyComposition`.
+ * Placed alongside wearable recovery rather than as its own numbered section so it does
+ * not collide with the "## 7"/"## 8" handoff sections `contextBriefPlanningHandoff.ts`
+ * appends for the full-preset pipeline. */
+function renderBodyComposition(input: BodyCompositionBriefInput | undefined): string[] {
+    if (!input) return [];
+    const { bodyMass, circumferences, bodyFatPct } = input;
+    if (!bodyMass && circumferences.length === 0 && !bodyFatPct) return [];
+
+    const lines: string[] = [
+        '### Body composition & fueling (observation only)',
+        '',
+        'Athlete-authored home anthropometry and device body-composition estimates. Zero '
+        + 'recommendation authority in this app\'s engine — exported for context only, not '
+        + 'an independent readiness or training-load input.',
+        '',
+    ];
+
+    if (bodyMass) {
+        const sourceLabel = bodyMass.source === 'provider' ? 'device-estimated' : 'manually logged';
+        lines.push(`- Body mass (${sourceLabel}): latest ${round(bodyMass.latestKg, 2)} kg${bodyMass.latestDate ? ` (${bodyMass.latestDate})` : ''}`);
+        if (bodyMass.current7dMeanKg !== null && bodyMass.prior7dMeanKg !== null) {
+            lines.push(
+                `  - 7d mean ${round(bodyMass.current7dMeanKg, 2)} kg vs prior 7d ${round(bodyMass.prior7dMeanKg, 2)} kg `
+                + `— ${signed(bodyMass.weekOverWeekKg, 2)} kg (${signed(bodyMass.weekOverWeekPercent)}%)`,
+            );
+        } else {
+            lines.push('  - Not enough recorded days yet for a week-over-week trend (needs 4+ of 7 days on both sides).');
+        }
+    }
+
+    if (bodyFatPct) {
+        const trend = bodyFatPct.mean7dPct !== null
+            ? `7d mean ${round(bodyFatPct.mean7dPct)}%`
+            : `7d mean insufficient data (${bodyFatPct.recordedDays7d}/7 days recorded, 4+ required)`;
+        lines.push(
+            `- Body fat % (device estimate): latest ${round(bodyFatPct.latestPct)}%`
+            + `${bodyFatPct.latestDate ? ` (${bodyFatPct.latestDate})` : ''} · ${trend}`,
+        );
+    }
+
+    if (circumferences.length > 0) {
+        lines.push('- Tape circumferences (protocol-aware, athlete-authored):');
+        for (const c of circumferences) {
+            const deltaStr = c.deltaCm === null ? 'no prior reading yet' : `${signed(c.deltaCm)} cm vs previous reading`;
+            const warning = c.repeatabilityWarning ? ' — repeatability tolerance exceeded on the latest reading, treat with caution' : '';
+            lines.push(`  - ${c.label}: ${round(c.latestCm, 1)} cm${c.latestDate ? ` (${c.latestDate})` : ''} — ${deltaStr}${warning}`);
+        }
+    }
+
     return lines;
 }
 
@@ -481,15 +578,90 @@ function renderSubjectiveBaseline(
     return lines;
 }
 
+/** Deliberately not imported from `../anthropometry/trends`: ADR-0039 D-BC-AUTH bars
+ * `engine/` from importing anthropometry at all (enforced by
+ * `anthropometry/engineIsolation.test.ts`), so this window math is a small local copy
+ * rather than a reuse of that module's `computeHungerRetrospectiveSummary`. */
+interface HungerWindowSummary {
+    recordedDays7d: number;
+    mean7d: number | null;
+    recordedDays28d: number;
+    mean28d: number | null;
+    latestValue: number | null;
+    latestDate: string | null;
+}
+
+function computeHungerWindow(
+    checkins: readonly DailySubjectiveCheckin[],
+    timing: 'morning_pre_breakfast' | 'other',
+    dates7d: readonly string[],
+    dates28d: readonly string[],
+): HungerWindowSummary {
+    const dates7dSet = new Set(dates7d);
+    const dates28dSet = new Set(dates28d);
+    const matching = checkins.filter((c): c is DailySubjectiveCheckin & { hunger1To10: number } =>
+        c.hungerTiming === timing && typeof c.hunger1To10 === 'number');
+    const in7d = matching.filter(c => dates7dSet.has(c.date));
+    const in28d = matching.filter(c => dates28dSet.has(c.date));
+    const sorted = [...matching].sort((a, b) => a.date.localeCompare(b.date));
+    const latest = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+    return {
+        recordedDays7d: in7d.length,
+        mean7d: mean(in7d.map(c => c.hunger1To10)),
+        recordedDays28d: in28d.length,
+        mean28d: mean(in28d.map(c => c.hunger1To10)),
+        latestValue: latest?.hunger1To10 ?? null,
+        latestDate: latest?.date ?? null,
+    };
+}
+
+/** Ownership: ADR-0039 D-BC-HUNGER. Zero recommendation authority in the engine (see
+ * docs/plans/body-composition-and-fueling-observations.md) — exported here for the same
+ * reason the robust respiration/candidate baselines above are: an external planner can see
+ * a fueling-adjacent trend without the brief implying it is an additional readiness input. */
+function renderHungerRetrospective(
+    morning: HungerWindowSummary,
+    other: HungerWindowSummary,
+    baselineDays: number,
+): string[] {
+    if (morning.recordedDays28d === 0 && other.recordedDays28d === 0) return [];
+    const lines: string[] = [
+        '',
+        'Appetite (hunger 1–10, self-scored). Zero recommendation authority — exported for context '
+        + 'only, not an independent readiness signal:',
+    ];
+    if (morning.recordedDays7d > 0 || morning.recordedDays28d > 0) {
+        lines.push(
+            `- Pre-breakfast timing (preferred series): latest ${round(morning.latestValue)}`
+            + `${morning.latestDate ? ` (${morning.latestDate})` : ''} — 7d avg ${round(morning.mean7d)} `
+            + `(${morning.recordedDays7d}/7 days), ${baselineDays}d avg ${round(morning.mean28d)} `
+            + `(${morning.recordedDays28d}/${baselineDays} days)`,
+        );
+    }
+    if (other.recordedDays7d > 0 || other.recordedDays28d > 0) {
+        lines.push(
+            `- Other timing: latest ${round(other.latestValue)}${other.latestDate ? ` (${other.latestDate})` : ''} `
+            + `— 7d avg ${round(other.mean7d)} (${other.recordedDays7d}/7 days), ${baselineDays}d avg `
+            + `${round(other.mean28d)} (${other.recordedDays28d}/${baselineDays} days)`,
+        );
+    }
+    return lines;
+}
+
 function renderSubjective(
     checkins: readonly DailySubjectiveCheckin[],
     baselineCheckins: readonly DailySubjectiveCheckin[],
     windowDays: number,
     baselineDays: number,
+    hunger: { morning: HungerWindowSummary; other: HungerWindowSummary },
 ): string[] {
     const lines: string[] = ['## 4. Subjective reports (self-scored each morning, 1–10)', ''];
     if (checkins.length === 0) {
         lines.push('No check-ins in this window.');
+        // Hunger is computed from `baselineDays` history, not `checkins` (the visible
+        // window) -- a hunger reading from 20 days ago can exist even when the last
+        // `windowDays` are empty, and must not be swallowed by this early return.
+        lines.push(...renderHungerRetrospective(hunger.morning, hunger.other, baselineDays));
         return lines;
     }
 
@@ -552,6 +724,7 @@ function renderSubjective(
     lines.push(`- Readiness ${round(mean(checkins.map(c => c.readiness)))} · fatigue ${round(mean(checkins.map(c => c.fatigue)))} · soreness ${round(mean(checkins.map(c => c.soreness)))}`);
     lines.push(`- Sleep quality ${round(mean(checkins.map(c => c.sleepQuality)))} · motivation ${round(mean(checkins.map(c => c.motivation)))} · mental stress ${round(mean(checkins.map(c => c.mentalStress)))}`);
     lines.push(...renderSubjectiveBaseline(checkins, baselineCheckins, baselineDays, windowDays));
+    lines.push(...renderHungerRetrospective(hunger.morning, hunger.other, baselineDays));
     lines.push('');
     lines.push('Flags:');
     const painDays = checkins.filter(c => c.painOrInjury).map(c => c.date);
@@ -653,6 +826,15 @@ export function buildContextBrief(input: ContextBriefInput): string {
     const activities = filterRange(sortByDateAsc(input.activities), startDate, asOfDate);
     const recommendations = filterRange(sortByDateAsc(input.recommendations), startDate, asOfDate);
 
+    // Hunger rides on the same check-in doc `checkins`/`baselineCheckins` already fetch —
+    // no separate source, no new I/O. Windows are computed relative to asOfDate rather than
+    // reused from checkins/baselineCheckins so a day with no submission still counts as a
+    // recorded-day denominator, matching computeHungerWindow's contract.
+    const hunger7dDates = lastNDates(asOfDate, 7);
+    const hunger28dDates = lastNDates(asOfDate, baselineDays);
+    const hungerMorning = computeHungerWindow(sortedCheckins, 'morning_pre_breakfast', hunger7dDates, hunger28dDates);
+    const hungerOther = computeHungerWindow(sortedCheckins, 'other', hunger7dDates, hunger28dDates);
+
     // A short retrospective window can legitimately have zero recorded sessions or
     // check-ins in range; without this note that reads as "this athlete does not train"
     // rather than "detail beyond this window was not requested". The recovery timeline
@@ -672,8 +854,9 @@ export function buildContextBrief(input: ContextBriefInput): string {
         ],
         renderConstraints(input.trainingSettings, input.preferences, asOfDate),
         renderObjective(snapshots, windowDays),
+        renderBodyComposition(input.bodyComposition),
         renderTraining(activities, asOfDate, windowDays),
-        renderSubjective(checkins, baselineCheckins, windowDays, baselineDays),
+        renderSubjective(checkins, baselineCheckins, windowDays, baselineDays, { morning: hungerMorning, other: hungerOther }),
         renderAdherence(recommendations),
         renderGoalsAndIntent(input.goals, input.intentProfile, asOfDate),
         [

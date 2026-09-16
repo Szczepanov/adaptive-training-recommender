@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { addDaysToLocalDateString } from '../utils/localDate';
+import type { DailyRecoverySnapshot } from '../engine/models';
 
 const services = vi.hoisted(() => ({
     getRecoverySnapshotState: vi.fn(),
+    getRecoverySnapshotsInRangeState: vi.fn(),
     getCheckinsInRange: vi.fn(),
     getActivitiesInRange: vi.fn(),
     getRecommendationsInRange: vi.fn(),
@@ -13,9 +16,13 @@ const services = vi.hoisted(() => ({
     getFixedActivitiesInRangeState: vi.fn(),
     getPlanBlocksInRangeState: vi.fn(),
     getActivePlanState: vi.fn(),
+    getEntriesInRange: vi.fn(),
 }));
 
-vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: { getRecoverySnapshotState: services.getRecoverySnapshotState } }));
+vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: {
+    getRecoverySnapshotState: services.getRecoverySnapshotState,
+    getRecoverySnapshotsInRangeState: services.getRecoverySnapshotsInRangeState,
+} }));
 vi.mock('./checkinService', () => ({ checkinService: { getCheckinsInRange: services.getCheckinsInRange } }));
 vi.mock('./activityService', () => ({ activityService: { getActivitiesInRange: services.getActivitiesInRange } }));
 vi.mock('./recommendationService', () => ({ recommendationService: { getRecommendationsInRange: services.getRecommendationsInRange } }));
@@ -33,10 +40,41 @@ vi.mock('./activeExternalPlanService', () => ({
     placedSessionForDate: (active: { placed: Array<{ date: string; status: string }> }, date: string) =>
         active.placed.find(item => item.date === date && (item.status === 'planned' || item.status === 'moved')) ?? null,
 }));
+vi.mock('./anthropometryService', () => ({ anthropometryService: { getEntriesInRange: services.getEntriesInRange } }));
 
 import { ContextBriefService } from './contextBriefService';
 
 const AS_OF = '2026-08-15';
+
+function snapshotWithWeight(date: string, weightKg: number): DailyRecoverySnapshot {
+    return {
+        userId: 'u1',
+        date,
+        source: { garminSyncedAt: `${date}T06:15:00Z`, sourceSchemaVersion: 3, metricDates: { weight: date } },
+        raw: {
+            sleepScore: 78, sleepDurationSec: 27000, restingHr: 48, hrvOvernightAvg: 62,
+            hrvStatus: 'balanced', respirationAvg: 13, bodyBatteryWake: 71, bodyBatteryChange: 40,
+            totalSteps: 9000, last3DaysHardSessionsCount: 1, yesterdayTraining: null, weightKg,
+        },
+        derived: {
+            baselineComputationVersion: 2,
+            sleepScore7dAvg: 71, sleepScore28dAvg: 74,
+            restingHr7dAvg: 50, restingHr28dAvg: 49,
+            hrv7dAvg: 58, hrv28dAvg: 61,
+            respiration7dAvg: 13, respiration28dAvg: 13,
+            deltas: {
+                sleepScoreVs7d: 7, sleepScoreVs28d: 4,
+                restingHrVs7d: -2, restingHrVs28d: -1,
+                hrvVs7d: 4, hrvVs28d: 1,
+                respirationVs7d: 0, respirationVs28d: 0,
+            },
+        },
+        dataQuality: {
+            sleepScoreAvailable: true, restingHrAvailable: true, hrvAvailable: true,
+            baseline7dReady: true, baseline28dReady: true,
+        },
+    };
+}
 
 describe('ContextBriefService', () => {
     beforeEach(() => {
@@ -53,6 +91,8 @@ describe('ContextBriefService', () => {
         services.getFixedActivitiesInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getPlanBlocksInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getActivePlanState.mockResolvedValue({ status: 'MISSING' });
+        services.getEntriesInRange.mockResolvedValue([]);
+        services.getRecoverySnapshotsInRangeState.mockResolvedValue({ status: 'MISSING' });
     });
 
     it('reads check-ins over a date range covering the full baseline, inclusive of asOfDate', async () => {
@@ -349,14 +389,59 @@ describe('ContextBriefService', () => {
         services.getActiveGoalsState.mockRejectedValue(new Error('offline'));
         services.getFixedActivitiesInRangeState.mockRejectedValue(new Error('offline'));
         services.getPlanBlocksInRangeState.mockRejectedValue(new Error('offline'));
+        services.getEntriesInRange.mockRejectedValue(new Error('offline'));
+        services.getRecoverySnapshotsInRangeState.mockRejectedValue(new Error('offline'));
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
         expect(result.text).toContain('# Training context brief');
         expect(result.unavailableSources).toContain('recovery snapshots');
         expect(result.unavailableSources).toContain('training settings');
         expect(result.unavailableSources).toContain('plan blocks / travel overlays');
+        expect(result.unavailableSources).toContain('body measurements');
         expect(result.text).toContain('Do not assume any equipment or absence of injury');
         expect(result.text).toContain('DATA INCOMPLETE');
+    });
+
+    describe('body composition (anthropometry)', () => {
+        it('reads anthropometry entries over a wider lookback than the subjective baseline', async () => {
+            await new ContextBriefService().build('u1', AS_OF, 14);
+            // 60-day lookback ending 2026-08-15 starts on 2026-06-17.
+            expect(services.getEntriesInRange).toHaveBeenCalledWith('u1', '2026-06-17', AS_OF);
+        });
+
+        it('reports a failed anthropometry read as an unavailable source without failing the whole brief', async () => {
+            services.getEntriesInRange.mockRejectedValue(new Error('offline'));
+            const result = await new ContextBriefService().build('u1', AS_OF, 14);
+            expect(result.unavailableSources).toContain('body measurements');
+            expect(result.text).toContain('# Training context brief');
+        });
+
+        it('does not report anthropometry as unavailable when it simply has no entries', async () => {
+            const result = await new ContextBriefService().build('u1', AS_OF, 14);
+            expect(result.unavailableSources.join()).not.toContain('body measurements');
+            expect(result.text).not.toContain('Body composition & fueling');
+        });
+
+        it('fetches provider body-composition snapshots over the full anthropometry lookback, not the shorter recovery-timeline window', async () => {
+            await new ContextBriefService().build('u1', AS_OF, 14);
+            // Same 60-day start as the anthropometry entries fetch, half-open through the day after asOfDate.
+            expect(services.getRecoverySnapshotsInRangeState).toHaveBeenCalledWith('u1', '2026-06-17', '2026-08-16');
+        });
+
+        it('surfaces a provider weigh-in older than the recovery-timeline window instead of silently falling back to manual data', async () => {
+            // 20 days back: outside contextDays (14 for this window) but inside the 60-day
+            // anthropometry lookback. The day-by-day recovery-snapshot fetch (contextStart..)
+            // never sees this date, so only the wider range fetch can surface it.
+            const staleDate = addDaysToLocalDateString(AS_OF, -20);
+            services.getRecoverySnapshotsInRangeState.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [snapshotWithWeight(staleDate, 81.4)],
+                revision: 'r1',
+            });
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14);
+            expect(result.text).toContain(`Body mass (device-estimated): latest 81.4 kg (${staleDate})`);
+        });
     });
 
     it('never writes a training settings profile as a side effect of being read', async () => {

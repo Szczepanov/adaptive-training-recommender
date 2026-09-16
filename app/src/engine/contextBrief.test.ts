@@ -344,6 +344,141 @@ describe('buildContextBrief', () => {
         });
     });
 
+    describe('hunger retrospective', () => {
+        it('omits the appetite block entirely when no check-in has scored hunger', () => {
+            const text = buildContextBrief(input({ checkins: [checkin(AS_OF)] }));
+            expect(text).not.toContain('Appetite');
+        });
+
+        it('reports pre-breakfast hunger with its non-authority caveat and both trend windows', () => {
+            const checkins = [
+                checkin(addDaysToLocalDateString(AS_OF, -20), { hunger1To10: 4, hungerTiming: 'morning_pre_breakfast' }),
+                checkin(addDaysToLocalDateString(AS_OF, -3), { hunger1To10: 6, hungerTiming: 'morning_pre_breakfast' }),
+                checkin(AS_OF, { hunger1To10: 7, hungerTiming: 'morning_pre_breakfast' }),
+            ];
+            const text = buildContextBrief(input({ checkins }));
+            expect(text).toContain(
+                'Appetite (hunger 1–10, self-scored). Zero recommendation authority — exported for context '
+                + 'only, not an independent readiness signal:',
+            );
+            expect(text).toContain(`- Pre-breakfast timing (preferred series): latest 7 (${AS_OF})`);
+            expect(text).toContain('7d avg 6.5 (2/7 days), 28d avg 5.7 (3/28 days)');
+            expect(text).not.toContain('Other timing:');
+        });
+
+        it('reports the other-timing series separately from pre-breakfast when both are recorded', () => {
+            const checkins = [
+                checkin(AS_OF, { hunger1To10: 7, hungerTiming: 'morning_pre_breakfast' }),
+                checkin(addDaysToLocalDateString(AS_OF, -1), { hunger1To10: 3, hungerTiming: 'other' }),
+            ];
+            const text = buildContextBrief(input({ checkins }));
+            expect(text).toContain('- Pre-breakfast timing (preferred series): latest 7');
+            expect(text).toContain(`- Other timing: latest 3 (${addDaysToLocalDateString(AS_OF, -1)})`);
+        });
+
+        it('does not let hunger leak into the brief for a check-in that never scored it', () => {
+            const text = buildContextBrief(input({ checkins: [checkin(AS_OF, { hunger1To10: null, hungerTiming: null })] }));
+            expect(text).not.toContain('Appetite');
+        });
+
+        it('still renders hunger history when the visible window has no check-ins at all', () => {
+            // Only entry is 20 days back: outside the 14-day visible window (triggering
+            // "No check-ins in this window"), but inside the 28-day hunger baseline.
+            const text = buildContextBrief(input({
+                checkins: [checkin(addDaysToLocalDateString(AS_OF, -20), { hunger1To10: 4, hungerTiming: 'morning_pre_breakfast' })],
+            }));
+            expect(text).toContain('No check-ins in this window.');
+            expect(text).toContain('Appetite (hunger 1–10, self-scored)');
+            expect(text).toContain('- Pre-breakfast timing (preferred series): latest 4');
+        });
+    });
+
+    describe('body composition', () => {
+        it('omits the section entirely when the service passes no body-composition summary', () => {
+            expect(buildContextBrief(input())).not.toContain('Body composition & fueling');
+        });
+
+        it('omits the section when a summary is passed but every field is empty', () => {
+            const text = buildContextBrief(input({
+                bodyComposition: { bodyMass: null, circumferences: [], bodyFatPct: null },
+            }));
+            expect(text).not.toContain('Body composition & fueling');
+        });
+
+        it('renders body mass, its trend, and the non-authority caveat', () => {
+            const text = buildContextBrief(input({
+                bodyComposition: {
+                    bodyMass: {
+                        source: 'manual', latestKg: 78, latestDate: '2026-08-15',
+                        current7dMeanKg: 78.2, prior7dMeanKg: 79.1,
+                        weekOverWeekKg: -0.9, weekOverWeekPercent: -1.1,
+                    },
+                    circumferences: [],
+                    bodyFatPct: null,
+                },
+            }));
+            expect(text).toContain('### Body composition & fueling (observation only)');
+            expect(text).toContain(
+                'Zero recommendation authority in this app\'s engine — exported for context only, not '
+                + 'an independent readiness or training-load input.',
+            );
+            expect(text).toContain('- Body mass (manually logged): latest 78 kg (2026-08-15)');
+            expect(text).toContain('7d mean 78.2 kg vs prior 7d 79.1 kg — -0.9 kg (-1.1%)');
+        });
+
+        it('flags an immature body-mass trend instead of printing a misleading week-over-week number', () => {
+            const text = buildContextBrief(input({
+                bodyComposition: {
+                    bodyMass: {
+                        source: 'provider', latestKg: 78, latestDate: '2026-08-15',
+                        current7dMeanKg: null, prior7dMeanKg: null,
+                        weekOverWeekKg: null, weekOverWeekPercent: null,
+                    },
+                    circumferences: [],
+                    bodyFatPct: null,
+                },
+            }));
+            expect(text).toContain('Not enough recorded days yet for a week-over-week trend');
+        });
+
+        it('renders circumferences with their delta against the previous reading, and a repeatability warning', () => {
+            const text = buildContextBrief(input({
+                bodyComposition: {
+                    bodyMass: null,
+                    circumferences: [
+                        { label: 'Waist minimum', latestCm: 80.6, latestDate: '2026-08-15', deltaCm: -1.5, repeatabilityWarning: false },
+                        { label: 'Relaxed upper arm (left)', latestCm: 32, latestDate: '2026-08-15', deltaCm: null, repeatabilityWarning: true },
+                    ],
+                    bodyFatPct: null,
+                },
+            }));
+            expect(text).toContain('- Waist minimum: 80.6 cm (2026-08-15) — -1.5 cm vs previous reading');
+            expect(text).toContain('- Relaxed upper arm (left): 32 cm (2026-08-15) — no prior reading yet — repeatability tolerance exceeded on the latest reading, treat with caution');
+        });
+
+        it('renders device body-fat percentage independently of body mass', () => {
+            const text = buildContextBrief(input({
+                bodyComposition: {
+                    bodyMass: null,
+                    circumferences: [],
+                    bodyFatPct: { latestPct: 15.2, latestDate: '2026-08-15', mean7dPct: 15.5, recordedDays7d: 5 },
+                },
+            }));
+            expect(text).toContain('- Body fat % (device estimate): latest 15.2% (2026-08-15) · 7d mean 15.5%');
+        });
+
+        it('reports sparse body-fat coverage explicitly instead of a bare dash indistinguishable from "no data"', () => {
+            const text = buildContextBrief(input({
+                bodyComposition: {
+                    bodyMass: null,
+                    circumferences: [],
+                    bodyFatPct: { latestPct: 15.2, latestDate: '2026-08-15', mean7dPct: null, recordedDays7d: 2 },
+                },
+            }));
+            expect(text).toContain('7d mean insufficient data (2/7 days recorded, 4+ required)');
+        });
+    });
+
     it('renders the most recent check-in separately in subjective reports', () => {
         const text = buildContextBrief(input({
             checkins: [

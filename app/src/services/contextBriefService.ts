@@ -9,9 +9,20 @@ import {
     buildContextBrief,
     defaultBriefWindowDays,
     SUBJECTIVE_BASELINE_DAYS,
+    type BodyCompositionBriefInput,
     type BriefWindowPreset,
     type ContextBriefInput,
 } from '../engine/contextBrief';
+import { METRIC_DISPLAY_LABELS, type AnthropometryEntry } from '../anthropometry/models';
+import {
+    computeBodyMassTrend,
+    computeCircumferenceTrends,
+    computeProviderCompositionSummary,
+    reduceDailyManualBodyMass,
+    reduceDailyProviderBodyMass,
+    type ProviderCompositionRecord,
+    type RawProviderWeightRecord,
+} from '../anthropometry/trends';
 import { injectActivityTelemetryIntoContextBrief } from '../engine/contextBriefActivityTelemetry';
 import {
     enhanceContextBriefForPlanning,
@@ -27,6 +38,7 @@ import { isV2Session, type AnyExternalPlanSession } from '../sessions/externalPl
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import { activeExternalPlanService, placedSessionForDate } from './activeExternalPlanService';
 import { activityService } from './activityService';
+import { anthropometryService } from './anthropometryService';
 import { checkinService } from './checkinService';
 import { fixedActivityService } from './fixedActivityService';
 import { goalService } from './goalService';
@@ -50,6 +62,102 @@ export interface ContextBriefResult {
     /** Sources that could not be read. The brief still renders; it says what is missing
      * rather than presenting a partial window as complete. */
     unavailableSources: string[];
+}
+
+function lastNCalendarDates(endDateInclusive: string, days: number): string[] {
+    return Array.from({ length: days }, (_, i) => addDaysToLocalDateString(endDateInclusive, -(days - 1 - i)));
+}
+
+/**
+ * Summarizes anthropometry entries and the provider-sourced weight/body-fat fields already
+ * present on `snapshots` into the plain, pre-computed shape `buildContextBrief` renders.
+ * Trend math is reused from `anthropometry/trends.ts` rather than duplicated here — that
+ * reuse is only safe in this file because it lives outside `engine/`, which ADR-0039
+ * D-BC-AUTH bars from importing anthropometry at all.
+ */
+export function buildBodyCompositionBriefInput(
+    targetDate: string,
+    entries: readonly AnthropometryEntry[],
+    snapshots: readonly DailyRecoverySnapshot[],
+): BodyCompositionBriefInput {
+    // Dated by `source.metricDates.weight` (the Garmin-reported weigh-in date), not by the
+    // snapshot's own `date`: Garmin can echo the same weigh-in onto several consecutive
+    // daily snapshots when no fresh reading exists. Keying on the snapshot date would let
+    // one stale reading masquerade as several distinct recorded days, falsely satisfying
+    // the 4-of-7 coverage floor `computeBodyMassTrend`/`computeProviderCompositionSummary`
+    // require and producing a fabricated week-over-week trend. An entry with no recorded
+    // metric date carries no provenance and is omitted rather than defaulted to the
+    // snapshot date, which would silently reintroduce the same failure mode. Weight and
+    // body-fat % come from the same weigh-in, so they share one date field.
+    const providerWeightRecords: RawProviderWeightRecord[] = snapshots
+        .filter(s => typeof s.raw.weightKg === 'number' && s.raw.weightKg > 0 && s.source.metricDates?.weight)
+        .map(s => ({ date: s.source.metricDates!.weight as string, weightKg: s.raw.weightKg as number }));
+    const providerCompositionRecords: ProviderCompositionRecord[] = snapshots
+        .filter(s => typeof s.raw.bodyFatPct === 'number' && s.raw.bodyFatPct > 0 && s.source.metricDates?.weight)
+        .map(s => ({ date: s.source.metricDates!.weight as string, bodyFatPct: s.raw.bodyFatPct }));
+
+    const manualPoints = reduceDailyManualBodyMass(entries);
+    const providerPoints = reduceDailyProviderBodyMass(providerWeightRecords);
+    const current7dDates = lastNCalendarDates(targetDate, 7);
+    const prior7dDates = lastNCalendarDates(addDaysToLocalDateString(targetDate, -7), 7);
+    const trendDates = new Set([...prior7dDates, ...current7dDates]);
+    const providerHasTrendData = Array.from(providerPoints.keys()).some(date => trendDates.has(date));
+    const manualHasTrendData = Array.from(manualPoints.keys()).some(date => trendDates.has(date));
+
+    // Keep a single source for the whole trend: provider wins when it has usable data in
+    // the 14-day comparison horizon, otherwise current manual data is the fallback. A
+    // provider point that is only a stale carry-forward must not suppress a fresh manual
+    // series. If neither source has current-horizon data, retain provider-first historical
+    // fallback so the latest dated observation remains deterministic without splicing.
+    const effectiveSource: 'provider' | 'manual' | null = providerHasTrendData
+        ? 'provider'
+        : manualHasTrendData
+            ? 'manual'
+            : providerPoints.size > 0
+                ? 'provider'
+                : manualPoints.size > 0 ? 'manual' : null;
+
+    let bodyMass: BodyCompositionBriefInput['bodyMass'] = null;
+    if (effectiveSource) {
+        const points = effectiveSource === 'provider' ? providerPoints : manualPoints;
+        const trend = computeBodyMassTrend(effectiveSource, current7dDates, prior7dDates, points);
+        bodyMass = {
+            source: effectiveSource,
+            latestKg: trend.latestPoint?.weightKg ?? null,
+            latestDate: trend.latestPoint?.date ?? null,
+            current7dMeanKg: trend.current7d.meanWeightKg,
+            prior7dMeanKg: trend.prior7d.meanWeightKg,
+            weekOverWeekKg: trend.weekOverWeekAbsoluteKg,
+            weekOverWeekPercent: trend.weekOverWeekPercent,
+        };
+    }
+
+    const circumferences = Array.from(computeCircumferenceTrends(entries).values())
+        .filter(trend => trend.latestPoint !== null)
+        .sort((a, b) => a.metricId.localeCompare(b.metricId) || a.laterality.localeCompare(b.laterality))
+        .map(trend => {
+            const latest = trend.latestPoint!;
+            const label = METRIC_DISPLAY_LABELS[trend.metricId] ?? trend.metricId;
+            return {
+                label: trend.laterality === 'unspecified' ? label : `${label} (${trend.laterality})`,
+                latestCm: latest.value,
+                latestDate: latest.date,
+                deltaCm: trend.deltaCm,
+                repeatabilityWarning: latest.repeatabilityWarning,
+            };
+        });
+
+    const providerComposition = computeProviderCompositionSummary(providerCompositionRecords, current7dDates);
+    const bodyFatPct: BodyCompositionBriefInput['bodyFatPct'] = providerComposition.latestBodyFatPct !== null
+        ? {
+            latestPct: providerComposition.latestBodyFatPct,
+            latestDate: providerComposition.latestDate,
+            mean7dPct: providerComposition.mean7d,
+            recordedDays7d: providerComposition.recordedDays7d,
+        }
+        : null;
+
+    return { bodyMass, circumferences, bodyFatPct };
 }
 
 /**
@@ -116,6 +224,12 @@ export class ContextBriefService {
         const placementOccupancyEnd = addDaysToLocalDateString(upcomingEndDate, 6);
         const unavailableSources: string[] = [];
 
+        // Wider than baselineDays: tape measurements and manual body-mass entries are
+        // typically logged weekly or less often, not daily, so a "previous reading" delta
+        // needs real lookback rather than the subjective baseline's 28-day floor.
+        const ANTHROPOMETRY_LOOKBACK_DAYS = 60;
+        const anthropometryStart = briefWindowStart(targetDate, ANTHROPOMETRY_LOOKBACK_DAYS);
+
         const snapshotDates = Array.from(
             { length: contextDays },
             (_, offset) => addDaysToLocalDateString(contextStart, offset),
@@ -132,6 +246,8 @@ export class ContextBriefService {
             goalsResult,
             fixedActivityResult,
             planBlockResult,
+            anthropometryResult,
+            bodyCompositionSnapshotResult,
         ] = await Promise.allSettled([
             // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
             // read outage would be indistinguishable from "no data that day" and the
@@ -158,6 +274,17 @@ export class ContextBriefService {
             // Plan blocks are range-overlays (currently explicit travel) and the service
             // returns any block intersecting this visible horizon, including one that began earlier.
             planBlockService.getBlocksInRangeState(userId, targetDate, upcomingEndDate),
+            // Zero recommendation authority (ADR-0039 D-BC-AUTH): fetched here for the
+            // service-computed summary handed to the brief, never for engine decisions.
+            anthropometryService.getEntriesInRange(userId, anthropometryStart, targetDate),
+            // A separate, wider range query rather than reusing `snapshots`: that array is
+            // bounded by `contextDays` (as little as RECOVERY_TIMELINE_DAYS = 7 for the
+            // `daily` preset), but a provider weigh-in can be as sparse as manual tape
+            // measurements, which is exactly why anthropometry entries get the full
+            // ANTHROPOMETRY_LOOKBACK_DAYS. Reusing the short array would make a real
+            // provider reading 8-60 days old invisible to body composition and silently
+            // fall back to manual data (or omit the reading entirely).
+            recoverySnapshotService.getRecoverySnapshotsInRangeState(userId, anthropometryStart, throughExclusive),
         ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
@@ -260,6 +387,21 @@ export class ContextBriefService {
             unavailableSources.push('plan blocks / travel overlays');
         }
 
+        const bodyCompositionSnapshots = bodyCompositionSnapshotResult.status === 'fulfilled'
+            && bodyCompositionSnapshotResult.value.status === 'AVAILABLE'
+            ? bodyCompositionSnapshotResult.value.data
+            : [];
+        const bodyCompositionSnapshotsReadable = bodyCompositionSnapshotResult.status === 'fulfilled'
+            && ['AVAILABLE', 'MISSING'].includes(bodyCompositionSnapshotResult.value.status);
+        const bodyComposition = buildBodyCompositionBriefInput(
+            targetDate,
+            anthropometryResult.status === 'fulfilled' ? anthropometryResult.value : [],
+            bodyCompositionSnapshots,
+        );
+        if (anthropometryResult.status !== 'fulfilled' || !bodyCompositionSnapshotsReadable) {
+            unavailableSources.push('body measurements');
+        }
+
         const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
         let currentExternalSession: AnyExternalPlanSession | null = null;
         // Whether "no session placed today" can be asserted as a confirmed fact. Starts
@@ -356,6 +498,7 @@ export class ContextBriefService {
             preferences,
             intentProfile,
             goals,
+            bodyComposition,
         };
         // `activities` was fetched over contextDays (>= windowDays) to feed the fixed
         // 7-day recovery timeline below; the detailed telemetry appendix must not inherit
