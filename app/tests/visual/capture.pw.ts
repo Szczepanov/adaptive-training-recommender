@@ -147,17 +147,17 @@ test('captures grouped session runner rotation without horizontal overflow', asy
   await expect(page.locator('.group-progress')).toContainText('Circuit');
 
   await page.getByRole('button', { name: 'Log Set ⏎' }).click();
-  await expect(page.getByRole('heading', { name: 'scapular_push_up' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /scapular.push.up/i })).toBeVisible();
 
-  await page.getByRole('button', { name: 'bench_press' }).click();
-  await expect(page.getByRole('heading', { name: 'bench_press' })).toBeVisible();
+  await page.getByRole('button', { name: /bench.press/i }).click();
+  await expect(page.getByRole('heading', { name: /bench.press/i })).toBeVisible();
   await page.getByRole('button', { name: 'Log Set ⏎' }).click();
-  await expect(page.getByRole('heading', { name: 'chest_supported_dumbbell_row' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /chest.supported.dumbbell.row/i })).toBeVisible();
 
   const nextBtn = page.locator('.group-next-button');
   if (await nextBtn.count()) {
     await nextBtn.first().click();
-    await expect(page.getByRole('heading', { name: /bench_press|scapular_push_up|chest_supported_dumbbell_row/ })).toBeVisible();
+    await expect(page.getByRole('heading', { name: /bench.press|scapular.push.up|chest.supported.dumbbell.row/i })).toBeVisible();
   }
 
   await capture(page, scenario, 'grouped-runner-active', [

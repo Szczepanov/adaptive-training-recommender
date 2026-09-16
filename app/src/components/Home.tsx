@@ -1398,6 +1398,52 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         </div>
 
         <div className="home-sidebar-col">
+          <div className="sidebar-status-cards">
+            <div className="dashboard-card recovery-card">
+              <div className="card-header">
+                <h3>Today's Recovery</h3>
+                {decisionInput?.recoverySnapshot ? (
+                  <span className="status-badge status-normal">
+                    Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
+                  </span>
+                ) : (
+                  <span className="status-badge status-neutral">Wearable Optional</span>
+                )}
+              </div>
+
+              {decisionInput?.recoverySnapshot ? (
+                <div className="recovery-metrics revealed">
+                  <div className="metric">
+                    <span className="metric-label">Sleep Score</span>
+                    <span className="metric-value">
+                      {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'}
+                    </span>
+                  </div>
+                  <div className="metric">
+                    <span className="metric-label">Resting HR</span>
+                    <span className="metric-value">
+                      {decisionInput.recoverySnapshot.raw.restingHr ?? '--'}
+                    </span>
+                  </div>
+                  <div className="metric">
+                    <span className="metric-label">HRV</span>
+                    <span className="metric-value">
+                      {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}
+                    </span>
+                  </div>
+                  <div className="metric">
+                    <span className="metric-label">Body Battery</span>
+                    <span className="metric-value">
+                      {decisionInput.recoverySnapshot.raw.bodyBatteryWake ?? '--'}
+                    </span>
+                  </div>
+                </div>
+              ) : (
+                <p className="card-empty">No wearable synced. Training readiness is guided by your daily check-in.</p>
+              )}
+            </div>
+          </div>
+
           <details className="home-insights-disclosure">
             <summary className="home-insights-summary">More insights & history ›</summary>
             <div className="home-insights-content">
@@ -1435,51 +1481,6 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           )}
 
           <div className="sidebar-status-cards">
-            <div className="dashboard-card">
-              <div className="card-header">
-                <h3>Today's Recovery</h3>
-                {decisionInput?.recoverySnapshot ? (
-                  <span className="status-badge status-normal">
-                    Sleep {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'} · HRV {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}ms
-                  </span>
-                ) : (
-                  <span className="status-badge status-neutral">Wearable Optional</span>
-                )}
-              </div>
-
-              {decisionInput?.recoverySnapshot ? (
-                <div className="recovery-metrics revealed">
-                  <>
-                      <div className="metric">
-                        <span className="metric-label">Sleep Score</span>
-                        <span className="metric-value">
-                          {decisionInput.recoverySnapshot.raw.sleepScore ?? '--'}
-                        </span>
-                      </div>
-                      <div className="metric">
-                        <span className="metric-label">Resting HR</span>
-                        <span className="metric-value">
-                          {decisionInput.recoverySnapshot.raw.restingHr ?? '--'}
-                        </span>
-                      </div>
-                      <div className="metric">
-                        <span className="metric-label">HRV</span>
-                        <span className="metric-value">
-                          {decisionInput.recoverySnapshot.raw.hrvOvernightAvg ?? '--'}
-                        </span>
-                      </div>
-                      <div className="metric">
-                        <span className="metric-label">Body Battery</span>
-                        <span className="metric-value">
-                          {decisionInput.recoverySnapshot.raw.bodyBatteryWake ?? '--'}
-                        </span>
-                      </div>
-                  </>
-                </div>
-              ) : (
-                <p className="card-empty">No wearable synced. Training readiness is guided by your daily check-in.</p>
-              )}
-            </div>
 
             <div className="dashboard-card" onClick={() => onNavigate('checkin')}>
               <div className="card-header">

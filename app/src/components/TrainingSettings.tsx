@@ -233,49 +233,88 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
         <p className="section-intro">Structured injuries dynamically derive guardrails, restricted modalities, and restricted categories. Expired review dates are automatically ignored.</p>
 
         <form onSubmit={saveInjury} className="injury-form">
-          <h3>{editingInjuryIndex === null ? 'Add injury constraint' : 'Edit injury constraint'}</h3>
-          <label>Body region
-            <select value={injuryDraft.region} onChange={(event) => setInjuryDraft(current => ({ ...current, region: event.target.value }))}>
-              <option value="">No specific region</option>
-              {injuryRegions.map(region => <option key={region.value} value={region.value}>{region.label}</option>)}
-            </select>
-          </label>
-          <label>Severity
-            <select value={injuryDraft.severity} onChange={(event) => setInjuryDraft(current => ({ ...current, severity: event.target.value as InjuryConstraint['severity'] }))}>
-              <option value="monitor">Monitor</option>
-              <option value="limit">Limit</option>
-              <option value="exclude">Exclude</option>
-            </select>
-          </label>
-          <fieldset>
+          <h3 className="injury-form-title">{editingInjuryIndex === null ? 'Add injury constraint' : 'Edit injury constraint'}</h3>
+          <div className="injury-fields-grid">
+            <label className="injury-form-label">
+              <span>Body region</span>
+              <select value={injuryDraft.region} onChange={(event) => setInjuryDraft(current => ({ ...current, region: event.target.value }))}>
+                <option value="">No specific region</option>
+                {injuryRegions.map(region => <option key={region.value} value={region.value}>{region.label}</option>)}
+              </select>
+            </label>
+            <label className="injury-form-label">
+              <span>Severity</span>
+              <select value={injuryDraft.severity} onChange={(event) => setInjuryDraft(current => ({ ...current, severity: event.target.value as InjuryConstraint['severity'] }))}>
+                <option value="monitor">Monitor</option>
+                <option value="limit">Limit</option>
+                <option value="exclude">Exclude</option>
+              </select>
+            </label>
+            <label className="injury-form-label">
+              <span>Review by (optional)</span>
+              <input type="date" value={injuryDraft.reviewBy} onChange={(event) => setInjuryDraft(current => ({ ...current, reviewBy: event.target.value }))} />
+            </label>
+          </div>
+          <fieldset className="injury-modalities-fieldset">
             <legend>Explicitly restricted modalities (optional)</legend>
-            {injuryModalities.map(modality => <label key={modality}>
-              <input type="checkbox" checked={injuryDraft.restrictedModalities.includes(modality)} onChange={(event) => setInjuryDraft(current => ({
-                ...current,
-                restrictedModalities: event.target.checked
-                  ? [...current.restrictedModalities, modality]
-                  : current.restrictedModalities.filter(item => item !== modality),
-              }))} /> {modality}
-            </label>)}
+            <div className="injury-modalities-checkboxes">
+              {injuryModalities.map(modality => (
+                <label key={modality} className="injury-modality-item">
+                  <input
+                    type="checkbox"
+                    checked={injuryDraft.restrictedModalities.includes(modality)}
+                    onChange={(event) => setInjuryDraft(current => ({
+                      ...current,
+                      restrictedModalities: event.target.checked
+                        ? [...current.restrictedModalities, modality]
+                        : current.restrictedModalities.filter(item => item !== modality),
+                    }))}
+                  />
+                  <span>{modality}</span>
+                </label>
+              ))}
+            </div>
           </fieldset>
-          <label>Review by (optional)<input type="date" value={injuryDraft.reviewBy} onChange={(event) => setInjuryDraft(current => ({ ...current, reviewBy: event.target.value }))} /></label>
-          <label>Note (optional)<textarea value={injuryDraft.note} onChange={(event) => setInjuryDraft(current => ({ ...current, note: event.target.value }))} /></label>
-          <button type="submit">{editingInjuryIndex === null ? 'Add injury constraint' : 'Save injury constraint'}</button>
-          {editingInjuryIndex !== null && <button type="button" onClick={() => { setInjuryDraft(emptyInjuryDraft); setEditingInjuryIndex(null); }}>Cancel editing</button>}
+          <label className="injury-form-label">
+            <span>Note (optional)</span>
+            <textarea
+              rows={2}
+              value={injuryDraft.note}
+              onChange={(event) => setInjuryDraft(current => ({ ...current, note: event.target.value }))}
+              placeholder="e.g. Flare-up during heavy loading, avoid impact"
+            />
+          </label>
+          <div className="injury-form-actions">
+            <button type="submit" className="btn-injury-submit">
+              {editingInjuryIndex === null ? '+ Add injury constraint' : 'Save injury constraint'}
+            </button>
+            {editingInjuryIndex !== null && (
+              <button
+                type="button"
+                className="btn-injury-cancel"
+                onClick={() => { setInjuryDraft(emptyInjuryDraft); setEditingInjuryIndex(null); }}
+              >
+                Cancel editing
+              </button>
+            )}
+          </div>
         </form>
 
         {settings.injuries && settings.injuries.length > 0 ? (
           <div className="injuries-list">
             {settings.injuries.map((inj, index) => (
-              <div key={index} className="setting-row injury-item" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', margin: '8px 0', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}>
-                <div>
-                  <strong>{inj.region ? inj.region.toUpperCase().replace('_', ' ') : 'General Activity'}</strong> ({inj.severity})
-                  {inj.reviewBy && <small style={{ display: 'block' }}>Review by: {inj.reviewBy}</small>}
-                  {inj.note && <small style={{ display: 'block' }}>Note: {inj.note}</small>}
+              <div key={index} className="injury-card-item">
+                <div className="injury-card-details">
+                  <div className="injury-card-header">
+                    <strong className="injury-card-region">{inj.region ? inj.region.toUpperCase().replace('_', ' ') : 'General Activity'}</strong>
+                    <span className={`injury-severity-pill severity-${inj.severity}`}>{inj.severity}</span>
+                  </div>
+                  {inj.reviewBy && <span className="injury-card-review">Review by: {inj.reviewBy}</span>}
+                  {inj.note && <span className="injury-card-note">Note: {inj.note}</span>}
                 </div>
-                <div>
-                  <button type="button" onClick={() => editInjury(inj, index)}>Edit</button>
-                  <button type="button" onClick={() => {
+                <div className="injury-card-actions">
+                  <button type="button" className="btn-injury-action edit" onClick={() => editInjury(inj, index)}>Edit</button>
+                  <button type="button" className="btn-injury-action remove" onClick={() => {
                     const nextInjuries = (settings.injuries ?? []).filter((_, i) => i !== index);
                     if (editingInjuryIndex === index) { setInjuryDraft(emptyInjuryDraft); setEditingInjuryIndex(null); }
                     void saveDestructive({ injuries: nextInjuries }, 'Injury constraint removed.');
@@ -285,7 +324,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
             ))}
           </div>
         ) : (
-          <p><small>No active injuries recorded.</small></p>
+          <p className="no-injuries-text"><small>No active injuries recorded.</small></p>
         )}
 
         {hasDerived && (

@@ -113,4 +113,90 @@ describe('MorningDecisionCard clinical escalation', () => {
 
         expect(html).toContain('Copy AI Context');
     });
+
+    it('separates technical scoring formula into expandable telemetry disclosure while displaying clean coaching rationale', () => {
+        const technicalRec = {
+            mode: 'train',
+            template: {
+                title: 'Threshold Intervals',
+                modality: 'Running',
+                category: 'Threshold',
+                durationMin: 45,
+                durationMax: 50,
+            },
+            rationale: 'Coverage tier: 1. Benefit score: 3.40, Fatigue cost penalty: 0.12. (Advances an explicit required weekly programming role.)',
+            envelopes: {
+                safety: {
+                    clinicalEscalationRequired: false,
+                },
+            },
+        } as unknown as Recommendation;
+
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                userId="athlete"
+                date="2026-09-02"
+                recommendation={technicalRec}
+                evidence={evidence}
+                prescription={prescription}
+                adjustmentDirection={null}
+                activeAlternativeId={null}
+                onStartSession={() => undefined}
+                onAdjustLoad={() => undefined}
+                onSelectTimeCrunch={() => undefined}
+                onSelectHomeAlternative={() => undefined}
+                onSelectMobilityAlternative={() => undefined}
+                onSelectActiveRecoveryWalk={() => undefined}
+                onResetAlternative={() => undefined}
+            />,
+        );
+
+        // Coaching narrative contains the human-facing text
+        expect(html).toContain('(Advances an explicit required weekly programming role.)');
+        // Technical scoring formula is rendered inside the dedicated details disclosure
+        expect(html).toContain('why-technical-details');
+        expect(html).toContain('Engine scoring telemetry');
+        expect(html).toContain('Coverage tier: 1. Benefit score: 3.40, Fatigue cost penalty: 0.12.');
+    });
+
+    it('provides fallback coaching narrative when rationale consists solely of scoring formulas', () => {
+        const formulaOnlyRec = {
+            mode: 'train',
+            template: {
+                title: 'Easy Aerobic',
+                modality: 'Cycling',
+                category: 'Easy Endurance',
+                durationMin: 45,
+                durationMax: 60,
+            },
+            rationale: 'Coverage tier: 2. Benefit score: 2.10, Fatigue cost penalty: 0.05.',
+            envelopes: {
+                safety: {
+                    clinicalEscalationRequired: false,
+                },
+            },
+        } as unknown as Recommendation;
+
+        const html = renderToStaticMarkup(
+            <MorningDecisionCard
+                userId="athlete"
+                date="2026-09-02"
+                recommendation={formulaOnlyRec}
+                evidence={evidence}
+                prescription={prescription}
+                adjustmentDirection={null}
+                activeAlternativeId={null}
+                onStartSession={() => undefined}
+                onAdjustLoad={() => undefined}
+                onSelectTimeCrunch={() => undefined}
+                onSelectHomeAlternative={() => undefined}
+                onSelectMobilityAlternative={() => undefined}
+                onSelectActiveRecoveryWalk={() => undefined}
+                onResetAlternative={() => undefined}
+            />,
+        );
+
+        expect(html).toContain('Optimized for current weekly phase and recovery balance.');
+        expect(html).toContain('Coverage tier: 2. Benefit score: 2.10, Fatigue cost penalty: 0.05.');
+    });
 });

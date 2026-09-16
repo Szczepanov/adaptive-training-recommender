@@ -185,7 +185,9 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
               className={`week-ahead-tile confidence-${day.confidence} ${index === safeIndex ? 'selected' : ''}`}
               onClick={() => setSelectedIndex(index)}
             >
-              <span className="tile-weekday">{index === 0 ? 'Tomorrow' : weekdayLabel(day.date)}</span>
+              <span className="tile-weekday">
+                {index === 0 ? `Tomorrow (${weekdayLabel(day.date)})` : weekdayLabel(day.date)}
+              </span>
               {dayOverlay ? (
                 <span className="tile-overlay-icon" title={`${dayOverlay.title} (${dayOverlay.category})`}>
                   {scheduleOverlayIcon(dayOverlay)}
