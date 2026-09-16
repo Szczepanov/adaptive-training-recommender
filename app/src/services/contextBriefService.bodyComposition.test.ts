@@ -10,11 +10,25 @@ import {
 
 const AS_OF = '2026-08-15';
 
-function snapshot(date: string, overrides: Partial<DailyRecoverySnapshot['raw']> = {}): DailyRecoverySnapshot {
+/**
+ * `weightDate` defaults to `date` -- a genuinely fresh weigh-in on the day the snapshot
+ * itself covers -- so existing callers exercising body mass/fat get a trustworthy record
+ * without having to think about provenance. Pass an explicit `weightDate` (or `null`) to
+ * exercise the stale/unprovenanced paths `buildBodyCompositionBriefInput` must reject.
+ */
+function snapshot(
+    date: string,
+    overrides: Partial<DailyRecoverySnapshot['raw']> = {},
+    weightDate: string | null = date,
+): DailyRecoverySnapshot {
     return {
         userId: 'u1',
         date,
-        source: { garminSyncedAt: `${date}T06:15:00Z`, sourceSchemaVersion: 3 },
+        source: {
+            garminSyncedAt: `${date}T06:15:00Z`,
+            sourceSchemaVersion: 3,
+            ...(weightDate !== null ? { metricDates: { weight: weightDate } } : {}),
+        },
         raw: {
             sleepScore: 78, sleepDurationSec: 27000, restingHr: 48, hrvOvernightAvg: 62,
             hrvStatus: 'balanced', respirationAvg: 13, bodyBatteryWake: 71, bodyBatteryChange: 40,
@@ -97,6 +111,30 @@ describe('buildBodyCompositionBriefInput', () => {
         expect(result.bodyMass?.weekOverWeekKg).toBe(-2);
     });
 
+    it('collapses a stale weigh-in echoed onto several snapshot days to a single recorded day, keyed by its real measurement date', () => {
+        // Garmin can carry the same underlying weigh-in forward onto every snapshot until a
+        // fresh one arrives. All four snapshots below report the identical reading, actually
+        // measured once on 2026-08-01 -- dating by the snapshot's own `date` would wrongly
+        // count this as 4 distinct recorded days and could satisfy the mean threshold on
+        // fabricated coverage.
+        const staleWeighInDate = '2026-08-01';
+        const snapshots = ['2026-08-01', '2026-08-05', '2026-08-10', AS_OF]
+            .map(date => snapshot(date, { weightKg: 82 }, staleWeighInDate));
+        const result = buildBodyCompositionBriefInput(AS_OF, [], snapshots);
+        expect(result.bodyMass).toMatchObject({ latestKg: 82, latestDate: staleWeighInDate });
+        // Only 1 distinct day recorded (2026-08-01, outside both 7-day windows), so neither
+        // window clears the 4-day floor and no week-over-week trend is fabricated.
+        expect(result.bodyMass?.current7dMeanKg).toBeNull();
+        expect(result.bodyMass?.weekOverWeekKg).toBeNull();
+    });
+
+    it('omits a provider weight or body-fat reading that carries no recorded metric date, rather than trusting the snapshot date', () => {
+        const snapshots = [snapshot(AS_OF, { weightKg: 78, bodyFatPct: 15 }, null)];
+        const result = buildBodyCompositionBriefInput(AS_OF, [], snapshots);
+        expect(result.bodyMass).toBeNull();
+        expect(result.bodyFatPct).toBeNull();
+    });
+
     it('reports circumferences with a delta against the previous reading of the same metric, laterality and protocol', () => {
         const entries = [
             entry(addDaysToLocalDateString(AS_OF, -14), [
@@ -132,7 +170,17 @@ describe('buildBodyCompositionBriefInput', () => {
     it('surfaces device body-fat percentage from snapshots independently of body mass', () => {
         const snapshots = [snapshot(AS_OF, { bodyFatPct: 15.2 })];
         const result = buildBodyCompositionBriefInput(AS_OF, [], snapshots);
-        expect(result.bodyFatPct).toMatchObject({ latestPct: 15.2, latestDate: AS_OF });
+        expect(result.bodyFatPct).toMatchObject({ latestPct: 15.2, latestDate: AS_OF, recordedDays7d: 1 });
         expect(result.bodyMass).toBeNull();
+    });
+
+    it('carries recorded-day coverage through even when it falls short of the 4-day mean threshold', () => {
+        const snapshots = [
+            snapshot(AS_OF, { bodyFatPct: 15.2 }),
+            snapshot(addDaysToLocalDateString(AS_OF, -1), { bodyFatPct: 15.4 }),
+        ];
+        const result = buildBodyCompositionBriefInput(AS_OF, [], snapshots);
+        expect(result.bodyFatPct?.mean7dPct).toBeNull();
+        expect(result.bodyFatPct?.recordedDays7d).toBe(2);
     });
 });

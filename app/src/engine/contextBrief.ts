@@ -61,6 +61,10 @@ export interface BodyCompositionBriefInput {
         latestPct: number | null;
         latestDate: string | null;
         mean7dPct: number | null;
+        /** Distinct recorded days feeding `mean7dPct`, out of 7. `mean7dPct` is null below
+         * the 4-day coverage floor; carried through so the brief can say why rather than
+         * rendering a bare "—" that reads the same as "no data at all". */
+        recordedDays7d: number;
     } | null;
 }
 
@@ -370,9 +374,12 @@ function renderBodyComposition(input: BodyCompositionBriefInput | undefined): st
     }
 
     if (bodyFatPct) {
+        const trend = bodyFatPct.mean7dPct !== null
+            ? `7d mean ${round(bodyFatPct.mean7dPct)}%`
+            : `7d mean insufficient data (${bodyFatPct.recordedDays7d}/7 days recorded, 4+ required)`;
         lines.push(
             `- Body fat % (device estimate): latest ${round(bodyFatPct.latestPct)}%`
-            + `${bodyFatPct.latestDate ? ` (${bodyFatPct.latestDate})` : ''} · 7d mean ${round(bodyFatPct.mean7dPct)}%`,
+            + `${bodyFatPct.latestDate ? ` (${bodyFatPct.latestDate})` : ''} · ${trend}`,
         );
     }
 
@@ -651,6 +658,10 @@ function renderSubjective(
     const lines: string[] = ['## 4. Subjective reports (self-scored each morning, 1–10)', ''];
     if (checkins.length === 0) {
         lines.push('No check-ins in this window.');
+        // Hunger is computed from `baselineDays` history, not `checkins` (the visible
+        // window) -- a hunger reading from 20 days ago can exist even when the last
+        // `windowDays` are empty, and must not be swallowed by this early return.
+        lines.push(...renderHungerRetrospective(hunger.morning, hunger.other, baselineDays));
         return lines;
     }
 

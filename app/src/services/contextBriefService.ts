@@ -80,12 +80,21 @@ export function buildBodyCompositionBriefInput(
     entries: readonly AnthropometryEntry[],
     snapshots: readonly DailyRecoverySnapshot[],
 ): BodyCompositionBriefInput {
+    // Dated by `source.metricDates.weight` (the Garmin-reported weigh-in date), not by the
+    // snapshot's own `date`: Garmin can echo the same weigh-in onto several consecutive
+    // daily snapshots when no fresh reading exists. Keying on the snapshot date would let
+    // one stale reading masquerade as several distinct recorded days, falsely satisfying
+    // the 4-of-7 coverage floor `computeBodyMassTrend`/`computeProviderCompositionSummary`
+    // require and producing a fabricated week-over-week trend. An entry with no recorded
+    // metric date carries no provenance and is omitted rather than defaulted to the
+    // snapshot date, which would silently reintroduce the same failure mode. Weight and
+    // body-fat % come from the same weigh-in, so they share one date field.
     const providerWeightRecords: RawProviderWeightRecord[] = snapshots
-        .filter(s => typeof s.raw.weightKg === 'number' && s.raw.weightKg > 0)
-        .map(s => ({ date: s.date, weightKg: s.raw.weightKg as number }));
+        .filter(s => typeof s.raw.weightKg === 'number' && s.raw.weightKg > 0 && s.source.metricDates?.weight)
+        .map(s => ({ date: s.source.metricDates!.weight as string, weightKg: s.raw.weightKg as number }));
     const providerCompositionRecords: ProviderCompositionRecord[] = snapshots
-        .filter(s => typeof s.raw.bodyFatPct === 'number' && s.raw.bodyFatPct > 0)
-        .map(s => ({ date: s.date, bodyFatPct: s.raw.bodyFatPct }));
+        .filter(s => typeof s.raw.bodyFatPct === 'number' && s.raw.bodyFatPct > 0 && s.source.metricDates?.weight)
+        .map(s => ({ date: s.source.metricDates!.weight as string, bodyFatPct: s.raw.bodyFatPct }));
 
     const manualPoints = reduceDailyManualBodyMass(entries);
     const providerPoints = reduceDailyProviderBodyMass(providerWeightRecords);
@@ -134,6 +143,7 @@ export function buildBodyCompositionBriefInput(
             latestPct: providerComposition.latestBodyFatPct,
             latestDate: providerComposition.latestDate,
             mean7dPct: providerComposition.mean7d,
+            recordedDays7d: providerComposition.recordedDays7d,
         }
         : null;
 

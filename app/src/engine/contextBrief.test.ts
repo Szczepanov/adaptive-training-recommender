@@ -380,6 +380,17 @@ describe('buildContextBrief', () => {
             const text = buildContextBrief(input({ checkins: [checkin(AS_OF, { hunger1To10: null, hungerTiming: null })] }));
             expect(text).not.toContain('Appetite');
         });
+
+        it('still renders hunger history when the visible window has no check-ins at all', () => {
+            // Only entry is 20 days back: outside the 14-day visible window (triggering
+            // "No check-ins in this window"), but inside the 28-day hunger baseline.
+            const text = buildContextBrief(input({
+                checkins: [checkin(addDaysToLocalDateString(AS_OF, -20), { hunger1To10: 4, hungerTiming: 'morning_pre_breakfast' })],
+            }));
+            expect(text).toContain('No check-ins in this window.');
+            expect(text).toContain('Appetite (hunger 1–10, self-scored)');
+            expect(text).toContain('- Pre-breakfast timing (preferred series): latest 4');
+        });
     });
 
     describe('body composition', () => {
@@ -450,10 +461,21 @@ describe('buildContextBrief', () => {
                 bodyComposition: {
                     bodyMass: null,
                     circumferences: [],
-                    bodyFatPct: { latestPct: 15.2, latestDate: '2026-08-15', mean7dPct: 15.5 },
+                    bodyFatPct: { latestPct: 15.2, latestDate: '2026-08-15', mean7dPct: 15.5, recordedDays7d: 5 },
                 },
             }));
             expect(text).toContain('- Body fat % (device estimate): latest 15.2% (2026-08-15) · 7d mean 15.5%');
+        });
+
+        it('reports sparse body-fat coverage explicitly instead of a bare dash indistinguishable from "no data"', () => {
+            const text = buildContextBrief(input({
+                bodyComposition: {
+                    bodyMass: null,
+                    circumferences: [],
+                    bodyFatPct: { latestPct: 15.2, latestDate: '2026-08-15', mean7dPct: null, recordedDays7d: 2 },
+                },
+            }));
+            expect(text).toContain('7d mean insufficient data (2/7 days recorded, 4+ required)');
         });
     });
 
