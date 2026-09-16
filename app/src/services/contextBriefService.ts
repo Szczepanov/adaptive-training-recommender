@@ -98,14 +98,24 @@ export function buildBodyCompositionBriefInput(
 
     const manualPoints = reduceDailyManualBodyMass(entries);
     const providerPoints = reduceDailyProviderBodyMass(providerWeightRecords);
-    // Provider preferred when present, mirroring BodyCompositionPanel's auto-fallback: a
-    // synced scale is less error-prone than a manually keyed reading.
-    const effectiveSource: 'provider' | 'manual' | null = providerPoints.size > 0
-        ? 'provider'
-        : manualPoints.size > 0 ? 'manual' : null;
-
     const current7dDates = lastNCalendarDates(targetDate, 7);
     const prior7dDates = lastNCalendarDates(addDaysToLocalDateString(targetDate, -7), 7);
+    const trendDates = new Set([...prior7dDates, ...current7dDates]);
+    const providerHasTrendData = Array.from(providerPoints.keys()).some(date => trendDates.has(date));
+    const manualHasTrendData = Array.from(manualPoints.keys()).some(date => trendDates.has(date));
+
+    // Keep a single source for the whole trend: provider wins when it has usable data in
+    // the 14-day comparison horizon, otherwise current manual data is the fallback. A
+    // provider point that is only a stale carry-forward must not suppress a fresh manual
+    // series. If neither source has current-horizon data, retain provider-first historical
+    // fallback so the latest dated observation remains deterministic without splicing.
+    const effectiveSource: 'provider' | 'manual' | null = providerHasTrendData
+        ? 'provider'
+        : manualHasTrendData
+            ? 'manual'
+            : providerPoints.size > 0
+                ? 'provider'
+                : manualPoints.size > 0 ? 'manual' : null;
 
     let bodyMass: BodyCompositionBriefInput['bodyMass'] = null;
     if (effectiveSource) {
