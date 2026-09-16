@@ -32,3 +32,6 @@
 ## 2026-09-08 - Use Map lookup for known default Rest templates
 **Learning:** Throughout the codebase (like in `planner.ts` and `safetyCheckin.ts`), fetching the fallback rest template via an array scan like `ENRICHED_TEMPLATES.find(t => t.category === 'Rest')` is unnecessary O(N) overhead when we just want the default Rest template. The `rest_01` template is the universal fallback.
 **Action:** Always fetch the fallback Rest template directly via `ENRICHED_TEMPLATES_BY_ID.get('rest_01')` (or `TEMPLATES_BY_ID`) rather than iterating the entire array looking for the 'Rest' category.
+## 2026-09-16 - [Optimize workoutForTemplate lookups via WeakMap cache]
+**Learning:** The `workoutForTemplate(templateId, workouts)` function was repeatedly performing O(N log N) filtering and sorting on the entire `workouts` array for every single template lookup. This is extremely inefficient when run frequently.
+**Action:** When optimizing frequently called functions that filter or sort a passed-in array object, utilize a `WeakMap` keyed by the array reference to store an inner `Map` for O(1) lookups. This prevents memory leaks if the array is discarded while eliminating redundant computations for subsequent calls.

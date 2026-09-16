@@ -300,22 +300,46 @@ function toDisplayStep(
 }
 
 const workoutMapCache = new WeakMap<WorkoutDefinition[], Map<string, WorkoutDefinition>>();
+const templateResolutionCache = new WeakMap<WorkoutDefinition[], Map<string, WorkoutDefinition | null>>();
 
 export function workoutForTemplate(templateId: string, workouts: WorkoutDefinition[] = WORKOUTS): WorkoutDefinition | undefined {
+  // ⚡ Bolt: Use a WeakMap cache to prevent O(N) filtering and sorting on every call
+  let resolutionMap = templateResolutionCache.get(workouts);
+  if (!resolutionMap) {
+    resolutionMap = new Map();
+    templateResolutionCache.set(workouts, resolutionMap);
+  }
+
+  if (resolutionMap.has(templateId)) {
+    const cached = resolutionMap.get(templateId);
+    return cached === null ? undefined : cached;
+  }
+
   const matching = workouts
     .filter((workout) => workout.status === 'active' && !workout.manualOnly && workout.engineTemplateIds?.includes(templateId))
     .sort((a, b) => (a.engineTemplatePriority ?? 1) - (b.engineTemplatePriority ?? 1));
-  if (matching.length > 0) return matching[0];
+
+  if (matching.length > 0) {
+    resolutionMap.set(templateId, matching[0]);
+    return matching[0];
+  }
+
   const fallbackId = FALLBACK_TEMPLATE_TO_WORKOUT[templateId];
-  if (!fallbackId) return undefined;
+  if (!fallbackId) {
+    resolutionMap.set(templateId, null);
+    return undefined;
+  }
 
   let map = workoutMapCache.get(workouts);
   if (!map) {
     map = new Map(workouts.map(w => [w.id, w]));
     workoutMapCache.set(workouts, map);
   }
+
   const workout = map.get(fallbackId);
-  return workout?.status === 'active' ? workout : undefined;
+  const result = workout?.status === 'active' ? workout : undefined;
+  resolutionMap.set(templateId, result ?? null);
+  return result;
 }
 
 function parseSetsFromLabel(label?: string, summary?: string): number | undefined {
