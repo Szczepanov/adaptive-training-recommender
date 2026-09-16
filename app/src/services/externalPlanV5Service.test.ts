@@ -138,6 +138,40 @@ describe('ExternalPlanService external-plan@5 integration', () => {
         expect(firestore.batch.set).toHaveBeenCalledTimes(2);
     });
 
+    it('fails closed when the header points to a missing predecessor revision', async () => {
+        firestore.getDoc
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
+            .mockResolvedValueOnce({ exists: () => false });
+
+        const result = await new ExternalPlanService().import('u1', v5Plan({ revision: 3 }));
+
+        expect(result.status).toBe('INVALID');
+        if (result.status !== 'INVALID') throw new Error('unreachable');
+        expect(result.issues).toContainEqual(expect.objectContaining({
+            code: 'superseded-revision-missing',
+            field: 'revision',
+            documentPath: 'users/u1/external_plans/v5-service-integration/revisions/2',
+        }));
+        expect(firestore.writeBatch).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when predecessor bytes do not match the header/path identity', async () => {
+        firestore.getDoc
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
+            .mockResolvedValueOnce({ exists: () => true, data: () => v5Plan({ planId: 'different-plan', revision: 2 }) });
+
+        const result = await new ExternalPlanService().import('u1', v5Plan({ revision: 3 }));
+
+        expect(result.status).toBe('INVALID');
+        if (result.status !== 'INVALID') throw new Error('unreachable');
+        expect(result.issues).toContainEqual(expect.objectContaining({
+            code: 'superseded-revision-invalid',
+            field: 'revision',
+            documentPath: 'users/u1/external_plans/v5-service-integration/revisions/2',
+        }));
+        expect(firestore.writeBatch).not.toHaveBeenCalled();
+    });
+
     it('rejects implicit retirement when a newer v5 revision omits a previously materializable block id', async () => {
         firestore.getDoc
             .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
