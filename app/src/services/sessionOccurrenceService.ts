@@ -174,7 +174,7 @@ export class SessionOccurrenceService {
     }
 
     private newOccurrenceId(): string {
-        return `occ-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        return `occ-${Date.now()}-${crypto.randomUUID()}`;
     }
 
     /** Shared persistence constructor for authority-bearing occurrences. Persisting an
