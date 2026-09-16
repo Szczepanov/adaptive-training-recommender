@@ -54,12 +54,12 @@ Tracing three more findings to their actual source found they were misreads of t
 
 ## 5. Findings not yet implemented
 
-Real findings, judged bigger or lower-value than the three fixed in PR #588, left for a future pass:
+Real findings, judged bigger or lower-value than the three fixed in PR #588, filed as issues for a future pass:
 
-- **Training Setup is one long, fully-expanded page.** Equipment, safety limits, time/location, recovery preferences, injury constraints, progression review, and a full progression-block authoring form all render open in sequence, with no grouping or collapse. Safety-relevant toggles carry no more visual prominence than cosmetic ones. Suggested fix: collapsible sections with safety pinned open by default; move progression-block authoring to its own destination.
-- **Two plan-import entry points on the Plan screen.** `Import Plan` (persistent header button) and `Have a coach's plan? Import it` (inline card CTA) appear to route to the same flow. Worth confirming intent before consolidating.
-- **Onboarding welcome card sits in an oversized, mostly-empty container** with its own scrollbar rather than a normally-centered modal.
-- **More drawer's nine destinations** (Sessions, Testing, Plan, Goals, Training Setup, Coach Preferences, Data, Export Context for AI, Sign Out) are one flat list; grouping into daily/configure/account clusters would help.
+- **Training Setup is one long, fully-expanded page.** ([#589](https://github.com/Szczepanov/adaptive-training-recommender/issues/589)) Equipment, safety limits, time/location, recovery preferences, injury constraints, progression review, and a full progression-block authoring form all render open in sequence, with no grouping or collapse. Safety-relevant toggles carry no more visual prominence than cosmetic ones. Suggested fix: collapsible sections with safety pinned open by default; move progression-block authoring to its own destination.
+- **Two plan-import entry points on the Plan screen.** ([#590](https://github.com/Szczepanov/adaptive-training-recommender/issues/590)) `Import Plan` (persistent header button) and `Have a coach's plan? Import it` (inline card CTA) appear to route to the same flow. Worth confirming intent before consolidating.
+- **Onboarding welcome card sits in an oversized, mostly-empty container** ([#591](https://github.com/Szczepanov/adaptive-training-recommender/issues/591)) with its own scrollbar rather than a normally-centered modal.
+- **More drawer's nine destinations** ([#592](https://github.com/Szczepanov/adaptive-training-recommender/issues/592)) (Sessions, Testing, Plan, Goals, Training Setup, Coach Preferences, Data, Export Context for AI, Sign Out) are one flat list; grouping into daily/configure/account clusters would help. Note: `navigationGroups.ts` already defines a `DRAWER_GROUPS` model — the gap may be in rendering, not data.
 
 ## 6. Design strengths
 
