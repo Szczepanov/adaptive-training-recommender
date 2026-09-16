@@ -1,5 +1,6 @@
 import type { EquipmentKey, SessionTemplate, TrainingSettings, TrainingEnvironment, UserContext } from './models';
 import { resolveInjuryRestrictions } from './injuryPolicy';
+import { DEFAULT_MAX_TIME_MINUTES } from './adapters';
 
 export type EligibilityReason = 'time_limit' | 'equipment' | 'environment' | 'safety_guardrail' | 'restricted_modality' | 'restricted_category';
 
@@ -68,7 +69,14 @@ export function resolveMaximumSessionMinutes(context: UserContext, checkinMinute
     const profileLimit = defaults
         ? (isWeekend(date) ? defaults.weekendMaxMinutes : defaults.weekdayMaxMinutes)
         : context.constraints.maxTimeMinutes;
-    return profileLimit === null || profileLimit === undefined ? checkinMinutes : Math.min(profileLimit, checkinMinutes);
+    if (profileLimit !== null && profileLimit !== undefined) return Math.min(profileLimit, checkinMinutes);
+    // Neither Training Setup's weekday/weekend limit nor today's check-in "time available"
+    // is set -- checkinMinutes defaults to +Infinity in that case (schedule.ts), which must
+    // never reach a caller as the final answer: downstream ceilings (dailyMinuteCeiling)
+    // require a finite value and reject Infinity outright. Fall back to the same generous
+    // default adapters.ts already uses for an unset constraint, rather than propagating
+    // Infinity into a value callers assume is always usable as a real minute count.
+    return Number.isFinite(checkinMinutes) ? checkinMinutes : DEFAULT_MAX_TIME_MINUTES;
 }
 
 function hasEquipment(settings: TrainingSettings | undefined, context: UserContext, equipment: EquipmentKey): boolean {

@@ -60,6 +60,17 @@ describe('training-settings eligibility', () => {
         expect(resolveMaximumSessionMinutes(context(profile), 30, '2026-08-08')).toBe(30);
     });
 
+    it('falls back to a finite default rather than +Infinity when neither the profile limit nor the check-in time is set', () => {
+        // Both sources empty -- an unconfigured Training Setup plus no check-in "time
+        // available" answer -- previously left resolveMaximumSessionMinutes returning
+        // checkinMinutes' own +Infinity sentinel unchanged, which downstream ledger
+        // ceilings reject as non-finite (RangeError).
+        const profile = settings({ defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' } });
+        const result = resolveMaximumSessionMinutes(context(profile), Number.POSITIVE_INFINITY, '2026-08-07');
+        expect(Number.isFinite(result)).toBe(true);
+        expect(result).toBeGreaterThan(0);
+    });
+
     it('attaches a cap-safe dose when an eligible wide-range template has no authored easier dose', () => {
         const profile = settings({ defaults: { weekdayMaxMinutes: 40, weekendMaxMinutes: 90, environment: 'either' } });
         const template = eligibleTemplates(TEMPLATES, context(profile), 60, '2026-08-07')

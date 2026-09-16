@@ -2,6 +2,7 @@ import { doc, getDoc, runTransaction, setDoc } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { BodyRegion, SessionTemplate, TrainingSettings, UserConstraint } from '../engine/models';
 import type { DataState } from '../engine/dataState';
+import { DEFAULT_MAX_TIME_MINUTES } from '../engine/adapters';
 import { CURRENT_TRAINING_SETTINGS_SCHEMA_VERSION, isSupportedTrainingSettingsSchemaVersion } from '../engine/trainingSettingsSchema';
 import { constraintService } from './constraintService';
 import { getErrorCode } from '../utils/errors';
@@ -35,7 +36,12 @@ export function createDefaultTrainingSettings(userId: string, now = timestamp())
         equipment: { free_weights: false, cable_machine: false, treadmill: false, indoor_bike: false, pullup_bar: false, outdoor_bike: false, swim_access: false },
         guardrails: { avoid_high_impact: false, avoid_heavy_lower_body: false, avoid_overhead_pressing: false, avoid_heavy_spinal_loading: false },
         injuries: [],
-        defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' },
+        // Generous, not a real cap -- so a first-run doc (created automatically the first
+        // time anything reads settings, e.g. via a skipped onboarding wizard) never leaves
+        // an athlete with literally no configured session-duration ceiling. Same value and
+        // same rationale as adapters.ts's DEFAULT_MAX_TIME_MINUTES, which this reuses rather
+        // than a second independently-chosen literal.
+        defaults: { weekdayMaxMinutes: DEFAULT_MAX_TIME_MINUTES, weekendMaxMinutes: DEFAULT_MAX_TIME_MINUTES, environment: 'either' },
         preferences: { preferActiveRecovery: false },
         migration: { legacyReviewed: true, migratedAt: null },
         createdAt: now,
