@@ -1576,6 +1576,11 @@ export interface UserPreferences {
     explanationVerbosity: 'brief' | 'detailed' | 'technical';
     conservativeBias: boolean;
     extraRecoveryMargin?: boolean;
+    /** Phase 9.0.3's shadow-mode reveal gate and Decision Journal card are an opt-in
+     *  evidence-collection tool for one athlete's own manual-AI-loop comparison, not a
+     *  general onboarding surface -- undefined/false (the default for every account,
+     *  including brand-new ones) keeps Home showing today's recommendation immediately. */
+    shadowModeEnabled?: boolean;
     // Metric preferences
     preferredUnits: {
         distance: 'km' | 'miles';
