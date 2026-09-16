@@ -1,9 +1,29 @@
 import json
+import os
+import urllib.parse
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler
 from typing import Any
 
 from .error_reporting import sanitize_text
+
+
+def _allowed_cors_origins() -> set[str]:
+    origins: set[str] = set()
+    raw_allowed = os.getenv("CORS_ALLOWED_ORIGINS", "")
+    if raw_allowed:
+        for origin in raw_allowed.split(","):
+            cleaned = origin.strip().rstrip("/")
+            if cleaned:
+                origins.add(cleaned)
+
+    app_base_url = os.getenv("APP_BASE_URL", "").strip()
+    if app_base_url:
+        parsed = urllib.parse.urlsplit(app_base_url)
+        if parsed.scheme and parsed.netloc:
+            origins.add(f"{parsed.scheme}://{parsed.netloc}")
+
+    return origins
 
 
 class BaseJSONRequestHandler(BaseHTTPRequestHandler):
@@ -14,6 +34,29 @@ class BaseJSONRequestHandler(BaseHTTPRequestHandler):
 
     request_id: str | None = None
 
+    def _send_cors_headers(self) -> None:
+        origin = self.headers.get("Origin")
+        if not origin:
+            return
+
+        allowed = _allowed_cors_origins()
+        cleaned_origin = origin.strip().rstrip("/")
+        if cleaned_origin in allowed:
+            self.send_header("Access-Control-Allow-Origin", origin.strip())
+            self.send_header("Vary", "Origin")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header(
+                "Access-Control-Allow-Headers",
+                "Content-Type, Authorization, X-Request-ID",
+            )
+            self.send_header("Access-Control-Max-Age", "86400")
+
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        self.send_response(HTTPStatus.NO_CONTENT.value)
+        self._send_cors_headers()
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
     def _json_response(self, status: HTTPStatus, payload: dict[str, Any]) -> None:
         body = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         self.send_response(status.value)
@@ -22,6 +65,7 @@ class BaseJSONRequestHandler(BaseHTTPRequestHandler):
         self.send_header("X-Content-Type-Options", "nosniff")
         if self.request_id:
             self.send_header("X-Request-ID", self.request_id)
+        self._send_cors_headers()
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
