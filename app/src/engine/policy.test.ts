@@ -3,7 +3,7 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the exact progression-confirmed-selection-wiring transition once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-o1-rest-template-lookup-v1');
+        expect(POLICY_VERSION).toBe('2026-09-bolt-workout-for-template-cache-v1');
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
                 (version) => version === '2026-09-progression-confirmed-selection-wiring-v2',
