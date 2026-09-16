@@ -58,7 +58,7 @@ function defaultLoadForKind(kind: SessionLoad['kind']): SessionLoad {
 }
 
 function newId(prefix: string): string {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    return `${prefix}-${crypto.randomUUID()}`;
 }
 
 function customStep(id = newId('step'), title = 'New exercise'): SessionStep {
