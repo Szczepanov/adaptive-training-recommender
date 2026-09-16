@@ -91,13 +91,61 @@ describe('activateIntentBlocksFromPlan', () => {
         expect(options).toEqual({ sourceSchemaVersion: EXTERNAL_PLAN_SCHEMA_V5, sourceRef: 'v5-import-1@1' });
     });
 
-    it('continues an existing block\'s revision sequence on re-import', async () => {
+    it('continues an existing block\'s revision sequence for a newer source-plan revision', async () => {
         const getHeaderState = vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: header({ revision: 4 }) });
-        const save = vi.fn().mockResolvedValue(header({ revision: 5 }));
+        const save = vi.fn().mockResolvedValue(header({ revision: 5, sourcePlanRevision: 2 }));
         const results = await activateIntentBlocksFromPlan('user-1', plan({ revision: 2 }), { getHeaderState, save });
 
-        expect(results[0].outcome).toEqual({ status: 'saved', header: header({ revision: 5 }) });
+        expect(results[0].outcome).toEqual({ status: 'saved', header: header({ revision: 5, sourcePlanRevision: 2 }) });
         expect(save.mock.calls[0][1].revision).toBe(5);
+        expect(save.mock.calls[0][1].sourcePlanRevision).toBe(2);
+    });
+
+    it('is idempotent for the same immutable source-plan revision', async () => {
+        const existing = header({ revision: 4, sourcePlanRevision: 1 });
+        const getHeaderState = vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: existing });
+        const save = vi.fn();
+
+        const results = await activateIntentBlocksFromPlan('user-1', plan({ revision: 1 }), { getHeaderState, save });
+
+        expect(results).toEqual([{ entryId: 'block-1', blockId: 'v5-import-1::block-1', outcome: { status: 'saved', header: existing } }]);
+        expect(save).not.toHaveBeenCalled();
+    });
+
+    it('fails closed when the existing header cannot be read safely', async () => {
+        const save = vi.fn();
+        const unavailable = await activateIntentBlocksFromPlan('user-1', plan(), {
+            getHeaderState: vi.fn().mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read intent block header', retryable: true, message: 'network down' }),
+            save,
+        });
+        const invalid = await activateIntentBlocksFromPlan('user-1', plan(), {
+            getHeaderState: vi.fn().mockResolvedValue({ status: 'INVALID', issues: [{ code: 'path-identity-mismatch' }] }),
+            save,
+        });
+
+        expect(unavailable[0].outcome.status).toBe('failed');
+        expect(unavailable[0].outcome.status === 'failed' && unavailable[0].outcome.message).toContain('network down');
+        expect(invalid[0].outcome.status).toBe('failed');
+        expect(invalid[0].outcome.status === 'failed' && invalid[0].outcome.message).toContain('invalid');
+        expect(save).not.toHaveBeenCalled();
+    });
+
+    it('refuses stale or colliding source ownership instead of overwriting it', async () => {
+        const save = vi.fn();
+        const stale = await activateIntentBlocksFromPlan('user-1', plan({ revision: 1 }), {
+            getHeaderState: vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: header({ revision: 4, sourcePlanRevision: 2 }) }),
+            save,
+        });
+        const collision = await activateIntentBlocksFromPlan('user-1', plan({ revision: 2 }), {
+            getHeaderState: vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: header({ revision: 4, sourcePlanId: 'some-other-source' }) }),
+            save,
+        });
+
+        expect(stale[0].outcome.status).toBe('failed');
+        expect(stale[0].outcome.status === 'failed' && stale[0].outcome.message).toContain('newer source plan revision');
+        expect(collision[0].outcome.status).toBe('failed');
+        expect(collision[0].outcome.status === 'failed' && collision[0].outcome.message).toContain('already owned');
+        expect(save).not.toHaveBeenCalled();
     });
 
     it('derives the same blockId across revisions of the same plan, namespaced by planId', () => {

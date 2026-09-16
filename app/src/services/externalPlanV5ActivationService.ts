@@ -16,7 +16,8 @@
  * authored entry's plan-scoped `id` is namespaced by the plan id (`${planId}::${entry.id}`)
  * so two different imported plans can never collide, while re-importing a later revision of
  * the *same* plan with the *same* entry id continues that block's own revision sequence
- * rather than starting a new one.
+ * rather than starting a new one. Re-running activation for the exact same source-plan
+ * revision is idempotent: an already-materialized block is returned without another write.
  */
 
 import type { ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
@@ -51,8 +52,10 @@ export type IntentBlockActivationServiceDependency = Pick<IntentBlockService, 'g
  * One entry's failure -- a stale revision, a missing `TrainingIntentProfile`, a transient
  * Firestore error -- is caught and reported for that entry only; it never blocks the rest,
  * matching `IntentBlockService.getActiveBlocks`'s own "one corrupted block must never blank
- * out every other block" resilience discipline. Returns `[]` immediately for a plan with no
- * `intentBlocks` (absence retains the inherited v4 contract unchanged).
+ * out every other block" resilience discipline. Existing invalid/unavailable headers fail
+ * closed instead of being treated as absent, and a retry of the same source plan revision is
+ * a no-op for blocks that were already materialized. Returns `[]` immediately for a plan with
+ * no `intentBlocks` (absence retains the inherited v4 contract unchanged).
  */
 export async function activateIntentBlocksFromPlan(
     userId: string,
@@ -68,7 +71,30 @@ export async function activateIntentBlocksFromPlan(
         const blockId = externalIntentBlockId(plan.planId, entry.id);
         try {
             const headerState = await service.getHeaderState(userId, blockId);
-            const existingRevision = headerState.status === 'AVAILABLE' ? headerState.data.revision : 0;
+            let existingRevision = 0;
+
+            if (headerState.status === 'AVAILABLE') {
+                const existing = headerState.data;
+                if (existing.sourcePlanId !== plan.planId) {
+                    throw new Error(`IntentBlock '${blockId}' is already owned by source plan '${existing.sourcePlanId}'`);
+                }
+                if (existing.sourcePlanRevision > plan.revision) {
+                    throw new Error(`IntentBlock '${blockId}' already comes from newer source plan revision ${existing.sourcePlanRevision}`);
+                }
+                if (existing.sourcePlanRevision === plan.revision) {
+                    // The external plan revision is immutable. Reaching the same source revision
+                    // again means this entry was already materialized (for example after a
+                    // caller retries a partially-failed activation), so do not manufacture an
+                    // extra native revision or overwrite later athlete review state.
+                    return { entryId: entry.id, blockId, outcome: { status: 'saved', header: existing } };
+                }
+                existingRevision = existing.revision;
+            } else if (headerState.status === 'INVALID') {
+                throw new Error(`Existing IntentBlock header '${blockId}' is invalid and cannot be advanced safely`);
+            } else if (headerState.status === 'UNAVAILABLE') {
+                throw new Error(`Could not read existing IntentBlock header '${blockId}'${headerState.message ? `: ${headerState.message}` : ''}`);
+            }
+
             const block = resolveExternalIntentBlock(
                 { planId: plan.planId, revision: plan.revision, startDate: plan.startDate },
                 entry,

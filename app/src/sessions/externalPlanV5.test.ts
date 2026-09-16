@@ -7,7 +7,7 @@ import {
     type ExternalIntentBlockV5,
 } from './externalPlanV5';
 import { validateExternalTrainingPlanV4, EXTERNAL_PLAN_SCHEMA_V4 } from './externalPlanV4';
-import type { BlockObjectiveDefinition } from '../engine/blockIntent';
+import type { BlockObjectiveDefinition, BlockProgressionContract } from '../engine/blockIntent';
 
 import fixture01 from './fixtures/01-full-body-maintenance.json';
 
@@ -23,6 +23,23 @@ function objective(overrides: Partial<BlockObjectiveDefinition> = {}): BlockObje
         knowledgeLineage: ['claim-1'],
         successCriteria: { minCompletedExposures: 2 },
         ...overrides,
+    };
+}
+
+function progressionContract(targetBinding: BlockProgressionContract['targetBinding']): BlockProgressionContract {
+    return {
+        targetBinding,
+        variable: 'duration_min',
+        unit: 'minutes',
+        currentValue: 90,
+        permittedRange: { min: 60, max: 120 },
+        increment: 10,
+        knowledgeLineage: ['claim-1'],
+        observationWindowDays: 14,
+        minCompletedExposures: 2,
+        requiredFollowUpCoveragePct: 80,
+        reviewCadenceDays: 14,
+        redirectCriteria: { triggers: ['adverse_response'] },
     };
 }
 
@@ -90,6 +107,14 @@ describe('external-plan@5 (ADR-0037 D-SCHEMA)', () => {
         }
     });
 
+    it('rejects malformed nested intent data without throwing across the external JSON boundary', () => {
+        const malformed = { ...intentBlock(), objectives: [null] };
+        expect(() => validateExternalTrainingPlanV5(planV5({ intentBlocks: [malformed] }))).not.toThrow();
+        const result = validateExternalTrainingPlanV5(planV5({ intentBlocks: [malformed] }));
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field === 'intentBlocks' && e.message.includes('malformed nested'))).toBe(true);
+    });
+
     it('rejects an intentBlocks entry missing required relative-date fields', () => {
         const bad = intentBlock() as unknown as Record<string, unknown>;
         delete bad.startWeek;
@@ -129,6 +154,14 @@ describe('external-plan@5 (ADR-0037 D-SCHEMA)', () => {
         }));
         expect(result.isValid).toBe(false);
         expect(result.errors.some(e => e.field === 'intentBlocks[0].id')).toBe(true);
+    });
+
+    it('rejects an intent block id containing a Firestore path separator', () => {
+        const result = validateExternalTrainingPlanV5(planV5({
+            intentBlocks: [intentBlock({ id: 'strength/base' })],
+        }));
+        expect(result.isValid).toBe(false);
+        expect(result.errors).toContainEqual(expect.objectContaining({ field: 'intentBlocks[0].id', message: expect.stringContaining('/') }));
     });
 
     it('rejects more than EXTERNAL_PLAN_MAX_WEEKS intent blocks', () => {
@@ -181,24 +214,30 @@ describe('external-plan@5 (ADR-0037 D-SCHEMA)', () => {
     it('rejects a progressionContract targetBinding session reference dangling outside this plan', () => {
         const result = validateExternalTrainingPlanV5(planV5({
             intentBlocks: [intentBlock({
-                progressionContract: {
-                    targetBinding: { objectiveId: 'obj-1', sessionId: 'ghost-session' },
-                    variable: 'duration_min',
-                    unit: 'minutes',
-                    currentValue: 90,
-                    permittedRange: { min: 60, max: 120 },
-                    increment: 10,
-                    knowledgeLineage: ['claim-1'],
-                    observationWindowDays: 14,
-                    minCompletedExposures: 2,
-                    requiredFollowUpCoveragePct: 80,
-                    reviewCadenceDays: 14,
-                    redirectCriteria: { triggers: ['adverse_response'] },
-                },
+                progressionContract: progressionContract({ objectiveId: 'obj-1', sessionId: 'ghost-session' }),
             })],
         }));
         expect(result.isValid).toBe(false);
         expect(result.errors.some(e => e.field.includes('progressionContract.targetBinding.sessionId'))).toBe(true);
+    });
+
+    it('rejects a progressionContract targetBinding step reference dangling inside a real session', () => {
+        const result = validateExternalTrainingPlanV5(planV5({
+            intentBlocks: [intentBlock({
+                progressionContract: progressionContract({ objectiveId: 'obj-1', sessionId: 'w1-session', stepId: 'ghost-step' }),
+            })],
+        }));
+        expect(result.isValid).toBe(false);
+        expect(result.errors.some(e => e.field.includes('progressionContract.targetBinding.stepId') && e.message.includes('ghost-step'))).toBe(true);
+    });
+
+    it('accepts a progressionContract step reference that resolves inside the named session', () => {
+        const result = validateExternalTrainingPlanV5(planV5({
+            intentBlocks: [intentBlock({
+                progressionContract: progressionContract({ objectiveId: 'obj-1', sessionId: 'w1-session', stepId: 'step-warmup-1' }),
+            })],
+        }));
+        expect(result.isValid).toBe(true);
     });
 
     it('inherits v4 intraday/rest contracts unchanged -- session-level intraday still validates', () => {

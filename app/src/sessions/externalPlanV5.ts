@@ -49,7 +49,8 @@ export const EXTERNAL_PLAN_SCHEMA_V5 = 'adaptive-training-recommender/external-p
  * and `ExternalSessionPlacement`). */
 export interface ExternalIntentBlockV5 {
     /** Plan-scoped stable id. Durable source identity for audit/replay and for deriving the
-     * persisted `IntentBlock`'s own id (`services/externalPlanV5ActivationService.ts`). */
+     * persisted `IntentBlock`'s own id (`services/externalPlanV5ActivationService.ts`). Since
+     * it becomes part of a Firestore document id after namespacing, `/` is not permitted. */
     id: string;
     title?: string;
     notes?: string;
@@ -93,8 +94,9 @@ const INTENT_BLOCK_KEYS = [
     'objectives', 'reviewCadenceDays', 'nextReviewWeek', 'nextReviewDay', 'progressionContract',
 ];
 const EXTERNAL_INTENT_BLOCK_ID_MAX_LENGTH = 64;
-/** A block spans at least part of one week, so it cannot outnumber the weeks in the plan --
- * same bound reasoning `EXTERNAL_PLAN_V3_MAX_REST_DAYS` uses for `restDays`. */
+/** Bounded authoring surface to keep one imported revision small enough for predictable
+ * validation/rules cost. The cap intentionally matches the plan's maximum week count; it is
+ * a storage/complexity bound, not a claim that an intent block must span a whole week. */
 const EXTERNAL_PLAN_V5_MAX_INTENT_BLOCKS = EXTERNAL_PLAN_MAX_WEEKS;
 /** Generous, not authoritative -- `engine/blockIntent.ts`'s `validateIntentBlock` is the real
  * authority on review cadence; this only rejects obviously-malformed input (e.g. a negative
@@ -162,6 +164,9 @@ function validateExternalIntentBlockField(raw: any, index: number, weekCount: nu
     } else if (raw.id.length > EXTERNAL_INTENT_BLOCK_ID_MAX_LENGTH) {
         errors.push({ field: `${path}.id`, message: `id must be at most ${EXTERNAL_INTENT_BLOCK_ID_MAX_LENGTH} characters` });
         resolvable = false;
+    } else if (raw.id.includes('/')) {
+        errors.push({ field: `${path}.id`, message: 'id must not contain "/"' });
+        resolvable = false;
     }
 
     if (raw.title !== undefined && typeof raw.title !== 'string') {
@@ -212,14 +217,41 @@ function sessionIdSet(sessions: readonly any[]): Set<string> {
     );
 }
 
+/** Shape-safe step-id index used only for external progression bindings. The inherited v2/v4
+ * session validator remains authoritative for definition shape; this pass merely prevents a
+ * syntactically valid targetBinding from naming a nonexistent executable step. */
+function sessionStepIds(sessions: readonly any[]): Map<string, ReadonlySet<string>> {
+    const result = new Map<string, ReadonlySet<string>>();
+    sessions.forEach(session => {
+        if (!session || typeof session !== 'object' || typeof session.id !== 'string' || !session.id) return;
+        const ids = new Set<string>();
+        const blocks = Array.isArray(session.definition?.blocks) ? session.definition.blocks : [];
+        blocks.forEach((block: any) => {
+            const steps = Array.isArray(block?.steps) ? block.steps : [];
+            steps.forEach((step: any) => {
+                if (typeof step?.id === 'string' && step.id) ids.add(step.id);
+            });
+        });
+        result.set(session.id, ids);
+    });
+    return result;
+}
+
 /**
  * D-SCHEMA: "an implementation lacking a used capability must reject the artifact explicitly,
  * never ignore its fields." A protected role or progression target naming a session must name
  * a session that actually exists in this plan -- the same dangling-reference discipline v4's
- * `afterSessionId` check applies to intraday bundles. Defensive against garbage input: never
- * dereferences past an optional-chained/type-guarded access.
+ * `afterSessionId` check applies to intraday bundles. If a progression binding narrows further
+ * to a step, that step must exist inside the named session definition. Defensive against
+ * garbage input: never dereferences past an optional-chained/type-guarded access.
  */
-function validateIntentBlockSessionReferences(raw: any, index: number, sessionIds: ReadonlySet<string>, errors: ValidationError[]): void {
+function validateIntentBlockSessionReferences(
+    raw: any,
+    index: number,
+    sessionIds: ReadonlySet<string>,
+    stepsBySession: ReadonlyMap<string, ReadonlySet<string>>,
+    errors: ValidationError[],
+): void {
     const path = `intentBlocks[${index}]`;
     const objectives = Array.isArray(raw?.objectives) ? raw.objectives : [];
     objectives.forEach((objective: any, objectiveIndex: number) => {
@@ -234,10 +266,21 @@ function validateIntentBlockSessionReferences(raw: any, index: number, sessionId
         });
     });
     const targetSessionId = raw?.progressionContract?.targetBinding?.sessionId;
+    const targetStepId = raw?.progressionContract?.targetBinding?.stepId;
     if (typeof targetSessionId === 'string' && !sessionIds.has(targetSessionId)) {
         errors.push({
             field: `${path}.progressionContract.targetBinding.sessionId`,
             message: `progressionContract session reference "${targetSessionId}" is not a session in this plan`,
+        });
+    } else if (
+        typeof targetSessionId === 'string'
+        && typeof targetStepId === 'string'
+        && targetStepId.length > 0
+        && !stepsBySession.get(targetSessionId)?.has(targetStepId)
+    ) {
+        errors.push({
+            field: `${path}.progressionContract.targetBinding.stepId`,
+            message: `progressionContract step reference "${targetStepId}" is not a step in session "${targetSessionId}"`,
         });
     }
 }
@@ -267,11 +310,12 @@ export function validateExternalIntentBlocks(raw: any, sessions: readonly any[],
     }
 
     const sessionIds = sessionIdSet(sessions);
+    const stepsBySession = sessionStepIds(sessions);
     const resolvedBlocks: IntentBlock[] = [];
 
     raw.intentBlocks.forEach((entry: unknown, index: number) => {
         const resolvable = validateExternalIntentBlockField(entry, index, weekCount, errors);
-        validateIntentBlockSessionReferences(entry, index, sessionIds, errors);
+        validateIntentBlockSessionReferences(entry, index, sessionIds, stepsBySession, errors);
         if (resolvable) {
             resolvedBlocks.push(resolveExternalIntentBlock(
                 { planId: raw.planId, revision: raw.revision, startDate: raw.startDate },
@@ -283,10 +327,16 @@ export function validateExternalIntentBlocks(raw: any, sessions: readonly any[],
 
     // `validatePlanIntentBlocks` already runs `validateIntentBlock` per block internally, then
     // checks cross-block overlap within the same `sourcePlanId` -- one call covers both, since
-    // every resolved candidate here shares `sourcePlanId = raw.planId`.
+    // every resolved candidate here shares `sourcePlanId = raw.planId`. Its public API is a
+    // trusted-domain validator, not an arbitrary-JSON parser, so keep the external boundary
+    // exception-safe in case a malformed nested object gets past the lightweight wrapper.
     if (resolvedBlocks.length > 0) {
-        const { issues } = validatePlanIntentBlocks(resolvedBlocks);
-        issues.forEach(issue => errors.push({ field: `intentBlocks:${issue.path}`, message: issue.message }));
+        try {
+            const { issues } = validatePlanIntentBlocks(resolvedBlocks);
+            issues.forEach(issue => errors.push({ field: `intentBlocks:${issue.path}`, message: issue.message }));
+        } catch {
+            errors.push({ field: 'intentBlocks', message: 'intentBlocks contains malformed nested objective or progression data' });
+        }
     }
 }
 
