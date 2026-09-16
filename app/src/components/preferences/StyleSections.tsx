@@ -46,9 +46,10 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
           </div>
           <button
             type="button"
-            className={`toggle-switch ${preferences.shadowModeEnabled ? 'active' : ''}`}
-            onClick={() => updatePreference('shadowModeEnabled', !preferences.shadowModeEnabled)}
+            className={`toggle-switch ${preferences.shadowModeEnabled === true ? 'active' : ''}`}
+            onClick={() => updatePreference('shadowModeEnabled', preferences.shadowModeEnabled !== true)}
             aria-label="Toggle Decision Journal"
+            aria-pressed={preferences.shadowModeEnabled === true}
           >
             <span className="toggle-slider" />
           </button>
