@@ -7,8 +7,8 @@
  * `applyConfirmedProposal`, but binding several same-date bundle members to distinct real
  * windows at once rather than moving one session to one date.
  *
- * Pure: no Firestore, no wiring into `evaluateTrainingWithIntent` or any decision path
- * yet -- see the H4 status notes in `docs/plans/cycling-primary-hybrid-evaluation.md`.
+ * Pure: no Firestore. Runtime wiring lives in `activeExternalPlanService.ts`; this module
+ * owns only the deterministic placement proposal and does not mutate decision state.
  * `POLICY_VERSION` is unchanged by this file.
  *
  * Scope note: this module resolves and validates a *scheduled* placement. "Separation"
@@ -16,7 +16,7 @@
  * bound window start, using D-TIME's instant resolution on the scheduled boundaries --
  * not the predecessor's actual execution end, which does not exist before either session
  * has started. Recomputing against real performed timestamps once execution begins is
- * D-REASSESS, a separate later ADR-0036 decision, not implemented here.
+ * D-REASSESS and remains outside this pure placement module.
  */
 
 import type { FixedActivity, ScheduleWindow, TrainingEnvironment } from './models';
@@ -41,6 +41,10 @@ export interface IntradayBundleMember {
     /** HH:mm, the athlete-authored requested interval -- never imported as availability
      * (D-WINDOW); only ever intersected against a real `ScheduleWindow`. */
     requestedWindow: { startLocal: string; endLocal: string };
+    /** Existing session feasibility requirements projected from the plan's `gating`.
+     * Schedule-window metadata may narrow these requirements but can never broaden them. */
+    requiredEquipment?: readonly string[];
+    requiredEnvironment?: TrainingEnvironment;
     /** An earlier required-completed predecessor's `sessionId`, when present. */
     afterSessionId?: string;
     minimumSeparationMinutes?: number;
@@ -131,6 +135,28 @@ function resolvePlacementWindows(date: string, scheduleWindows: readonly Schedul
         }));
     }
     return [{ windowId: LEGACY_SINGLE_SLOT_WINDOW_ID, startLocal: '00:00', endLocal: '23:59' }];
+}
+
+/** D-WINDOW context metadata is restrictive, not advisory. An omitted field means the
+ * window does not add a restriction for that dimension; `either` likewise accepts either
+ * session environment. When a window declares equipment, it is the equipment available
+ * in that opening, so every item required by the session must be present. */
+function windowSupportsMember(window: PlacementWindow, member: IntradayBundleMember): boolean {
+    if (
+        window.environment !== undefined
+        && window.environment !== 'either'
+        && member.requiredEnvironment !== undefined
+        && member.requiredEnvironment !== 'either'
+        && window.environment !== member.requiredEnvironment
+    ) {
+        return false;
+    }
+
+    if (window.equipment !== undefined && (member.requiredEquipment ?? []).some(item => !window.equipment!.includes(item))) {
+        return false;
+    }
+
+    return true;
 }
 
 /** The date's fixed-activity-occupied intervals. Only immovable commitments
@@ -234,6 +260,7 @@ function assignFrom(date: string, sortedMembers: readonly IntradayBundleMember[]
     }
 
     const candidates = state.pool
+        .filter(window => windowSupportsMember(window, member))
         .map(window => ({ window, intersection: intersectWindow(member.requestedWindow, window) }))
         .filter((candidate): candidate is { window: PlacementWindow; intersection: { startLocal: string; endLocal: string } } =>
             candidate.intersection !== null,
@@ -250,7 +277,7 @@ function assignFrom(date: string, sortedMembers: readonly IntradayBundleMember[]
     if (candidates.length === 0) {
         return {
             reason: `Session '${member.sessionId}' requests ${member.requestedWindow.startLocal}-${member.requestedWindow.endLocal} on `
-                + `${date}, but no available window fits its duration after fixed commitments and other bundle members.`,
+                + `${date}, but no available window fits its duration and equipment/environment requirements after fixed commitments and other bundle members.`,
         };
     }
 
