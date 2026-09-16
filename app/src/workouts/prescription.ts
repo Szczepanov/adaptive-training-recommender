@@ -299,47 +299,73 @@ function toDisplayStep(
   };
 }
 
-const workoutMapCache = new WeakMap<WorkoutDefinition[], Map<string, WorkoutDefinition>>();
-const templateResolutionCache = new WeakMap<WorkoutDefinition[], Map<string, WorkoutDefinition | null>>();
+type WorkoutTemplateIndex = {
+  byTemplateId: ReadonlyMap<string, WorkoutDefinition>;
+  byWorkoutId: ReadonlyMap<string, WorkoutDefinition>;
+};
 
-export function workoutForTemplate(templateId: string, workouts: WorkoutDefinition[] = WORKOUTS): WorkoutDefinition | undefined {
-  // ⚡ Bolt: Use a WeakMap cache to prevent O(N) filtering and sorting on every call
-  let resolutionMap = templateResolutionCache.get(workouts);
-  if (!resolutionMap) {
-    resolutionMap = new Map();
-    templateResolutionCache.set(workouts, resolutionMap);
+function automaticTemplatePriority(workout: WorkoutDefinition): number {
+  return workout.engineTemplatePriority ?? 1;
+}
+
+function buildWorkoutTemplateIndex(workouts: readonly WorkoutDefinition[]): WorkoutTemplateIndex {
+  const byTemplateId = new Map<string, WorkoutDefinition>();
+  const byWorkoutId = new Map<string, WorkoutDefinition>();
+
+  for (const workout of workouts) {
+    // Match the previous Map construction: if IDs ever collide, the last catalog entry wins.
+    byWorkoutId.set(workout.id, workout);
+    if (workout.status !== 'active' || workout.manualOnly) continue;
+
+    for (const templateId of workout.engineTemplateIds ?? []) {
+      const existing = byTemplateId.get(templateId);
+      if (!existing || automaticTemplatePriority(workout) < automaticTemplatePriority(existing)) {
+        // Strictly-lower replacement preserves the old stable-sort tie behavior: first wins.
+        byTemplateId.set(templateId, workout);
+      }
+    }
   }
 
-  if (resolutionMap.has(templateId)) {
-    const cached = resolutionMap.get(templateId);
-    return cached === null ? undefined : cached;
-  }
+  return { byTemplateId, byWorkoutId };
+}
 
-  const matching = workouts
-    .filter((workout) => workout.status === 'active' && !workout.manualOnly && workout.engineTemplateIds?.includes(templateId))
-    .sort((a, b) => (a.engineTemplatePriority ?? 1) - (b.engineTemplatePriority ?? 1));
+// The production catalog is a module-level snapshot, so pay the indexing cost once. Custom
+// arrays remain live/mutable test and adapter inputs and are deliberately not identity-cached.
+const canonicalWorkoutTemplateIndex = buildWorkoutTemplateIndex(WORKOUTS);
 
-  if (matching.length > 0) {
-    resolutionMap.set(templateId, matching[0]);
-    return matching[0];
-  }
+function resolveIndexedWorkout(templateId: string, index: WorkoutTemplateIndex): WorkoutDefinition | undefined {
+  const directMatch = index.byTemplateId.get(templateId);
+  if (directMatch) return directMatch;
 
   const fallbackId = FALLBACK_TEMPLATE_TO_WORKOUT[templateId];
-  if (!fallbackId) {
-    resolutionMap.set(templateId, null);
-    return undefined;
+  if (!fallbackId) return undefined;
+  const fallback = index.byWorkoutId.get(fallbackId);
+  return fallback?.status === 'active' ? fallback : undefined;
+}
+
+function resolveCustomWorkout(templateId: string, workouts: readonly WorkoutDefinition[]): WorkoutDefinition | undefined {
+  const fallbackId = FALLBACK_TEMPLATE_TO_WORKOUT[templateId];
+  let fallback: WorkoutDefinition | undefined;
+  let bestMatch: WorkoutDefinition | undefined;
+
+  for (const workout of workouts) {
+    // Preserve the previous workoutMap fallback semantics for duplicate IDs: last wins.
+    if (fallbackId && workout.id === fallbackId) fallback = workout;
+
+    if (workout.status !== 'active' || workout.manualOnly || !workout.engineTemplateIds?.includes(templateId)) continue;
+    if (!bestMatch || automaticTemplatePriority(workout) < automaticTemplatePriority(bestMatch)) {
+      bestMatch = workout;
+    }
   }
 
-  let map = workoutMapCache.get(workouts);
-  if (!map) {
-    map = new Map(workouts.map(w => [w.id, w]));
-    workoutMapCache.set(workouts, map);
-  }
+  if (bestMatch) return bestMatch;
+  return fallback?.status === 'active' ? fallback : undefined;
+}
 
-  const workout = map.get(fallbackId);
-  const result = workout?.status === 'active' ? workout : undefined;
-  resolutionMap.set(templateId, result ?? null);
-  return result;
+export function workoutForTemplate(templateId: string, workouts: WorkoutDefinition[] = WORKOUTS): WorkoutDefinition | undefined {
+  return workouts === WORKOUTS
+    ? resolveIndexedWorkout(templateId, canonicalWorkoutTemplateIndex)
+    : resolveCustomWorkout(templateId, workouts);
 }
 
 function parseSetsFromLabel(label?: string, summary?: string): number | undefined {
