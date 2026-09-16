@@ -92,6 +92,11 @@ export class ExternalPlanService {
      * only partly understood must not be half-stored, because a silently dropped session
      * is a session the athlete believes was imported.
      *
+     * Re-importing byte-identical immutable revision content is an idempotent success. This
+     * matters for `external-plan@5`: plan storage and intent-block activation are deliberately
+     * separate, so a transient activation failure can be retried without inventing a new plan
+     * revision. Same-revision content that differs from the stored immutable bytes still fails.
+     *
      * `supersededFrom` records the date this revision takes effect. Days already
      * adjudicated keep their persisted recommendations and audits regardless.
      */
@@ -110,8 +115,9 @@ export class ExternalPlanService {
         try {
             const existing = await getDoc(this.headerRef(userId, plan.planId));
             if (existing.exists()) {
-                const storedRevision = existing.data().revision;
-                if (typeof storedRevision === 'number' && plan.revision <= storedRevision) {
+                const existingHeader = existing.data() as ExternalPlanHeader;
+                const storedRevision = existingHeader.revision;
+                if (typeof storedRevision === 'number' && plan.revision < storedRevision) {
                     return {
                         status: 'INVALID',
                         issues: [{
@@ -124,10 +130,10 @@ export class ExternalPlanService {
 
                 if (typeof storedRevision === 'number') {
                     // Intent blocks become independent persisted artifacts after v5 activation.
-                    // A safe supersession decision therefore requires the immutable predecessor
-                    // itself, not just the mutable header: if those bytes are missing, malformed,
-                    // or stored under the wrong identity we cannot prove that the predecessor did
-                    // not carry live intent blocks that the new revision would strand.
+                    // A safe supersession or idempotent-retry decision therefore requires the
+                    // immutable predecessor itself, not just the mutable header: if those bytes
+                    // are missing, malformed, or stored under the wrong identity we cannot prove
+                    // what live intent blocks or immutable content the header actually represents.
                     const previousDocumentPath = `users/${userId}/external_plans/${plan.planId}/revisions/${storedRevision}`;
                     const previousSnapshot = await getDoc(this.revisionRef(userId, plan.planId, storedRevision));
                     if (!previousSnapshot.exists()) {
@@ -155,6 +161,28 @@ export class ExternalPlanService {
                                 field: 'revision',
                                 documentPath: previousDocumentPath,
                             }],
+                        };
+                    }
+
+                    if (plan.revision === storedRevision) {
+                        const [storedHash, incomingHash] = await Promise.all([
+                            computeContentHash(previousParsed.data),
+                            computeContentHash(plan),
+                        ]);
+                        if (storedHash !== incomingHash || existingHeader.contentHash !== storedHash) {
+                            return {
+                                status: 'INVALID',
+                                issues: [{
+                                    code: 'immutable-revision-conflict',
+                                    field: 'revision',
+                                    documentPath: previousDocumentPath,
+                                }],
+                            };
+                        }
+                        return {
+                            status: 'AVAILABLE',
+                            data: { header: existingHeader, plan },
+                            revision: storedHash,
                         };
                     }
 
