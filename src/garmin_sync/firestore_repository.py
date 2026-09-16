@@ -1,3 +1,4 @@
+import concurrent.futures
 import itertools
 import logging
 import os
@@ -657,17 +658,27 @@ class FirestoreRecoveryRepository:
             while chunk := list(itertools.islice(it, n)):
                 yield chunk
 
-        deleted_count = 0
-        for chunk in batched(keys, 500):
+        chunks = list(batched(keys, 500))
+        if not chunks:
+            return 0
+
+        def _process_chunk(chunk: list[tuple[str, str, str]]) -> int:
             batch = db.batch()
             for logical_date, provider, transport in chunk:
                 doc_id = f"{logical_date}_{provider}_{transport}"
                 doc_ref = collection_ref.document(doc_id)
                 batch.delete(doc_ref)
-                deleted_count += 1
             batch.commit()
+            return len(chunk)
 
-        return deleted_count
+        if len(chunks) == 1:
+            return _process_chunk(chunks[0])
+
+        max_workers = min(10, len(chunks))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            results = list(executor.map(_process_chunk, chunks))
+
+        return sum(results)
 
     def get_health_observation_bundles_in_range(
         self,

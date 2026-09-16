@@ -35,3 +35,7 @@
 ## 2026-09-16 - Index canonical workout-template resolution without hiding mutable inputs
 **Learning:** `workoutForTemplate(templateId, workouts)` was repeatedly filtering and sorting the canonical workout catalog. Caching final answers by arbitrary array identity avoids repeat work but silently makes mutable caller-supplied arrays stale after their first lookup.
 **Action:** Build only the missing canonical template-to-workout index once, reuse `WORKOUTS_BY_ID` for fallback IDs, preserve stable priority/tie and fallback semantics, and keep caller-supplied mutable arrays uncached with a single O(N) selection pass.
+
+## 2026-09-16 - Concurrent execution of batched Firestore commits
+**Learning:** Committing multiple Firestore batches sequentially in a loop blocks on network roundtrips for each batch chunk. Processing batch commits concurrently via `ThreadPoolExecutor` eliminates sequential I/O latency when deleting or writing large numbers of documents in 500-item chunks.
+**Action:** When performing multi-chunk batch writes or batch deletes in Firestore, submit and wait for batch commits concurrently using `ThreadPoolExecutor(max_workers=min(10, len(chunks)))`.
