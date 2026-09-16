@@ -331,25 +331,36 @@ export interface ProviderCompositionRecord {
 
 /**
  * Computes summary for device-estimated provider body fat percentage.
+ *
+ * Coverage is explicitly date-based (ADR-0039 D-BC-TRENDS). Daily recovery snapshots can
+ * legitimately echo one scale measurement onto several subsequent snapshot documents, so
+ * repeated records carrying the same provider measurement date must still count as one
+ * recorded day. Keep the first valid value for a date; provider adapters remain responsible
+ * for resolving genuinely distinct same-day source observations before this projection.
  */
 export function computeProviderCompositionSummary(
     records: readonly ProviderCompositionRecord[],
     dates7d: readonly string[],
 ): ProviderCompositionTrend {
-    const dates7dSet = new Set(dates7d);
-    const validRecords = records.filter(r => typeof r.bodyFatPct === 'number' && Number.isFinite(r.bodyFatPct));
+    const valuesByDate = new Map<string, number>();
+    for (const record of records) {
+        if (typeof record.bodyFatPct !== 'number' || !Number.isFinite(record.bodyFatPct)) continue;
+        if (!valuesByDate.has(record.date)) valuesByDate.set(record.date, record.bodyFatPct);
+    }
 
-    const in7d = validRecords.filter(r => dates7dSet.has(r.date));
+    const in7d = dates7d
+        .filter(date => valuesByDate.has(date))
+        .map(date => valuesByDate.get(date)!);
     const mean7d = in7d.length >= 4
-        ? roundTo1Decimal(in7d.reduce((acc, r) => acc + (r.bodyFatPct ?? 0), 0) / in7d.length)
+        ? roundTo1Decimal(in7d.reduce((acc, value) => acc + value, 0) / in7d.length)
         : null;
 
-    const sorted = [...validRecords].sort((a, b) => a.date.localeCompare(b.date));
-    const latest = sorted.length > 0 ? sorted[sorted.length - 1] : null;
+    const sortedDates = Array.from(valuesByDate.keys()).sort();
+    const latestDate = sortedDates.length > 0 ? sortedDates[sortedDates.length - 1] : null;
 
     return {
-        latestBodyFatPct: latest?.bodyFatPct ?? null,
-        latestDate: latest?.date ?? null,
+        latestBodyFatPct: latestDate ? valuesByDate.get(latestDate) ?? null : null,
+        latestDate,
         mean7d,
         recordedDays7d: in7d.length,
     };
