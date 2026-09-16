@@ -6,6 +6,7 @@ export const POLICY_VERSION = '2026-09-bolt-workout-for-template-cache-v1';
  * audits remain readable evidence, but replay is rejected explicitly because the old
  * decision function is not bundled alongside the current policy. */
 export const HISTORICAL_POLICY_VERSIONS = [
+    '2026-09-o1-rest-template-lookup-v1',
     '2026-09-progression-confirmed-selection-wiring-v2',
     '2026-09-progression-confirmed-selection-wiring-v1',
     '2026-09-fixed-activity-dedup-identity-unification-v1',
