@@ -429,3 +429,23 @@ fieldset input[type="radio"] {
   color: var(--text-secondary);
   font-size: 0.875rem;
 }
+
+/* TrainingSettings.tsx still carries legacy inline spacing/background on this block.
+   Override only the theme surface here so the read-only derived state remains legible
+   in the app's dark theme until that inline layout is removed. */
+.derived-restrictions {
+  background: rgba(59, 130, 246, 0.08) !important;
+  border: 1px solid rgba(59, 130, 246, 0.22);
+  color: var(--text-primary);
+}
+
+.derived-restrictions h4 {
+  margin: 0 0 0.5rem;
+  color: #bfdbfe;
+  font-size: 0.9rem;
+}
+
+.derived-restrictions p {
+  margin: 0.25rem 0;
+  color: var(--text-secondary);
+}
