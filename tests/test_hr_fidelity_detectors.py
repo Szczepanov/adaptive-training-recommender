@@ -346,8 +346,10 @@ def test_source_switch_flags_cadence_change_not_flagged() -> None:
     assert "SOURCE_SWITCH_POSSIBLE" not in flags
 
 
-def test_source_switch_flags_large_record_set_linear_complexity() -> None:
-    import time
+def test_source_switch_flags_large_record_set_linear_complexity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import garmin_sync._hr_fidelity_detectors as detectors_mod
 
     policy = MockArtifactPolicy(
         abrupt_change_bpm=15.0,
@@ -366,18 +368,25 @@ def test_source_switch_flags_large_record_set_linear_complexity() -> None:
         )
         for second in range(10_000)
     ]
-    start = time.perf_counter()
+
+    access_count = 0
+    orig_record_timestamp = detectors_mod.record_timestamp
+
+    def counting_record_timestamp(record: FitRecordSample) -> datetime:
+        nonlocal access_count
+        access_count += 1
+        return orig_record_timestamp(record)
+
+    monkeypatch.setattr(detectors_mod, "record_timestamp", counting_record_timestamp)
+
     _ = source_switch_flags(records, policy)
-    duration = time.perf_counter() - start
-    # Linear bounded window scan should finish well under 0.5s for 10k records
-    assert duration < 0.5
+    # Linear bounded window scan ensures at most 30 accesses per candidate
+    assert access_count <= len(records) * 30
 
 
 def test_source_switch_flags_dense_timestamps_stress_test(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import time
-
     import garmin_sync._hr_fidelity_detectors as detectors_mod
 
     policy = MockArtifactPolicy(
@@ -414,21 +423,18 @@ def test_source_switch_flags_dense_timestamps_stress_test(
 
     monkeypatch.setattr(detectors_mod, "record_timestamp", counting_record_timestamp)
 
-    start = time.perf_counter()
     _ = source_switch_flags(records, policy)
-    duration = time.perf_counter() - start
 
     # Deterministic proof of linear O(N) complexity:
     # A quadratic O(N^2) scan would perform millions of accesses (~200,000,000).
     # The bounded scan is guaranteed strictly O(N) with at most 10 accesses per candidate.
     assert access_count <= len(records) * 10
 
-    # Environment-tolerant wall-clock ceiling
-    assert duration < 2.5
 
-
-def test_source_switch_flags_duplicate_timestamps_bounded() -> None:
-    import time
+def test_source_switch_flags_duplicate_timestamps_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import garmin_sync._hr_fidelity_detectors as detectors_mod
 
     policy = MockArtifactPolicy(
         abrupt_change_bpm=15.0,
@@ -450,9 +456,18 @@ def test_source_switch_flags_duplicate_timestamps_bounded() -> None:
         )
         for second in range(20_000)
     ]
-    start = time.perf_counter()
+
+    access_count = 0
+    orig_record_timestamp = detectors_mod.record_timestamp
+
+    def counting_record_timestamp(record: FitRecordSample) -> datetime:
+        nonlocal access_count
+        access_count += 1
+        return orig_record_timestamp(record)
+
+    monkeypatch.setattr(detectors_mod, "record_timestamp", counting_record_timestamp)
+
     flags = source_switch_flags(records, policy)
-    duration = time.perf_counter() - start
-    assert duration < 2.5
+    assert access_count <= len(records) * 10
     # Duplicate timestamps cannot satisfy abrupt_persistence_seconds (duration is 0)
     assert "SOURCE_SWITCH_POSSIBLE" not in flags

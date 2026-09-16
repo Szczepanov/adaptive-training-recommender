@@ -146,56 +146,7 @@ def transition_flags(records: list[FitRecordSample], policy: ArtifactPolicy) -> 
         ):
             flags.add("ISOLATED_SPIKE")
 
-    for index in range(1, len(records)):
-        previous = records[index - 1]
-        current = records[index]
-        if not _nearby(previous, current, policy):
-            continue
-        assert previous.heart_rate_bpm is not None
-        assert current.heart_rate_bpm is not None
-        if abs(current.heart_rate_bpm - previous.heart_rate_bpm) < policy.abrupt_change_bpm:
-            continue
-
-        transition = record_timestamp(current)
-        b_start, b_end = _local_window_before_bounds(
-            records,
-            index,
-            transition,
-            policy.abrupt_context_seconds,
-            max_samples=policy.abrupt_max_context_samples,
-        )
-        if (
-            b_end - b_start < 2
-            or (
-                record_timestamp(records[b_end - 1]) - record_timestamp(records[b_start])
-            ).total_seconds()
-            < policy.abrupt_persistence_seconds
-        ):
-            continue
-
-        a_start, a_end = _local_window_after_bounds(
-            records,
-            index,
-            transition,
-            policy.abrupt_context_seconds,
-            max_samples=policy.abrupt_max_context_samples,
-        )
-        if (
-            a_end - a_start < 2
-            or (
-                record_timestamp(records[a_end - 1]) - record_timestamp(records[a_start])
-            ).total_seconds()
-            < policy.abrupt_persistence_seconds
-        ):
-            continue
-
-        before = records[b_start:b_end]
-        after = records[a_start:a_end]
-        delta = median(_hr_values(after)) - median(_hr_values(before))
-        if abs(delta) < policy.abrupt_change_bpm:
-            continue
-        if not _stable_independent_workload(records, index, transition, policy):
-            continue
+    for delta in _confirmed_transitions(records, policy):
         flags.add("ABRUPT_JUMP" if delta > 0 else "ABRUPT_DROP")
     return flags
 
@@ -530,9 +481,11 @@ def _twice_cadence(record: FitRecordSample) -> float:
     return 2.0 * record.cadence_rpm
 
 
-def source_switch_flags(records: list[FitRecordSample], policy: ArtifactPolicy) -> set[str]:
-    """Detect plausible source-switch signatures between strap ECG and wrist PPG."""
-    flags: set[str] = set()
+def _confirmed_transitions(
+    records: list[FitRecordSample],
+    policy: ArtifactPolicy,
+) -> Iterator[float]:
+    """Yield signed median HR deltas for confirmed persistent transitions under stable workload."""
     for index in range(1, len(records)):
         previous = records[index - 1]
         current = records[index]
@@ -578,10 +531,16 @@ def source_switch_flags(records: list[FitRecordSample], policy: ArtifactPolicy) 
 
         before = records[b_start:b_end]
         after = records[a_start:a_end]
-        delta = abs(median(_hr_values(after)) - median(_hr_values(before)))
-        if delta >= policy.abrupt_change_bpm and _stable_independent_workload(
-            records, index, transition, policy
-        ):
-            flags.add("SOURCE_SWITCH_POSSIBLE")
-            break
-    return flags
+        delta = float(median(_hr_values(after)) - median(_hr_values(before)))
+        if abs(delta) < policy.abrupt_change_bpm:
+            continue
+        if not _stable_independent_workload(records, index, transition, policy):
+            continue
+        yield delta
+
+
+def source_switch_flags(records: list[FitRecordSample], policy: ArtifactPolicy) -> set[str]:
+    """Detect plausible source-switch signatures between strap ECG and wrist PPG."""
+    for _delta in _confirmed_transitions(records, policy):
+        return {"SOURCE_SWITCH_POSSIBLE"}
+    return set()

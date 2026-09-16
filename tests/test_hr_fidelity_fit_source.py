@@ -147,6 +147,32 @@ def test_third_party_polar_and_wahoo_straps_recognized() -> None:
     assert source_wahoo.sensor_technology == "electrode_chest_strap"
 
 
+def test_third_party_polar_and_wahoo_missing_product_fails_to_external_unknown() -> None:
+    # A missing product (product=None) cannot distinguish a chest strap from an optical armband.
+    # It must classify as external_unknown and fail closed to ambiguous provenance.
+    for mfg in ("polar_electro", "wahoo_fitness"):
+        devices = (
+            FitDeviceInventoryEntry(0, "garmin", "forerunner_965", None, "local"),
+            FitDeviceInventoryEntry(1, mfg, None, "heart_rate", "bluetooth"),
+        )
+        source = _source_evidence_from_fit_devices(devices)
+        assert source.sensor_technology == "external_unknown"
+        assert source.provenance_confidence == "ambiguous"
+
+
+def test_unknown_recorder_with_strap_fails_closed_to_ambiguous() -> None:
+    # When recorder is an unknown device (neither recognized watch, Edge, nor standalone strap),
+    # an indexed electrode strap must fail closed to ambiguous provenance while preserving tech.
+    devices = (
+        FitDeviceInventoryEntry(0, "other_brand", "unknown_device", None, "local"),
+        FitDeviceInventoryEntry(1, "garmin", "hrm_pro", "heart_rate", "antplus"),
+    )
+    source = _source_evidence_from_fit_devices(devices)
+    assert source.sensor_technology == "electrode_chest_strap"
+    assert source.provenance_confidence == "ambiguous"
+    assert source.source_for_activity == "mixed_possible"
+
+
 def test_optical_armbands_classified_as_optical_armband() -> None:
     # Verity Sense and TICKR FIT must classify as optical_armband under real decoded strings
     verity = (

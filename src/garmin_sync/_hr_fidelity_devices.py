@@ -151,14 +151,14 @@ def classify_hr_sensor_technology(
     if _matches_manufacturer(mfg, (_MFG_POLAR,), ("polar", "polar_electro")):
         if _matches_substring(product, ("verity", "oh1", "armband")):
             return "optical_armband"
-        if _matches_substring(product, _CHEST_STRAP_NAME_SUBSTRINGS) or product is None:
+        if _matches_substring(product, _CHEST_STRAP_NAME_SUBSTRINGS):
             return "electrode_chest_strap"
 
     # 4. Check for Wahoo TICKR straps / armbands (requires approved Wahoo mfg 32)
     if _matches_manufacturer(mfg, (_MFG_WAHOO,), ("wahoo", "wahoo_fitness")):
         if _matches_substring(product, ("fit", "armband")):
             return "optical_armband"
-        if _matches_substring(product, _CHEST_STRAP_NAME_SUBSTRINGS) or product is None:
+        if _matches_substring(product, _CHEST_STRAP_NAME_SUBSTRINGS):
             return "electrode_chest_strap"
 
     # Finding 3: Do NOT classify arbitrary text as a verified chest strap without an approved manufacturer!
@@ -315,10 +315,18 @@ def source_evidence_from_fit_devices(
 
     # Scenario 2 & 5: Watch or Standalone + Electrode Chest Strap
     if tech == "electrode_chest_strap":
+        if is_watch_device(recorder) or recorder == external_sensor:
+            return CanonicalHrSourceEvidence(
+                external_hr_sensor_present=True,
+                source_for_activity="external",
+                provenance_confidence="confirmed",
+                sensor_technology="electrode_chest_strap",
+            )
+        # Unknown/unrecognized recorder type with strap fails closed to ambiguous
         return CanonicalHrSourceEvidence(
             external_hr_sensor_present=True,
-            source_for_activity="external",
-            provenance_confidence="confirmed",
+            source_for_activity="mixed_possible",
+            provenance_confidence="ambiguous",
             sensor_technology="electrode_chest_strap",
         )
 
