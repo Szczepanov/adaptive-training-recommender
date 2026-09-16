@@ -12,6 +12,7 @@ from typing import Any
 from firebase_admin import firestore
 from garminconnect import GarminConnectTooManyRequestsError
 
+from ._hr_fidelity_devices import source_evidence_from_fit_devices
 from .archive import ArchiveRecord, RawArchiveStore, create_archive_store
 from .canonical import (
     CanonicalActivity,
@@ -47,31 +48,8 @@ logger = logging.getLogger(__name__)
 def _source_evidence_from_fit_devices(
     devices: tuple[FitDeviceInventoryEntry, ...],
 ) -> CanonicalHrSourceEvidence:
-    """Return only source claims the decoded device inventory can support.
-
-    FIT device inventory does not prove which sensor Garmin selected for individual
-    samples. A positively identified external HR accessory is therefore represented
-    as ``mixed_possible`` with ambiguous provenance; absent positive evidence remains
-    unknown rather than guessing wrist provenance from recording-device metadata.
-    """
-    external_hr_present = any(
-        isinstance(device.device_type, str)
-        and device.device_type.strip().lower() in {"heart_rate", "heart_rate_monitor"}
-        for device in devices
-    )
-    if external_hr_present:
-        return CanonicalHrSourceEvidence(
-            external_hr_sensor_present=True,
-            source_for_activity="mixed_possible",
-            provenance_confidence="ambiguous",
-            sensor_technology="external_unknown",
-        )
-    return CanonicalHrSourceEvidence(
-        external_hr_sensor_present=None,
-        source_for_activity="unknown",
-        provenance_confidence="unknown",
-        sensor_technology="unknown",
-    )
+    """Return source and provenance evidence from decoded device inventory."""
+    return source_evidence_from_fit_devices(devices)
 
 
 @dataclass

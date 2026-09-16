@@ -10,6 +10,7 @@ import pytest
 from garmin_sync._hr_fidelity_detectors import (
     activity_motion_risk,
     cadence_lock_flags,
+    source_switch_flags,
     transition_flags,
     workload_flags,
 )
@@ -29,6 +30,10 @@ class MockArtifactPolicy:
     abrupt_workload_context_seconds: float = 10.0
     abrupt_stable_power_delta_watts: float = 20.0
     abrupt_min_power_coverage_pct: float = 50.0
+    abrupt_stable_cadence_delta_rpm: float = 5.0
+    abrupt_min_cadence_coverage_pct: float = 50.0
+    abrupt_max_context_samples: int = 200
+    abrupt_max_workload_samples: int = 600
     cadence_tolerance_bpm: float = 5.0
     harmonic_tolerance_bpm: float = 5.0
     lock_min_duration_seconds: float = 10.0
@@ -292,3 +297,177 @@ def test_transition_flags_does_not_call_power_change_an_hr_artifact() -> None:
     ]
 
     assert "ABRUPT_JUMP" not in transition_flags(records, policy)
+
+
+def test_source_switch_flags_cadence_only_workload_detected() -> None:
+    policy = MockArtifactPolicy(
+        abrupt_change_bpm=15.0,
+        abrupt_context_seconds=10.0,
+        abrupt_persistence_seconds=3.0,
+        abrupt_workload_context_seconds=10.0,
+        abrupt_min_cadence_coverage_pct=50.0,
+        abrupt_stable_cadence_delta_rpm=5.0,
+    )
+    base_time = datetime(2025, 1, 1, 10, 0, 0)
+    records = [
+        _sample(
+            base_time + timedelta(seconds=second),
+            hr=130.0 if second < 60 else 170.0,
+            power=None,
+            cadence=165.0,
+        )
+        for second in range(121)
+    ]
+    flags = source_switch_flags(records, policy)
+    assert "SOURCE_SWITCH_POSSIBLE" in flags
+
+
+def test_source_switch_flags_cadence_change_not_flagged() -> None:
+    policy = MockArtifactPolicy(
+        abrupt_change_bpm=15.0,
+        abrupt_context_seconds=10.0,
+        abrupt_persistence_seconds=3.0,
+        abrupt_workload_context_seconds=10.0,
+        abrupt_min_cadence_coverage_pct=50.0,
+        abrupt_stable_cadence_delta_rpm=5.0,
+    )
+    base_time = datetime(2025, 1, 1, 10, 0, 0)
+    # Cadence changes from 150 to 180 rpm along with the HR jump (workload surge, e.g. sprint)
+    records = [
+        _sample(
+            base_time + timedelta(seconds=second),
+            hr=130.0 if second < 60 else 170.0,
+            power=None,
+            cadence=150.0 if second < 60 else 180.0,
+        )
+        for second in range(121)
+    ]
+    flags = source_switch_flags(records, policy)
+    assert "SOURCE_SWITCH_POSSIBLE" not in flags
+
+
+def test_source_switch_flags_large_record_set_linear_complexity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import garmin_sync._hr_fidelity_detectors as detectors_mod
+
+    policy = MockArtifactPolicy(
+        abrupt_change_bpm=15.0,
+        abrupt_context_seconds=10.0,
+        abrupt_persistence_seconds=3.0,
+        abrupt_workload_context_seconds=10.0,
+    )
+    base_time = datetime(2025, 1, 1, 10, 0, 0)
+    # Create 10,000 records with frequent transitions to stress test worst-case quadratic behavior
+    records = [
+        _sample(
+            base_time + timedelta(seconds=second),
+            hr=130.0 + (20.0 if (second % 50) < 25 else 0.0),
+            power=150.0,
+            cadence=85.0,
+        )
+        for second in range(10_000)
+    ]
+
+    access_count = 0
+    orig_record_timestamp = detectors_mod.record_timestamp
+
+    def counting_record_timestamp(record: FitRecordSample) -> datetime:
+        nonlocal access_count
+        access_count += 1
+        return orig_record_timestamp(record)
+
+    monkeypatch.setattr(detectors_mod, "record_timestamp", counting_record_timestamp)
+
+    _ = source_switch_flags(records, policy)
+    # Linear bounded window scan ensures at most 30 accesses per candidate
+    assert access_count <= len(records) * 30
+
+
+def test_source_switch_flags_dense_timestamps_stress_test(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import garmin_sync._hr_fidelity_detectors as detectors_mod
+
+    policy = MockArtifactPolicy(
+        abrupt_change_bpm=15.0,
+        abrupt_context_seconds=10.0,
+        abrupt_persistence_seconds=3.0,
+        abrupt_workload_context_seconds=10.0,
+        abrupt_max_context_samples=200,
+        abrupt_max_workload_samples=600,
+    )
+    base_time = datetime(2025, 1, 1, 10, 0, 0)
+    # Stress test: 20,000 records packed densely (100 samples per second)
+    # with alternating HR (+40 bpm every sample) ensuring every pair is an abrupt jump candidate.
+    # Without bounded sample-count scan, this causes O(N^2) backward/forward scans across thousands
+    # of records per candidate (~200,000,000 operations).
+    records = [
+        _sample(
+            base_time + timedelta(milliseconds=10 * second),
+            hr=130.0 if (second % 2 == 0) else 170.0,
+            power=150.0,
+            cadence=85.0,
+        )
+        for second in range(20_000)
+    ]
+
+    # Deterministic operation-bound test: count timestamp evaluations across all candidates
+    access_count = 0
+    orig_record_timestamp = detectors_mod.record_timestamp
+
+    def counting_record_timestamp(record: FitRecordSample) -> datetime:
+        nonlocal access_count
+        access_count += 1
+        return orig_record_timestamp(record)
+
+    monkeypatch.setattr(detectors_mod, "record_timestamp", counting_record_timestamp)
+
+    _ = source_switch_flags(records, policy)
+
+    # Deterministic proof of linear O(N) complexity:
+    # A quadratic O(N^2) scan would perform millions of accesses (~200,000,000).
+    # The bounded scan is guaranteed strictly O(N) with at most 10 accesses per candidate.
+    assert access_count <= len(records) * 10
+
+
+def test_source_switch_flags_duplicate_timestamps_bounded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import garmin_sync._hr_fidelity_detectors as detectors_mod
+
+    policy = MockArtifactPolicy(
+        abrupt_change_bpm=15.0,
+        abrupt_context_seconds=10.0,
+        abrupt_persistence_seconds=3.0,
+        abrupt_workload_context_seconds=10.0,
+        abrupt_max_context_samples=200,
+        abrupt_max_workload_samples=600,
+    )
+    base_time = datetime(2025, 1, 1, 10, 0, 0)
+    # 20,000 records sharing the EXACT SAME timestamp (zero elapsed time)
+    # with alternating HR. Bounded scan ensures it never degrades to quadratic.
+    records = [
+        _sample(
+            base_time,
+            hr=130.0 if (second % 2 == 0) else 170.0,
+            power=150.0,
+            cadence=85.0,
+        )
+        for second in range(20_000)
+    ]
+
+    access_count = 0
+    orig_record_timestamp = detectors_mod.record_timestamp
+
+    def counting_record_timestamp(record: FitRecordSample) -> datetime:
+        nonlocal access_count
+        access_count += 1
+        return orig_record_timestamp(record)
+
+    monkeypatch.setattr(detectors_mod, "record_timestamp", counting_record_timestamp)
+
+    flags = source_switch_flags(records, policy)
+    assert access_count <= len(records) * 10
+    # Duplicate timestamps cannot satisfy abrupt_persistence_seconds (duration is 0)
+    assert "SOURCE_SWITCH_POSSIBLE" not in flags

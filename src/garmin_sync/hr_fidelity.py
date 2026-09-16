@@ -11,6 +11,7 @@ from typing import Literal
 from ._hr_fidelity_detectors import (
     activity_motion_risk,
     cadence_lock_flags,
+    source_switch_flags,
     transition_flags,
     workload_flags,
 )
@@ -59,6 +60,10 @@ class HrFidelityPolicy:
     abrupt_workload_context_seconds: float = 30.0
     abrupt_stable_power_delta_watts: float = 25.0
     abrupt_min_power_coverage_pct: float = 60.0
+    abrupt_stable_cadence_delta_rpm: float = 5.0
+    abrupt_min_cadence_coverage_pct: float = 60.0
+    abrupt_max_context_samples: int = 200
+    abrupt_max_workload_samples: int = 600
     cadence_tolerance_bpm: float = 3.0
     harmonic_tolerance_bpm: float = 5.0
     lock_min_duration_seconds: float = 60.0
@@ -144,6 +149,7 @@ def assess_activity_hr_fidelity(
         flags.update(transition_flags(window_valid, policy))
         flags.update(workload_flags(window_valid, policy))
         flags.update(cadence_lock_flags(activity_type, window_valid, policy))
+        flags.update(source_switch_flags(window_valid, policy))
 
     quality = _quality_from_evidence(
         source=source,
@@ -223,26 +229,47 @@ def _quality_from_evidence(
     ):
         confidence = "high"
 
+    # ADR-0031 amendment: if trace artifacts or unreliability are detected,
+    # provisional confirmed external provenance fails closed to ambiguous provenance.
+    effective_source = source
     if (
-        source.source_for_activity == "mixed_possible"
-        or source.provenance_confidence == "ambiguous"
+        source.source_for_activity == "external"
+        and source.provenance_confidence == "confirmed"
+        and (unreliable or suspect)
+    ):
+        effective_source = CanonicalHrSourceEvidence(
+            external_hr_sensor_present=source.external_hr_sensor_present,
+            source_for_activity="mixed_possible",
+            provenance_confidence="ambiguous",
+            sensor_technology=source.sensor_technology,
+        )
+
+    if (
+        effective_source.source_for_activity == "mixed_possible"
+        or effective_source.provenance_confidence == "ambiguous"
     ):
         reasons.add("PROVENANCE_AMBIGUOUS")
-    if source.source_for_activity == "unknown" or source.provenance_confidence == "unknown":
+    if (
+        effective_source.source_for_activity == "unknown"
+        or effective_source.provenance_confidence == "unknown"
+    ):
         reasons.add("SOURCE_UNKNOWN")
-    if source.provenance_confidence in {"ambiguous", "unknown"} or source.source_for_activity in {
+    if effective_source.provenance_confidence in {
+        "ambiguous",
+        "unknown",
+    } or effective_source.source_for_activity in {
         "mixed_possible",
         "unknown",
     }:
         confidence = _cap(confidence, "moderate")
-    if source.sensor_technology == "wrist_ppg" and motion_risk == "high":
+    if effective_source.sensor_technology == "wrist_ppg" and motion_risk == "high":
         confidence = _cap(confidence, "moderate")
 
     signal_quality: HrSignalQuality = (
         "poor" if confidence == "unreliable" else "suspect" if suspect else "clean"
     )
     return CanonicalHrMeasurementQuality(
-        source=source,
+        source=effective_source,
         activity_motion_risk=motion_risk,
         coverage_pct=round(coverage_pct, 1),
         longest_gap_seconds=round(longest_gap_seconds, 1),
