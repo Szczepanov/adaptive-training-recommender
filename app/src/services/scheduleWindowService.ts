@@ -5,7 +5,7 @@ import type { DataIssue, DataState } from '../engine/dataState';
 import { validateScheduleWindow, validateScheduleWindowManifest } from '../engine/scheduleWindows';
 import { getErrorCode } from '../utils/errors';
 
-type ScheduleWindowWithId = ScheduleWindow & { id: string };
+export type ScheduleWindowWithId = ScheduleWindow & { id: string };
 type NewScheduleWindowInput = Omit<ScheduleWindow, 'id' | 'userId' | 'revision' | 'createdAt' | 'updatedAt'>;
 type ScheduleWindowUpdates = Partial<Omit<ScheduleWindow, 'id' | 'userId' | 'revision' | 'createdAt' | 'updatedAt'>>;
 
