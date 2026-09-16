@@ -48,7 +48,6 @@ describe('workoutForTemplate lookup semantics', () => {
     const firstFallback = workout({
       id: 'cycling_zone2_standard_01',
       engineTemplateIds: [],
-      engineTemplatePriority: undefined,
       manualOnly: false,
       status: 'active'
     });
