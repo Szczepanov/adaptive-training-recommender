@@ -36,6 +36,18 @@ function validExternalPlanRevisionV4(restDays: unknown[] = [{ id: 'w1-fri-rest',
     };
 }
 
+function validExternalPlanRevisionV5(intentBlocks: unknown[] | undefined = [{ id: 'maintain-strength' }]) {
+    const plan: Record<string, unknown> = {
+        schema: 'adaptive-training-recommender/external-plan@5',
+        planId: 'autumn-block', revision: 1, title: '4-week block',
+        startDate: '2026-08-17', weekCount: 4,
+        sessions: [{ id: 'w1-a', title: 'Threshold', priority: 'key' }],
+        restDays: [{ id: 'w1-fri-rest', week: 1, day: 'friday' }],
+    };
+    if (intentBlocks !== undefined) plan.intentBlocks = intentBlocks;
+    return plan;
+}
+
 function validRecommendation() {
     return {
         userId: ownerId,
@@ -120,6 +132,31 @@ emulatorDescribe('Firestore rules — ADR-0035/0036 external-plan storage', () =
             await assertFails(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV3(restDays)));
             await assertFails(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV4(restDays)));
         }
+    });
+
+    it('accepts external-plan@5 revision bytes with intentBlocks, and with intentBlocks absent', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV5()))).resolves.toBeUndefined();
+
+        await testEnvironment.clearFirestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV5(undefined)))).resolves.toBeUndefined();
+    });
+
+    it('rejects a non-list intentBlocks value and an oversized intentBlocks list', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV5('not-a-list' as unknown as unknown[])));
+
+        await testEnvironment.clearFirestore();
+        const tooMany = Array.from({ length: 27 }, (_, i) => ({ id: `block-${i}` }));
+        await assertFails(setDoc(doc(ownerDb, revisionPath), validExternalPlanRevisionV5(tooMany)));
+    });
+
+    it('rejects an intentBlocks field on v3/v4 -- the field is v5-only', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await assertFails(setDoc(doc(ownerDb, revisionPath), { ...validExternalPlanRevisionV3(), intentBlocks: [{ id: 'x' }] }));
+
+        await testEnvironment.clearFirestore();
+        await assertFails(setDoc(doc(ownerDb, revisionPath), { ...validExternalPlanRevisionV4(), intentBlocks: [{ id: 'x' }] }));
     });
 
     it('binds externalRest provenance to canonical rest_01', async () => {

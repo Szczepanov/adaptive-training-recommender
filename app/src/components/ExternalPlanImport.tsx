@@ -3,6 +3,7 @@ import { validateExternalTrainingPlan } from '../engine/validation';
 import { impliedDate } from '../engine/externalPlacement';
 import { type ExternalPlanHeader, type ObjectiveKey } from '../engine/models';
 import { externalPlanService } from '../services/externalPlanService';
+import { activateIntentBlocksFromPlan, type IntentBlockActivationResult } from '../services/externalPlanV5ActivationService';
 import { getLocalDateString } from '../utils/localDate';
 import { diffPlans, type PlanDiffRow } from './externalPlanDiff';
 import {
@@ -13,6 +14,8 @@ import {
     type AnyExternalPlanSession,
 } from '../sessions/externalPlanV2';
 import { validateExternalTrainingPlanV3, EXTERNAL_PLAN_SCHEMA_V3 } from '../sessions/externalPlanV3';
+import { validateExternalTrainingPlanV4, EXTERNAL_PLAN_SCHEMA_V4 } from '../sessions/externalPlanV4';
+import { validateExternalTrainingPlanV5, EXTERNAL_PLAN_SCHEMA_V5, isV5Plan } from '../sessions/externalPlanV5';
 import { SessionDefinitionPreview } from './session/SessionDefinitionPreview';
 import './ExternalPlanImport.css';
 
@@ -26,15 +29,19 @@ type Phase =
     | { kind: 'invalid'; issues: { field: string; message: string }[] }
     | { kind: 'previewing'; plan: ExternalTrainingPlan; previous: ExternalPlanHeader | null }
     | { kind: 'saving' }
-    | { kind: 'saved'; plan: ExternalTrainingPlan; untagged: AnyExternalPlanSession[] }
+    | { kind: 'saved'; plan: ExternalTrainingPlan; untagged: AnyExternalPlanSession[]; intentBlockResults: IntentBlockActivationResult[] }
     | { kind: 'failed'; message: string };
 
-/** Dispatches to the v1, v2 or v3 validator based on the pasted document's own `schema`
- * literal, mirroring `externalPlanService.ts`'s own dispatcher (kept separate rather than
- * imported from there since that one isn't exported, and a UI validate-before-save step
- * has no service dependency otherwise). */
+/** Dispatches to the v1-v5 validator based on the pasted document's own `schema` literal,
+ * mirroring `externalPlanService.ts`'s own dispatcher (kept separate rather than imported
+ * from there since that one isn't exported, and a UI validate-before-save step has no
+ * service dependency otherwise). Previously stopped at v3, silently rejecting a pasted v4
+ * plan before it ever reached the service's own (more complete) dispatcher -- fixed here
+ * alongside adding v5, since leaving that gap while adding v5 support would be confusing. */
 function validateAnyExternalTrainingPlan(raw: unknown) {
     const schema = (raw as { schema?: unknown } | null)?.schema;
+    if (schema === EXTERNAL_PLAN_SCHEMA_V5) return validateExternalTrainingPlanV5(raw);
+    if (schema === EXTERNAL_PLAN_SCHEMA_V4) return validateExternalTrainingPlanV4(raw);
     if (schema === EXTERNAL_PLAN_SCHEMA_V3) return validateExternalTrainingPlanV3(raw);
     if (schema === EXTERNAL_PLAN_SCHEMA_V2) return validateExternalTrainingPlanV2(raw);
     return validateExternalTrainingPlan(raw);
@@ -133,10 +140,15 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
         // the recommendation and audit they were given (ADR-0019 D-IMMUT).
         const result = await externalPlanService.import(userId, plan, today);
         if (result.status === 'AVAILABLE') {
+            // v5's intentBlocks are materialized as real IntentBlocks only after the plan
+            // revision itself is safely stored -- never before, since a failed plan import
+            // must not leave orphaned intent blocks sourced from a plan that was never saved.
+            const intentBlockResults = isV5Plan(plan) ? await activateIntentBlocksFromPlan(userId, plan) : [];
             setPhase({
                 kind: 'saved',
                 plan,
                 untagged: plan.sessions.filter(session => !session.objectives || session.objectives.length === 0),
+                intentBlockResults,
             });
             onImported?.();
             return;
@@ -249,6 +261,20 @@ export function ExternalPlanImport({ userId, onImported }: ExternalPlanImportPro
                             Revision {phase.plan.revision}, {phase.plan.sessions.length} sessions,
                             {' '}effective from {today}. Days already decided keep the recommendation they were given.
                         </p>
+                        {phase.intentBlockResults.length > 0 && (
+                            <div className="external-import-objectives">
+                                <h5>Intent blocks</h5>
+                                <ul>
+                                    {phase.intentBlockResults.map(result => (
+                                        <li key={result.entryId}>
+                                            {result.outcome.status === 'saved'
+                                                ? `${result.entryId}: saved (revision ${result.outcome.header.revision})`
+                                                : `${result.entryId}: not saved — ${result.outcome.message}`}
+                                        </li>
+                                    ))}
+                                </ul>
+                            </div>
+                        )}
                         {phase.untagged.length > 0 && (
                             <div className="external-import-objectives">
                                 <h5>Confirm what these sessions are for</h5>
@@ -402,6 +428,22 @@ export function PlanPreview({ plan, previous, diff, onConfirm, onCancel }: PlanP
             )}
             {diff && diff.length === 0 && (
                 <p className="external-import-preview-meta">No session differs from the stored revision.</p>
+            )}
+
+            {isV5Plan(plan) && plan.intentBlocks && plan.intentBlocks.length > 0 && (
+                <div className="external-import-diff">
+                    <h5>Intent blocks this import will author</h5>
+                    <ul>
+                        {plan.intentBlocks.map(block => (
+                            <li key={block.id}>
+                                <strong>{block.title ?? block.id}</strong> — week {block.startWeek} ({block.startDay}) through
+                                {' '}week {block.endWeek} ({block.endDay}), {block.objectives.length} objective
+                                {block.objectives.length === 1 ? '' : 's'}
+                                {block.progressionContract ? ', with a progression contract' : ''}.
+                            </li>
+                        ))}
+                    </ul>
+                </div>
             )}
 
             <ol className="external-import-sessions">
