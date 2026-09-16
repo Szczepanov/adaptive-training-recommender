@@ -3,8 +3,13 @@ import { WORKOUTS } from './catalog.ts';
 import type { WorkoutDefinition } from './models.ts';
 import { workoutForTemplate } from './prescription.ts';
 
-const seedWorkout = WORKOUTS.find((workout) => workout.status === 'active' && !workout.manualOnly);
-if (!seedWorkout) throw new Error('Expected at least one active automatic workout fixture');
+function requireAutomaticWorkoutSeed(): WorkoutDefinition {
+  const seed = WORKOUTS.find((workout) => workout.status === 'active' && !workout.manualOnly);
+  if (!seed) throw new Error('Expected at least one active automatic workout fixture');
+  return seed;
+}
+
+const seedWorkout = requireAutomaticWorkoutSeed();
 
 function workout(overrides: Partial<WorkoutDefinition>): WorkoutDefinition {
   return { ...seedWorkout, ...overrides };
