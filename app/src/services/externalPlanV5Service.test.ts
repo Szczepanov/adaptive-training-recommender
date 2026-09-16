@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import fixture01 from '../sessions/fixtures/01-full-body-maintenance.json';
+import { EXTERNAL_PLAN_SCHEMA_V4 } from '../sessions/externalPlanV4';
 import { EXTERNAL_PLAN_SCHEMA_V5 } from '../sessions/externalPlanV5';
 
 const firestore = vi.hoisted(() => {
@@ -124,5 +125,50 @@ describe('ExternalPlanService external-plan@5 integration', () => {
         });
 
         expect(await computeContentHash(original)).not.toBe(await computeContentHash(changed));
+    });
+
+    it('allows a newer v5 revision to supersede an existing block when its stable id is retained', async () => {
+        firestore.getDoc
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
+            .mockResolvedValueOnce({ exists: () => true, data: () => v5Plan({ revision: 2 }) });
+
+        const result = await new ExternalPlanService().import('u1', v5Plan({ revision: 3 }));
+
+        expect(result.status).toBe('AVAILABLE');
+        expect(firestore.batch.set).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects implicit retirement when a newer v5 revision omits a previously materializable block id', async () => {
+        firestore.getDoc
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
+            .mockResolvedValueOnce({ exists: () => true, data: () => v5Plan({ revision: 2 }) });
+
+        const result = await new ExternalPlanService().import('u1', v5Plan({ revision: 3, intentBlocks: [] }));
+
+        expect(result.status).toBe('INVALID');
+        if (result.status !== 'INVALID') throw new Error('unreachable');
+        expect(result.issues).toContainEqual(expect.objectContaining({
+            code: 'intent-block-retirement-unsupported',
+            field: 'intentBlocks.block-1',
+        }));
+        expect(firestore.writeBatch).not.toHaveBeenCalled();
+    });
+
+    it('rejects a schema downgrade that would silently strand v5 intent blocks', async () => {
+        firestore.getDoc
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 2 }) })
+            .mockResolvedValueOnce({ exists: () => true, data: () => v5Plan({ revision: 2 }) });
+        const downgraded = v5Plan({ schema: EXTERNAL_PLAN_SCHEMA_V4, revision: 3 }) as Record<string, unknown>;
+        delete downgraded.intentBlocks;
+
+        const result = await new ExternalPlanService().import('u1', downgraded);
+
+        expect(result.status).toBe('INVALID');
+        if (result.status !== 'INVALID') throw new Error('unreachable');
+        expect(result.issues).toContainEqual(expect.objectContaining({
+            code: 'intent-block-retirement-unsupported',
+            field: 'schema',
+        }));
+        expect(firestore.writeBatch).not.toHaveBeenCalled();
     });
 });
