@@ -60,6 +60,14 @@ When Garmin source switching is possible but sample-level provenance is not avai
 
 External-sensor presence alone SHALL NOT be sufficient to produce a high-confidence external-source classification.
 
+**Amendment (2026-09-16 — Trace-verified external strap provenance):**
+
+Where Garmin FIT activity files lack per-sample `device_index` attribution on the primary record track:
+
+1. **Dedicated head units without optical sensors (e.g. Garmin Edge series):** Dynamic source switching is physically impossible. When paired with a single verified electrode chest strap, provenance SHALL be classified as `external` and `confirmed`. Unidentified external sensors remain `mixed_possible` / `ambiguous` (`external_unknown`).
+2. **Wrist wearables with paired electrode chest straps (e.g. Forerunner, Fenix):** When a single verified electrode chest strap is paired and no secondary source-switching stream or switching artifact signature is detected, provenance MAY be provisionally attributed as `external` and `confirmed`. High confidence is awarded only when accompanied by assessable, clean signal quality ($\ge 95\%$ coverage, zero artifact flags). If source-switching signatures, multi-sensor conflicts, or trace artifacts are detected, provenance fails closed to `mixed_possible` / `ambiguous` (capped at moderate or lower).
+3. **Competing external sensors:** Multiple conflicting external HR sensors in inventory SHALL fail closed to `mixed_possible` / `ambiguous`.
+
 ### D-HRF-CONTEXT — activity and sensor type provide priors, not final truth
 
 Sensor technology and activity/motion context MAY establish a conservative prior reliability.
@@ -72,7 +80,7 @@ However:
 - a chest strap is not automatically infallible;
 - a clean-looking high-motion wrist trace is not automatically proven accurate;
 - population validation informs priors but does not replace athlete/device/activity-specific evidence;
-- strap presence with ambiguous source switching cannot be upgraded to a confirmed strap source merely because the trace looks clean.
+- strap presence cannot be upgraded to a confirmed strap source when conflicting sensors, secondary switching streams, or trace artifacts are present.
 
 ### D-HRF-TRACE — evaluate the actual trace when available
 

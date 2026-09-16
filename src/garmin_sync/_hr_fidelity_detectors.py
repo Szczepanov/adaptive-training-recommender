@@ -64,6 +64,18 @@ class ArtifactPolicy(Protocol):
     def abrupt_min_power_coverage_pct(self) -> float: ...
 
     @property
+    def abrupt_stable_cadence_delta_rpm(self) -> float: ...
+
+    @property
+    def abrupt_min_cadence_coverage_pct(self) -> float: ...
+
+    @property
+    def abrupt_max_context_samples(self) -> int: ...
+
+    @property
+    def abrupt_max_workload_samples(self) -> int: ...
+
+    @property
     def cadence_tolerance_bpm(self) -> float: ...
 
     @property
@@ -145,26 +157,44 @@ def transition_flags(records: list[FitRecordSample], policy: ArtifactPolicy) -> 
             continue
 
         transition = record_timestamp(current)
-        before = [
-            record
-            for record in records[:index]
-            if 0
-            <= (transition - record_timestamp(record)).total_seconds()
-            <= policy.abrupt_context_seconds
-        ]
-        after = [
-            record
-            for record in records[index:]
-            if 0
-            <= (record_timestamp(record) - transition).total_seconds()
-            <= policy.abrupt_context_seconds
-        ]
-        if not _has_persistent_context(before, after, policy):
+        b_start, b_end = _local_window_before_bounds(
+            records,
+            index,
+            transition,
+            policy.abrupt_context_seconds,
+            max_samples=policy.abrupt_max_context_samples,
+        )
+        if (
+            b_end - b_start < 2
+            or (
+                record_timestamp(records[b_end - 1]) - record_timestamp(records[b_start])
+            ).total_seconds()
+            < policy.abrupt_persistence_seconds
+        ):
             continue
+
+        a_start, a_end = _local_window_after_bounds(
+            records,
+            index,
+            transition,
+            policy.abrupt_context_seconds,
+            max_samples=policy.abrupt_max_context_samples,
+        )
+        if (
+            a_end - a_start < 2
+            or (
+                record_timestamp(records[a_end - 1]) - record_timestamp(records[a_start])
+            ).total_seconds()
+            < policy.abrupt_persistence_seconds
+        ):
+            continue
+
+        before = records[b_start:b_end]
+        after = records[a_start:a_end]
         delta = median(_hr_values(after)) - median(_hr_values(before))
         if abs(delta) < policy.abrupt_change_bpm:
             continue
-        if not _stable_independent_workload(records, transition, policy):
+        if not _stable_independent_workload(records, index, transition, policy):
             continue
         flags.add("ABRUPT_JUMP" if delta > 0 else "ABRUPT_DROP")
     return flags
@@ -271,30 +301,121 @@ def _hr_values(records: list[FitRecordSample]) -> list[float]:
     return values
 
 
+def _local_window_before_bounds(
+    records: list[FitRecordSample],
+    index: int,
+    transition: datetime,
+    context_seconds: float,
+    *,
+    max_samples: int = 200,
+) -> tuple[int, int]:
+    min_start = max(0, index - max_samples)
+    if (
+        min_start < index
+        and (transition - record_timestamp(records[min_start])).total_seconds() <= context_seconds
+    ):
+        return min_start, index
+    start = index - 1
+    count = 0
+    while start >= 0 and count < max_samples:
+        dt = (transition - record_timestamp(records[start])).total_seconds()
+        if dt > context_seconds:
+            break
+        start -= 1
+        count += 1
+    return start + 1, index
+
+
+def _local_window_after_bounds(
+    records: list[FitRecordSample],
+    index: int,
+    transition: datetime,
+    context_seconds: float,
+    *,
+    max_samples: int = 200,
+) -> tuple[int, int]:
+    max_end = min(len(records), index + max_samples)
+    if (
+        max_end > index
+        and (record_timestamp(records[max_end - 1]) - transition).total_seconds() <= context_seconds
+    ):
+        return index, max_end
+    end = index
+    n = len(records)
+    count = 0
+    while end < n and count < max_samples:
+        dt = (record_timestamp(records[end]) - transition).total_seconds()
+        if dt > context_seconds:
+            break
+        end += 1
+        count += 1
+    return index, end
+
+
+def _local_window_before(
+    records: list[FitRecordSample],
+    index: int,
+    transition: datetime,
+    context_seconds: float,
+    *,
+    strict: bool = False,
+    max_samples: int = 200,
+) -> list[FitRecordSample]:
+    b_start, b_end = _local_window_before_bounds(
+        records, index, transition, context_seconds, max_samples=max_samples
+    )
+    window = records[b_start:b_end]
+    if strict:
+        return [r for r in window if record_timestamp(r) < transition]
+    return window
+
+
+def _local_window_after(
+    records: list[FitRecordSample],
+    index: int,
+    transition: datetime,
+    context_seconds: float,
+    *,
+    max_samples: int = 200,
+) -> list[FitRecordSample]:
+    a_start, a_end = _local_window_after_bounds(
+        records, index, transition, context_seconds, max_samples=max_samples
+    )
+    return records[a_start:a_end]
+
+
 def _stable_independent_workload(
     records: list[FitRecordSample],
+    index: int,
     transition: datetime,
     policy: ArtifactPolicy,
 ) -> bool:
-    before = [
-        record
-        for record in records
-        if 0
-        < (transition - record_timestamp(record)).total_seconds()
-        <= policy.abrupt_workload_context_seconds
-    ]
-    after = [
-        record
-        for record in records
-        if 0
-        <= (record_timestamp(record) - transition).total_seconds()
-        <= policy.abrupt_workload_context_seconds
-    ]
+    before = _local_window_before(
+        records,
+        index,
+        transition,
+        policy.abrupt_workload_context_seconds,
+        strict=True,
+        max_samples=policy.abrupt_max_workload_samples,
+    )
+    after = _local_window_after(
+        records,
+        index,
+        transition,
+        policy.abrupt_workload_context_seconds,
+        max_samples=policy.abrupt_max_workload_samples,
+    )
     before_power = _covered_power_median(before, policy.abrupt_min_power_coverage_pct)
     after_power = _covered_power_median(after, policy.abrupt_min_power_coverage_pct)
-    if before_power is None or after_power is None:
-        return False
-    return abs(after_power - before_power) <= policy.abrupt_stable_power_delta_watts
+    if before_power is not None and after_power is not None:
+        return abs(after_power - before_power) <= policy.abrupt_stable_power_delta_watts
+
+    before_cadence = _covered_cadence_median(before, policy.abrupt_min_cadence_coverage_pct)
+    after_cadence = _covered_cadence_median(after, policy.abrupt_min_cadence_coverage_pct)
+    if before_cadence is not None and after_cadence is not None:
+        return abs(after_cadence - before_cadence) <= policy.abrupt_stable_cadence_delta_rpm
+
+    return False
 
 
 def _covered_power_median(records: list[FitRecordSample], min_coverage_pct: float) -> float | None:
@@ -304,9 +425,23 @@ def _covered_power_median(records: list[FitRecordSample], min_coverage_pct: floa
     for record in records:
         if record.power_watts is not None:
             powers.append(record.power_watts)
-    if (len(powers) / len(records)) * 100.0 < min_coverage_pct:
+    if not powers or (len(powers) / len(records)) * 100.0 < min_coverage_pct:
         return None
     return float(median(powers))
+
+
+def _covered_cadence_median(
+    records: list[FitRecordSample], min_coverage_pct: float
+) -> float | None:
+    if not records:
+        return None
+    cadences: list[float] = []
+    for record in records:
+        if record.cadence_rpm is not None:
+            cadences.append(record.cadence_rpm)
+    if not cadences or (len(cadences) / len(records)) * 100.0 < min_coverage_pct:
+        return None
+    return float(median(cadences))
 
 
 def _rolling_time_blocks(
@@ -393,3 +528,60 @@ def _cadence_context_is_suspicious(records: list[FitRecordSample], policy: Artif
 def _twice_cadence(record: FitRecordSample) -> float:
     assert record.cadence_rpm is not None
     return 2.0 * record.cadence_rpm
+
+
+def source_switch_flags(records: list[FitRecordSample], policy: ArtifactPolicy) -> set[str]:
+    """Detect plausible source-switch signatures between strap ECG and wrist PPG."""
+    flags: set[str] = set()
+    for index in range(1, len(records)):
+        previous = records[index - 1]
+        current = records[index]
+        if not _nearby(previous, current, policy):
+            continue
+        assert previous.heart_rate_bpm is not None
+        assert current.heart_rate_bpm is not None
+        if abs(current.heart_rate_bpm - previous.heart_rate_bpm) < policy.abrupt_change_bpm:
+            continue
+
+        transition = record_timestamp(current)
+        b_start, b_end = _local_window_before_bounds(
+            records,
+            index,
+            transition,
+            policy.abrupt_context_seconds,
+            max_samples=policy.abrupt_max_context_samples,
+        )
+        if (
+            b_end - b_start < 2
+            or (
+                record_timestamp(records[b_end - 1]) - record_timestamp(records[b_start])
+            ).total_seconds()
+            < policy.abrupt_persistence_seconds
+        ):
+            continue
+
+        a_start, a_end = _local_window_after_bounds(
+            records,
+            index,
+            transition,
+            policy.abrupt_context_seconds,
+            max_samples=policy.abrupt_max_context_samples,
+        )
+        if (
+            a_end - a_start < 2
+            or (
+                record_timestamp(records[a_end - 1]) - record_timestamp(records[a_start])
+            ).total_seconds()
+            < policy.abrupt_persistence_seconds
+        ):
+            continue
+
+        before = records[b_start:b_end]
+        after = records[a_start:a_end]
+        delta = abs(median(_hr_values(after)) - median(_hr_values(before)))
+        if delta >= policy.abrupt_change_bpm and _stable_independent_workload(
+            records, index, transition, policy
+        ):
+            flags.add("SOURCE_SWITCH_POSSIBLE")
+            break
+    return flags
