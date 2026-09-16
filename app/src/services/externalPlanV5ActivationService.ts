@@ -44,8 +44,10 @@ export interface IntentBlockActivationResult {
 }
 
 /** The minimal `IntentBlockService` surface this module needs -- narrowed so a test double
- * only has to implement two methods instead of the whole class. */
-export type IntentBlockActivationServiceDependency = Pick<IntentBlockService, 'getHeaderState' | 'save'>;
+ * only has to implement these methods instead of the whole class. `getRevisionState` backs
+ * the idempotent-retry check below: a header alone cannot prove its revision document was
+ * ever actually written, only `getRevisionState`'s own shape/content-hash re-validation can. */
+export type IntentBlockActivationServiceDependency = Pick<IntentBlockService, 'getHeaderState' | 'getRevisionState' | 'save'>;
 
 /**
  * Materializes every entry in `plan.intentBlocks` (if any) as a real `IntentBlock` revision.
@@ -82,11 +84,19 @@ export async function activateIntentBlocksFromPlan(
                     throw new Error(`IntentBlock '${blockId}' already comes from newer source plan revision ${existing.sourcePlanRevision}`);
                 }
                 if (existing.sourcePlanRevision === plan.revision) {
-                    // The external plan revision is immutable. Reaching the same source revision
-                    // again means this entry was already materialized (for example after a
-                    // caller retries a partially-failed activation), so do not manufacture an
-                    // extra native revision or overwrite later athlete review state.
-                    return { entryId: entry.id, blockId, outcome: { status: 'saved', header: existing } };
+                    // The external plan revision is immutable, so reaching the same source
+                    // revision again normally means this entry was already materialized (for
+                    // example after a caller retries a partially-failed activation) -- but the
+                    // header alone does not prove its revision document actually exists and is
+                    // valid; save()'s header+revision writes are not transactional together, and
+                    // rules allow either document to be written independently. Verify the
+                    // revision itself before reporting success, so a missing/invalid/
+                    // hash-inconsistent revision is repaired (a fresh revision written) rather
+                    // than silently reported as already-saved.
+                    const revisionState = await service.getRevisionState(userId, blockId, existing.revision);
+                    if (revisionState.status === 'AVAILABLE') {
+                        return { entryId: entry.id, blockId, outcome: { status: 'saved', header: existing } };
+                    }
                 }
                 existingRevision = existing.revision;
             } else if (headerState.status === 'INVALID') {

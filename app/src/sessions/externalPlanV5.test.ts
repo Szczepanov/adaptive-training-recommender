@@ -265,6 +265,24 @@ describe('external-plan@5 (ADR-0037 D-SCHEMA)', () => {
         expect(result.isValid).toBe(false);
         expect(result.errors).toContainEqual(expect.objectContaining({ field: 'schema' }));
     });
+
+    it('reports an invalid/missing startDate without throwing, even with intentBlocks present', () => {
+        // resolveExternalIntentBlock's addDaysToLocalDateString does a bare `.split('-')` on
+        // startDate -- a malformed startDate must gate intent-block resolution off rather than
+        // reaching that call, so the reported startDate error is the only failure, not a crash.
+        for (const startDate of [undefined, null, 'not-a-date', '2026-02-31']) {
+            expect(() => validateExternalTrainingPlanV5(planV5({
+                startDate: startDate as unknown as string,
+                intentBlocks: [intentBlock()],
+            }))).not.toThrow();
+            const result = validateExternalTrainingPlanV5(planV5({
+                startDate: startDate as unknown as string,
+                intentBlocks: [intentBlock()],
+            }));
+            expect(result.isValid).toBe(false);
+            expect(result.errors.some(e => e.field === 'startDate')).toBe(true);
+        }
+    });
 });
 
 describe('resolveExternalIntentBlock', () => {

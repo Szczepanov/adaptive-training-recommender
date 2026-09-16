@@ -32,6 +32,7 @@ import {
     validateExternalPlanEnvelope,
     unknownKeys,
     isPositiveInt,
+    isValidDate,
     EXTERNAL_WEEKDAYS,
     EXTERNAL_PLAN_MAX_WEEKS,
     type ValidationError,
@@ -312,11 +313,18 @@ export function validateExternalIntentBlocks(raw: any, sessions: readonly any[],
     const sessionIds = sessionIdSet(sessions);
     const stepsBySession = sessionStepIds(sessions);
     const resolvedBlocks: IntentBlock[] = [];
+    // `validateExternalPlanEnvelope` reports an invalid/missing startDate as its own error but
+    // does not stop this function from also running -- resolving a block against a malformed
+    // startDate would crash inside addDaysToLocalDateString (a bare `.split('-')`) before that
+    // reported error ever surfaces. Gate resolution on the same full-date validity check the
+    // envelope itself uses, not just a shape check; the separate Monday-of-week-1 rule can
+    // still be reported for a valid-but-non-Monday date without this guard being involved.
+    const canResolveDates = typeof raw.startDate === 'string' && isValidDate(raw.startDate);
 
     raw.intentBlocks.forEach((entry: unknown, index: number) => {
         const resolvable = validateExternalIntentBlockField(entry, index, weekCount, errors);
         validateIntentBlockSessionReferences(entry, index, sessionIds, stepsBySession, errors);
-        if (resolvable) {
+        if (resolvable && canResolveDates) {
             resolvedBlocks.push(resolveExternalIntentBlock(
                 { planId: raw.planId, revision: raw.revision, startDate: raw.startDate },
                 entry as ExternalIntentBlockV5,

@@ -65,17 +65,20 @@ function header(overrides: Partial<IntentBlockHeader> = {}): IntentBlockHeader {
 describe('activateIntentBlocksFromPlan', () => {
     it('returns [] for a plan with no intentBlocks -- absence never triggers a Firestore call', async () => {
         const getHeaderState = vi.fn();
+        const getRevisionState = vi.fn();
         const save = vi.fn();
-        const results = await activateIntentBlocksFromPlan('user-1', plan({ intentBlocks: undefined }), { getHeaderState, save });
+        const results = await activateIntentBlocksFromPlan('user-1', plan({ intentBlocks: undefined }), { getHeaderState, getRevisionState, save });
         expect(results).toEqual([]);
         expect(getHeaderState).not.toHaveBeenCalled();
+        expect(getRevisionState).not.toHaveBeenCalled();
         expect(save).not.toHaveBeenCalled();
     });
 
     it('saves a first revision (revision 1) for a block with no existing header', async () => {
         const getHeaderState = vi.fn().mockResolvedValue({ status: 'MISSING' });
+        const getRevisionState = vi.fn();
         const save = vi.fn().mockResolvedValue(header());
-        const service: IntentBlockActivationServiceDependency = { getHeaderState, save };
+        const service: IntentBlockActivationServiceDependency = { getHeaderState, getRevisionState, save };
 
         const results = await activateIntentBlocksFromPlan('user-1', plan(), service);
 
@@ -93,33 +96,61 @@ describe('activateIntentBlocksFromPlan', () => {
 
     it('continues an existing block\'s revision sequence for a newer source-plan revision', async () => {
         const getHeaderState = vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: header({ revision: 4 }) });
+        const getRevisionState = vi.fn();
         const save = vi.fn().mockResolvedValue(header({ revision: 5, sourcePlanRevision: 2 }));
-        const results = await activateIntentBlocksFromPlan('user-1', plan({ revision: 2 }), { getHeaderState, save });
+        const results = await activateIntentBlocksFromPlan('user-1', plan({ revision: 2 }), { getHeaderState, getRevisionState, save });
 
         expect(results[0].outcome).toEqual({ status: 'saved', header: header({ revision: 5, sourcePlanRevision: 2 }) });
         expect(save.mock.calls[0][1].revision).toBe(5);
         expect(save.mock.calls[0][1].sourcePlanRevision).toBe(2);
+        // A newer source-plan revision never hits the idempotent same-revision check.
+        expect(getRevisionState).not.toHaveBeenCalled();
     });
 
-    it('is idempotent for the same immutable source-plan revision', async () => {
+    it('is idempotent for the same immutable source-plan revision, once the persisted revision itself is verified', async () => {
         const existing = header({ revision: 4, sourcePlanRevision: 1 });
         const getHeaderState = vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: existing });
+        const getRevisionState = vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: { block: {} } });
         const save = vi.fn();
 
-        const results = await activateIntentBlocksFromPlan('user-1', plan({ revision: 1 }), { getHeaderState, save });
+        const results = await activateIntentBlocksFromPlan('user-1', plan({ revision: 1 }), { getHeaderState, getRevisionState, save });
 
         expect(results).toEqual([{ entryId: 'block-1', blockId: 'v5-import-1::block-1', outcome: { status: 'saved', header: existing } }]);
+        expect(getRevisionState).toHaveBeenCalledWith('user-1', 'v5-import-1::block-1', 4);
         expect(save).not.toHaveBeenCalled();
     });
 
+    it('repairs by writing a fresh revision when the header claims a revision that is actually missing, invalid or hash-inconsistent', async () => {
+        const existing = header({ revision: 4, sourcePlanRevision: 1 });
+        for (const revisionState of [
+            { status: 'MISSING' },
+            { status: 'INVALID', issues: [{ code: 'content-hash-mismatch' }] },
+        ] as const) {
+            const getHeaderState = vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: existing });
+            const getRevisionState = vi.fn().mockResolvedValue(revisionState);
+            const save = vi.fn().mockResolvedValue(header({ revision: 5, sourcePlanRevision: 1 }));
+
+            const results = await activateIntentBlocksFromPlan('user-1', plan({ revision: 1 }), { getHeaderState, getRevisionState, save });
+
+            // Not a false "already saved" success: a real save happens, continuing the
+            // existing header's own revision counter rather than reporting the stale claim.
+            expect(save).toHaveBeenCalledTimes(1);
+            expect(save.mock.calls[0][1].revision).toBe(5);
+            expect(results[0].outcome).toEqual({ status: 'saved', header: header({ revision: 5, sourcePlanRevision: 1 }) });
+        }
+    });
+
     it('fails closed when the existing header cannot be read safely', async () => {
+        const getRevisionState = vi.fn();
         const save = vi.fn();
         const unavailable = await activateIntentBlocksFromPlan('user-1', plan(), {
             getHeaderState: vi.fn().mockResolvedValue({ status: 'UNAVAILABLE', operation: 'read intent block header', retryable: true, message: 'network down' }),
+            getRevisionState,
             save,
         });
         const invalid = await activateIntentBlocksFromPlan('user-1', plan(), {
             getHeaderState: vi.fn().mockResolvedValue({ status: 'INVALID', issues: [{ code: 'path-identity-mismatch' }] }),
+            getRevisionState,
             save,
         });
 
@@ -127,17 +158,21 @@ describe('activateIntentBlocksFromPlan', () => {
         expect(unavailable[0].outcome.status === 'failed' && unavailable[0].outcome.message).toContain('network down');
         expect(invalid[0].outcome.status).toBe('failed');
         expect(invalid[0].outcome.status === 'failed' && invalid[0].outcome.message).toContain('invalid');
+        expect(getRevisionState).not.toHaveBeenCalled();
         expect(save).not.toHaveBeenCalled();
     });
 
     it('refuses stale or colliding source ownership instead of overwriting it', async () => {
+        const getRevisionState = vi.fn();
         const save = vi.fn();
         const stale = await activateIntentBlocksFromPlan('user-1', plan({ revision: 1 }), {
             getHeaderState: vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: header({ revision: 4, sourcePlanRevision: 2 }) }),
+            getRevisionState,
             save,
         });
         const collision = await activateIntentBlocksFromPlan('user-1', plan({ revision: 2 }), {
             getHeaderState: vi.fn().mockResolvedValue({ status: 'AVAILABLE', data: header({ revision: 4, sourcePlanId: 'some-other-source' }) }),
+            getRevisionState,
             save,
         });
 
@@ -145,6 +180,7 @@ describe('activateIntentBlocksFromPlan', () => {
         expect(stale[0].outcome.status === 'failed' && stale[0].outcome.message).toContain('newer source plan revision');
         expect(collision[0].outcome.status).toBe('failed');
         expect(collision[0].outcome.status === 'failed' && collision[0].outcome.message).toContain('already owned');
+        expect(getRevisionState).not.toHaveBeenCalled();
         expect(save).not.toHaveBeenCalled();
     });
 
@@ -154,6 +190,7 @@ describe('activateIntentBlocksFromPlan', () => {
 
     it('reports one block\'s failure without throwing and without blocking other blocks', async () => {
         const getHeaderState = vi.fn().mockResolvedValue({ status: 'MISSING' });
+        const getRevisionState = vi.fn();
         const save = vi.fn()
             .mockRejectedValueOnce(new Error('IntentBlock validation failed: boom'))
             .mockResolvedValueOnce(header({ blockId: 'v5-import-1::block-2' }));
@@ -161,7 +198,7 @@ describe('activateIntentBlocksFromPlan', () => {
         const results = await activateIntentBlocksFromPlan(
             'user-1',
             plan({ intentBlocks: [entry({ id: 'block-1' }), entry({ id: 'block-2' })] }),
-            { getHeaderState, save },
+            { getHeaderState, getRevisionState, save },
         );
 
         expect(results).toHaveLength(2);
