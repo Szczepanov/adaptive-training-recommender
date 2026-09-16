@@ -36,7 +36,7 @@ export interface SessionResponse {
     occurrenceId?: string;
     window: ResponseWindow;
     /** Warsaw-local date this response was recorded for -- equal to `sourceSession.date`
-     * for `immediate`, later for `later_day`/`next_morning`. */
+     * for `immediate` and same-day `later_day`, and later for `next_morning`. */
     date: string;
     /** Points at the canonical daily check-in that holds this window's tissue values.
      * Never duplicated here -- see the module doc comment. */
