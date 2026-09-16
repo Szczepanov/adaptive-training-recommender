@@ -137,5 +137,9 @@ describe('GarminSyncBadge', () => {
         const html = renderToStaticMarkup(<GarminSyncBadge userId="u1" />);
         expect(html).toContain('Garmin: Status unavailable');
         expect(html).toContain('disabled');
+        // A stalled status check is not the same severity as a real sync failure -- must
+        // not reuse status-failed's alarm styling for "we couldn't tell right now".
+        expect(html).toContain('status-unknown');
+        expect(html).not.toContain('status-failed');
     });
 });

@@ -96,6 +96,11 @@ function formatCandidateBaseline(
   return `7d med ${formatCandidateNumber(median7d)} · 28d med ${formatCandidateNumber(median28d)} · MAD ${formatCandidateNumber(mad28d)} · Δ7 ${formatCandidateDelta(delta7d)} · Δ28 ${formatCandidateDelta(delta28d)}`;
 }
 
+// A schema/algorithm rollout gate on the account, not a fact about the athlete's own data --
+// naming the internal version number ("requires baseline v4") tells the reader nothing
+// actionable, so every gated field uses this one neutral label instead.
+const VERSION_GATED_NOT_AVAILABLE = 'Not available yet';
+
 export function DataView({ decisionInput, userId, initialTab = 'recovery', onNavigateToBrief, onRetry, onBack }: DataViewProps) {
   const [activeTab, setActiveTab] = useState<DataViewTab>(initialTab);
   const [brief, setBrief] = useState<ContextBriefResult | null>(null);
@@ -436,16 +441,16 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             <span className="data-value">{recoverySnapshot?.derived.steps28dStdev ?? 'N/A'}</span>
           </div>
           <div className="data-item">
-            <span className="data-label">{baselineVersion >= 3 ? 'Respiration 7d Median:' : 'Respiration 7d Avg (legacy pre-v3):'}</span>
+            <span className="data-label">{baselineVersion >= 3 ? 'Respiration 7d Median:' : 'Respiration 7d Avg:'}</span>
             <span className="data-value">{recoverySnapshot?.derived.respiration7dAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
-            <span className="data-label">{baselineVersion >= 3 ? 'Respiration 28d Median:' : 'Respiration 28d Avg (legacy pre-v3):'}</span>
+            <span className="data-label">{baselineVersion >= 3 ? 'Respiration 28d Median:' : 'Respiration 28d Avg:'}</span>
             <span className="data-value">{recoverySnapshot?.derived.respiration28dAvg ?? 'N/A'}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Respiration 28d MAD:</span>
-            <span className="data-value">{baselineVersion >= 3 ? recoverySnapshot?.derived.respiration28dMad ?? 'N/A' : 'N/A (requires v3)'}</span>
+            <span className="data-value">{baselineVersion >= 3 ? recoverySnapshot?.derived.respiration28dMad ?? 'N/A' : VERSION_GATED_NOT_AVAILABLE}</span>
           </div>
           <div className="data-item">
             <span className="data-label">Respiration Scoring:</span>
@@ -464,7 +469,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             <span className="data-value">
               {baselineVersion >= 4
                 ? formatCandidateBaseline(recoverySnapshot?.derived.sleepScore7dMedian, recoverySnapshot?.derived.sleepScore28dMedian, recoverySnapshot?.derived.sleepScore28dMad, recoverySnapshot?.derived.deltas.sleepScoreVs7dMedian, recoverySnapshot?.derived.deltas.sleepScoreVs28dMedian)
-                : 'N/A (requires baseline v4)'}
+                : VERSION_GATED_NOT_AVAILABLE}
             </span>
           </div>
           <div className="data-item">
@@ -472,7 +477,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             <span className="data-value">
               {baselineVersion >= 4
                 ? formatCandidateBaseline(recoverySnapshot?.derived.restingHr7dMedian, recoverySnapshot?.derived.restingHr28dMedian, recoverySnapshot?.derived.restingHr28dMad, recoverySnapshot?.derived.deltas.restingHrVs7dMedian, recoverySnapshot?.derived.deltas.restingHrVs28dMedian)
-                : 'N/A (requires baseline v4)'}
+                : VERSION_GATED_NOT_AVAILABLE}
             </span>
           </div>
           <div className="data-item">
@@ -480,7 +485,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             <span className="data-value">
               {baselineVersion >= 4
                 ? formatCandidateBaseline(recoverySnapshot?.derived.hrv7dMedian, recoverySnapshot?.derived.hrv28dMedian, recoverySnapshot?.derived.hrv28dMad, recoverySnapshot?.derived.deltas.hrvVs7dMedian, recoverySnapshot?.derived.deltas.hrvVs28dMedian)
-                : 'N/A (requires baseline v4)'}
+                : VERSION_GATED_NOT_AVAILABLE}
             </span>
           </div>
           <div className="data-item">
@@ -488,7 +493,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             <span className="data-value">
               {baselineVersion >= 4
                 ? formatCandidateBaseline(recoverySnapshot?.derived.steps7dMedian, recoverySnapshot?.derived.steps28dMedian, recoverySnapshot?.derived.steps28dMad, recoverySnapshot?.derived.deltas.stepsVs7dMedian, recoverySnapshot?.derived.deltas.stepsVs28dMedian)
-                : 'N/A (requires baseline v4)'}
+                : VERSION_GATED_NOT_AVAILABLE}
             </span>
           </div>
           <div className="data-item">
@@ -496,7 +501,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             <span className="data-value">
               {baselineVersion >= 5
                 ? formatCandidateBaseline(recoverySnapshot?.derived.bodyBatteryWake7dMedian, recoverySnapshot?.derived.bodyBatteryWake28dMedian, recoverySnapshot?.derived.bodyBatteryWake28dMad, recoverySnapshot?.derived.deltas.bodyBatteryWakeVs7dMedian, recoverySnapshot?.derived.deltas.bodyBatteryWakeVs28dMedian)
-                : 'N/A (requires baseline v5)'}
+                : VERSION_GATED_NOT_AVAILABLE}
             </span>
           </div>
           <div className="data-item">
@@ -504,7 +509,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             <span className="data-value">
               {baselineVersion >= 5
                 ? formatCandidateBaseline(recoverySnapshot?.derived.stressAvg7dMedian, recoverySnapshot?.derived.stressAvg28dMedian, recoverySnapshot?.derived.stressAvg28dMad, recoverySnapshot?.derived.deltas.stressAvgVs7dMedian, recoverySnapshot?.derived.deltas.stressAvgVs28dMedian)
-                : 'N/A (requires baseline v5)'}
+                : VERSION_GATED_NOT_AVAILABLE}
             </span>
           </div>
           <div className="data-item">
@@ -512,7 +517,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             <span className="data-value">
               {baselineVersion >= 5
                 ? formatCandidateBaseline(recoverySnapshot?.derived.stressMax7dMedian, recoverySnapshot?.derived.stressMax28dMedian, recoverySnapshot?.derived.stressMax28dMad, recoverySnapshot?.derived.deltas.stressMaxVs7dMedian, recoverySnapshot?.derived.deltas.stressMaxVs28dMedian)
-                : 'N/A (requires baseline v5)'}
+                : VERSION_GATED_NOT_AVAILABLE}
             </span>
           </div>
           <div className="data-item">
@@ -520,7 +525,7 @@ export function DataView({ decisionInput, userId, initialTab = 'recovery', onNav
             <span className="data-value">
               {baselineVersion >= 5
                 ? formatCandidateBaseline(recoverySnapshot?.derived.trainingReadinessScore7dMedian, recoverySnapshot?.derived.trainingReadinessScore28dMedian, recoverySnapshot?.derived.trainingReadinessScore28dMad, recoverySnapshot?.derived.deltas.trainingReadinessScoreVs7dMedian, recoverySnapshot?.derived.deltas.trainingReadinessScoreVs28dMedian)
-                : 'N/A (requires baseline v5)'}
+                : VERSION_GATED_NOT_AVAILABLE}
             </span>
           </div>
           <div className="data-item">

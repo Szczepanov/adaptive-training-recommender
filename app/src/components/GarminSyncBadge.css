@@ -67,6 +67,14 @@
     border: 1px solid rgba(239, 68, 68, 0.25);
 }
 
+/* A stalled status check, not a sync failure -- muted amber signals "we couldn't tell
+   right now" without the alarm of the red failure state. */
+.garmin-sync-badge.status-unknown {
+    background-color: rgba(245, 158, 11, 0.12);
+    color: #b45309;
+    border: 1px solid rgba(245, 158, 11, 0.25);
+}
+
 .garmin-sync-icon {
     font-size: 0.8rem;
 }

@@ -67,15 +67,20 @@ export const GarminSyncBadge: React.FC<GarminSyncBadgeProps> = ({ userId, date, 
         return null;
     }
     if (garminConnectionState === 'unknown') {
+        // Distinct from a real sync failure (status-failed): this means the connection
+        // check itself couldn't complete, not that a workout failed to sync. Reusing the
+        // failure styling here overstated the severity -- a solid red badge next to a
+        // reassuring "wearable optional" message elsewhere on the same screen sent
+        // conflicting signals for the same underlying fact.
         return (
             <button
                 type="button"
-                className="garmin-sync-badge status-failed"
+                className="garmin-sync-badge status-unknown"
                 title="Garmin connection status could not be verified. Refresh to retry."
                 aria-label="Garmin connection status could not be verified. Refresh to retry."
                 disabled
             >
-                <span className="garmin-sync-icon" aria-hidden="true">⚠️</span>
+                <span className="garmin-sync-icon" aria-hidden="true">○</span>
                 <span className="garmin-sync-label">Garmin: Status unavailable</span>
             </button>
         );
