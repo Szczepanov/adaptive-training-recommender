@@ -2188,9 +2188,28 @@ emulatorDescribe('Firestore security rules', () => {
             ...validSessionResponse(),
             sourceSession: { kind: 'strength', id: 'strength-1', date: '2026-08-18' },
         }));
-        await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), window: 'later_day' }));
         await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), date: '2026-08-19' }));
         await assertFails(setDoc(doc(ownerDb, sessionResponsePath), { ...validSessionResponse(), createdAt: '2026-08-19T00:00:00Z' }));
+    });
+
+    it('allows a same-day later_day response but rejects a same-day next_morning response', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        await expect(assertSucceeds(setDoc(doc(ownerDb, `${sessionResponsePath}-later-day`), {
+            ...validSessionResponse(),
+            responseId: 'resp-1-later-day',
+            window: 'later_day',
+        }))).resolves.toBeUndefined();
+        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-next-morning-same-day`), {
+            ...validSessionResponse(),
+            responseId: 'resp-1-next-morning-same-day',
+            window: 'next_morning',
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${sessionResponsePath}-later-day-next-day`), {
+            ...validSessionResponse(),
+            responseId: 'resp-1-later-day-next-day',
+            window: 'later_day',
+            date: '2026-08-19',
+        }));
     });
 
     it('rejects a malformed session response: bad window, out-of-range sessionRpe/completedFraction, extra field, foreign userId', async () => {

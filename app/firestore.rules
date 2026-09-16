@@ -1584,7 +1584,9 @@ service cloud.firestore {
         && isValidActivityDate(data.sourceSession.date)
         && data.window in ['immediate', 'later_day', 'next_morning']
         && isValidActivityDate(data.date)
-        && (data.window == 'immediate' ? data.date == data.sourceSession.date : data.date > data.sourceSession.date)
+        && ((data.window == 'immediate' && data.date == data.sourceSession.date)
+          || (data.window == 'later_day' && data.date == data.sourceSession.date)
+          || (data.window == 'next_morning' && data.date > data.sourceSession.date))
         && data.checkinRef is map
         && data.checkinRef.keys().hasOnly(['date'])
         && isValidActivityDate(data.checkinRef.date)

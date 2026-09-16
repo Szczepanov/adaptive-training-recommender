@@ -30,8 +30,8 @@ describe('validateSessionResponse', () => {
     });
 
     it.each(['immediate', 'later_day', 'next_morning'] as const)('accepts window %s', window => {
-        // date equals sourceSession.date for immediate, strictly later otherwise.
-        const date = window === 'immediate' ? '2026-08-19' : '2026-08-20';
+        // date equals sourceSession.date for immediate and later_day; next_morning is later.
+        const date = window === 'next_morning' ? '2026-08-20' : '2026-08-19';
         expect(validateSessionResponse(response({ window, date })).ok).toBe(true);
     });
 
@@ -40,9 +40,21 @@ describe('validateSessionResponse', () => {
         expect(result.ok).toBe(false);
     });
 
-    it.each(['later_day', 'next_morning'] as const)('rejects a %s response whose date is not strictly later than sourceSession.date', window => {
-        const result = validateSessionResponse(response({ window, date: '2026-08-19' }));
-        expect(result.ok).toBe(false);
+    it('accepts a same-day later_day response', () => {
+        expect(validateSessionResponse(response({ window: 'later_day', date: '2026-08-19' })).ok).toBe(true);
+    });
+
+    it('rejects a same-day next_morning response', () => {
+        expect(validateSessionResponse(response({ window: 'next_morning', date: '2026-08-19' })).ok).toBe(false);
+    });
+
+    it('rejects a later_day response dated on a different day', () => {
+        expect(validateSessionResponse(response({ window: 'later_day', date: '2026-08-20' })).ok).toBe(false);
+        expect(validateSessionResponse(response({ window: 'later_day', date: '2026-08-18' })).ok).toBe(false);
+    });
+
+    it('rejects a next_morning response dated before the source session', () => {
+        expect(validateSessionResponse(response({ window: 'next_morning', date: '2026-08-18' })).ok).toBe(false);
     });
 
     it('rejects an invalid window', () => {

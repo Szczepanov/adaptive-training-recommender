@@ -58,14 +58,17 @@ export function validateSessionResponse(raw: unknown): ValidationResult<SessionR
     if (!isValidCalendarDate(raw.date)) {
         issues.push({ path: 'date', message: 'date must be a YYYY-MM-DD string' });
     } else if (isObject(raw.sourceSession) && isValidCalendarDate(raw.sourceSession.date)) {
-        // `date` equals sourceSession.date for `immediate`, strictly later otherwise
-        // (models.ts's own documented invariant) -- ISO YYYY-MM-DD strings compare
-        // lexicographically the same as chronologically, mirroring firestore.rules.
+        // `date` equals sourceSession.date for `immediate` and the same-day `later_day`
+        // follow-up, and must be later for `next_morning` (models.ts's own documented
+        // invariant). ISO YYYY-MM-DD strings compare lexicographically the same as
+        // chronologically, mirroring firestore.rules.
         const sourceDate = raw.sourceSession.date;
         if (raw.window === 'immediate' && raw.date !== sourceDate) {
             issues.push({ path: 'date', message: 'date must equal sourceSession.date for an immediate-window response' });
-        } else if (raw.window !== 'immediate' && raw.date <= sourceDate) {
-            issues.push({ path: 'date', message: 'date must be strictly later than sourceSession.date for a later_day/next_morning response' });
+        } else if (raw.window === 'later_day' && raw.date !== sourceDate) {
+            issues.push({ path: 'date', message: 'date must equal sourceSession.date for a later_day response' });
+        } else if (raw.window === 'next_morning' && raw.date <= sourceDate) {
+            issues.push({ path: 'date', message: 'date must be strictly later than sourceSession.date for a next_morning response' });
         }
     }
 
