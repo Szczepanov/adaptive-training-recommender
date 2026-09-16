@@ -380,8 +380,11 @@ export function mapCheckinToSubjectiveInput(checkin: DailySubjectiveCheckin | nu
     };
 }
 
-/** Generous default so an unset "max session time" constraint doesn't silently cap today's availability. */
-const DEFAULT_MAX_TIME_MINUTES = 180;
+/** Generous default so an unset "max session time" constraint doesn't silently cap today's
+ *  availability. Exported so eligibility.ts's resolveMaximumSessionMinutes -- the per-day
+ *  resolution this same UserContext.constraints value ultimately feeds -- falls back to the
+ *  identical number rather than a second, independently-chosen literal that could drift. */
+export const DEFAULT_MAX_TIME_MINUTES = 180;
 
 /**
  * Maps active goals and typed training settings (Firestore canonical models) to the internal

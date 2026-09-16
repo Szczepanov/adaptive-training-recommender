@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { TEMPLATES, TEMPLATES_BY_ID } from './templates';
 import type { SessionTemplate, TrainingSettings, UserContext } from './models';
+import { DEFAULT_MAX_TIME_MINUTES } from './adapters';
 
 function settings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
     return {
@@ -58,6 +59,49 @@ describe('training-settings eligibility', () => {
         const profile = settings();
         expect(resolveMaximumSessionMinutes(context(profile), 60, '2026-08-07')).toBe(45);
         expect(resolveMaximumSessionMinutes(context(profile), 30, '2026-08-08')).toBe(30);
+    });
+
+    it('terminates the no-answer sentinel at a finite runtime fallback without changing unset profile semantics', () => {
+        const profile = settings({ defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' } });
+        expect(profile.defaults.weekdayMaxMinutes).toBeNull();
+        expect(profile.defaults.weekendMaxMinutes).toBeNull();
+        expect(resolveMaximumSessionMinutes(context(profile), Number.POSITIVE_INFINITY, '2026-08-07'))
+            .toBe(DEFAULT_MAX_TIME_MINUTES);
+    });
+
+    it('keeps a finite check-in time authoritative when the profile limit is unset', () => {
+        const profile = settings({ defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' } });
+        expect(resolveMaximumSessionMinutes(context(profile), 75, '2026-08-07')).toBe(75);
+    });
+
+    it('ignores a non-finite legacy profile limit rather than leaking it downstream', () => {
+        const ctx = context(settings());
+        ctx.trainingSettings = undefined;
+        ctx.constraints.maxTimeMinutes = Number.POSITIVE_INFINITY;
+        expect(resolveMaximumSessionMinutes(ctx, Number.POSITIVE_INFINITY, '2026-08-07'))
+            .toBe(DEFAULT_MAX_TIME_MINUTES);
+    });
+
+    it('rejects a negative profile limit rather than making every session ineligible', () => {
+        // migrateLegacyConstraints copies a legacy max_time_minutes value without a
+        // non-negativity check, so a bad historical import can persist a negative limit.
+        // Number.isFinite(-30) is true, so this must be rejected on its own term.
+        const profile = settings({ defaults: { weekdayMaxMinutes: -30, weekendMaxMinutes: null, environment: 'either' } });
+        expect(resolveMaximumSessionMinutes(context(profile), 60, '2026-08-07')).toBe(60);
+    });
+
+    it('rejects a negative check-in time rather than propagating it past the day boundary', () => {
+        // parseSubjectiveCheckin's read-path nullableNumber only requires finite, unlike
+        // the write-path's [0, 1440] range validation -- a malformed persisted document can
+        // still carry a negative timeAvailableMin.
+        const profile = settings({ defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' } });
+        expect(resolveMaximumSessionMinutes(context(profile), -10, '2026-08-07')).toBe(DEFAULT_MAX_TIME_MINUTES);
+    });
+
+    it('treats zero as a valid, meaningful limit rather than falling back', () => {
+        const profile = settings({ defaults: { weekdayMaxMinutes: 0, weekendMaxMinutes: null, environment: 'either' } });
+        expect(resolveMaximumSessionMinutes(context(profile), 60, '2026-08-07')).toBe(0);
+        expect(resolveMaximumSessionMinutes(context(settings({ defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' } })), 0, '2026-08-07')).toBe(0);
     });
 
     it('attaches a cap-safe dose when an eligible wide-range template has no authored easier dose', () => {
