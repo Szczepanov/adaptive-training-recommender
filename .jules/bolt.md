@@ -1,5 +1,5 @@
 ## 2025-02-12 - [Redundant array filtering in React renders]
-**Learning:** React components containing inline `.filter()` calls on arrays inside render methods (like `activeSettings.filter(s => s.kind === 'guardrail')`) can be optimized by extracting the filtered result into a `useMemo` hook, avoiding O(N) redundant operations on every render, especially when the filtered result is used multiple times.
+**Learning:** React components containing inline `.filter()` calls on arrays inside render methods (like `activeSettings.filter(s => s.kind === 'guardrail')`) can be optimized by extracting the filtered result into a `useMemo` hook, avoiding O(N) redundant operations on every render, especially when the filtered result is used multiple times in the JSX.
 **Action:** Always memoize derived array computations (like filtering and mapping) that rely on props or state, especially if they are used more than once in the JSX.
 
 ## 2024-05-18 - Use Map for O(1) template lookup by ID
@@ -34,4 +34,4 @@
 **Action:** Always fetch the fallback Rest template directly via `ENRICHED_TEMPLATES_BY_ID.get('rest_01')` (or `TEMPLATES_BY_ID`) rather than iterating the entire array looking for the 'Rest' category.
 ## 2026-09-16 - Index canonical workout-template resolution without hiding mutable inputs
 **Learning:** `workoutForTemplate(templateId, workouts)` was repeatedly filtering and sorting the canonical workout catalog. Caching final answers by arbitrary array identity avoids repeat work but silently makes mutable caller-supplied arrays stale after their first lookup.
-**Action:** Pre-index the module-level canonical workout snapshot once for O(1) production lookups, preserve stable priority/tie and fallback semantics in the index, and keep caller-supplied mutable arrays uncached with a single O(N) selection pass.
+**Action:** Build only the missing canonical template-to-workout index once, reuse `WORKOUTS_BY_ID` for fallback IDs, preserve stable priority/tie and fallback semantics, and keep caller-supplied mutable arrays uncached with a single O(N) selection pass.
