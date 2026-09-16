@@ -25,16 +25,17 @@ rule-evaluation budget was re-verified insufficient. H5 design is
 accepted as ADR-0037 with H5a/H5b/H5c now all delivered, and a confirmed progression
 revision now wired into live evergreen selection for 4 of 7 `ObjectiveKey`s -- see below for
 what H5c's delivery and the selection-wiring delivery each do and deliberately do not
-cover; only cumulative `external-plan@5` remains unstarted.
+cover. Cumulative `external-plan@5` D-SCHEMA is now also delivered, including persistence
+wiring into `intentBlockService` -- see the H5 section for exactly what it does and
+deliberately does not cover.
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
 confirmation; H4's live release is delivered through PR 3 Phase 6, recorded in
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's non-gating follow-up work
 (dedup unification and placement-display persistence) is delivered -- see the H4 section
 below for what it does and deliberately does not yet cover (full ADR-0036 D-AUDIT compliance
 for placement remains separate). H5c is delivered per
-[the progression-claim design](./h5c-progression-claim-design.md); cumulative
-`external-plan@5` acceptance is unblocked by the landed H4 v4 contract and by H5c's shape
-now existing, but remains separately scoped work.
+[the progression-claim design](./h5c-progression-claim-design.md); `external-plan@5` D-SCHEMA
+is delivered -- see the H5 section for scope boundaries.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
 
 ## Decision
@@ -586,10 +587,11 @@ unscoped follow-up.
 **H5a, H5b and H5c all delivered as of 2026-09-09; a confirmed progression revision is now
 wired into live evergreen selection as of 2026-09-10** for the 4 `ObjectiveKey`s whose
 `coverageKey` already has a packed evergreen role (`zone2_aerobic`,
-`strength_maintenance`, `strength_development`, `threshold_quality`). Only cumulative
-`external-plan@5` remains unstarted.
-**Dependencies:** `external-plan@5` acceptance depends on the landed H4 v4 contract (landed)
-and on H5c's shape (now delivered); it remains separately scoped work.
+`strength_maintenance`, `strength_development`, `threshold_quality`). **Cumulative
+`external-plan@5` D-SCHEMA is now also delivered**, including persistence wiring into
+`intentBlockService` -- see below for exactly what it does and deliberately does not cover.
+**Dependencies:** `external-plan@5` depended on the landed H4 v4 contract and H5c's shape,
+both now satisfied.
 
 Decision: per-objective `develop | maintain` intent is separate from priority and profile
 commitment. Use existing plan, dose, coverage, response and outcome authorities. New import
@@ -656,6 +658,45 @@ separate `ObjectiveKey -> AdaptationKey` table to build. The real constraint is 
   entirely in `engine/progressionReview.ts` (H5b), governing how `currentValue` is proposed
   to move over time: the packer only ever consumes whatever value is currently confirmed.
 
+### Cumulative `external-plan@5` (delivered)
+
+`sessions/externalPlanV5.ts` adds `external-plan@5`: the same envelope as v4 (inheriting
+`restDays`/`intraday` unchanged) plus an optional plan-level `intentBlocks` list, per ADR-0037
+D-SCHEMA. Authored block boundaries are relative `{week, day}` pairs -- the plan's `startDate`
+stays the only absolute date -- while `objectives`/`progressionContract` are reused verbatim
+from `engine/blockIntent.ts` (no date fields, so no relative variant was needed). Structural
+validation (shape, unknown keys, week/day bounds, id uniqueness, dangling `protectedRoles`/
+`progressionContract` session references against this plan's own sessions) is this file's own
+job; all deep semantic validation (dose envelopes, coverage keys, success criteria, progression
+contracts, cross-block overlap) is delegated to the already-exported `validatePlanIntentBlocks`/
+`validateIntentBlock` -- zero duplication. `externalPlanV4.ts`'s `validateIntradayBundles` and
+`externalPlacement.ts`'s relative-date arithmetic (now generalized as `resolveRelativeLocalDate`,
+with `resolveRestDate` delegating to it) are reused unchanged rather than re-implemented.
+
+Persistence wiring (`services/externalPlanV5ActivationService.ts`) is a second, explicit step
+the caller invokes after a successful `externalPlanService.import()` -- not automatic inside
+`import()` itself, which stays schema-agnostic across all five versions. Each authored entry is
+namespaced (`${planId}::${entryId}`) so two different imported plans can never collide, while
+re-importing a later revision of the same plan continues that block's own revision sequence via
+`intentBlockService.save()` (no changes needed to that file -- it was already built with a
+second, non-manual caller in mind). One block's failure is caught and reported per-block, never
+blocking the rest. `components/ExternalPlanImport.tsx` calls this after import and surfaces
+per-block results; fixing that screen's own local schema dispatcher (which silently stopped at
+v3 and never reached v4) was folded in, since leaving v4 unreachable there while adding v5 felt
+like an obviously incomplete companion fix. `firestore.rules` validates the new field shallowly
+only (list + bounded size, matching `intent_blocks`' own documented rule-evaluation-budget
+lesson from PR #468) -- deep validation stays exclusively in `validatePlanIntentBlocks`.
+
+`POLICY_VERSION` is unchanged: this only adds a second *write* path into `intent_blocks`,
+reusing the exact storage/read path manual authoring and the already-live selection-wiring
+already use; `check-policy-drift.mjs` and `simulate:diff` both confirm no change. Deliberately
+excluded, matching every prior H4 slice's own precedent (schema lands, deeper wiring is
+reviewed separately): nothing about `progressionClaimService.ts`'s singleton active-experiment
+claim changes here. An imported block carrying a `progressionContract.currentValue` is
+equivalent to an athlete's first manual authoring of that block (also ungated by the singleton
+claim today -- that claim only guards a later *revision* confirmed through the
+`progressionReview.ts` review flow), so this PR neither adds nor removes that characteristic.
+
 ## Reproduction and verification
 
 From `app/`:
@@ -664,11 +705,15 @@ From `app/`:
 npm exec vitest run scripts/ai-judge/__tests__/hybridScenarios.test.mjs
 npm exec vitest run src/engine/coverageAnchorAuthority.test.ts
 npm exec vitest run src/engine/h3AuthoredPlanContracts.test.ts
+npm exec vitest run src/sessions/externalPlanV5.test.ts
+npm exec vitest run src/services/externalPlanV5ActivationService.test.ts
+npm exec vitest run src/services/externalPlanV5Service.test.ts
 npm run persona:hybrid:build
 npm run check
 npm run build
 npm run simulate:scenarios
 npm run simulate:diff
+npm run test:rules
 node scripts/check-policy-drift.mjs <starting-commit>
 ```
 
@@ -701,5 +746,8 @@ confirm-only, no selection-time read). Wiring a confirmed progression into live 
 selection then archived `-v1` and activated
 `2026-09-progression-confirmed-selection-wiring-v1` -- a real behavior change gated on an
 athlete actually confirming a progression (`simulate:diff` clean against the committed
-baseline, since no simulation fixture has one). Do not enable experimental personalization
-simply to improve a judge score.
+baseline, since no simulation fixture has one). Cumulative `external-plan@5` D-SCHEMA
+required no policy bump (`check-policy-drift.mjs`/`simulate:diff` both clean) -- it adds a
+second write path into storage an existing policy-current read path already consumes, not a
+change to `rules.ts`/`planner.ts`/`weeklyDosePacking.ts`/`confirmedProgressionOverrides.ts`
+themselves. Do not enable experimental personalization simply to improve a judge score.

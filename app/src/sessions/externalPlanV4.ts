@@ -252,8 +252,11 @@ function validateRequestedWindowOverlaps(refs: readonly IntradaySessionRef[], er
 }
 
 /** Cross-session bundle validation (needs the whole session list, so cannot live in the
- * per-session validator -- mirrors v3's `validateRestDays` for the same reason). */
-function validateIntradayBundles(sessions: readonly any[], restDays: readonly any[], errors: ValidationError[]): void {
+ * per-session validator -- mirrors v3's `validateRestDays` for the same reason). Exported
+ * for `sessions/externalPlanV5.ts` to reuse -- v5 inherits v4's intraday contract unchanged
+ * (ADR-0037 D-SCHEMA), same reuse precedent `validateRestDays`/`stripRestDays` already set
+ * for v4 reusing v3. */
+export function validateIntradayBundles(sessions: readonly any[], restDays: readonly any[], errors: ValidationError[]): void {
     const refs = sessions.map(toIntradayRef).filter((ref): ref is IntradaySessionRef => ref !== null);
     if (refs.length === 0) return;
 

@@ -34,9 +34,21 @@ export interface PlacementOccupancy {
     fixedActivities?: readonly FixedActivity[];
 }
 
-/** Returns the Monday-like start of a plan-relative week. */
-function weekStart(plan: ExternalTrainingPlan, week: number): string {
-    return addDaysToLocalDateString(plan.startDate, (week - 1) * 7);
+/** Returns the Monday-like start of a plan-relative week, given the plan's own absolute
+ * `startDate` (Monday of week 1). Takes the date directly rather than a whole plan so it
+ * stays usable by any schema version's relative-date resolution, not just one whose shape
+ * happens to match `ExternalTrainingPlan`. */
+function weekStart(startDate: string, week: number): string {
+    return addDaysToLocalDateString(startDate, (week - 1) * 7);
+}
+
+/** Resolves one relative `(week, day)` pair to its plan-local absolute date, given the
+ * plan's own `startDate`. The shared arithmetic behind `resolveRestDate` (v3 `restDays`)
+ * and `external-plan@5`'s `intentBlocks` relative date-range/review-date fields
+ * (`sessions/externalPlanV5.ts`) -- both are "relative to this plan's startDate", just for
+ * different authored fields, so this is decoupled from any one plan schema's own type. */
+export function resolveRelativeLocalDate(startDate: string, week: number, day: ExternalWeekday): string {
+    return addDaysToLocalDateString(weekStart(startDate, week), WEEKDAY_OFFSET[day]);
 }
 
 /**
@@ -45,7 +57,7 @@ function weekStart(plan: ExternalTrainingPlan, week: number): string {
  * carries `restDays`; v1/v2 plans have no directives to resolve.
  */
 export function resolveRestDate(plan: ExternalTrainingPlan, directive: ExternalRestDirective): string {
-    return addDaysToLocalDateString(weekStart(plan, directive.week), WEEKDAY_OFFSET[directive.day]);
+    return resolveRelativeLocalDate(plan.startDate, directive.week, directive.day);
 }
 
 /** All of a v3 plan's rest directives resolved to dates, keyed by date. Empty for v1/v2
@@ -59,12 +71,12 @@ export function resolveRestDatesByDate(plan: ExternalTrainingPlan): Map<string, 
  * lands on its week's Monday; `resolvePlacement` then spreads it if that day is taken. */
 export function impliedDate(plan: ExternalTrainingPlan, session: ExternalPlanSession): string {
     const offset = session.placement.preferredDay ? WEEKDAY_OFFSET[session.placement.preferredDay] : 0;
-    return addDaysToLocalDateString(weekStart(plan, session.placement.week), offset);
+    return addDaysToLocalDateString(weekStart(plan.startDate, session.placement.week), offset);
 }
 
 /** Materializes the seven plan-local dates for one relative week. */
 function weekDates(plan: ExternalTrainingPlan, week: number): string[] {
-    const start = weekStart(plan, week);
+    const start = weekStart(plan.startDate, week);
     return Array.from({ length: 7 }, (_, offset) => addDaysToLocalDateString(start, offset));
 }
 

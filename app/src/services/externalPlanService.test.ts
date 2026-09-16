@@ -153,15 +153,21 @@ describe('ExternalPlanService', () => {
         expect(result.issues.map(issue => issue.field)).toEqual(expect.arrayContaining(['planId', 'weekCount']));
     });
 
-    it('refuses a revision that does not advance the stored one', async () => {
+    it('refuses a revision older than the stored one', async () => {
         firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ revision: 3 }) });
 
-        const same = await new ExternalPlanService().import('u1', plan({ revision: 3 }));
-        expect(same.status).toBe('INVALID');
-        if (same.status !== 'INVALID') throw new Error('unreachable');
-        expect(same.issues[0].code).toBe('revision-not-newer');
+        const older = await new ExternalPlanService().import('u1', plan({ revision: 2 }));
+        expect(older.status).toBe('INVALID');
+        if (older.status !== 'INVALID') throw new Error('unreachable');
+        expect(older.issues[0].code).toBe('revision-not-newer');
         expect(firestore.writeBatch).not.toHaveBeenCalled();
         expect(firestore.setDoc).not.toHaveBeenCalled();
+    });
+
+    it('allows a newer revision only after validating the immutable predecessor bytes', async () => {
+        firestore.getDoc
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 3 }) })
+            .mockResolvedValueOnce({ exists: () => true, data: () => plan({ revision: 3 }) });
 
         const newer = await new ExternalPlanService().import('u1', plan({ revision: 4 }));
         expect(newer.status).toBe('AVAILABLE');
@@ -180,7 +186,9 @@ describe('ExternalPlanService', () => {
     });
 
     it('supersedes forward only, touching nothing a previously adjudicated day depends on', async () => {
-        firestore.getDoc.mockResolvedValue({ exists: () => true, data: () => ({ revision: 1 }) });
+        firestore.getDoc
+            .mockResolvedValueOnce({ exists: () => true, data: () => ({ revision: 1 }) })
+            .mockResolvedValueOnce({ exists: () => true, data: () => plan({ revision: 1 }) });
 
         const result = await new ExternalPlanService().import('u1', plan({ revision: 2 }), '2026-08-20');
         expect(result.status).toBe('AVAILABLE');

@@ -3,6 +3,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { diffPlans, type PlanDiffRow } from './externalPlanDiff';
 import { EXTERNAL_PLAN_SCHEMA, type ExternalTrainingPlan } from '../engine/models';
 import { EXTERNAL_PLAN_SCHEMA_V2, type ExternalTrainingPlanV2 } from '../sessions/externalPlanV2';
+import { EXTERNAL_PLAN_SCHEMA_V5, type ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
 import type { SessionDefinition } from '../sessions/models';
 import { PlanPreview } from './ExternalPlanImport';
 
@@ -198,5 +199,55 @@ describe('PlanPreview — M3.7 import acknowledgement gating', () => {
         expect(html).not.toContain('I reviewed the');
         const importButtonMarkup = html.match(/<button[^>]*>Import this plan<\/button>/)?.[0] ?? '';
         expect(importButtonMarkup).not.toContain('disabled');
+    });
+});
+
+function v5Plan(): ExternalTrainingPlanV5 {
+    return {
+        schema: EXTERNAL_PLAN_SCHEMA_V5,
+        planId: 'block', revision: 1, title: 'Block', startDate: '2026-08-17', weekCount: 4,
+        sessions: [{
+            id: 's1', title: 'Threshold', priority: 'key',
+            placement: { week: 1, preferredDay: 'tuesday', flexibility: 'preferred', ifMissed: 'reschedule_within_week' },
+            gating: { modality: 'cycling', intensity: 'hard', durationMin: 60, durationMax: 75, environment: 'either', equipment: ['indoor_bike'] },
+            objectives: ['threshold_quality', 'zone2_aerobic'],
+            definition: v2Definition(),
+        }],
+        restDays: [],
+        intentBlocks: [{
+            id: 'maintain-strength',
+            title: 'Maintain strength through the block',
+            startWeek: 1, startDay: 'monday', endWeek: 4, endDay: 'sunday',
+            objectives: [{
+                id: 'obj-1', sport: 'strength', adaptationScope: 'strength_maintenance', coverageKey: 'primary_strength',
+                intent: 'maintain', priority: 'must_have',
+                doseEnvelope: { min: 30, target: 45, max: 55, unit: 'minutes', floorSemantics: 'soft_floor' },
+                knowledgeLineage: ['claim-1'], successCriteria: { minCompletedExposures: 2 },
+            }],
+            reviewCadenceDays: 28, nextReviewWeek: 4, nextReviewDay: 'sunday',
+        }],
+    };
+}
+
+/** v5's intentBlocks preview (D-SCHEMA + persistence wiring). Static-markup only, same
+ * reachable-half constraint as the acknowledgement-gating tests above. */
+describe('PlanPreview — external-plan@5 intent block preview', () => {
+    it('lists an authored intent block before the athlete confirms import', () => {
+        const html = renderToStaticMarkup(
+            <PlanPreview plan={v5Plan()} previous={null} diff={null} onConfirm={vi.fn()} onCancel={vi.fn()} />,
+        );
+        expect(html).toContain('Intent blocks this import will author');
+        expect(html).toContain('Maintain strength through the block');
+        expect(html).toContain('week 1 (monday) through');
+        expect(html).toContain('week 4 (sunday)');
+        expect(html).toContain('1 objective');
+    });
+
+    it('renders no intent block section for a v5 plan with intentBlocks absent', () => {
+        const plan = { ...v5Plan(), intentBlocks: undefined };
+        const html = renderToStaticMarkup(
+            <PlanPreview plan={plan} previous={null} diff={null} onConfirm={vi.fn()} onCancel={vi.fn()} />,
+        );
+        expect(html).not.toContain('Intent blocks this import will author');
     });
 });

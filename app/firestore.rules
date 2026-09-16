@@ -721,26 +721,45 @@ service cloud.firestore {
 
     function hasValidExternalPlanRevision() {
       let data = request.resource.data;
-      // ADR-0035/0036: rules validate the bounded plan-level storage shape for v3/v4. The
-      // TypeScript import validator remains authoritative for cross-entry invariants such
+      // ADR-0035/0036/0037: rules validate the bounded plan-level storage shape for v3/v4/v5.
+      // The TypeScript import validator remains authoritative for cross-entry invariants such
       // as id/date uniqueness and fixed-session/rest conflicts, which require viewing the
-      // two authored lists together.
+      // two authored lists together. v5's intentBlocks is deliberately kept shallow here
+      // (list + bounded size only, no per-block field validation) -- the same
+      // rule-evaluation-budget lesson `intent_blocks`' own rules already document below, and
+      // `engine/blockIntent.ts`'s validateIntentBlock (via validatePlanIntentBlocks) is
+      // authoritative for its deep cross-field invariants.
+      let restDaySchemas = [
+        'adaptive-training-recommender/external-plan@3',
+        'adaptive-training-recommender/external-plan@4',
+        'adaptive-training-recommender/external-plan@5',
+      ];
+      // Only v5 may carry intentBlocks -- v3/v4 keep rejecting it, same as v1/v2 keep
+      // rejecting restDays.
+      let isV5 = data.schema == 'adaptive-training-recommender/external-plan@5';
       return data.keys().hasAll(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'sessions'])
         && data.schema in [
           'adaptive-training-recommender/external-plan@1',
           'adaptive-training-recommender/external-plan@2',
           'adaptive-training-recommender/external-plan@3',
           'adaptive-training-recommender/external-plan@4',
+          'adaptive-training-recommender/external-plan@5',
         ]
-        && (data.schema in ['adaptive-training-recommender/external-plan@3', 'adaptive-training-recommender/external-plan@4']
-              ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
+        && (isV5
+              ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays', 'intentBlocks'])
                  && data.keys().hasAll(['restDays'])
-              : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
+              : data.schema in restDaySchemas
+                ? data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
+                   && data.keys().hasAll(['restDays'])
+                : data.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions']))
         && data.revision is int && data.revision >= 1
         && isValidActivityDate(data.startDate)
         && data.weekCount is int && data.weekCount >= 1 && data.weekCount <= 26
-        && (!(data.schema in ['adaptive-training-recommender/external-plan@3', 'adaptive-training-recommender/external-plan@4'])
+        && (!(data.schema in restDaySchemas)
           || hasValidExternalRestDirectives(data.restDays, data.weekCount))
+        && (!isV5
+          || !('intentBlocks' in data.keys())
+          || (data.intentBlocks is list && data.intentBlocks.size() <= 26))
         && data.sessions is list && data.sessions.size() >= 1 && data.sessions.size() <= 120;
     }
 

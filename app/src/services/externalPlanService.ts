@@ -12,18 +12,20 @@ import { getErrorCode, getErrorMessage } from '../utils/errors';
 import { validateExternalTrainingPlanV2, EXTERNAL_PLAN_SCHEMA_V2, type ExternalTrainingPlanV2 } from '../sessions/externalPlanV2';
 import { validateExternalTrainingPlanV3, EXTERNAL_PLAN_SCHEMA_V3, type ExternalTrainingPlanV3 } from '../sessions/externalPlanV3';
 import { validateExternalTrainingPlanV4, EXTERNAL_PLAN_SCHEMA_V4, type ExternalTrainingPlanV4 } from '../sessions/externalPlanV4';
+import { validateExternalTrainingPlanV5, EXTERNAL_PLAN_SCHEMA_V5, type ExternalTrainingPlanV5 } from '../sessions/externalPlanV5';
 
 /** Re-exported so existing callers keep one import site. The implementation lives in
  * `engine/externalPlanHash.ts` because `replay.ts` verifies against it and must not pull
  * a Firestore-bound module into the audit path. */
 export { computeContentHash } from '../engine/externalPlanHash';
 
-/** Dispatches to the v1, v2, v3 or v4 validator based on the raw document's own `schema`
+/** Dispatches to the v1, v2, v3, v4 or v5 validator based on the raw document's own `schema`
  * literal, mirroring the "back-inferred/branched on a discriminant" precedent
  * `DailyRecommendation.schemaVersion` already uses. v1 stays the default so a malformed
  * `schema` value fails against v1's stricter literal check rather than silently passing. */
 function validateAnyExternalTrainingPlan(raw: unknown) {
     const schema = (raw as { schema?: unknown } | null)?.schema;
+    if (schema === EXTERNAL_PLAN_SCHEMA_V5) return validateExternalTrainingPlanV5(raw);
     if (schema === EXTERNAL_PLAN_SCHEMA_V4) return validateExternalTrainingPlanV4(raw);
     if (schema === EXTERNAL_PLAN_SCHEMA_V3) return validateExternalTrainingPlanV3(raw);
     if (schema === EXTERNAL_PLAN_SCHEMA_V2) return validateExternalTrainingPlanV2(raw);
@@ -32,7 +34,41 @@ function validateAnyExternalTrainingPlan(raw: unknown) {
 
 export interface ImportResult {
     header: ExternalPlanHeader;
-    plan: ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4;
+    plan: ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4 | ExternalTrainingPlanV5;
+}
+
+/**
+ * `external-plan@5` materializes intent blocks into a separate live collection. Until the
+ * IntentBlock domain gains an explicit retirement/tombstone operation, omission from a newer
+ * source-plan revision cannot safely mean deletion: the prior materialized block would remain
+ * independently selectable. Preserve every previously-authored block id across source-plan
+ * revisions so supersession is always explicit through another revision of that same block.
+ */
+function validateIntentBlockSupersession(
+    previous: ExternalTrainingPlanV5,
+    next: ImportResult['plan'],
+    userId: string,
+): DataIssue[] {
+    const previousIds = new Set((previous.intentBlocks ?? []).map(block => block.id));
+    if (previousIds.size === 0) return [];
+
+    const documentPath = `users/${userId}/external_plans/${previous.planId}`;
+    if (next.schema !== EXTERNAL_PLAN_SCHEMA_V5) {
+        return [{
+            code: 'intent-block-retirement-unsupported',
+            field: 'schema',
+            documentPath,
+        }];
+    }
+
+    const nextIds = new Set((next.intentBlocks ?? []).map(block => block.id));
+    return [...previousIds]
+        .filter(blockId => !nextIds.has(blockId))
+        .map(blockId => ({
+            code: 'intent-block-retirement-unsupported',
+            field: `intentBlocks.${blockId}`,
+            documentPath,
+        }));
 }
 
 /** User-scoped persistence for externally-authored plans. A stored revision is immutable:
@@ -56,6 +92,11 @@ export class ExternalPlanService {
      * only partly understood must not be half-stored, because a silently dropped session
      * is a session the athlete believes was imported.
      *
+     * Re-importing byte-identical immutable revision content is an idempotent success. This
+     * matters for `external-plan@5`: plan storage and intent-block activation are deliberately
+     * separate, so a transient activation failure can be retried without inventing a new plan
+     * revision. Same-revision content that differs from the stored immutable bytes still fails.
+     *
      * `supersededFrom` records the date this revision takes effect. Days already
      * adjudicated keep their persisted recommendations and audits regardless.
      */
@@ -74,8 +115,9 @@ export class ExternalPlanService {
         try {
             const existing = await getDoc(this.headerRef(userId, plan.planId));
             if (existing.exists()) {
-                const storedRevision = existing.data().revision;
-                if (typeof storedRevision === 'number' && plan.revision <= storedRevision) {
+                const existingHeader = existing.data() as ExternalPlanHeader;
+                const storedRevision = existingHeader.revision;
+                if (typeof storedRevision === 'number' && plan.revision < storedRevision) {
                     return {
                         status: 'INVALID',
                         issues: [{
@@ -84,6 +126,72 @@ export class ExternalPlanService {
                             documentPath: `users/${userId}/external_plans/${plan.planId}`,
                         }],
                     };
+                }
+
+                if (typeof storedRevision === 'number') {
+                    // Intent blocks become independent persisted artifacts after v5 activation.
+                    // A safe supersession or idempotent-retry decision therefore requires the
+                    // immutable predecessor itself, not just the mutable header: if those bytes
+                    // are missing, malformed, or stored under the wrong identity we cannot prove
+                    // what live intent blocks or immutable content the header actually represents.
+                    const previousDocumentPath = `users/${userId}/external_plans/${plan.planId}/revisions/${storedRevision}`;
+                    const previousSnapshot = await getDoc(this.revisionRef(userId, plan.planId, storedRevision));
+                    if (!previousSnapshot.exists()) {
+                        return {
+                            status: 'INVALID',
+                            issues: [{
+                                code: 'superseded-revision-missing',
+                                field: 'revision',
+                                documentPath: previousDocumentPath,
+                            }],
+                        };
+                    }
+
+                    const previousParsed = validateAnyExternalTrainingPlan(previousSnapshot.data());
+                    if (
+                        !previousParsed.isValid
+                        || !previousParsed.data
+                        || previousParsed.data.planId !== plan.planId
+                        || previousParsed.data.revision !== storedRevision
+                    ) {
+                        return {
+                            status: 'INVALID',
+                            issues: [{
+                                code: 'superseded-revision-invalid',
+                                field: 'revision',
+                                documentPath: previousDocumentPath,
+                            }],
+                        };
+                    }
+
+                    if (plan.revision === storedRevision) {
+                        const [storedHash, incomingHash] = await Promise.all([
+                            computeContentHash(previousParsed.data),
+                            computeContentHash(plan),
+                        ]);
+                        if (storedHash !== incomingHash || existingHeader.contentHash !== storedHash) {
+                            return {
+                                status: 'INVALID',
+                                issues: [{
+                                    code: 'immutable-revision-conflict',
+                                    field: 'revision',
+                                    documentPath: previousDocumentPath,
+                                }],
+                            };
+                        }
+                        return {
+                            status: 'AVAILABLE',
+                            data: { header: existingHeader, plan },
+                            revision: storedHash,
+                        };
+                    }
+
+                    if (previousParsed.data.schema === EXTERNAL_PLAN_SCHEMA_V5) {
+                        const supersessionIssues = validateIntentBlockSupersession(previousParsed.data, plan, userId);
+                        if (supersessionIssues.length > 0) {
+                            return { status: 'INVALID', issues: supersessionIssues };
+                        }
+                    }
                 }
             }
 
@@ -145,7 +253,7 @@ export class ExternalPlanService {
 
     /** Re-validates on read. A revision that no longer satisfies the contract -- because
      * the contract moved, or the document was tampered with -- is `INVALID`, never coerced. */
-    async getRevisionState(userId: string, planId: string, revision: number): Promise<DataState<ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4>> {
+    async getRevisionState(userId: string, planId: string, revision: number): Promise<DataState<ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4 | ExternalTrainingPlanV5>> {
         const documentPath = `users/${userId}/external_plans/${planId}/revisions/${revision}`;
         try {
             const snapshot = await getDoc(this.revisionRef(userId, planId, revision));

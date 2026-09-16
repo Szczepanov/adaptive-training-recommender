@@ -106,7 +106,12 @@ evergreen selection (`engine/confirmedProgressionOverrides.ts`, `POLICY_VERSION`
 `race_specific_endurance` and `vo2_max` are explicitly flagged unsupported-for-selection
 rather than silently ignored -- see
 [the cycling hybrid evaluation plan](./cycling-primary-hybrid-evaluation.md)'s H5 section.
-Cumulative `external-plan@5` remains separate, later, unstarted work.
+Cumulative `external-plan@5` D-SCHEMA is now also delivered (`sessions/externalPlanV5.ts`,
+`services/externalPlanV5ActivationService.ts`): an optional plan-level `intentBlocks` field
+with relative `{week, day}` boundaries, validated by delegating to the already-exported
+`validatePlanIntentBlocks`/`validateIntentBlock` and materialized into real `IntentBlock`s via
+`intentBlockService.save()` after a successful import -- see the H5 section for exactly what
+this does and deliberately does not cover.
 H4's same-day canonical performed-fact boundary is verified;
 H5 runtime needs validated intent mappings and linked response evidence. H5
 delivers intent authoring, report-only review, then confirmed bounded revisions. The work
