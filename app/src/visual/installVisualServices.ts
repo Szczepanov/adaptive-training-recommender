@@ -263,16 +263,24 @@ export function installVisualServices(fixture: VisualFixture): void {
   executionPrescriptionService.savePrescription = async () => {};
 
   const visualOccurrences = new Map<string, SessionOccurrence>();
+  const sortOccurrences = <T extends SessionOccurrence>(occurrences: T[]): T[] => occurrences.sort((a, b) =>
+    (a.placementOrder ?? 0) - (b.placementOrder ?? 0)
+    || a.occurrenceId.localeCompare(b.occurrenceId));
 
   sessionOccurrenceService.getReplaceOccurrenceForDate = async () => null;
   sessionOccurrenceService.getAdditionalOccurrencesForDate = async () => [];
   sessionOccurrenceService.getOccurrencesForDate = async (_userId, date) => {
-    return Array.from(visualOccurrences.values()).filter(occ => occ.date === date);
+    return sortOccurrences(Array.from(visualOccurrences.values()).filter(occ => occ.date === date));
   };
   sessionOccurrenceService.getExternalPlanOccurrencesForDate = async (_userId, date) => {
-    return Array.from(visualOccurrences.values()).filter(
-      (occ): occ is ExternalPlanSessionOccurrence => occ.date === date && occ.authority === 'external_plan',
-    );
+    return sortOccurrences(Array.from(visualOccurrences.values()).filter(
+      (occ): occ is ExternalPlanSessionOccurrence => (
+        occ.date === date
+        && occ.authority === 'external_plan'
+        && occ.state !== 'superseded'
+        && occ.state !== 'skipped'
+      ),
+    ));
   };
   sessionOccurrenceService.getOrCreateExternalPlanOccurrence = async (userId, date, externalPlanRef, options = {}) => {
     const occurrenceId = `visual-external-occurrence-${externalPlanRef.sessionId}`;
@@ -297,28 +305,32 @@ export function installVisualServices(fixture: VisualFixture): void {
   };
   sessionOccurrenceService.claimOccurrenceLaunch = async (_userId, occurrenceId, nowOrOptions) => {
     const existing = visualOccurrences.get(occurrenceId);
-    const now = (typeof nowOrOptions === 'string' ? nowOrOptions : nowOrOptions?.now) ?? fixture.input.date;
-    if (existing) {
-      const activeOccurrence: SessionOccurrence = {
-        ...existing,
-        state: 'active',
-        updatedAt: now,
-      };
-      visualOccurrences.set(occurrenceId, activeOccurrence);
-      return activeOccurrence;
+    if (!existing) {
+      throw new Error(`Occurrence ${occurrenceId} not found.`);
     }
-    const fallbackOccurrence: SessionOccurrence = {
-      userId: fixture.input.userId,
-      occurrenceId,
-      date: fixture.input.date,
-      authority: 'external_plan',
-      externalPlanRef: { planId: 'visual-plan', revision: 1, sessionId: 's1', contentHash: 'ch' },
+    if (existing.state !== 'scheduled') {
+      throw new Error(`Occurrence ${occurrenceId} cannot be claimed; state is '${existing.state}', expected 'scheduled'.`);
+    }
+    const now = (typeof nowOrOptions === 'string' ? nowOrOptions : nowOrOptions?.now) ?? fixture.input.date;
+    const activeOccurrence: SessionOccurrence = {
+      ...existing,
       state: 'active',
-      createdAt: fixture.input.date,
       updatedAt: now,
     };
-    visualOccurrences.set(occurrenceId, fallbackOccurrence);
-    return fallbackOccurrence;
+    visualOccurrences.set(occurrenceId, activeOccurrence);
+    return activeOccurrence;
+  };
+  sessionOccurrenceService.releaseOccurrenceClaim = async (_userId, occurrenceId, options = {}) => {
+    const existing = visualOccurrences.get(occurrenceId);
+    if (!existing) return null;
+    if (existing.state !== 'active') return existing;
+    const releasedOccurrence: SessionOccurrence = {
+      ...existing,
+      state: 'scheduled',
+      updatedAt: options.now ?? fixture.input.date,
+    };
+    visualOccurrences.set(occurrenceId, releasedOccurrence);
+    return releasedOccurrence;
   };
   sessionOccurrenceService.getOccurrence = async (_userId, occurrenceId) => {
     const occ = visualOccurrences.get(occurrenceId);
