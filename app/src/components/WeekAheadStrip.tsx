@@ -183,6 +183,7 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
               key={day.date}
               type="button"
               className={`week-ahead-tile confidence-${day.confidence} ${index === safeIndex ? 'selected' : ''}`}
+              aria-pressed={index === safeIndex}
               onClick={() => setSelectedIndex(index)}
             >
               <span className="tile-weekday">
