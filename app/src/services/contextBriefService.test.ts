@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { addDaysToLocalDateString } from '../utils/localDate';
+import type { DailyRecoverySnapshot } from '../engine/models';
 
 const services = vi.hoisted(() => ({
     getRecoverySnapshotState: vi.fn(),
+    getRecoverySnapshotsInRangeState: vi.fn(),
     getCheckinsInRange: vi.fn(),
     getActivitiesInRange: vi.fn(),
     getRecommendationsInRange: vi.fn(),
@@ -16,7 +19,10 @@ const services = vi.hoisted(() => ({
     getEntriesInRange: vi.fn(),
 }));
 
-vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: { getRecoverySnapshotState: services.getRecoverySnapshotState } }));
+vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: {
+    getRecoverySnapshotState: services.getRecoverySnapshotState,
+    getRecoverySnapshotsInRangeState: services.getRecoverySnapshotsInRangeState,
+} }));
 vi.mock('./checkinService', () => ({ checkinService: { getCheckinsInRange: services.getCheckinsInRange } }));
 vi.mock('./activityService', () => ({ activityService: { getActivitiesInRange: services.getActivitiesInRange } }));
 vi.mock('./recommendationService', () => ({ recommendationService: { getRecommendationsInRange: services.getRecommendationsInRange } }));
@@ -40,6 +46,36 @@ import { ContextBriefService } from './contextBriefService';
 
 const AS_OF = '2026-08-15';
 
+function snapshotWithWeight(date: string, weightKg: number): DailyRecoverySnapshot {
+    return {
+        userId: 'u1',
+        date,
+        source: { garminSyncedAt: `${date}T06:15:00Z`, sourceSchemaVersion: 3, metricDates: { weight: date } },
+        raw: {
+            sleepScore: 78, sleepDurationSec: 27000, restingHr: 48, hrvOvernightAvg: 62,
+            hrvStatus: 'balanced', respirationAvg: 13, bodyBatteryWake: 71, bodyBatteryChange: 40,
+            totalSteps: 9000, last3DaysHardSessionsCount: 1, yesterdayTraining: null, weightKg,
+        },
+        derived: {
+            baselineComputationVersion: 2,
+            sleepScore7dAvg: 71, sleepScore28dAvg: 74,
+            restingHr7dAvg: 50, restingHr28dAvg: 49,
+            hrv7dAvg: 58, hrv28dAvg: 61,
+            respiration7dAvg: 13, respiration28dAvg: 13,
+            deltas: {
+                sleepScoreVs7d: 7, sleepScoreVs28d: 4,
+                restingHrVs7d: -2, restingHrVs28d: -1,
+                hrvVs7d: 4, hrvVs28d: 1,
+                respirationVs7d: 0, respirationVs28d: 0,
+            },
+        },
+        dataQuality: {
+            sleepScoreAvailable: true, restingHrAvailable: true, hrvAvailable: true,
+            baseline7dReady: true, baseline28dReady: true,
+        },
+    };
+}
+
 describe('ContextBriefService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
@@ -56,6 +92,7 @@ describe('ContextBriefService', () => {
         services.getPlanBlocksInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getActivePlanState.mockResolvedValue({ status: 'MISSING' });
         services.getEntriesInRange.mockResolvedValue([]);
+        services.getRecoverySnapshotsInRangeState.mockResolvedValue({ status: 'MISSING' });
     });
 
     it('reads check-ins over a date range covering the full baseline, inclusive of asOfDate', async () => {
@@ -353,6 +390,7 @@ describe('ContextBriefService', () => {
         services.getFixedActivitiesInRangeState.mockRejectedValue(new Error('offline'));
         services.getPlanBlocksInRangeState.mockRejectedValue(new Error('offline'));
         services.getEntriesInRange.mockRejectedValue(new Error('offline'));
+        services.getRecoverySnapshotsInRangeState.mockRejectedValue(new Error('offline'));
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
         expect(result.text).toContain('# Training context brief');
@@ -382,6 +420,27 @@ describe('ContextBriefService', () => {
             const result = await new ContextBriefService().build('u1', AS_OF, 14);
             expect(result.unavailableSources.join()).not.toContain('body measurements');
             expect(result.text).not.toContain('Body composition & fueling');
+        });
+
+        it('fetches provider body-composition snapshots over the full anthropometry lookback, not the shorter recovery-timeline window', async () => {
+            await new ContextBriefService().build('u1', AS_OF, 14);
+            // Same 60-day start as the anthropometry entries fetch, half-open through the day after asOfDate.
+            expect(services.getRecoverySnapshotsInRangeState).toHaveBeenCalledWith('u1', '2026-06-17', '2026-08-16');
+        });
+
+        it('surfaces a provider weigh-in older than the recovery-timeline window instead of silently falling back to manual data', async () => {
+            // 20 days back: outside contextDays (14 for this window) but inside the 60-day
+            // anthropometry lookback. The day-by-day recovery-snapshot fetch (contextStart..)
+            // never sees this date, so only the wider range fetch can surface it.
+            const staleDate = addDaysToLocalDateString(AS_OF, -20);
+            services.getRecoverySnapshotsInRangeState.mockResolvedValue({
+                status: 'AVAILABLE',
+                data: [snapshotWithWeight(staleDate, 81.4)],
+                revision: 'r1',
+            });
+
+            const result = await new ContextBriefService().build('u1', AS_OF, 14);
+            expect(result.text).toContain(`Body mass (device-estimated): latest 81.4 kg (${staleDate})`);
         });
     });
 

@@ -247,6 +247,7 @@ export class ContextBriefService {
             fixedActivityResult,
             planBlockResult,
             anthropometryResult,
+            bodyCompositionSnapshotResult,
         ] = await Promise.allSettled([
             // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
             // read outage would be indistinguishable from "no data that day" and the
@@ -276,6 +277,14 @@ export class ContextBriefService {
             // Zero recommendation authority (ADR-0039 D-BC-AUTH): fetched here for the
             // service-computed summary handed to the brief, never for engine decisions.
             anthropometryService.getEntriesInRange(userId, anthropometryStart, targetDate),
+            // A separate, wider range query rather than reusing `snapshots`: that array is
+            // bounded by `contextDays` (as little as RECOVERY_TIMELINE_DAYS = 7 for the
+            // `daily` preset), but a provider weigh-in can be as sparse as manual tape
+            // measurements, which is exactly why anthropometry entries get the full
+            // ANTHROPOMETRY_LOOKBACK_DAYS. Reusing the short array would make a real
+            // provider reading 8-60 days old invisible to body composition and silently
+            // fall back to manual data (or omit the reading entirely).
+            recoverySnapshotService.getRecoverySnapshotsInRangeState(userId, anthropometryStart, throughExclusive),
         ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
@@ -378,12 +387,18 @@ export class ContextBriefService {
             unavailableSources.push('plan blocks / travel overlays');
         }
 
+        const bodyCompositionSnapshots = bodyCompositionSnapshotResult.status === 'fulfilled'
+            && bodyCompositionSnapshotResult.value.status === 'AVAILABLE'
+            ? bodyCompositionSnapshotResult.value.data
+            : [];
+        const bodyCompositionSnapshotsReadable = bodyCompositionSnapshotResult.status === 'fulfilled'
+            && ['AVAILABLE', 'MISSING'].includes(bodyCompositionSnapshotResult.value.status);
         const bodyComposition = buildBodyCompositionBriefInput(
             targetDate,
             anthropometryResult.status === 'fulfilled' ? anthropometryResult.value : [],
-            snapshots,
+            bodyCompositionSnapshots,
         );
-        if (anthropometryResult.status !== 'fulfilled') {
+        if (anthropometryResult.status !== 'fulfilled' || !bodyCompositionSnapshotsReadable) {
             unavailableSources.push('body measurements');
         }
 
