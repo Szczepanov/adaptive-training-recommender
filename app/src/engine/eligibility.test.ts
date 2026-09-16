@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { eligibleTemplates, evaluateTemplateEligibility, resolveMaximumSessionMinutes } from './eligibility';
 import { TEMPLATES, TEMPLATES_BY_ID } from './templates';
 import type { SessionTemplate, TrainingSettings, UserContext } from './models';
+import { DEFAULT_MAX_TIME_MINUTES } from './adapters';
 
 function settings(overrides: Partial<TrainingSettings> = {}): TrainingSettings {
     return {
@@ -60,15 +61,25 @@ describe('training-settings eligibility', () => {
         expect(resolveMaximumSessionMinutes(context(profile), 30, '2026-08-08')).toBe(30);
     });
 
-    it('falls back to a finite default rather than +Infinity when neither the profile limit nor the check-in time is set', () => {
-        // Both sources empty -- an unconfigured Training Setup plus no check-in "time
-        // available" answer -- previously left resolveMaximumSessionMinutes returning
-        // checkinMinutes' own +Infinity sentinel unchanged, which downstream ledger
-        // ceilings reject as non-finite (RangeError).
+    it('terminates the no-answer sentinel at a finite runtime fallback without changing unset profile semantics', () => {
         const profile = settings({ defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' } });
-        const result = resolveMaximumSessionMinutes(context(profile), Number.POSITIVE_INFINITY, '2026-08-07');
-        expect(Number.isFinite(result)).toBe(true);
-        expect(result).toBeGreaterThan(0);
+        expect(profile.defaults.weekdayMaxMinutes).toBeNull();
+        expect(profile.defaults.weekendMaxMinutes).toBeNull();
+        expect(resolveMaximumSessionMinutes(context(profile), Number.POSITIVE_INFINITY, '2026-08-07'))
+            .toBe(DEFAULT_MAX_TIME_MINUTES);
+    });
+
+    it('keeps a finite check-in time authoritative when the profile limit is unset', () => {
+        const profile = settings({ defaults: { weekdayMaxMinutes: null, weekendMaxMinutes: null, environment: 'either' } });
+        expect(resolveMaximumSessionMinutes(context(profile), 75, '2026-08-07')).toBe(75);
+    });
+
+    it('ignores a non-finite legacy profile limit rather than leaking it downstream', () => {
+        const ctx = context(settings());
+        ctx.trainingSettings = undefined;
+        ctx.constraints.maxTimeMinutes = Number.POSITIVE_INFINITY;
+        expect(resolveMaximumSessionMinutes(ctx, Number.POSITIVE_INFINITY, '2026-08-07'))
+            .toBe(DEFAULT_MAX_TIME_MINUTES);
     });
 
     it('attaches a cap-safe dose when an eligible wide-range template has no authored easier dose', () => {

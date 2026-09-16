@@ -69,14 +69,19 @@ export function resolveMaximumSessionMinutes(context: UserContext, checkinMinute
     const profileLimit = defaults
         ? (isWeekend(date) ? defaults.weekendMaxMinutes : defaults.weekdayMaxMinutes)
         : context.constraints.maxTimeMinutes;
-    if (profileLimit !== null && profileLimit !== undefined) return Math.min(profileLimit, checkinMinutes);
-    // Neither Training Setup's weekday/weekend limit nor today's check-in "time available"
-    // is set -- checkinMinutes defaults to +Infinity in that case (schedule.ts), which must
-    // never reach a caller as the final answer: downstream ceilings (dailyMinuteCeiling)
-    // require a finite value and reject Infinity outright. Fall back to the same generous
-    // default adapters.ts already uses for an unset constraint, rather than propagating
-    // Infinity into a value callers assume is always usable as a real minute count.
-    return Number.isFinite(checkinMinutes) ? checkinMinutes : DEFAULT_MAX_TIME_MINUTES;
+
+    // `schedule.ts` deliberately uses +Infinity to mean "the athlete did not answer time
+    // available today". That sentinel may participate in comparisons, but it must terminate
+    // at this hard-feasibility boundary: downstream daily-minute ceilings are persisted and
+    // therefore require a real finite number. Keep persisted null profile limits meaning
+    // "unset"; use the runtime fallback only when neither source supplied a finite limit.
+    const finiteCheckinMinutes = Number.isFinite(checkinMinutes) ? checkinMinutes : null;
+    if (profileLimit !== null && profileLimit !== undefined && Number.isFinite(profileLimit)) {
+        return finiteCheckinMinutes === null
+            ? profileLimit
+            : Math.min(profileLimit, finiteCheckinMinutes);
+    }
+    return finiteCheckinMinutes ?? DEFAULT_MAX_TIME_MINUTES;
 }
 
 function hasEquipment(settings: TrainingSettings | undefined, context: UserContext, equipment: EquipmentKey): boolean {
