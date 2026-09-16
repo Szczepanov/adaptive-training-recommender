@@ -37,6 +37,40 @@ export interface ImportResult {
     plan: ExternalTrainingPlan | ExternalTrainingPlanV2 | ExternalTrainingPlanV3 | ExternalTrainingPlanV4 | ExternalTrainingPlanV5;
 }
 
+/**
+ * `external-plan@5` materializes intent blocks into a separate live collection. Until the
+ * IntentBlock domain gains an explicit retirement/tombstone operation, omission from a newer
+ * source-plan revision cannot safely mean deletion: the prior materialized block would remain
+ * independently selectable. Preserve every previously-authored block id across source-plan
+ * revisions so supersession is always explicit through another revision of that same block.
+ */
+function validateIntentBlockSupersession(
+    previous: ExternalTrainingPlanV5,
+    next: ImportResult['plan'],
+    userId: string,
+): DataIssue[] {
+    const previousIds = new Set((previous.intentBlocks ?? []).map(block => block.id));
+    if (previousIds.size === 0) return [];
+
+    const documentPath = `users/${userId}/external_plans/${previous.planId}`;
+    if (next.schema !== EXTERNAL_PLAN_SCHEMA_V5) {
+        return [{
+            code: 'intent-block-retirement-unsupported',
+            field: 'schema',
+            documentPath,
+        }];
+    }
+
+    const nextIds = new Set((next.intentBlocks ?? []).map(block => block.id));
+    return [...previousIds]
+        .filter(blockId => !nextIds.has(blockId))
+        .map(blockId => ({
+            code: 'intent-block-retirement-unsupported',
+            field: `intentBlocks.${blockId}`,
+            documentPath,
+        }));
+}
+
 /** User-scoped persistence for externally-authored plans. A stored revision is immutable:
  * this service only ever creates one, never updates or deletes it. Rescheduling belongs to
  * the placement overlay, and an AI adjustment is a new revision. */
@@ -86,6 +120,31 @@ export class ExternalPlanService {
                             documentPath: `users/${userId}/external_plans/${plan.planId}`,
                         }],
                     };
+                }
+
+                if (typeof storedRevision === 'number') {
+                    // Intent blocks become independent persisted artifacts after v5 activation.
+                    // Read the immutable predecessor before moving the plan header so a newer
+                    // revision cannot silently orphan still-live block state by omission (or by
+                    // dropping back to an older schema that cannot express intentBlocks).
+                    const previousSnapshot = await getDoc(this.revisionRef(userId, plan.planId, storedRevision));
+                    if (previousSnapshot.exists() && previousSnapshot.data().schema === EXTERNAL_PLAN_SCHEMA_V5) {
+                        const previousParsed = validateExternalTrainingPlanV5(previousSnapshot.data());
+                        if (!previousParsed.isValid || !previousParsed.data) {
+                            return {
+                                status: 'INVALID',
+                                issues: [{
+                                    code: 'superseded-v5-revision-invalid',
+                                    field: 'revision',
+                                    documentPath: `users/${userId}/external_plans/${plan.planId}/revisions/${storedRevision}`,
+                                }],
+                            };
+                        }
+                        const supersessionIssues = validateIntentBlockSupersession(previousParsed.data, plan, userId);
+                        if (supersessionIssues.length > 0) {
+                            return { status: 'INVALID', issues: supersessionIssues };
+                        }
+                    }
                 }
             }
 
