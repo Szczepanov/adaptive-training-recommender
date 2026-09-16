@@ -1,6 +1,6 @@
 import type { PlannedDose, Recommendation, TrainingSettings } from '../engine/models.ts';
 import { EXERCISES } from './exercises.ts';
-import { WORKOUTS } from './catalog.ts';
+import { WORKOUTS, WORKOUTS_BY_ID } from './catalog.ts';
 import type {
   AthletePerformanceProfile,
   DisplayTarget,
@@ -299,10 +299,7 @@ function toDisplayStep(
   };
 }
 
-type WorkoutTemplateIndex = {
-  byTemplateId: ReadonlyMap<string, WorkoutDefinition>;
-  byWorkoutId: ReadonlyMap<string, WorkoutDefinition>;
-};
+type WorkoutTemplateIndex = ReadonlyMap<string, WorkoutDefinition>;
 
 function automaticTemplatePriority(workout: WorkoutDefinition): number {
   return workout.engineTemplatePriority ?? 1;
@@ -310,11 +307,8 @@ function automaticTemplatePriority(workout: WorkoutDefinition): number {
 
 function buildWorkoutTemplateIndex(workouts: readonly WorkoutDefinition[]): WorkoutTemplateIndex {
   const byTemplateId = new Map<string, WorkoutDefinition>();
-  const byWorkoutId = new Map<string, WorkoutDefinition>();
 
   for (const workout of workouts) {
-    // Match the previous Map construction: if IDs ever collide, the last catalog entry wins.
-    byWorkoutId.set(workout.id, workout);
     if (workout.status !== 'active' || workout.manualOnly) continue;
 
     for (const templateId of workout.engineTemplateIds ?? []) {
@@ -326,20 +320,21 @@ function buildWorkoutTemplateIndex(workouts: readonly WorkoutDefinition[]): Work
     }
   }
 
-  return { byTemplateId, byWorkoutId };
+  return byTemplateId;
 }
 
-// The production catalog is a module-level snapshot, so pay the indexing cost once. Custom
-// arrays remain live/mutable test and adapter inputs and are deliberately not identity-cached.
+// The production catalog is a module-level snapshot, so pay the missing template index cost once.
+// Reuse catalog.ts's canonical workout-ID map for fallbacks. Custom arrays remain live/mutable
+// test and adapter inputs and are deliberately not identity-cached.
 const canonicalWorkoutTemplateIndex = buildWorkoutTemplateIndex(WORKOUTS);
 
 function resolveIndexedWorkout(templateId: string, index: WorkoutTemplateIndex): WorkoutDefinition | undefined {
-  const directMatch = index.byTemplateId.get(templateId);
+  const directMatch = index.get(templateId);
   if (directMatch) return directMatch;
 
   const fallbackId = FALLBACK_TEMPLATE_TO_WORKOUT[templateId];
   if (!fallbackId) return undefined;
-  const fallback = index.byWorkoutId.get(fallbackId);
+  const fallback = WORKOUTS_BY_ID.get(fallbackId);
   return fallback?.status === 'active' ? fallback : undefined;
 }
 
