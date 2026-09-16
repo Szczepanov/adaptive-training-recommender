@@ -245,6 +245,12 @@ describe('enhanceContextBriefForPlanning', () => {
         expect(text).toContain('### Day YYYY-MM-DD: <Session Name>');
     });
 
+    it('tells the planner to reconcile Day 1 of a new block against recently completed training instead of duplicating it', () => {
+        const text = enhanceContextBriefForPlanning(BASE, handoffInput());
+        expect(text).toContain('Day 1 of a new block is not a blank slate');
+        expect(text).toContain('needs an explicit adjustment (lower end of the range, different modality, or rest), not a repeat of the same slot');
+    });
+
     it('puts source failures inside the copied text and says absence means unknown', () => {
         const text = enhanceContextBriefForPlanning(BASE, handoffInput({
             unavailableSources: ['recorded activities', 'future fixed activities'],
@@ -627,6 +633,28 @@ describe('enhanceContextBriefForPlanning', () => {
             expect(text).not.toContain('### Preferred output schema');
             expect(text).not.toContain('### Day YYYY-MM-DD: <Session Name>');
             expect(text).not.toContain('Detailed activity telemetry');
+        });
+
+        it('reports appetite in the daily check-in section with its non-authority caveat', () => {
+            const text = enhanceContextBriefForPlanning(BASE, handoffInput({
+                preset: 'daily',
+                checkins: [checkin(AS_OF, { hunger1To10: 6, hungerTiming: 'morning_pre_breakfast' })],
+            }));
+            expect(text).toContain('- Appetite (hunger 1–10, pre-breakfast): 6 — observation only, zero recommendation authority');
+        });
+
+        it('labels a non-preferred hunger timing and omits the line entirely when unscored', () => {
+            const withOtherTiming = enhanceContextBriefForPlanning(BASE, handoffInput({
+                preset: 'daily',
+                checkins: [checkin(AS_OF, { hunger1To10: 3, hungerTiming: 'other' })],
+            }));
+            expect(withOtherTiming).toContain('- Appetite (hunger 1–10, non-preferred timing): 3');
+
+            const withoutHunger = enhanceContextBriefForPlanning(BASE, handoffInput({
+                preset: 'daily',
+                checkins: [checkin(AS_OF)],
+            }));
+            expect(withoutHunger).not.toContain('Appetite');
         });
     });
 });

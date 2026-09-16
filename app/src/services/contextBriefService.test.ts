@@ -13,6 +13,7 @@ const services = vi.hoisted(() => ({
     getFixedActivitiesInRangeState: vi.fn(),
     getPlanBlocksInRangeState: vi.fn(),
     getActivePlanState: vi.fn(),
+    getEntriesInRange: vi.fn(),
 }));
 
 vi.mock('./recoverySnapshotService', () => ({ recoverySnapshotService: { getRecoverySnapshotState: services.getRecoverySnapshotState } }));
@@ -33,6 +34,7 @@ vi.mock('./activeExternalPlanService', () => ({
     placedSessionForDate: (active: { placed: Array<{ date: string; status: string }> }, date: string) =>
         active.placed.find(item => item.date === date && (item.status === 'planned' || item.status === 'moved')) ?? null,
 }));
+vi.mock('./anthropometryService', () => ({ anthropometryService: { getEntriesInRange: services.getEntriesInRange } }));
 
 import { ContextBriefService } from './contextBriefService';
 
@@ -53,6 +55,7 @@ describe('ContextBriefService', () => {
         services.getFixedActivitiesInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getPlanBlocksInRangeState.mockResolvedValue({ status: 'AVAILABLE', data: [], revision: null });
         services.getActivePlanState.mockResolvedValue({ status: 'MISSING' });
+        services.getEntriesInRange.mockResolvedValue([]);
     });
 
     it('reads check-ins over a date range covering the full baseline, inclusive of asOfDate', async () => {
@@ -349,14 +352,37 @@ describe('ContextBriefService', () => {
         services.getActiveGoalsState.mockRejectedValue(new Error('offline'));
         services.getFixedActivitiesInRangeState.mockRejectedValue(new Error('offline'));
         services.getPlanBlocksInRangeState.mockRejectedValue(new Error('offline'));
+        services.getEntriesInRange.mockRejectedValue(new Error('offline'));
 
         const result = await new ContextBriefService().build('u1', AS_OF, 14);
         expect(result.text).toContain('# Training context brief');
         expect(result.unavailableSources).toContain('recovery snapshots');
         expect(result.unavailableSources).toContain('training settings');
         expect(result.unavailableSources).toContain('plan blocks / travel overlays');
+        expect(result.unavailableSources).toContain('body measurements');
         expect(result.text).toContain('Do not assume any equipment or absence of injury');
         expect(result.text).toContain('DATA INCOMPLETE');
+    });
+
+    describe('body composition (anthropometry)', () => {
+        it('reads anthropometry entries over a wider lookback than the subjective baseline', async () => {
+            await new ContextBriefService().build('u1', AS_OF, 14);
+            // 60-day lookback ending 2026-08-15 starts on 2026-06-17.
+            expect(services.getEntriesInRange).toHaveBeenCalledWith('u1', '2026-06-17', AS_OF);
+        });
+
+        it('reports a failed anthropometry read as an unavailable source without failing the whole brief', async () => {
+            services.getEntriesInRange.mockRejectedValue(new Error('offline'));
+            const result = await new ContextBriefService().build('u1', AS_OF, 14);
+            expect(result.unavailableSources).toContain('body measurements');
+            expect(result.text).toContain('# Training context brief');
+        });
+
+        it('does not report anthropometry as unavailable when it simply has no entries', async () => {
+            const result = await new ContextBriefService().build('u1', AS_OF, 14);
+            expect(result.unavailableSources.join()).not.toContain('body measurements');
+            expect(result.text).not.toContain('Body composition & fueling');
+        });
     });
 
     it('never writes a training settings profile as a side effect of being read', async () => {

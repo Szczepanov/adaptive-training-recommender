@@ -9,9 +9,20 @@ import {
     buildContextBrief,
     defaultBriefWindowDays,
     SUBJECTIVE_BASELINE_DAYS,
+    type BodyCompositionBriefInput,
     type BriefWindowPreset,
     type ContextBriefInput,
 } from '../engine/contextBrief';
+import { METRIC_DISPLAY_LABELS, type AnthropometryEntry } from '../anthropometry/models';
+import {
+    computeBodyMassTrend,
+    computeCircumferenceTrends,
+    computeProviderCompositionSummary,
+    reduceDailyManualBodyMass,
+    reduceDailyProviderBodyMass,
+    type ProviderCompositionRecord,
+    type RawProviderWeightRecord,
+} from '../anthropometry/trends';
 import { injectActivityTelemetryIntoContextBrief } from '../engine/contextBriefActivityTelemetry';
 import {
     enhanceContextBriefForPlanning,
@@ -27,6 +38,7 @@ import { isV2Session, type AnyExternalPlanSession } from '../sessions/externalPl
 import { addDaysToLocalDateString, getLocalDateString } from '../utils/localDate';
 import { activeExternalPlanService, placedSessionForDate } from './activeExternalPlanService';
 import { activityService } from './activityService';
+import { anthropometryService } from './anthropometryService';
 import { checkinService } from './checkinService';
 import { fixedActivityService } from './fixedActivityService';
 import { goalService } from './goalService';
@@ -50,6 +62,82 @@ export interface ContextBriefResult {
     /** Sources that could not be read. The brief still renders; it says what is missing
      * rather than presenting a partial window as complete. */
     unavailableSources: string[];
+}
+
+function lastNCalendarDates(endDateInclusive: string, days: number): string[] {
+    return Array.from({ length: days }, (_, i) => addDaysToLocalDateString(endDateInclusive, -(days - 1 - i)));
+}
+
+/**
+ * Summarizes anthropometry entries and the provider-sourced weight/body-fat fields already
+ * present on `snapshots` into the plain, pre-computed shape `buildContextBrief` renders.
+ * Trend math is reused from `anthropometry/trends.ts` rather than duplicated here — that
+ * reuse is only safe in this file because it lives outside `engine/`, which ADR-0039
+ * D-BC-AUTH bars from importing anthropometry at all.
+ */
+export function buildBodyCompositionBriefInput(
+    targetDate: string,
+    entries: readonly AnthropometryEntry[],
+    snapshots: readonly DailyRecoverySnapshot[],
+): BodyCompositionBriefInput {
+    const providerWeightRecords: RawProviderWeightRecord[] = snapshots
+        .filter(s => typeof s.raw.weightKg === 'number' && s.raw.weightKg > 0)
+        .map(s => ({ date: s.date, weightKg: s.raw.weightKg as number }));
+    const providerCompositionRecords: ProviderCompositionRecord[] = snapshots
+        .filter(s => typeof s.raw.bodyFatPct === 'number' && s.raw.bodyFatPct > 0)
+        .map(s => ({ date: s.date, bodyFatPct: s.raw.bodyFatPct }));
+
+    const manualPoints = reduceDailyManualBodyMass(entries);
+    const providerPoints = reduceDailyProviderBodyMass(providerWeightRecords);
+    // Provider preferred when present, mirroring BodyCompositionPanel's auto-fallback: a
+    // synced scale is less error-prone than a manually keyed reading.
+    const effectiveSource: 'provider' | 'manual' | null = providerPoints.size > 0
+        ? 'provider'
+        : manualPoints.size > 0 ? 'manual' : null;
+
+    const current7dDates = lastNCalendarDates(targetDate, 7);
+    const prior7dDates = lastNCalendarDates(addDaysToLocalDateString(targetDate, -7), 7);
+
+    let bodyMass: BodyCompositionBriefInput['bodyMass'] = null;
+    if (effectiveSource) {
+        const points = effectiveSource === 'provider' ? providerPoints : manualPoints;
+        const trend = computeBodyMassTrend(effectiveSource, current7dDates, prior7dDates, points);
+        bodyMass = {
+            source: effectiveSource,
+            latestKg: trend.latestPoint?.weightKg ?? null,
+            latestDate: trend.latestPoint?.date ?? null,
+            current7dMeanKg: trend.current7d.meanWeightKg,
+            prior7dMeanKg: trend.prior7d.meanWeightKg,
+            weekOverWeekKg: trend.weekOverWeekAbsoluteKg,
+            weekOverWeekPercent: trend.weekOverWeekPercent,
+        };
+    }
+
+    const circumferences = Array.from(computeCircumferenceTrends(entries).values())
+        .filter(trend => trend.latestPoint !== null)
+        .sort((a, b) => a.metricId.localeCompare(b.metricId) || a.laterality.localeCompare(b.laterality))
+        .map(trend => {
+            const latest = trend.latestPoint!;
+            const label = METRIC_DISPLAY_LABELS[trend.metricId] ?? trend.metricId;
+            return {
+                label: trend.laterality === 'unspecified' ? label : `${label} (${trend.laterality})`,
+                latestCm: latest.value,
+                latestDate: latest.date,
+                deltaCm: trend.deltaCm,
+                repeatabilityWarning: latest.repeatabilityWarning,
+            };
+        });
+
+    const providerComposition = computeProviderCompositionSummary(providerCompositionRecords, current7dDates);
+    const bodyFatPct: BodyCompositionBriefInput['bodyFatPct'] = providerComposition.latestBodyFatPct !== null
+        ? {
+            latestPct: providerComposition.latestBodyFatPct,
+            latestDate: providerComposition.latestDate,
+            mean7dPct: providerComposition.mean7d,
+        }
+        : null;
+
+    return { bodyMass, circumferences, bodyFatPct };
 }
 
 /**
@@ -116,6 +204,12 @@ export class ContextBriefService {
         const placementOccupancyEnd = addDaysToLocalDateString(upcomingEndDate, 6);
         const unavailableSources: string[] = [];
 
+        // Wider than baselineDays: tape measurements and manual body-mass entries are
+        // typically logged weekly or less often, not daily, so a "previous reading" delta
+        // needs real lookback rather than the subjective baseline's 28-day floor.
+        const ANTHROPOMETRY_LOOKBACK_DAYS = 60;
+        const anthropometryStart = briefWindowStart(targetDate, ANTHROPOMETRY_LOOKBACK_DAYS);
+
         const snapshotDates = Array.from(
             { length: contextDays },
             (_, offset) => addDaysToLocalDateString(contextStart, offset),
@@ -132,6 +226,7 @@ export class ContextBriefService {
             goalsResult,
             fixedActivityResult,
             planBlockResult,
+            anthropometryResult,
         ] = await Promise.allSettled([
             // getRecoverySnapshotByDate collapses UNAVAILABLE and MISSING to null, so a
             // read outage would be indistinguishable from "no data that day" and the
@@ -158,6 +253,9 @@ export class ContextBriefService {
             // Plan blocks are range-overlays (currently explicit travel) and the service
             // returns any block intersecting this visible horizon, including one that began earlier.
             planBlockService.getBlocksInRangeState(userId, targetDate, upcomingEndDate),
+            // Zero recommendation authority (ADR-0039 D-BC-AUTH): fetched here for the
+            // service-computed summary handed to the brief, never for engine decisions.
+            anthropometryService.getEntriesInRange(userId, anthropometryStart, targetDate),
         ] as const);
 
         const snapshots: DailyRecoverySnapshot[] = [];
@@ -260,6 +358,15 @@ export class ContextBriefService {
             unavailableSources.push('plan blocks / travel overlays');
         }
 
+        const bodyComposition = buildBodyCompositionBriefInput(
+            targetDate,
+            anthropometryResult.status === 'fulfilled' ? anthropometryResult.value : [],
+            snapshots,
+        );
+        if (anthropometryResult.status !== 'fulfilled') {
+            unavailableSources.push('body measurements');
+        }
+
         const upcomingExternalSessions: UpcomingExternalPlanSession[] = [];
         let currentExternalSession: AnyExternalPlanSession | null = null;
         // Whether "no session placed today" can be asserted as a confirmed fact. Starts
@@ -356,6 +463,7 @@ export class ContextBriefService {
             preferences,
             intentProfile,
             goals,
+            bodyComposition,
         };
         // `activities` was fetched over contextDays (>= windowDays) to feed the fixed
         // 7-day recovery timeline below; the detailed telemetry appendix must not inherit

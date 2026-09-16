@@ -394,6 +394,7 @@ function renderUseInstructions(): string {
         '',
         '- Treat the brief as **state/context**, not as a request to automatically create a plan. Answer the user\'s actual question first.',
         '- For **today**, current illness/pain/tissue response and current-day availability outrank favorable wearable metrics. A green wearable day does not justify overriding a local warning signal.',
+        '- **Day 1 of a new block is not a blank slate.** Cross-check it against the most recent rows in the completed-training table before finalizing it — a session scheduled for today or tomorrow that duplicates one already completed the day of or immediately before the brief\'s date needs an explicit adjustment (lower end of the range, different modality, or rest), not a repeat of the same slot.',
         '- For **future days**, preserve the intended purpose and hard/easy spacing of key sessions. Do not pre-emptively downgrade a future quality day merely because the preceding planned work may create normal fatigue; reassess that day when current data exists.',
         '- Favorable recovery metrics may support proceeding with the intended dose, but are not a reason by themselves to add volume or intensity beyond the plan.',
         '- Treat respiration robust statistics and the observation-only median/MAD fields as context for pattern recognition, not independent additive penalties.',
@@ -501,6 +502,14 @@ export function buildMorningCoachBrief(input: ContextBriefPlanningHandoffInput):
         if (todayCheckin.alreadyTrainedToday) flags.push('already trained today');
         if (todayCheckin.unusuallyLimitedTime) flags.push('unusually limited time');
         lines.push(`- Flags: ${flags.length > 0 ? flags.join(' · ') : 'no acute flags'}`);
+
+        if (todayCheckin.hunger1To10 != null) {
+            const timingLabel = todayCheckin.hungerTiming === 'morning_pre_breakfast' ? 'pre-breakfast' : 'non-preferred timing';
+            lines.push(
+                `- Appetite (hunger 1–10, ${timingLabel}): ${textNumber(todayCheckin.hunger1To10)} `
+                + '— observation only, zero recommendation authority',
+            );
+        }
 
         if (todayCheckin.tissueResponses) {
             const trEntries = Object.entries(todayCheckin.tissueResponses).filter(([, tr]) => tr != null);
