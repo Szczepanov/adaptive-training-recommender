@@ -64,6 +64,7 @@ export class PreferencesService {
                 unavailableModalities: existingPrefs?.unavailableModalities ?? [],
                 explanationVerbosity: existingPrefs?.explanationVerbosity ?? 'detailed',
                 conservativeBias: existingPrefs?.conservativeBias ?? false,
+                shadowModeEnabled: existingPrefs?.shadowModeEnabled ?? false,
                 preferredUnits: existingPrefs?.preferredUnits ?? {
                     distance: 'km',
                     weight: 'kg',
@@ -118,6 +119,7 @@ export class PreferencesService {
             unavailableModalities: [],
             explanationVerbosity: 'detailed',
             conservativeBias: false,
+            shadowModeEnabled: false,
             preferredUnits: {
                 distance: 'km',
                 weight: 'kg',

@@ -34,6 +34,28 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
         </div>
       </div>
 
+      {/* Decision Journal / shadow mode -- opt-in evidence-collection, off by default */}
+      <div className="preference-section">
+        <h2>Decision Journal</h2>
+        <div className="toggle-group">
+          <div className="toggle-info">
+            <span className="toggle-title">Record my own verdict before today's recommendation</span>
+            <p className="preference-desc">
+              Adds a card each morning to log what you'd have decided yourself, before revealing the app's recommendation, so the two can be compared later. Off by default -- turn this on only if you want to run that comparison.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={`toggle-switch ${preferences.shadowModeEnabled === true ? 'active' : ''}`}
+            onClick={() => updatePreference('shadowModeEnabled', preferences.shadowModeEnabled !== true)}
+            aria-label="Toggle Decision Journal"
+            aria-pressed={preferences.shadowModeEnabled === true}
+          >
+            <span className="toggle-slider" />
+          </button>
+        </div>
+      </div>
+
       {/* Recovery Style */}
       <div className="preference-section">
         <h2>Recovery Day Style</h2>

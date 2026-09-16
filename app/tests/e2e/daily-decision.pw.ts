@@ -1,7 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { dismissOnboardingIfVisible, hasPersistedCheckin, provisionAthlete, seedRecoverySnapshot, signInThroughUi } from './support/athlete';
 
-test('a complete check-in produces a visible daily recommendation', async ({ page }) => {
+test('a complete check-in produces a visible daily recommendation without shadow-mode opt-in', async ({ page }) => {
   const athlete = await provisionAthlete();
   const date = await seedRecoverySnapshot(athlete);
 
@@ -12,10 +12,11 @@ test('a complete check-in produces a visible daily recommendation', async ({ pag
   await expect.poll(() => hasPersistedCheckin(athlete, date)).toBe(true);
   // Saving the check-in triggers a fresh decisionInput composition (App.tsx's
   // onCheckinSaved), the same async work that makes the onboarding wizard eligible to show
-  // again for a goal-less athlete -- dismiss it here too, or it can intercept the click below.
+  // again for a goal-less athlete -- dismiss it here too, or it can intercept assertions.
   await dismissOnboardingIfVisible(page);
-  const reveal = page.getByRole('button', { name: /Reveal today's recommendation/ });
-  await expect(reveal).toBeVisible();
-  await reveal.click();
+
+  // Decision Journal / shadow mode is opt-in. A fresh athlete has no preference document yet,
+  // so Home must fail closed: no reveal gate and the recommendation is immediately visible.
+  await expect(page.getByRole('button', { name: /Reveal today's recommendation/ })).toHaveCount(0);
   await expect(page.getByLabel("Today's Morning Training Decision")).toBeVisible();
 });

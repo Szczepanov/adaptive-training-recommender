@@ -1077,7 +1077,12 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
   const todaysEngineVerdict = activeRec && canGenerateNormalPlan
     ? resolveEngineShadowVerdict(activeRec.mode, activeRec.externalVerdict?.decision)
     : null;
-  const recommendationEffectivelyRevealed = recommendationRevealed || !!todaysJournalEntry;
+  // Phase 9.0.3's shadow-mode reveal gate/Decision Journal card is a single-athlete
+  // evidence-collection tool (docs/plans/phase-9-0-shadow-mode-and-decision-journal.md),
+  // not a general onboarding surface -- opt-in per account, off by default so a new user's
+  // first visit shows today's recommendation immediately instead of an unfamiliar gate.
+  const shadowModeEnabled = decisionInput?.preferences?.shadowModeEnabled === true;
+  const recommendationEffectivelyRevealed = !shadowModeEnabled || recommendationRevealed || !!todaysJournalEntry;
 
   const eventPeriodization = useMemo(() => {
     if (!decisionInput) return null;
@@ -1288,7 +1293,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           {/* The first, still-unrecorded verdict is an intentional reveal gate. Once it has
               been recorded, it no longer needs premium dashboard space and moves to the
               insights disclosure below, where the editable evening outcome remains available. */}
-          {decisionInput && !todaysJournalEntry && (
+          {shadowModeEnabled && decisionInput && !todaysJournalEntry && (
             <DecisionJournalCard
               userId={userId}
               date={decisionInput.date}
@@ -1447,7 +1452,7 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           <details className="home-insights-disclosure">
             <summary className="home-insights-summary">More insights & history ›</summary>
             <div className="home-insights-content">
-          {decisionInput && todaysJournalEntry && (
+          {shadowModeEnabled && decisionInput && todaysJournalEntry && (
             <DecisionJournalCard
               userId={userId}
               date={decisionInput.date}
