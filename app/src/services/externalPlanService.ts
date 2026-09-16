@@ -124,22 +124,41 @@ export class ExternalPlanService {
 
                 if (typeof storedRevision === 'number') {
                     // Intent blocks become independent persisted artifacts after v5 activation.
-                    // Read the immutable predecessor before moving the plan header so a newer
-                    // revision cannot silently orphan still-live block state by omission (or by
-                    // dropping back to an older schema that cannot express intentBlocks).
+                    // A safe supersession decision therefore requires the immutable predecessor
+                    // itself, not just the mutable header: if those bytes are missing, malformed,
+                    // or stored under the wrong identity we cannot prove that the predecessor did
+                    // not carry live intent blocks that the new revision would strand.
+                    const previousDocumentPath = `users/${userId}/external_plans/${plan.planId}/revisions/${storedRevision}`;
                     const previousSnapshot = await getDoc(this.revisionRef(userId, plan.planId, storedRevision));
-                    if (previousSnapshot.exists() && previousSnapshot.data().schema === EXTERNAL_PLAN_SCHEMA_V5) {
-                        const previousParsed = validateExternalTrainingPlanV5(previousSnapshot.data());
-                        if (!previousParsed.isValid || !previousParsed.data) {
-                            return {
-                                status: 'INVALID',
-                                issues: [{
-                                    code: 'superseded-v5-revision-invalid',
-                                    field: 'revision',
-                                    documentPath: `users/${userId}/external_plans/${plan.planId}/revisions/${storedRevision}`,
-                                }],
-                            };
-                        }
+                    if (!previousSnapshot.exists()) {
+                        return {
+                            status: 'INVALID',
+                            issues: [{
+                                code: 'superseded-revision-missing',
+                                field: 'revision',
+                                documentPath: previousDocumentPath,
+                            }],
+                        };
+                    }
+
+                    const previousParsed = validateAnyExternalTrainingPlan(previousSnapshot.data());
+                    if (
+                        !previousParsed.isValid
+                        || !previousParsed.data
+                        || previousParsed.data.planId !== plan.planId
+                        || previousParsed.data.revision !== storedRevision
+                    ) {
+                        return {
+                            status: 'INVALID',
+                            issues: [{
+                                code: 'superseded-revision-invalid',
+                                field: 'revision',
+                                documentPath: previousDocumentPath,
+                            }],
+                        };
+                    }
+
+                    if (previousParsed.data.schema === EXTERNAL_PLAN_SCHEMA_V5) {
                         const supersessionIssues = validateIntentBlockSupersession(previousParsed.data, plan, userId);
                         if (supersessionIssues.length > 0) {
                             return { status: 'INVALID', issues: supersessionIssues };
