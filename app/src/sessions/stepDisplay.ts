@@ -1,6 +1,7 @@
 import type { SessionStep } from './models';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 
+/** Convert identifier-style fallback text into a readable athlete-facing label. */
 function formatSlug(slug: string): string {
     return slug
         .replace(/[-_]+/g, ' ')
