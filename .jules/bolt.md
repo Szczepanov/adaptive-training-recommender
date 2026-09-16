@@ -32,3 +32,6 @@
 ## 2026-09-08 - Use Map lookup for known default Rest templates
 **Learning:** Throughout the codebase (like in `planner.ts` and `safetyCheckin.ts`), fetching the fallback rest template via an array scan like `ENRICHED_TEMPLATES.find(t => t.category === 'Rest')` is unnecessary O(N) overhead when we just want the default Rest template. The `rest_01` template is the universal fallback.
 **Action:** Always fetch the fallback Rest template directly via `ENRICHED_TEMPLATES_BY_ID.get('rest_01')` (or `TEMPLATES_BY_ID`) rather than iterating the entire array looking for the 'Rest' category.
+## 2026-09-16 - Index canonical workout-template resolution without hiding mutable inputs
+**Learning:** `workoutForTemplate(templateId, workouts)` was repeatedly filtering and sorting the canonical workout catalog. Caching final answers by arbitrary array identity avoids repeat work but silently makes mutable caller-supplied arrays stale after their first lookup.
+**Action:** Build only the missing canonical template-to-workout index once, reuse `WORKOUTS_BY_ID` for fallback IDs, preserve stable priority/tie and fallback semantics, and keep caller-supplied mutable arrays uncached with a single O(N) selection pass.
