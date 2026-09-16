@@ -2,8 +2,13 @@ import { describe, expect, it } from 'vitest';
 import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION } from './policy';
 
 describe('isHistoricalPolicyVersion', () => {
-    it('records the exact progression-confirmed-selection-wiring transition once', () => {
+    it('records the current transition and the previous live policy exactly once', () => {
         expect(POLICY_VERSION).toBe('2026-09-bolt-workout-for-template-cache-v1');
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-o1-rest-template-lookup-v1',
+            ),
+        ).toHaveLength(1);
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
                 (version) => version === '2026-09-progression-confirmed-selection-wiring-v2',
