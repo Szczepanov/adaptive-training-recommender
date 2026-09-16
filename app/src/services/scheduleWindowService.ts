@@ -5,7 +5,7 @@ import type { DataIssue, DataState } from '../engine/dataState';
 import { validateScheduleWindow, validateScheduleWindowManifest } from '../engine/scheduleWindows';
 import { getErrorCode } from '../utils/errors';
 
-type ScheduleWindowWithId = ScheduleWindow & { id: string };
+export type ScheduleWindowWithId = ScheduleWindow & { id: string };
 type NewScheduleWindowInput = Omit<ScheduleWindow, 'id' | 'userId' | 'revision' | 'createdAt' | 'updatedAt'>;
 type ScheduleWindowUpdates = Partial<Omit<ScheduleWindow, 'id' | 'userId' | 'revision' | 'createdAt' | 'updatedAt'>>;
 
@@ -150,6 +150,11 @@ export class ScheduleWindowService {
      * Updates one window by stable id. `currentDate` is required because the window now
      * lives inside a per-date document; a date move atomically reads and writes both
      * affected manifests rather than relying on a query inside a transaction.
+     *
+     * Optional fields use an explicit-own-property clear convention: passing a field as
+     * `undefined` removes it instead of accidentally retaining the old value via object
+     * spread. This keeps edit forms able to clear label/context metadata without relying
+     * on Firestore's `ignoreUndefinedProperties` setting.
      */
     async updateWindow(userId: string, currentDate: string, windowId: string, updates: ScheduleWindowUpdates): Promise<ScheduleWindow> {
         await this.assertNoRetiredWindows(userId, currentDate);
@@ -165,6 +170,9 @@ export class ScheduleWindowService {
                 ...existing, ...updates, id: existing.id, userId, revision: existing.revision + 1,
                 createdAt: existing.createdAt, updatedAt: this.now(),
             };
+            if (Object.prototype.hasOwnProperty.call(updates, 'label') && updates.label === undefined) delete candidate.label;
+            if (Object.prototype.hasOwnProperty.call(updates, 'equipment') && updates.equipment === undefined) delete candidate.equipment;
+            if (Object.prototype.hasOwnProperty.call(updates, 'environment') && updates.environment === undefined) delete candidate.environment;
             const validation = validateScheduleWindow(candidate);
             if (!validation.isValid || !validation.data) {
                 throw new Error(`Validation failed: ${validation.errors.map(error => `${error.field}: ${error.message}`).join('; ')}`);

@@ -3,7 +3,7 @@
 * **Status:** Accepted
 * **Date:** 2026-09-05
 * **Deciders:** Codex, under the repository owner's request to take the H4 decision
-* **Implementation:** Unstarted; acceptance of this design does not activate behavior.
+* **Implementation:** Live H4 release delivered (D-SCHEMA/D-LEDGER/D-TIME/D-WINDOW, D-PLACEMENT, D-REASSESS and decision persistence); remaining placement D-AUDIT/replay completeness is tracked in the H4 evaluation.
 * **Related:** [ADR-0035](./0035-explicit-rest-day-authoring.md),
   [ADR-0034](./0034-canonical-performed-training-occurrence-and-multisource-reconciliation.md),
   [ADR-0023](./0023-multidomain-session-authoring-execution-and-evidence.md),

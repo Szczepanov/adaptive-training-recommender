@@ -52,6 +52,7 @@ import {
   type WearablePlanningMode,
 } from '../utils/wearablePlanningGate';
 import { ScheduleOverlayCard } from './schedule/ScheduleOverlayCard';
+import { ScheduleWindowsCard } from './schedule/ScheduleWindowsCard';
 import { PlanAuthorityBanner } from './PlanAuthorityBanner';
 import type { AuthorityBannerInput } from './planAuthorityBannerRule';
 import './PlanView.css';
@@ -659,6 +660,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
         </div>
       )}
       <ScheduleOverlayCard userId={userId} onChanged={loadPlanData} />
+      <ScheduleWindowsCard userId={userId} onChanged={loadPlanData} />
     </div>
   );
 };

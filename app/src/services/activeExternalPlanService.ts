@@ -145,7 +145,15 @@ function toMembers(
     memberState?: IntradayBundlePlacementContext['memberState'],
 ): IntradayBundleMember[] {
     return bundleSessions.map(placed => {
-        const { intraday, definition, priority, id } = placed.session;
+        const { intraday, definition, priority, id, gating } = placed.session;
+        // ADR-0036 D-WINDOW: plan gating never creates athlete availability or broadens
+        // a window's context. Project the session's existing feasibility requirements
+        // into the pure placement member so D-PLACEMENT can intersect them with the
+        // selected window's equipment/environment restrictions.
+        const requiredContext = {
+            ...(gating.equipment !== undefined ? { requiredEquipment: gating.equipment } : {}),
+            ...(gating.environment !== undefined ? { requiredEnvironment: gating.environment } : {}),
+        };
         // ADR-0036 D-PLACEMENT: "once a member starts, do not move its history." Before
         // PR 3 wired real occurrence state through, every member was evaluated as
         // not-yet-started regardless of what actually happened -- a placed-but-launched
@@ -157,6 +165,7 @@ function toMembers(
             order: intraday.order,
             priority,
             requestedWindow: intraday.window,
+            ...requiredContext,
             afterSessionId: intraday.afterSessionId,
             minimumSeparationMinutes: intraday.minimumSeparationMinutes,
             estimatedMinutes: definition.duration?.max ?? definition.duration?.min ?? 45,
