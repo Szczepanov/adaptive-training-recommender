@@ -6,7 +6,6 @@ from garmin_sync.base_api import BaseJSONRequestHandler
 
 
 class DummyRequestHandler(BaseJSONRequestHandler):
-
     def __init__(self, headers: dict[str, str] | None = None) -> None:
         self.headers = headers or {}  # type: ignore[assignment]
         self.wfile = io.BytesIO()
@@ -45,10 +44,16 @@ def test_cors_headers_added_for_allowed_origin(monkeypatch: Any) -> None:
     handler = DummyRequestHandler(headers={"Origin": "https://app.example.com"})
     handler._json_response(HTTPStatus.OK, {"status": "ok"})  # noqa: SLF001
 
-    assert get_header(handler.sent_headers, "Access-Control-Allow-Origin") == "https://app.example.com"
+    assert (
+        get_header(handler.sent_headers, "Access-Control-Allow-Origin") == "https://app.example.com"
+    )
     assert get_header(handler.sent_headers, "Vary") == "Origin"
-    assert "GET, POST, OPTIONS" in (get_header(handler.sent_headers, "Access-Control-Allow-Methods") or "")
-    assert "Content-Type" in (get_header(handler.sent_headers, "Access-Control-Allow-Headers") or "")
+    assert "GET, POST, OPTIONS" in (
+        get_header(handler.sent_headers, "Access-Control-Allow-Methods") or ""
+    )
+    assert "Content-Type" in (
+        get_header(handler.sent_headers, "Access-Control-Allow-Headers") or ""
+    )
 
 
 def test_cors_allowed_origins_from_app_base_url(monkeypatch: Any) -> None:
@@ -57,7 +62,9 @@ def test_cors_allowed_origins_from_app_base_url(monkeypatch: Any) -> None:
     handler = DummyRequestHandler(headers={"Origin": "https://my-app.web.app"})
     handler._json_response(HTTPStatus.OK, {"status": "ok"})  # noqa: SLF001
 
-    assert get_header(handler.sent_headers, "Access-Control-Allow-Origin") == "https://my-app.web.app"
+    assert (
+        get_header(handler.sent_headers, "Access-Control-Allow-Origin") == "https://my-app.web.app"
+    )
 
 
 def test_cors_rejected_for_unallowed_origin(monkeypatch: Any) -> None:
@@ -75,7 +82,9 @@ def test_do_options_returns_no_content_with_cors_headers(monkeypatch: Any) -> No
 
     assert handler.sent_status == HTTPStatus.NO_CONTENT.value
     assert get_header(handler.sent_headers, "Content-Length") == "0"
-    assert get_header(handler.sent_headers, "Access-Control-Allow-Origin") == "https://app.example.com"
+    assert (
+        get_header(handler.sent_headers, "Access-Control-Allow-Origin") == "https://app.example.com"
+    )
 
 
 def test_error_response_includes_cors_headers(monkeypatch: Any) -> None:
@@ -89,4 +98,6 @@ def test_error_response_includes_cors_headers(monkeypatch: Any) -> None:
     )
 
     assert handler.sent_status == HTTPStatus.BAD_REQUEST.value
-    assert get_header(handler.sent_headers, "Access-Control-Allow-Origin") == "https://app.example.com"
+    assert (
+        get_header(handler.sent_headers, "Access-Control-Allow-Origin") == "https://app.example.com"
+    )
