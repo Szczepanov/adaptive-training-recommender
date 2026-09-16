@@ -160,9 +160,7 @@ def test_rebuild_success_from_archived_payloads() -> None:
     # Raw payload mocks for target_date "2026-08-20"
     payloads = {
         ("stats", "2026-08-20"): {"restingHeartRate": 52, "totalSteps": 8000},
-        ("sleep", "2026-08-20"): {
-            "dailySleepDTO": {"sleepScores": {"overall": {"value": 85}}}
-        },
+        ("sleep", "2026-08-20"): {"dailySleepDTO": {"sleepScores": {"overall": {"value": 85}}}},
         ("hrv", "2026-08-20"): {"hrvSummary": {"lastNightAvg": 60}},
         ("activities", "2026-08-20"): [],
     }
