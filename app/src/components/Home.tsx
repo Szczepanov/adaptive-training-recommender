@@ -94,7 +94,6 @@ import {
 import './Home.css';
 
 import type { Screen } from '../types/navigation';
-import { SCREEN_LABELS } from '../types/navigation';
 
 interface HomeProps {
   userId: string;
@@ -346,16 +345,16 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           setError('Garmin is connected, but today\'s recovery data is missing. Sync before generating a plan.');
           return;
         }
-        if (wearableMode === 'unavailable') {
-          setRecommendation(null);
-          setNextDayPlan(null);
-          clearExternalPlanState();
-          // Connection configuration lives under Coach Preferences -- link there so the
-          // state names the missing input, offers the fixing screen, and still retries.
-          setErrorRepairTargets([{ kind: 'navigate', screen: 'preferences', label: `Review ${SCREEN_LABELS.preferences}` }]);
-          setError('Garmin connection status could not be verified. Retry before using wearable-free mode.');
-          return;
-        }
+        // 'unavailable' means the Garmin connection status genuinely could not be
+        // determined (the reconciliation call itself failed) -- most commonly for an
+        // account with no Garmin mirror doc at all, i.e. every non-Garmin user, on every
+        // load, since nothing ever writes a 'disconnected' doc. Treating that as a hard
+        // block made a transient backend hiccup (cold start, deploy, outage) block the
+        // daily recommendation for exactly the users least likely to know what "Garmin
+        // connection" even means. Fail open into the same subjective-only computation
+        // 'subjective_only' already uses below -- GarminSyncBadge in the top nav keeps
+        // showing "Status unavailable" so the uncertainty is still visible, just not
+        // blocking.
       }
 
       const yesterday = getPreviousLocalDateString(input.date);

@@ -189,13 +189,12 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
             canResync: true,
           });
         }
-        if (wearableMode === 'unavailable') {
-          setWearableForecastBlock({
-            message: 'Garmin connection status could not be verified. Review Coach Preferences or retry before using wearable-free mode.',
-            canResync: false,
-            repairAction: { kind: 'navigate', screen: 'preferences', label: `Review ${SCREEN_LABELS.preferences}` },
-          });
-        }
+        // 'unavailable' means the reconciliation call itself failed rather than
+        // confirming a real disconnect -- most often on an account with no Garmin mirror
+        // doc at all (every non-Garmin user, every load). Blocking the forecast here made
+        // a transient backend hiccup fully dead-end the athletes least likely to know
+        // what "Garmin connection" means. Fail open into the same subjective-only
+        // computation below, same as Home.tsx's dashboard load.
       }
 
       const acts = actState.data;
@@ -224,7 +223,7 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
       const safetyStatus = getMinimumSafetyCheckinStatus(input.subjectiveCheckin);
       const canGenerateNormalPlan = canGenerateNormalRecommendation(safetyStatus);
 
-      if (canGenerateNormalPlan && (wearableMode === 'wearable' || wearableMode === 'subjective_only')) {
+      if (canGenerateNormalPlan && (wearableMode === 'wearable' || wearableMode === 'subjective_only' || wearableMode === 'unavailable')) {
         const subjective = mapCheckinToSubjectiveInput(input.subjectiveCheckin);
         const objective = mapSnapshotToEngineInput(input.recoverySnapshot);
         const events = mapGoalsToUserEvents(input.activeGoals);
