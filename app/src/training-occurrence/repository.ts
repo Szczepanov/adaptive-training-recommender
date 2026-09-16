@@ -77,7 +77,7 @@ export class OccurrenceMergeConflictError extends Error {
 }
 
 function newPerformedOccurrenceId(): string {
-    return `pto-${Date.now()}-${Math.random().toString(36).slice(2, 14)}`;
+    return `pto-${Date.now()}-${crypto.randomUUID()}`;
 }
 
 function newOccurrenceDoc(
