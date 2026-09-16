@@ -39,6 +39,7 @@ const SHORT_MODALITY_LABEL: Record<string, string> = {
   None: 'Rest',
 };
 
+/** Choose the compact visual cue used for a schedule overlay in the seven-day strip. */
 function scheduleOverlayIcon(overlay: ScheduleOverlay): string {
   if (overlay.category === 'sedentary_rest') return '🎄';
   if (overlay.category === 'high_step_walking') return '🚶';
@@ -53,6 +54,7 @@ function scheduleOverlayIcon(overlay: ScheduleOverlay): string {
   }
 }
 
+/** Return a concise athlete-facing label for a schedule overlay category or sport. */
 function scheduleOverlayLabel(overlay: ScheduleOverlay): string {
   if (overlay.category === 'active_sport' && overlay.sport) {
     return overlay.sport.replaceAll('_', ' ');
@@ -84,6 +86,7 @@ const CONFIDENCE_LABEL: Record<WeekAheadDay['confidence'], string> = {
 
 const WEEKDAY_FORMATTER = new Intl.DateTimeFormat('en-US', { weekday: 'short', timeZone: 'UTC' });
 
+/** Format a canonical YYYY-MM-DD plan date in UTC so local timezone offsets cannot shift its weekday. */
 function weekdayLabel(dateStr: string): string {
   return WEEKDAY_FORMATTER.format(new Date(dateStr + 'T00:00:00Z'));
 }
