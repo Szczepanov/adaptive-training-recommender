@@ -74,14 +74,21 @@ export function resolveMaximumSessionMinutes(context: UserContext, checkinMinute
     // available today". That sentinel may participate in comparisons, but it must terminate
     // at this hard-feasibility boundary: downstream daily-minute ceilings are persisted and
     // therefore require a real finite number. Keep persisted null profile limits meaning
-    // "unset"; use the runtime fallback only when neither source supplied a finite limit.
-    const finiteCheckinMinutes = Number.isFinite(checkinMinutes) ? checkinMinutes : null;
-    if (profileLimit !== null && profileLimit !== undefined && Number.isFinite(profileLimit)) {
-        return finiteCheckinMinutes === null
-            ? profileLimit
-            : Math.min(profileLimit, finiteCheckinMinutes);
-    }
-    return finiteCheckinMinutes ?? DEFAULT_MAX_TIME_MINUTES;
+    // "unset"; use the runtime fallback only when neither source supplied a finite,
+    // non-negative limit. Negative is rejected, not just non-finite: a negative value is
+    // still `Number.isFinite`, and can reach here two ways -- parseSubjectiveCheckin's
+    // read-path `nullableNumber` check only requires finite (unlike the write-path's [0,
+    // 1440] range validation), and migrateLegacyConstraints copies a legacy
+    // max_time_minutes value without range-checking it. A negative ceiling would mark
+    // every non-negative-duration template ineligible on 'time_limit' instead of degrading
+    // to the same generous fallback an absent limit already gets. Zero remains valid --
+    // "no time available today" is a real, meaningful answer.
+    const isValidLimit = (value: number | null | undefined): value is number =>
+        value !== null && value !== undefined && Number.isFinite(value) && value >= 0;
+    const validProfileLimit = isValidLimit(profileLimit) ? profileLimit : null;
+    const validCheckinMinutes = isValidLimit(checkinMinutes) ? checkinMinutes : null;
+    if (validProfileLimit !== null && validCheckinMinutes !== null) return Math.min(validProfileLimit, validCheckinMinutes);
+    return validProfileLimit ?? validCheckinMinutes ?? DEFAULT_MAX_TIME_MINUTES;
 }
 
 function hasEquipment(settings: TrainingSettings | undefined, context: UserContext, equipment: EquipmentKey): boolean {
