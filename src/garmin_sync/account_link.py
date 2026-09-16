@@ -15,7 +15,6 @@ from garminconnect import (
     Garmin,
     GarminConnectAuthenticationError,
     GarminConnectConnectionError,
-    GarminConnectTooManyRequestsError,
 )
 from google.cloud import firestore as google_firestore
 from google.cloud.exceptions import GoogleCloudError
@@ -561,5 +560,4 @@ __all__ = [
     "list_active_garmin_user_ids",
     "GarminConnectAuthenticationError",
     "GarminConnectConnectionError",
-    "GarminConnectTooManyRequestsError",
 ]
