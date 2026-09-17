@@ -6,6 +6,7 @@ import { getLocalDateString } from '../utils/localDate';
 import { SCREEN_LABELS, type Screen } from '../types/navigation';
 import { ProgressionBlockEditor } from './ProgressionBlockEditor';
 import { ProgressionReviewPanel } from './ProgressionReviewPanel';
+import { SettingsDisclosure } from './SettingsDisclosure';
 import './TrainingSettings.css';
 
 interface TrainingSettingsProps {
@@ -180,8 +181,7 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
         </section>
       )}
 
-      <section aria-labelledby="equipment-title">
-        <h2 id="equipment-title">Available equipment & sport access</h2>
+      <SettingsDisclosure title="Available equipment & sport access" titleId="equipment-title">
         <p className="section-intro">Turn on only equipment and venues you can reliably use for a typical session. Pool access may be indoor or outdoor.</p>
         <CrossSurfaceNote onNavigate={onNavigate}>Related: {SCREEN_LABELS.preferences} → “Unavailable Training Types” excludes modalities by name, even when the equipment here would allow them.</CrossSurfaceNote>
         <div className="settings-list">
@@ -192,10 +192,9 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
             </label>
           ))}
         </div>
-      </section>
+      </SettingsDisclosure>
 
-      <section aria-labelledby="guardrails-title">
-        <h2 id="guardrails-title">Safety limits</h2>
+      <SettingsDisclosure title="Safety limits" titleId="guardrails-title" defaultOpen>
         <p className="section-intro">These limits remove matching sessions from every recommendation, including “Harder”. This is not medical advice.</p>
         <CrossSurfaceNote onNavigate={onNavigate}>Related: mere dislikes (no safety impact) belong in {SCREEN_LABELS.preferences} → “Training I’d Rather Avoid”, which only penalizes rather than blocks.</CrossSurfaceNote>
         <div className="settings-list">
@@ -206,10 +205,9 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
             </label>
           ))}
         </div>
-      </section>
+      </SettingsDisclosure>
 
-      <section aria-labelledby="availability-title">
-        <h2 id="availability-title">Time and location</h2>
+      <SettingsDisclosure title="Time and location" titleId="availability-title">
         <p className="section-intro">These limits are hard caps: longer sessions are never recommended.</p>
         <CrossSurfaceNote onNavigate={onNavigate}>Related: {SCREEN_LABELS.preferences} → “Default Available Duration” holds soft time budgets that shape durations without gating.</CrossSurfaceNote>
         <div className="time-inputs">
@@ -221,15 +219,13 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
           <p className="section-intro">This is the persistent requirement. A one-day indoor-only override lives in today’s check-in availability.</p>
           {(['either', 'indoor', 'outdoor'] as const).map((environment) => <label key={environment}><input type="radio" name="environment" checked={settings.defaults.environment === environment} onChange={() => void save({ defaults: { environment } })} /> {environment === 'either' ? 'Any location' : `${environment[0].toUpperCase()}${environment.slice(1)} only`}</label>)}
         </fieldset>
-      </section>
+      </SettingsDisclosure>
 
-      <section aria-labelledby="preferences-title">
-        <h2 id="preferences-title">Recovery preferences</h2>
+      <SettingsDisclosure title="Recovery preferences" titleId="preferences-title">
         <label className="setting-row"><input type="checkbox" checked={settings.preferences.preferActiveRecovery} onChange={(event) => void save({ preferences: { preferActiveRecovery: event.target.checked } })} /><span><strong>Prefer active recovery</strong><small>When recovery is needed, mobility is ranked ahead of total rest when both are suitable.</small></span></label>
-      </section>
+      </SettingsDisclosure>
 
-      <section aria-labelledby="injuries-title">
-        <h2 id="injuries-title">Active Injury Constraints</h2>
+      <SettingsDisclosure title="Active Injury Constraints" titleId="injuries-title">
         <p className="section-intro">Structured injuries dynamically derive guardrails, restricted modalities, and restricted categories. Expired review dates are automatically ignored.</p>
 
         <form onSubmit={saveInjury} className="injury-form">
@@ -335,14 +331,18 @@ export function TrainingSettings({ userId, onNavigate }: TrainingSettingsProps) 
             {derivedRestrictions.restrictedCategories.length > 0 && <p><small><strong>Restricted Categories:</strong> {derivedRestrictions.restrictedCategories.join(', ')}</small></p>}
           </div>
         )}
-      </section>
+      </SettingsDisclosure>
 
       {/* ADR-0037 H5c: report-only review (H5b) becomes a real, confirmable feature here.
           Neither section feeds any live recommendation yet -- see the H5c design doc's
           'no recommendation-time query' invariant -- so they are intentionally last,
           after every hard-gating setting above. */}
-      <ProgressionReviewPanel key={progressionRefreshKey} userId={userId} />
-      <ProgressionBlockEditor userId={userId} onBlockSaved={() => setProgressionRefreshKey(current => current + 1)} />
+      <SettingsDisclosure title="Progression Review" titleId="progression-review-title">
+        <ProgressionReviewPanel key={progressionRefreshKey} userId={userId} />
+      </SettingsDisclosure>
+      <SettingsDisclosure title="Progression Blocks" titleId="progression-blocks-title">
+        <ProgressionBlockEditor userId={userId} onBlockSaved={() => setProgressionRefreshKey(current => current + 1)} />
+      </SettingsDisclosure>
     </main>
   );
 }
