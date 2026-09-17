@@ -116,7 +116,7 @@ export function buildComparisonContextFromStrings(
     })) as ComparisonContext;
 }
 
-export function createAssessmentAttemptId(protocol: MeasurementProtocol, entropy = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`): string {
+export function createAssessmentAttemptId(protocol: MeasurementProtocol, entropy: string = crypto.randomUUID()): string {
     assertValidMeasurementProtocol(protocol);
     return `assessment-${protocol.id}-r${protocol.revision}-${entropy}`;
 }
