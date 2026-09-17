@@ -170,6 +170,16 @@ def normalize_activity(
                     else {}
                 ),
                 **({"averageHrBpm": lap.average_hr_bpm} if lap.average_hr_bpm is not None else {}),
+                **(
+                    {"distanceMeters": lap.distance_meters}
+                    if lap.distance_meters is not None
+                    else {}
+                ),
+                **(
+                    {"averageSpeedMps": lap.average_speed_mps}
+                    if lap.average_speed_mps is not None
+                    else {}
+                ),
             }
             for lap in detail.laps
         ]

@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, TypeVar
 
+from garminconnect import GarminConnectNotFoundError
+
 from .canonical import (
     CanonicalActivity,
     CanonicalActivityDetail,
@@ -423,6 +425,18 @@ def _daily_recovery_time_hours(
     return None
 
 
+def _fetch_optional_endpoint(call: Callable[[], T], default: T) -> T:
+    """Run one Garmin detail-endpoint call, treating a 404 as "not applicable to this
+    activity" rather than a fetch failure. Mirrors GarminClientWrapper's own
+    ``GarminConnectNotFoundError`` handling for activity downloads (garmin_client.py) --
+    used here so one endpoint 404ing (e.g. power-timezones for a run with no power
+    meter) doesn't also discard the other endpoints' data from the same detail fetch."""
+    try:
+        return call()
+    except GarminConnectNotFoundError:
+        return default
+
+
 def _positive_integer(value: Any) -> int | None:
     numeric = _non_negative_number(value)
     if numeric is None or numeric < 1 or not numeric.is_integer():
@@ -431,16 +445,24 @@ def _positive_integer(value: Any) -> int | None:
 
 
 def qualifies_for_activity_detail(activity: CanonicalActivity) -> bool:
-    """Accepted D-DETAIL-GATE predicate for the opt-in power-detail fetch.
+    """Accepted D-DETAIL-GATE predicate for the opt-in power/lap-detail fetch.
 
     At three endpoints per qualifying activity, the worst-case incremental request
     budget is ``3 * N`` for that run. Strength sets are deliberately handled by the
     separate one-endpoint predicate below so enabling their auto-sync does not silently
-    turn on the more expensive cycling telemetry path.
+    turn on the more expensive cycling/running telemetry path.
+
+    Running qualifies alongside the power-sport types so interval/lap splits (pace,
+    distance, HR per rep) are fetched for hard runs, not just rides -- Garmin's splits
+    endpoint (``get_activity_splits``) is activity-type-agnostic; only power/HR zones
+    are cycling-specific, and those are simply empty for a run when Garmin has none.
     """
     return (
         activity.activity_id is not None
-        and activity.type.lower() in _POWER_ACTIVITY_TYPES
+        and (
+            activity.type.lower() in _POWER_ACTIVITY_TYPES
+            or _is_running_activity_type(activity.type)
+        )
         and activity.intensity_tag != "easy"
     )
 
@@ -496,6 +518,8 @@ def _build_lap_summary(raw_lap: dict[str, Any]) -> CanonicalLapSummary | None:
         duration_seconds=duration,
         average_power_watts=_non_negative_number(raw_lap.get("averagePower")),
         average_hr_bpm=_non_negative_number(raw_lap.get("averageHR")),
+        distance_meters=_non_negative_number(raw_lap.get("distance")),
+        average_speed_mps=_non_negative_number(raw_lap.get("averageSpeed")),
     )
 
 
@@ -1674,9 +1698,21 @@ class GarminProviderAdapter:
                 raw_payloads={"activity_exercise_sets": exercise_sets},
             )
 
-        power_zones = self.client.get_activity_power_zones(activity_id)
-        hr_zones = self.client.get_activity_hr_zones(activity_id)
-        splits = self.client.get_activity_splits(activity_id)
+        # Fetched independently (not as one try/except around all three) because
+        # running activities routinely have no power data: Garmin's power-timezones
+        # endpoint 404s for those, and that must not also cost the splits/laps data
+        # -- the whole reason running now qualifies for this fetch at all.
+        empty_zones: list[dict[str, Any]] = []
+        empty_splits: dict[str, Any] = {}
+        power_zones = _fetch_optional_endpoint(
+            lambda: self.client.get_activity_power_zones(activity_id), empty_zones
+        )
+        hr_zones = _fetch_optional_endpoint(
+            lambda: self.client.get_activity_hr_zones(activity_id), empty_zones
+        )
+        splits = _fetch_optional_endpoint(
+            lambda: self.client.get_activity_splits(activity_id), empty_splits
+        )
         return ProviderActivityDetailResult(
             canonical=canonicalize_activity_detail(
                 activity_id=activity_id,

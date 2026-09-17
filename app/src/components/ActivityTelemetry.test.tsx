@@ -24,6 +24,21 @@ describe('ActivityTelemetry', () => {
     expect(html).toContain('229</strong> W NP');
   });
 
+  it('renders lap distance and pace for a running interval workout', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{ status: 'AVAILABLE', revision: null, data: [{
+      ...base,
+      type: 'running',
+      laps: [
+        { lapIndex: 1, durationSeconds: 180, averageHrBpm: 168, distanceMeters: 800, averageSpeedMps: 4.44 },
+        { lapIndex: 2, durationSeconds: 120, averageHrBpm: 140 },
+      ],
+    }] }} />);
+    expect(html).toContain('Lap summaries');
+    expect(html).toContain('800 m');
+    expect(html).toContain('3:45/km');
+    expect(html).toContain('168 bpm');
+  });
+
   it('renders partial HR-only telemetry', () => {
     const html = renderToStaticMarkup(<ActivityTelemetry state={{ status: 'AVAILABLE', revision: null, data: [{
       ...base, type: 'running', hrInZones: [{ zoneNumber: 3, secondsInZone: 900 }],
