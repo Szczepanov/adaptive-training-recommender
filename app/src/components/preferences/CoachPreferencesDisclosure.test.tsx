@@ -53,7 +53,7 @@ const noopModalityHandlers = {
 };
 
 function expectDisclosure(html: string, titleId: string, title: string, defaultOpen = false) {
-  const summary = `<summary id="${titleId}">${title}</summary>`;
+  const summary = `<summary id="${titleId}"><h2>${title}</h2></summary>`;
   const summaryIndex = html.indexOf(summary);
   expect(summaryIndex).toBeGreaterThan(-1);
 

@@ -11,7 +11,7 @@ describe('SettingsDisclosure', () => {
     );
 
     expect(html).toContain('<details class="settings-disclosure">');
-    expect(html).toContain('<summary id="preferences-title">Recovery preferences</summary>');
+    expect(html).toContain('<summary id="preferences-title"><h2>Recovery preferences</h2></summary>');
     expect(html).not.toContain(' open');
     expect(html).toContain('Preference content');
   });
@@ -24,6 +24,16 @@ describe('SettingsDisclosure', () => {
     );
 
     expect(html).toContain('<details class="settings-disclosure" open="">');
-    expect(html).toContain('<summary id="guardrails-title">Safety limits</summary>');
+    expect(html).toContain('<summary id="guardrails-title"><h2>Safety limits</h2></summary>');
+  });
+
+  it('exposes the title as a heading for screen-reader navigation, not just summary text', () => {
+    const html = renderToStaticMarkup(
+      <SettingsDisclosure title="Equipment" titleId="equipment-title">
+        <p>Equipment content</p>
+      </SettingsDisclosure>,
+    );
+
+    expect(html).toContain('<h2>Equipment</h2>');
   });
 });
