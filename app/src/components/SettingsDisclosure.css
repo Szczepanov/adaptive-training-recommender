@@ -1,0 +1,11 @@
+/* The <h2> inside <summary> exists for screen-reader heading navigation; it must not
+   introduce any visual change (block-level break, UA default margin/weight/color).
+   Each page still owns the visible summary styling (font-size, weight, marker, focus
+   ring) -- this only neutralizes the heading element's own default box/typography so
+   it inherits that page styling exactly as plain summary text would have. */
+.settings-disclosure > summary > h2 {
+  display: inline;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+}

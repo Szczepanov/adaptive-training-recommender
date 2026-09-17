@@ -6,6 +6,7 @@ import { garminConnectionService } from '../../services/garminConnectionService'
 import { getErrorMessage } from '../../utils/errors';
 import { firestoreDateToDate, type FirestoreDateValue } from '../../utils/firestoreDate';
 import { getLocalDateString } from '../../utils/localDate';
+import { SettingsDisclosure } from '../SettingsDisclosure';
 
 interface GarminConnection {
   status?: string;
@@ -109,8 +110,7 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
   const formVisible = !loadingConnection && !connectionError && (!isConnected || showForm);
 
   return (
-    <section className="preference-section">
-      <h2>Garmin wearable</h2>
+    <SettingsDisclosure title="Garmin wearable" titleId="garmin-connection-title">
       <p className="preference-desc">
         Connect Garmin wearable to this app account for sync. Your password is used only for Garmin authentication;
         the app keeps the resulting refreshable session token, not the password.
@@ -203,6 +203,6 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
           )}
         </form>
       )}
-    </section>
+    </SettingsDisclosure>
   );
 }

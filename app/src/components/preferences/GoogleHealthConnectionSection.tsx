@@ -4,6 +4,7 @@ import { getDb } from '../../firebase';
 import { googleHealthLinkService } from '../../services/googleHealthLinkService';
 import { getErrorMessage } from '../../utils/errors';
 import { getLocalDateString } from '../../utils/localDate';
+import { SettingsDisclosure } from '../SettingsDisclosure';
 
 interface GoogleHealthConnection {
   status?: string;
@@ -80,8 +81,7 @@ export function GoogleHealthConnectionSection({ userId }: GoogleHealthConnection
   };
 
   return (
-    <section className="preference-section">
-      <h2>Google Health</h2>
+    <SettingsDisclosure title="Google Health" titleId="google-health-title">
       <p className="preference-desc">
         Connect Google Health to pull Eight Sleep (and Health Connect-synced Garmin) recovery
         data. Google has not finished verifying this app for these data types yet, so you'll see
@@ -116,6 +116,6 @@ export function GoogleHealthConnectionSection({ userId }: GoogleHealthConnection
       >
         {starting ? 'Redirecting to Google...' : isConnected ? 'Reconnect Google Health' : 'Connect Google Health'}
       </button>
-    </section>
+    </SettingsDisclosure>
   );
 }

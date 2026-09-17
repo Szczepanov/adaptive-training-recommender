@@ -1,4 +1,5 @@
 import { clearOnboardingDismissalForUser } from '../../utils/onboardingStorage';
+import { SettingsDisclosure } from '../SettingsDisclosure';
 
 interface OnboardingRelaunchSectionProps {
   userId: string;
@@ -16,8 +17,7 @@ export function OnboardingRelaunchSection({ userId, disabled = false }: Onboardi
   };
 
   return (
-    <section className="preference-section">
-      <h2>Setup wizard</h2>
+    <SettingsDisclosure title="Setup wizard" titleId="setup-wizard-title">
       <p className="preference-desc">
         Re-run the rapid setup wizard to configure training setup and goals from
         scratch. The wizard appears when your account has no active goal; if you
@@ -31,6 +31,6 @@ export function OnboardingRelaunchSection({ userId, disabled = false }: Onboardi
       <button type="button" className="login-btn" onClick={handleRelaunch} disabled={disabled}>
         Re-run setup wizard
       </button>
-    </section>
+    </SettingsDisclosure>
   );
 }
