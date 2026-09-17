@@ -31,15 +31,11 @@ class _PostAuthRateLimitedGarmin:
     def login(self, _token_path: str) -> tuple[str, None]:
         return "needs_mfa", None
 
-    def resume_login(
-        self, _client_state: dict[str, Any], _code: str
-    ) -> tuple[None, None]:
+    def resume_login(self, _client_state: dict[str, Any], _code: str) -> tuple[None, None]:
         # Mirrors garminconnect 0.3.15: the low-level client has accepted MFA
         # and cleared its pending state before the wrapper loads profile/settings.
         self.client.authenticated = True
-        raise account_link_module.GarminConnectTooManyRequestsError(
-            "profile fetch rate limited"
-        )
+        raise account_link_module.GarminConnectTooManyRequestsError("profile fetch rate limited")
 
 
 class _DummyRepository:
