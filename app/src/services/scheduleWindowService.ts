@@ -148,10 +148,11 @@ export class ScheduleWindowService {
     }
 
     /**
-     * Expands a repeating weekday schedule into the existing dated manifests. Existing
-     * retired representations are rejected before the transaction starts; every affected
-     * manifest is then read and written in one Firestore transaction so the repeat action
-     * is all-or-nothing even when another client edits one of its dates concurrently.
+     * Expands a repeating weekday schedule into the existing dated manifests. Every
+     * affected date is preflighted before writes begin, then committed in its own
+     * transaction because the manifest rules intentionally sit near Firestore's per-request
+     * expression budget. If a later date fails after earlier commits, the service removes
+     * only this operation's stable window ids from those dates before surfacing the error.
      */
     async createRecurringWindows(userId: string, input: RecurringScheduleInput): Promise<ScheduleWindow[]> {
         const validationErrors = validateRecurringSchedule(input);
@@ -186,23 +187,58 @@ export class ScheduleWindowService {
             candidatesByDate.set(candidate.date, dateCandidates);
         }
 
-        await runTransaction(this.db, async transaction => {
-            // Firestore transactions require reads before writes. Read every manifest first,
-            // then validate/build every replacement before staging any set operation.
-            const snapshots = await Promise.all(dates.map(date => transaction.get(this.ref(userId, date))));
-            const replacements = dates.map((date, index) => {
-                const snapshot = snapshots[index];
-                const current = this.manifestFromSnapshot(userId, date, snapshot.exists() ? snapshot.data() : undefined);
-                return {
-                    ref: this.ref(userId, date),
-                    manifest: this.buildManifest(userId, date, current, [
-                        ...(current?.windows ?? []),
-                        ...(candidatesByDate.get(date) ?? []),
-                    ]),
-                };
-            });
-            for (const replacement of replacements) transaction.set(replacement.ref, replacement.manifest);
-        });
+        const preflightEntries = await Promise.all(dates.map(async date => {
+            const snapshot = await getDoc(this.ref(userId, date));
+            const current = this.manifestFromSnapshot(userId, date, snapshot.exists() ? snapshot.data() : undefined);
+            this.buildManifest(userId, date, current, [...(current?.windows ?? []), ...(candidatesByDate.get(date) ?? [])]);
+            return [date, current] as const;
+        }));
+        const preflightByDate = new Map(preflightEntries);
+        const committedDates: string[] = [];
+
+        try {
+            for (const date of dates) {
+                await runTransaction(this.db, async transaction => {
+                    const snapshot = await transaction.get(this.ref(userId, date));
+                    const current = this.manifestFromSnapshot(userId, date, snapshot.exists() ? snapshot.data() : undefined);
+                    // A changed manifest is revalidated against the same candidates in this
+                    // date-level transaction. Any failure triggers compensation of dates that
+                    // this operation already committed.
+                    const expected = preflightByDate.get(date);
+                    if ((current?.revision ?? 0) !== (expected?.revision ?? 0)) {
+                        throw new Error(`Schedule window data changed while applying ${date}; retry the repeating schedule`);
+                    }
+                    transaction.set(
+                        this.ref(userId, date),
+                        this.buildManifest(userId, date, current, [...(current?.windows ?? []), ...(candidatesByDate.get(date) ?? [])]),
+                    );
+                });
+                committedDates.push(date);
+            }
+        } catch (applyError) {
+            const rollbackFailures: string[] = [];
+            for (const date of [...committedDates].reverse()) {
+                const candidateIds = new Set((candidatesByDate.get(date) ?? []).map(candidate => candidate.id));
+                try {
+                    await runTransaction(this.db, async transaction => {
+                        const ref = this.ref(userId, date);
+                        const snapshot = await transaction.get(ref);
+                        const current = this.manifestFromSnapshot(userId, date, snapshot.exists() ? snapshot.data() : undefined);
+                        if (!current) return;
+                        const remaining = current.windows.filter(window => !candidateIds.has(window.id));
+                        if (remaining.length === current.windows.length) return;
+                        transaction.set(ref, this.buildManifest(userId, date, current, remaining));
+                    });
+                } catch {
+                    rollbackFailures.push(date);
+                }
+            }
+            if (rollbackFailures.length > 0) {
+                const originalMessage = applyError instanceof Error ? applyError.message : 'unknown apply failure';
+                throw new Error(`Repeating schedule failed and automatic rollback could not restore ${rollbackFailures.join(', ')}. Review those dates before retrying. Original error: ${originalMessage}`);
+            }
+            throw applyError;
+        }
         return candidates;
     }
 
