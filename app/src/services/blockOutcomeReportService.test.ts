@@ -127,7 +127,7 @@ describe('BlockOutcomeReportService', () => {
         })).toThrow('activated/frozen');
     });
 
-    it('does not attribute a linked same-day outcome from another evaluation', () => {
+    it('does not attribute same-day ecological evidence from another or unlinked event', () => {
         const linkedEvaluation = {
             ...evaluation(),
             revision: {
@@ -151,6 +151,11 @@ describe('BlockOutcomeReportService', () => {
             id: 'wrong-event',
             eventRef: 'event-2',
         };
+        const unlinked = race('unlinked', '2026-08-05T08:00:00.000Z');
+        const legacyMatching = {
+            ...race('legacy-matching', '2026-08-05T08:00:00.000Z'),
+            eventRef: 'event-1',
+        };
 
         const report = service.buildReport({
             evaluation: linkedEvaluation,
@@ -159,9 +164,9 @@ describe('BlockOutcomeReportService', () => {
             completedSessions: [],
             sessionOutcomes: [],
             keyRoles: { plannedOccurrenceIds: [], completedOccurrenceIds: [] },
-            ecologicalOutcomes: [other, wrongEvent, matching],
+            ecologicalOutcomes: [other, wrongEvent, unlinked, legacyMatching, matching],
         });
 
-        expect(report.ecologicalOutcomes.map(item => item.id)).toEqual(['matching']);
+        expect(report.ecologicalOutcomes.map(item => item.id)).toEqual(['legacy-matching', 'matching']);
     });
 });
