@@ -11,12 +11,39 @@
   color: var(--text-secondary);
 }
 
-.training-settings section {
+.training-settings section,
+.training-settings .settings-disclosure {
   margin-top: 1.5rem;
   padding: 1.5rem;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.03);
+}
+
+.training-settings .settings-disclosure > summary {
+  cursor: pointer;
+  list-style-position: outside;
+  color: var(--text-primary);
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+
+.training-settings .settings-disclosure > summary::marker {
+  color: var(--primary-color);
+}
+
+.training-settings .settings-disclosure > summary:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.training-settings .settings-disclosure[open] > summary {
+  margin-bottom: 1.25rem;
+}
+
+.settings-disclosure-content > :first-child {
+  margin-top: 0;
 }
 
 .training-settings h1 {
