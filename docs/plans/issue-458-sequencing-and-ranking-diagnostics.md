@@ -1,6 +1,6 @@
 # Issue #458 — deterministic sequencing and ranking-counterfactual diagnostics
 
-Status: **Implemented** (2026-09-08, this worktree; not yet merged to `main`)
+Status: **Implemented** (2026-09-08; merged to `main` in PR [#464](https://github.com/Szczepanov/adaptive-training-recommender/pull/464))
 Blocked by: none (implementable directly against current `main`; see [Relationship to PR #453](#relationship-to-pr-453))
 Unlocks: Priority 2 (phase-specific sequence intent) and Priority 3 policy experiments in
 `docs/analysis/2026-09-07-recommender-optimization-opportunities.md`; a future ADR-0015
@@ -28,16 +28,14 @@ snapshot diffing (see [Verification](#verification)).
 
 ### Relationship to PR #453
 
-`docs/analysis/2026-09-07-recommender-optimization-opportunities.md` is committed on PR
+`docs/analysis/2026-09-07-recommender-optimization-opportunities.md` was introduced on PR
 [#453](https://github.com/Szczepanov/adaptive-training-recommender/pull/453)'s branch
-(`fix/effective-dose-week-ahead-projection`), which is **open, not yet merged** into `main`
-as of this plan. This plan's engineering seams (`optimizer.ts` ranking internals,
+(`fix/effective-dose-week-ahead-projection`), which is now merged into `main`. This plan's
+engineering seams (`optimizer.ts` ranking internals,
 `simulation/analyze.ts` trace types, `planner.ts` forecast diagnostics) do not depend on
-PR #453 landing first — they can be built directly against current `main`. If PR #453 merges
-first, rebase onto it so the analysis doc exists at its documented path; if this plan lands
-first, add the analysis doc's path as a forward reference once #453 merges. Either order is
-safe because the two PRs touch non-overlapping logic (PR #453: `activeDose` projection
-fidelity; this plan: read-only diagnostics derived from already-selected candidates).
+PR #453 landing first — they could be built directly against `main`. The two PRs touched
+non-overlapping logic (PR #453: `activeDose` projection fidelity; this plan: read-only
+diagnostics derived from already-selected candidates), and both are now merged.
 
 ---
 
