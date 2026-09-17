@@ -1,7 +1,7 @@
 {
   "lapDTOs": [
-    {"lapIndex": 1, "duration": 900.0, "averagePower": 262.0, "averageHR": 148.0},
-    {"lapIndex": 2, "duration": 360.0, "averagePower": 148.0, "averageHR": 132.0},
-    {"lapIndex": 3, "duration": 900.0, "averagePower": 258.0, "averageHR": 151.0}
+    {"lapIndex": 1, "duration": 900.0, "averagePower": 262.0, "averageHR": 148.0, "distance": 5000.0, "averageSpeed": 5.56},
+    {"lapIndex": 2, "duration": 360.0, "averagePower": 148.0, "averageHR": 132.0, "distance": 1800.0, "averageSpeed": 5.0},
+    {"lapIndex": 3, "duration": 900.0, "averagePower": 258.0, "averageHR": 151.0, "distance": 5000.0, "averageSpeed": 5.56}
   ]
 }

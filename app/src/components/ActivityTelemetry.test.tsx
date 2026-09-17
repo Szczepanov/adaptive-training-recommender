@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { NormalizedGarminActivity } from '../engine/models';
 import { ActivityTelemetry } from './ActivityTelemetry';
+import { formatPace } from './activityTelemetryFormat';
 
 const base: NormalizedGarminActivity = {
   activityId: 'ride-1', date: '2026-08-17', type: 'cycling', durationMin: 60,
@@ -22,6 +23,25 @@ describe('ActivityTelemetry', () => {
     expect(html).toContain('Heart-rate zones');
     expect(html).toContain('Lap summaries');
     expect(html).toContain('229</strong> W NP');
+  });
+
+  it('renders lap distance and pace for a running interval workout', () => {
+    const html = renderToStaticMarkup(<ActivityTelemetry state={{ status: 'AVAILABLE', revision: null, data: [{
+      ...base,
+      type: 'running',
+      laps: [
+        { lapIndex: 1, durationSeconds: 180, averageHrBpm: 168, distanceMeters: 800, averageSpeedMps: 4.44 },
+        { lapIndex: 2, durationSeconds: 120, averageHrBpm: 140 },
+      ],
+    }] }} />);
+    expect(html).toContain('Lap summaries');
+    expect(html).toContain('800 m');
+    expect(html).toContain('3:45/km');
+    expect(html).toContain('168 bpm');
+  });
+
+  it('normalizes pace rounding at minute boundaries', () => {
+    expect(formatPace(1000 / 119.6)).toBe('2:00/km');
   });
 
   it('renders partial HR-only telemetry', () => {

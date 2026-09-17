@@ -18,6 +18,19 @@ export function hasRunningDynamics(dynamics: RunningDynamics | undefined): dynam
     return dynamics !== undefined && Object.values(dynamics).some((value) => value != null);
 }
 
+export function formatLapDistance(meters: number): string {
+    return meters >= 1000 ? `${(meters / 1000).toFixed(2)} km` : `${Math.round(meters)} m`;
+}
+
+/** Converts m/s to a min:sec-per-km pace string, the unit runners actually read splits in. */
+export function formatPace(averageSpeedMps: number): string {
+    if (averageSpeedMps <= 0) return '—';
+    const totalSeconds = Math.round(1000 / averageSpeedMps);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
+    return `${minutes}:${String(seconds).padStart(2, '0')}/km`;
+}
+
 export function formatRunningPower(dynamics: RunningDynamics): string | null {
     const parts: string[] = [];
     if (dynamics.avgRunningPowerWatts != null) parts.push(`${Math.round(dynamics.avgRunningPowerWatts)} W avg`);

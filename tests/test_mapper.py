@@ -390,6 +390,47 @@ def test_normalize_activity_adds_detail_without_schema_version_or_null_fields():
     assert without_timestamp == expected
 
 
+def test_normalize_activity_includes_lap_distance_and_pace_when_present():
+    from garmin_sync.canonical import CanonicalActivityDetail, CanonicalLapSummary
+
+    activity = CanonicalActivity(
+        activity_id="999",
+        date="2026-08-05",
+        type="running",
+        duration_min=32,
+        duration_seconds=1920,
+        training_effect_aerobic=3.4,
+        training_effect_anaerobic=1.2,
+        average_hr=162,
+        training_load=90.0,
+        intensity_tag="hard",
+    )
+    detail = CanonicalActivityDetail(
+        activity_id="999",
+        laps=[
+            CanonicalLapSummary(
+                lap_index=1,
+                duration_seconds=180.0,
+                average_hr_bpm=168.0,
+                distance_meters=800.0,
+                average_speed_mps=4.44,
+            )
+        ],
+    )
+
+    normalized = normalize_activity(activity, sync_run_id="run-abc", detail=detail)
+
+    assert normalized["laps"] == [
+        {
+            "lapIndex": 1,
+            "durationSeconds": 180.0,
+            "averageHrBpm": 168.0,
+            "distanceMeters": 800.0,
+            "averageSpeedMps": 4.44,
+        }
+    ]
+
+
 def test_build_snapshot_populates_metric_enrichment_fields():
     from garmin_sync.canonical import (
         CanonicalBodyBattery,

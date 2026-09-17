@@ -35,6 +35,8 @@ def test_canonicalize_activity_detail_from_reduced_contract_fixtures():
     assert detail.intensity_factor == 0.82
     assert detail.variability_index == 229.0 / 214.0
     assert detail.laps and detail.laps[2].average_power_watts == 258.0
+    assert detail.laps[2].distance_meters == 5000.0
+    assert detail.laps[2].average_speed_mps == 5.56
 
 
 def test_canonicalize_activity_detail_degrades_on_malformed_payload():
@@ -56,6 +58,8 @@ def test_canonicalize_activity_detail_degrades_on_malformed_payload():
     assert detail.intensity_factor is None
     assert detail.variability_index is None
     assert detail.laps and detail.laps[0].average_power_watts is None
+    assert detail.laps[0].distance_meters is None
+    assert detail.laps[0].average_speed_mps is None
 
 
 def test_variability_index_omitted_when_average_power_zero():
@@ -63,7 +67,7 @@ def test_variability_index_omitted_when_average_power_zero():
     assert detail.variability_index is None
 
 
-def test_detail_gate_skips_easy_and_non_power_activities():
+def test_detail_gate_skips_easy_and_unsupported_activities():
     from garmin_sync.canonical import CanonicalActivity
 
     def activity(activity_type: str, intensity: str, activity_id: str | None = "1"):
@@ -82,7 +86,12 @@ def test_detail_gate_skips_easy_and_non_power_activities():
 
     assert qualifies_for_activity_detail(activity("cycling", "moderate"))
     assert not qualifies_for_activity_detail(activity("cycling", "easy"))
-    assert not qualifies_for_activity_detail(activity("running", "hard"))
+    # Running qualifies for the same lap/split detail fetch as the power-sport types --
+    # interval/tempo runs need per-lap pace and distance just as much as rides do.
+    assert qualifies_for_activity_detail(activity("running", "hard"))
+    assert qualifies_for_activity_detail(activity("treadmill_running", "moderate"))
+    assert not qualifies_for_activity_detail(activity("running", "easy"))
+    assert not qualifies_for_activity_detail(activity("swimming", "hard"))
     assert not qualifies_for_activity_detail(activity("cycling", "hard", None))
 
 
@@ -123,6 +132,37 @@ def test_adapter_fetch_activity_detail_uses_cached_list_summary_and_all_three_en
         "activity_hr_zones",
         "activity_splits",
     }
+
+
+def test_adapter_fetch_activity_detail_keeps_splits_when_power_zones_404():
+    """A running activity with no power meter 404s on Garmin's power-timezones
+    endpoint; that must not also discard the splits/laps data from the same fetch."""
+    from garminconnect import GarminConnectNotFoundError
+
+    mock_client = MagicMock()
+    mock_client.get_activities_window.return_value = [
+        {
+            "activityId": 2002,
+            "startTimeLocal": "2026-08-17T08:00:00",
+            "duration": 1800,
+            "activityType": {"typeKey": "running"},
+        }
+    ]
+    mock_client.get_activity_power_zones.side_effect = GarminConnectNotFoundError("no power data")
+    mock_client.get_activity_hr_zones.return_value = [
+        {"zoneNumber": 3, "secsInZone": 900, "zoneLowBoundary": 137}
+    ]
+    mock_client.get_activity_splits.return_value = {
+        "lapDTOs": [{"lapIndex": 1, "duration": 180, "distance": 800.0, "averageSpeed": 4.44}]
+    }
+    adapter = GarminProviderAdapter(mock_client)
+
+    adapter.fetch_activities("2026-08-17", "2026-08-17")
+    result = adapter.fetch_activity_detail("2002")
+
+    assert result.canonical.power_zones == []
+    assert result.canonical.hr_zones and result.canonical.hr_zones[0].zone_number == 3
+    assert result.canonical.laps and result.canonical.laps[0].distance_meters == 800.0
 
 
 def test_canonicalize_from_raw_using_fixtures():

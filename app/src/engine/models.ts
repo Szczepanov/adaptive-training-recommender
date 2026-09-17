@@ -1771,6 +1771,8 @@ export interface ActivityLapSummary {
     durationSeconds: number;
     averagePowerWatts?: number;
     averageHrBpm?: number;
+    distanceMeters?: number;
+    averageSpeedMps?: number;
 }
 
 export type HrSensorTechnology = 'electrode_chest_strap' | 'optical_armband' | 'wrist_ppg' | 'external_unknown' | 'unknown';

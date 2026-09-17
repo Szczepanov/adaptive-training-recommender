@@ -4,6 +4,8 @@ import type { NormalizedGarminActivity } from '../engine/models';
 import { copyActivityJsonToClipboard } from '../utils/activityJsonExport';
 import {
   formatDuration,
+  formatLapDistance,
+  formatPace,
   formatRunningPower,
   formatTrainingEffectDescriptor,
   hasRunningDynamics,
@@ -186,12 +188,14 @@ export function ActivityTelemetry({ state, onReclassify }: ActivityTelemetryProp
                 <h5>Lap summaries</h5>
                 <div className="activity-lap-table-wrap">
                   <table>
-                    <thead><tr><th>Lap</th><th>Duration</th><th>Avg power</th><th>Avg HR</th></tr></thead>
+                    <thead><tr><th>Lap</th><th>Duration</th><th>Distance</th><th>Pace</th><th>Avg power</th><th>Avg HR</th></tr></thead>
                     <tbody>
                       {activity.laps.map((lap) => (
                         <tr key={lap.lapIndex}>
                           <td>{lap.lapIndex}</td>
                           <td>{formatDuration(lap.durationSeconds)}</td>
+                          <td>{lap.distanceMeters !== undefined ? formatLapDistance(lap.distanceMeters) : '—'}</td>
+                          <td>{lap.averageSpeedMps !== undefined ? formatPace(lap.averageSpeedMps) : '—'}</td>
                           <td>{lap.averagePowerWatts !== undefined ? `${Math.round(lap.averagePowerWatts)} W` : '—'}</td>
                           <td>{lap.averageHrBpm !== undefined ? `${Math.round(lap.averageHrBpm)} bpm` : '—'}</td>
                         </tr>

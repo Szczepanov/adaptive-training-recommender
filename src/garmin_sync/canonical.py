@@ -549,6 +549,8 @@ class CanonicalLapSummary:
     duration_seconds: float
     average_power_watts: float | None = None
     average_hr_bpm: float | None = None
+    distance_meters: float | None = None
+    average_speed_mps: float | None = None
 
 
 @dataclass
