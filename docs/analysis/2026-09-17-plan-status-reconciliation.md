@@ -18,7 +18,8 @@ three different categories and must not be collapsed into one delivery queue:
 
 1. evidence or real-use collection;
 2. production activation decisions with explicit safety gates; and
-3. genuinely unimplemented, startable product work.
+3. remaining implementation or verification work that is actionable only when its named
+   dependency or usage trigger is satisfied.
 
 ## Remaining work matrix
 
@@ -32,12 +33,12 @@ three different categories and must not be collapsed into one delivery queue:
 | OV | OV7.1 capture of a real event outcome, then OV7.2–OV7.4; OV4.4/OV6.2 on their triggers; OV8 after multiple comparable blocks | operational evidence | PR #631 delivered the OV7 capture infrastructure, but the plan correctly remains open until real event data and the block readout exist. |
 | HA | HA6.4 labelled personal history, HA7 release evidence, HA8 visible surfaces, HA9-R3/R4/R5/R6 evidence and release decisions | evidence/activation | Shadow anomaly work is shipped; user-visible wording and training tightening remain gated. |
 | SV | SV6 multi-block prospective calibration synthesis | real-use evidence | Requires multiple real athlete blocks. |
-| MS | MS17 metric-by-metric production activation decision | activation | CASA Tier 2/restricted-scope status and prospective evidence remain unresolved; fusion stays off. |
+| MS | MS17 metric-by-metric production activation decision | activation | Google Restricted Scope App Verification/CASA for Google Health transport, verified in-app health-data disclosure and explicit consent, sufficient prospective/incremental evidence, and a rollback flag remain required; fusion stays off. |
 | PI | PI8 prospective labels, PI9 activation decision, PI10 activation-time telemetry/retention policy | evidence/activation | Historical replay and review UI are delivered; no production identity promotion has been accepted. |
 | ES | ES9 continued shadow accumulation and ES10 activation review | evidence/activation | Direct Eight Sleep ingestion remains default-off. |
 | TO | TO4 history shadow evidence and TO5 FIT identity evidence | evidence/activation | Decode/shadow only; no new live recommendation authority is authorized. |
 | SKR | SKR5 freshness governance; SKR6 human-reviewed evidence-synthesis workflow when demand justifies it | planned governance | SKR1–SKR4 are delivered; no high-impact/high-safety uncovered family remains. |
-| SAW | Completion/deployment verification for the server-authoritative anthropometry path | verification | The implementation landed in PR #572; the plan's completion record still needs the delivery-contract evidence. |
+| SAW | Completion/deployment verification for the server-authoritative anthropometry path | verification | PR #572 delivered the implementation, tests, and deployment wiring; live deployment/completion is not claimed until the delivery-contract verification evidence is recorded. |
 | RP / ADR-0038 | RP0, RP1, RP3, RP4, RP5A, RP5B; RP2 is implemented | draft/activation | Behavior remains blocked until ADR-0038 is accepted or explicitly authorized. |
 
 ## Closed or deliberately deferred work
@@ -75,8 +76,9 @@ boards:
 ## Documentation actions taken with this reconciliation
 
 1. Add ADR-0038 recovery placement to the central plan board.
-2. Align the MS, HRF, PI, and SKR plan-level lifecycle labels with the work already started
-   and retain their evidence/activation blockers in the board columns.
+2. Align the MS, HRF, PI, and SKR plan-level lifecycle labels with the work already started,
+   and preserve the complete evidence/compliance/activation gates in both plan headers and the
+   central board.
 3. Record the latest OV7 and SAW implementation boundaries without prematurely calling their
    operational verification complete.
 4. Mark pre-PR324 occurrence documents and the old strength cutover plan as historical
