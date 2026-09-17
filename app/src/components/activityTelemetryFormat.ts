@@ -25,9 +25,9 @@ export function formatLapDistance(meters: number): string {
 /** Converts m/s to a min:sec-per-km pace string, the unit runners actually read splits in. */
 export function formatPace(averageSpeedMps: number): string {
     if (averageSpeedMps <= 0) return '—';
-    const secPerKm = 1000 / averageSpeedMps;
-    const minutes = Math.floor(secPerKm / 60);
-    const seconds = Math.round(secPerKm % 60);
+    const totalSeconds = Math.round(1000 / averageSpeedMps);
+    const minutes = Math.floor(totalSeconds / 60);
+    const seconds = totalSeconds % 60;
     return `${minutes}:${String(seconds).padStart(2, '0')}/km`;
 }
 

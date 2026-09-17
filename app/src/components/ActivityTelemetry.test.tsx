@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { describe, expect, it } from 'vitest';
 import type { NormalizedGarminActivity } from '../engine/models';
 import { ActivityTelemetry } from './ActivityTelemetry';
+import { formatPace } from './activityTelemetryFormat';
 
 const base: NormalizedGarminActivity = {
   activityId: 'ride-1', date: '2026-08-17', type: 'cycling', durationMin: 60,
@@ -37,6 +38,10 @@ describe('ActivityTelemetry', () => {
     expect(html).toContain('800 m');
     expect(html).toContain('3:45/km');
     expect(html).toContain('168 bpm');
+  });
+
+  it('normalizes pace rounding at minute boundaries', () => {
+    expect(formatPace(1000 / 119.6)).toBe('2:00/km');
   });
 
   it('renders partial HR-only telemetry', () => {
