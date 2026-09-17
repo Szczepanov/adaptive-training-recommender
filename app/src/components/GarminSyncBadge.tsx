@@ -72,11 +72,13 @@ export const GarminSyncBadge: React.FC<GarminSyncBadgeProps> = ({ userId, date, 
         // information rather than an unavailable action, so expose it as a status instead
         // of a disabled button; assistive technology can announce the change without
         // implying that there is a control the athlete could activate.
+        const unavailableMessage = 'Garmin connection status could not be verified. Refresh to retry.';
         return (
             <span
                 className="garmin-sync-badge status-unknown"
                 role="status"
-                title="Garmin connection status could not be verified. Refresh to retry."
+                title={unavailableMessage}
+                aria-label={unavailableMessage}
             >
                 <span className="garmin-sync-icon" aria-hidden="true">○</span>
                 <span className="garmin-sync-label">Garmin: Status unavailable</span>
