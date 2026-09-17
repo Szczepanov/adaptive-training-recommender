@@ -52,6 +52,25 @@ const noopModalityHandlers = {
   removeUnavailableModality: () => undefined,
 };
 
+function expectDisclosure(html: string, titleId: string, title: string, defaultOpen = false) {
+  const summary = `<summary id="${titleId}">${title}</summary>`;
+  const summaryIndex = html.indexOf(summary);
+  expect(summaryIndex).toBeGreaterThan(-1);
+
+  const detailsStart = html.lastIndexOf('<details', summaryIndex);
+  const detailsEnd = html.indexOf('>', detailsStart);
+  expect(detailsStart).toBeGreaterThan(-1);
+  expect(detailsEnd).toBeGreaterThan(detailsStart);
+
+  const openingTag = html.slice(detailsStart, detailsEnd + 1);
+  expect(openingTag).toContain('class="settings-disclosure"');
+  if (defaultOpen) {
+    expect(openingTag).toContain('open=""');
+  } else {
+    expect(openingTag).not.toContain('open=""');
+  }
+}
+
 // Coach Preferences never adopted the SettingsDisclosure treatment #589/#620 gave its
 // sibling Training Setup page (issue #623), so it rendered as one long, fully-expanded
 // page. These assert every section component now collapses behind a <details> summary,
@@ -64,14 +83,10 @@ describe('Coach Preferences progressive disclosure (#623)', () => {
     const quickSetup = renderToStaticMarkup(<HealthRunYogaPresetSection userId="u1" onApplied={async () => undefined} />);
     const setupWizard = renderToStaticMarkup(<OnboardingRelaunchSection userId="u1" />);
 
-    for (const html of [garmin, googleHealth, quickSetup, setupWizard]) {
-      expect(html).toContain('<details class="settings-disclosure">');
-      expect(html).not.toContain('<details class="settings-disclosure" open');
-    }
-    expect(garmin).toContain('<summary id="garmin-connection-title">Garmin wearable</summary>');
-    expect(googleHealth).toContain('<summary id="google-health-title">Google Health</summary>');
-    expect(quickSetup).toContain('<summary id="quick-setup-title">Quick setup</summary>');
-    expect(setupWizard).toContain('<summary id="setup-wizard-title">Setup wizard</summary>');
+    expectDisclosure(garmin, 'garmin-connection-title', 'Garmin wearable');
+    expectDisclosure(googleHealth, 'google-health-title', 'Google Health');
+    expectDisclosure(quickSetup, 'quick-setup-title', 'Quick setup');
+    expectDisclosure(setupWizard, 'setup-wizard-title', 'Setup wizard');
   });
 
   it('collapses Training Plan by default', () => {
@@ -85,25 +100,17 @@ describe('Coach Preferences progressive disclosure (#623)', () => {
       />,
     );
 
-    expect(html).toContain('<details class="settings-disclosure">');
-    expect(html).toContain('<summary id="training-plan-title">Training Plan</summary>');
+    expectDisclosure(html, 'training-plan-title', 'Training Plan');
   });
 
-  it('opens Unavailable Training Types by default (the hard-exclusion gate) while its siblings stay collapsed', () => {
+  it('opens Unavailable Training Types by default while its soft-preference siblings stay collapsed', () => {
     const html = renderToStaticMarkup(
       <ModalitySections preferences={buildPreferences()} {...noopModalityHandlers} />,
     );
 
-    expect(html).toContain('<summary id="modality-unavailable-title">Unavailable Training Types</summary>');
-    const unavailableIndex = html.indexOf('modality-unavailable-title');
-    const detailsStart = html.lastIndexOf('<details', unavailableIndex);
-    expect(html.slice(detailsStart, unavailableIndex)).toContain('open=""');
-
-    expect(html).toContain('<summary id="modality-preferred-title">Training I Enjoy</summary>');
-    expect(html).toContain('<summary id="modality-avoided-title">Training I&#x27;d Rather Avoid</summary>');
-    const preferredIndex = html.indexOf('modality-preferred-title');
-    const preferredDetailsStart = html.lastIndexOf('<details', preferredIndex);
-    expect(html.slice(preferredDetailsStart, preferredIndex)).not.toContain('open=""');
+    expectDisclosure(html, 'modality-preferred-title', 'Training I Enjoy');
+    expectDisclosure(html, 'modality-unavailable-title', 'Unavailable Training Types', true);
+    expectDisclosure(html, 'modality-avoided-title', 'Training I&#x27;d Rather Avoid');
   });
 
   it('collapses every Style section by default', () => {
@@ -115,32 +122,52 @@ describe('Coach Preferences progressive disclosure (#623)', () => {
       />,
     );
 
-    for (const titleId of [
-      'style-decision-title', 'style-journal-title', 'style-recovery-title',
-      'style-duration-title', 'style-time-of-day-title', 'style-explanation-title', 'style-units-title',
-    ]) {
-      const index = html.indexOf(titleId);
-      expect(index).toBeGreaterThan(-1);
-      const detailsStart = html.lastIndexOf('<details', index);
-      expect(html.slice(detailsStart, index)).not.toContain('open=""');
+    for (const [titleId, title] of [
+      ['style-decision-title', 'Training Decision Style'],
+      ['style-journal-title', 'Decision Journal'],
+      ['style-recovery-title', 'Recovery Day Style'],
+      ['style-duration-title', 'Default Available Duration'],
+      ['style-time-of-day-title', 'Preferred Time of Day'],
+      ['style-explanation-title', 'Explanation Detail'],
+      ['style-units-title', 'Units of Measurement'],
+    ] as const) {
+      expectDisclosure(html, titleId, title);
     }
   });
 
-  it('collapses every Performance section by default', () => {
+  it('collapses every Performance section, including conditional Garmin sections, by default', () => {
+    const preferences = {
+      ...buildPreferences(),
+      gearTracker: {
+        items: [{
+          gearPk: 'shoe-1',
+          displayName: 'Test shoe',
+          totalDistanceKm: 100,
+          status: 'active',
+        }],
+      },
+      performanceProfile: {
+        racePredictions: { fiveKmSec: 1200 },
+      },
+    } as unknown as UserPreferences;
+
     const html = renderToStaticMarkup(
       <PerformanceSections
-        preferences={buildPreferences()}
+        preferences={preferences}
         updateCapability={() => undefined}
         updatePerformanceProfile={() => undefined}
         updateEstimated1Rm={() => undefined}
       />,
     );
 
-    for (const titleId of ['performance-biometrics-title', 'performance-devices-title', 'performance-targets-title']) {
-      const index = html.indexOf(titleId);
-      expect(index).toBeGreaterThan(-1);
-      const detailsStart = html.lastIndexOf('<details', index);
-      expect(html.slice(detailsStart, index)).not.toContain('open=""');
+    for (const [titleId, title] of [
+      ['performance-biometrics-title', 'Body Composition &amp; Biometrics'],
+      ['performance-devices-title', 'Measurement Devices &amp; Equipment'],
+      ['performance-targets-title', 'Training Targets'],
+      ['performance-gear-title', 'Shoes &amp; Equipment Mileage'],
+      ['performance-race-predictions-title', 'Garmin Race Predictions'],
+    ] as const) {
+      expectDisclosure(html, titleId, title);
     }
   });
 });
