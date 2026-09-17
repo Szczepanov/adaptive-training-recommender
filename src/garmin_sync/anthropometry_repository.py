@@ -1,7 +1,5 @@
 """Transactional Firestore persistence for server-authoritative anthropometry writes."""
 
-from __future__ import annotations
-
 from typing import Any
 
 from firebase_admin import firestore
