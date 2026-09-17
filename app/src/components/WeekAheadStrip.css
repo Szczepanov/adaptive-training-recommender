@@ -212,6 +212,31 @@
   margin: 0 0 0.5rem;
 }
 
+.detail-rationale-technical {
+  margin: -0.25rem 0 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.detail-rationale-technical summary {
+  cursor: pointer;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  user-select: none;
+}
+
+.detail-rationale-technical span {
+  display: block;
+  margin-top: 0.35rem;
+  padding: 0.35rem 0.5rem;
+  background: rgba(0, 0, 0, 0.06);
+  border-radius: 4px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  overflow-wrap: break-word;
+}
+
 .detail-objectives {
   font-size: 0.8rem;
   color: var(--text-secondary);

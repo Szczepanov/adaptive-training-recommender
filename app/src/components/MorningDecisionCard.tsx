@@ -8,6 +8,7 @@ import { WorkoutExportMenu } from './WorkoutExportMenu';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
 import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
+import { splitCoachingRationale } from '../utils/rationaleDisplay';
 import { contextBriefService } from '../services/contextBriefService';
 import './MorningDecisionCard.css';
 
@@ -276,45 +277,17 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
 
                         {(() => {
                             const rawRationale = clinicalEscalationActive ? clinicalReason : recommendation.rationale;
-                            // optimizer.ts appends its scoring/coverage internals to rationale as a
-                            // leading "Coverage tier: X. Benefit score: Y..." sentence plus zero or more
-                            // parenthetical clauses ("(Sequence intent: ...)", "(Event-modality coverage:
-                            // ...)", etc.) -- all moved into the collapsed detail below rather than shown
-                            // inline, since athletes think in sessions and how they feel, not coverage
-                            // tiers or sequence-intent parameters. Matched by recognizable technical
-                            // phrase rather than "strip every paren": rules.ts's own parenthetical
-                            // clauses (e.g. explaining a Rest/Mobility default) are genuinely
-                            // athlete-relevant and must stay visible.
-                            const LEAD_SCORE_PATTERN = /Coverage tier:\s*\d+\.\s*Benefit score:\s*[\d.]+(?:,\s*Fatigue cost penalty:\s*[\d.]+)?\.?/i;
-                            const TECHNICAL_CLAUSE_PATTERN = /\((?:Advances (?:mandatory|an explicit)|Eligible for proactive|Soft penalty applied|Event-modality coverage|Sequence intent|Sequence soft preference)[^)]*\)\.?/gi;
-
-                            let coachingNarrative = rawRationale;
-                            const technicalParts: string[] = [];
-
-                            const leadMatch = coachingNarrative.match(LEAD_SCORE_PATTERN);
-                            if (leadMatch && leadMatch.index !== undefined) {
-                                technicalParts.push(leadMatch[0].trim());
-                                coachingNarrative = coachingNarrative.slice(0, leadMatch.index) + coachingNarrative.slice(leadMatch.index + leadMatch[0].length);
-                            }
-                            coachingNarrative = coachingNarrative.replace(TECHNICAL_CLAUSE_PATTERN, match => {
-                                technicalParts.push(match.trim());
-                                return '';
-                            });
-                            coachingNarrative = coachingNarrative.replace(/\s{2,}/g, ' ').trim();
-                            if (!coachingNarrative) {
-                                coachingNarrative = 'Optimized for current weekly phase and recovery balance.';
-                            }
-                            const technicalScore = technicalParts.length > 0 ? technicalParts.join(' ') : null;
+                            const { coachingNarrative, technicalDetail } = splitCoachingRationale(rawRationale);
 
                             return (
                                 <div className="hero-why-callout" role="note">
                                     <p className="why-text">
                                         <strong>Why today:</strong> {coachingNarrative}
                                     </p>
-                                    {technicalScore && (
+                                    {technicalDetail && (
                                         <details className="why-technical-details">
                                             <summary className="why-technical-summary">Engine scoring telemetry</summary>
-                                            <span className="why-technical-content">{technicalScore}</span>
+                                            <span className="why-technical-content">{technicalDetail}</span>
                                         </details>
                                     )}
                                 </div>
