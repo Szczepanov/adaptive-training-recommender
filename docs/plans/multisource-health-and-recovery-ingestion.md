@@ -2,7 +2,9 @@
 
 * **Status:** `In progress`
 * **Proposed:** 2026-08-27
-* **Blocked by:** none (`MS0` is startable today; `MS1+` gated by `MS0` evidence).
+* **Blocked by:** `MS17` activation gates — Google Restricted Scope App Verification/CASA for
+  Google Health transport, verified in-app health-data disclosure and explicit user consent,
+  sufficient prospective/incremental evidence, and a rollback flag.
 * **Unlocks:** source-aware Google Health ingestion, Eight Sleep source validation,
   transport-equivalence measurement, and evidence-gated multisource recovery fusion.
 * **Source analysis:**
@@ -127,7 +129,7 @@ This plan does not initially:
 | MS14 | 35–45-night prospective shadow study (60d backfilled) | `[x]` (re-run for real post-fix 2026-08-27: 42/18/0/0 night split and baselines reproduced closely; new cross-source sleep-duration correlation 0.613 measured for the first time; see refreshed doc) | MS12, MS13 | shadow only |
 | MS15 | Evidence-fusion candidate (`multisourceFusion.ts`) | `[x]` | MS14 | default-off |
 | MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` (doesn't depend on real account data — synthetic-scenario/invariant testing; re-ran `multisourceComparison.test.ts` directly 2026-08-27, 5/5 pass) | MS15 | default-off |
-| MS17 | Metric-by-metric production activation decision | `[ ]` (CASA Tier 2 / Restricted Scope Verification confirmed NOT done — checked directly in Google Cloud Console 2026-08-27; see note above) | MS16 + prospective evidence | granular config |
+| MS17 | Metric-by-metric production activation decision | `[ ]` (CASA Tier 2 / Restricted Scope Verification confirmed NOT done — checked directly in Google Cloud Console 2026-08-27; see note above) | MS16 + prospective/incremental evidence + Restricted Scope/CASA + disclosure/consent + rollback | granular config |
 | MS18 | Optional direct Eight Sleep adapter | `[x]` (implemented via PR #275 / [ES plan](./eight-sleep-direct-recovery-ingestion.md) & ADR-0030) | MS11 | none |
 | MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
 
