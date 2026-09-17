@@ -49,7 +49,7 @@ describe('WeekAheadStrip rationale display (UX review follow-up)', () => {
         expect(rationaleMatch?.[1]).toBe('Base phase.');
         expect(rationaleMatch?.[1]).not.toContain('Coverage tier');
         expect(rationaleMatch?.[1]).not.toContain('Sequence intent');
-        expect(technicalDetailsMatch?.[1]).not.toContain('open');
+        expect(technicalDetailsMatch?.[1]).toBe('');
         expect(technicalDetailsMatch?.[2]).toContain('Engine scoring telemetry');
         expect(technicalDetailsMatch?.[2]).toContain('Coverage tier: 1. Benefit score: 1.27, Fatigue cost penalty: 1.30.');
         expect(technicalDetailsMatch?.[2]).toContain('Sequence intent: recondition/spread, preferred key gap 2d.');
