@@ -155,7 +155,17 @@ export function assertValidCompetitionOutcome(outcome: CompetitionOutcome): void
     assertTimestamp(outcome.occurredAt, 'occurredAt');
     assertTimestamp(outcome.createdAt, 'createdAt');
     if (outcome.eventRef !== undefined) assertNonEmptyString(outcome.eventRef, 'eventRef');
+    if (outcome.evaluationRef !== undefined) {
+        assertNonEmptyString(outcome.evaluationRef.id, 'evaluationRef.id');
+        if (!Number.isInteger(outcome.evaluationRef.revision) || outcome.evaluationRef.revision < 1) {
+            throw new Error('evaluationRef.revision must be a positive integer');
+        }
+        assertNonEmptyString(outcome.evaluationRef.contentHash, 'evaluationRef.contentHash');
+    }
     if (outcome.sourceRef !== undefined) assertNonEmptyString(outcome.sourceRef, 'sourceRef');
+    if (outcome.source !== 'manual' && outcome.sourceRef === undefined) {
+        throw new Error('sourceRef is required for non-manual competition outcomes');
+    }
     if (!outcome.result || typeof outcome.result !== 'object') throw new Error('Competition result is required');
     if (typeof outcome.result.completed !== 'boolean') throw new Error('Competition result.completed must be boolean');
     if (outcome.result.placing !== undefined) {

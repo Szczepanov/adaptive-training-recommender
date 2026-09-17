@@ -41,6 +41,21 @@ function inPeriod(date: string, startDate: string, endDate: string): boolean {
     return date >= startDate && date <= endDate;
 }
 
+function belongsToEvaluation(outcome: CompetitionOutcome, evaluation: OutcomeEvaluationSnapshot): boolean {
+    const sourceRef = evaluation.revision.sourceRef;
+    if (outcome.evaluationRef !== undefined) {
+        const matchesEvaluation = outcome.evaluationRef.id === evaluation.revision.id
+            && outcome.evaluationRef.revision === evaluation.revision.revision
+            && outcome.evaluationRef.contentHash === evaluation.revision.contentHash;
+        const matchesEvent = sourceRef?.kind !== 'event' || outcome.eventRef === sourceRef.id;
+        return matchesEvaluation && matchesEvent;
+    }
+    // Legacy outcomes can still participate in non-event block reports by date. Event-scoped
+    // evaluations fail closed unless the legacy record carries the exact event identity; an
+    // unlinked same-day race must not be silently attributed to the evaluated event.
+    return sourceRef?.kind !== 'event' || outcome.eventRef === sourceRef.id;
+}
+
 /**
  * OV5.2-OV6.1 composition boundary. This service performs no writes and owns no evidence;
  * callers load canonical records and this deterministic join derives a report from them.
@@ -57,7 +72,7 @@ export class BlockOutcomeReportService {
         const sessionOutcomes = input.sessionOutcomes.filter(item => inPeriod(item.sourceSession.date, startDate, endDate));
         const ecologicalOutcomes = input.ecologicalOutcomes.filter(item => {
             const date = getLocalDateString(new Date(item.occurredAt));
-            return inPeriod(date, startDate, endDate);
+            return inPeriod(date, startDate, endDate) && belongsToEvaluation(item, evaluation);
         });
 
         const metricProgress = evaluation.bindings.map(binding => deriveProgress(

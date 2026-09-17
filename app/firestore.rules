@@ -2348,6 +2348,27 @@ service cloud.firestore {
         );
     }
 
+    function hasValidCompetitionOutcomeEvaluationRef(userId, evaluationRef) {
+      let revisionPath = /databases/$(database)/documents/users/$(userId)/outcome_evaluations/$(evaluationRef.id)/revisions/$(string(evaluationRef.revision));
+      return evaluationRef is map
+        && evaluationRef.keys().hasOnly(['id', 'revision', 'contentHash'])
+        && evaluationRef.keys().hasAll(['id', 'revision', 'contentHash'])
+        && evaluationRef.id is string && evaluationRef.id.size() > 0 && evaluationRef.id.size() <= 160
+        && evaluationRef.revision is int && evaluationRef.revision >= 1
+        && evaluationRef.contentHash is string && evaluationRef.contentHash.matches('^[0-9a-f]{64}$')
+        && exists(revisionPath)
+        && get(revisionPath).data.status in ['active', 'completed', 'archived']
+        && get(revisionPath).data.contentHash == evaluationRef.contentHash;
+    }
+
+    function competitionOutcomeEventMatchesEvaluation(userId, evaluationRef, eventRef) {
+      let revisionPath = /databases/$(database)/documents/users/$(userId)/outcome_evaluations/$(evaluationRef.id)/revisions/$(string(evaluationRef.revision));
+      let evaluation = get(revisionPath).data;
+      return !('sourceRef' in evaluation)
+        || evaluation.sourceRef.kind != 'event'
+        || (eventRef is string && eventRef.size() > 0 && evaluation.sourceRef.id == eventRef);
+    }
+
     match /users/{userId}/outcome_evaluations/{evaluationId} {
       allow read: if isOwner(userId);
       allow create: if hasValidOutcomeEvaluationHead(userId, evaluationId)
@@ -2395,7 +2416,7 @@ service cloud.firestore {
       let data = request.resource.data;
       let result = data.result;
       return isOwner(userId)
-        && data.keys().hasOnly(['id', 'eventRef', 'sport', 'occurredAt', 'source', 'sourceRef', 'result', 'metrics', 'context', 'createdAt'])
+        && data.keys().hasOnly(['id', 'eventRef', 'evaluationRef', 'sport', 'occurredAt', 'source', 'sourceRef', 'result', 'metrics', 'context', 'createdAt'])
         && data.keys().hasAll(['id', 'sport', 'occurredAt', 'source', 'result', 'metrics', 'context', 'createdAt'])
         && data.id == outcomeId
         && data.id is string && data.id.size() > 0 && data.id.size() <= 160
@@ -2403,7 +2424,10 @@ service cloud.firestore {
         && data.sport in ['cycling', 'running', 'field', 'other']
         && data.occurredAt is string && data.occurredAt.size() > 0
         && data.source in ['manual', 'garmin_activity', 'imported_result']
+        && (data.source == 'manual' || ('sourceRef' in data && data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
         && (!('sourceRef' in data) || (data.sourceRef is string && data.sourceRef.size() > 0 && data.sourceRef.size() <= 512))
+        && (!('evaluationRef' in data) || hasValidCompetitionOutcomeEvaluationRef(userId, data.evaluationRef))
+        && (!('evaluationRef' in data) || competitionOutcomeEventMatchesEvaluation(userId, data.evaluationRef, ('eventRef' in data ? data.eventRef : null)))
         && result is map
         && result.keys().hasOnly(['completed', 'placing', 'fieldSize', 'elapsedSeconds', 'distanceM', 'courseId', 'summary'])
         && result.keys().hasAll(['completed'])

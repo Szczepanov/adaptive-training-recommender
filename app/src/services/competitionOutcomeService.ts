@@ -1,4 +1,4 @@
-import { doc, getDoc, setDoc, type Firestore } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, type Firestore } from 'firebase/firestore';
 import { getDb } from '../firebase';
 import type { CompetitionOutcome } from '../observations/models';
 import { assertValidCompetitionOutcome } from '../observations/validation';
@@ -18,9 +18,11 @@ export class CompetitionOutcomeService {
     async createOutcome(userId: string, outcome: CompetitionOutcome): Promise<CompetitionOutcome> {
         assertValidCompetitionOutcome(outcome);
         const ref = this.outcomeRef(userId, outcome.id);
-        const existing = await getDoc(ref);
-        if (existing.exists()) throw new Error(`Competition outcome ${outcome.id} already exists`);
-        await setDoc(ref, outcome);
+        await runTransaction(this.db, async (transaction) => {
+            const existing = await transaction.get(ref);
+            if (existing.exists()) throw new Error(`Competition outcome ${outcome.id} already exists`);
+            transaction.set(ref, outcome);
+        });
         return outcome;
     }
 

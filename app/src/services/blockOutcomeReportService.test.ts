@@ -126,4 +126,47 @@ describe('BlockOutcomeReportService', () => {
             ecologicalOutcomes: [],
         })).toThrow('activated/frozen');
     });
+
+    it('does not attribute same-day ecological evidence from another or unlinked event', () => {
+        const linkedEvaluation = {
+            ...evaluation(),
+            revision: {
+                ...evaluation().revision,
+                sourceRef: { kind: 'event' as const, id: 'event-1' },
+            },
+        };
+        const matching = {
+            ...race('matching', '2026-08-05T08:00:00.000Z'),
+            eventRef: 'event-1',
+            evaluationRef: { id: 'eval-compose', revision: 1, contentHash: 'frozen-hash' },
+        };
+        const other = {
+            ...matching,
+            id: 'other',
+            eventRef: 'event-2',
+            evaluationRef: { id: 'other-eval', revision: 1, contentHash: 'other-hash' },
+        };
+        const wrongEvent = {
+            ...matching,
+            id: 'wrong-event',
+            eventRef: 'event-2',
+        };
+        const unlinked = race('unlinked', '2026-08-05T08:00:00.000Z');
+        const legacyMatching = {
+            ...race('legacy-matching', '2026-08-05T08:00:00.000Z'),
+            eventRef: 'event-1',
+        };
+
+        const report = service.buildReport({
+            evaluation: linkedEvaluation,
+            observations: [],
+            recommendations: [],
+            completedSessions: [],
+            sessionOutcomes: [],
+            keyRoles: { plannedOccurrenceIds: [], completedOccurrenceIds: [] },
+            ecologicalOutcomes: [other, wrongEvent, unlinked, legacyMatching, matching],
+        });
+
+        expect(report.ecologicalOutcomes.map(item => item.id)).toEqual(['legacy-matching', 'matching']);
+    });
 });

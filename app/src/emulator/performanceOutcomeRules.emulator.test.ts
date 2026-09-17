@@ -17,6 +17,9 @@ const observationKey = `${attemptId}:${metricId}`;
 const observationPath = `users/${ownerId}/metric_observations/${observationKey}`;
 const revision1Path = `${observationPath}/revisions/1`;
 const competitionPath = `users/${ownerId}/competition_outcomes/race-1`;
+const evaluationId = 'evaluation-race-1';
+const evaluationPath = `users/${ownerId}/outcome_evaluations/${evaluationId}`;
+const evaluationRevisionPath = `${evaluationPath}/revisions/1`;
 
 function validProtocol() {
     return {
@@ -95,6 +98,44 @@ function validCompetitionOutcome() {
         context: { course: 'loop-a', weather: 'dry' },
         createdAt: '2026-08-21T06:00:00.000Z',
     };
+}
+
+function validOutcomeEvaluationHead() {
+    return {
+        id: evaluationId,
+        currentRevision: 1,
+        createdAt: '2026-08-21T06:00:00.000Z',
+        updatedAt: '2026-08-21T06:00:00.000Z',
+    };
+}
+
+function validOutcomeEvaluationRevision() {
+    return {
+        id: evaluationId,
+        revision: 1,
+        title: 'Race outcome',
+        startDate: '2026-08-01',
+        endDate: '2026-08-21',
+        sourceRef: { kind: 'event', id: 'event-1' },
+        status: 'draft',
+        contentHash: '',
+        createdAt: '2026-08-21T06:00:00.000Z',
+        bindings: [{ id: 'primary', metricId }],
+    };
+}
+
+async function seedActiveOutcomeEvaluation() {
+    const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+    const batch = writeBatch(ownerDb);
+    batch.set(doc(ownerDb, evaluationPath), validOutcomeEvaluationHead());
+    batch.set(doc(ownerDb, evaluationRevisionPath), validOutcomeEvaluationRevision());
+    await assertSucceeds(batch.commit());
+    await assertSucceeds(updateDoc(doc(ownerDb, evaluationRevisionPath), {
+        status: 'active',
+        activatedAt: '2026-08-21T06:01:00.000Z',
+        contentHash: 'a'.repeat(64),
+    }));
+    return ownerDb;
 }
 
 async function seedProtocolAndAttempt() {
@@ -277,5 +318,35 @@ emulatorDescribe('Performance outcome Firestore rules (OV2.4)', () => {
             comparisonSeriesKey: 'forbidden',
         }));
         await assertFails(updateDoc(doc(ownerDb, competitionPath), { metrics: { normalized_power_w: 999 } }));
+    });
+
+    it('allows an outcome linked to a frozen evaluation and requires provenance for imported sources', async () => {
+        const ownerDb = await seedActiveOutcomeEvaluation();
+        await assertSucceeds(setDoc(doc(ownerDb, competitionPath), {
+            ...validCompetitionOutcome(),
+            eventRef: 'event-1',
+            evaluationRef: { id: evaluationId, revision: 1, contentHash: 'a'.repeat(64) },
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${competitionPath}-missing-source-ref`), {
+            ...validCompetitionOutcome(),
+            id: 'race-missing-source-ref',
+            source: 'garmin_activity',
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${competitionPath}-missing-evaluation`), {
+            ...validCompetitionOutcome(),
+            id: 'race-missing-evaluation',
+            evaluationRef: { id: 'does-not-exist', revision: 1, contentHash: 'a'.repeat(64) },
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${competitionPath}-wrong-event`), {
+            ...validCompetitionOutcome(),
+            id: 'race-wrong-event',
+            eventRef: 'event-2',
+            evaluationRef: { id: evaluationId, revision: 1, contentHash: 'a'.repeat(64) },
+        }));
+        await assertFails(setDoc(doc(ownerDb, `${competitionPath}-missing-event`), {
+            ...validCompetitionOutcome(),
+            id: 'race-missing-event',
+            evaluationRef: { id: evaluationId, revision: 1, contentHash: 'a'.repeat(64) },
+        }));
     });
 });
