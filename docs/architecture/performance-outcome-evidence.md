@@ -6,8 +6,9 @@ testing/familiarization/validity workflow (OV3, PR #163), progress/reliability/p
 interpretation (OV4.1–OV4.3, PR #164), and immutable block-outcome derivation, policy-version
 segmentation, and deterministic report/export (OV5–OV6.1, PR #169). Only personal repeatability
 estimation (OV4.4, gated on real close-spaced repeat trials), an optional progress/report UI
-(OV6.2, usage-triggered), and operational evidence on the real event/block timeline (OV7–OV8)
-remain unimplemented; their planned work stays in
+ (OV6.2, usage-triggered), and operational evidence on the real event/block timeline (the
+ remaining OV7.1 data capture plus OV7.2–OV8) remain unimplemented; OV7.1 capture
+ infrastructure is now available through the event-aware outcome-capture service. Their planned work stays in
 [`performance-outcome-validation.md`](../plans/performance-outcome-validation.md).
 
 ## Authority boundary
@@ -217,7 +218,7 @@ The following are deliberately absent from the current architecture:
 
 * personal repeatability estimation (OV4.4) — gated on real close-spaced repeat trials;
 * any progress/report dashboard UI (OV6.2) — usage-triggered, not yet justified by real report use;
-* operational evidence on the real event/block timeline (OV7–OV8);
+* operational evidence on the real event/block timeline (the remaining OV7.1 data capture plus OV7.2–OV8);
 * automatic recommendation changes based on outcome evidence.
 
 The last item is not merely unfinished UI. It is an explicit architecture boundary: adding

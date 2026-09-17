@@ -1085,6 +1085,12 @@ This makes the implementation real rather than architectural.
 
 The current macrocycle’s primary target is an approximately 50-minute road race. Do not insert an unrelated maximal test battery into the decisive specific week/taper.
 
+**Implementation note (2026-09-17).** Event-aware capture infrastructure is available in
+`competitionOutcomeCaptureService.ts`: it verifies the user-scoped event goal, derives the
+local outcome date, requires caller-supplied primary evaluation criteria, freezes the linked
+evaluation revision, and persists an immutable `CompetitionOutcome`. This task remains `[ ]`
+until real event data is captured and included in a block report.
+
 Create a frozen outcome evaluation revision linked to the event and capture a `CompetitionOutcome` with:
 
 * event completion/result as the primary ecological endpoint;
