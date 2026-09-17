@@ -522,6 +522,12 @@ A goal event is valuable evidence without pretending to be a protocol-locked ben
 export interface CompetitionOutcome {
   id: string;
   eventRef?: string;
+  /** Immutable link to the frozen evaluation that authorized this capture. */
+  evaluationRef?: {
+    id: string;
+    revision: number;
+    contentHash: string;
+  };
   sport: 'cycling' | 'running' | 'field' | 'other';
   occurredAt: string;
   source: 'manual' | 'garmin_activity' | 'imported_result';

@@ -252,10 +252,10 @@ describe('OV2/OV3 persistence services', () => {
     });
 
     it('creates competition outcomes without any protocol-series persistence path', async () => {
-        firestore.getDoc.mockResolvedValueOnce(snapshot(null));
+        firestore.transaction.get.mockResolvedValueOnce(snapshot(null));
         const service = new CompetitionOutcomeService({} as never);
         await service.createOutcome('u1', outcome);
-        expect(firestore.setDoc).toHaveBeenCalledWith(
+        expect(firestore.transaction.set).toHaveBeenCalledWith(
             expect.objectContaining({ path: 'users/u1/competition_outcomes/race-1' }),
             outcome,
         );
