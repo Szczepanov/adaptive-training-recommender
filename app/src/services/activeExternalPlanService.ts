@@ -86,6 +86,12 @@ export interface IntradayBundlePlacementContext {
     memberState?: ReadonlyMap<string, { started: boolean; existingBinding?: ResolvedWindowBinding }>;
 }
 
+export interface IntradayBundlePlanSessionProjection {
+    sessionId: string;
+    date: string;
+    status: 'planned' | 'moved';
+}
+
 /**
  * H4 (#434) PR 3 step 7: maps today's already-fetched external-plan occurrences onto
  * `IntradayBundlePlacementContext['memberState']`, keyed by the v4 session's own
@@ -219,6 +225,27 @@ export function resolveIntradayBundlePlacement(
         if (result.outcome === 'placed') return result;
     }
     return firstResult;
+}
+
+/** Frozen projection used by D-AUDIT; it deliberately performs no live lookup. */
+export function intradayBundlePlacementReplayInputs(
+    active: ActiveExternalPlan,
+    date: string,
+    context: IntradayBundlePlacementContext,
+    bundleId: string,
+): { members: IntradayBundleMember[]; restDates: string[]; planSessions: IntradayBundlePlanSessionProjection[] } | null {
+    const sessions = placedSessionsForDate(active, date)
+        .filter((placed): placed is PlacedSession & { session: ExternalPlanSessionV4 & { intraday: ExternalIntradayPlacement } } => hasIntraday(placed.session))
+        .filter(placed => placed.session.intraday.bundleId === bundleId);
+    return sessions.length === 0 ? null : {
+        members: toMembers(sessions, context.memberState),
+        restDates: [...resolveRestDatesByDate(active.plan).keys()].sort(),
+        planSessions: sessions.map(placed => ({
+            sessionId: placed.session.id,
+            date: placed.date,
+            status: placed.status === 'moved' ? 'moved' : 'planned',
+        })),
+    };
 }
 
 /**

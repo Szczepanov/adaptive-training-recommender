@@ -1843,7 +1843,7 @@ service cloud.firestore {
     }
 
     // ADR-0036 (H4) D-PLACEMENT follow-up: a v4 intraday bundle's resolved window
-    // placement, persisted for display only -- see
+    // placement, persisted as a legacy date-level display record -- see
     // `intradayBundlePlacementAuditService.ts`'s header for why this is a separate
     // sibling document rather than a `recommendationAudit.externalPlan` field
     // (that path is already at Firestore's per-request rule-evaluation ceiling).
@@ -1877,6 +1877,66 @@ service cloud.firestore {
         && request.resource.data.createdAt == resource.data.createdAt
         && request.resource.data.revision == resource.data.revision + 1;
       allow delete: if false;
+    }
+
+    // ADR-0036 D-AUDIT: immutable, content-addressed replay input and proposal snapshot.
+    // Deep member/window/activity validation remains at the TypeScript boundary; rules
+    // enforce ownership, bounded shape, identity binding, and write-once semantics.
+    function hasValidIntradayBundlePlacementAudit(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['schemaVersion', 'auditId', 'snapshotHash', 'userId', 'date', 'asOf', 'policyVersion', 'plan', 'planSnapshot', 'bundleId', 'scheduleWindows', 'fixedActivities', 'restDates', 'planSessions', 'members', 'ledger', 'proposal', 'createdAt'])
+        && data.keys().hasAll(['schemaVersion', 'auditId', 'snapshotHash', 'userId', 'date', 'asOf', 'policyVersion', 'plan', 'planSnapshot', 'bundleId', 'scheduleWindows', 'fixedActivities', 'restDates', 'planSessions', 'members', 'ledger', 'proposal', 'createdAt'])
+        && data.schemaVersion == 'intraday_bundle_placement_audit_v1'
+        && data.auditId is string && data.auditId.matches('^audit_[0-9a-f]{64}$')
+        && data.snapshotHash is string && data.snapshotHash.matches('^[0-9a-f]{64}$')
+        && isValidActivityDate(data.date)
+        && data.asOf is string && data.asOf.size() > 0 && data.asOf.size() <= 64
+        && data.policyVersion is string && data.policyVersion.size() > 0 && data.policyVersion.size() <= 128
+        && data.plan is map && data.plan.keys().hasOnly(['planId', 'revision', 'contentHash'])
+        && data.plan.planId is string && data.plan.planId.size() > 0 && data.plan.planId.size() <= 128
+        && data.plan.revision is int && data.plan.revision >= 1
+        && data.plan.contentHash is string && data.plan.contentHash.matches('^[0-9a-f]{64}$')
+        && data.planSnapshot is map
+        && data.planSnapshot.keys().hasOnly(['schema', 'planId', 'revision', 'title', 'startDate', 'weekCount', 'notes', 'sessions', 'restDays'])
+        && data.planSnapshot.keys().hasAll(['schema', 'planId', 'revision', 'sessions', 'restDays'])
+        && data.planSnapshot.schema == 'adaptive-training-recommender/external-plan@4'
+        && data.planSnapshot.planId is string && data.planSnapshot.planId.size() > 0 && data.planSnapshot.planId.size() <= 128
+        && data.planSnapshot.revision is int && data.planSnapshot.revision >= 1
+        && data.planSnapshot.title is string && data.planSnapshot.title.size() > 0 && data.planSnapshot.title.size() <= 200
+        && isValidActivityDate(data.planSnapshot.startDate)
+        && data.planSnapshot.weekCount is int && data.planSnapshot.weekCount >= 1 && data.planSnapshot.weekCount <= 52
+        && data.planSnapshot.sessions is list && data.planSnapshot.sessions.size() > 0 && data.planSnapshot.sessions.size() <= 64
+        && data.planSnapshot.restDays is list && data.planSnapshot.restDays.size() <= 64
+        && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
+        && data.scheduleWindows is list && data.scheduleWindows.size() <= 8
+        && data.fixedActivities is list && data.fixedActivities.size() <= 32
+        && data.restDates is list && data.restDates.size() <= 64
+        && data.planSessions is list && data.planSessions.size() > 0 && data.planSessions.size() <= 8
+        && data.members is list && data.members.size() > 0 && data.members.size() <= 8
+        && data.ledger is map && data.ledger.keys().hasOnly(['ceilings', 'entries', 'result'])
+        && data.ledger.ceilings is map
+        && data.ledger.ceilings.keys().hasAll(['dailyMinuteCeiling', 'dailySystemicCostCeiling'])
+        && data.ledger.ceilings.dailyMinuteCeiling is number && data.ledger.ceilings.dailyMinuteCeiling >= 0
+        && data.ledger.ceilings.dailySystemicCostCeiling is number && data.ledger.ceilings.dailySystemicCostCeiling >= 0 && data.ledger.ceilings.dailySystemicCostCeiling <= 1
+        && data.ledger.entries is list && data.ledger.entries.size() <= 50
+        && data.ledger.result is map
+        && data.ledger.result.keys().hasAll(['remainingMinutes', 'remainingSystemicCost', 'unresolvedEntries'])
+        && data.ledger.result.remainingMinutes is number && data.ledger.result.remainingMinutes >= 0
+        && data.ledger.result.remainingSystemicCost is number && data.ledger.result.remainingSystemicCost >= 0 && data.ledger.result.remainingSystemicCost <= 1
+        && data.ledger.result.unresolvedEntries is list && data.ledger.result.unresolvedEntries.size() <= 50
+        && data.proposal is map && data.proposal.bundleId == data.bundleId
+        && data.proposal.outcome in ['placed', 'infeasible']
+        && ((data.proposal.outcome == 'placed' && data.proposal.bindings is list && data.proposal.bindings.size() > 0 && data.proposal.bindings.size() <= 8)
+          || (data.proposal.outcome == 'infeasible' && data.proposal.reason is string && data.proposal.reason.size() > 0 && data.proposal.reason.size() <= 512))
+        && data.createdAt is string && data.createdAt.size() > 0 && data.createdAt.size() <= 64;
+    }
+
+    match /users/{userId}/intraday_bundle_placement_audits/{auditId} {
+      allow read: if isOwner(userId);
+      allow create: if hasValidIntradayBundlePlacementAudit(userId)
+        && request.resource.data.auditId == auditId;
+      allow update, delete: if false;
     }
 
     function hasKnownOutcomeMetric(metricId) {
