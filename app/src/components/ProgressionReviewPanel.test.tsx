@@ -104,7 +104,7 @@ function blockWithContract(objectiveOverrides: Partial<BlockObjectiveDefinition>
             targetBinding: { objectiveId: 'obj_1' },
             variable: 'duration_min',
             unit: 'minutes',
-            currentValue: 100,
+            currentValue: 70,
             permittedRange: { min: 60, max: 120 },
             increment: 10,
             knowledgeLineage: [],
@@ -121,8 +121,23 @@ describe('isProgressionSelectionUnsupported', () => {
         expect(isProgressionSelectionUnsupported(blockWithContract({ coverageKey: 'sustained_quality' }))).toBe(false);
     });
 
-    it('is true for a coverage key not yet packed into evergreen selection', () => {
-        expect(isProgressionSelectionUnsupported(blockWithContract({ coverageKey: 'short_surges' }))).toBe(true);
+    it('is false for a newly wired event coverage key', () => {
+        expect(isProgressionSelectionUnsupported(blockWithContract({ coverageKey: 'short_surges' }))).toBe(false);
+    });
+
+    it('is true when a supported role still has an unresolved authored session binding', () => {
+        const block = blockWithContract({ coverageKey: 'short_surges' });
+        expect(isProgressionSelectionUnsupported({
+            ...block,
+            progressionContract: {
+                ...block.progressionContract!,
+                targetBinding: { objectiveId: 'obj_1', sessionId: 'external-session', stepId: 'main' },
+            },
+        })).toBe(true);
+    });
+
+    it('is true for a coverage key without a confirmed-selection role', () => {
+        expect(isProgressionSelectionUnsupported(blockWithContract({ coverageKey: 'field_maintenance' }))).toBe(true);
     });
 
     it('is false when there is no progression contract', () => {

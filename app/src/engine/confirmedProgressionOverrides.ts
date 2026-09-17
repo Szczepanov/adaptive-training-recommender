@@ -23,20 +23,17 @@ import type {
 } from './blockIntent';
 import { EVERGREEN_PACKING_COVERAGE } from './weeklyDosePacking';
 import type { DoseVariation, ObjectiveKey, SessionTemplate } from './models';
-import type { PlanCoverageKey } from '../workouts/event-plan';
+import { SEPTEMBER_CYCLING_EVENT_COVERAGE_SET, type PlanCoverageKey } from '../workouts/event-plan';
 import { WORKOUTS_BY_ID } from '../workouts/catalog';
 import { workoutForTemplate } from '../workouts/prescription';
 import { progressionOverrideKey } from './progressionOverrideKey';
 
 export { progressionOverrideKey };
 
-/** Derived, not hardcoded, so it cannot drift from the roles the packer actually iterates. */
-export const SELECTION_WIRED_COVERAGE_KEYS: readonly PlanCoverageKey[] =
-    EVERGREEN_PACKING_COVERAGE.roles.map(role => role.id as PlanCoverageKey);
-
 export type UnsupportedProgressionReason =
     | 'coverage_not_wired'
     | 'no_exact_prescription_target'
+    | 'session_binding_unresolved'
     | 'ambiguous_active_role_progression';
 
 export interface UnsupportedProgressionObjective {
@@ -57,6 +54,53 @@ export interface DerivedProgressionOverrides {
     unsupported: readonly UnsupportedProgressionObjective[];
 }
 
+interface ProgressionSelectionRole {
+    /** Stable plan-role identity used by the authored progression binding. */
+    id: PlanCoverageKey;
+    exactWorkoutIds: readonly string[];
+    durationMinutes: number;
+}
+
+/**
+ * These roles are valid exact targets for a confirmed progression, but they are not
+ * evergreen dose-packing roles. Keeping them in this separate selection registry lets an
+ * authored event/taper progression change the dose of a matching selected session without
+ * adding event-specific work to a plan-less evergreen weekly budget.
+ */
+const SELECTION_ONLY_ROLE_KEYS: readonly PlanCoverageKey[] = [
+    'short_surges', 'gap_closing', 'outdoor_event_specific', 'taper_sharpening',
+];
+
+function minimumDuration(workoutIds: readonly string[]): number {
+    return Math.min(...workoutIds.map(id => WORKOUTS_BY_ID.get(id)?.duration.minimumMin ?? Number.POSITIVE_INFINITY));
+}
+
+const EVENT_SELECTION_ROLES: readonly ProgressionSelectionRole[] =
+    SEPTEMBER_CYCLING_EVENT_COVERAGE_SET.coverage
+        .filter(coverage => SELECTION_ONLY_ROLE_KEYS.includes(coverage.key))
+        .map(coverage => ({
+            id: coverage.key,
+            exactWorkoutIds: coverage.workoutIds,
+            durationMinutes: minimumDuration(coverage.workoutIds),
+        }));
+
+const EVERGREEN_SELECTION_ROLES: readonly ProgressionSelectionRole[] =
+    EVERGREEN_PACKING_COVERAGE.roles.map(role => ({
+        id: role.id as PlanCoverageKey,
+        exactWorkoutIds: role.exactWorkoutIds,
+        durationMinutes: role.durationMinutes,
+    }));
+
+/** Exact catalog roles available to the final recommendation selector. */
+export const PROGRESSION_SELECTION_ROLES: readonly ProgressionSelectionRole[] = [
+    ...EVERGREEN_SELECTION_ROLES,
+    ...EVENT_SELECTION_ROLES,
+];
+
+/** Derived from the exact selector registry, so UI notices cannot drift from execution. */
+export const SELECTION_WIRED_COVERAGE_KEYS: readonly PlanCoverageKey[] =
+    PROGRESSION_SELECTION_ROLES.map(role => role.id);
+
 function isActiveOn(block: IntentBlock, date: string): boolean {
     return date >= block.dateRange.startDate && date <= block.dateRange.endDate;
 }
@@ -66,11 +110,11 @@ function findBoundObjective(block: IntentBlock, objectiveId: string): BlockObjec
 }
 
 function roleFor(coverageKey: PlanCoverageKey) {
-    return EVERGREEN_PACKING_COVERAGE.roles.find(role => role.id === coverageKey) ?? null;
+    return PROGRESSION_SELECTION_ROLES.find(role => role.id === coverageKey) ?? null;
 }
 
 function isWiredCoverageKey(coverageKey: PlanCoverageKey): boolean {
-    return SELECTION_WIRED_COVERAGE_KEYS.includes(coverageKey);
+    return PROGRESSION_SELECTION_ROLES.some(role => role.id === coverageKey);
 }
 
 function workoutModalityMatchesSport(modality: string, sport: BlockSport): boolean {
@@ -110,16 +154,11 @@ function exactWorkoutTargets(
     const role = roleFor(objective.coverageKey);
     if (!role) return [];
     const duration = clampConfirmedDuration(contract, objective);
-    const { sessionId, stepId } = contract.targetBinding;
 
     return role.exactWorkoutIds.filter(workoutId => {
         const workout = WORKOUTS_BY_ID.get(workoutId);
         if (!workout || workout.status !== 'active') return false;
         if (!workoutModalityMatchesSport(workout.modality, objective.sport)) return false;
-        // In generated evergreen planning, a session binding can only be honored without
-        // guessing when it names the exact catalog workout identity used by coverage.
-        if (sessionId && sessionId !== workoutId) return false;
-        if (stepId && !workout.blocks.some(block => block.steps.some(step => step.id === stepId))) return false;
         // A confirmed authored target that no exact prescription can physically represent
         // must not be credited merely as accounting metadata.
         if (duration < workout.duration.minimumMin || duration > workout.duration.maximumMin) return false;
@@ -134,6 +173,7 @@ export function progressionSelectionUnsupportedReason(
     if (!block || !contract) return null;
     const objective = findBoundObjective(block, contract.targetBinding.objectiveId);
     if (!objective) return null;
+    if (contract.targetBinding.sessionId || contract.targetBinding.stepId) return 'session_binding_unresolved';
     if (!isWiredCoverageKey(objective.coverageKey)) return 'coverage_not_wired';
     if (contract.variable !== 'duration_min' || contract.unit !== 'minutes') return 'no_exact_prescription_target';
     return exactWorkoutTargets(objective, contract).length > 0 ? null : 'no_exact_prescription_target';
@@ -150,10 +190,18 @@ export function progressionDoseForTemplate(
 ): DoseVariation | null {
     const workout = workoutForTemplate(template.id);
     if (!workout) return null;
-    const role = EVERGREEN_PACKING_COVERAGE.roles.find(item => item.exactWorkoutIds.includes(workout.id));
-    if (!role) return null;
-    const duration = overrides.get(progressionOverrideKey(role.id, workout.id)) ?? overrides.get(role.id);
-    if (duration === undefined || !Number.isFinite(duration)) return null;
+    const roles = PROGRESSION_SELECTION_ROLES.filter(item => item.exactWorkoutIds.includes(workout.id));
+    const applicableDurations: number[] = [];
+    for (const role of roles) {
+        const exact = overrides.get(progressionOverrideKey(role.id, workout.id));
+        const direct = overrides.get(role.id);
+        const duration = exact ?? direct;
+        if (duration === undefined) continue;
+        if (!Number.isFinite(duration)) return null;
+        applicableDurations.push(duration);
+    }
+    if (applicableDurations.length !== 1) return null;
+    const duration = applicableDurations[0];
     if (duration < workout.duration.minimumMin || duration > workout.duration.maximumMin) return null;
     const fullDuration = workout.variants.find(variant => variant.id === 'full')?.targetDurationMin
         ?? workout.duration.defaultMin
@@ -189,7 +237,7 @@ export function deriveDurationOverridesForDate(
 ): DerivedProgressionOverrides {
     const overrides = new Map<string, number>();
     const unsupported: UnsupportedProgressionObjective[] = [];
-    const claimedRoles = new Map<string, { block: IntentBlock; objective: BlockObjectiveDefinition; keys: string[] }>();
+    const claimedRoles = new Map<string, { block: IntentBlock; objective: BlockObjectiveDefinition; keys: string[]; workoutIds: string[] }>();
     const conflictedRoles = new Set<string>();
 
     const activeWithContract = blocks
@@ -223,9 +271,26 @@ export function deriveDurationOverridesForDate(
         }
 
         const duration = clampConfirmedDuration(contract, objective);
-        const keys = exactWorkoutTargets(objective, contract).map(workoutId => progressionOverrideKey(roleId, workoutId));
+        const workoutIds = exactWorkoutTargets(objective, contract);
+        const keys = workoutIds.map(workoutId => progressionOverrideKey(roleId, workoutId));
         keys.forEach(key => overrides.set(key, duration));
-        claimedRoles.set(roleId, { block, objective, keys });
+        claimedRoles.set(roleId, { block, objective, keys, workoutIds });
+    }
+
+    const roleClaims = [...claimedRoles.entries()];
+    const overlappingRoleIds = new Set<string>();
+    for (let leftIndex = 0; leftIndex < roleClaims.length; leftIndex += 1) {
+        const [leftRoleId, left] = roleClaims[leftIndex];
+        for (const [rightRoleId, right] of roleClaims.slice(leftIndex + 1)) {
+            if (!left.workoutIds.some(workoutId => right.workoutIds.includes(workoutId))) continue;
+            overlappingRoleIds.add(leftRoleId);
+            overlappingRoleIds.add(rightRoleId);
+        }
+    }
+    for (const [roleId, claim] of roleClaims) {
+        if (!overlappingRoleIds.has(roleId)) continue;
+        claim.keys.forEach(key => overrides.delete(key));
+        unsupported.push(unsupportedEntry(claim.block, claim.objective, 'ambiguous_active_role_progression'));
     }
 
     return { overrides, unsupported };

@@ -9,14 +9,10 @@ its record of what was investigated, not as a task list.
 ADR-0036 with every design slice (D-SCHEMA, D-LEDGER, D-TIME, D-WINDOW, D-PLACEMENT,
 D-REASSESS, D-AUDIT) delivered as code and issue #434's execution-binding pipeline delivered
 through PR 3 Phase 6, including the cumulative H4 `POLICY_VERSION` transition; ledger-based
-ranking/admission is still not a decision input anywhere; H5 design accepted as ADR-0037
-with H5a (intent contracts, canonical replay) and H5b (report-only progression review)
-delivered (H5c confirmed revisions and cumulative `external-plan@5` unstarted)
-**Blocked by:** Nothing blocks starting any remaining item. H4's live release is delivered.
-H5c (confirmed bounded revisions, with the athlete-scoped singleton
-progression claim) and cumulative `external-plan@5` with `intentBlocks` are both ready to
-start, and are independent of H4's non-gating follow-ups. Personal M00/M01 prescription needs
-current athlete inputs.
+ranking/admission is still not a decision input anywhere. H5 design is accepted as ADR-0037
+with H5a/H5b/H5c, cumulative `external-plan@5`, and confirmed progression selection coverage
+all delivered. **Blocked by:** Nothing in H1-H5 blocks the next independently scoped item.
+Personal M00/M01 prescription still needs current athlete inputs.
 **Unlocks:** A cycling-first recommendation path that preserves feasible strength, respects equipment and time, and supports authored blocks without inventing capacity.
 
 ## Start here
@@ -434,23 +430,17 @@ pinning test confirming `getPerformedTrainingFactsInRange`'s existing behavior a
 `trainingIntent.ts`'s call site are unchanged.
 
 D-PLACEMENT's placement-correctness wiring and issue #434's execution-binding pipeline
-through Phase 6 are delivered. Remaining H4 work therefore separates into two independent,
-non-gating tracks: (a) unifying `planner.ts`'s remaining ad hoc dedup /
-remainder-admission paths onto D-LEDGER as a real ranking input; and (b) recommendation-audit
-persistence of resolved bundle placement for display, now unblocked by #468/#435 but still
-unimplemented. Do not resurrect the older roadmap that placed the execution-binding pipeline
-or D-REASSESS/D-AUDIT after D-PLACEMENT; those have already landed.
+through Phase 6 are delivered. The placement snapshot/replay slice is also delivered; the
+broader occurrence/response/actual-execution and supersession lifecycle remains deliberately
+unscoped. Do not resurrect the older roadmap that placed the execution-binding pipeline or
+D-REASSESS/D-AUDIT after D-PLACEMENT; those have already landed.
 
 ## Work order H5 — Block intent and controlled progression
 
-**Status:** Design accepted in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md).
-**H5a and H5b delivered** (`engine/blockIntent.ts`, `engine/blockIntentReplay.ts`,
-`engine/progressionReview.ts`); H5c and cumulative `external-plan@5` unstarted.
-**Dependencies:** H5c needs the athlete-scoped singleton progression-claim transaction
-design. `external-plan@5` import depends on the concrete inherited v3/v4 contracts;
-ADR-0036's v4 artifact has landed, so it is a real dependency to build against rather
-than a discussion-context reconstruction.
-**Deliverable:** H5a explicit intent, H5b report-only review, H5c confirmed bounded revisions.
+**Status:** H5a, H5b, H5c, cumulative `external-plan@5`, and confirmed progression selection
+coverage are delivered. Remaining H5 work is separately scoped coverage/policy expansion.
+**Deliverable:** H5a explicit intent, H5b report-only review, H5c confirmed bounded revisions,
+imported intent blocks, and exact-role progression selection.
 
 1. **H5a — Intent contracts (delivered).** `engine/blockIntent.ts` provides explicit
    per-objective `develop | maintain` intent and typed objective priority, typed dose
@@ -480,7 +470,7 @@ than a discussion-context reconstruction.
    end-of-block redirect enforcement, and no implicit "N bad responses" redirect
    threshold. `progressionReview.test.ts` covers this. Not wired into daily
    recommendation selection; `POLICY_VERSION` unchanged.
-3. **H5c — Confirmed revision (design notes; unstarted).** Show concrete before/after dose and affected future work.
+3. **H5c — Confirmed revision (delivered).** Shows concrete before/after dose and affected future work.
    Confirmation must revalidate source revisions, safety and capacity and atomically create
    one new authored revision. Enforce the one-confirmed-active-experiment-per-athlete rule
    with an athlete-scoped singleton claim/sentinel acquired in the same Firestore transaction
@@ -488,7 +478,7 @@ than a discussion-context reconstruction.
    blocks. Stale/repeated confirmation cannot apply an increment twice. Release uses matching
    compare-and-clear semantics so stale cleanup cannot erase a newer claim. Outcome reports
    remain outside automatic engine selection; no unattended progression.
-4. **Verification.** Implement ADR-0037's complete deterministic matrix, immutable replay,
+4. **Verification (delivered).** ADR-0037's complete deterministic matrix, immutable replay,
    user isolation/rules and architecture boundary tests. Replay fixtures must mutate each
    semantic binding (including source identity/revision, effective bounds, intent, protected
    roles, substitution rules, success criteria, review timing, prerequisites and progression
