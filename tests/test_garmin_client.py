@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 from garminconnect import (
@@ -10,6 +10,72 @@ from garminconnect import (
 )
 
 from garmin_sync.garmin_client import GarminClientWrapper
+
+
+def test_get_activities_window_filters_paginated_plain_list_response():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = MagicMock()
+    wrapper.api.get_activities.side_effect = [
+        [
+            {"activityId": 3, "startTimeLocal": "2026-08-23 09:00:00"},
+            {"activityId": 2, "startTimeLocal": "2026-08-22 09:00:00"},
+        ],
+        [{"activityId": 1, "startTimeLocal": "2026-08-20 09:00:00"}],
+    ]
+
+    result = wrapper.get_activities_window("2026-08-21", "2026-08-23")
+
+    assert result == [
+        {"activityId": 3, "startTimeLocal": "2026-08-23 09:00:00"},
+        {"activityId": 2, "startTimeLocal": "2026-08-22 09:00:00"},
+    ]
+    assert wrapper.api.get_activities.call_args_list == [
+        call(0, 100),
+        call(100, 100),
+    ]
+
+
+def test_get_activities_window_accepts_activity_list_envelope():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = MagicMock()
+    wrapper.api.get_activities.side_effect = [
+        {
+            "activityList": [
+                {"activityId": 2, "startTimeLocal": "2026-08-22 09:00:00"},
+                {"activityId": 1, "startTimeLocal": "2026-08-20 09:00:00"},
+            ]
+        }
+    ]
+
+    assert wrapper.get_activities_window("2026-08-21", "2026-08-23") == [
+        {"activityId": 2, "startTimeLocal": "2026-08-22 09:00:00"}
+    ]
+
+
+def test_get_activities_window_ignores_malformed_activity_entries():
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = MagicMock()
+    wrapper.api.get_activities.side_effect = [
+        [
+            "not-an-activity",
+            {"activityId": 1, "startTimeLocal": None},
+            {"activityId": 2, "startTimeLocal": "2026-08-22 09:00:00"},
+        ],
+        [],
+    ]
+
+    assert wrapper.get_activities_window("2026-08-21", "2026-08-23") == [
+        {"activityId": 2, "startTimeLocal": "2026-08-22 09:00:00"}
+    ]
+
+
+@pytest.mark.parametrize("response", [{"activityList": "not-a-list"}, {"other": []}, None, "bad"])
+def test_get_activities_window_ignores_malformed_response_envelopes(response):
+    wrapper = GarminClientWrapper(allow_credential_login=False)
+    wrapper.api = MagicMock()
+    wrapper.api.get_activities.return_value = response
+
+    assert wrapper.get_activities_window("2026-08-21", "2026-08-23") == []
 
 
 def test_login_success_persists_via_single_call(tmp_path):

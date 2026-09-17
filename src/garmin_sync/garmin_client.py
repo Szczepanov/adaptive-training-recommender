@@ -14,6 +14,11 @@ from garminconnect import (
 logger = logging.getLogger(__name__)
 
 
+def _activity_date(activity: dict[str, Any]) -> str:
+    start_time_local = activity.get("startTimeLocal")
+    return start_time_local[:10] if isinstance(start_time_local, str) else ""
+
+
 class GarminDataClient(Protocol):
     def get_stats(self, date_iso: str) -> dict[str, Any]: ...
     def get_sleep_data(self, date_iso: str) -> dict[str, Any]: ...
@@ -262,12 +267,19 @@ class GarminClientWrapper:
         max_pages = 30
 
         for _ in range(max_pages):
-            batch = self.api.get_activities(start_index, limit)
-            if not isinstance(batch, list) or not batch:
+            raw_batch = self.api.get_activities(start_index, limit)
+            if isinstance(raw_batch, list):
+                batch = raw_batch
+            elif isinstance(raw_batch, dict) and isinstance(raw_batch.get("activityList"), list):
+                batch = raw_batch["activityList"]
+            else:
+                batch = []
+            batch = [activity for activity in batch if isinstance(activity, dict)]
+            if not batch:
                 break
             activities.extend(batch)
             oldest = batch[-1]
-            oldest_date = oldest.get("startTimeLocal", "")[:10] if isinstance(oldest, dict) else ""
+            oldest_date = _activity_date(oldest)
             if oldest_date and oldest_date < start_date_iso:
                 break
             start_index += limit
@@ -277,9 +289,7 @@ class GarminClientWrapper:
             )
 
         window_acts = [
-            act
-            for act in activities
-            if start_date_iso <= act.get("startTimeLocal", "")[:10] <= end_date_iso
+            act for act in activities if start_date_iso <= _activity_date(act) <= end_date_iso
         ]
         return window_acts
 

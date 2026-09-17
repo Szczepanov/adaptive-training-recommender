@@ -84,7 +84,7 @@
     "deploy:indexes": "firebase deploy --only firestore:indexes --project adaptive-training-recommender",
     "test": "vitest run",
     "test:rules": "firebase --project demo-adaptive-training emulators:exec --only firestore \"npm run test:rules:emulator\"",
-    "test:rules:emulator": "vitest run src/emulator",
+    "test:rules:emulator": "vitest run src/emulator --fileParallelism=false --maxWorkers=1",
     "e2e:serve": "vite --mode e2e --host 127.0.0.1 --port 4173",
     "test:e2e": "firebase --project demo-adaptive-training-e2e emulators:exec --only auth,firestore \"playwright test --config=playwright.e2e.config.ts\"",
     "firestore:rules:drift": "node scripts/check-firestore-rules-drift.mjs --project adaptive-training-recommender",
