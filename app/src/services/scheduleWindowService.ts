@@ -3,6 +3,7 @@ import { getDb } from '../firebase';
 import type { ScheduleWindow, ScheduleWindowManifest } from '../engine/models';
 import type { DataIssue, DataState } from '../engine/dataState';
 import { validateScheduleWindow, validateScheduleWindowManifest } from '../engine/scheduleWindows';
+import { expandRecurringSchedule, validateRecurringSchedule, type RecurringScheduleInput } from '../engine/scheduleWindowRecurrence';
 import { getErrorCode } from '../utils/errors';
 
 export type ScheduleWindowWithId = ScheduleWindow & { id: string };
@@ -54,7 +55,7 @@ export class ScheduleWindowService {
             userId,
             date,
             revision: previous ? previous.revision + 1 : 1,
-            windows,
+            windows: [...windows].sort((left, right) => left.startLocal.localeCompare(right.startLocal)),
             createdAt: previous?.createdAt ?? now,
             updatedAt: now,
         };
@@ -144,6 +145,74 @@ export class ScheduleWindowService {
             transaction.set(ref, this.buildManifest(userId, candidate.date, current, [...(current?.windows ?? []), candidate]));
         });
         return candidate;
+    }
+
+    /**
+     * Expands a repeating weekday schedule into the existing dated manifests. Every
+     * affected date is preflighted before writes begin, then committed in its own
+     * transaction because the manifest rules intentionally sit near Firestore's per-request
+     * expression budget. Each date remains concurrency-safe and an existing conflict is
+     * reported before any date is changed.
+     */
+    async createRecurringWindows(userId: string, input: RecurringScheduleInput): Promise<ScheduleWindow[]> {
+        const validationErrors = validateRecurringSchedule(input);
+        if (validationErrors.length > 0) {
+            throw new Error(`Validation failed: ${validationErrors.map(error => `${error.field}: ${error.message}`).join('; ')}`);
+        }
+
+        const drafts = expandRecurringSchedule(input);
+        const dates = [...new Set(drafts.map(draft => draft.date))].sort();
+        await Promise.all(dates.map(date => this.assertNoRetiredWindows(userId, date)));
+
+        const candidates = drafts.map(draft => {
+            const now = this.now();
+            const candidate: ScheduleWindow = {
+                ...draft,
+                id: this.newId(),
+                userId,
+                revision: 1,
+                createdAt: now,
+                updatedAt: now,
+            };
+            const validation = validateScheduleWindow(candidate);
+            if (!validation.isValid || !validation.data) {
+                throw new Error(`Validation failed: ${validation.errors.map(error => `${error.field}: ${error.message}`).join('; ')}`);
+            }
+            return validation.data;
+        });
+        const candidatesByDate = new Map<string, ScheduleWindow[]>();
+        for (const candidate of candidates) {
+            const dateCandidates = candidatesByDate.get(candidate.date) ?? [];
+            dateCandidates.push(candidate);
+            candidatesByDate.set(candidate.date, dateCandidates);
+        }
+
+        const preflightByDate = new Map<string, ScheduleWindowManifest | null>();
+        for (const date of dates) {
+            const snapshot = await getDoc(this.ref(userId, date));
+            const current = this.manifestFromSnapshot(userId, date, snapshot.exists() ? snapshot.data() : undefined);
+            preflightByDate.set(date, current);
+            this.buildManifest(userId, date, current, [...(current?.windows ?? []), ...(candidatesByDate.get(date) ?? [])]);
+        }
+
+        for (const date of dates) {
+            await runTransaction(this.db, async transaction => {
+                const snapshot = await transaction.get(this.ref(userId, date));
+                const current = this.manifestFromSnapshot(userId, date, snapshot.exists() ? snapshot.data() : undefined);
+                // A changed manifest is revalidated against the same candidates in this
+                // date-level transaction; an intervening overlap or capacity overflow fails
+                // this date without corrupting its existing data.
+                const expected = preflightByDate.get(date);
+                if ((current?.revision ?? 0) !== (expected?.revision ?? 0)) {
+                    throw new Error(`Schedule window data changed while applying ${date}; retry the repeating schedule`);
+                }
+                transaction.set(
+                    this.ref(userId, date),
+                    this.buildManifest(userId, date, current, [...(current?.windows ?? []), ...(candidatesByDate.get(date) ?? [])]),
+                );
+            });
+        }
+        return candidates;
     }
 
     /**

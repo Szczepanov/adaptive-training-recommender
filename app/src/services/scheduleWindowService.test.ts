@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ScheduleWindow, ScheduleWindowManifest } from '../engine/models';
+import type { RecurringScheduleInput } from '../engine/scheduleWindowRecurrence';
 
 const firestore = vi.hoisted(() => ({
     collection: vi.fn(),
@@ -71,6 +72,70 @@ describe('ScheduleWindowService manifest persistence', () => {
         await expect(service(['window-2']).createWindow('u1', { ...validInput, startLocal: '07:00', endLocal: '09:00' }))
             .rejects.toThrow(/Overlapping schedule windows/);
         expect(stored.revision).toBe(1);
+    });
+
+    it('expands and persists a repeating schedule across date manifests', async () => {
+        const manifests = new Map<string, ScheduleWindowManifest>();
+        firestore.getDoc.mockImplementation(async (ref: { path: string }) => snapshot(manifests.get(ref.path)));
+        firestore.runTransaction.mockImplementation(async (_db: unknown, callback: (transaction: {
+            get: (ref: { path: string }) => Promise<ReturnType<typeof snapshot>>;
+            set: (ref: { path: string }, data: ScheduleWindowManifest) => void;
+        }) => Promise<void>) => {
+            const writes = new Map<string, ScheduleWindowManifest>();
+            await callback({
+                get: async ref => snapshot(manifests.get(ref.path)),
+                set: (ref, data) => { writes.set(ref.path, data); },
+            });
+            for (const [path, data] of writes) manifests.set(path, data);
+        });
+        const schedule: RecurringScheduleInput = {
+            startDate: '2026-09-07',
+            endDate: '2026-09-11',
+            rules: [
+                { weekdays: [1, 2, 3, 4, 5], startLocal: '06:00', endLocal: '09:00', label: 'AM' },
+                { weekdays: [1, 2, 3, 4, 5], startLocal: '12:00', endLocal: '16:00', label: 'PM' },
+            ],
+        };
+
+        const ids = Array.from({ length: 10 }, (_, index) => `window-${index + 1}`);
+        const created = await service(ids).createRecurringWindows('u1', schedule);
+
+        expect(created).toHaveLength(10);
+        expect(manifests.size).toBe(5);
+        expect(manifests.get('users/u1/schedule_window_manifests/2026-09-10')).toMatchObject({
+            revision: 1,
+            windows: [
+                expect.objectContaining({ id: 'window-7', startLocal: '06:00' }),
+                expect.objectContaining({ id: 'window-8', startLocal: '12:00' }),
+            ],
+        });
+    });
+
+    it('does not partially save a repeating schedule when one date conflicts', async () => {
+        const manifests = new Map<string, ScheduleWindowManifest>([
+            [`users/u1/schedule_window_manifests/${DATE}`, manifest([window({ startLocal: '12:00', endLocal: '13:00' })])],
+        ]);
+        firestore.getDoc.mockImplementation(async (ref: { path: string }) => snapshot(manifests.get(ref.path)));
+        firestore.runTransaction.mockImplementation(async (_db: unknown, callback: (transaction: {
+            get: (ref: { path: string }) => Promise<ReturnType<typeof snapshot>>;
+            set: (ref: { path: string }, data: ScheduleWindowManifest) => void;
+        }) => Promise<void>) => {
+            const writes = new Map<string, ScheduleWindowManifest>();
+            await callback({
+                get: async ref => snapshot(manifests.get(ref.path)),
+                set: (ref, data) => { writes.set(ref.path, data); },
+            });
+            for (const [path, data] of writes) manifests.set(path, data);
+        });
+
+        await expect(service(['new-window']).createRecurringWindows('u1', {
+            startDate: DATE,
+            endDate: '2026-09-11',
+            rules: [{ weekdays: [4, 5], startLocal: '12:30', endLocal: '14:00' }],
+        })).rejects.toThrow(/Overlapping schedule windows/);
+
+        expect(manifests.size).toBe(1);
+        expect(manifests.get('users/u1/schedule_window_manifests/2026-09-11')).toBeUndefined();
     });
 
     it('updates in place with a stable id, a per-window revision bump, and a manifest revision bump', async () => {
