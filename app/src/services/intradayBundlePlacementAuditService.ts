@@ -288,10 +288,22 @@ export async function replayIntradayBundlePlacementAudit(audit: IntradayBundlePl
     return { valid: failures.length === 0, failures };
 }
 
+function normalizeAuditInputForPersistence(input: IntradayBundlePlacementAuditInput): IntradayBundlePlacementAuditInput {
+    // D-PLACEMENT only consults fixed commitments on the placement date. Home currently
+    // owns a plan-week activity cache, so callers may naturally pass the whole cache.
+    // Persist only the decision-relevant date slice: this keeps content-addressing stable,
+    // avoids unrelated activity churn changing the audit identity, and prevents a busy
+    // but valid week from exceeding the audit document's bounded fixed-activity list.
+    return withoutUndefined({
+        ...input,
+        fixedActivities: input.fixedActivities.filter(activity => activity.date === input.date),
+    }) as IntradayBundlePlacementAuditInput;
+}
+
 export async function recordIntradayBundlePlacementAudit(input: IntradayBundlePlacementAuditInput): Promise<IntradayBundlePlacementAudit> {
-    validateAuditInput(input);
-    const normalizedInput = withoutUndefined(input) as IntradayBundlePlacementAuditInput;
-    if (input.policyVersion !== POLICY_VERSION) throw new Error('Placement audit policy version must match the active policy');
+    const normalizedInput = normalizeAuditInputForPersistence(input);
+    validateAuditInput(normalizedInput);
+    if (normalizedInput.policyVersion !== POLICY_VERSION) throw new Error('Placement audit policy version must match the active policy');
     if (await computeContentHash(normalizedInput.planSnapshot) !== normalizedInput.plan.contentHash) throw new Error('External plan content hash does not match the frozen plan snapshot');
     const auditId = `audit_${await sha256(canonical(withoutAsOf(normalizedInput)))}`;
     const snapshotHash = await sha256(canonical(normalizedInput));
