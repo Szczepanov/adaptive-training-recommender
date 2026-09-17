@@ -1,9 +1,9 @@
-import concurrent.futures
 import importlib.metadata
 import logging
 import random
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -718,13 +718,13 @@ class GarminSyncService:
                 logger.info(
                     f"Fetching activity details for {len(qualifying)} qualifying activities in backfill window..."
                 )
-                with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+                with ThreadPoolExecutor(max_workers=5) as executor:
                     future_to_activity = {
                         executor.submit(fetch_detail, activity.activity_id): activity
                         for activity in qualifying
                         if activity.activity_id is not None
                     }
-                    for future in concurrent.futures.as_completed(future_to_activity):
+                    for future in as_completed(future_to_activity):
                         activity = future_to_activity[future]
                         try:
                             result: Any = future.result()
