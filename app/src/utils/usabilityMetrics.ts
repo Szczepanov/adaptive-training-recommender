@@ -88,7 +88,7 @@ class UsabilityMetricsTracker {
             this.viewStartTimes.set(key, performance.now());
         }
         this.saveEvent({
-            id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            id: `evt-${crypto.randomUUID()}`,
             timestamp: new Date().toISOString(),
             eventType: 'recommendation_view',
             userId,
@@ -105,7 +105,7 @@ class UsabilityMetricsTracker {
         if (startTime !== undefined) this.viewStartTimes.delete(key);
 
         this.saveEvent({
-            id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            id: `evt-${crypto.randomUUID()}`,
             timestamp: new Date().toISOString(),
             eventType: 'action_selected',
             userId,
@@ -125,7 +125,7 @@ class UsabilityMetricsTracker {
         this.viewStartTimes.delete(key);
 
         this.saveEvent({
-            id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            id: `evt-${crypto.randomUUID()}`,
             timestamp: new Date().toISOString(),
             eventType: 'alternative_chosen',
             userId,
@@ -140,7 +140,7 @@ class UsabilityMetricsTracker {
 
     recordOverrideAttempt(userId: string, date: string, reason: string, blockedByGate: boolean): void {
         this.saveEvent({
-            id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            id: `evt-${crypto.randomUUID()}`,
             timestamp: new Date().toISOString(),
             eventType: 'override_attempt',
             userId,
@@ -151,7 +151,7 @@ class UsabilityMetricsTracker {
 
     recordCompletionReport(userId: string, date: string, followed: boolean, actualModality?: string | null): void {
         this.saveEvent({
-            id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            id: `evt-${crypto.randomUUID()}`,
             timestamp: new Date().toISOString(),
             eventType: 'completion_reported',
             userId,
@@ -168,7 +168,7 @@ class UsabilityMetricsTracker {
         stage?: OnboardingWizardStage,
     ): void {
         this.saveEvent({
-            id: `evt-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+            id: `evt-${crypto.randomUUID()}`,
             timestamp: new Date().toISOString(),
             eventType: 'wizard_completed',
             userId,

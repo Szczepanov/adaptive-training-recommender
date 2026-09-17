@@ -35,7 +35,10 @@
 ## 2026-09-16 - Index canonical workout-template resolution without hiding mutable inputs
 **Learning:** `workoutForTemplate(templateId, workouts)` was repeatedly filtering and sorting the canonical workout catalog. Caching final answers by arbitrary array identity avoids repeat work but silently makes mutable caller-supplied arrays stale after their first lookup.
 **Action:** Build only the missing canonical template-to-workout index once, reuse `WORKOUTS_BY_ID` for fallback IDs, preserve stable priority/tie and fallback semantics, and keep caller-supplied mutable arrays uncached with a single O(N) selection pass.
-
 ## 2026-09-16 - Defer dict lookup in loop until after condition checks
 **Learning:** In dict iteration loops where early continue statements occur based on metadata keys (e.g. `source in {"manual", "coach"}`), performing lookups on secondary dicts (`existing_value = profile.get(key)`) prior to evaluating the condition causes redundant dictionary operations for skipped entries.
 **Action:** Always defer dictionary lookups until after filter/guard conditions in loop bodies to avoid unnecessary lookup overhead.
+
+## 2025-03-08 - Single dict lookup for review event categorization
+**Learning:** Checking `key in dict` followed by `dict[key]` performs two key hash lookups in Python. Using `dict.get(key)` combines both operations into a single hash lookup.
+**Action:** In inner loops over large datasets, use `dict.get(key)` to avoid redundant dict key hash operations.
