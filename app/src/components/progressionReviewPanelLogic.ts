@@ -2,7 +2,7 @@ import type { IntentBlock } from '../engine/blockIntent';
 import type { ProposedProgressionChange } from '../engine/progressionReview';
 import type { ProgressionExperimentClaim } from '../services/progressionClaimService';
 import { deriveProgressionProposalId } from '../services/progressionProposalIdentity';
-import { SELECTION_WIRED_COVERAGE_KEYS } from '../engine/confirmedProgressionOverrides';
+import { progressionSelectionUnsupportedReason } from '../engine/confirmedProgressionOverrides';
 
 /** UI-facing alias retained so the panel/tests stay decoupled from persistence naming. */
 export function deriveProposalId(sourcePlanRevision: number, asOfDate: string, change: ProposedProgressionChange): string {
@@ -36,6 +36,5 @@ export function claimBelongsToReviewedRevision(
 export function isProgressionSelectionUnsupported(block: IntentBlock | null | undefined): boolean {
     const contract = block?.progressionContract;
     if (!contract) return false;
-    const objective = block.objectives.find(item => item.id === contract.targetBinding.objectiveId);
-    return objective ? !SELECTION_WIRED_COVERAGE_KEYS.includes(objective.coverageKey) : false;
+    return progressionSelectionUnsupportedReason(block) !== null;
 }

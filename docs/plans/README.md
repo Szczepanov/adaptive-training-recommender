@@ -98,13 +98,12 @@ H5a intent contracts and canonical replay (`engine/blockIntent.ts`,
 `progressionReviewInputService.ts` (real evidence assembly), `progressionClaimService.ts`
 (the athlete-scoped singleton claim/confirmation transaction), and an athlete-facing
 authoring + review UI (`ProgressionBlockEditor.tsx`/`ProgressionReviewPanel.tsx`, mounted in
-`TrainingSettings.tsx`). A confirmed progression revision is now also wired into live
-evergreen selection (`engine/confirmedProgressionOverrides.ts`, `POLICY_VERSION`
-`2026-09-progression-confirmed-selection-wiring-v1`) for the 4 `ObjectiveKey`s whose
-`coverageKey` has a packed evergreen role (`zone2_aerobic`, `strength_maintenance`,
-`strength_development`, `threshold_quality`); `surge_repeatability`,
-`race_specific_endurance` and `vo2_max` are explicitly flagged unsupported-for-selection
-rather than silently ignored -- see
+`TrainingSettings.tsx`). A confirmed progression revision is now wired into live selection
+(`engine/confirmedProgressionOverrides.ts`, `POLICY_VERSION`
+`2026-09-progression-confirmed-selection-coverage-v1`) for all 7 `ObjectiveKey`s when bound
+to an exact supported coverage role. The three baseline evergreen roles remain the only
+roles used to create plan-less weekly dose demand; event/taper roles are selection targets
+only. See
 [the cycling hybrid evaluation plan](./cycling-primary-hybrid-evaluation.md)'s H5 section.
 Cumulative `external-plan@5` D-SCHEMA is now also delivered (`sessions/externalPlanV5.ts`,
 `services/externalPlanV5ActivationService.ts`): an optional plan-level `intentBlocks` field
@@ -113,8 +112,9 @@ with relative `{week, day}` boundaries, validated by delegating to the already-e
 `intentBlockService.save()` after a successful import -- see the H5 section for exactly what
 this does and deliberately does not cover.
 H4's same-day canonical performed-fact boundary is verified;
-H5 runtime needs validated intent mappings and linked response evidence. H5
-delivers intent authoring, report-only review, then confirmed bounded revisions. The work
+H5 runtime uses validated intent mappings and linked response evidence. H5
+delivers intent authoring, report-only review, confirmed bounded revisions, and exact-role
+selection coverage. The work
 does not replace the reviewed active persona-judge baseline. The
 [implementation handoff](./cycling-primary-hybrid-implementation-handoff.md) supplies
 work orders for H2/H2b/H3/H3-rest and the H5 sequence; **its H4 work order is superseded**

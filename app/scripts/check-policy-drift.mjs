@@ -130,6 +130,9 @@ const decisionAffectingFiles = [
   'app/src/workouts/prescription.ts',
   'app/src/workouts/models.ts',
   'app/src/sessions/catalogSessionAdapter.ts',
+  // Confirmed progression overrides alter the active dose of the selected catalog
+  // workout, including authored event/taper roles that are outside evergreen packing.
+  'app/src/engine/confirmedProgressionOverrides.ts',
 ];
 
 const policyFile = 'app/src/engine/policy.ts';

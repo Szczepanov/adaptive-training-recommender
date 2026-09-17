@@ -1,9 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { deriveDurationOverridesForDate, progressionOverrideKey, SELECTION_WIRED_COVERAGE_KEYS } from './confirmedProgressionOverrides';
+import { deriveDurationOverridesForDate, progressionDoseForTemplate, progressionOverrideKey, SELECTION_WIRED_COVERAGE_KEYS } from './confirmedProgressionOverrides';
 import { EVERGREEN_PACKING_COVERAGE, packWeeklyDose } from './weeklyDosePacking';
 import type { EvidenceBackedStrategy } from './evergreenStrategy';
 import type { ResolvedTrainingCapacity } from './trainingCapacity';
 import type { BlockObjectiveDefinition, IntentBlock } from './blockIntent';
+import { ENRICHED_TEMPLATES_BY_ID } from './templates';
 
 /**
  * `cycling_zone2_standard_01` (aerobic_volume), `strength_full_body_maintenance_01`
@@ -57,8 +58,14 @@ function block(overrides: Partial<IntentBlock> = {}, objectiveOverrides: Partial
 }
 
 describe('SELECTION_WIRED_COVERAGE_KEYS', () => {
-    it('is exactly the 3 roles EVERGREEN_PACKING_COVERAGE defines', () => {
-        expect([...SELECTION_WIRED_COVERAGE_KEYS].sort()).toEqual(['aerobic_volume', 'primary_strength', 'sustained_quality']);
+    it('includes baseline evergreen and exact event/taper roles without changing the packer roles', () => {
+        expect([...SELECTION_WIRED_COVERAGE_KEYS].sort()).toEqual([
+            'aerobic_volume', 'gap_closing', 'outdoor_event_specific', 'primary_strength',
+            'short_surges', 'sustained_quality', 'taper_sharpening',
+        ]);
+        expect(EVERGREEN_PACKING_COVERAGE.roles.map(role => role.id)).toEqual([
+            'aerobic_volume', 'primary_strength', 'sustained_quality',
+        ]);
     });
 });
 
@@ -96,18 +103,107 @@ describe('deriveDurationOverridesForDate', () => {
             expect(result.unsupported).toEqual([]);
         }
 
-        const unsupported: Array<[BlockObjectiveDefinition['adaptationScope'], BlockObjectiveDefinition['coverageKey']]> = [
-            ['surge_repeatability', 'short_surges'],
-            ['race_specific_endurance', 'outdoor_event_specific'],
-            ['vo2_max', 'gap_closing'],
+        const newlyWired: Array<[
+            BlockObjectiveDefinition['adaptationScope'],
+            BlockObjectiveDefinition['coverageKey'],
+            string,
+        ]> = [
+            ['surge_repeatability', 'short_surges', 'cycling_short_surges_10x20_01'],
+            ['race_specific_endurance', 'outdoor_event_specific', 'cycling_event_specific_endurance_01'],
+            ['vo2_max', 'gap_closing', 'cycling_gap_closing_01'],
         ];
-        for (const [adaptationScope, coverageKey] of unsupported) {
+        for (const [adaptationScope, coverageKey, workoutId] of newlyWired) {
             const result = deriveDurationOverridesForDate([block({}, { adaptationScope, coverageKey })], '2026-09-10');
-            expect(result.overrides.size).toBe(0);
-            expect(result.unsupported).toEqual([
-                { blockId: 'block_a', objectiveId: 'obj_threshold_dev', coverageKey, adaptationScope, reason: 'coverage_not_wired' },
-            ]);
+            expect(result.overrides.get(progressionOverrideKey(coverageKey, workoutId))).toBe(70);
+            expect(result.unsupported).toEqual([]);
         }
+    });
+
+    it('supports the race-specific taper role with its shorter catalog bounds', () => {
+        const result = deriveDurationOverridesForDate([
+            block(
+                { progressionContract: { ...block().progressionContract!, currentValue: 45, permittedRange: { min: 30, max: 55 } } },
+                {
+                    adaptationScope: 'race_specific_endurance',
+                    coverageKey: 'taper_sharpening',
+                    doseEnvelope: { min: 30, target: 45, max: 55, unit: 'minutes', floorSemantics: 'hard_floor' },
+                },
+            ),
+        ], '2026-09-10');
+
+        expect(result.overrides.get(progressionOverrideKey('taper_sharpening', 'cycling_taper_sharpening_01'))).toBe(45);
+        expect(result.unsupported).toEqual([]);
+    });
+
+    it('fails closed when active role bindings share a catalog workout identity', () => {
+        const surge = block(
+            { id: 'block_surge', progressionContract: { ...block().progressionContract!, currentValue: 50 } },
+            { adaptationScope: 'surge_repeatability', coverageKey: 'short_surges' },
+        );
+        const event = block(
+            { id: 'block_event', progressionContract: { ...block().progressionContract!, currentValue: 60 } },
+            { adaptationScope: 'race_specific_endurance', coverageKey: 'outdoor_event_specific' },
+        );
+
+        const result = deriveDurationOverridesForDate([surge, event], '2026-09-10');
+
+        expect(result.overrides).toEqual(new Map());
+        expect(result.unsupported.map(entry => ({ blockId: entry.blockId, reason: entry.reason }))).toEqual([
+            { blockId: 'block_event', reason: 'ambiguous_active_role_progression' },
+            { blockId: 'block_surge', reason: 'ambiguous_active_role_progression' },
+        ]);
+    });
+
+    it('keeps authored session and step bindings unsupported until their pinned definition is resolved', () => {
+        const bound = block(
+            { progressionContract: { ...block().progressionContract!, targetBinding: { objectiveId: 'obj_threshold_dev', sessionId: 'session_external', stepId: 'step_main' } } },
+            { adaptationScope: 'surge_repeatability', coverageKey: 'short_surges' },
+        );
+
+        const result = deriveDurationOverridesForDate([bound], '2026-09-10');
+
+        expect(result.overrides).toEqual(new Map());
+        expect(result.unsupported).toEqual([
+            {
+                blockId: 'block_a', objectiveId: 'obj_threshold_dev', coverageKey: 'short_surges',
+                adaptationScope: 'surge_repeatability', reason: 'session_binding_unresolved',
+            },
+        ]);
+    });
+
+    it('materializes each newly wired exact role only for a matching selected catalog template', () => {
+        const cases = [
+            ['short_surges', 'end_crit_surges_01', 'cycling_criterium_surges_01', 40],
+            ['gap_closing', 'end_race_sim_01', 'cycling_race_simulation_50_01', 60],
+            ['outdoor_event_specific', 'end_race_specific_01', 'cycling_event_specific_endurance_01', 60],
+            ['taper_sharpening', 'end_taper_sharpen_01', 'cycling_taper_sharpening_01', 45],
+        ] as const;
+
+        for (const [coverageKey, templateId, workoutId, duration] of cases) {
+            const template = ENRICHED_TEMPLATES_BY_ID.get(templateId);
+            expect(template).toBeDefined();
+            const dose = progressionDoseForTemplate(
+                template!,
+                new Map([[progressionOverrideKey(coverageKey, workoutId), duration]]),
+            );
+            expect(dose?.durationMin).toBe(duration);
+            expect(dose?.durationMax).toBe(duration);
+        }
+    });
+
+    it('fails closed when injected exact overrides disagree across overlapping roles', () => {
+        const template = ENRICHED_TEMPLATES_BY_ID.get('end_race_specific_01');
+        expect(template).toBeDefined();
+
+        const dose = progressionDoseForTemplate(
+            template!,
+            new Map([
+                [progressionOverrideKey('short_surges', 'cycling_event_specific_endurance_01'), 55],
+                [progressionOverrideKey('outdoor_event_specific', 'cycling_event_specific_endurance_01'), 65],
+            ]),
+        );
+
+        expect(dose).toBeNull();
     });
 
     it('rejects a confirmed value no real catalog workout can physically represent, rather than crediting it', () => {

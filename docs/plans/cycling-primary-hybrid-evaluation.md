@@ -22,8 +22,9 @@ not persisted). A bundle's resolved placement is also now persisted for
 display, at `users/{userId}/intraday_bundle_placements/{date}` -- a separate sibling
 document rather than a `recommendationAudit.externalPlan` field, since that document's
 rule-evaluation budget was re-verified insufficient. H5 design is
-accepted as ADR-0037 with H5a/H5b/H5c now all delivered, and a confirmed progression
-revision now wired into live evergreen selection for 4 of 7 `ObjectiveKey`s -- see below for
+accepted as ADR-0037 with H5a/H5b/H5c now all delivered, and confirmed progression
+selection now wired for all 7 `ObjectiveKey`s when bound to an exact supported coverage
+role -- see below for
 what H5c's delivery and the selection-wiring delivery each do and deliberately do not
 cover. Cumulative `external-plan@5` D-SCHEMA is now also delivered, including persistence
 wiring into `intentBlockService` -- see the H5 section for exactly what it does and
@@ -592,10 +593,11 @@ facts and override/supersession remains deliberately unscoped.
 ## H5 — Explicit develop/maintain intent and progression
 
 **Status:** Accepted design in [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md);
-**H5a, H5b and H5c all delivered as of 2026-09-09; a confirmed progression revision is now
-wired into live evergreen selection as of 2026-09-10** for the 4 `ObjectiveKey`s whose
-`coverageKey` already has a packed evergreen role (`zone2_aerobic`,
-`strength_maintenance`, `strength_development`, `threshold_quality`). **Cumulative
+**H5a, H5b and H5c all delivered as of 2026-09-09; confirmed progression selection is now
+wired for all 7 `ObjectiveKey`s when the objective binds to an exact supported coverage role.**
+The baseline evergreen packer still has only its original three roles
+(`aerobic_volume`, `primary_strength`, `sustained_quality`); event/taper roles are selection
+targets only, so confirming them does not invent plan-less weekly demand. **Cumulative
 `external-plan@5` D-SCHEMA is now also delivered**, including persistence wiring into
 `intentBlockService` -- see below for exactly what it does and deliberately does not cover.
 **Dependencies:** `external-plan@5` depended on the landed H4 v4 contract and H5c's shape,
@@ -639,29 +641,30 @@ delivery therefore built the full chain, per
 `IntentBlock` revision, but nothing read that revision from any recommendation selection
 path.
 
-**Wiring into live selection (2026-09-10, `2026-09-progression-confirmed-selection-wiring-v1`):**
+**Wiring into live selection (2026-09-17, `2026-09-progression-confirmed-selection-coverage-v1`):**
 a `BlockObjectiveDefinition.coverageKey` already binds an objective directly onto
-`weeklyDosePacking.ts`'s coverage-role vocabulary -- the same `PlanCoverageKey` values
-`EVERGREEN_PACKING_COVERAGE` uses to bind a role to an `AdaptationKey` -- so there was no
-separate `ObjectiveKey -> AdaptationKey` table to build. The real constraint is that
-`EVERGREEN_PACKING_COVERAGE` only defines roles for 3 of the 18 `PlanCoverageKey`s
-(`aerobic_volume`, `primary_strength`, `sustained_quality`). This delivery:
+`PlanCoverageKey` vocabulary. The baseline packer continues to define only 3 of the 18
+coverage keys (`aerobic_volume`, `primary_strength`, `sustained_quality`); the selector now
+has a separate exact-role registry for authored event and taper sessions. This delivery:
 
-- `engine/confirmedProgressionOverrides.ts` (new) derives a per-role duration-minutes
-  override from an athlete's active confirmed `IntentBlock`s for a given date, classified
-  against `SELECTION_WIRED_COVERAGE_KEYS` (derived from `EVERGREEN_PACKING_COVERAGE`, so it
-  cannot drift out of sync with it).
-- `weeklyDosePacking.ts`'s `packWeeklyDose` takes the override map, substituting a role's
-  catalog-derived `durationMinutes` for capacity-fit and delivered-dose accounting only --
+- `engine/confirmedProgressionOverrides.ts` derives a per-role duration-minutes override
+  from an athlete's active confirmed `IntentBlock`s for a given date, classified against
+  `SELECTION_WIRED_COVERAGE_KEYS` derived from the exact selector registry. The registry
+  combines the three evergreen roles with `short_surges`, `gap_closing`,
+  `outdoor_event_specific` and `taper_sharpening` from the frozen cycling catalog.
+- `weeklyDosePacking.ts`'s `packWeeklyDose` still takes the override map for the three
+  baseline evergreen roles, substituting the role's catalog-derived `durationMinutes` for
+  capacity-fit and delivered-dose accounting only --
   `requirement.floor`/`requirement.target` (the WHO-guideline numbers from
   `evergreenStrategy.ts`) are never touched, so a guideline floor can never be lowered or
   bypassed by a confirmed progression.
 - `zone2_aerobic`, `strength_maintenance`, `strength_development` and `threshold_quality`
-  are wired (their natural `coverageKey` has a packed role). `surge_repeatability`,
-  `race_specific_endurance` and `vo2_max` are explicitly classified unsupported-for-selection
-  -- a visible notice in `ProgressionBlockEditor.tsx`/`ProgressionReviewPanel.tsx`, not a
-  silent no-op -- pending a future evergreen coverage-role expansion, which is separate,
-  unscoped work.
+  remain backed by the baseline evergreen roles. `surge_repeatability`,
+  `race_specific_endurance` and `vo2_max` now resolve through the exact event/taper roles;
+  overlapping catalog roles are rejected when more than one exact override applies, so
+  selection proceeds only when exactly one authoritative exact override remains. Authored
+  session/step bindings remain unsupported in this catalog-only adapter and are surfaced as
+  unsupported until a pinned session-definition resolver is supplied.
 - `develop` vs. `maintain` needed no new packing logic: that distinction already lives
   entirely in `engine/progressionReview.ts` (H5b), governing how `currentValue` is proposed
   to move over time: the packer only ever consumes whatever value is currently confirmed.
