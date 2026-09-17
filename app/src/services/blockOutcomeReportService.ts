@@ -42,19 +42,18 @@ function inPeriod(date: string, startDate: string, endDate: string): boolean {
 }
 
 function belongsToEvaluation(outcome: CompetitionOutcome, evaluation: OutcomeEvaluationSnapshot): boolean {
+    const sourceRef = evaluation.revision.sourceRef;
     if (outcome.evaluationRef !== undefined) {
         const matchesEvaluation = outcome.evaluationRef.id === evaluation.revision.id
             && outcome.evaluationRef.revision === evaluation.revision.revision
             && outcome.evaluationRef.contentHash === evaluation.revision.contentHash;
-        const matchesEvent = evaluation.revision.sourceRef?.kind !== 'event'
-            || outcome.eventRef === evaluation.revision.sourceRef.id;
+        const matchesEvent = sourceRef?.kind !== 'event' || outcome.eventRef === sourceRef.id;
         return matchesEvaluation && matchesEvent;
     }
-    // Preserve legacy date-only records, while using the event source reference whenever the
-    // evaluation identifies one. New captures always carry evaluationRef above.
-    return evaluation.revision.sourceRef?.kind !== 'event'
-        || outcome.eventRef === undefined
-        || outcome.eventRef === evaluation.revision.sourceRef.id;
+    // Legacy outcomes can still participate in non-event block reports by date. Event-scoped
+    // evaluations fail closed unless the legacy record carries the exact event identity; an
+    // unlinked same-day race must not be silently attributed to the evaluated event.
+    return sourceRef?.kind !== 'event' || outcome.eventRef === sourceRef.id;
 }
 
 /**
