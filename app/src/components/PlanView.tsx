@@ -598,15 +598,6 @@ export const PlanView: React.FC<PlanViewProps> = ({ userId, onNavigate, onPlanCh
                   : 'The engine dynamically prescribes and balances workouts across your microcycle objectives based on your daily check-in, available recovery data, and training goals.'}
               </p>
             </div>
-            {!activePlan && (
-              <button
-                type="button"
-                className="plan-import-subtle-btn"
-                onClick={() => setShowImport(true)}
-              >
-                📥 Have a coach's plan? Import it
-              </button>
-            )}
           </div>
 
           {wearableForecastBlock ? (

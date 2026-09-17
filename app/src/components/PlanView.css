@@ -264,19 +264,3 @@
   max-width: 540px;
   line-height: 1.4;
 }
-
-.plan-import-subtle-btn {
-  padding: 8px 14px;
-  font-size: 0.82rem;
-  font-weight: 600;
-  background: var(--color-bg-elevated, #334155);
-  color: var(--color-text-primary, #f8fafc);
-  border: 1px solid var(--color-border, #475569);
-  border-radius: var(--radius-control, 8px);
-  cursor: pointer;
-  white-space: nowrap;
-}
-
-.plan-import-subtle-btn:hover {
-  background: #475569;
-}
