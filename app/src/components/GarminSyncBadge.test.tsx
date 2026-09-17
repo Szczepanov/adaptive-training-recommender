@@ -126,7 +126,7 @@ describe('GarminSyncBadge', () => {
         expect(renderToStaticMarkup(<GarminSyncBadge userId="u1" />)).toBe('');
     });
 
-    it('renders unknown status without pretending the account is disconnected', () => {
+    it('renders unknown connection state as non-interactive status content', () => {
         vi.spyOn(connectionHook, 'useGarminConnectionState').mockReturnValue('unknown');
         vi.spyOn(syncHook, 'useGarminSyncStatus').mockReturnValue({
             status: 'idle', queuedWorkout: null, isPending: false, isBusy: false,
@@ -136,6 +136,13 @@ describe('GarminSyncBadge', () => {
 
         const html = renderToStaticMarkup(<GarminSyncBadge userId="u1" />);
         expect(html).toContain('Garmin: Status unavailable');
-        expect(html).toContain('disabled');
+        expect(html).toContain('role="status"');
+        expect(html).toContain('aria-label="Garmin connection status could not be verified. Refresh to retry."');
+        expect(html).not.toContain('disabled');
+        expect(html).not.toContain('<button');
+        // A stalled status check is not the same severity as a real sync failure -- must
+        // not reuse status-failed's alarm styling for "we couldn't tell right now".
+        expect(html).toContain('status-unknown');
+        expect(html).not.toContain('status-failed');
     });
 });

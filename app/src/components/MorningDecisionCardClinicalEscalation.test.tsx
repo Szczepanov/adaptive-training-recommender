@@ -124,7 +124,7 @@ describe('MorningDecisionCard clinical escalation', () => {
                 durationMin: 45,
                 durationMax: 50,
             },
-            rationale: 'Coverage tier: 1. Benefit score: 3.40, Fatigue cost penalty: 0.12. (Advances an explicit required weekly programming role.)',
+            rationale: 'Base phase build toward your goal event. Coverage tier: 1. Benefit score: 3.40, Fatigue cost penalty: 0.12. (Advances an explicit required weekly programming role.) (Sequence intent: recondition/spread, preferred key gap 2d.)',
             envelopes: {
                 safety: {
                     clinicalEscalationRequired: false,
@@ -155,11 +155,19 @@ describe('MorningDecisionCard clinical escalation', () => {
         const whyText = whyCallout.match(/<p class="why-text">([\s\S]*?)<\/p>/)?.[1] ?? '';
         const technicalDetails = whyCallout.match(/<details class="why-technical-details">([\s\S]*?)<\/details>/)?.[1] ?? '';
 
-        // Coaching narrative contains the human-facing text
-        expect(whyText).toContain('(Advances an explicit required weekly programming role.)');
-        // Technical scoring formula is rendered inside the dedicated details disclosure
+        // Coaching narrative contains the human-facing sentence and none of the engine
+        // internals -- an athlete reads what the plan is for, not how it was scored.
+        expect(whyText).toContain('Base phase build toward your goal event.');
+        expect(whyText).not.toContain('Coverage tier');
+        expect(whyText).not.toContain('Advances an explicit required weekly programming role');
+        expect(whyText).not.toContain('Sequence intent');
+        // Every technical clause -- the leading score formula and every parenthetical
+        // scoring/sequencing clause that follows it -- is rendered inside the dedicated
+        // details disclosure instead.
         expect(technicalDetails).toContain('Engine scoring telemetry');
         expect(technicalDetails).toContain('Coverage tier: 1. Benefit score: 3.40, Fatigue cost penalty: 0.12.');
+        expect(technicalDetails).toContain('(Advances an explicit required weekly programming role.)');
+        expect(technicalDetails).toContain('(Sequence intent: recondition/spread, preferred key gap 2d.)');
     });
 
     it('provides fallback coaching narrative when rationale consists solely of scoring formulas', () => {

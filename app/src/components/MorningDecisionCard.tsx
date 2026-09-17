@@ -276,18 +276,35 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
 
                         {(() => {
                             const rawRationale = clinicalEscalationActive ? clinicalReason : recommendation.rationale;
-                            // Check if rationale contains technical scoring telemetry (e.g., "Coverage tier: X. Benefit score: Y, Fatigue cost penalty: Z.")
-                            const scoreMatch = rawRationale.match(/Coverage tier:\s*\d+\.\s*Benefit score:\s*[\d.]+(?:,\s*Fatigue cost penalty:\s*[\d.]+)?\.?/i);
+                            // optimizer.ts appends its scoring/coverage internals to rationale as a
+                            // leading "Coverage tier: X. Benefit score: Y..." sentence plus zero or more
+                            // parenthetical clauses ("(Sequence intent: ...)", "(Event-modality coverage:
+                            // ...)", etc.) -- all moved into the collapsed detail below rather than shown
+                            // inline, since athletes think in sessions and how they feel, not coverage
+                            // tiers or sequence-intent parameters. Matched by recognizable technical
+                            // phrase rather than "strip every paren": rules.ts's own parenthetical
+                            // clauses (e.g. explaining a Rest/Mobility default) are genuinely
+                            // athlete-relevant and must stay visible.
+                            const LEAD_SCORE_PATTERN = /Coverage tier:\s*\d+\.\s*Benefit score:\s*[\d.]+(?:,\s*Fatigue cost penalty:\s*[\d.]+)?\.?/i;
+                            const TECHNICAL_CLAUSE_PATTERN = /\((?:Advances (?:mandatory|an explicit)|Eligible for proactive|Soft penalty applied|Event-modality coverage|Sequence intent|Sequence soft preference)[^)]*\)\.?/gi;
+
                             let coachingNarrative = rawRationale;
-                            let technicalScore: string | null = null;
-                            if (scoreMatch && scoreMatch.index !== undefined) {
-                                technicalScore = scoreMatch[0].trim();
-                                // Remove the score formula from narrative, cleaning up any double spaces
-                                coachingNarrative = (rawRationale.slice(0, scoreMatch.index) + rawRationale.slice(scoreMatch.index + scoreMatch[0].length)).trim();
-                                if (!coachingNarrative) {
-                                    coachingNarrative = 'Optimized for current weekly phase and recovery balance.';
-                                }
+                            const technicalParts: string[] = [];
+
+                            const leadMatch = coachingNarrative.match(LEAD_SCORE_PATTERN);
+                            if (leadMatch && leadMatch.index !== undefined) {
+                                technicalParts.push(leadMatch[0].trim());
+                                coachingNarrative = coachingNarrative.slice(0, leadMatch.index) + coachingNarrative.slice(leadMatch.index + leadMatch[0].length);
                             }
+                            coachingNarrative = coachingNarrative.replace(TECHNICAL_CLAUSE_PATTERN, match => {
+                                technicalParts.push(match.trim());
+                                return '';
+                            });
+                            coachingNarrative = coachingNarrative.replace(/\s{2,}/g, ' ').trim();
+                            if (!coachingNarrative) {
+                                coachingNarrative = 'Optimized for current weekly phase and recovery balance.';
+                            }
+                            const technicalScore = technicalParts.length > 0 ? technicalParts.join(' ') : null;
 
                             return (
                                 <div className="hero-why-callout" role="note">

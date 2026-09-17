@@ -17,23 +17,23 @@
     border: 1px solid transparent;
 }
 
-.garmin-sync-badge:hover:not(:disabled) {
+button.garmin-sync-badge:hover:not(:disabled) {
     filter: brightness(1.12);
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
-.garmin-sync-badge:active:not(:disabled) {
+button.garmin-sync-badge:active:not(:disabled) {
     transform: translateY(0);
     box-shadow: none;
 }
 
-.garmin-sync-badge:focus-visible {
+button.garmin-sync-badge:focus-visible {
     outline: 2px solid #3b82f6;
     outline-offset: 2px;
 }
 
-.garmin-sync-badge:disabled {
+button.garmin-sync-badge:disabled {
     cursor: wait;
     opacity: 0.85;
 }
@@ -65,6 +65,16 @@
     background-color: rgba(239, 68, 68, 0.12);
     color: #ef4444;
     border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+/* A stalled status check, not a sync failure -- muted amber signals "we couldn't tell
+   right now" without the alarm of the red failure state. It is non-interactive status
+   content, so do not inherit the pointer/wait cursors used by actionable badges. */
+.garmin-sync-badge.status-unknown {
+    background-color: rgba(245, 158, 11, 0.12);
+    color: #b45309;
+    border: 1px solid rgba(245, 158, 11, 0.25);
+    cursor: default;
 }
 
 .garmin-sync-icon {
