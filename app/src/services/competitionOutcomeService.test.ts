@@ -4,13 +4,15 @@ import type { CompetitionOutcome } from '../observations/models';
 const firestore = vi.hoisted(() => ({
     doc: vi.fn(),
     getDoc: vi.fn(),
-    setDoc: vi.fn(),
+    runTransaction: vi.fn(),
+    transactionGet: vi.fn(),
+    transactionSet: vi.fn(),
 }));
 
 vi.mock('firebase/firestore', () => ({
     doc: firestore.doc,
     getDoc: firestore.getDoc,
-    setDoc: firestore.setDoc,
+    runTransaction: firestore.runTransaction,
 }));
 
 vi.mock('../firebase', () => ({
@@ -40,12 +42,18 @@ describe('CompetitionOutcomeService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         firestore.doc.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
-        firestore.setDoc.mockResolvedValue(undefined);
+        firestore.runTransaction.mockImplementation(async (_db: unknown, update: (transaction: {
+            get: typeof firestore.transactionGet;
+            set: typeof firestore.transactionSet;
+        }) => Promise<unknown>) => update({
+            get: firestore.transactionGet,
+            set: firestore.transactionSet,
+        }));
     });
 
     describe('createOutcome', () => {
-        it('creates and returns valid competition outcome when it does not exist', async () => {
-            firestore.getDoc.mockResolvedValueOnce(snapshot(null));
+        it('creates and returns valid competition outcome atomically when it does not exist', async () => {
+            firestore.transactionGet.mockResolvedValueOnce(snapshot(null));
             const service = new CompetitionOutcomeService();
 
             const result = await service.createOutcome('user-1', validOutcome);
@@ -58,21 +66,45 @@ describe('CompetitionOutcomeService', () => {
                 'competition_outcomes',
                 'race-1',
             );
-            expect(firestore.getDoc).toHaveBeenCalledOnce();
-            expect(firestore.setDoc).toHaveBeenCalledWith(
+            expect(firestore.runTransaction).toHaveBeenCalledOnce();
+            expect(firestore.transactionGet).toHaveBeenCalledWith(
+                { path: 'users/user-1/competition_outcomes/race-1' },
+            );
+            expect(firestore.transactionSet).toHaveBeenCalledWith(
                 { path: 'users/user-1/competition_outcomes/race-1' },
                 validOutcome,
             );
         });
 
         it('throws an error if the outcome already exists', async () => {
-            firestore.getDoc.mockResolvedValueOnce(snapshot(validOutcome));
+            firestore.transactionGet.mockResolvedValueOnce(snapshot(validOutcome));
             const service = new CompetitionOutcomeService();
 
             await expect(service.createOutcome('user-1', validOutcome)).rejects.toThrow(
                 'Competition outcome race-1 already exists',
             );
-            expect(firestore.setDoc).not.toHaveBeenCalled();
+            expect(firestore.transactionSet).not.toHaveBeenCalled();
+        });
+
+        it('surfaces the same already-exists error when a transaction retry observes a concurrent create', async () => {
+            firestore.runTransaction.mockImplementationOnce(async (_db: unknown, update: (transaction: {
+                get: () => Promise<ReturnType<typeof snapshot<CompetitionOutcome>>>;
+                set: typeof firestore.transactionSet;
+            }) => Promise<unknown>) => {
+                await update({
+                    get: vi.fn().mockResolvedValueOnce(snapshot(null)),
+                    set: firestore.transactionSet,
+                });
+                return update({
+                    get: vi.fn().mockResolvedValueOnce(snapshot(validOutcome)),
+                    set: firestore.transactionSet,
+                });
+            });
+            const service = new CompetitionOutcomeService();
+
+            await expect(service.createOutcome('user-1', validOutcome)).rejects.toThrow(
+                'Competition outcome race-1 already exists',
+            );
         });
 
         it('throws an error if outcome validation fails', async () => {
@@ -82,8 +114,7 @@ describe('CompetitionOutcomeService', () => {
             await expect(service.createOutcome('user-1', invalidOutcome)).rejects.toThrow(
                 /Unsupported competition sport/,
             );
-            expect(firestore.getDoc).not.toHaveBeenCalled();
-            expect(firestore.setDoc).not.toHaveBeenCalled();
+            expect(firestore.runTransaction).not.toHaveBeenCalled();
         });
     });
 
