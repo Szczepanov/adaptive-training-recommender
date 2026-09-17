@@ -1,6 +1,9 @@
 # PR 1 scope: canonical performed occurrence and shadow reconciliation
 
-Status: scoped implementation slice
+**Status:** Historical implementation slice — delivered in PR #324
+
+> This document records the original PR1 boundary. It is not a current task list; current
+> rollout status belongs to the TO row in [`README.md`](./README.md).
 
 This document narrows the first implementation PR so it can be reviewed independently from UI and training-engine behavior.
 

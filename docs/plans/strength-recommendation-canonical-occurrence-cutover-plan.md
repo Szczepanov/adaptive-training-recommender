@@ -1,6 +1,7 @@
 # Canonical strength occurrence -> recommendation credit cutover
 
-**Status:** In Progress (PR 1 & PR 2 implemented)
+**Status:** Superseded by [`training-occurrence-reconciliation-and-strength-session-unification.md`](./training-occurrence-reconciliation-and-strength-session-unification.md) and the TO row in [`README.md`](./README.md); PR 1–3 history retained
+**Reader note:** This is a historical cutover design. Current rollout status belongs to the TO plan and ADR-0034; TO4/TO5 own the remaining shadow-evidence gates.
 **Motivating incident:** 2026-09-01 strength session followed by a 2026-09-02 duplicate full-body-strength recommendation
 **Depends on:** ADR-0016, ADR-0023, ADR-0034; PR #321 and PR #324
 

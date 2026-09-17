@@ -1,6 +1,9 @@
 # Training occurrence reviewer focus notes
 
-Status: review aid
+**Status:** Historical review aid — superseded for delivery status by ADR-0034 and PR #324
+
+> Retained for reviewer rationale. It is not a current task list; current rollout status belongs
+> to the TO row in [`README.md`](./README.md).
 
 This note highlights the decisions that should receive explicit reviewer agreement before implementation starts.
 

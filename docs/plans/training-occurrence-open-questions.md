@@ -1,6 +1,9 @@
 # Training occurrence implementation open questions
 
-Status: pre-implementation decisions
+**Status:** Historical pre-implementation decisions — resolved or superseded by ADR-0034 and PR #324
+
+> This document is retained for design rationale. It is not a current task list; current
+> rollout status belongs to the TO row in [`README.md`](./README.md).
 
 These are deliberately narrow questions that should be resolved in PR 1 or explicitly deferred with rationale. They are not blockers to merging the documentation PR, but leaving them implicit in code would create unnecessary migration risk.
 

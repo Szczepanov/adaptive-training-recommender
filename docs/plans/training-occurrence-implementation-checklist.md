@@ -1,6 +1,10 @@
 # Training occurrence implementation checklist
 
-Status: implementation checklist
+**Status:** Historical checklist — PR #324 delivered the scoped implementation; remaining rollout
+gates belong to the TO row in [`README.md`](./README.md)
+
+> This checklist predates PR #324. Its unchecked boxes are an audit trail, not a live delivery
+> queue. Use the TO plan and ADR-0034 for current status.
 
 Companion documents:
 

@@ -1,6 +1,6 @@
 # HRF — Activity Heart-Rate Measurement Fidelity & Decision Authority
 
-* **Status:** `Approved`
+* **Status:** `In progress`
 * **Proposed:** 2026-08-29
 * **Blocked by:** HRF8 replay and independently recorded paired-reference evidence before HRF9 production gating
 * **Unlocks:** source-aware HR trust, artifact-resistant HR-zone/load interpretation, safe max-HR/threshold/decoupling gating, and athlete/device/activity-specific HR reliability calibration

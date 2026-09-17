@@ -1,5 +1,8 @@
 # Training occurrence architecture summary
 
+> Historical architecture summary. The canonical current status is the TO row in
+> [`README.md`](./README.md); this file is not an independent plan or task board.
+
 One physical workout should be represented once.
 
 ```text
