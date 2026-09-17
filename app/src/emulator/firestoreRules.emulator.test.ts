@@ -1957,7 +1957,11 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, auditPath), { ...validAudit, proposal: { bundleId: 'bundle-1', outcome: 'placed' } }));
         await assertFails(deleteDoc(doc(ownerDb, auditPath)));
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intraday_bundle_placement_audits/not-the-payload-id`), validAudit));
-        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intraday_bundle_placement_audits/audit_bad`), { ...validAudit, auditId: 'audit_bad', members: [] }));
+        const emptyMembersAuditId = 'audit_' + 'c'.repeat(64);
+        await assertFails(setDoc(
+            doc(ownerDb, `users/${ownerId}/intraday_bundle_placement_audits/${emptyMembersAuditId}`),
+            { ...validAudit, auditId: emptyMembersAuditId, members: [] },
+        ));
     });
 
     it('allows recommendations with primarySession and additionalSessions bindings', async () => {

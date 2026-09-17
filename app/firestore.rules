@@ -1906,7 +1906,7 @@ service cloud.firestore {
         && data.planSnapshot.title is string && data.planSnapshot.title.size() > 0 && data.planSnapshot.title.size() <= 200
         && isValidActivityDate(data.planSnapshot.startDate)
         && data.planSnapshot.weekCount is int && data.planSnapshot.weekCount >= 1 && data.planSnapshot.weekCount <= 52
-        && data.planSnapshot.sessions is list && data.planSnapshot.sessions.size() > 0 && data.planSnapshot.sessions.size() <= 64
+        && data.planSnapshot.sessions is list && data.planSnapshot.sessions.size() > 0 && data.planSnapshot.sessions.size() <= 120
         && data.planSnapshot.restDays is list && data.planSnapshot.restDays.size() <= 64
         && data.bundleId is string && data.bundleId.size() > 0 && data.bundleId.size() <= 128
         && data.scheduleWindows is list && data.scheduleWindows.size() <= 8
