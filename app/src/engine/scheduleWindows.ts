@@ -7,11 +7,10 @@
  * a plan's `intraday` request (`sessions/externalPlanV4.ts`) against these windows --
  * that intersection is D-PLACEMENT's job, layered on top of this file.
  *
- * Recurring availability ("Recurring availability is resolved to dated instances by the
- * app", D-WINDOW) is intentionally out of scope for this first PR: only already-dated
- * window instances are modeled and persisted here. A future PR can add a template that
- * resolves to `ScheduleWindow` instances without changing this file's contract, since
- * every downstream consumer only ever sees resolved, dated windows.
+ * Recurring availability is resolved to dated instances by the app's
+ * `scheduleWindowRecurrence.ts` input layer. This module intentionally remains limited to
+ * already-dated window instances, since every downstream consumer only ever sees resolved,
+ * dated windows.
  */
 import type { ScheduleWindow, ScheduleWindowManifest, TrainingEnvironment } from './models';
 import { isValidDate, type ValidationError, type ValidationResult } from './validationCore';

@@ -139,8 +139,24 @@ emulatorDescribe('ScheduleWindow manifest persistence boundary (#430)', () => {
             window('duplicate', '08:00', '09:00'),
         ])));
         await assertFails(setDoc(manifestRef, manifest([
+            window('duplicate-edge', '06:00', '07:00'),
+            window('middle', '08:00', '09:00'),
+            window('duplicate-edge', '10:00', '11:00'),
+        ])));
+        await assertFails(setDoc(manifestRef, manifest([
             window('first', '06:00', '08:00'),
             window('second', '07:00', '09:00'),
+        ])));
+    });
+
+    it('accepts a valid three-window AM, PM, and evening manifest through the rules fast path', async () => {
+        const db = environment.authenticatedContext(USER_ID).firestore();
+        const manifestRef = doc(db, 'users', USER_ID, 'schedule_window_manifests', DATE);
+
+        await assertSucceeds(setDoc(manifestRef, manifest([
+            window('morning', '06:00', '09:00'),
+            window('afternoon', '12:00', '16:00'),
+            window('evening', '17:30', '18:30'),
         ])));
     });
 

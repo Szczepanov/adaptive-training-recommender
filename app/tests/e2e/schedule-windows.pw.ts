@@ -1,6 +1,22 @@
 import { expect, test } from '@playwright/test';
 import { provisionAthlete, signInThroughUi } from './support/athlete';
 
+function localDateAfter(days: number): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Warsaw',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  const target = new Date(Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day) + days,
+  ));
+  return target.toISOString().slice(0, 10);
+}
+
 test('an athlete can manage same-day training windows from the Plan screen', async ({ page }) => {
   const athlete = await provisionAthlete();
 
@@ -59,4 +75,41 @@ test('an athlete can manage same-day training windows from the Plan screen', asy
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByText('07:00–09:00')).toBeHidden();
   await expect(page.getByText('PM strength')).toBeVisible();
+});
+
+test('an athlete can add several recurring weekday time blocks at once', async ({ page }) => {
+  const athlete = await provisionAthlete();
+
+  await signInThroughUi(page, athlete);
+  await page.getByRole('button', { name: 'Plan', exact: true }).click();
+  await page.getByRole('heading', { name: 'Training Windows' }).waitFor();
+
+  await page.getByRole('button', { name: '+ Repeat Schedule' }).click();
+  await expect(page.getByRole('heading', { name: 'Repeat Training Schedule' })).toBeVisible();
+  await page.getByLabel('Repeat from').fill(localDateAfter(7));
+  await page.getByLabel('Repeat until').fill(localDateAfter(13));
+
+  const firstBlock = page.getByRole('group', { name: 'Time block 1' });
+  await firstBlock.getByLabel('Start time').fill('06:00');
+  await firstBlock.getByLabel('End time').fill('09:00');
+
+  await page.getByRole('button', { name: '+ Add time block' }).click();
+  const secondBlock = page.getByRole('group', { name: 'Time block 2' });
+  await secondBlock.getByLabel('Start time').fill('12:00');
+  await secondBlock.getByLabel('End time').fill('16:00');
+
+  await page.getByRole('button', { name: '+ Add time block' }).click();
+  const thirdBlock = page.getByRole('group', { name: 'Time block 3' });
+  await thirdBlock.getByLabel('Start time').fill('17:30');
+  await thirdBlock.getByLabel('End time').fill('18:30');
+  await thirdBlock.getByRole('button', { name: 'Tuesday' }).click();
+  await thirdBlock.getByRole('button', { name: 'Thursday' }).click();
+
+  await expect(page.getByText('13 windows across 5 days')).toBeVisible();
+  await page.getByRole('button', { name: 'Apply Schedule', exact: true }).click();
+
+  await expect(page.getByRole('heading', { name: 'Repeat Training Schedule' })).toBeHidden();
+  await expect(page.getByText('06:00–09:00')).toHaveCount(5);
+  await expect(page.getByText('12:00–16:00')).toHaveCount(5);
+  await expect(page.getByText('17:30–18:30')).toHaveCount(3);
 });

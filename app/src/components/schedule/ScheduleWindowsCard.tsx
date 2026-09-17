@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, memo } from 'react';
 import { scheduleWindowService, type ScheduleWindowWithId } from '../../services/scheduleWindowService';
 import { ScheduleWindowModal } from './ScheduleWindowModal';
+import { RecurringScheduleModal } from './RecurringScheduleModal';
 import { dateLabel, groupByDate } from './scheduleWindowsCardHelpers';
 import { getLocalDateString } from '../../utils/localDate';
 import './ScheduleWindowsCard.css';
@@ -18,7 +19,8 @@ interface ScheduleWindowsCardProps {
  * prior path was pasting hand-authored JSON through `ExternalPlanImport.tsx`. This card
  * closes that gap: an athlete can add, edit, and delete their own dated AM/PM (or any
  * other) windows directly, the same way `ScheduleOverlayCard` already does for planned
- * absences.
+ * absences. Repeating schedules are expanded into the same dated manifests by the
+ * `RecurringScheduleModal` input layer.
  */
 export const ScheduleWindowsCard = memo(function ScheduleWindowsCard({
     userId,
@@ -28,6 +30,7 @@ export const ScheduleWindowsCard = memo(function ScheduleWindowsCard({
     const [loading, setLoading] = useState(true);
     const [loadError, setLoadError] = useState<string | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isRecurringModalOpen, setIsRecurringModalOpen] = useState(false);
     const [selectedWindow, setSelectedWindow] = useState<ScheduleWindowWithId | null>(null);
     const [modalDefaultDate, setModalDefaultDate] = useState<string | undefined>(undefined);
 
@@ -77,13 +80,17 @@ export const ScheduleWindowsCard = memo(function ScheduleWindowsCard({
                     <h3 className="card-title">Training Windows</h3>
                     <p className="card-description">
                         Real blocks of clock time on a given day, such as an AM slot before work and a
-                        PM slot after. A second session is only ever placed against a window that
-                        exists here -- add one to make training twice in a day possible.
+                        PM slot after. Add one manually or repeat several blocks across selected weekdays.
                     </p>
                 </div>
-                <button type="button" className="btn-add-window" onClick={() => handleOpenCreate(today)}>
-                    + Add Window
-                </button>
+                <div className="window-header-actions">
+                    <button type="button" className="btn-add-window btn-add-window-secondary" onClick={() => setIsRecurringModalOpen(true)}>
+                        + Repeat Schedule
+                    </button>
+                    <button type="button" className="btn-add-window" onClick={() => handleOpenCreate(today)}>
+                        + Add Window
+                    </button>
+                </div>
             </div>
 
             {loading ? (
@@ -101,8 +108,9 @@ export const ScheduleWindowsCard = memo(function ScheduleWindowsCard({
                     <span className="empty-icon">🕒</span>
                     <p>No upcoming training windows.</p>
                     <span className="empty-hint">
-                        Add a window for a day you plan to train twice, then author or import a
-                        same-day session plan to place against it.
+                        Add a window for a day you plan to train, or use Repeat Schedule to add
+                        recurring weekday blocks. Same-day sessions are placed only inside windows
+                        that exist here.
                     </span>
                 </div>
             ) : (
@@ -170,6 +178,12 @@ export const ScheduleWindowsCard = memo(function ScheduleWindowsCard({
                 defaultDate={modalDefaultDate}
                 isOpen={isModalOpen}
                 onClose={() => setIsModalOpen(false)}
+                onSaved={handleSaved}
+            />
+            <RecurringScheduleModal
+                userId={userId}
+                isOpen={isRecurringModalOpen}
+                onClose={() => setIsRecurringModalOpen(false)}
                 onSaved={handleSaved}
             />
         </section>

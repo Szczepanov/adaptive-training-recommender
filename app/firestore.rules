@@ -527,7 +527,7 @@ service cloud.firestore {
 
     // ADR-0036 D-WINDOW: a date's windows share one authoritative manifest. The
     // eight-entry bound is intentional: rules cannot iterate arbitrary lists, but this
-    // lets them validate every entry and every pair, including direct SDK writes.
+    // lets them validate every entry and every adjacent pair, including direct SDK writes.
     function hasValidScheduleWindowManifestEntry(userId, date, window) {
       return window is map
         && window.keys().hasOnly(['id', 'userId', 'date', 'startLocal', 'endLocal', 'label', 'equipment', 'environment', 'revision', 'createdAt', 'updatedAt'])
@@ -557,42 +557,78 @@ service cloud.firestore {
         && (windows.size() < 8 || hasValidScheduleWindowManifestEntry(userId, date, windows[7]));
     }
 
-    function scheduleWindowManifestPairIsValid(windows, left, right) {
+    // The full eight-position validator is retained for legacy/manual schedules, but a
+    // normal AM / PM / evening day must not pay for all eight nested rule branches. This
+    // bounded fast path keeps the common three-window write below Firestore's expression
+    // ceiling without weakening the per-entry or overlap checks that protect it.
+    function hasValidScheduleWindowManifestEntriesUpToThree(userId, date, windows) {
+      return windows is list && windows.size() <= 3
+        && (windows.size() < 1 || hasValidScheduleWindowManifestEntry(userId, date, windows[0]))
+        && (windows.size() < 2 || hasValidScheduleWindowManifestEntry(userId, date, windows[1]))
+        && (windows.size() < 3 || hasValidScheduleWindowManifestEntry(userId, date, windows[2]));
+    }
+
+    function hasDistinctScheduleWindowManifestIdsUpToThree(windows) {
+      return windows.size() <= 1
+        || ((windows.size() < 2 || windows[0].id != windows[1].id)
+        && (windows.size() < 3 || windows[0].id != windows[2].id)
+        && (windows.size() < 3 || windows[1].id != windows[2].id));
+    }
+
+    // The service stores each manifest in start-time order. Checking adjacent entries is
+    // sufficient for interval overlap once that ordering is part of the persisted boundary,
+    // and keeps a three-window (AM / PM / evening) create below the rules expression budget.
+    function scheduleWindowManifestAdjacentPairIsValid(windows, left, right) {
       return windows.size() <= right || (
         windows[left].id != windows[right].id
-        && !(windows[left].startLocal < windows[right].endLocal && windows[right].startLocal < windows[left].endLocal)
+        && windows[left].startLocal < windows[right].startLocal
+        && windows[left].endLocal <= windows[right].startLocal
       );
     }
 
     function hasNonOverlappingScheduleWindowManifestEntries(windows) {
-      return scheduleWindowManifestPairIsValid(windows, 0, 1)
-        && scheduleWindowManifestPairIsValid(windows, 0, 2)
-        && scheduleWindowManifestPairIsValid(windows, 0, 3)
-        && scheduleWindowManifestPairIsValid(windows, 0, 4)
-        && scheduleWindowManifestPairIsValid(windows, 0, 5)
-        && scheduleWindowManifestPairIsValid(windows, 0, 6)
-        && scheduleWindowManifestPairIsValid(windows, 0, 7)
-        && scheduleWindowManifestPairIsValid(windows, 1, 2)
-        && scheduleWindowManifestPairIsValid(windows, 1, 3)
-        && scheduleWindowManifestPairIsValid(windows, 1, 4)
-        && scheduleWindowManifestPairIsValid(windows, 1, 5)
-        && scheduleWindowManifestPairIsValid(windows, 1, 6)
-        && scheduleWindowManifestPairIsValid(windows, 1, 7)
-        && scheduleWindowManifestPairIsValid(windows, 2, 3)
-        && scheduleWindowManifestPairIsValid(windows, 2, 4)
-        && scheduleWindowManifestPairIsValid(windows, 2, 5)
-        && scheduleWindowManifestPairIsValid(windows, 2, 6)
-        && scheduleWindowManifestPairIsValid(windows, 2, 7)
-        && scheduleWindowManifestPairIsValid(windows, 3, 4)
-        && scheduleWindowManifestPairIsValid(windows, 3, 5)
-        && scheduleWindowManifestPairIsValid(windows, 3, 6)
-        && scheduleWindowManifestPairIsValid(windows, 3, 7)
-        && scheduleWindowManifestPairIsValid(windows, 4, 5)
-        && scheduleWindowManifestPairIsValid(windows, 4, 6)
-        && scheduleWindowManifestPairIsValid(windows, 4, 7)
-        && scheduleWindowManifestPairIsValid(windows, 5, 6)
-        && scheduleWindowManifestPairIsValid(windows, 5, 7)
-        && scheduleWindowManifestPairIsValid(windows, 6, 7);
+      return scheduleWindowManifestAdjacentPairIsValid(windows, 0, 1)
+        && scheduleWindowManifestAdjacentPairIsValid(windows, 1, 2)
+        && scheduleWindowManifestAdjacentPairIsValid(windows, 2, 3)
+        && scheduleWindowManifestAdjacentPairIsValid(windows, 3, 4)
+        && scheduleWindowManifestAdjacentPairIsValid(windows, 4, 5)
+        && scheduleWindowManifestAdjacentPairIsValid(windows, 5, 6)
+        && scheduleWindowManifestAdjacentPairIsValid(windows, 6, 7);
+    }
+
+    function scheduleWindowManifestIdsPairIsDistinct(windows, left, right) {
+      return windows.size() <= right || windows[left].id != windows[right].id;
+    }
+
+    function hasDistinctScheduleWindowManifestIds(windows) {
+      return scheduleWindowManifestIdsPairIsDistinct(windows, 0, 1)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 2)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 3)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 4)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 5)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 6)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 0, 7)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 2)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 3)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 4)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 5)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 6)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 1, 7)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 2, 3)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 2, 4)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 2, 5)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 2, 6)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 2, 7)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 3, 4)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 3, 5)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 3, 6)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 3, 7)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 4, 5)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 4, 6)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 4, 7)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 5, 6)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 5, 7)
+        && scheduleWindowManifestIdsPairIsDistinct(windows, 6, 7);
     }
 
     // Per-window identity/revision transition validation (stable id/createdAt retained,
@@ -630,16 +666,43 @@ service cloud.firestore {
         && data.revision is int && data.revision >= 1
         && data.createdAt is string && data.updatedAt is string
         && hasValidScheduleWindowManifestEntries(userId, date, data.windows)
+        && hasDistinctScheduleWindowManifestIds(data.windows)
+        && hasNonOverlappingScheduleWindowManifestEntries(data.windows);
+    }
+
+    function hasValidSmallScheduleWindowManifest(userId, date) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
+        && data.keys().hasAll(['userId', 'date', 'revision', 'windows', 'createdAt', 'updatedAt'])
+        && data.date == date && isValidActivityDate(data.date)
+        && data.revision is int && data.revision >= 1
+        && data.createdAt is string && data.updatedAt is string
+        && hasValidScheduleWindowManifestEntriesUpToThree(userId, date, data.windows)
+        && hasDistinctScheduleWindowManifestIdsUpToThree(data.windows)
         && hasNonOverlappingScheduleWindowManifestEntries(data.windows);
     }
 
     match /users/{userId}/schedule_window_manifests/{date} {
       allow read: if isOwner(userId);
-      allow create: if hasValidScheduleWindowManifest(userId, date)
-        && request.resource.data.revision == 1;
-      allow update: if hasValidScheduleWindowManifest(userId, date)
-        && request.resource.data.createdAt == resource.data.createdAt
-        && request.resource.data.revision == resource.data.revision + 1;
+      allow create: if (
+        (request.resource.data.windows.size() <= 3
+          && hasValidSmallScheduleWindowManifest(userId, date)
+          && request.resource.data.revision == 1)
+        || (request.resource.data.windows.size() > 3
+          && hasValidScheduleWindowManifest(userId, date)
+          && request.resource.data.revision == 1)
+      );
+      allow update: if (
+        (request.resource.data.windows.size() <= 3
+          && hasValidSmallScheduleWindowManifest(userId, date)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.revision == resource.data.revision + 1)
+        || (request.resource.data.windows.size() > 3
+          && hasValidScheduleWindowManifest(userId, date)
+          && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.revision == resource.data.revision + 1)
+      );
       allow delete: if false;
     }
 
