@@ -25,11 +25,11 @@ import logging
 import secrets
 import tempfile
 import time
-import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote, urlencode
 
 import requests
 
@@ -161,7 +161,7 @@ def build_authorize_url(
         "prompt": "consent",
         "state": state,
     }
-    query = urllib.parse.urlencode(params, quote_via=urllib.parse.quote, safe="")
+    query = urlencode(params, quote_via=quote, safe="")
     return f"https://accounts.google.com/o/oauth2/v2/auth?{query}"
 
 
