@@ -1,6 +1,6 @@
 # PI — Physiological Identity Passport & Measurement Trust
 
-* **Status:** `Approved`
+* **Status:** `In progress`
 * **Proposed:** 2026-08-27
 * **Foundation:** PR #240 / ADR-0027 is merged on `main` (`8312fe90`); no remaining design blocker.
 * **Unlocks:** identity-safe Eight Sleep use, contamination-resistant source baselines, reviewable shared-device attribution, and a provider-neutral measurement-trust layer.

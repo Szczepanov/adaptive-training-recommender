@@ -1,6 +1,8 @@
 # Training occurrence reconciliation and structured strength session unification
 
-Status: implementation plan
+**Status:** In progress — canonical TO plan; PR #324 and PR #331 landed, TO4/TO5 remain shadow-evidence gates
+**Reader note:** Historical companion checklists and the earlier strength-only cutover are not
+independent status boards. Current status is maintained in [`README.md`](./README.md).
 
 ## Problem statement
 

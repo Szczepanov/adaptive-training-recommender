@@ -1,6 +1,6 @@
 # MS — Multisource Health & Recovery Ingestion
 
-* **Status:** `Approved`
+* **Status:** `In progress`
 * **Proposed:** 2026-08-27
 * **Blocked by:** none (`MS0` is startable today; `MS1+` gated by `MS0` evidence).
 * **Unlocks:** source-aware Google Health ingestion, Eight Sleep source validation,

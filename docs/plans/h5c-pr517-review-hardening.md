@@ -1,5 +1,8 @@
 # H5c PR #517 — review hardening and remaining audit boundary
 
+**Status:** Implemented review follow-up; the write-once review-snapshot boundary remains future
+scope. Canonical H5 status belongs to [`cycling-primary-hybrid-evaluation.md`](./cycling-primary-hybrid-evaluation.md).
+
 **Date:** 2026-09-09
 **PR:** #517
 **Governing decision:** [ADR-0037](../adr/0037-block-intent-and-controlled-progression.md)

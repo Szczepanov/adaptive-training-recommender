@@ -1,5 +1,9 @@
 # Training occurrence final review checklist
 
+> Historical review checklist for the pre-PR324 documentation/implementation review. The
+> unchecked boxes below are retained as review history, not live work. Current rollout status
+> belongs to the TO row in [`README.md`](./README.md).
+
 Use this immediately before approving the documentation PR or starting implementation.
 
 - [ ] The distinction between `SessionOccurrence` and performed-workout identity is accepted.

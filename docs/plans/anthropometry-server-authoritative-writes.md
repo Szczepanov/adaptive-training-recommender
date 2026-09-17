@@ -1,7 +1,7 @@
 # Server-authoritative anthropometry writes — implementation plan
 
-**Status:** In progress
-**Blocked by:** none — ADR-0040 is Accepted
+**Status:** In progress — implementation landed in PR #572; completion/deployment verification remains
+**Blocked by:** deployment and delivery-contract verification; ADR-0040 is Accepted
 **Unlocks:** reliable ten-measurement saves without Firestore Rules expression-budget failures
 **Decision:** [ADR-0040](../adr/0040-server-authoritative-anthropometry-writes.md)
 
@@ -26,4 +26,7 @@
 
 ## Completion record
 
-Implementation and verification results are recorded here once all delivery-contract checks pass.
+The implementation landed in PR #572, including the authenticated Cloud Run write API,
+server/client conformance validation, fail-closed Rules, emulator coverage, deployment wiring,
+and focused backend/frontend tests. The plan remains open until the deployment and full
+delivery-contract verification evidence is recorded here.
