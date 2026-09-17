@@ -190,6 +190,9 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-07 ADR-0038 Recovery Placement Implementation Analysis**](./analysis/2026-09-07-adr-0038-recovery-placement-implementation-analysis.md) — Analysis of recovery placement options for external plans under ADR-0038.
 * [**2026-09-07 Recommender Optimization Analysis**](./analysis/2026-09-07-recommender-optimization-opportunities.md) — Investigation into potential optimization strategies for the core recommender engine.
 * [**2026-09-14 Body-composition and fueling observations analysis**](./analysis/2026-09-14-body-composition-and-fueling-observations.md) — Point-in-time analysis of how longitudinal body mass, home tape measurements, connected scale estimates and subjective hunger fit the recommender without recommending authority.
+* [**2026-09-16 Adaptive Coach UX Heuristics Review**](./analysis/2026-09-16-ux-heuristics-review.md) — Live walkthrough and usability heuristics evaluation of onboarding, daily check-in, and training setup against emulators.
+* [**2026-09-17 Plan status reconciliation**](./analysis/2026-09-17-plan-status-reconciliation.md) — Dated audit of `docs/plans/` against the latest `origin/main` repository state.
+* [**2026-09-17 Adaptive Coach UX Heuristics Review Follow-up**](./analysis/2026-09-17-ux-heuristics-review-followup.md) — Second, smaller usability evaluation pass following the 2026-09-16 review and its related fixes.
 
 ---
 
