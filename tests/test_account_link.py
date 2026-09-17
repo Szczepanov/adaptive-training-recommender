@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -13,6 +15,11 @@ from garmin_sync.account_link import GarminAccountLinkService, PendingLoginStore
 class FakeGarminClient:
     def __init__(self) -> None:
         self.dumped_paths: list[str] = []
+        self._mfa_pending = True
+
+    @property
+    def is_authenticated(self) -> bool:
+        return not self._mfa_pending
 
     def dump(self, path: str) -> None:
         self.dumped_paths.append(path)
@@ -34,11 +41,271 @@ class FakeGarmin:
 
     def resume_login(self, _client_state: dict[str, Any], code: str) -> tuple[None, None]:
         self.resumed_codes.append(code)
+        self.client._mfa_pending = False
         return None, None
 
 
 class DummyRepository:
     pass
+
+
+def test_mfa_resume_failure_preserves_challenge_for_retry(
+    monkeypatch: Any,
+) -> None:
+    class RetryGarmin(FakeGarmin):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(needs_mfa=True, **kwargs)
+            self.failures_remaining = 1
+
+        def resume_login(self, client_state: dict[str, Any], code: str) -> tuple[None, None]:
+            if self.failures_remaining:
+                self.failures_remaining -= 1
+                raise account_link_module.GarminConnectAuthenticationError("invalid code")
+            return super().resume_login(client_state, code)
+
+    api: RetryGarmin | None = None
+
+    def factory(**kwargs: Any) -> RetryGarmin:
+        nonlocal api
+        api = RetryGarmin(**kwargs)
+        return api
+
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=DummyRepository(),  # type: ignore[arg-type]
+        garmin_factory=factory,  # type: ignore[arg-type]
+    )
+    monkeypatch.setattr(
+        service,
+        "_finalize",
+        lambda *_args: {"status": "authenticated"},
+    )
+
+    first = service.start_login("person@example.com", "secret")
+    challenge_id = str(first["challengeId"])
+
+    with pytest.raises(account_link_module.GarminConnectAuthenticationError, match="invalid code"):
+        service.complete_mfa(challenge_id, "000000")
+
+    assert api is not None
+    assert api.password is None
+    assert service.complete_mfa(challenge_id, "123456")["status"] == "authenticated"
+    assert api.resumed_codes == ["123456"]
+
+    with pytest.raises(
+        account_link_module.GarminConnectAuthenticationError, match="invalid, expired"
+    ):
+        service.complete_mfa(challenge_id, "123456")
+
+
+def test_concurrent_mfa_completion_allows_only_one_resume(
+    monkeypatch: Any,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class BlockingGarmin(FakeGarmin):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(needs_mfa=True, **kwargs)
+            self.resume_started = threading.Event()
+            self.resume_release = threading.Event()
+
+        def resume_login(self, client_state: dict[str, Any], code: str) -> tuple[None, None]:
+            self.resumed_codes.append(code)
+            self.resume_started.set()
+            assert self.resume_release.wait(timeout=2)
+            return None, None
+
+    api: BlockingGarmin | None = None
+
+    def factory(**kwargs: Any) -> BlockingGarmin:
+        nonlocal api
+        api = BlockingGarmin(**kwargs)
+        return api
+
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=DummyRepository(),  # type: ignore[arg-type]
+        garmin_factory=factory,  # type: ignore[arg-type]
+    )
+    monkeypatch.setattr(service, "_finalize", lambda *_args: {"status": "authenticated"})
+    first = service.start_login("person@example.com", "secret")
+    challenge_id = str(first["challengeId"])
+
+    winning_result: list[dict[str, Any]] = []
+    winning_error: list[BaseException] = []
+
+    def complete_winner() -> None:
+        try:
+            winning_result.append(service.complete_mfa(challenge_id, "654321"))
+        except BaseException as exc:  # pragma: no cover - diagnostic guard for thread failures
+            winning_error.append(exc)
+
+    winner = threading.Thread(target=complete_winner)
+    with caplog.at_level(logging.INFO):
+        winner.start()
+        assert api is not None
+        assert api.resume_started.wait(timeout=2)
+
+        with pytest.raises(
+            account_link_module.GarminConnectAuthenticationError, match="already in use"
+        ):
+            service.complete_mfa(challenge_id, "111111")
+
+        api.resume_release.set()
+        winner.join(timeout=2)
+
+    assert not winner.is_alive()
+    assert winning_error == []
+    assert winning_result == [{"status": "authenticated"}]
+    assert api is not None
+    assert api.resumed_codes == ["654321"]
+    assert "654321" not in caplog.text
+    assert "secret" not in caplog.text
+
+
+def test_failed_mfa_resume_expires_and_cleans_up_live_temp_state() -> None:
+    now = [100.0]
+
+    class FailingGarmin(FakeGarmin):
+        def resume_login(self, _client_state: dict[str, Any], _code: str) -> tuple[None, None]:
+            raise account_link_module.GarminConnectAuthenticationError("invalid code")
+
+    store = PendingLoginStore(ttl_seconds=5, clock=lambda: now[0])
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=DummyRepository(),  # type: ignore[arg-type]
+        pending_store=store,
+        garmin_factory=lambda **kwargs: FailingGarmin(needs_mfa=True, **kwargs),  # type: ignore[arg-type]
+    )
+
+    first = service.start_login("person@example.com", "secret")
+    challenge_id = str(first["challengeId"])
+    pending = store._items[challenge_id]  # noqa: SLF001 - verify cleanup boundary
+    assert pending.temp_dir.exists()
+
+    with pytest.raises(account_link_module.GarminConnectAuthenticationError, match="invalid code"):
+        service.complete_mfa(challenge_id, "000000")
+    assert pending.temp_dir.exists()
+
+    now[0] = 106.0
+    with pytest.raises(account_link_module.GarminConnectAuthenticationError, match="expired"):
+        service.complete_mfa(challenge_id, "123456")
+
+    assert not pending.temp_dir.exists()
+
+
+def test_mfa_challenge_is_consumed_after_bounded_failed_attempts() -> None:
+    class FailingGarmin(FakeGarmin):
+        def resume_login(self, _client_state: dict[str, Any], _code: str) -> tuple[None, None]:
+            raise account_link_module.GarminConnectAuthenticationError("invalid code")
+
+    store = PendingLoginStore()
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=DummyRepository(),  # type: ignore[arg-type]
+        pending_store=store,
+        garmin_factory=lambda **kwargs: FailingGarmin(needs_mfa=True, **kwargs),  # type: ignore[arg-type]
+    )
+
+    first = service.start_login("person@example.com", "secret")
+    challenge_id = str(first["challengeId"])
+    pending = store._items[challenge_id]  # noqa: SLF001 - verify cleanup boundary
+
+    for _ in range(account_link_module._MAX_MFA_ATTEMPTS):
+        with pytest.raises(
+            account_link_module.GarminConnectAuthenticationError, match="invalid code"
+        ):
+            service.complete_mfa(challenge_id, "000000")
+
+    with pytest.raises(
+        account_link_module.GarminConnectAuthenticationError, match="invalid, expired"
+    ):
+        service.complete_mfa(challenge_id, "123456")
+    assert not pending.temp_dir.exists()
+
+
+def test_post_authentication_profile_failure_consumes_mfa_challenge() -> None:
+    class ProfileFailGarmin(FakeGarmin):
+        def resume_login(self, client_state: dict[str, Any], code: str) -> tuple[None, None]:
+            super().resume_login(client_state, code)
+            raise RuntimeError("profile fetch failed")
+
+    store = PendingLoginStore()
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=DummyRepository(),  # type: ignore[arg-type]
+        pending_store=store,
+        garmin_factory=lambda **kwargs: ProfileFailGarmin(needs_mfa=True, **kwargs),  # type: ignore[arg-type]
+    )
+
+    first = service.start_login("person@example.com", "secret")
+    challenge_id = str(first["challengeId"])
+    pending = store._items[challenge_id]  # noqa: SLF001 - verify cleanup boundary
+
+    with pytest.raises(RuntimeError, match="profile fetch failed"):
+        service.complete_mfa(challenge_id, "123456")
+
+    with pytest.raises(
+        account_link_module.GarminConnectAuthenticationError, match="invalid, expired"
+    ):
+        service.complete_mfa(challenge_id, "123456")
+    assert not pending.temp_dir.exists()
+
+
+def test_mfa_rate_limits_do_not_consume_code_attempts() -> None:
+    class RateLimitedGarmin(FakeGarmin):
+        def resume_login(self, _client_state: dict[str, Any], _code: str) -> tuple[None, None]:
+            raise account_link_module.GarminConnectTooManyRequestsError("rate limited")
+
+    store = PendingLoginStore()
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=DummyRepository(),  # type: ignore[arg-type]
+        pending_store=store,
+        garmin_factory=lambda **kwargs: RateLimitedGarmin(needs_mfa=True, **kwargs),  # type: ignore[arg-type]
+    )
+
+    first = service.start_login("person@example.com", "secret")
+    challenge_id = str(first["challengeId"])
+    pending = store._items[challenge_id]  # noqa: SLF001 - verify retry state
+
+    for _ in range(account_link_module._MAX_MFA_ATTEMPTS + 1):
+        with pytest.raises(
+            account_link_module.GarminConnectTooManyRequestsError, match="rate limited"
+        ):
+            service.complete_mfa(challenge_id, "123456")
+
+    assert pending.failed_mfa_attempts == 0
+    assert pending.temp_dir.exists()
+
+
+def test_mfa_post_authentication_verification_failure_consumes_challenge() -> None:
+    class VerificationFailGarmin(FakeGarmin):
+        def resume_login(self, client_state: dict[str, Any], code: str) -> tuple[None, None]:
+            super().resume_login(client_state, code)
+            self.client._mfa_pending = False
+            self.client.di_token = None
+            raise account_link_module.GarminConnectConnectionError("token rejected")
+
+    store = PendingLoginStore()
+    service = GarminAccountLinkService(
+        "bucket",
+        repository=DummyRepository(),  # type: ignore[arg-type]
+        pending_store=store,
+        garmin_factory=lambda **kwargs: VerificationFailGarmin(needs_mfa=True, **kwargs),  # type: ignore[arg-type]
+    )
+
+    first = service.start_login("person@example.com", "secret")
+    challenge_id = str(first["challengeId"])
+    pending = store._items[challenge_id]  # noqa: SLF001 - verify terminal cleanup
+
+    with pytest.raises(account_link_module.GarminConnectConnectionError, match="token rejected"):
+        service.complete_mfa(challenge_id, "123456")
+
+    with pytest.raises(
+        account_link_module.GarminConnectAuthenticationError, match="invalid, expired"
+    ):
+        service.complete_mfa(challenge_id, "123456")
+    assert not pending.temp_dir.exists()
 
 
 def test_clean_login_dumps_tokens_and_clears_password_before_finalize(
