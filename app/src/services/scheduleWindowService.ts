@@ -235,7 +235,7 @@ export class ScheduleWindowService {
             }
             if (rollbackFailures.length > 0) {
                 const originalMessage = applyError instanceof Error ? applyError.message : 'unknown apply failure';
-                throw new Error(`Repeating schedule failed and automatic rollback could not restore ${rollbackFailures.join(', ')}. Review those dates before retrying. Original error: ${originalMessage}`);
+                throw new Error(`Repeating schedule failed and automatic rollback could not restore ${rollbackFailures.join(', ')}. Review those dates before retrying. Original error: ${originalMessage}`, { cause: applyError });
             }
             throw applyError;
         }
