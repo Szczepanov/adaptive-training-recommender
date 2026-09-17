@@ -450,10 +450,19 @@ class GarminAccountLinkService:
                 pending.requested_uid,
             )
         except GarminConnectTooManyRequestsError:
-            # A 429 is not evidence of a wrong code and garminconnect deliberately
-            # keeps the MFA session live so the caller can retry after backoff.
-            self.pending_store.release(challenge_id, consume=False)
+            # MFA verification 429s happen before authentication and leave the live
+            # continuation reusable. The same exception can also surface later while
+            # Garmin.resume_login() loads profile/settings, after the low-level client
+            # has accepted MFA and cleared its pending state. Only the former is retryable.
+            authenticated_after_failure = resumed or pending.api.client.is_authenticated
+            self.pending_store.release(
+                challenge_id,
+                consume=authenticated_after_failure,
+                cleanup=authenticated_after_failure,
+            )
             pending.api.password = None
+            if authenticated_after_failure:
+                shutil.rmtree(pending.temp_dir, ignore_errors=True)
             raise
         except GarminConnectConnectionError:
             # In garminconnect 0.3.15 this is raised when MFA succeeded but the
