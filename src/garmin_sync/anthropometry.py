@@ -5,8 +5,6 @@ write authority. It canonicalizes every persisted field and intentionally expose
 structural field paths on failure, never measurements or other health values.
 """
 
-from __future__ import annotations
-
 import math
 from collections.abc import Mapping
 from datetime import datetime

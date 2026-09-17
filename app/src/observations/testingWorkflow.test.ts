@@ -71,4 +71,14 @@ describe('OV3 protocol testing workflow helpers', () => {
             'assessment-cycling-20m-tt-r2-offline-retry-token',
         );
     });
+
+    it('generates a cryptographically secure random UUID entropy by default', () => {
+        const attemptId = createAssessmentAttemptId(protocol);
+        const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const prefix = `assessment-${protocol.id}-r${protocol.revision}-`;
+
+        expect(attemptId.startsWith(prefix)).toBe(true);
+        const generatedUuid = attemptId.slice(prefix.length);
+        expect(uuidPattern.test(generatedUuid)).toBe(true);
+    });
 });

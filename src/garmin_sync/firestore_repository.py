@@ -353,9 +353,9 @@ class FirestoreRecoveryRepository:
                 if value is None:
                     continue
                 source = sources.get(key)
-                existing_value = profile.get(key)
                 if source in {"manual", "coach"}:
                     continue
+                existing_value = profile.get(key)
                 if source == "garmin" or existing_value is None:
                     profile[key] = value
                     sources[key] = "garmin"
@@ -888,8 +888,10 @@ class FirestoreRecoveryRepository:
                         + "Z"
                     )
                 assessment_id = event.get("assessmentId")
-                if isinstance(assessment_id, str) and assessment_id in reviews_by_assessment:
-                    reviews_by_assessment[assessment_id].append(event)
+                if isinstance(assessment_id, str):
+                    target_list = reviews_by_assessment.get(assessment_id)
+                    if target_list is not None:
+                        target_list.append(event)
 
         for events in reviews_by_assessment.values():
             events.sort(key=lambda item: (item.get("recordedAt", ""), item.get("id", "")))

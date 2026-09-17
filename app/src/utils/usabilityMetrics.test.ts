@@ -131,4 +131,17 @@ describe('usabilityMetrics task-based evaluation', () => {
         expect(report.wizardSkips).toBe(0);
         expect(report.wizardSkipsByStage).toEqual({});
     });
+
+    it('generates secure UUIDs for event IDs', () => {
+        const storage = installLocalStorage();
+        usabilityMetrics.recordRecommendationView('athlete-test', '2026-08-26');
+
+        const storedRaw = storage.get(STORAGE_KEY);
+        expect(storedRaw).toBeDefined();
+        const events = JSON.parse(storedRaw!);
+        expect(events).toHaveLength(1);
+
+        const uuidRegex = /^evt-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        expect(events[0].id).toMatch(uuidRegex);
+    });
 });

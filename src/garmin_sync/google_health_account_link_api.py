@@ -11,10 +11,10 @@ warning -- that's a known, accepted limitation of this phase, not a flaw in this
 import logging
 import os
 import secrets
-import urllib.parse
 from http import HTTPStatus
 from http.server import ThreadingHTTPServer
 from typing import Any
+from urllib.parse import parse_qs, urlencode, urlsplit
 
 from firebase_admin import auth as firebase_auth
 
@@ -99,7 +99,7 @@ class GoogleHealthAccountLinkHandler(BaseJSONRequestHandler):
         params = {"googleHealthLinked": "success" if success else "error"}
         if reason:
             params["reason"] = reason
-        query = urllib.parse.urlencode(params)
+        query = urlencode(params)
         self._redirect(f"{base}/settings?{query}" if base else f"/settings?{query}")
 
     def do_GET(self) -> None:  # noqa: N802
@@ -172,7 +172,7 @@ class GoogleHealthAccountLinkHandler(BaseJSONRequestHandler):
         self._json_response(HTTPStatus.OK, {"authorizeUrl": authorize_url})
 
     def _handle_callback(self) -> None:
-        query = urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+        query = parse_qs(urlsplit(self.path).query)
 
         def _first(key: str) -> str | None:
             values = query.get(key)

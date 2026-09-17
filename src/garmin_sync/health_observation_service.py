@@ -4,7 +4,9 @@ Orchestrates multi-source recovery observation ingestion, immutable raw archivin
 and idempotent Firestore day-source bundle persistence with repair sync.
 """
 
+import concurrent.futures
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -67,6 +69,7 @@ class HealthObservationService:
         # batch; used to scope reconciliation when that same provider later returns an
         # empty batch (see _reconcile_missing_sources).
         self._provider_transports: dict[str, set[str]] = {}
+        self._lock = threading.Lock()
 
     def register_provider(self, name: str, provider: RecoveryObservationProvider) -> None:
         """Register a recovery observation provider."""
@@ -124,118 +127,145 @@ class HealthObservationService:
 
         return stale_ids
 
+    def _sync_single_provider(
+        self,
+        provider_name: str,
+        provider: RecoveryObservationProvider,
+        logical_date_iso: str,
+        previous_date_iso: str,
+    ) -> dict[str, Any]:
+        """Process observation fetch, archiving, and persistence for a single provider."""
+        try:
+            batch = provider.fetch_observations(logical_date_iso, previous_date_iso)
+            if not batch.observations:
+                logger.debug(
+                    "No observations returned by %s for %s.", provider_name, logical_date_iso
+                )
+                with self._lock:
+                    known_transports = self._provider_transports.get(provider_name, set())
+                reconciled = self._reconcile_missing_sources(
+                    logical_date_iso,
+                    provider_transports=known_transports,
+                    current_keys=set(),
+                )
+                return {
+                    "status": "empty",
+                    "observations": 0,
+                    "reconciledStale": reconciled,
+                }
+
+            # Group observations by (provider, transport) so that e.g. Eight Sleep and Garmin
+            # within Google Health get their own separate day-source bundles.
+            grouped: dict[tuple[str, str], list[CanonicalHealthObservation]] = {}
+            for o in batch.observations:
+                key = (o.source.provider, o.source.transport)
+                grouped.setdefault(key, []).append(o)
+
+            current_transports = {transport for _, transport in grouped}
+            with self._lock:
+                self._provider_transports[provider_name] = current_transports
+
+            # Archive raw health observations if archive store is configured
+            archive_ref = batch.raw_archive_ref
+            if hasattr(self.archive_store, "archive_health"):
+                import dataclasses
+
+                from .archive import HealthArchiveRecord
+
+                try:
+                    archive_rec = HealthArchiveRecord(
+                        user_id=self.user_id,
+                        provider=provider_name,
+                        transport="bundle",
+                        logical_date=logical_date_iso,
+                        payload=[dataclasses.asdict(o) for o in batch.observations],
+                        revision=batch.revision,
+                        normalizer_version=batch.normalizer_version,
+                    )
+                    stored_ref = self.archive_store.archive_health(archive_rec)
+                    if stored_ref:
+                        archive_ref = stored_ref
+                except (OSError, ValueError, TypeError, AttributeError) as arch_err:
+                    logger.warning(
+                        "Failed to archive raw health observations: %s", arch_err, exc_info=True
+                    )
+
+            provider_results: dict[str, Any] = {}
+            for (obs_provider, obs_transport), source_obs in grouped.items():
+                dtos = [observation_to_dto(self.user_id, o) for o in source_obs]
+
+                bundle = HealthObservationDayBundle(
+                    userId=self.user_id,
+                    logicalDate=logical_date_iso,
+                    provider=obs_provider,
+                    transport=obs_transport,
+                    observations=dtos,
+                    sourcePayloadHash=batch.source_payload_hash,
+                    rawArchiveRef=archive_ref,
+                    schemaVersion=batch.schema_version,
+                    normalizerVersion=batch.normalizer_version,
+                    revision=batch.revision,
+                )
+
+                changed, revision = self.repository.save_health_observation_day_bundle(bundle)
+                provider_key = f"{obs_provider}_{obs_transport}"
+                provider_results[provider_key] = {
+                    "status": "saved" if changed else "unchanged",
+                    "observations": len(dtos),
+                    "revision": revision,
+                }
+
+            reconciled = self._reconcile_missing_sources(
+                logical_date_iso,
+                provider_transports=current_transports,
+                current_keys=set(grouped.keys()),
+            )
+
+            return {
+                "status": "success",
+                "sources": provider_results,
+                "totalObservations": len(batch.observations),
+                "reconciledStale": reconciled,
+            }
+
+        except Exception as e:
+            logger.error(
+                "Error syncing observations from %s for %s: %s",
+                provider_name,
+                logical_date_iso,
+                e,
+            )
+            return {"status": "error", "error": str(e)}
+
     def sync_date(
         self,
         logical_date_iso: str,
         previous_date_iso: str | None = None,
     ) -> dict[str, Any]:
-        """Ingest and persist observations for one logical date from all registered providers."""
+        """Ingest and persist observations for one logical date from all registered providers concurrently."""
         if not previous_date_iso:
             curr_dt = datetime.strptime(logical_date_iso, "%Y-%m-%d")
             previous_date_iso = (curr_dt - timedelta(days=1)).strftime("%Y-%m-%d")
 
         results: dict[str, Any] = {}
+        if not self.providers:
+            return results
 
-        for provider_name, provider in self.providers.items():
-            try:
-                batch = provider.fetch_observations(logical_date_iso, previous_date_iso)
-                if not batch.observations:
-                    logger.debug(
-                        "No observations returned by %s for %s.", provider_name, logical_date_iso
-                    )
-                    reconciled = self._reconcile_missing_sources(
-                        logical_date_iso,
-                        provider_transports=self._provider_transports.get(provider_name, set()),
-                        current_keys=set(),
-                    )
-                    results[provider_name] = {
-                        "status": "empty",
-                        "observations": 0,
-                        "reconciledStale": reconciled,
-                    }
-                    continue
-
-                # Group observations by (provider, transport) so that e.g. Eight Sleep and Garmin
-                # within Google Health get their own separate day-source bundles.
-                grouped: dict[tuple[str, str], list[CanonicalHealthObservation]] = {}
-                for o in batch.observations:
-                    key = (o.source.provider, o.source.transport)
-                    grouped.setdefault(key, []).append(o)
-
-                current_transports = {transport for _, transport in grouped}
-                self._provider_transports[provider_name] = current_transports
-
-                # Archive raw health observations if archive store is configured
-                archive_ref = batch.raw_archive_ref
-                if hasattr(self.archive_store, "archive_health"):
-                    import dataclasses
-
-                    from .archive import HealthArchiveRecord
-
-                    try:
-                        archive_rec = HealthArchiveRecord(
-                            user_id=self.user_id,
-                            provider=provider_name,
-                            transport="bundle",
-                            logical_date=logical_date_iso,
-                            payload=[dataclasses.asdict(o) for o in batch.observations],
-                            revision=batch.revision,
-                            normalizer_version=batch.normalizer_version,
-                        )
-                        stored_ref = self.archive_store.archive_health(archive_rec)
-                        if stored_ref:
-                            archive_ref = stored_ref
-                    except (OSError, ValueError, TypeError, AttributeError) as arch_err:
-                        logger.warning(
-                            "Failed to archive raw health observations: %s", arch_err, exc_info=True
-                        )
-
-                provider_results: dict[str, Any] = {}
-                for (obs_provider, obs_transport), source_obs in grouped.items():
-                    dtos = [observation_to_dto(self.user_id, o) for o in source_obs]
-
-                    bundle = HealthObservationDayBundle(
-                        userId=self.user_id,
-                        logicalDate=logical_date_iso,
-                        provider=obs_provider,
-                        transport=obs_transport,
-                        observations=dtos,
-                        sourcePayloadHash=batch.source_payload_hash,
-                        rawArchiveRef=archive_ref,
-                        schemaVersion=batch.schema_version,
-                        normalizerVersion=batch.normalizer_version,
-                        revision=batch.revision,
-                    )
-
-                    changed, revision = self.repository.save_health_observation_day_bundle(bundle)
-                    provider_key = f"{obs_provider}_{obs_transport}"
-                    provider_results[provider_key] = {
-                        "status": "saved" if changed else "unchanged",
-                        "observations": len(dtos),
-                        "revision": revision,
-                    }
-
-                reconciled = self._reconcile_missing_sources(
-                    logical_date_iso,
-                    provider_transports=current_transports,
-                    current_keys=set(grouped.keys()),
-                )
-
-                results[provider_name] = {
-                    "status": "success",
-                    "sources": provider_results,
-                    "totalObservations": len(batch.observations),
-                    "reconciledStale": reconciled,
-                }
-
-            except Exception as e:
-                logger.error(
-                    "Error syncing observations from %s for %s: %s",
+        max_workers = min(10, len(self.providers))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            future_to_provider = {
+                executor.submit(
+                    self._sync_single_provider,
                     provider_name,
+                    provider,
                     logical_date_iso,
-                    e,
-                )
-                results[provider_name] = {"status": "error", "error": str(e)}
+                    previous_date_iso,
+                ): provider_name
+                for provider_name, provider in self.providers.items()
+            }
+            for future in concurrent.futures.as_completed(future_to_provider):
+                p_name = future_to_provider[future]
+                results[p_name] = future.result()
 
         return results
 
