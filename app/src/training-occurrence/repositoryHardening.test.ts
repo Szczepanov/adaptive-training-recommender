@@ -140,3 +140,16 @@ describe('merge authority hardening', () => {
         ]));
     });
 });
+
+describe('ID generation hardening', () => {
+    it('generates performed occurrence IDs using crypto.randomUUID', async () => {
+        const repo = new PerformedTrainingOccurrenceRepository({} as never);
+        const { occurrence } = await repo.createOrGetForSource(userId, structuredFacts('exec-id-test'));
+
+        // Format: pto-<timestamp>-<uuid>
+        const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        expect(occurrence.performedOccurrenceId).toMatch(/^pto-\d+-/);
+        const uuidPart = occurrence.performedOccurrenceId.replace(/^pto-\d+-/, '');
+        expect(uuidPart).toMatch(uuidRegex);
+    });
+});
