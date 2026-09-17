@@ -11,6 +11,7 @@ import { HealthRunYogaPresetSection } from './HealthRunYogaPresetSection';
 import { OnboardingRelaunchSection } from './OnboardingRelaunchSection';
 import type { Screen } from '../../types/navigation';
 import '../Preferences.css';
+import './CoachPreferencesDisclosure.css';
 
 interface PreferencesProps {
   userId: string;

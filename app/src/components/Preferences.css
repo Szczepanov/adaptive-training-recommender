@@ -46,17 +46,41 @@
   gap: 2rem;
 }
 
-.preference-section {
+.preferences-container .settings-disclosure {
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid rgba(255, 255, 255, 0.05);
   border-radius: 16px;
   padding: 1.5rem;
 }
 
-.preference-section h2 {
+.preferences-container .settings-disclosure > summary {
+  cursor: pointer;
+  list-style-position: outside;
+  color: var(--text-primary);
   font-size: 1.25rem;
   font-weight: 600;
-  margin: 0 0 0.5rem 0;
+}
+
+.preferences-container .settings-disclosure > summary::marker {
+  color: var(--primary-color);
+}
+
+.preferences-container .settings-disclosure > summary:focus-visible {
+  outline: 2px solid var(--primary-color);
+  outline-offset: 4px;
+  border-radius: 4px;
+}
+
+.preferences-container .settings-disclosure[open] > summary {
+  margin-bottom: 0.5rem;
+}
+
+/* SettingsDisclosure.tsx ships no CSS of its own -- TrainingSettings.css declares this same
+   rule for its own page. TrainingSettings and Preferences are separately lazy-loaded
+   (code-split), so relying on the other page's chunk having loaded would silently break
+   spacing for anyone who opens Coach Preferences first. Re-declared here for that reason. */
+.preferences-container .settings-disclosure-content > :first-child {
+  margin-top: 0;
 }
 
 .preference-desc {
@@ -541,13 +565,8 @@
     align-items: start;
   }
 
-  .preference-section {
+  .preferences-container .settings-disclosure {
     padding: 1.75rem;
-    height: 100%;
-  }
-
-  .preference-section.full-width-card {
-    grid-column: 1 / -1;
   }
 
   .time-inputs {

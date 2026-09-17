@@ -3,6 +3,7 @@ import { preferencesService } from '../../services/preferencesService';
 import { trainingIntentProfileService } from '../../services/trainingIntentProfileService';
 import { getErrorMessage } from '../../utils/errors';
 import { derivePresetOutcome, type PresetMessage } from '../../utils/healthRunYogaPreset';
+import { SettingsDisclosure } from '../SettingsDisclosure';
 
 interface HealthRunYogaPresetSectionProps {
   userId: string;
@@ -63,8 +64,7 @@ export function HealthRunYogaPresetSection({ userId, onApplied }: HealthRunYogaP
   };
 
   return (
-    <section className="preference-section">
-      <h2>Quick setup</h2>
+    <SettingsDisclosure title="Quick setup" titleId="quick-setup-title">
       <p className="preference-desc">
         Health + Running + Yoga uses evergreen planning, prefers Running and Mobility (the
         catalog bucket for yoga/mobility), excludes Cycling, Strength, Field and Cross Training,
@@ -81,6 +81,6 @@ export function HealthRunYogaPresetSection({ userId, onApplied }: HealthRunYogaP
           {message.text}
         </p>
       )}
-    </section>
+    </SettingsDisclosure>
   );
 }

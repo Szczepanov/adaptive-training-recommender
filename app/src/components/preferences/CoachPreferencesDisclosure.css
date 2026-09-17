@@ -1,0 +1,10 @@
+/*
+ * Coach Preferences keeps compact collapsed cards in a two-column desktop grid.
+ * Once a disclosure opens, let it use the full row so a tall panel is not paired
+ * with a short collapsed card that leaves a large dead column underneath it.
+ */
+@media (min-width: 900px) {
+  .preferences-container .settings-disclosure[open] {
+    grid-column: 1 / -1;
+  }
+}

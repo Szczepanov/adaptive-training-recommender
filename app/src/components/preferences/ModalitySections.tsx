@@ -3,6 +3,7 @@ import type { UserPreferences } from '../../engine/models';
 import type { Screen } from '../../types/navigation';
 import { SCREEN_LABELS } from '../../types/navigation';
 import { CANONICAL_MODALITIES } from '../../utils/modalities';
+import { SettingsDisclosure } from '../SettingsDisclosure';
 
 interface ModalitySectionsProps {
   preferences: UserPreferences;
@@ -28,8 +29,7 @@ export function ModalitySections({
   return (
     <>
       {/* Preferred Training Types */}
-      <div className="preference-section">
-        <h2>Training I Enjoy</h2>
+      <SettingsDisclosure title="Training I Enjoy" titleId="modality-preferred-title">
         <p className="preference-desc">
           Modalities you enjoy. When multiple training types achieve today's objective equally well, preferred types receive a soft boost.
         </p>
@@ -94,10 +94,9 @@ export function ModalitySections({
             Add Custom
           </button>
         </div>
-      </div>
+      </SettingsDisclosure>
 
-      <div className="preference-section">
-        <h2>Unavailable Training Types</h2>
+      <SettingsDisclosure title="Unavailable Training Types" titleId="modality-unavailable-title" defaultOpen>
         <p className="preference-desc">
           Hard exclusions: these activities will not be offered, even when they would otherwise fit the plan.
         </p>
@@ -137,11 +136,10 @@ export function ModalitySections({
             </div>
           ))}
         </div>
-      </div>
+      </SettingsDisclosure>
 
       {/* Avoided Training Types */}
-      <div className="preference-section">
-        <h2>Training I'd Rather Avoid</h2>
+      <SettingsDisclosure title="Training I'd Rather Avoid" titleId="modality-avoided-title">
         <p className="preference-desc">
           Modalities you dislike. The engine will apply a strong soft penalty to avoid prescribing these when viable alternatives exist.
         </p>
@@ -209,7 +207,7 @@ export function ModalitySections({
             Add Custom
           </button>
         </div>
-      </div>
+      </SettingsDisclosure>
     </>
   );
 }
