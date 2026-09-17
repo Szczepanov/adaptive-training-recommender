@@ -67,11 +67,14 @@ describe('SessionOccurrenceService authority methods (M3.3)', () => {
         expect(firestore.setDoc.mock.calls[0][1].placementOrder).toBe(2);
     });
 
-    it('each authority method produces a distinct occurrenceId', async () => {
+    it('each authority method produces a distinct occurrenceId containing a cryptographically secure UUID', async () => {
         const service = new SessionOccurrenceService();
         const a = await service.scheduleOccurrence('u1', '2026-08-20', definitionRef);
         const b = await service.scheduleOccurrence('u1', '2026-08-21', definitionRef);
         expect(a.occurrenceId).not.toBe(b.occurrenceId);
+        const uuidRegex = /^occ-\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        expect(a.occurrenceId).toMatch(uuidRegex);
+        expect(b.occurrenceId).toMatch(uuidRegex);
     });
 
     it('getReplaceOccurrenceForDate returns only an active replace_recommendation occurrence', async () => {
