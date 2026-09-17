@@ -205,7 +205,7 @@ all-`Ready` table became unusable.
 | 1 | [Live defects](./phase-1-live-defects.md) | **Implemented** | — | — | F1, F2, F6 |
 | 2 | [Plan intent is the planning authority](./phase-2-plan-intent-authority.md) | **Implemented** | — | — | F16, F17, F9 |
 | 3 | [One ranking path](./phase-3-single-ranking-path.md) | **Implemented** | — | — | F3, F4, F5 |
-| 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | **Implemented** | none | none | separates adaptation credit from weekly programming-role coverage; not an original review finding |
+| 4 | [Objective credit V2](./phase-4-objective-credit-v2.md) | **Implemented** | — | — | F7, F8, F12 |
 | 5 | [Sequence planning](./phase-5-sequence-planning.md) | **Implemented** | — | — | the cutover proper |
 | 6 | [Evidence-driven calibration & operational assurance](./phase-6-evidence-and-operational-assurance.md) | **Implemented** | none | none | remaining F11, F12, F15 |
 | 6.2c | [Recommendation quality & weekly coverage](./phase-6-2c-recommendation-quality-and-weekly-coverage.md) | **Implemented** | none | none | separates adaptation credit from weekly programming-role coverage; not an original review finding |
