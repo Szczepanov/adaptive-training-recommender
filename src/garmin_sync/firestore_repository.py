@@ -858,7 +858,7 @@ class FirestoreRecoveryRepository:
             recorded_at = event.get("recordedAt")
             if isinstance(recorded_at, datetime):
                 event["recordedAt"] = (
-                    recorded_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                    recorded_at.astimezone(timezone.utc).isoformat().removesuffix("+00:00") + "Z"
                 )
         events.sort(key=lambda item: (item.get("recordedAt", ""), item.get("id", "")))
         return events
@@ -884,7 +884,8 @@ class FirestoreRecoveryRepository:
                 recorded_at = event.get("recordedAt")
                 if isinstance(recorded_at, datetime):
                     event["recordedAt"] = (
-                        recorded_at.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+                        recorded_at.astimezone(timezone.utc).isoformat().removesuffix("+00:00")
+                        + "Z"
                     )
                 assessment_id = event.get("assessmentId")
                 if isinstance(assessment_id, str):
