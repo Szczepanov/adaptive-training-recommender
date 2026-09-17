@@ -31,9 +31,9 @@ deliberately does not cover.
 **Blocked by:** Personal M00/M01 prescription requires current workload/restriction
 confirmation; H4's live release is delivered through PR 3 Phase 6, recorded in
 [the PR 3 plan](./h4-434-pr3-bundle-second-member-launch.md). H4's non-gating follow-up work
-(dedup unification and placement-display persistence) is delivered -- see the H4 section
-below for what it does and deliberately does not yet cover (full ADR-0036 D-AUDIT compliance
-for placement remains separate). H5c is delivered per
+(dedup unification and placement persistence) is delivered -- see the H4 section below for
+the replayable placement/ledger snapshot slice and its deliberately unscoped lifecycle
+boundaries. H5c is delivered per
 [the progression-claim design](./h5c-progression-claim-design.md); `external-plan@5` D-SCHEMA
 is delivered -- see the H5 section for scope boundaries.
 **Unlocks:** Reproducible acceptance cases for equipment specificity, block authority and hybrid plan quality.
@@ -294,9 +294,12 @@ execution-binding pipeline has since given them a live caller, through PR 3 Phas
 
 The rolling planner now uses D-LEDGER occurrence/revision identity for pending fixed activities
 and filters candidates through `computeDailyLedger` / `admitsCandidate` before ranking. The
-H4-specific Phase 6 policy transition is also delivered. Persisting a bundle's resolved
-placement for display in the recommendation audit remains separately unimplemented; #468 closed
-the earlier rules-expression blocker (#435), so that work is unblocked but non-gating.
+H4-specific Phase 6 policy transition is also delivered. An immutable, replayable placement
+audit snapshot now persists beside the legacy date-level display record; it includes the
+external-plan snapshot/hash and the as-of ledger ceilings, pending fixed-activity entries,
+and recomputed remainder. The broader D-AUDIT lifecycle (occurrence/response/actual execution
+identity and terminal decision supersession) remains separately unscoped; #468 closed the
+earlier rules-expression blocker (#435), so this placement slice is non-gating.
 **Dependencies:** ADR-0035 rest support (delivered). The `external-plan@4`/`dailyLedger.ts`
 D-SCHEMA/D-LEDGER slice itself left `POLICY_VERSION` unchanged (neither module is
 consumed by any decision path); the fixed-activity cost-reduce dedup slice bumped it
@@ -326,7 +329,9 @@ same-day duration, bundle membership agreement (`week`/`preferredDay`/`flexibili
 order, no overlapping requested windows, no dangling/forward/cyclic `afterSessionId`, no
 required session depending on an optional predecessor, and no intraday session date
 conflicting with an authored rest directive. It does not resolve requested windows
-against real availability (D-TIME) and is not wired into placement or any decision.
+against real availability (D-TIME); the active v4 plan is now projected into the
+replayable placement-audit slice described below, while this pure schema module remains
+free of runtime/Firestore dependencies.
 
 `engine/dailyLedger.ts` implements D-LEDGER's remainder/reconciliation math as a pure,
 timestamp-agnostic module: `computeDailyLedger` (dedupes by occurrence identity/highest
@@ -480,11 +485,14 @@ implement this feature. The resolved placement is now persisted instead at a sep
 sibling document, `users/{userId}/intraday_bundle_placements/{date}`
 (`intradayBundlePlacementAuditService.ts`), written best-effort/non-blocking from `Home.tsx`
 right where `resolveIntradayBundlePlacement` already computes the proposal. This is
-deliberately the smaller **display-only** slice of ADR-0036 D-AUDIT: no replay
-recomputation/verification, no ledger-ceiling snapshot, no override/supersession id, and no
-`POLICY_VERSION` bump (the decision-affecting bundle-aware primary-session selection above
-was already shipped separately and does not depend on this document). Verified with a
-dedicated emulator rules test (revision-gating, cross-user denial, malformed-shape
+the smaller **placement snapshot** slice of ADR-0036 D-AUDIT: the sibling audit document is
+content-addressed and immutable, freezes the exact external-plan revision, captures the
+as-of ledger ceilings/entries/result, and replays the proposal from those frozen inputs
+without live reads. It does not yet persist the full occurrence/response/actual-execution
+decision lifecycle, override/supersession identity, or a `POLICY_VERSION` bump (the
+decision-affecting bundle-aware primary-session selection above was already shipped
+separately and does not depend on this document). Verified with focused Vitest coverage and
+a dedicated emulator rules test (revision-gating, cross-user denial, malformed-shape
 rejection, infeasible-outcome shape) independent of `recommendationAudit`'s own budget.
 
 ### Same-day canonical performed-fact boundary (verified)
@@ -577,9 +585,9 @@ contract the current decision policy.
 evidence path; Phase 6 activates their cumulative policy contract. The broader ledger
 dedup-unification and placement-persistence follow-ups (both delivered -- see "Fixed-activity
 cost-reduce duplication unified" and "D-PLACEMENT wiring" below) were the last separate H4
-work; full ADR-0036 D-AUDIT compliance for the persisted placement (replay verification,
-ledger-ceiling snapshot, override/supersession id) remains a deliberately separate,
-unscoped follow-up.
+work. The placement snapshot slice now covers replay verification and the ledger-ceiling
+snapshot; full ADR-0036 D-AUDIT lifecycle coverage for occurrence/response/actual-execution
+facts and override/supersession remains deliberately unscoped.
 
 ## H5 — Explicit develop/maintain intent and progression
 

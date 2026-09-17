@@ -1934,6 +1934,36 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intraday_bundle_placements/2026-08-21`), malformed));
     });
 
+    it('enforces immutable ownership and shape for replayable intraday placement audits (ADR-0036 D-AUDIT)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const auditId = 'audit_' + 'a'.repeat(64);
+        const auditPath = `users/${ownerId}/intraday_bundle_placement_audits/${auditId}`;
+        const validAudit = {
+            schemaVersion: 'intraday_bundle_placement_audit_v1', auditId, snapshotHash: 'a'.repeat(64), userId: ownerId,
+            date: '2026-08-18', asOf: '2026-08-18T05:00:00Z', policyVersion: '2026-09-h4-intraday-bundle-member-launch-v1',
+            plan: { planId: 'plan-1', revision: 2, contentHash: 'b'.repeat(64) }, bundleId: 'bundle-1',
+            planSnapshot: { schema: 'adaptive-training-recommender/external-plan@4', planId: 'plan-1', revision: 2, title: 'Test plan', startDate: '2026-08-17', weekCount: 1, sessions: [{}], restDays: [] },
+            scheduleWindows: [], fixedActivities: [], restDates: [], planSessions: [{ sessionId: 's1', date: '2026-08-18', status: 'planned' }],
+            members: [{ sessionId: 's1', order: 1, requestedWindow: { startLocal: '06:00', endLocal: '07:00' }, estimatedMinutes: 45, estimatedSystemicCost: 0.2, started: false }],
+            ledger: { ceilings: { dailyMinuteCeiling: 60, dailySystemicCostCeiling: 1 }, entries: [], result: { remainingMinutes: 60, remainingSystemicCost: 1, unresolvedEntries: [] } },
+            proposal: { bundleId: 'bundle-1', outcome: 'infeasible', reason: 'no placement' }, createdAt: '2026-08-18T05:00:00Z',
+        };
+
+        await assertSucceeds(setDoc(doc(ownerDb, auditPath), validAudit));
+        await assertSucceeds(getDoc(doc(ownerDb, auditPath)));
+        await assertFails(getDoc(doc(otherDb, auditPath)));
+        await assertFails(setDoc(doc(otherDb, auditPath), { ...validAudit, userId: otherUserId }));
+        await assertFails(setDoc(doc(ownerDb, auditPath), { ...validAudit, proposal: { bundleId: 'bundle-1', outcome: 'placed' } }));
+        await assertFails(deleteDoc(doc(ownerDb, auditPath)));
+        await assertFails(setDoc(doc(ownerDb, `users/${ownerId}/intraday_bundle_placement_audits/not-the-payload-id`), validAudit));
+        const emptyMembersAuditId = 'audit_' + 'c'.repeat(64);
+        await assertFails(setDoc(
+            doc(ownerDb, `users/${ownerId}/intraday_bundle_placement_audits/${emptyMembersAuditId}`),
+            { ...validAudit, auditId: emptyMembersAuditId, members: [] },
+        ));
+    });
+
     it('allows recommendations with primarySession and additionalSessions bindings', async () => {
         const base = validRecommendation();
         const recWithBindings = {

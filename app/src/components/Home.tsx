@@ -22,6 +22,7 @@ import { resolveSessionDefinition } from '../sessions/sessionDefinitionResolver'
 import { fixedActivityService } from '../services/fixedActivityService';
 import { scheduleWindowService } from '../services/scheduleWindowService';
 import { computeDailyLedger } from '../engine/dailyLedger';
+import { pendingFixedActivityLedgerEntries } from '../engine/fixedActivityLedger';
 import { planBlockService } from '../services/planBlockService';
 import { intentBlockService } from '../services/intentBlockService';
 import { deriveDurationOverridesForDate } from '../engine/confirmedProgressionOverrides';
@@ -41,6 +42,7 @@ import {
   externalPlanContextForDate,
   externalRestContextForDate,
   resolveIntradayBundlePlacement,
+  intradayBundlePlacementReplayInputs,
   type ActiveExternalPlan,
   type IntradayBundlePlacementContext,
 } from '../services/activeExternalPlanService';
@@ -48,8 +50,9 @@ import {
   adjudicateIntradayBundleMembers,
   type IntradayBundleMemberStatus,
 } from '../services/intradayBundleMemberAdjudication';
-import { recordIntradayBundlePlacement } from '../services/intradayBundlePlacementAuditService';
-import type { LedgerCeilings } from '../engine/dailyLedger';
+import { recordIntradayBundlePlacement, recordIntradayBundlePlacementAudit } from '../services/intradayBundlePlacementAuditService';
+import type { LedgerCeilings, LedgerEntry } from '../engine/dailyLedger';
+import { POLICY_VERSION } from '../engine/policy';
 import { checkinService } from '../services/checkinService';
 import { sessionExecutionService } from '../services/sessionExecutionService';
 import { sessionResponseService } from '../services/sessionResponseService';
@@ -503,13 +506,21 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
           todaysExternalPlanMemberState = undefined;
         }
         const earlyAvailability = resolveAvailability(input.date, subjective, planWeekActivities, context, input.scheduleOverlays);
-        const bundleLedger = computeDailyLedger(
-          {
-            dailyMinuteCeiling: earlyAvailability.maxTimeMinutes,
-            dailySystemicCostCeiling: Math.max(0, 1 - earlyAvailability.reservedCapacityCost),
-          },
-          [],
+        const bundleLedgerEntries: LedgerEntry[] = pendingFixedActivityLedgerEntries(
+          planWeekActivities.filter(activity => activity.date === input.date),
         );
+        // resolveAvailability already exposes capacity after fixed commitments. Rebuild
+        // the pre-entry ceilings before feeding the same commitments to D-LEDGER, so the
+        // persisted entries are consumed exactly once rather than double-counted. The
+        // systemic ceiling is bounded at 1 because that is the shared ledger scale; the
+        // min also preserves a zero remainder when fixed load plus overlays exhaust it.
+        const pendingLedgerMinutes = bundleLedgerEntries.reduce((sum, entry) => sum + entry.reservedMinutes, 0);
+        const pendingLedgerSystemicCost = bundleLedgerEntries.reduce((sum, entry) => sum + entry.reservedSystemicCost, 0);
+        const bundleLedgerCeilings = {
+          dailyMinuteCeiling: earlyAvailability.maxTimeMinutes + pendingLedgerMinutes,
+          dailySystemicCostCeiling: Math.min(1, Math.max(0, 1 - earlyAvailability.reservedCapacityCost) + pendingLedgerSystemicCost),
+        };
+        const bundleLedger = computeDailyLedger(bundleLedgerCeilings, bundleLedgerEntries);
         // An unreadable fixed-activities read must not silently become "no fixed
         // commitments today": bundle placement would then be free to bind a window a
         // real (but unreadable) fixed activity actually occupies. Schedule-window state
@@ -522,13 +533,36 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
               memberState: todaysExternalPlanMemberState,
             }
           : undefined;
-        const bundlePlacement = (activeExternal && bundleContext && isV4Plan(activeExternal.plan))
+        const activeV4Plan = activeExternal && isV4Plan(activeExternal.plan) ? activeExternal.plan : null;
+        const bundlePlacement = (activeExternal && activeV4Plan && bundleContext)
           ? resolveIntradayBundlePlacement(activeExternal, input.date, bundleContext)
           : null;
-        // Display-only persistence of the placement decision already made above (ADR-0036
-        // D-PLACEMENT follow-up) -- fire-and-forget, must never delay or fail today's
-        // recommendation; the service itself swallows write failures.
-        if (bundlePlacement) void recordIntradayBundlePlacement(userId, input.date, bundlePlacement);
+        // Persist the placement display record and immutable D-AUDIT replay snapshot
+        // best-effort; neither write may delay or fail today's recommendation.
+        if (bundlePlacement) {
+          void recordIntradayBundlePlacement(userId, input.date, bundlePlacement);
+          const replayInputs = activeExternal && activeV4Plan && bundleContext
+            ? intradayBundlePlacementReplayInputs(activeExternal, input.date, bundleContext, bundlePlacement.bundleId)
+            : null;
+          if (activeExternal && activeV4Plan && bundleContext && replayInputs) {
+            void recordIntradayBundlePlacementAudit({
+              userId,
+              date: input.date,
+              asOf: new Date().toISOString(),
+              policyVersion: POLICY_VERSION,
+              plan: { planId: activeV4Plan.planId, revision: activeV4Plan.revision, contentHash: activeExternal.header.contentHash },
+              planSnapshot: activeV4Plan,
+              bundleId: bundlePlacement.bundleId,
+              scheduleWindows: todaysScheduleWindows,
+              fixedActivities: planWeekActivities,
+              restDates: replayInputs.restDates,
+              planSessions: replayInputs.planSessions,
+              members: replayInputs.members,
+              ledger: { ceilings: bundleLedgerCeilings, entries: bundleLedgerEntries, result: bundleLedger },
+              proposal: bundlePlacement,
+            }).catch(error => console.warn('Failed to persist intraday placement audit:', error));
+          }
+        }
         const externalContext = activeExternal ? externalPlanContextForDate(activeExternal, input.date, bundleContext) : null;
         const externalRestContext = activeExternal ? externalRestContextForDate(activeExternal, input.date) : null;
 
