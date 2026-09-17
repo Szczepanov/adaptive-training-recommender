@@ -90,25 +90,30 @@ This plan does not initially:
 > data at all (it's synthetic-scenario/invariant testing of the fusion logic) — re-ran its test
 > suite directly, 5/5 pass, restored to `[x]`.
 >
-> **2026-08-27, later same day — CASA/verification confirmed NOT done.** MS17's activation-gate
-> claim that a Google Restricted Scope App Verification + CASA Tier 2 audit was completed is
-> **false**, checked directly in Google Cloud Console (Google Auth Platform → Data Access /
-> Verification Center): the project is `In production`/`External`, but zero scopes are registered
-> in Data Access — the two Google Health scopes actually in use were never declared there, so
-> Verification Center's "not required" reading is an artifact of that, not an exemption (Google's
-> documentation classifies Google Health API scopes, including the two used here, as Restricted —
-> not necessarily every scope the whole API surface offers, but definitely these two). Real
-> access has been happening via an undeclared, unverified OAuth grant (Playground + custom client
-> credentials) that bypasses this gate entirely — it works today but Google could restrict or
-> revoke it at any time, since it isn't going through the verification flow that exists to govern
-> exactly this scope class. **CASA is the gate this correction can answer with certainty (checked
-> directly), not the only gate MS17 requires** — its original gate list below also includes
-> in-app health-data disclosure, an explicit user-consent flow, sufficient prospective evidence,
-> and a rollback flag, none of which have been independently re-verified as part of this
-> correction. MS17 stays `[ ]`, and unlike every other item in this chain, closing the CASA gate
-> specifically requires external action (submitting for Google verification), not
-> more engineering or evidence-gathering. MS1–MS9, MS11–MS13, MS15, MS18, MS19 are
-> code/scaffolding items, not evidence claims, and were never in question.
+> **2026-08-27, later same day — Google verification/CASA confirmed NOT done.** MS17's
+> activation-gate claim that Google Restricted Scope App Verification plus the required CASA
+> security assessment had been completed is **false**, checked directly in Google Cloud Console
+> (Google Auth Platform → Data Access / Verification Center): the project is `In production`/
+> `External`, but zero scopes are registered in Data Access — the two Google Health scopes
+> actually in use were never declared there, so Verification Center's "not required" reading is
+> an artifact of that, not an exemption (Google's documentation classifies Google Health API
+> scopes, including the two used here, as Restricted — not necessarily every scope the whole API
+> surface offers, but definitely these two). Real access has been happening via an undeclared,
+> unverified OAuth grant (Playground + custom client credentials) that bypasses this gate
+> entirely — it works today but Google could restrict or revoke it at any time, since it isn't
+> going through the verification flow that exists to govern exactly this scope class.
+> **Verification/CASA is the gate this correction can answer with certainty (checked directly),
+> not the only gate MS17 requires** — its original gate list below also includes in-app
+> health-data disclosure, an explicit user-consent flow, sufficient prospective evidence, and a
+> rollback flag, none of which have been independently re-verified as part of this correction.
+> MS17 stays `[ ]`, and unlike every other item in this chain, closing the Google verification/
+> CASA gate specifically requires external action, not more engineering or evidence-gathering.
+> Google's current Health API guidance describes both Tier 2 and Tier 3 assessment timelines and
+> states that Trust & Safety tells the developer when to start the CASA process, so this plan does
+> not hard-code a CASA tier before Google assigns one. See
+> [Google Health app verification](https://developers.google.com/health/app-verification).
+> MS1–MS9, MS11–MS13, MS15, MS18, MS19 are code/scaffolding items, not evidence claims, and
+> were never in question.
 
 | Item | Title | Status | Blocked by | Decision impact |
 |---|---|---|---|---|
@@ -129,7 +134,7 @@ This plan does not initially:
 | MS14 | 35–45-night prospective shadow study (60d backfilled) | `[x]` (re-run for real post-fix 2026-08-27: 42/18/0/0 night split and baselines reproduced closely; new cross-source sleep-duration correlation 0.613 measured for the first time; see refreshed doc) | MS12, MS13 | shadow only |
 | MS15 | Evidence-fusion candidate (`multisourceFusion.ts`) | `[x]` | MS14 | default-off |
 | MS16 | Replay/simulation comparison (`multisourceComparison.ts`) | `[x]` (doesn't depend on real account data — synthetic-scenario/invariant testing; re-ran `multisourceComparison.test.ts` directly 2026-08-27, 5/5 pass) | MS15 | default-off |
-| MS17 | Metric-by-metric production activation decision | `[ ]` (CASA Tier 2 / Restricted Scope Verification confirmed NOT done — checked directly in Google Cloud Console 2026-08-27; see note above) | MS16 + prospective/incremental evidence + Restricted Scope/CASA + disclosure/consent + rollback | granular config |
+| MS17 | Metric-by-metric production activation decision | `[ ]` (Restricted Scope Verification / required CASA security assessment confirmed NOT done — checked directly in Google Cloud Console 2026-08-27; see note above) | MS16 + prospective/incremental evidence + Restricted Scope/CASA + disclosure/consent + rollback | granular config |
 | MS18 | Optional direct Eight Sleep adapter | `[x]` (implemented via PR #275 / [ES plan](./eight-sleep-direct-recovery-ingestion.md) & ADR-0030) | MS11 | none |
 | MS19 | Living architecture / ops reconciliation | `[x]` | corresponding code landed | documentation |
 
@@ -427,11 +432,12 @@ Add activity scope (`https://www.googleapis.com/auth/googlehealth.activity_and_f
 
 ## Security & Launch Compliance Gates
 
-Google Health OAuth scopes for sensitive health measurements require formal verification before public launch:
+Google Health OAuth scopes for sensitive health measurements require formal verification before public launch. The [Google Health app-verification guide](https://developers.google.com/health/app-verification) is the current external authority for this gate.
+
 1. **Testing Mode**: During `MS0`–`MS16`, the OAuth consent screen operates in restricted Testing mode with explicitly authorized test accounts.
 2. **Launch Prerequisites (MS17 Gate)**: Before any public or multi-tenant production activation:
    - Complete Google Cloud Restricted Scope App Verification.
-   - Complete Cloud Application Security Assessment (CASA Tier 2) / third-party security assessment.
+   - Complete the required third-party CASA security assessment at the tier assigned by Google; do not assume Tier 2 before Trust & Safety assigns the assessment.
    - Implement in-app prominent health-data disclosure and explicit user consent flows complying with Google Health Limited Use requirements (strict prohibition on transferring or selling health data).
 
 ## Connection state
@@ -811,7 +817,7 @@ Each needs:
 - stable baseline;
 - incremental evidence;
 - acceptable false-positive/false-negative behavior;
-- completed Google Cloud Restricted Scope App Verification & CASA Tier 2 security assessment (for Google Health transport);
+- completed Google Cloud Restricted Scope App Verification and the required CASA security assessment at the tier assigned by Google (for Google Health transport);
 - in-app health data disclosure & user consent flow verified;
 - rollback flag.
 
