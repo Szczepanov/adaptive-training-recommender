@@ -148,11 +148,10 @@ export class ScheduleWindowService {
     }
 
     /**
-     * Expands a repeating weekday schedule into the existing dated manifests. Every
-     * affected date is preflighted before writes begin, then committed in its own
-     * transaction because the manifest rules intentionally sit near Firestore's per-request
-     * expression budget. Each date remains concurrency-safe and an existing conflict is
-     * reported before any date is changed.
+     * Expands a repeating weekday schedule into the existing dated manifests. Existing
+     * retired representations are rejected before the transaction starts; every affected
+     * manifest is then read and written in one Firestore transaction so the repeat action
+     * is all-or-nothing even when another client edits one of its dates concurrently.
      */
     async createRecurringWindows(userId: string, input: RecurringScheduleInput): Promise<ScheduleWindow[]> {
         const validationErrors = validateRecurringSchedule(input);
@@ -187,31 +186,23 @@ export class ScheduleWindowService {
             candidatesByDate.set(candidate.date, dateCandidates);
         }
 
-        const preflightByDate = new Map<string, ScheduleWindowManifest | null>();
-        for (const date of dates) {
-            const snapshot = await getDoc(this.ref(userId, date));
-            const current = this.manifestFromSnapshot(userId, date, snapshot.exists() ? snapshot.data() : undefined);
-            preflightByDate.set(date, current);
-            this.buildManifest(userId, date, current, [...(current?.windows ?? []), ...(candidatesByDate.get(date) ?? [])]);
-        }
-
-        for (const date of dates) {
-            await runTransaction(this.db, async transaction => {
-                const snapshot = await transaction.get(this.ref(userId, date));
+        await runTransaction(this.db, async transaction => {
+            // Firestore transactions require reads before writes. Read every manifest first,
+            // then validate/build every replacement before staging any set operation.
+            const snapshots = await Promise.all(dates.map(date => transaction.get(this.ref(userId, date))));
+            const replacements = dates.map((date, index) => {
+                const snapshot = snapshots[index];
                 const current = this.manifestFromSnapshot(userId, date, snapshot.exists() ? snapshot.data() : undefined);
-                // A changed manifest is revalidated against the same candidates in this
-                // date-level transaction; an intervening overlap or capacity overflow fails
-                // this date without corrupting its existing data.
-                const expected = preflightByDate.get(date);
-                if ((current?.revision ?? 0) !== (expected?.revision ?? 0)) {
-                    throw new Error(`Schedule window data changed while applying ${date}; retry the repeating schedule`);
-                }
-                transaction.set(
-                    this.ref(userId, date),
-                    this.buildManifest(userId, date, current, [...(current?.windows ?? []), ...(candidatesByDate.get(date) ?? [])]),
-                );
+                return {
+                    ref: this.ref(userId, date),
+                    manifest: this.buildManifest(userId, date, current, [
+                        ...(current?.windows ?? []),
+                        ...(candidatesByDate.get(date) ?? []),
+                    ]),
+                };
             });
-        }
+            for (const replacement of replacements) transaction.set(replacement.ref, replacement.manifest);
+        });
         return candidates;
     }
 
