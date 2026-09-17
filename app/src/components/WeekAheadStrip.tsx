@@ -1,6 +1,7 @@
 import { useState, memo } from 'react';
 import type { WeekAheadDay, WeekAheadPlan } from '../engine/planner';
 import type { NextDayPotentialPlan, PlanningMode, ScheduleOverlay, TrainingIntentProfile } from '../engine/models';
+import { splitCoachingRationale } from '../utils/rationaleDisplay';
 import './WeekAheadStrip.css';
 
 interface WeekAheadStripProps {
@@ -243,7 +244,20 @@ export const WeekAheadStrip = memo(function WeekAheadStrip({
         <p className="detail-meta">
           {selected.template.category} · {effectiveDuration(selected).min}-{effectiveDuration(selected).max} min · {selected.phaseName} phase
         </p>
-        <p className="detail-rationale">{selected.rationale}</p>
+        {(() => {
+          const { coachingNarrative, technicalDetail } = splitCoachingRationale(selected.rationale);
+          return (
+            <>
+              <p className="detail-rationale">{coachingNarrative}</p>
+              {technicalDetail && (
+                <details className="detail-rationale-technical">
+                  <summary>Engine scoring telemetry</summary>
+                  <span>{technicalDetail}</span>
+                </details>
+              )}
+            </>
+          );
+        })()}
         {selected.addressesObjectives && selected.addressesObjectives.length > 0 && (
           <p className="detail-objectives">
             🎯 Works toward: {selected.addressesObjectives.join(', ')}
