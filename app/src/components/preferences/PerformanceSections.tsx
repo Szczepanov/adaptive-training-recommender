@@ -1,4 +1,5 @@
 import type { UserPreferences } from '../../engine/models';
+import { SettingsDisclosure } from '../SettingsDisclosure';
 import './PerformanceSections.css';
 
 interface PerformanceSectionsProps {
@@ -54,8 +55,7 @@ export function PerformanceSections({
 
   return (
     <>
-      <div className="preference-section">
-        <h2>Body Composition & Biometrics</h2>
+      <SettingsDisclosure title="Body Composition & Biometrics" titleId="performance-biometrics-title">
         <p className="preference-desc">
           Body mass enables power-to-weight (W/kg) and relative-strength calculations. Garmin can refresh weight after a weigh-in; body-fat percentage is stored as biometric context.
         </p>
@@ -111,10 +111,9 @@ export function PerformanceSections({
             </small>
           </div>
         )}
-      </div>
+      </SettingsDisclosure>
 
-      <div className="preference-section">
-        <h2>Measurement Devices & Equipment</h2>
+      <SettingsDisclosure title="Measurement Devices & Equipment" titleId="performance-devices-title">
         <p className="preference-desc">
           Toggle available sensors. Workout steps adapt to your equipment—falling back safely to RPE when a sensor is unconfigured or absent.
         </p>
@@ -153,10 +152,9 @@ export function PerformanceSections({
             </select>
           </div>
         </div>
-      </div>
+      </SettingsDisclosure>
 
-      <div className="preference-section">
-        <h2>Training Targets</h2>
+      <SettingsDisclosure title="Training Targets" titleId="performance-targets-title">
         <p className="preference-desc">
           Sport-scoped benchmark references. Garmin imports cycling FTP and running threshold targets after daily sync.
         </p>
@@ -234,11 +232,10 @@ export function PerformanceSections({
             );
           })}
         </div>
-      </div>
+      </SettingsDisclosure>
 
       {preferences.gearTracker?.items && preferences.gearTracker.items.length > 0 && (
-        <div className="preference-section">
-          <h2>Shoes & Equipment Mileage</h2>
+        <SettingsDisclosure title="Shoes & Equipment Mileage" titleId="performance-gear-title">
           <p className="preference-desc">
             Garmin gear records monitor cumulative shoe and bike wear to help manage lower-limb impact strain and equipment maintenance.
           </p>
@@ -304,12 +301,11 @@ export function PerformanceSections({
               );
             })}
           </div>
-        </div>
+        </SettingsDisclosure>
       )}
 
       {racePredictions && (
-        <div className="preference-section">
-          <h2>Garmin Race Predictions</h2>
+        <SettingsDisclosure title="Garmin Race Predictions" titleId="performance-race-predictions-title">
           <p className="preference-desc">
             Garmin-estimated finish times imported during sync. Treat them as aerobic benchmarks, not guaranteed race outcomes.
           </p>
@@ -341,7 +337,7 @@ export function PerformanceSections({
               );
             })}
           </div>
-        </div>
+        </SettingsDisclosure>
       )}
     </>
   );

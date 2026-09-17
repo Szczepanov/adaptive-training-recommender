@@ -2,6 +2,7 @@
 import type { UserPreferences, RecoveryStyle, TimeOfDay, ExplanationVerbosity } from '../../engine/models';
 import type { Screen } from '../../types/navigation';
 import { SCREEN_LABELS } from '../../types/navigation';
+import { SettingsDisclosure } from '../SettingsDisclosure';
 
 interface StyleSectionsProps {
   preferences: UserPreferences;
@@ -14,8 +15,7 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
   return (
     <>
       {/* Training Decision Style */}
-      <div className="preference-section">
-        <h2>Training Decision Style</h2>
+      <SettingsDisclosure title="Training Decision Style" titleId="style-decision-title">
         <div className="toggle-group">
           <div className="toggle-info">
             <span className="toggle-title">Extra Recovery Margin</span>
@@ -32,11 +32,10 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
             <span className="toggle-slider" />
           </button>
         </div>
-      </div>
+      </SettingsDisclosure>
 
       {/* Decision Journal / shadow mode -- opt-in evidence-collection, off by default */}
-      <div className="preference-section">
-        <h2>Decision Journal</h2>
+      <SettingsDisclosure title="Decision Journal" titleId="style-journal-title">
         <div className="toggle-group">
           <div className="toggle-info">
             <span className="toggle-title">Record my own verdict before today's recommendation</span>
@@ -54,11 +53,10 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
             <span className="toggle-slider" />
           </button>
         </div>
-      </div>
+      </SettingsDisclosure>
 
       {/* Recovery Style */}
-      <div className="preference-section">
-        <h2>Recovery Day Style</h2>
+      <SettingsDisclosure title="Recovery Day Style" titleId="style-recovery-title">
         <p className="preference-desc">
           On recovery days, how do you prefer to recharge?
         </p>
@@ -78,11 +76,10 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
             </button>
           ))}
         </div>
-      </div>
+      </SettingsDisclosure>
 
       {/* Time Preferences */}
-      <div className="preference-section">
-        <h2>Default Available Duration</h2>
+      <SettingsDisclosure title="Default Available Duration" titleId="style-duration-title">
         <p className="preference-desc">
           Default daily time budgets used to filter or scale session durations.
         </p>
@@ -126,11 +123,10 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
             </div>
           </div>
         </div>
-      </div>
+      </SettingsDisclosure>
 
       {/* Preferred Time of Day */}
-      <div className="preference-section">
-        <h2>Preferred Time of Day</h2>
+      <SettingsDisclosure title="Preferred Time of Day" titleId="style-time-of-day-title">
         <div className="segmented-control">
           {['morning', 'midday', 'evening', 'flexible'].map(time => (
             <button
@@ -143,11 +139,10 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
             </button>
           ))}
         </div>
-      </div>
+      </SettingsDisclosure>
 
       {/* Explanation Style */}
-      <div className="preference-section">
-        <h2>Explanation Detail</h2>
+      <SettingsDisclosure title="Explanation Detail" titleId="style-explanation-title">
         <p className="preference-desc">
           Controls presentation format. The underlying decision telemetry and reasoning remain fixed.
         </p>
@@ -167,11 +162,10 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
             </button>
           ))}
         </div>
-      </div>
+      </SettingsDisclosure>
 
       {/* Units */}
-      <div className="preference-section">
-        <h2>Units of Measurement</h2>
+      <SettingsDisclosure title="Units of Measurement" titleId="style-units-title">
         <div className="units-grid">
           <div className="unit-group">
             <label htmlFor="unit-distance">Distance</label>
@@ -207,7 +201,7 @@ export function StyleSections({ preferences, onNavigate, updatePreference, updat
             </select>
           </div>
         </div>
-      </div>
+      </SettingsDisclosure>
     </>
   );
 }

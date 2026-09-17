@@ -1,6 +1,7 @@
 
 import type { PlanningMode, TrainingPriority } from '../../engine/models';
 import type { TrainingIntentProfileDraft } from './usePreferences';
+import { SettingsDisclosure } from '../SettingsDisclosure';
 
 const TRAINING_PRIORITY_OPTIONS: Array<{ value: TrainingPriority; label: string }> = [
   { value: 'health', label: 'Health and energy' },
@@ -27,8 +28,7 @@ export function TrainingPlanSection({
   updateWeeklyCommitment
 }: TrainingPlanSectionProps) {
   return (
-    <div className="preference-section">
-      <h2>Training Plan</h2>
+    <SettingsDisclosure title="Training Plan" titleId="training-plan-title">
       <p className="preference-desc">
         Set the kind of training you want to organize. These are planning inputs, not a promise of a fixed workout every day.
       </p>
@@ -96,6 +96,6 @@ export function TrainingPlanSection({
           </div>
         ))}
       </div>
-    </div>
+    </SettingsDisclosure>
   );
 }
