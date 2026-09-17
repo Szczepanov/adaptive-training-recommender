@@ -2,16 +2,19 @@ import { expect, test } from '@playwright/test';
 import { provisionAthlete, signInThroughUi } from './support/athlete';
 
 function localDateAfter(days: number): string {
-  const date = new Date();
-  date.setDate(date.getDate() + days);
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'Europe/Warsaw',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
-  }).formatToParts(date);
+  }).formatToParts(new Date());
   const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
-  return `${values.year}-${values.month}-${values.day}`;
+  const target = new Date(Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day) + days,
+  ));
+  return target.toISOString().slice(0, 10);
 }
 
 test('an athlete can manage same-day training windows from the Plan screen', async ({ page }) => {

@@ -74,10 +74,20 @@ export const RecurringScheduleModal = memo(function RecurringScheduleModal({
     const initialFocusRef = useRef<HTMLInputElement>(null);
     const previousFocusRef = useRef<HTMLElement | null>(null);
     const onCloseRef = useRef(onClose);
+    const savingRef = useRef(saving);
 
     useEffect(() => {
         onCloseRef.current = onClose;
     }, [onClose]);
+
+    useEffect(() => {
+        savingRef.current = saving;
+    }, [saving]);
+
+    const requestClose = () => {
+        if (savingRef.current) return;
+        onCloseRef.current();
+    };
 
     useEffect(() => {
         if (!isOpen) return;
@@ -95,7 +105,7 @@ export const RecurringScheduleModal = memo(function RecurringScheduleModal({
         const handleKeyDown = (event: KeyboardEvent) => {
             if (event.key === 'Escape') {
                 event.preventDefault();
-                onCloseRef.current();
+                requestClose();
                 return;
             }
             if (event.key !== 'Tab') return;
@@ -171,7 +181,7 @@ export const RecurringScheduleModal = memo(function RecurringScheduleModal({
     if (!isOpen) return null;
 
     return (
-        <div className="modal-backdrop" onClick={onClose}>
+        <div className="modal-backdrop" onClick={requestClose}>
             <div
                 ref={dialogRef}
                 className="recurring-schedule-modal-card"
@@ -189,7 +199,7 @@ export const RecurringScheduleModal = memo(function RecurringScheduleModal({
                             Add one or more time blocks and choose the weekdays they repeat on. This creates dated windows for the selected period.
                         </p>
                     </div>
-                    <button type="button" className="btn-close-modal" onClick={onClose} aria-label="Close">&times;</button>
+                    <button type="button" className="btn-close-modal" onClick={requestClose} disabled={saving} aria-label="Close">&times;</button>
                 </div>
 
                 <form onSubmit={handleSave} className="recurring-schedule-form">
