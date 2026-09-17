@@ -10,12 +10,12 @@ from http.server import ThreadingHTTPServer
 from typing import Any
 
 from firebase_admin import auth as firebase_auth
+from garminconnect import GarminConnectTooManyRequestsError
 
 from .account_link import (
     GarminAccountLinkService,
     GarminConnectAuthenticationError,
     GarminConnectConnectionError,
-    GarminConnectTooManyRequestsError,
     GarminLinkConfigurationError,
     GarminLinkConflictError,
 )

@@ -1,7 +1,5 @@
 """Authenticated HTTP API for server-authoritative anthropometry writes."""
 
-from __future__ import annotations
-
 import json
 import logging
 import os

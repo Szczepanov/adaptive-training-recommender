@@ -53,7 +53,7 @@ vi.mock('./executionPrescriptionService', () => ({ executionPrescriptionService:
 vi.mock('./sessionOccurrenceService', () => ({ sessionOccurrenceService: services.occurrence }));
 
 import { resolveWorkoutPrescription } from '../workouts/prescription';
-import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch } from './sessionAuthoringService';
+import { prepareAuthoredOccurrenceLaunch, prepareCatalogSessionLaunch, prepareExternalPlanSessionLaunch, prepareUnplannedSessionLaunch } from './sessionAuthoringService';
 import type { SessionDefinition } from '../sessions/models';
 import type { ExternalPlanSessionV4 } from '../sessions/externalPlanV4';
 
@@ -81,6 +81,34 @@ function makeTestPrescription(templateId: string) {
 
     return resolveWorkoutPrescription(rec, 'test-user', '2026-08-18')!;
 }
+
+describe('prepareUnplannedSessionLaunch', () => {
+    it('generates a secure occurrenceId containing a UUID and saves occurrence', async () => {
+        const definition: SessionDefinition = {
+            schemaVersion: 1,
+            id: 'unplanned-1',
+            revision: 1,
+            title: 'Unplanned workout',
+            intent: 'training',
+            blocks: [{
+                id: 'b1',
+                role: 'main',
+                executionMode: 'sequential',
+                steps: [],
+            }],
+        };
+
+        const launch = await prepareUnplannedSessionLaunch('u1', definition, '2026-08-19T00:00:00.000Z');
+
+        expect(launch.binding.occurrenceId).toMatch(/^occ-\d+-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
+        expect(services.occurrence.saveOccurrence).toHaveBeenCalledWith(expect.objectContaining({
+            userId: 'u1',
+            occurrenceId: launch.binding.occurrenceId,
+            authority: 'unplanned_log',
+            state: 'active',
+        }));
+    });
+});
 
 describe('prepareCatalogSessionLaunch (M3.1/M3.4)', () => {
     it('saves a write-once prescription and returns a catalog binding with no occurrence', async () => {
