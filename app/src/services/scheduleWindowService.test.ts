@@ -138,6 +138,46 @@ describe('ScheduleWindowService manifest persistence', () => {
         expect(manifests.get('users/u1/schedule_window_manifests/2026-09-11')).toBeUndefined();
     });
 
+    it('rolls back earlier recurring dates when a later date changes after preflight', async () => {
+        const secondDate = '2026-09-11';
+        const firstPath = `users/u1/schedule_window_manifests/${DATE}`;
+        const secondPath = `users/u1/schedule_window_manifests/${secondDate}`;
+        const manifests = new Map<string, ScheduleWindowManifest>();
+        firestore.getDoc.mockImplementation(async (ref: { path: string }) => snapshot(manifests.get(ref.path)));
+        let transactionCall = 0;
+        firestore.runTransaction.mockImplementation(async (_db: unknown, callback: (transaction: {
+            get: (ref: { path: string }) => Promise<ReturnType<typeof snapshot>>;
+            set: (ref: { path: string }, data: ScheduleWindowManifest) => void;
+        }) => Promise<void>) => {
+            transactionCall += 1;
+            if (transactionCall === 2) {
+                manifests.set(secondPath, {
+                    userId: 'u1', date: secondDate, revision: 1,
+                    windows: [window({ id: 'concurrent-window', date: secondDate, startLocal: '18:00', endLocal: '19:00' })],
+                    createdAt: NOW, updatedAt: NOW,
+                });
+            }
+            const writes = new Map<string, ScheduleWindowManifest>();
+            await callback({
+                get: async ref => snapshot(manifests.get(ref.path)),
+                set: (ref, data) => { writes.set(ref.path, data); },
+            });
+            for (const [path, data] of writes) manifests.set(path, data);
+        });
+
+        await expect(service(['first-new', 'second-new']).createRecurringWindows('u1', {
+            startDate: DATE,
+            endDate: secondDate,
+            rules: [{ weekdays: [4, 5], startLocal: '12:30', endLocal: '14:00' }],
+        })).rejects.toThrow(/data changed while applying 2026-09-11/);
+
+        expect(manifests.get(firstPath)).toMatchObject({ revision: 2, windows: [] });
+        expect(manifests.get(secondPath)).toMatchObject({
+            revision: 1,
+            windows: [expect.objectContaining({ id: 'concurrent-window' })],
+        });
+    });
+
     it('updates in place with a stable id, a per-window revision bump, and a manifest revision bump', async () => {
         stored = manifest([window()]);
 
