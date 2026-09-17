@@ -44,10 +44,15 @@ describe('WeekAheadStrip rationale display (UX review follow-up)', () => {
         );
 
         const rationaleMatch = html.match(/<p class="detail-rationale">(.*?)<\/p>/);
+        const technicalDetailsMatch = html.match(/<details class="detail-rationale-technical"([^>]*)>([\s\S]*?)<\/details>/);
+
         expect(rationaleMatch?.[1]).toBe('Base phase.');
         expect(rationaleMatch?.[1]).not.toContain('Coverage tier');
-        expect(html).toContain('Engine scoring telemetry');
-        expect(html).toContain('Sequence intent: recondition/spread, preferred key gap 2d.');
+        expect(rationaleMatch?.[1]).not.toContain('Sequence intent');
+        expect(technicalDetailsMatch?.[1]).not.toContain('open');
+        expect(technicalDetailsMatch?.[2]).toContain('Engine scoring telemetry');
+        expect(technicalDetailsMatch?.[2]).toContain('Coverage tier: 1. Benefit score: 1.27, Fatigue cost penalty: 1.30.');
+        expect(technicalDetailsMatch?.[2]).toContain('Sequence intent: recondition/spread, preferred key gap 2d.');
     });
 
     it('renders a plain rationale with no technical-detail disclosure at all', () => {
@@ -55,5 +60,6 @@ describe('WeekAheadStrip rationale display (UX review follow-up)', () => {
 
         expect(html).toContain('<p class="detail-rationale">Recovery day after yesterday&#x27;s long run.</p>');
         expect(html).not.toContain('Engine scoring telemetry');
+        expect(html).not.toContain('detail-rationale-technical');
     });
 });
