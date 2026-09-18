@@ -1,4 +1,4 @@
-import { useState, useEffect, memo, useId } from 'react';
+import { useState, useEffect, useRef, memo, useId } from 'react';
 import type { Recommendation, SessionTemplate } from '../engine/models';
 import type { SessionExecution, SessionReferenceBinding } from '../sessions/models';
 import type { WorkoutPrescription } from '../workouts';
@@ -74,19 +74,38 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     const [aiContextCopied, setAiContextCopied] = useState(false);
     const [aiContextError, setAiContextError] = useState<string | null>(null);
     const [existingExecution, setExistingExecution] = useState<SessionExecution | null>(todayExecutionProp ?? null);
+    const [checkingExecution, setCheckingExecution] = useState(todayExecutionProp === undefined);
     const [confirmRedoOpen, setConfirmRedoOpen] = useState(false);
     const panelId = useId();
+    const cancelRedoButtonRef = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        if (!confirmRedoOpen) return;
+        // role="alertdialog" implies focus moves into the dialog and Escape dismisses it --
+        // without this, assistive tech announces a dialog that keyboard focus never reaches.
+        cancelRedoButtonRef.current?.focus();
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setConfirmRedoOpen(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [confirmRedoOpen]);
 
     useEffect(() => {
         if (todayExecutionProp !== undefined) {
             setExistingExecution(todayExecutionProp);
+            setCheckingExecution(false);
             return;
         }
         if (!userId || !date) {
             setExistingExecution(null);
+            setCheckingExecution(false);
             return;
         }
         let cancelled = false;
+        setCheckingExecution(true);
         sessionExecutionService.findExistingExecution(userId, {
             date,
             occurrenceId: recommendation?.primarySession?.occurrenceId,
@@ -94,11 +113,13 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         }).then(exec => {
             if (!cancelled) {
                 setExistingExecution(exec);
+                setCheckingExecution(false);
             }
         }).catch(err => {
             console.warn('Failed to check today execution status:', err);
             if (!cancelled) {
                 setExistingExecution(null);
+                setCheckingExecution(false);
             }
         });
         return () => {
@@ -377,15 +398,17 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                             type="button"
                                             className="btn-hero-primary"
                                             onClick={() => void handleStartPrimary()}
-                                            disabled={launching}
+                                            disabled={launching || checkingExecution}
                                             aria-label={`${existingExecution?.state === 'in_progress' ? 'Resume' : 'Start'} ${recommendation.template.title}`}
                                         >
                                             {recommendation.template.modality === 'Strength' ? '🏋️' : '▶️'} {
                                                 launching
                                                     ? 'Preparing Session…'
-                                                    : existingExecution?.state === 'in_progress'
-                                                        ? 'Resume Session →'
-                                                        : 'Start Session →'
+                                                    : checkingExecution
+                                                        ? 'Checking Today’s Status…'
+                                                        : existingExecution?.state === 'in_progress'
+                                                            ? 'Resume Session →'
+                                                            : 'Start Session →'
                                             }
                                         </button>
                                     ) : prescription ? (
@@ -400,7 +423,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                     ) : null}
 
                                     {confirmRedoOpen && (
-                                        <div className="redo-confirm-banner" role="alertdialog" aria-labelledby={`${panelId}-redo-confirm-title`}>
+                                        <div className="redo-confirm-banner" role="alertdialog" aria-modal="true" aria-labelledby={`${panelId}-redo-confirm-title`}>
                                             <p id={`${panelId}-redo-confirm-title`} className="redo-confirm-message">
                                                 You already completed this session today — start another anyway?
                                             </p>
@@ -414,6 +437,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                                     {launching ? 'Preparing Session…' : 'Start Another Anyway'}
                                                 </button>
                                                 <button
+                                                    ref={cancelRedoButtonRef}
                                                     type="button"
                                                     className="btn-cancel-redo"
                                                     onClick={() => setConfirmRedoOpen(false)}

@@ -265,7 +265,7 @@ describe('SessionExecutionService', () => {
             expect(result).toBeNull();
         });
 
-        it('prioritizes completed over in_progress', async () => {
+        it('prioritizes in_progress over completed, so an active redo is never shadowed by a stale completed record', async () => {
             firestore.getDocs.mockResolvedValueOnce({
                 docs: [
                     {
@@ -282,7 +282,22 @@ describe('SessionExecutionService', () => {
             });
 
             const result = await service.findExistingExecution(USER_ID, { date: '2026-08-17' });
-            expect(result?.executionId).toBe('exec-completed');
+            expect(result?.executionId).toBe('exec-in-progress');
+        });
+
+        it('does not treat an unrelated catalog session with a different prescriptionHash as a duplicate', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: 'exec-am-run',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-am-run` },
+                        data: () => validExecution({ executionId: 'exec-am-run', state: 'completed', prescriptionHash: 'hash-am-run', completedAt: '2026-08-17T08:45:00Z' }),
+                    },
+                ],
+            });
+
+            const result = await service.findExistingExecution(USER_ID, { date: '2026-08-17', prescriptionHash: 'hash-pm-strength' });
+            expect(result).toBeNull();
         });
     });
 

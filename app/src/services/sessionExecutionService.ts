@@ -299,7 +299,8 @@ export class SessionExecutionService {
 
     /**
      * Looks up an existing execution for a given date and optional occurrence or prescription.
-     * Prioritizes completed executions, then in-progress ones, sorted by most recent startedAt.
+     * Prioritizes in-progress executions (there is active work to resume), then completed
+     * ones, sorted by most recent startedAt.
      */
     async findExistingExecution(
         userId: string,
@@ -325,9 +326,15 @@ export class SessionExecutionService {
                 }
             } else {
                 // If no occurrenceId was requested (e.g. today's primary catalog recommendation),
-                // match executions that are either not bound to a different occurrence,
-                // or match the exact prescriptionHash.
-                if (!execution.occurrenceId || (params.prescriptionHash && execution.prescriptionHash === params.prescriptionHash)) {
+                // only match executions that are not bound to a different occurrence AND whose
+                // prescriptionHash agrees with the request -- an execution missing a hash only
+                // matches a hash-less request, so an unrelated catalog session from earlier the
+                // same day is never mistaken for the one being checked.
+                if (execution.occurrenceId) continue;
+                const hashesMatch = params.prescriptionHash
+                    ? execution.prescriptionHash === params.prescriptionHash
+                    : !execution.prescriptionHash;
+                if (hashesMatch) {
                     candidates.push(execution);
                 }
             }
@@ -336,7 +343,10 @@ export class SessionExecutionService {
         if (candidates.length === 0) return null;
 
         candidates.sort((a, b) => {
-            const stateRank = (s: SessionExecutionState) => (s === 'completed' ? 2 : s === 'in_progress' ? 1 : 0);
+            // An active execution always outranks a finished one: a stale completed record
+            // must never hide a redo that is still in progress (that would let the caller
+            // re-run startExecution and orphan the in-progress doc under a fresh id).
+            const stateRank = (s: SessionExecutionState) => (s === 'in_progress' ? 2 : s === 'completed' ? 1 : 0);
             const rankDiff = stateRank(b.state) - stateRank(a.state);
             if (rankDiff !== 0) return rankDiff;
             return b.startedAt.localeCompare(a.startedAt);
