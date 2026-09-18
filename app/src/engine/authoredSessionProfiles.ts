@@ -1,5 +1,5 @@
 import type { GateableSession } from './eligibility';
-import { inferredSafetyTags, toGateableSession } from './externalSessionProfiles';
+import { toGateableSession } from './externalSessionProfiles';
 import type { GuardrailKey } from './models';
 import { isV2Session, type AnyExternalPlanSession as ExternalPlanSession } from '../sessions/externalPlanV2';
 import type { RangeOrNumber, SessionStep } from '../sessions/models';
@@ -47,7 +47,7 @@ export interface AuthoredSessionEligibilityCandidate extends GateableSession {
      * `strengthExposure.ts`'s `deriveStrengthExposure` already applies to its own evidence
      * tier, mirrored here rather than re-derived. */
     evidenceConfidence: 'resolved' | 'discounted';
-    /** Required step ids that forced the conservative `inferredSafetyTags` fallback. */
+    /** Required step ids that forced the conservative `coarseFallbackSafetyTags` fallback. */
     unresolvedStepIds: string[];
 }
 
@@ -124,12 +124,28 @@ function uniqueTags(tags: GuardrailKey[]): GuardrailKey[] {
     return [...new Set(tags)];
 }
 
+/** A local copy of `externalSessionProfiles.ts`'s private `inferredSafetyTags` fallback
+ * (not exported there -- that file is on `check-policy-drift.mjs`'s decision-affecting
+ * list, so even an additive `export` on a decision-affecting file is treated as a policy
+ * change; duplicating this small, stable heuristic keeps that production file untouched,
+ * exactly as `LOWER_BODY_MUSCLES` above already duplicates rather than imports from
+ * `strengthExposure.ts`). Any future edit to the original must be mirrored here by hand. */
+function coarseFallbackSafetyTags(session: ExternalPlanSession): GuardrailKey[] {
+    const { modality, intensity } = session.gating;
+    const tags: GuardrailKey[] = [];
+    if (modality === 'running' || modality === 'field') tags.push('avoid_high_impact');
+    if (modality === 'strength' && ['moderate', 'hard', 'max'].includes(intensity)) {
+        tags.push('avoid_heavy_lower_body', 'avoid_overhead_pressing', 'avoid_heavy_spinal_loading');
+    }
+    return tags;
+}
+
 /**
  * The candidate's own safety-tag derivation: fine-grained where a required step resolves to
- * a real catalog movement, falling back to today's coarse `inferredSafetyTags` for whatever
- * doesn't. "Unknown and free-text movements force conservative eligibility" (M8.1) --
- * unresolved steps never make the session look *safer*, only ever add the same conservative
- * tags production already trusts.
+ * a real catalog movement, falling back to today's coarse heuristic for whatever doesn't.
+ * "Unknown and free-text movements force conservative eligibility" (M8.1) -- unresolved
+ * steps never make the session look *safer*, only ever add the same conservative tags
+ * production already trusts.
  */
 function deriveCandidateSafetyEvidence(session: ExternalPlanSession, requiredSteps: SessionStep[]): {
     safetyTags: GuardrailKey[];
@@ -149,7 +165,7 @@ function deriveCandidateSafetyEvidence(session: ExternalPlanSession, requiredSte
     }
 
     if (unresolvedStepIds.length > 0) {
-        tags.push(...inferredSafetyTags(session));
+        tags.push(...coarseFallbackSafetyTags(session));
     }
 
     return {

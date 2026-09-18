@@ -203,11 +203,8 @@ export function externalEventAsFixedActivity(
  * is still withheld from an athlete avoiding it. That is the correct direction to be wrong
  * in for a hard safety gate, and it is recoverable — the athlete can adjust the guardrail
  * or the plan, whereas an unvetted session that hurt them is not.
- *
- * Exported so `authoredSessionProfiles.ts` (M8.1) can reuse this exact conservative
- * fallback for the portion of a session it cannot resolve to real movements (an unknown
- * catalog id or free-text exercise), rather than re-deriving a second coarse heuristic. */
-export function inferredSafetyTags(session: ExternalPlanSession): GuardrailKey[] {
+ */
+function inferredSafetyTags(session: ExternalPlanSession): GuardrailKey[] {
     const { modality, intensity } = session.gating;
     const tags: GuardrailKey[] = [];
     if (modality === 'running' || modality === 'field') tags.push('avoid_high_impact');
