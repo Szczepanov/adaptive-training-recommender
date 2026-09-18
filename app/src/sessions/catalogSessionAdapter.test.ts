@@ -59,6 +59,30 @@ describe('Catalog Session Adapter (M3.1 / ADR-0023)', () => {
         expect(execPresc.blocks.length).toBeGreaterThan(0);
     });
 
+    it('does not duplicate catalog step notes when display cues already contain them', () => {
+        const presc = makeTestPrescription('str_full_01');
+        const sessionDef = adaptCatalogPrescriptionToSessionDefinition(presc);
+        const hinge = sessionDef.blocks[0].steps.find(step => step.id === 'full_warmup_hinge');
+
+        expect(hinge?.notes).toBe('Push the hips back with a soft knee bend and a flat back until a hamstring stretch is felt, then drive the hips forward to stand tall.; Move smoothly through a comfortable range.');
+        expect(hinge?.notes?.match(/Move smoothly through a comfortable range\./g)).toHaveLength(1);
+    });
+
+    it('preserves a catalog note that is absent from display cues', () => {
+        const presc = structuredClone(makeTestPrescription('str_full_01'));
+        const displayHinge = presc.displayBlocks[0].steps.find(step => step.id === 'full_warmup_hinge');
+        if (!displayHinge) throw new Error('Missing primary warm-up hinge display step');
+        displayHinge.cues = displayHinge.cues.filter(
+            cue => cue !== 'Move smoothly through a comfortable range.',
+        );
+
+        const sessionDef = adaptCatalogPrescriptionToSessionDefinition(presc);
+        const hinge = sessionDef.blocks[0].steps.find(step => step.id === 'full_warmup_hinge');
+
+        expect(hinge?.notes).toContain('Push the hips back with a soft knee bend');
+        expect(hinge?.notes).toContain('Move smoothly through a comfortable range.');
+    });
+
     it('hashes the explicit catalog ramp load into a new execution prescription', async () => {
         const presc = makeTestPrescription('str_full_01');
         const original = await createExecutionPrescriptionFromCatalog(presc, 'def-hash-xyz');

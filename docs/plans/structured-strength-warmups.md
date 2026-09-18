@@ -1,8 +1,8 @@
 # Structured strength warm-ups
 
-* **Status:** In progress
+* **Status:** Implemented
 * **Date:** 2026-09-01
-* **Blocked by:** Catalog-specific visual capture and full host-window verification
+* **Blocked by:** none
 * **Unlocks:** Complete, executable warm-up prescriptions for every active catalog strength session
 * **Decision boundary:** Catalog execution content changes; recommendation selection, fatigue cost,
   stimulus credit, and automatic warm-up-response coaching do not change
@@ -247,7 +247,7 @@ retain in-progress correction behavior. Do not infer warm-up status later from s
 main/activation/accessory entries persist `false`, a user correction round-trips, and warm-up sets
 remain excluded from overload/e1RM derivation.
 
-### WU5 `[~]` Add enforcement, versioning, rollout, and visual coverage
+### WU5 `[x]` Add enforcement, versioning, rollout, and visual coverage
 
 **Depends on:** WU1–WU4.
 
@@ -271,12 +271,14 @@ warm-up logging default, transition into activation/main, and completion summary
 `node scripts/check-policy-drift.mjs <base-sha>` pass; any simulation change is reviewed rather than
 silently accepting a new baseline; and the living docs describe the shipped behavior.
 
-**Implementation note (2026-09-01):** catalog validation, policy/catalog versioning, immutable
-execution hashing, knowledge lineage, targeted adapter/runner tests, workout validation, and living
-documentation are complete. `npm run simulate:scenarios` completed and the committed baseline was
-left unchanged after review of broad pre-existing engine-level drift. The full visual refresh was
-started but did not finish within the local command window; capture of the new catalog-specific
-warm-up state remains the only open verification item.
+**Implementation note (2026-09-17):** catalog validation, policy/catalog versioning, immutable
+execution hashing, knowledge lineage, targeted adapter/runner tests, workout validation, living
+documentation, and the catalog-specific visual journey are complete. The visual journey covers
+the primary catalog session opening on its warm-up, the default warm-up logging state, ramp-load
+copy, transition into the separate activation block, and the completion summary at desktop and
+390 px mobile widths. The full visual refresh passed with 60 captures; `npm run simulate:scenarios`
+completed and the committed baseline was left unchanged after review of broad pre-existing
+engine-level drift.
 
 ## Tests to add
 
@@ -304,7 +306,7 @@ warm-up state remains the only open verification item.
 - [x] Warm-up work remains excluded from working-set tonnage and e1RM estimation by existing downstream filters.
 - [x] Catalog and policy versions identify the new executable content.
 - [x] Catalog validation prevents regression.
-- [~] The full check/build and visual refresh need a host window longer than the available command limit; targeted validation and tests pass, and simulations were reviewed without changing the baseline.
+- [x] The full check/build and visual refresh pass; simulations were reviewed without changing the baseline.
 
 ## Risks and rollback
 
@@ -345,4 +347,4 @@ warm-up state remains the only open verification item.
 | WU2 Primary full-body repair | `[x]` | WU0, WU1 | Complete |
 | WU3 Remaining strength catalog | `[x]` | WU2 | Complete |
 | WU4 Safe logging default | `[x]` | WU2 | Complete |
-| WU5 Enforcement and rollout | `[~]` | WU1–WU4 | Partial — visual coverage capture outstanding |
+| WU5 Enforcement and rollout | `[x]` | WU1–WU4 | Complete — catalog-specific visual coverage passes on desktop and 390 px mobile |

@@ -139,7 +139,7 @@ Unless implementation evidence forces a reviewed change:
 
 ## BC0 — contracts, persistence and security
 
-**Status:** Blocked by ADR-0039 acceptance
+**Status:** Implemented — ADR-0039 is Accepted
 
 ### BC0.1 Focused anthropometry domain
 

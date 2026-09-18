@@ -6,6 +6,7 @@ import {
   type DecisionJournalEntry,
   type ExternalTrainingPlan,
   type NormalizedGarminActivity,
+  type Recommendation,
   type TrainingIntentProfile,
   type TrainingSettings,
   type UserGoal,
@@ -14,7 +15,11 @@ import {
 import { evaluateDataConfidence } from '../engine/dataConfidence';
 
 import type { StrengthSession } from '../engine/models';
-import type { SessionDefinition } from '../sessions/models';
+import type { SessionDefinition, SessionReferenceBinding } from '../sessions/models';
+import { TEMPLATES_BY_ID } from '../engine/templates';
+import { WORKOUTS_BY_ID } from '../workouts/catalog';
+import { resolveWorkoutPrescription } from '../workouts/prescription';
+import type { WorkoutPrescription } from '../workouts/models';
 
 export const VISUAL_USER_ID = 'visual-athlete';
 export const VISUAL_DATE = '2026-09-12';
@@ -47,6 +52,10 @@ export interface VisualFixture {
   savedTemplates?: Array<{ definition: SessionDefinition; status: 'active' | 'archived' }>;
   /** A recorded journal moves the card from the primary decision surface into insights. */
   decisionJournalEntry?: DecisionJournalEntry;
+  /** A content-addressed session launch used by visual coverage of catalog prescriptions. */
+  initialSession?:
+    | { definition: SessionDefinition; binding: SessionReferenceBinding }
+    | { prescription: WorkoutPrescription };
 }
 
 const settings: TrainingSettings = {
@@ -178,7 +187,7 @@ const eventGoal: UserGoal & { id: string } = {
 };
 
 function buildFixture(
-  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession' | 'savedTemplates' | 'decisionJournalEntry'>> = {},
+  overrides: Partial<Pick<VisualFixture, 'settings' | 'preferences' | 'checkin' | 'recovery' | 'goals' | 'activities' | 'externalPlan' | 'strengthSession' | 'savedTemplates' | 'decisionJournalEntry' | 'initialSession'>> = {},
   trainingIntentProfile: TrainingIntentProfile | null = null,
 ): VisualFixture {
   const fixtureSettings = overrides.settings ?? settings;
@@ -217,6 +226,7 @@ function buildFixture(
     ...(overrides.strengthSession ? { strengthSession: overrides.strengthSession } : {}),
     ...(overrides.savedTemplates ? { savedTemplates: overrides.savedTemplates } : {}),
     ...(overrides.decisionJournalEntry ? { decisionJournalEntry: overrides.decisionJournalEntry } : {}),
+    ...(overrides.initialSession ? { initialSession: overrides.initialSession } : {}),
     input,
   };
 }
@@ -295,6 +305,33 @@ const restrictedSettings: TrainingSettings = {
 };
 
 const standardFixture = buildFixture();
+
+const primaryStrengthWorkout = WORKOUTS_BY_ID.get('strength_full_body_maintenance_01');
+if (!primaryStrengthWorkout) throw new Error('Missing primary strength workout catalog entry');
+
+const primaryStrengthTemplate = TEMPLATES_BY_ID.get('str_full_01');
+if (!primaryStrengthTemplate) throw new Error('Missing primary strength template');
+
+const primaryStrengthRecommendation: Recommendation = {
+  template: primaryStrengthTemplate,
+  rationale: 'Visual review uses the full-dose primary catalog strength prescription.',
+  mode: 'train',
+  executionDose: { volume: 1, intensity: 1 },
+};
+
+const primaryStrengthPrescription = resolveWorkoutPrescription(
+  primaryStrengthRecommendation,
+  VISUAL_USER_ID,
+  VISUAL_DATE,
+  undefined,
+  primaryStrengthRecommendation.executionDose,
+  settings,
+);
+if (!primaryStrengthPrescription || primaryStrengthPrescription.workoutId !== primaryStrengthWorkout.id) {
+  throw new Error('Primary strength visual fixture could not resolve the catalog prescription');
+}
+
+const primaryStrengthSession = { prescription: primaryStrengthPrescription };
 
 const savedUpperBodyStrengthMaintenance: SessionDefinition = {
   schemaVersion: 1,
@@ -606,6 +643,17 @@ export const VISUAL_SCENARIOS: VisualScenario[] = [
     screen: 'session',
     expectedFocus: ['The runner shows the current round and advances through a grouped rotation without horizontal overflow.'],
     fixture: standardFixture,
+  },
+  {
+    id: 'session-runner-primary-strength-warmup',
+    title: 'Session Runner — primary catalog strength warm-up',
+    screen: 'session',
+    expectedFocus: [
+      'The primary catalog strength session opens on its structured warm-up.',
+      'Warm-up logging defaults and ramp-load copy are visible before activation.',
+      'Activation remains distinct and completion summary remains available.',
+    ],
+    fixture: buildFixture({ initialSession: primaryStrengthSession }),
   },
   {
     id: 'session-runner-custom-template-library',

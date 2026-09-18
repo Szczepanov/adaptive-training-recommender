@@ -141,6 +141,7 @@ function adaptCatalogWorkoutStep(step: WorkoutStep, display?: PrescriptionStep):
         ? step.target.stopConditions
         : undefined;
     const load = loadFromWorkoutStep(step.load);
+    const notes = [...new Set([...(display?.cues ?? []), ...(step.notes ?? [])])];
     return {
         id: step.id,
         kind: 'exercise',
@@ -152,7 +153,7 @@ function adaptCatalogWorkoutStep(step: WorkoutStep, display?: PrescriptionStep):
         ...(step.target?.type === 'rpe' ? { effort: { rpe: { min: step.target.min, max: step.target.max } } } : {}),
         ...(step.target?.type === 'reps_in_reserve' ? { effort: { rir: { min: step.target.min, max: step.target.max } } } : {}),
         ...(step.optional ? { optional: true } : {}),
-        ...(display?.cues?.length || step.notes?.length ? { notes: [...(display?.cues ?? []), ...(step.notes ?? [])].join('; ') } : {}),
+        ...(notes.length ? { notes: notes.join('; ') } : {}),
         ...(technicalStopConditions?.length ? { stopConditions: technicalStopConditions } : {}),
     };
 }
