@@ -79,6 +79,10 @@ export interface KnowledgeClaim {
     reviewedOn: string;
     version: number;
     supersedes?: string;
+    /** Optional tighter review cadence in months. It cannot relax the risk-derived cadence (see `knowledgeFreshness.ts`). */
+    reviewCadenceMonthsOverride?: number;
+    /** Explicit review owner override. Omit to use the registry default owner. */
+    owner?: string;
 }
 
 export interface KnowledgeRegistryValidation {
@@ -613,7 +617,7 @@ const DOI_PATTERN = /^10\.\d{4,9}\/\S+$/i;
 const SYNTHESIS_SOURCE_TYPES: readonly KnowledgeSourceType[] = ['systematic_review', 'scoping_review', 'umbrella_review'];
 
 /** Validate both ISO date shape and Gregorian calendar validity without timezone-dependent parsing. */
-function isIsoCalendarDate(value: string): boolean {
+export function isIsoCalendarDate(value: string): boolean {
     const match = ISO_DATE_PATTERN.exec(value);
     if (!match) return false;
     const year = Number(match[1]);
@@ -725,6 +729,8 @@ export function validateSportsKnowledgeRegistry(
         if (claim.safetyImpact === 'high' && claim.recommendationStrength === 'strong' && (claim.maturity === 'emerging' || claim.maturity === 'heuristic' || ['low', 'very_low', 'not_applicable'].includes(claim.evidenceCertainty))) errors.push(`claim ${claim.id}: high-safety strong policy requires at least supported maturity and moderate certainty`);
         if (claim.status === 'contested') warnings.push(`claim ${claim.id}: contested claim requires explicit consumer opt-in`);
         if (claim.limitations.length === 0) warnings.push(`claim ${claim.id}: no applicability limitations recorded`);
+        if (claim.reviewCadenceMonthsOverride !== undefined && (!Number.isInteger(claim.reviewCadenceMonthsOverride) || claim.reviewCadenceMonthsOverride < 1 || claim.reviewCadenceMonthsOverride > 24)) errors.push(`claim ${claim.id}: reviewCadenceMonthsOverride must be an integer between 1 and 24`);
+        if (claim.owner !== undefined && !claim.owner.trim()) errors.push(`claim ${claim.id}: owner override must not be blank`);
     }
     return { valid: errors.length === 0, errors, warnings };
 }

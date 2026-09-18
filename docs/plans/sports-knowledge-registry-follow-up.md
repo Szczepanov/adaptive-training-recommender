@@ -181,12 +181,16 @@ Key guarantees:
 
 ## SKR5 — Freshness governance
 
-**Status:** Planned
+**Status:** Complete (2026-09-18)
 
-- high-safety or rapidly evolving claims reviewed more frequently;
-- stable guideline definitions reviewed less frequently;
-- stale review dates create warnings first, not automatic scientific invalidation;
-- automated literature discovery may suggest review work but may not silently rewrite claim status/certainty.
+Implemented in `app/src/knowledge/knowledgeFreshness.ts`, validated by `knowledgeFreshness.test.ts`, and reported by `npm run validate:knowledge-freshness` (wired into `npm run check` and the CI Frontend Hygiene job).
+
+- Review cadence is derived deterministically from fields every claim already carries (`safetyImpact`, `maturity`, `evidenceCertainty`, `recommendationStrength`) rather than requiring a per-claim data migration: `high_safety` (6 months) when `safetyImpact` is `high`; `rapidly_evolving` (9 months) for `emerging` maturity or `low`/`very_low` certainty; `high_impact` (12 months) for a `strong` recommendation or `moderate` safety impact; `stable` (24 months) otherwise. A claim may declare an explicit `reviewCadenceMonthsOverride` and/or `owner` (both optional fields on `KnowledgeClaim`, structurally validated by `validateSportsKnowledgeRegistry`) when a more specific reviewer or **stricter** cadence is warranted. Overrides are fail-safe: they may shorten the interval but cannot relax the risk-derived cadence;
+- these cadences are repository-governance defaults, not scientific "expiry dates". They are intentionally more frequent for higher-risk or more volatile claims, while a `due`/`stale` result only creates review work and does not by itself invalidate evidence or alter production policy;
+- every claim resolves to a deterministic `current` / `due` / `stale` freshness status (`due` after the cadence elapses, `stale` after a further 2-month grace window) and a resolved owner (defaulting to `repository-maintainer` when unset), satisfying "every active claim has deterministic freshness status and an owner/cadence";
+- `validate-knowledge-freshness.ts` always exits `0` for freshness state and only prints/warns — staleness is visibility, not automatic invalidation, and it never changes `status`, `evidenceCertainty` or `recommendationStrength`. The report identifies **every active due/stale claim** with category, owner, effective cadence, due date and stale date, and separately warns on inconsistent intent such as a future `reviewedOn` date or a cadence override that attempts to relax the risk-derived interval. Structurally invalid freshness metadata (e.g. an out-of-range `reviewCadenceMonthsOverride`) is caught by the existing hard-failing `validate:knowledge` structural gate, not by freshness state;
+- review/audit history remains Git-backed: a human review that leaves the claim unchanged updates `reviewedOn` in an explicit reviewed commit with the review rationale/source check in the commit or PR record; any substantive claim, certainty, maturity, status or recommendation-authority change follows the existing claim version/supersession and policy-version rules. Git history provides rollback to the previously reviewed registry state;
+- SKR6's automated-literature-discovery workflow remains out of scope here and continues to require human review before changing claim status/certainty/authority.
 
 ## SKR6 — Evidence-synthesis review workflow
 

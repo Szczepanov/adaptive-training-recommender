@@ -2,7 +2,7 @@
 import { readFileSync } from 'node:fs';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc, writeBatch } from 'firebase/firestore';
 
 const emulatorDescribe = process.env.FIRESTORE_EMULATOR_HOST ? describe : describe.skip;
 let testEnvironment: RulesTestEnvironment;
@@ -2126,29 +2126,82 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, sessionRestEventPath), { ...validSessionRestEvent(), id: 'wrong-id' }));
     });
 
-    it('validates the session_execution_locks pointer doc used by claimExecutionSlot (#663)', async () => {
+    it('enforces session_execution_locks as a server-side single-winner claim (#663)', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
-        const lockPath = `users/${ownerId}/session_execution_locks/occ-unplanned-1`;
-
+        const lockPath = `users/${ownerId}/session_execution_locks/rx-2026-08-18-nohash`;
+        const execution = validSessionExecution();
+        const execution2Path = `users/${ownerId}/session_executions/exec-2`;
+        const execution2 = {
+            ...validSessionExecution(),
+            executionId: 'exec-2',
+            startedAt: '2026-08-18T11:00:00Z',
+            updatedAt: '2026-08-18T11:00:00Z',
+        };
         const validLock = {
             userId: ownerId,
-            executionId: 'exec-1',
+            executionId: execution.executionId,
+            date: execution.date,
+            allowCompletedReplacement: false,
             updatedAt: '2026-08-18T10:00:00Z',
             schemaVersion: 1,
         };
 
-        await expect(assertSucceeds(setDoc(doc(ownerDb, lockPath), validLock))).resolves.toBeUndefined();
-        // Redo moves the pointer to a new executionId -- a full overwrite, not a merge.
-        await expect(assertSucceeds(setDoc(doc(ownerDb, lockPath), {
-            ...validLock, executionId: 'exec-2', updatedAt: '2026-08-18T11:00:00Z',
-        }))).resolves.toBeUndefined();
+        // This is the exact offline fallback shape: neither doc exists yet, then one atomic
+        // batch creates the execution and its lock. getAfter() must see the paired execution.
+        const firstClaim = writeBatch(ownerDb);
+        firstClaim.set(doc(ownerDb, sessionExecPath), execution);
+        firstClaim.set(doc(ownerDb, lockPath), validLock);
+        await expect(assertSucceeds(firstClaim.commit())).resolves.toBeUndefined();
 
+        // A second blind/offline batch cannot steal an in-progress slot, and atomicity means
+        // its otherwise-valid execution document is rolled back with the rejected lock move.
+        const racingClaim = writeBatch(ownerDb);
+        racingClaim.set(doc(ownerDb, execution2Path), execution2);
+        racingClaim.set(doc(ownerDb, lockPath), {
+            ...validLock,
+            executionId: 'exec-2',
+            updatedAt: '2026-08-18T11:00:00Z',
+        });
+        await assertFails(racingClaim.commit());
+        expect((await getDoc(doc(ownerDb, execution2Path))).exists()).toBe(false);
+
+        // Completing the old execution still does not permit an implicit duplicate.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, sessionExecPath), {
+            ...execution,
+            state: 'completed',
+            completedAt: '2026-08-18T10:45:00Z',
+            updatedAt: '2026-08-18T10:45:00Z',
+        }))).resolves.toBeUndefined();
+        const unconfirmedRedo = writeBatch(ownerDb);
+        unconfirmedRedo.set(doc(ownerDb, execution2Path), execution2);
+        unconfirmedRedo.set(doc(ownerDb, lockPath), {
+            ...validLock,
+            executionId: 'exec-2',
+            updatedAt: '2026-08-18T11:00:00Z',
+        });
+        await assertFails(unconfirmedRedo.commit());
+        expect((await getDoc(doc(ownerDb, execution2Path))).exists()).toBe(false);
+
+        // Explicit redo may atomically create a second execution and move the pointer.
+        const confirmedRedo = writeBatch(ownerDb);
+        confirmedRedo.set(doc(ownerDb, execution2Path), execution2);
+        confirmedRedo.set(doc(ownerDb, lockPath), {
+            ...validLock,
+            executionId: 'exec-2',
+            allowCompletedReplacement: true,
+            updatedAt: '2026-08-18T11:00:00Z',
+        });
+        await expect(assertSucceeds(confirmedRedo.commit())).resolves.toBeUndefined();
+
+        // Shape, ownership, target identity, and anchor deletion stay fail-closed.
         await assertFails(setDoc(doc(ownerDb, lockPath), { ...validLock, userId: otherUserId }));
         await assertFails(setDoc(doc(ownerDb, lockPath), { ...validLock, executionId: '' }));
+        await assertFails(setDoc(doc(ownerDb, lockPath), { ...validLock, date: '2026-08-19' }));
         await assertFails(setDoc(doc(ownerDb, lockPath), { ...validLock, extraField: true }));
         await assertFails(setDoc(doc(otherDb, lockPath), validLock));
         await assertFails(getDoc(doc(otherDb, lockPath)));
+        await assertFails(deleteDoc(doc(ownerDb, lockPath)));
     });
 
     it('rejects an execution with an incomplete or unknown source reference', async () => {

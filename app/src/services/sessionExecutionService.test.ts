@@ -12,6 +12,7 @@ const firestore = vi.hoisted(() => {
         where: vi.fn(),
         orderBy: vi.fn(),
         runTransaction: vi.fn(),
+        writeBatch: vi.fn(),
     };
 });
 
@@ -78,6 +79,13 @@ function makeTransactionMock(responsesByPath: Record<string, TxSnapshot> = {}) {
     return tx;
 }
 
+function makeWriteBatchMock() {
+    return {
+        set: vi.fn(),
+        commit: vi.fn().mockResolvedValue(undefined),
+    };
+}
+
 describe('SessionExecutionService', () => {
     let service: SessionExecutionService;
 
@@ -100,6 +108,7 @@ describe('SessionExecutionService', () => {
         firestore.runTransaction.mockImplementation(
             async (_db: unknown, callback: (t: ReturnType<typeof makeTx>) => unknown) => callback(makeTx()),
         );
+        firestore.writeBatch.mockImplementation(() => makeWriteBatchMock());
     });
 
     describe('getExecutionsInRange', () => {
@@ -431,7 +440,7 @@ describe('SessionExecutionService', () => {
                 firestore.getDocs.mockResolvedValueOnce({ docs: [] }); // pre-check: race window, sees nothing
                 const winnerPath = `users/${USER_ID}/session_executions/exec-winner`;
                 const tx = makeTransactionMock({
-                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-winner', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-winner', date: '2026-08-17', allowCompletedReplacement: false, updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
                     [winnerPath]: { exists: true, data: validExecution({ executionId: 'exec-winner', state: 'in_progress' }) },
                 });
 
@@ -448,7 +457,7 @@ describe('SessionExecutionService', () => {
                 firestore.getDocs.mockResolvedValueOnce({ docs: [] });
                 const winnerPath = `users/${USER_ID}/session_executions/exec-winner`;
                 const tx = makeTransactionMock({
-                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-winner', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-winner', date: '2026-08-17', allowCompletedReplacement: false, updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
                     [winnerPath]: { exists: true, data: validExecution({ executionId: 'exec-winner', state: 'completed', completedAt: '2026-08-17T18:45:00Z' }) },
                 });
 
@@ -463,7 +472,7 @@ describe('SessionExecutionService', () => {
                 firestore.getDocs.mockResolvedValueOnce({ docs: [] });
                 const previousPath = `users/${USER_ID}/session_executions/exec-previous`;
                 const tx = makeTransactionMock({
-                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-previous', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-previous', date: '2026-08-17', allowCompletedReplacement: false, updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
                     [previousPath]: { exists: true, data: validExecution({ executionId: 'exec-previous', state: 'completed', completedAt: '2026-08-17T18:45:00Z' }) },
                 });
 
@@ -482,7 +491,7 @@ describe('SessionExecutionService', () => {
             it('creates a new execution when the lock points at an execution doc that no longer exists (dangling pointer)', async () => {
                 firestore.getDocs.mockResolvedValueOnce({ docs: [] });
                 const tx = makeTransactionMock({
-                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-deleted', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-deleted', date: '2026-08-17', allowCompletedReplacement: false, updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
                     // No entry for exec-deleted's own path -- the transaction's get() falls
                     // back to { exists: false }, exactly like a doc that was removed.
                 });
@@ -500,7 +509,7 @@ describe('SessionExecutionService', () => {
                 firestore.getDocs.mockResolvedValueOnce({ docs: [] });
                 const badPath = `users/${USER_ID}/session_executions/exec-corrupt`;
                 const tx = makeTransactionMock({
-                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-corrupt', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-corrupt', date: '2026-08-17', allowCompletedReplacement: false, updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
                     [badPath]: { exists: true, data: { not: 'a valid execution document' } },
                 });
 
@@ -517,7 +526,7 @@ describe('SessionExecutionService', () => {
                 firestore.getDocs.mockResolvedValueOnce({ docs: [] });
                 const abandonedPath = `users/${USER_ID}/session_executions/exec-abandoned`;
                 const tx = makeTransactionMock({
-                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-abandoned', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-abandoned', date: '2026-08-17', allowCompletedReplacement: false, updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
                     [abandonedPath]: { exists: true, data: validExecution({ executionId: 'exec-abandoned', state: 'abandoned' }) },
                 });
 
@@ -528,6 +537,68 @@ describe('SessionExecutionService', () => {
 
                 expect(exec.executionId).toBe('exec-new');
                 expect(tx.set).toHaveBeenCalledTimes(2);
+            });
+        });
+
+        describe('offline persistent-cache fallback', () => {
+            it('queues the execution and lock in one atomic batch when transactions are unavailable offline', async () => {
+                firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+                firestore.runTransaction.mockRejectedValueOnce(
+                    Object.assign(new Error('client is offline'), { code: 'unavailable' }),
+                );
+                const batch = makeWriteBatchMock();
+                firestore.writeBatch.mockReturnValueOnce(batch);
+
+                const exec = await service.startExecution(USER_ID, 'exec-offline', {
+                    sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                    occurrenceId: 'occ-offline-1',
+                    date: '2026-08-17',
+                });
+
+                expect(exec.executionId).toBe('exec-offline');
+                expect(batch.set).toHaveBeenCalledTimes(2);
+                expect(batch.commit).toHaveBeenCalledTimes(1);
+                const lockWrite = batch.set.mock.calls.find(call =>
+                    (call[0] as { path: string }).path.includes('/session_execution_locks/'));
+                expect(lockWrite?.[1]).toMatchObject({
+                    executionId: 'exec-offline',
+                    date: '2026-08-17',
+                    occurrenceId: 'occ-offline-1',
+                    allowCompletedReplacement: false,
+                });
+            });
+
+            it('returns the server winner if an offline queued claim later loses lock arbitration', async () => {
+                firestore.getDocs
+                    .mockResolvedValueOnce({ docs: [] })
+                    .mockResolvedValueOnce({
+                        docs: [{
+                            id: 'exec-server-winner',
+                            ref: { path: `users/${USER_ID}/session_executions/exec-server-winner` },
+                            data: () => validExecution({
+                                executionId: 'exec-server-winner',
+                                occurrenceId: 'occ-offline-race',
+                                state: 'in_progress',
+                            }),
+                        }],
+                    });
+                firestore.runTransaction.mockRejectedValueOnce(
+                    Object.assign(new Error('client is offline'), { code: 'unavailable' }),
+                );
+                const batch = makeWriteBatchMock();
+                batch.commit.mockRejectedValueOnce(
+                    Object.assign(new Error('lock already claimed'), { code: 'permission-denied' }),
+                );
+                firestore.writeBatch.mockReturnValueOnce(batch);
+
+                const exec = await service.startExecution(USER_ID, 'exec-offline-loser', {
+                    sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                    occurrenceId: 'occ-offline-race',
+                    date: '2026-08-17',
+                });
+
+                expect(exec.executionId).toBe('exec-server-winner');
+                expect(batch.commit).toHaveBeenCalledTimes(1);
             });
         });
     });

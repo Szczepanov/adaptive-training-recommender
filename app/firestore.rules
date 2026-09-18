@@ -1504,26 +1504,118 @@ service cloud.firestore {
         && data.updatedAt is string;
     }
 
-    // #663: a deterministic pointer doc per (date, occurrenceId) or (date,
-    // prescriptionHash) identity, written inside the same client transaction as the
-    // execution doc it points at (`SessionExecutionService.claimExecutionSlot`) so two
-    // concurrent `startExecution` calls for the same identity cannot both create an
-    // execution -- see that method for why the deterministic id makes the check
-    // transactable. Full-document create/update (not merge), so one validator covers both.
+    // #663: deterministic launch-slot pointer. Online starts claim this doc in a
+    // transaction; offline starts queue execution+lock in one persisted write batch. The
+    // rules below are therefore part of the concurrency invariant, not just shape checks:
+    // a queued blind write may create an empty slot, repair a dangling/abandoned pointer,
+    // or explicitly redo a completed execution, but it may never replace an in-progress
+    // winner. getAfter() also binds the pointer to the in-progress execution in the same
+    // atomic request.
     function hasValidSessionExecutionLock(userId) {
       let data = request.resource.data;
       return hasOwnedUserId(userId)
-        && data.keys().hasOnly(['userId', 'executionId', 'updatedAt', 'schemaVersion'])
-        && data.keys().hasAll(['userId', 'executionId', 'updatedAt', 'schemaVersion'])
+        && data.keys().hasOnly([
+          'userId', 'executionId', 'date', 'occurrenceId', 'prescriptionHash',
+          'allowCompletedReplacement', 'updatedAt', 'schemaVersion'
+        ])
+        && data.keys().hasAll([
+          'userId', 'executionId', 'date', 'allowCompletedReplacement',
+          'updatedAt', 'schemaVersion'
+        ])
         && data.executionId is string && data.executionId.size() > 0
+        && isValidActivityDate(data.date)
+        && data.allowCompletedReplacement is bool
         && data.updatedAt is string
-        && data.schemaVersion == 1;
+        && data.schemaVersion == 1
+        && (
+          (
+            'occurrenceId' in data
+            && !('prescriptionHash' in data)
+            && data.occurrenceId is string && data.occurrenceId.size() > 0
+          )
+          || (
+            !('occurrenceId' in data)
+            && (
+              !('prescriptionHash' in data)
+              || (data.prescriptionHash is string && data.prescriptionHash.size() > 0)
+            )
+          )
+        );
+    }
+
+    function sessionExecutionMatchesLockIdentity(lockData, execution) {
+      return (
+          'occurrenceId' in lockData
+          && 'occurrenceId' in execution
+          && execution.occurrenceId == lockData.occurrenceId
+        )
+        || (
+          !('occurrenceId' in lockData)
+          && !('occurrenceId' in execution)
+          && (
+            (
+              'prescriptionHash' in lockData
+              && 'prescriptionHash' in execution
+              && execution.prescriptionHash == lockData.prescriptionHash
+            )
+            || (
+              !('prescriptionHash' in lockData)
+              && !('prescriptionHash' in execution)
+            )
+          )
+        );
+    }
+
+    function sessionExecutionLockTargetsInProgress(userId, lockData) {
+      let executionPath = /databases/$(database)/documents/users/$(userId)/session_executions/$(lockData.executionId);
+      let execution = getAfter(executionPath).data;
+      return existsAfter(executionPath)
+        && execution.userId == userId
+        && execution.executionId == lockData.executionId
+        && execution.date == lockData.date
+        && execution.state == 'in_progress'
+        && execution.schemaVersion == 1
+        && sessionExecutionMatchesLockIdentity(lockData, execution);
+    }
+
+    function sessionExecutionLockPointsAtBlockingExecution(userId, lockData) {
+      let executionPath = /databases/$(database)/documents/users/$(userId)/session_executions/$(lockData.executionId);
+      let execution = get(executionPath).data;
+      return exists(executionPath)
+        && execution.userId == userId
+        && execution.executionId == lockData.executionId
+        && execution.date == lockData.date
+        && execution.state in ['in_progress', 'completed']
+        && execution.schemaVersion == 1
+        && sessionExecutionMatchesLockIdentity(lockData, execution);
+    }
+
+    function canUpdateSessionExecutionLock(userId) {
+      let next = request.resource.data;
+      let current = resource.data;
+      let currentExecutionPath = /databases/$(database)/documents/users/$(userId)/session_executions/$(current.executionId);
+      return hasValidSessionExecutionLock(userId)
+        && next.diff(current).affectedKeys().hasOnly([
+          'executionId', 'allowCompletedReplacement', 'updatedAt'
+        ])
+        && sessionExecutionLockTargetsInProgress(userId, next)
+        && (
+          !sessionExecutionLockPointsAtBlockingExecution(userId, current)
+          || (
+            get(currentExecutionPath).data.state == 'completed'
+            && next.allowCompletedReplacement == true
+          )
+        );
     }
 
     match /users/{userId}/session_execution_locks/{lockId} {
       allow read: if isOwner(userId);
-      allow create, update: if hasValidSessionExecutionLock(userId);
-      allow delete: if isOwner(userId);
+      allow create: if hasValidSessionExecutionLock(userId)
+        && sessionExecutionLockTargetsInProgress(userId, request.resource.data);
+      allow update: if canUpdateSessionExecutionLock(userId);
+      // The pointer is a durable concurrency anchor. Deleting it would reopen the exact
+      // check-then-create race this collection exists to close.
+      allow delete: if false;
     }
 
     match /users/{userId}/session_executions/{executionId} {

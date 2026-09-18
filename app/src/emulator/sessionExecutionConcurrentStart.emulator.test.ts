@@ -63,6 +63,28 @@ emulatorDescribe('SessionExecutionService concurrent startExecution (#663)', () 
         expect(snap.docs[0].data().state).toBe('in_progress');
     });
 
+    it('keeps date in occurrence identity so a reused/rescheduled occurrence id does not resume another day', async () => {
+        const service = new SessionExecutionService(db);
+        const occurrenceId = 'occ-reused-across-days';
+
+        const first = await service.startExecution(USER_ID, 'exec-day-1', {
+            sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+            occurrenceId,
+            date: DATE,
+        });
+        const second = await service.startExecution(USER_ID, 'exec-day-2', {
+            sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+            occurrenceId,
+            date: '2026-09-19',
+        });
+
+        expect(first.executionId).toBe('exec-day-1');
+        expect(second.executionId).toBe('exec-day-2');
+
+        const snap = await getDocs(collection(db, 'users', USER_ID, 'session_executions'));
+        expect(snap.docs.length).toBe(2);
+    });
+
     it('never creates two in_progress executions for the same date+hash-less catalog identity when two tabs race Start', async () => {
         const service = new SessionExecutionService(db);
 
