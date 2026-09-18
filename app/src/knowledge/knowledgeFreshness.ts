@@ -78,6 +78,8 @@ export interface ClaimFreshnessRecord {
     cadenceMonths: number;
     owner: string;
     reviewedOn: string;
+    reviewedInFuture: boolean;
+    cadenceOverrideIgnored: boolean;
     dueOn: string;
     staleOn: string;
     freshness: KnowledgeFreshnessStatus;
@@ -86,7 +88,11 @@ export interface ClaimFreshnessRecord {
 /** Compute one claim's freshness record as of `asOfIsoDate`. Pure: the caller supplies "today". */
 export function computeClaimFreshness(claim: KnowledgeClaim, asOfIsoDate: string): ClaimFreshnessRecord {
     const category = deriveReviewCadenceCategory(claim);
+    const derivedCadenceMonths = REVIEW_CADENCE_MONTHS[category];
     const cadenceMonths = reviewCadenceMonthsFor(claim);
+    const reviewedInFuture = claim.reviewedOn > asOfIsoDate;
+    const cadenceOverrideIgnored = claim.reviewCadenceMonthsOverride !== undefined
+        && claim.reviewCadenceMonthsOverride > derivedCadenceMonths;
     const dueOn = addCalendarMonths(claim.reviewedOn, cadenceMonths);
     const staleOn = addCalendarMonths(dueOn, DUE_GRACE_MONTHS);
     const freshness: KnowledgeFreshnessStatus = asOfIsoDate < dueOn ? 'current' : asOfIsoDate < staleOn ? 'due' : 'stale';
@@ -97,6 +103,8 @@ export function computeClaimFreshness(claim: KnowledgeClaim, asOfIsoDate: string
         cadenceMonths,
         owner: ownerForClaim(claim),
         reviewedOn: claim.reviewedOn,
+        reviewedInFuture,
+        cadenceOverrideIgnored,
         dueOn,
         staleOn,
         freshness,
@@ -110,6 +118,7 @@ export interface KnowledgeFreshnessSummary {
     dueActive: readonly string[];
     dueOrStaleHighSafetyActive: readonly string[];
     staleActive: readonly string[];
+    inconsistentMetadataActive: readonly string[];
 }
 
 export interface KnowledgeFreshnessReport {
@@ -122,7 +131,8 @@ export interface KnowledgeFreshnessReport {
  * Build the freshness report for every claim, regardless of lifecycle status: a deprecated or
  * rejected claim's freshness is still informative for audit, but only `active` claims count
  * toward the risk-visibility summary (`dueActive`, `dueOrStaleHighSafetyActive`,
- * `staleActive`) since only active claims currently authorize a recommendation.
+ * `staleActive`, `inconsistentMetadataActive`) since only active claims currently
+ * authorize a recommendation.
  */
 export function buildKnowledgeFreshnessReport(claims: readonly KnowledgeClaim[], asOfIsoDate: string): KnowledgeFreshnessReport {
     const records = claims.map(claim => computeClaimFreshness(claim, asOfIsoDate));
@@ -132,6 +142,7 @@ export function buildKnowledgeFreshnessReport(claims: readonly KnowledgeClaim[],
     const dueActive: string[] = [];
     const dueOrStaleHighSafetyActive: string[] = [];
     const staleActive: string[] = [];
+    const inconsistentMetadataActive: string[] = [];
 
     for (const record of records) {
         byFreshness[record.freshness] += 1;
@@ -140,6 +151,7 @@ export function buildKnowledgeFreshnessReport(claims: readonly KnowledgeClaim[],
         if (record.freshness === 'due') dueActive.push(record.claimId);
         if (record.category === 'high_safety' && record.freshness !== 'current') dueOrStaleHighSafetyActive.push(record.claimId);
         if (record.freshness === 'stale') staleActive.push(record.claimId);
+        if (record.reviewedInFuture || record.cadenceOverrideIgnored) inconsistentMetadataActive.push(record.claimId);
     }
 
     return {
@@ -152,6 +164,7 @@ export function buildKnowledgeFreshnessReport(claims: readonly KnowledgeClaim[],
             dueActive,
             dueOrStaleHighSafetyActive,
             staleActive,
+            inconsistentMetadataActive,
         },
     };
 }
