@@ -21,7 +21,7 @@ export async function exportDecisionJournalEvidenceOnce(request: DecisionJournal
     try {
         const result = await request.build(request.userId, addDaysToLocalDateString(request.date, -41), request.date);
         request.download(result);
-        request.setStatus('Downloaded the private evidence CSV and aggregate readout manifest.');
+        request.setStatus('Evidence export started. Your browser may ask to allow multiple downloads; verify both the CSV and readout JSON were saved.');
         return true;
     } catch {
         request.setStatus('Could not export the shadow evidence. Retry when the data connection is available.');
