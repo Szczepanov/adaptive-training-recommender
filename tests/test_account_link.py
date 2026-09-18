@@ -50,7 +50,9 @@ class DummyRepository:
 
 
 def test_sync_request_staleness_matches_shared_frontend_windows() -> None:
-    now = account_link_module.datetime(2026, 9, 18, 12, 0, tzinfo=account_link_module.timezone.utc)
+    now = account_link_module.datetime(
+        2026, 9, 18, 12, 0, tzinfo=account_link_module.timezone.utc
+    )
 
     pending = {
         "status": "pending",
