@@ -24,9 +24,14 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
     const [localError, setLocalError] = useState<string | null>(null);
     const [now, setNow] = useState(() => Date.now());
     const userIdRef = useRef(userId);
+    // Guards against a retry's async completion landing after a newer retry (or a user
+    // change) has already moved on -- without this, a slow failed attempt could overwrite
+    // state a more recent attempt already resolved.
+    const retryGenerationRef = useRef(0);
 
     useEffect(() => {
         userIdRef.current = userId;
+        retryGenerationRef.current += 1;
         setLocalError(null);
         setRetrying(false);
         if (!userId) {
@@ -74,17 +79,18 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
     const retryBackfill = useCallback(async () => {
         const uid = userId;
         if (!uid) return;
+        const generation = (retryGenerationRef.current += 1);
         setRetrying(true);
         setLocalError(null);
         try {
             await garminSyncRequestService.requestBackfill(uid);
         } catch (err) {
             console.error('[useGarminBackfillStatus] Failed to request backfill retry:', err);
-            if (userIdRef.current === uid) {
+            if (userIdRef.current === uid && retryGenerationRef.current === generation) {
                 setLocalError('Could not request a retry — try again.');
             }
         } finally {
-            if (userIdRef.current === uid) {
+            if (userIdRef.current === uid && retryGenerationRef.current === generation) {
                 setRetrying(false);
             }
         }

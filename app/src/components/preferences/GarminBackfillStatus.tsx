@@ -14,6 +14,14 @@ export interface GarminBackfillStatusProps {
 export function GarminBackfillStatus({ userId }: GarminBackfillStatusProps) {
     const { status, retrying, localError, retryBackfill } = useGarminBackfillStatus(userId);
 
+    if (localError && status !== 'failed' && status !== 'stale') {
+        return (
+            <p className="error-message" role="alert">
+                {localError}
+            </p>
+        );
+    }
+
     if (status === 'in_progress') {
         return (
             <p className="preference-desc" role="status" aria-live="polite">

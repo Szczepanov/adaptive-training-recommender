@@ -49,6 +49,36 @@ describe('GarminBackfillStatus', () => {
         expect(html).toBe('');
     });
 
+    it('surfaces a subscription-level error even when no request is actionable yet', () => {
+        vi.mocked(useGarminBackfillStatus).mockReturnValue(
+            hookResult({
+                status: 'none',
+                localError: 'Could not refresh historical load status — try again later.',
+            })
+        );
+
+        const html = renderToStaticMarkup(<GarminBackfillStatus userId="u1" />);
+
+        expect(html).toContain('role="alert"');
+        expect(html).toContain('Could not refresh historical load status — try again later.');
+        expect(html).not.toContain('Retry loading history');
+    });
+
+    it('surfaces a subscription-level error over the in-progress announcement', () => {
+        vi.mocked(useGarminBackfillStatus).mockReturnValue(
+            hookResult({
+                status: 'in_progress',
+                localError: 'Could not refresh historical load status — try again later.',
+            })
+        );
+
+        const html = renderToStaticMarkup(<GarminBackfillStatus userId="u1" />);
+
+        expect(html).toContain('role="alert"');
+        expect(html).toContain('Could not refresh historical load status — try again later.');
+        expect(html).not.toContain('Loading historical data');
+    });
+
     it('announces a request-backed backfill while it is in progress', () => {
         vi.mocked(useGarminBackfillStatus).mockReturnValue(hookResult({ status: 'in_progress' }));
 
