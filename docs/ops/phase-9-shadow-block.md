@@ -98,6 +98,12 @@ evidence package. It contains:
 * `shadow-evidence_<start>_to_<end>.readout.json` — aggregate-only gate counts, agreement
   counts split by reveal ordering, contiguous stable-policy segments, and data-quality counts.
 
+The export starts two browser downloads from one explicit action. Browsers may ask whether this
+site is allowed to download multiple files after the first artifact. Approve that prompt only
+for the trusted app origin, then verify that **both** filenames above are present before treating
+the package as complete. If either artifact is absent, rerun the export; do not assume the
+on-screen status proves that the browser saved both files.
+
 Keep both files in the owner's private evidence location. Do not commit them or send them to
 an external AI service unless the owner separately approves that disclosure. The manifest does
 not turn incomplete evidence into a pass:
