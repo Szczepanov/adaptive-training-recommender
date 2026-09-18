@@ -35,7 +35,7 @@ export function GarminBackfillStatus({ userId }: GarminBackfillStatusProps) {
     return (
         <>
             <p className="error-message" role="alert">
-                Historical backfill didn't finish. {reason}
+                Historical Garmin data didn't finish loading. {reason}
             </p>
             <button
                 type="button"
