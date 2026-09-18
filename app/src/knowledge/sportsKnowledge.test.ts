@@ -154,4 +154,38 @@ describe('sports knowledge registry', () => {
         expect(result.valid).toBe(false);
         expect(result.errors).toContain('claim test.product_policy_science: scientific certainty requires at least one non-product-policy source');
     });
+
+    it('rejects malformed freshness-governance metadata', () => {
+        const base = SPORTS_KNOWLEDGE_CLAIMS[0];
+        const invalidCadence: KnowledgeClaim = {
+            ...base,
+            id: 'test.invalid_cadence',
+            reviewCadenceMonthsOverride: 25,
+        };
+        const blankOwner: KnowledgeClaim = {
+            ...base,
+            id: 'test.blank_owner',
+            owner: '   ',
+        };
+        const result = validateSportsKnowledgeRegistry(SPORTS_KNOWLEDGE_SOURCES, [invalidCadence, blankOwner]);
+        expect(result.valid).toBe(false);
+        expect(result.errors).toEqual(expect.arrayContaining([
+            'claim test.invalid_cadence: reviewCadenceMonthsOverride must be an integer between 1 and 24',
+            'claim test.blank_owner: owner override must not be blank',
+        ]));
+    });
+
+    it('rejects fractional or non-positive freshness cadence overrides', () => {
+        const base = SPORTS_KNOWLEDGE_CLAIMS[0];
+        const invalidClaims: KnowledgeClaim[] = [
+            { ...base, id: 'test.zero_cadence', reviewCadenceMonthsOverride: 0 },
+            { ...base, id: 'test.fractional_cadence', reviewCadenceMonthsOverride: 2.5 },
+        ];
+        const result = validateSportsKnowledgeRegistry(SPORTS_KNOWLEDGE_SOURCES, invalidClaims);
+        expect(result.valid).toBe(false);
+        expect(result.errors).toEqual(expect.arrayContaining([
+            'claim test.zero_cadence: reviewCadenceMonthsOverride must be an integer between 1 and 24',
+            'claim test.fractional_cadence: reviewCadenceMonthsOverride must be an integer between 1 and 24',
+        ]));
+    });
 });
