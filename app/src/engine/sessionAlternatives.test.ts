@@ -128,6 +128,16 @@ describe('findStimulusMatchedAlternatives', () => {
         expect(result).toEqual([]);
     });
 
+    it('fails closed when a non-catalog base has no explicit transfer opt-in', () => {
+        const unknownTransferability: SessionTemplate = {
+            ...template('end_easy_01'),
+            id: 'synthetic_unspecified_transfer',
+            objectiveTransferable: undefined,
+        };
+        const result = findStimulusMatchedAlternatives(unknownTransferability, baseContext(), 90, DATE);
+        expect(result).toEqual([]);
+    });
+
     it('never includes the base template itself', () => {
         const result = findStimulusMatchedAlternatives(template('end_easy_01'), baseContext(), 90, DATE);
         expect(result.some(t => t.id === 'end_easy_01')).toBe(false);
