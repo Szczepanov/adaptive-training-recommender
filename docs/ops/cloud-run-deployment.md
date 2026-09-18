@@ -253,32 +253,76 @@ does not enumerate or delete Scheduler resources that are absent from the workfl
 job such as `garmin-sync-daily` therefore cannot be removed by merging or rerunning a
 repository deployment; it needs a separately authorized Cloud Console or `gcloud` action.
 
-Before changing a suspected duplicate, inspect it and the canonical job with production
-credentials. Record the complete target, invoker, retry policy, state, and most recent Cloud
-Run execution history. The repository does not prescribe a Scheduler retry policy, so do not
-silently change a live one while removing a duplicate.
+Before changing a suspected duplicate, run the read-only repository check. It lists every
+Scheduler job and fails unless exactly one complete URI targets `garmin-sync:run`; a historical
+name alone cannot prove uniqueness.
+
+```bash
+GCP_PROJECT=${GCP_PROJECT} REGION=${REGION} \
+  bash docs/ops/verify-existing-deploy.sh
+```
+
+Then inspect the canonical job with production credentials. Record only the safe summary
+fields below with operational evidence; the repository does not prescribe a Scheduler retry
+policy, so do not silently change a live one while removing a duplicate.
 
 ```bash
 gcloud scheduler jobs describe garmin-sync-morning-poll --location=${REGION} \
-  --format="yaml(name,state,schedule,timeZone,httpTarget.uri,httpTarget.oauthToken.serviceAccountEmail,retryConfig,lastAttemptTime)"
-
-gcloud scheduler jobs describe garmin-sync-daily --location=${REGION} \
-  --format="yaml(name,state,schedule,timeZone,httpTarget.uri,httpTarget.oauthToken.serviceAccountEmail,retryConfig,lastAttemptTime)"
+  --format="yaml(name,state,schedule,timeZone,httpTarget.httpMethod,httpTarget.uri,httpTarget.oauthToken.serviceAccountEmail,httpTarget.oauthToken.scope,retryConfig,lastAttemptTime)"
 
 gcloud run jobs executions list --region=${REGION} --job=garmin-sync --limit=20 \
   --format="table(metadata.name,metadata.creationTimestamp,status.completionTime,status.conditions[0].type,status.conditions[0].status,status.conditions[0].message)"
 ```
 
-If `garmin-sync-daily` exists and is confirmed to be the duplicate of the canonical target,
-pause only that job first. Keep the canonical scheduler enabled, preserve its Warsaw schedule,
-and do not add `--force` to either the scheduler request or the Cloud Run Job.
+The `httpTarget` must use `POST` and the exact URI in the table above. Its OAuth service account
+must be `${SCHEDULER_SA_EMAIL}`. The OAuth scope may be omitted in the stored job when `gcloud`
+uses its default; omitted means `https://www.googleapis.com/auth/cloud-platform`. If a scope is
+explicitly stored, it must be that value. The expected request has no message body and no
+custom credential header. Inspect `httpTarget.headers` and `httpTarget.body` only in a protected
+operator terminal: header values or a body may be sensitive, so never paste them into a ticket,
+workflow log, commit, or operational evidence. Treat a non-empty body or an unexpected static
+`Authorization`/credential header as configuration drift and stop for review.
+
+```bash
+# Sensitive local inspection only; do not redirect, upload, or retain this output.
+gcloud scheduler jobs describe garmin-sync-morning-poll --location=${REGION} \
+  --format="yaml(httpTarget.headers,httpTarget.body)"
+```
+
+To attribute a RunJob request, use a read-only Cloud Audit Logs query that includes both the
+RunJob method and `authenticationInfo.principalEmail`:
+
+```bash
+gcloud logging read \
+  'protoPayload.serviceName="run.googleapis.com" AND protoPayload.methodName="/Jobs.RunJob" AND protoPayload.resourceName:"garmin-sync"' \
+  --project=${GCP_PROJECT} --limit=20 \
+  --format="table(timestamp,protoPayload.methodName,protoPayload.authenticationInfo.principalEmail,protoPayload.resourceName)"
+```
+
+Some Cloud Run `system_event` records omit `authenticationInfo.principalEmail`. An empty value
+is not evidence of Scheduler authentication; record the limitation rather than attributing the
+execution to the Scheduler invoker. This query does not expose `httpTarget` headers or body.
+
+If the full-URI check finds more than one target, pause only the confirmed duplicate first.
+Keep the canonical scheduler enabled, preserve its Warsaw schedule, and do not add `--force` to
+either the scheduler request or the Cloud Run Job.
 
 ```bash
 gcloud scheduler jobs pause garmin-sync-daily --location=${REGION}
 ```
 
-Verify the next monitored snapshot-coverage window with `garmin_sync audit` before making a
-permanent deletion decision. The immediate rollback for a paused duplicate is reversible:
+No post-cleanup snapshot-coverage window is complete until its audit is recorded. After a
+duplicate is absent or paused, the owner must run the user-scoped audit over a fresh monitored
+window and retain its result before declaring this cleanup verified or making a permanent
+deletion decision:
+
+```bash
+uv run python -m garmin_sync audit --days 7
+```
+
+This audit is read-only with respect to recovery snapshots; it must use the intended user's
+production configuration and does not justify `--force`. The immediate rollback for a paused
+duplicate is reversible:
 
 ```bash
 gcloud scheduler jobs resume garmin-sync-daily --location=${REGION}

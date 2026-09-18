@@ -7,6 +7,8 @@ set -uo pipefail
 
 : "${GCP_PROJECT:?Set GCP_PROJECT to your GCP/Firebase project id}"
 : "${REGION:=europe-central2}"
+GARMIN_SYNC_RUN_URI="https://run.googleapis.com/v2/projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-sync:run"
+verification_failed=0
 
 # Process-scoped only -- never mutates your persisted gcloud configuration.
 export CLOUDSDK_CORE_PROJECT="${GCP_PROJECT}"
@@ -30,16 +32,34 @@ check_output() {
   fi
 }
 
-check_absent() {
-  local desc="$1"; shift
+check_exactly_one_scheduler_target() {
   local output
-  if output="$("$@" 2>&1)"; then
-    echo "UNEXPECTED  ${desc}"
-  elif [[ "${output}" == *"NOT_FOUND"* ]]; then
-    echo "OK    ${desc} absent"
-  else
-    echo "UNKNOWN  ${desc} (unable to confirm absence)"
+  local name
+  local uri
+  local target_count=0
+  local target_names=()
+
+  if ! output="$(gcloud scheduler jobs list --location="${REGION}" \
+    --format='csv[no-heading](name,httpTarget.uri)' 2>&1)"; then
+    echo "FAILED  Unable to list Cloud Scheduler jobs for Garmin sync target validation"
+    return 1
   fi
+
+  while IFS=, read -r name uri; do
+    [[ -n "${name}" ]] || continue
+    if [[ "${uri}" == "${GARMIN_SYNC_RUN_URI}" ]]; then
+      target_names+=("${name}")
+      ((target_count += 1))
+    fi
+  done <<< "${output}"
+
+  if (( target_count == 1 )); then
+    echo "OK    Exactly one Cloud Scheduler job targets ${GARMIN_SYNC_RUN_URI}: ${target_names[0]}"
+    return 0
+  fi
+
+  echo "FAILED  Expected exactly one Cloud Scheduler job targeting ${GARMIN_SYNC_RUN_URI}; found ${target_count}: ${target_names[*]:-none}"
+  return 1
 }
 
 echo "Checking project: ${GCP_PROJECT}, region: ${REGION}"
@@ -84,11 +104,12 @@ check "Cloud Run service anthropometry-write-api in ${REGION}" \
 check "Cloud Scheduler job garmin-sync-morning-poll in ${REGION}" \
   gcloud scheduler jobs describe garmin-sync-morning-poll --location="${REGION}"
 
-# The deploy workflow reconciles garmin-sync-morning-poll but deliberately never deletes
-# out-of-band Scheduler resources. Keep the historical duplicate visible to this read-only
-# verification so an operator can follow cloud-run-deployment.md's pause/audit procedure.
-check_absent "Legacy duplicate Cloud Scheduler job garmin-sync-daily in ${REGION}" \
-  gcloud scheduler jobs describe garmin-sync-daily --location="${REGION}"
+# The repository-owned name is useful for reconciliation, but it cannot prove uniqueness:
+# a duplicate can have any name. Count every Scheduler job whose complete URI targets the
+# garmin-sync RunJob and fail this read-only check unless it is exactly one.
+if ! check_exactly_one_scheduler_target; then
+  verification_failed=1
+fi
 
 check "Cloud Scheduler job garmin-push-pending-workouts-poll in ${REGION}" \
   gcloud scheduler jobs describe garmin-push-pending-workouts-poll --location="${REGION}"
@@ -111,6 +132,8 @@ echo "it (idempotent) -- deploy-garmin-sync.yml itself no longer provisions infr
 echo "deploys against what already exists. A row you expected OK but got MISSING is worth a"
 echo "second look: either the manual deploy used a different name/region, or that piece"
 echo "genuinely wasn't done."
-echo "An UNEXPECTED legacy duplicate is external configuration: do not expect a deploy to remove"
-echo "it. Follow docs/ops/cloud-run-deployment.md's pause, audit, and rollback procedure."
-echo "An UNKNOWN legacy duplicate check is an access or command failure, not evidence of absence."
+
+if (( verification_failed )); then
+  echo "FAILED: Cloud Scheduler target uniqueness is not verified. Do not treat a deployment as duplicate cleanup."
+  exit 1
+fi
