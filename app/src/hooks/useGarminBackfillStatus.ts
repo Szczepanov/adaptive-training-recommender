@@ -24,12 +24,9 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
     const [localError, setLocalError] = useState<string | null>(null);
     const [now, setNow] = useState(() => Date.now());
     const userIdRef = useRef(userId);
-    // Keep identity current synchronously with render. An effect-only update leaves a
-    // small window after an account switch where a fast retry click could target the
-    // previous user's request document.
-    userIdRef.current = userId;
 
     useEffect(() => {
+        userIdRef.current = userId;
         setLocalError(null);
         setRetrying(false);
         if (!userId) {
@@ -37,20 +34,25 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
             return;
         }
 
-        const subscribedUserId = userId;
-        return garminSyncRequestService.subscribeToRequest(
-            subscribedUserId,
+        let active = true;
+        const unsubscribe = garminSyncRequestService.subscribeToRequest(
+            userId,
             (next) => {
-                if (userIdRef.current !== subscribedUserId) return;
+                if (!active) return;
                 setRequest(next);
                 setLocalError(null);
             },
             (err) => {
-                if (userIdRef.current !== subscribedUserId) return;
+                if (!active) return;
                 console.error('[useGarminBackfillStatus] Subscription error:', err);
                 setLocalError('Could not refresh historical load status — try again later.');
             }
         );
+
+        return () => {
+            active = false;
+            unsubscribe();
+        };
     }, [userId]);
 
     // React preserves state across prop changes. Never let the previous user's last
@@ -70,7 +72,7 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
     }, [status]);
 
     const retryBackfill = useCallback(async () => {
-        const uid = userIdRef.current;
+        const uid = userId;
         if (!uid) return;
         setRetrying(true);
         setLocalError(null);
@@ -86,7 +88,7 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
                 setRetrying(false);
             }
         }
-    }, []);
+    }, [userId]);
 
     return { request: currentRequest, status, retrying, localError, retryBackfill };
 }
