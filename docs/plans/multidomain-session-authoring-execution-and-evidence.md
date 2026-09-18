@@ -1674,22 +1674,39 @@ M5 plus whatever independently-justified evidence exists. If a candidate cannot 
 without an untriggered measurement subsystem, the correct result is `defer: evidence not yet
 collected`, not "build the subsystem so this experiment can run."
 
-### M8.1 `[ ]` Step-derived eligibility/profile candidate
+### M8.1 `[x]` Step-derived eligibility/profile candidate
 
-**Change.** Replace coarse external-strength assumptions in a default-off candidate adapter
-using resolved required steps, selected options and actual definition duration. Optional steps
-cannot block the session. Unknown and free-text movements force conservative eligibility and
-discounted evidence.
+**Delivered.** `engine/authoredSessionProfiles.ts` classifies safety tags per required,
+catalog-resolved step (`primaryMuscles`/`movementPatterns`/`equipment`/`impact` against
+authored effort/load) instead of `externalSessionProfiles.ts`'s coarse authored
+`modality`×`intensity` bucket, and reads a v2+ session's own `definition.duration` in place of
+the coarse authored `gating` range. Optional steps are excluded from the required set. An
+unresolved catalog id or free-text movement discounts evidence confidence and falls back to
+a local copy of today's conservative coarse fallback, never to a more permissive result. Cost/stimulus and
+category/equipment/environment derivation are untouched. A v1 session (no `.definition`) is
+identical to `toGateableSession` today.
 
-Do not activate cost or stimulus. Produce a comparison against the current
-`engine/externalSessionProfiles.ts` and the current gate results.
+`engine/simulation/authoredSessionProfilesComparison.ts` runs both adapters over the same
+session and reports every field discrepancy (safety tags, category, duration, modality); its
+`limitations` state explicitly that production selection authority is unaffected.
 
-**Files.** New `engine/authoredSessionProfiles.ts`, comparison tests and report; retain the
-current production adapter until M8.3.
+**Files.** `engine/authoredSessionProfiles.ts`, `engine/authoredSessionProfiles.test.ts`,
+`engine/simulation/authoredSessionProfilesComparison.ts`,
+`engine/simulation/authoredSessionProfilesComparison.test.ts`. `externalSessionProfiles.ts` is
+untouched -- `check-policy-drift.mjs` treats it as decision-affecting and fails on any
+executable diff there (including an additive export with no behavior change), so the small
+coarse-fallback heuristic is hand-duplicated locally (`coarseFallbackSafetyTags`) instead of
+exported and imported, the same way this new module already duplicates
+`strengthExposure.ts`'s private lower-body muscle set rather than importing it. No production
+module imports the new candidate.
 
-**Done when.** The upper-only sample no longer claims heavy lower work in candidate output, the
-lower/Olympic sample does, every gate discrepancy is reported, and live selections are
-unchanged.
+**Verified.** Against `sessions/fixtures/02-lower-olympic-variants.json` (barbell hang power
+clean / power clean from floor) the candidate keeps `avoid_heavy_lower_body` and
+`avoid_heavy_spinal_loading`. Against `sessions/fixtures/03-upper-body-absorption-and-spin.json`
+(bench press/rows/pull-ups/overhead press at RPE <= 6, plus light knee/Achilles maintenance) the
+candidate drops `avoid_heavy_lower_body`/`avoid_heavy_spinal_loading` while today's coarse
+adapter still claims them for a plausible authored `moderate`-intensity strength import --
+exactly the discrepancy this item was built to surface. `npm run check` is green.
 
 ### M8.2 `[ ]` Response/exposure comparison harness
 
