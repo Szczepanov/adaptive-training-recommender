@@ -35,13 +35,15 @@ class GarminLinkConfigurationError(RuntimeError):
     """Raised when account linking is not safely configured."""
 
 
-# Mirrors app/src/utils/garminSyncStaleness.ts's STALE_AFTER_MS / IN_FLIGHT_STATUSES /
-# isSyncRequestStale: the account-link initial-backfill queueing below must apply the
-# exact same "don't stomp a genuinely still-running request" policy the frontend's
-# GarminSyncRequestService.requestSync() uses, or the two callers could disagree about
-# when it's safe to overwrite a pending/processing garmin_sync_requests/latest doc.
-_SYNC_REQUEST_STALE_AFTER = timedelta(minutes=5)
+# Mirrors app/src/utils/garminSyncStaleness.ts. Account linking and the browser
+# both write users/{uid}/garmin_sync_requests/latest, so they must agree on when an
+# in-flight request is genuinely stale. Pending/ordinary requests get 20 minutes to
+# cover the 15-minute manual-sync poll cadence plus execution margin; claimed
+# historical backfills get the backend's 30-minute per-user execution-lease window.
+_SYNC_REQUEST_STALE_AFTER = timedelta(minutes=20)
+_SYNC_BACKFILL_PROCESSING_STALE_AFTER = timedelta(minutes=30)
 _SYNC_REQUEST_IN_FLIGHT_STATUSES = {"pending", "processing"}
+_SYNC_REQUEST_BACKFILL_TYPES = {"initial_backfill", "backfill"}
 _MAX_MFA_ATTEMPTS = 5
 
 
@@ -52,7 +54,8 @@ def _is_sync_request_in_flight(data: dict[str, Any]) -> bool:
 def _is_sync_request_stale(data: dict[str, Any], now: datetime) -> bool:
     if not _is_sync_request_in_flight(data):
         return False
-    reference = data.get("claimedAt") if data.get("status") == "processing" else None
+    status = data.get("status")
+    reference = data.get("claimedAt") if status == "processing" else None
     reference = reference or data.get("requestedAt")
     if not reference:
         return False
@@ -62,7 +65,13 @@ def _is_sync_request_stale(data: dict[str, Any], now: datetime) -> bool:
         return False
     if reference_dt.tzinfo is None:
         reference_dt = reference_dt.replace(tzinfo=timezone.utc)
-    return (now - reference_dt) > _SYNC_REQUEST_STALE_AFTER
+
+    stale_after = (
+        _SYNC_BACKFILL_PROCESSING_STALE_AFTER
+        if status == "processing" and data.get("requestType") in _SYNC_REQUEST_BACKFILL_TYPES
+        else _SYNC_REQUEST_STALE_AFTER
+    )
+    return (now - reference_dt) > stale_after
 
 
 @dataclass
