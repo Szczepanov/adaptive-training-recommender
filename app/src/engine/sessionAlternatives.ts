@@ -53,7 +53,7 @@ export function findStimulusMatchedAlternatives(
     date: string,
 ): SessionTemplate[] {
     const enrichedBase = ENRICHED_TEMPLATES_BY_ID.get(baseTemplate.id) ?? baseTemplate;
-    if (enrichedBase.objectiveTransferable === false) return [];
+    if (enrichedBase.objectiveTransferable !== true) return [];
 
     const avoidedModalities = normalizedSet(context.preferences.avoidedModalities);
     const deprioritizedModalities = normalizedSet(context.preferences.deprioritizedModalities);
@@ -61,7 +61,7 @@ export function findStimulusMatchedAlternatives(
     let candidates = eligibleTemplates(ENRICHED_TEMPLATES, context, checkinMinutes, date)
         .filter(candidate => candidate.category === enrichedBase.category)
         .filter(candidate => candidate.modality !== enrichedBase.modality)
-        .filter(candidate => candidate.objectiveTransferable !== false)
+        .filter(candidate => candidate.objectiveTransferable === true)
         .filter(candidate => candidate.systemicCost <= enrichedBase.systemicCost + Number.EPSILON)
         .filter(candidate => !avoidedModalities.has(candidate.modality.trim().toLowerCase()));
 
@@ -71,8 +71,11 @@ export function findStimulusMatchedAlternatives(
     if (nonDeprioritized.length > 0) candidates = nonDeprioritized;
 
     const compare = (left: SessionTemplate, right: SessionTemplate): number => {
-        const stimulusDelta = stimulusDistance(enrichedBase, left) - stimulusDistance(enrichedBase, right);
-        if (stimulusDelta !== 0) return stimulusDelta;
+        const leftStimulusDelta = stimulusDistance(enrichedBase, left);
+        const rightStimulusDelta = stimulusDistance(enrichedBase, right);
+        // If a non-catalog base has no authored/enriched profile, both distances are Infinity.
+        // Treat that as a tie and fall through rather than returning NaN from Infinity-Infinity.
+        if (leftStimulusDelta !== rightStimulusDelta) return leftStimulusDelta - rightStimulusDelta;
 
         const leftCostDelta = Math.abs(left.systemicCost - enrichedBase.systemicCost);
         const rightCostDelta = Math.abs(right.systemicCost - enrichedBase.systemicCost);
