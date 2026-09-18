@@ -28,8 +28,8 @@
 
 The implementation landed in PR #572, including the authenticated Cloud Run write API,
 server/client conformance validation, fail-closed Rules, emulator coverage, deployment wiring,
-and focused backend/frontend tests. Completion was verified on 2026-09-17 with 47 focused
-backend tests, 51 focused frontend tests, the full frontend gate, and the successful [production
+and focused backend/frontend tests. Completion was verified on 2026-09-17 with the focused
+backend/frontend coverage, the full frontend gate, and the successful [production
 release workflow](https://github.com/Szczepanov/adaptive-training-recommender/actions/runs/35249005688)
 at commit `a9d6ccbe`. That release completed the full CI gate, Garmin backend, Firestore indexes,
 Firestore rules, and Firebase Hosting jobs. The Hosting deployment's anthropometry rewrite smoke
