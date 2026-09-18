@@ -30,6 +30,18 @@ check_output() {
   fi
 }
 
+check_absent() {
+  local desc="$1"; shift
+  local output
+  if output="$("$@" 2>&1)"; then
+    echo "UNEXPECTED  ${desc}"
+  elif [[ "${output}" == *"NOT_FOUND"* ]]; then
+    echo "OK    ${desc} absent"
+  else
+    echo "UNKNOWN  ${desc} (unable to confirm absence)"
+  fi
+}
+
 echo "Checking project: ${GCP_PROJECT}, region: ${REGION}"
 echo
 
@@ -72,6 +84,12 @@ check "Cloud Run service anthropometry-write-api in ${REGION}" \
 check "Cloud Scheduler job garmin-sync-morning-poll in ${REGION}" \
   gcloud scheduler jobs describe garmin-sync-morning-poll --location="${REGION}"
 
+# The deploy workflow reconciles garmin-sync-morning-poll but deliberately never deletes
+# out-of-band Scheduler resources. Keep the historical duplicate visible to this read-only
+# verification so an operator can follow cloud-run-deployment.md's pause/audit procedure.
+check_absent "Legacy duplicate Cloud Scheduler job garmin-sync-daily in ${REGION}" \
+  gcloud scheduler jobs describe garmin-sync-daily --location="${REGION}"
+
 check "Cloud Scheduler job garmin-push-pending-workouts-poll in ${REGION}" \
   gcloud scheduler jobs describe garmin-push-pending-workouts-poll --location="${REGION}"
 
@@ -93,3 +111,6 @@ echo "it (idempotent) -- deploy-garmin-sync.yml itself no longer provisions infr
 echo "deploys against what already exists. A row you expected OK but got MISSING is worth a"
 echo "second look: either the manual deploy used a different name/region, or that piece"
 echo "genuinely wasn't done."
+echo "An UNEXPECTED legacy duplicate is external configuration: do not expect a deploy to remove"
+echo "it. Follow docs/ops/cloud-run-deployment.md's pause, audit, and rollback procedure."
+echo "An UNKNOWN legacy duplicate check is an access or command failure, not evidence of absence."

@@ -233,6 +233,62 @@ gcloud scheduler jobs create http garmin-sync-morning-poll \
   --oauth-service-account-email=${SCHEDULER_SA_EMAIL}
 ```
 
+### Canonical recovery scheduler and duplicate remediation
+
+`garmin-sync-morning-poll` is the sole repository-owned scheduler for the
+`garmin-sync` Cloud Run Job. Its contract is:
+
+| Field | Required value |
+| --- | --- |
+| Scheduler name | `garmin-sync-morning-poll` |
+| Schedule | `*/15 5-9 * * *` |
+| Time zone | `Europe/Warsaw` |
+| Target | `projects/${GCP_PROJECT}/locations/${REGION}/jobs/garmin-sync:run` |
+| Invoker | `${SCHEDULER_SA_EMAIL}` |
+| Cloud Run Job command | `sync-all`, with no `--force` |
+
+The `Create/update Cloud Scheduler jobs` step in
+`.github/workflows/deploy-garmin-sync.yml` reconciles this named job, but it intentionally
+does not enumerate or delete Scheduler resources that are absent from the workflow. A legacy
+job such as `garmin-sync-daily` therefore cannot be removed by merging or rerunning a
+repository deployment; it needs a separately authorized Cloud Console or `gcloud` action.
+
+Before changing a suspected duplicate, inspect it and the canonical job with production
+credentials. Record the complete target, invoker, retry policy, state, and most recent Cloud
+Run execution history. The repository does not prescribe a Scheduler retry policy, so do not
+silently change a live one while removing a duplicate.
+
+```bash
+gcloud scheduler jobs describe garmin-sync-morning-poll --location=${REGION} \
+  --format="yaml(name,state,schedule,timeZone,httpTarget.uri,httpTarget.oauthToken.serviceAccountEmail,retryConfig,lastAttemptTime)"
+
+gcloud scheduler jobs describe garmin-sync-daily --location=${REGION} \
+  --format="yaml(name,state,schedule,timeZone,httpTarget.uri,httpTarget.oauthToken.serviceAccountEmail,retryConfig,lastAttemptTime)"
+
+gcloud run jobs executions list --region=${REGION} --job=garmin-sync --limit=20 \
+  --format="table(metadata.name,metadata.creationTimestamp,status.completionTime,status.conditions[0].type,status.conditions[0].status,status.conditions[0].message)"
+```
+
+If `garmin-sync-daily` exists and is confirmed to be the duplicate of the canonical target,
+pause only that job first. Keep the canonical scheduler enabled, preserve its Warsaw schedule,
+and do not add `--force` to either the scheduler request or the Cloud Run Job.
+
+```bash
+gcloud scheduler jobs pause garmin-sync-daily --location=${REGION}
+```
+
+Verify the next monitored snapshot-coverage window with `garmin_sync audit` before making a
+permanent deletion decision. The immediate rollback for a paused duplicate is reversible:
+
+```bash
+gcloud scheduler jobs resume garmin-sync-daily --location=${REGION}
+```
+
+Delete a paused duplicate only through a separately approved operator change after capturing
+its configuration and the monitored audit evidence. Do not add a broad deletion step to the
+deployment workflow: it would turn an external-infrastructure cleanup into an unreviewed
+release-side effect.
+
 The window's first tick each day (5:00am, no snapshot yet for today) always runs
 a real fetch, which includes the normal D-1 lookback resync -- so there's no need
 for a separate once-daily "thorough" run; this single schedule covers it. Want
