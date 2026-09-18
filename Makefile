@@ -4,7 +4,7 @@
         format format-check format-python-check format-python format-frontend \
         typecheck typecheck-python typecheck-frontend \
         test test-python test-frontend test-coverage test-rules \
-        validate-workouts validate-knowledge validate-knowledge-coverage \
+        validate-workouts validate-knowledge validate-knowledge-coverage validate-knowledge-freshness \
         simulate simulate-scenarios simulate-diff \
         simulate-calibrate simulate-fatigue-fusion simulate-subjective-drift \
         compare-sequence-search build build-frontend \
@@ -37,7 +37,7 @@ format-check: format-python-check
 ## Automatically fix formatting and auto-fixable lint issues across the repository
 format: format-python format-frontend
 
-## Run validation checks (lint, format-check, typecheck, tests, workout validation)
+## Run validation checks (lint, format-check, typecheck, tests, knowledge/freshness/workout validation)
 check: check-python check-frontend
 
 ## Run all backend Python checks and tests
@@ -45,7 +45,7 @@ check-python: lint-python typecheck-python test-python
 
 ## Run all frontend TypeScript checks and tests
 ## Mirrors app's own `npm run check` so this gate matches CI's Frontend Hygiene job
-check-frontend: typecheck-frontend lint-frontend test-frontend validate-knowledge validate-knowledge-coverage validate-workouts
+check-frontend: typecheck-frontend lint-frontend test-frontend validate-knowledge validate-knowledge-coverage validate-knowledge-freshness validate-workouts
 
 ## Run simulation scenario benchmarks and baseline diff verification
 simulate: simulate-scenarios simulate-diff
@@ -143,6 +143,10 @@ validate-knowledge:
 ## Validate engine knowledge-coverage inventory
 validate-knowledge-coverage:
 	npm --prefix app run validate:knowledge-coverage
+
+## Report Sports Knowledge Registry freshness debt without failing on due/stale state
+validate-knowledge-freshness:
+	npm --prefix app run validate:knowledge-freshness
 
 ## Validate workout catalog definitions and prescription contracts
 validate-workouts:
@@ -244,12 +248,13 @@ help:
 	@echo   make test-coverage     - Run pytest with coverage report
 	@echo --------------------------------------------------------------------------------
 	@echo Frontend Targets:
-	@echo   make check-frontend    - Run tsc, eslint, vitest, knowledge and workout validation
+	@echo   make check-frontend    - Run tsc, eslint, vitest, knowledge, freshness, and workout validation
 	@echo   make typecheck-frontend- Run TypeScript compiler check
 	@echo   make lint-frontend     - Run ESLint
 	@echo   make test-frontend     - Run Vitest suite
 	@echo   make validate-knowledge- Validate sports knowledge registry
 	@echo   make validate-knowledge-coverage - Validate engine knowledge coverage inventory
+	@echo   make validate-knowledge-freshness - Report due/stale knowledge review debt
 	@echo   make validate-workouts - Validate workout catalog and contracts
 	@echo   make simulate-scenarios- Run scenario simulations
 	@echo   make simulate-diff     - Compare scenario simulation against baseline

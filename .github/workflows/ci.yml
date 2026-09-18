@@ -195,6 +195,9 @@ jobs:
       - name: Validate engine knowledge coverage
         run: npm run validate:knowledge-coverage
 
+      - name: Report knowledge freshness (SKR5; warns, never fails)
+        run: npm run validate:knowledge-freshness
+
       - name: Validate workout library
         run: npm run validate:workouts
 
