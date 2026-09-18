@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import '../App.css';
 import { DailyCheckin } from '../components/DailyCheckin';
 import { DataView } from '../components/DataView';
@@ -12,6 +12,8 @@ import { Header } from '../components/Header';
 import { MobileNav } from '../components/MobileNav';
 import type { Screen } from '../types/navigation';
 import { VISUAL_USER_ID, type VisualScenario, type VisualScreen } from './fixtures';
+import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
+import type { SessionDefinition, SessionReferenceBinding } from '../sessions/models';
 
 interface VisualReviewAppProps {
   scenario: VisualScenario;
@@ -29,6 +31,36 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
   const [desktopSettingsOpen, setDesktopSettingsOpen] = useState(false);
   const [mobileMoreOpen, setMobileMoreOpen] = useState(false);
   const [sessionExecution, setSessionExecution] = useState<{ state: string } | null>(null);
+  const [initialSessionError, setInitialSessionError] = useState(false);
+  const [preparedInitialSession, setPreparedInitialSession] = useState<{
+    definition: SessionDefinition;
+    binding: SessionReferenceBinding;
+  }>();
+
+  useEffect(() => {
+    const initialSession = scenario.fixture.initialSession;
+    let disposed = false;
+    if (!initialSession) {
+      setPreparedInitialSession(undefined);
+      setInitialSessionError(false);
+      return () => { disposed = true; };
+    }
+    if ('prescription' in initialSession) {
+      setPreparedInitialSession(undefined);
+      setInitialSessionError(false);
+      void prepareCatalogSessionLaunch(VISUAL_USER_ID, initialSession.prescription)
+        .then(launch => {
+          if (!disposed) setPreparedInitialSession(launch);
+        })
+        .catch(() => {
+          if (!disposed) setInitialSessionError(true);
+        });
+    } else {
+      setPreparedInitialSession(initialSession);
+      setInitialSessionError(false);
+    }
+    return () => { disposed = true; };
+  }, [scenario.fixture.initialSession]);
 
   const navigate = (next: VisualScreen) => {
     setScreen(next);
@@ -63,9 +95,15 @@ export function VisualReviewApp({ scenario }: VisualReviewAppProps) {
         {screen === 'data' && <DataView decisionInput={scenario.fixture.input} userId={VISUAL_USER_ID} onBack={() => navigate('home')} initialTab={scenario.initialDataTab} />}
         {screen === 'constraints' && <TrainingSettings userId={VISUAL_USER_ID} />}
         {screen === 'preferences' && <Preferences userId={VISUAL_USER_ID} onNavigate={handleAppNavigate} />}
-        {screen === 'session' && (
+        {screen === 'session' && initialSessionError && (
+          <div className="session-runner-container" role="alert">
+            Unable to prepare the catalog session for visual review.
+          </div>
+        )}
+        {screen === 'session' && !initialSessionError && (
           <SessionRunner
             userId={VISUAL_USER_ID}
+            initialSession={preparedInitialSession}
             onSessionStateChange={setSessionExecution}
             onClose={() => navigate('home')}
           />

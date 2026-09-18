@@ -1,7 +1,7 @@
 # Server-authoritative anthropometry writes — implementation plan
 
-**Status:** In progress — implementation landed in PR #572; completion/deployment verification remains
-**Blocked by:** deployment and delivery-contract verification; ADR-0040 is Accepted
+**Status:** Implemented — implementation and deployment verification recorded 2026-09-17
+**Blocked by:** none; ADR-0040 is Accepted
 **Unlocks:** reliable ten-measurement saves without Firestore Rules expression-budget failures
 **Decision:** [ADR-0040](../adr/0040-server-authoritative-anthropometry-writes.md)
 
@@ -28,5 +28,10 @@
 
 The implementation landed in PR #572, including the authenticated Cloud Run write API,
 server/client conformance validation, fail-closed Rules, emulator coverage, deployment wiring,
-and focused backend/frontend tests. The plan remains open until the deployment and full
-delivery-contract verification evidence is recorded here.
+and focused backend/frontend tests. Completion was verified on 2026-09-17 with 47 focused
+backend tests, 51 focused frontend tests, the full frontend gate, and the successful [production
+release workflow](https://github.com/Szczepanov/adaptive-training-recommender/actions/runs/35249005688)
+at commit `a9d6ccbe`. That release completed the full CI gate, Garmin backend, Firestore indexes,
+Firestore rules, and Firebase Hosting jobs. The Hosting deployment's anthropometry rewrite smoke
+check passed with the expected authenticated-API 404 contract; direct client writes remain denied
+by Rules. Recommendation authority remains zero.

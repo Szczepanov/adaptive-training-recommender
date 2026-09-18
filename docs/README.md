@@ -190,6 +190,8 @@ Point-in-time assessments of the system as built, including gaps between documen
 * [**2026-09-07 ADR-0038 Recovery Placement Implementation Analysis**](./analysis/2026-09-07-adr-0038-recovery-placement-implementation-analysis.md) — Analysis of recovery placement options for external plans under ADR-0038.
 * [**2026-09-07 Recommender Optimization Analysis**](./analysis/2026-09-07-recommender-optimization-opportunities.md) — Investigation into potential optimization strategies for the core recommender engine.
 * [**2026-09-14 Body-composition and fueling observations analysis**](./analysis/2026-09-14-body-composition-and-fueling-observations.md) — Point-in-time analysis of how longitudinal body mass, home tape measurements, connected scale estimates and subjective hunger fit the recommender without recommending authority.
+* [**2026-09-17 Plan status reconciliation**](./analysis/2026-09-17-plan-status-reconciliation.md) — Reconciles implemented plans, verification closures, and remaining evidence/activation gates.
+* [**2026-09-17 Firestore evidence reconnaissance**](./analysis/2026-09-17-firestore-evidence-recon.md) — Privacy-preserving aggregate inventory of production evidence and the gates it does and does not satisfy.
 
 ---
 
@@ -226,7 +228,7 @@ How agreed changes get made. Mutable, status-tracked, and expected to go stale �
 * [**Safety evidence pack — subjective readiness, injury/pain**](./plans/2026-08-31-safety-evidence-pack-subjective-readiness-injury-pain.md) — *Implemented.* P0 evidence/policy migration for the four previously-unresolved high-safety Sports Knowledge Registry families; SEP-A, SEP-B, and SEP-C1–C4 (clinical envelope decoupling, running-restriction contextualization, tissue-response latency, fail-closed clinical escalation) are all merged to `main` via PRs #317–#320.
 * [**Body-composition and fueling observations**](./plans/body-composition-and-fueling-observations.md) — *Implemented.* Provider-agnostic body mass, home tape measurements, device body-composition estimates, and subjective fueling context without recommendation authority.
 
-* [**Server-authoritative anthropometry writes**](./plans/anthropometry-server-authoritative-writes.md) — *In progress.* Dedicated Python Cloud Run API that verifies Firebase ID tokens, replacing the user-owned mutable observations from ADR-0039 with strict, validated server-side writes.
+* [**Server-authoritative anthropometry writes**](./plans/anthropometry-server-authoritative-writes.md) — *Implemented.* Dedicated Python Cloud Run API verifies Firebase ID tokens and owns strict, validated anthropometry writes; the capability has zero recommendation authority.
 
 ---
 

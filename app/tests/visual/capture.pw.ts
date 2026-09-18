@@ -171,6 +171,48 @@ test('captures grouped session runner rotation without horizontal overflow', asy
   ]);
 });
 
+test('captures the primary catalog strength warm-up journey', async ({ page }) => {
+  const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-primary-strength-warmup');
+  if (!scenario) throw new Error('Missing primary strength warm-up visual scenario');
+  await visitScenario(page, scenario);
+
+  await expect(page.locator('.session-title-text')).toHaveText('Primary Full-body Strength Maintenance');
+  await expect(page.locator('.block-role-label').first()).toHaveText('Warm-up and clean rehearsal');
+  await expect(page.getByRole('heading', { name: 'Bodyweight hip hinge' })).toBeVisible();
+  await expect(page.getByRole('checkbox', { name: 'Warm-up' })).toBeChecked();
+  await expect(page.getByText('Load: Empty bar, then light rehearsal load')).toHaveCount(0);
+  await capture(page, scenario, 'warmup-start', [
+    'The primary catalog strength session opens on its structured warm-up.',
+    'Warm-up repetition logging is enabled by default.',
+  ]);
+
+  await page.getByRole('button', { name: /Log Set/ }).click();
+  await page.getByRole('button', { name: 'Dead bug', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /Dead Bug/i })).toBeVisible();
+  await page.getByRole('button', { name: /Log Set/ }).click();
+  await page.getByRole('button', { name: 'Hang power clean rehearsal', exact: true }).click();
+  await expect(page.getByRole('heading', { name: /Hang Power Clean Rehearsal/i })).toBeVisible();
+  await expect(page.getByText('Load: Empty bar, then light rehearsal load')).toBeVisible();
+  await capture(page, scenario, 'warmup-ramp', [
+    'The structured ramp-load copy is visible before the activation block.',
+  ]);
+
+  await page.getByRole('button', { name: 'Hang power clean', exact: true }).click();
+  await expect(page.locator('.block-role-label').filter({ hasText: 'Power activation' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Hang Power Clean/i, exact: true })).toBeVisible();
+  await capture(page, scenario, 'activation-transition', [
+    'Activation remains a distinct block after warm-up work.',
+  ]);
+
+  await page.getByRole('button', { name: /Finish Session/ }).click();
+  await expect(page.getByRole('dialog', { name: 'Complete Session' })).toBeVisible();
+  await expect(page.getByText('Total Sets')).toBeVisible();
+  await expect(page.getByText('Exercises')).toBeVisible();
+  await capture(page, scenario, 'completion-summary', [
+    'The completion summary remains available after partial warm-up execution.',
+  ]);
+});
+
 test('captures saved custom-template preview and archived-library states', async ({ page }) => {
   const scenario = VISUAL_SCENARIOS.find(candidate => candidate.id === 'session-runner-custom-template-library');
   if (!scenario) throw new Error('Missing saved custom-template library visual scenario');

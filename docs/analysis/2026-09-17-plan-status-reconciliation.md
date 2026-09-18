@@ -28,7 +28,7 @@ three different categories and must not be collapsed into one delivery queue:
 | Phase 9.0 | 9.0.7 run the real block; 9.0.8 readout and decision | real-use evidence | Startable; the repository already has the ingestion, journal, export, and isolation surface. The historical 2026-08-22 target date has passed without a recorded completed block. |
 | Phase 9 | 9.8 prospective subjective-baseline go/no-go | evidence/activation | Waits for Phase 9.0 prospective evidence. |
 | HRF | HRF8 replay plus independent paired-reference evidence; HRF9 activation; HRF11 living closeout; HRF10 only if its usage trigger fires | evidence/activation | Default-off. No HR-derived production authority is implied by HRF0–HRF7. |
-| WU | WU5 catalog-specific visual capture and full host-window verification | verification | The structured catalog and logging behavior are implemented; only this verification item remains. |
+| WU | WU5 catalog-specific visual capture and full host-window verification | closed verification | Completed in the follow-up working-tree verification: the primary catalog journey and full 60-capture refresh pass at desktop and 390 px mobile widths. |
 | M | M6.1–M6.4, M8.1–M8.3, M9.1–M9.3 | usage/evidence gates | Deliberately not a sequential delivery queue. Start only when each named trigger is real. |
 | OV | OV7.1 capture of a real event outcome, then OV7.2–OV7.4; OV4.4/OV6.2 on their triggers; OV8 after multiple comparable blocks | operational evidence | PR #631 delivered the OV7 capture infrastructure, but the plan correctly remains open until real event data and the block readout exist. |
 | HA | HA6.4 labelled personal history, HA7 release evidence, HA8 visible surfaces, HA9-R3/R4/R5/R6 evidence and release decisions | evidence/activation | Shadow anomaly work is shipped; user-visible wording and training tightening remain gated. |
@@ -38,7 +38,7 @@ three different categories and must not be collapsed into one delivery queue:
 | ES | ES9 continued shadow accumulation and ES10 activation review | evidence/activation | Direct Eight Sleep ingestion remains default-off. |
 | TO | TO4 history shadow evidence and TO5 FIT identity evidence | evidence/activation | Decode/shadow only; no new live recommendation authority is authorized. |
 | SKR | SKR5 freshness governance; SKR6 human-reviewed evidence-synthesis workflow when demand justifies it | planned governance | SKR1–SKR4 are delivered; no high-impact/high-safety uncovered family remains. |
-| SAW | Completion/deployment verification for the server-authoritative anthropometry path | verification | PR #572 delivered the implementation, tests, and deployment wiring; live deployment/completion is not claimed until the delivery-contract verification evidence is recorded. |
+| SAW | Completion/deployment verification for the server-authoritative anthropometry path | closed verification | The 2026-09-17 production release at `a9d6ccbe` passed CI, backend/index/rules/Hosting deployment, and the Hosting → anthropometry rewrite smoke check; focused tests and the full frontend gate also pass. |
 | RP / ADR-0038 | RP0, RP1, RP3, RP4, RP5A, RP5B; RP2 is implemented | draft/activation | Behavior remains blocked until ADR-0038 is accepted or explicitly authorized. |
 
 ## Closed or deliberately deferred work
