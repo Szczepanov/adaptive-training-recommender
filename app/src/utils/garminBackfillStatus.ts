@@ -13,10 +13,11 @@ export function isGarminBackfillRequest(request: GarminSyncRequest | null): bool
 }
 
 /**
- * Classifies the shared users/{uid}/garmin_sync_requests/latest doc for the historical
- * backfill Firestore already queues automatically (account_link.py on first Garmin
- * link, or GarminSyncService.sync_daily's cold-start check -- see
- * docs/ops/data-backfill-and-rebuild.md), so a UI can decide whether to show progress
+ * Classifies the shared users/{uid}/garmin_sync_requests/latest doc for request-backed
+ * historical backfills (account_link.py queues the initial request; later retries use
+ * the same document). GarminSyncService.sync_daily's scheduled cold-start safeguard
+ * runs directly and is intentionally outside this request-status surface. See
+ * docs/ops/data-backfill-and-rebuild.md. A UI can therefore decide whether to show progress
  * or offer a retry without duplicating the requestType/staleness rules already
  * established for the "Sync Now" button (garminSyncStaleness.ts).
  *
