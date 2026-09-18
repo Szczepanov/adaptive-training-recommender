@@ -41,14 +41,14 @@ Full statements, with rationale and the checks that enforce them, are in
 
 * `make check` — the core local code gate: `ruff check`, `ruff format --check`, `mypy`,
   `pytest`, `tsc -b`, `eslint`, `vitest`, knowledge validation, knowledge-coverage
-  validation, and workout validation. `check-frontend` mirrors the app's `npm run check`
+  validation, knowledge-freshness reporting, and workout validation. `check-frontend` mirrors the app's `npm run check`
   gate; CI adds further path-specific checks such as dependency audits, policy drift,
   coverage/rules, simulations, and Docker validation.
 * `make all` — `check` + `simulate` + `build` (the default target)
 * `make test` — unit tests only (`pytest` + `vitest`)
 * `make typecheck` / `make lint` — both stacks
 * `make format` — auto-format Python and TypeScript; `make format-check` verifies Python formatting without writing
-* `make validate-knowledge` / `make validate-knowledge-coverage` / `make validate-workouts` — run the frontend registries/catalog validators individually
+* `make validate-knowledge` / `make validate-knowledge-coverage` / `make validate-knowledge-freshness` / `make validate-workouts` — run the frontend registry/coverage/freshness/catalog checks individually
 * `make simulate` — scenario simulations + baseline diff verification
 * `make simulate-calibrate` / `make simulate-fatigue-fusion` / `make simulate-subjective-drift` / `make compare-sequence-search` — targeted evidence runs
 * `make build` — production frontend build
