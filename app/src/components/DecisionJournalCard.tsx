@@ -1,6 +1,9 @@
 import { useEffect, useState, memo } from 'react';
 import { decisionJournalService } from '../services/decisionJournalService';
+import { shadowLogService } from '../services/shadowLogService';
 import { SHADOW_VERDICTS, type DecisionJournalEntry, type ShadowVerdict } from '../engine/models';
+import { addDaysToLocalDateString } from '../utils/localDate';
+import { downloadShadowEvidence } from '../utils/shadowLogExport';
 import './DecisionJournalCard.css';
 
 interface DecisionJournalCardProps {
@@ -73,6 +76,8 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
   const [externalNote, setExternalNote] = useState('');
   const [actualVerdict, setActualVerdict] = useState<ShadowVerdict | ''>('');
   const [submitting, setSubmitting] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [readBlocked, setReadBlocked] = useState(false);
 
@@ -159,6 +164,22 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
     }
   };
 
+  const exportShadowEvidence = async () => {
+    setExporting(true);
+    setExportStatus(null);
+    try {
+      // Six weeks is the largest planned block window. The service returns every requested
+      // Warsaw-local date so no-empty-record days remain visible in the export manifest.
+      const result = await shadowLogService.build(userId, addDaysToLocalDateString(date, -41), date);
+      downloadShadowEvidence(result);
+      setExportStatus('Downloaded the private evidence CSV and aggregate readout manifest.');
+    } catch {
+      setExportStatus('Could not export the shadow evidence. Retry when the data connection is available.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   if (!loaded) {
     return (
       <div className="dashboard-card decision-journal-card">
@@ -228,6 +249,10 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
               : "Recorded before seeing today's recommendation"}
           </p>
           <p className="journal-locked">Morning verdict locked after recording so the anchoring record cannot be rewritten.</p>
+          <button type="button" className="journal-btn" disabled={exporting} onClick={exportShadowEvidence}>
+            {exporting ? 'Preparing evidence…' : 'Download 42-day shadow evidence'}
+          </button>
+          {exportStatus && <p className="journal-export-status" role="status">{exportStatus}</p>}
         </div>
       )}
 

@@ -61,10 +61,11 @@ describe('ShadowLogService', () => {
         }], invalidRecords: 0 });
 
         const result = await new ShadowLogService().build('u1', START, END);
-        expect(result.rows).toHaveLength(1);
-        expect(result.rows[0]).toMatchObject({
+        expect(result.rows).toHaveLength(3);
+        expect(result.rows[1]).toMatchObject({
             date: '2026-08-15', engineVerdict: 'proceed', externalVerdict: 'proceed', agreement: 'agree', adherenceFollowed: true,
         });
+        expect(result.rows[0]).toMatchObject({ date: '2026-08-14', engineVerdict: null, externalVerdict: null });
     });
 
     it('does not report a missing recovery snapshot day as an unavailable source', async () => {

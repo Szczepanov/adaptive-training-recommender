@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildShadowLog, buildShadowLogRow, deriveEngineVerdictFromMode, renderShadowLogCsv, type ShadowLogDayInput } from './shadowLog';
+import { summarizeShadowLog } from './shadowReadout';
 import type { DailyRecommendation, DailyRecoverySnapshot, DailySubjectiveCheckin, DecisionJournalEntry, ShadowVerdict } from './models';
 import type { ClosedLoopFeedbackRecord } from '../feedback/feedbackModels';
 
@@ -101,9 +102,10 @@ describe('buildShadowLogRow', () => {
         expect(row).toBeNull();
     });
 
-    it('returns null for a recovery snapshot alone -- not one of the three sources that trigger a row', () => {
+    it('keeps a recovery snapshot-only day visible as an objective-evidence row', () => {
         const row = buildShadowLogRow({ date: DATE, recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: snapshot() });
-        expect(row).toBeNull();
+        expect(row).not.toBeNull();
+        expect(row!.objective?.sleepScoreVs7d).toBe(2);
     });
 
     it('builds a row from a recommendation alone, with everything else visible as a gap', () => {
@@ -129,6 +131,7 @@ describe('buildShadowLogRow', () => {
         const row = buildShadowLogRow({ date: DATE, recommendation: null, journalEntry: null, checkin: checkin(), recoverySnapshot: null });
         expect(row).not.toBeNull();
         expect(row!.subjective).toEqual({ readiness: 7, sleepQuality: 6, fatigue: 4, soreness: 3, mentalStress: 4, motivation: 6 });
+        expect(row!.subjectiveComplete).toBe(true);
     });
 
     it('computes agreement when both engine and external verdicts are present', () => {
@@ -225,14 +228,79 @@ describe('buildShadowLogRow', () => {
 });
 
 describe('buildShadowLog', () => {
-    it('drops empty days and preserves the order of days with evidence', () => {
+    it('preserves every requested day, including a fully missing day', () => {
         const days: ShadowLogDayInput[] = [
             { date: '2026-08-14', recommendation: recommendation({ date: '2026-08-14' }), journalEntry: null, checkin: null, recoverySnapshot: null },
             { date: '2026-08-15', recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: null },
             { date: '2026-08-16', recommendation: null, journalEntry: journalEntry(), checkin: null, recoverySnapshot: null },
         ];
         const rows = buildShadowLog(days);
-        expect(rows.map(r => r.date)).toEqual(['2026-08-14', '2026-08-16']);
+        expect(rows.map(r => r.date)).toEqual(['2026-08-14', '2026-08-15', '2026-08-16']);
+        expect(rows[1]).toMatchObject({ date: '2026-08-15', engineVerdict: null, externalVerdict: null, subjective: null, objective: null });
+    });
+});
+
+describe('summarizeShadowLog', () => {
+    it('counts gates and data-quality gaps without allowing duplicate rows to inflate evidence', () => {
+        const rows = buildShadowLog([
+            {
+                date: '2026-08-14', recommendation: recommendation({ date: '2026-08-14', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-14', sawEngineVerdictFirst: false }), checkin: checkin({ date: '2026-08-14' }), recoverySnapshot: null,
+            },
+            {
+                date: '2026-08-15', recommendation: recommendation({ date: '2026-08-15', mode: 'recover', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-15', sawEngineVerdictFirst: true }), checkin: null, recoverySnapshot: null,
+            },
+            { date: '2026-08-16', recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: null },
+            {
+                date: '2026-08-17', recommendation: recommendation({ date: '2026-08-17', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-17', sawEngineVerdictFirst: false }), checkin: null, recoverySnapshot: null,
+            },
+            {
+                date: '2026-08-18', recommendation: recommendation({ date: '2026-08-18', recommendationAudit: { policyVersion: 'policy-b' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-18', sawEngineVerdictFirst: false }), checkin: checkin({ date: '2026-08-18', dataQuality: { isComplete: false, missingFields: ['fatigue'] } }), recoverySnapshot: null,
+            },
+        ]);
+
+        const summary = summarizeShadowLog([...rows, rows[0]]);
+
+        expect(summary.calendarDays).toBe(5);
+        expect(summary.gates.pairedVerdictDays).toMatchObject({ required: 28, observed: 4, met: false });
+        expect(summary.gates.completeSubjectiveCheckins).toMatchObject({ required: 21, observed: 1, met: false });
+        expect(summary.gates.unanchoredDays).toMatchObject({ required: 7, observed: 3, met: false });
+        expect(summary.gates.unanchoredPairedVerdictDays).toBe(3);
+        expect(summary.agreement).toMatchObject({ comparedDays: 4, agree: 3, engineMoreConservative: 1 });
+        expect(summary.anchoredAgreement).toMatchObject({ comparedDays: 1, engineMoreConservative: 1 });
+        expect(summary.unanchoredAgreement).toMatchObject({ comparedDays: 3, agree: 3 });
+        expect(summary.dataQuality).toMatchObject({ duplicateRows: 1, emptyEvidenceDays: 1, incompleteSubjectiveCheckinDays: 1 });
+    });
+
+    it('splits stable-policy segments at an empty date and at a version boundary', () => {
+        const rows = buildShadowLog([
+            {
+                date: '2026-08-14', recommendation: recommendation({ date: '2026-08-14', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-14' }), checkin: null, recoverySnapshot: null,
+            },
+            {
+                date: '2026-08-15', recommendation: recommendation({ date: '2026-08-15', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-15' }), checkin: null, recoverySnapshot: null,
+            },
+            { date: '2026-08-16', recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: null },
+            {
+                date: '2026-08-17', recommendation: recommendation({ date: '2026-08-17', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-17' }), checkin: null, recoverySnapshot: null,
+            },
+            {
+                date: '2026-08-18', recommendation: recommendation({ date: '2026-08-18', recommendationAudit: { policyVersion: 'policy-b' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-18' }), checkin: null, recoverySnapshot: null,
+            },
+        ]);
+
+        expect(summarizeShadowLog(rows).stablePolicySegments).toEqual([
+            expect.objectContaining({ policyVersion: 'policy-a', startDate: '2026-08-14', endDate: '2026-08-15', calendarDays: 2, pairedVerdictDays: 2 }),
+            expect.objectContaining({ policyVersion: 'policy-a', startDate: '2026-08-17', endDate: '2026-08-17', calendarDays: 1, pairedVerdictDays: 1 }),
+            expect.objectContaining({ policyVersion: 'policy-b', startDate: '2026-08-18', endDate: '2026-08-18', calendarDays: 1, pairedVerdictDays: 1 }),
+        ]);
     });
 });
 
@@ -245,7 +313,7 @@ describe('renderShadowLogCsv', () => {
         const lines = csv.split('\n');
         expect(lines[0]).toBe(
             'date,engineVerdict,engineMode,externalVerdict,externalNote,sawEngineVerdictFirst,actualVerdict,adherenceFollowed,'
-            + 'actualDurationMin,agreement,readiness,sleepQuality,fatigue,soreness,mentalStress,motivation,'
+            + 'actualDurationMin,agreement,subjectiveComplete,readiness,sleepQuality,fatigue,soreness,mentalStress,motivation,'
             + 'sleepScoreVs7d,sleepScoreVs28d,restingHrVs7d,restingHrVs28d,hrvVs7d,hrvVs28d,respirationVs7d,respirationVs28d,'
             + 'policyVersion,externalPlanContentHash,athleteDecisionAction,athleteDecisionReasons,regretClass,'
             + 'regretConfidence,athleteDeclaredRegret,utilityScore,coachingHelpfulness',

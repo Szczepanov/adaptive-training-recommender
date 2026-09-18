@@ -262,6 +262,7 @@ Operational manuals and operational procedures:
 * [**Google Health Source-Provenance Probe**](./ops/google-health-source-provenance-probe.md) — Real-account empirical validation procedure for Google Health API data types, source application provenance, Garmin equivalence, and Eight Sleep export presence.
 * [**GCP Cloud Run & Cloud Scheduler Deployment**](./ops/cloud-run-deployment.md) — Packaging Docker images, GCS token store management, Cloud Run services and jobs, and Cloud Scheduler setups.
 * [**Data Backfill, Audit & Offline Rebuild**](./ops/data-backfill-and-rebuild.md) — Executing historical backfills, data completeness audits, and offline raw payload rebuilds.
+* [**Phase 9.0 Shadow Block Operations**](./ops/phase-9-shadow-block.md) — Privacy-preserving preflight, daily evidence capture, export, gate review, and 9.0.8 execution packet.
 * [**Firestore Rules Deployment**](./ops/firestore-rules-deployment.md) — Local repository-owned deployment, deployed-source drift checks, and ruleset rollback.
 * [**Frontend, Firestore Rules & Indexes Deployment**](./ops/frontend-deployment.md) — Manual and automated procedures for Firebase Hosting, Security Rules, and Firestore Index deployment.
 * [**Self-Service Garmin Accounts & Family Setup**](./ops/multi-user-family-setup.md) — Operational guide for onboarding multiple Garmin users, local token bootstrap, and family member mapping.
