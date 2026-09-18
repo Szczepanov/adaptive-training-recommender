@@ -72,7 +72,7 @@ make check          # ruff check/format + mypy + pytest; tsc + eslint + vitest +
   and skips the code test/build/simulation jobs.
 - `make check` already runs `ruff format --check` through `lint-python`; if formatting
   fails, use `make format` (or `uv run ruff format .`) and rerun the gate.
-- Knowledge-registry and coverage validation are part of `make check`; use
+- Knowledge-registry, coverage, and freshness validation/reporting are part of `make check`; use
   `cd app && npm run check` when you want the same frontend-only gate without the Python
   checks.
 - Engine or policy change → `make simulate` (scenario run, aggregate-bounds gate) plus
