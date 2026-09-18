@@ -11,9 +11,9 @@ export interface UseGarminBackfillStatusResult {
 }
 
 /**
- * Surfaces the status of the historical backfill Firestore already queues
- * automatically and offers a retry when it failed or the claimed poller run went
- * stale -- see docs/ops/data-backfill-and-rebuild.md. Reuses the same
+ * Surfaces request-backed historical backfills (the initial account-link request
+ * and later manual retries) and offers a retry when one failed or the claimed poller
+ * run went stale -- see docs/ops/data-backfill-and-rebuild.md. Reuses the same
  * users/{uid}/garmin_sync_requests/latest doc as useGarminSyncTrigger/
  * GarminSyncNowButton; getGarminBackfillStatus filters out an ordinary "Sync Now"
  * request sitting on the same doc.
@@ -41,7 +41,10 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
                 setRequest(next);
                 setLocalError(null);
             },
-            (err) => console.error('[useGarminBackfillStatus] Subscription error:', err)
+            (err) => {
+                console.error('[useGarminBackfillStatus] Subscription error:', err);
+                setLocalError('Could not refresh historical load status — try again later.');
+            }
         );
     }, [userId]);
 
