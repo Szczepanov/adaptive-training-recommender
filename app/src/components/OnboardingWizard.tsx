@@ -11,6 +11,7 @@ import './OnboardingWizard.css';
 interface OnboardingWizardProps {
     userId: string;
     onCompleted: () => void;
+    initialStep?: 1 | 2 | 3;
 }
 
 type GoalFocus = 'general_fitness' | 'running' | 'cycling' | 'triathlon' | 'strength';
@@ -57,8 +58,8 @@ export function ExerciseDaysSlider({ value, onChange, disabled = false }: Exerci
     );
 }
 
-export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompleted }: OnboardingWizardProps) {
-    const [step, setStep] = useState<1 | 2 | 3>(1);
+export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompleted, initialStep = 1 }: OnboardingWizardProps) {
+    const [step, setStep] = useState<1 | 2 | 3>(initialStep);
     const [focus, setFocus] = useState<GoalFocus>('general_fitness');
     const [equipment, setEquipment] = useState<EquipmentTier>('full_gym');
     const [exerciseDaysPerWeek, setExerciseDaysPerWeek] = useState<number>(4);
@@ -273,13 +274,13 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                             <label className="group-heading">Available Equipment:</label>
                             <div className="choice-grid-small">
                                 <button type="button" className={`choice-card-mini ${equipment === 'full_gym' ? 'active' : ''}`} onClick={() => setEquipment('full_gym')} disabled={saving}>
-                                    🏋️ Full Gym (Barbells, Machines, Cardio)
+                                    <span className="choice-mini-icon" aria-hidden="true">🏋️</span> Full Gym (Barbells, Machines, Cardio)
                                 </button>
                                 <button type="button" className={`choice-card-mini ${equipment === 'home_dumbbells' ? 'active' : ''}`} onClick={() => setEquipment('home_dumbbells')} disabled={saving}>
-                                    🏠 Home Gear (Dumbbells & Pull-up Bar)
+                                    <span className="choice-mini-icon" aria-hidden="true">🏠</span> Home Gear (Dumbbells & Pull-up Bar)
                                 </button>
                                 <button type="button" className={`choice-card-mini ${equipment === 'minimal' ? 'active' : ''}`} onClick={() => setEquipment('minimal')} disabled={saving}>
-                                    👟 Minimal / Bodyweight & Running Only
+                                    <span className="choice-mini-icon" aria-hidden="true">👟</span> Minimal / Bodyweight & Running Only
                                 </button>
                             </div>
                         </div>
@@ -289,11 +290,11 @@ export const OnboardingWizard = memo(function OnboardingWizard({ userId, onCompl
                             <div className="choice-grid-small">
                                 <label className="choice-card-mini">
                                     <input type="checkbox" checked={sportAccess.outdoor_bike} onChange={(event) => setSportAccess(current => ({ ...current, outdoor_bike: event.target.checked }))} disabled={saving} />
-                                    🚴 Bicycle available for outdoor riding
+                                    <span className="choice-mini-icon" aria-hidden="true">🚴</span> Bicycle available for outdoor riding
                                 </label>
                                 <label className="choice-card-mini">
                                     <input type="checkbox" checked={sportAccess.swim_access} onChange={(event) => setSportAccess(current => ({ ...current, swim_access: event.target.checked }))} disabled={saving} />
-                                    🏊 Pool / swim venue access
+                                    <span className="choice-mini-icon" aria-hidden="true">🏊</span> Pool / swim venue access
                                 </label>
                             </div>
                         </div>
