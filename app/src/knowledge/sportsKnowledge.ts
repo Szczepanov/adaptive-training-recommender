@@ -617,7 +617,7 @@ const DOI_PATTERN = /^10\.\d{4,9}\/\S+$/i;
 const SYNTHESIS_SOURCE_TYPES: readonly KnowledgeSourceType[] = ['systematic_review', 'scoping_review', 'umbrella_review'];
 
 /** Validate both ISO date shape and Gregorian calendar validity without timezone-dependent parsing. */
-function isIsoCalendarDate(value: string): boolean {
+export function isIsoCalendarDate(value: string): boolean {
     const match = ISO_DATE_PATTERN.exec(value);
     if (!match) return false;
     const year = Number(match[1]);
