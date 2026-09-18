@@ -30,13 +30,35 @@ describe('OnboardingWizard', () => {
     usabilityMetrics.clear();
   });
 
-  it('renders Step 1 welcome screen by default', () => {
+  it('renders Step 1 welcome screen by default within an onboarding modal backdrop', () => {
     const html = renderToStaticMarkup(
       <OnboardingWizard userId="athlete-1" onCompleted={() => {}} />
     );
 
+    expect(html).toContain('class="onboarding-modal-backdrop"');
     expect(html).toContain('Welcome to Adaptive Training');
     expect(html).toContain('Let&#x27;s Set Up Your Profile →');
+  });
+
+  it('renders Step 2 focus options with choice-icon spans including strength emoji', () => {
+    const html = renderToStaticMarkup(
+      <OnboardingWizard userId="athlete-1" onCompleted={() => {}} initialStep={2} />
+    );
+
+    expect(html).toContain('class="choice-icon">🏋️</span>');
+    expect(html).toContain('Strength &amp; Muscle');
+  });
+
+  it('renders Step 3 equipment and sport access with choice-mini-icon spans', () => {
+    const html = renderToStaticMarkup(
+      <OnboardingWizard userId="athlete-1" onCompleted={() => {}} initialStep={3} />
+    );
+
+    expect(html).toContain('class="choice-mini-icon" aria-hidden="true">🏋️</span> Full Gym');
+    expect(html).toContain('class="choice-mini-icon" aria-hidden="true">🏠</span> Home Gear');
+    expect(html).toContain('class="choice-mini-icon" aria-hidden="true">👟</span> Minimal');
+    expect(html).toContain('class="choice-mini-icon" aria-hidden="true">🚴</span> Bicycle available');
+    expect(html).toContain('class="choice-mini-icon" aria-hidden="true">🏊</span> Pool / swim venue access');
   });
 
   it('offers an explicit Skip path on the welcome step without starting setup', () => {
