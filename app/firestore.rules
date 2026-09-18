@@ -1504,6 +1504,28 @@ service cloud.firestore {
         && data.updatedAt is string;
     }
 
+    // #663: a deterministic pointer doc per (date, occurrenceId) or (date,
+    // prescriptionHash) identity, written inside the same client transaction as the
+    // execution doc it points at (`SessionExecutionService.claimExecutionSlot`) so two
+    // concurrent `startExecution` calls for the same identity cannot both create an
+    // execution -- see that method for why the deterministic id makes the check
+    // transactable. Full-document create/update (not merge), so one validator covers both.
+    function hasValidSessionExecutionLock(userId) {
+      let data = request.resource.data;
+      return hasOwnedUserId(userId)
+        && data.keys().hasOnly(['userId', 'executionId', 'updatedAt', 'schemaVersion'])
+        && data.keys().hasAll(['userId', 'executionId', 'updatedAt', 'schemaVersion'])
+        && data.executionId is string && data.executionId.size() > 0
+        && data.updatedAt is string
+        && data.schemaVersion == 1;
+    }
+
+    match /users/{userId}/session_execution_locks/{lockId} {
+      allow read: if isOwner(userId);
+      allow create, update: if hasValidSessionExecutionLock(userId);
+      allow delete: if isOwner(userId);
+    }
+
     match /users/{userId}/session_executions/{executionId} {
       allow read: if isOwner(userId);
       allow create: if hasValidSessionExecution(userId, executionId)

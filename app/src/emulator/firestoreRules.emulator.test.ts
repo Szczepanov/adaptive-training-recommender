@@ -2126,6 +2126,31 @@ emulatorDescribe('Firestore security rules', () => {
         await assertFails(setDoc(doc(ownerDb, sessionRestEventPath), { ...validSessionRestEvent(), id: 'wrong-id' }));
     });
 
+    it('validates the session_execution_locks pointer doc used by claimExecutionSlot (#663)', async () => {
+        const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
+        const otherDb = testEnvironment.authenticatedContext(otherUserId).firestore();
+        const lockPath = `users/${ownerId}/session_execution_locks/occ-unplanned-1`;
+
+        const validLock = {
+            userId: ownerId,
+            executionId: 'exec-1',
+            updatedAt: '2026-08-18T10:00:00Z',
+            schemaVersion: 1,
+        };
+
+        await expect(assertSucceeds(setDoc(doc(ownerDb, lockPath), validLock))).resolves.toBeUndefined();
+        // Redo moves the pointer to a new executionId -- a full overwrite, not a merge.
+        await expect(assertSucceeds(setDoc(doc(ownerDb, lockPath), {
+            ...validLock, executionId: 'exec-2', updatedAt: '2026-08-18T11:00:00Z',
+        }))).resolves.toBeUndefined();
+
+        await assertFails(setDoc(doc(ownerDb, lockPath), { ...validLock, userId: otherUserId }));
+        await assertFails(setDoc(doc(ownerDb, lockPath), { ...validLock, executionId: '' }));
+        await assertFails(setDoc(doc(ownerDb, lockPath), { ...validLock, extraField: true }));
+        await assertFails(setDoc(doc(otherDb, lockPath), validLock));
+        await assertFails(getDoc(doc(otherDb, lockPath)));
+    });
+
     it('rejects an execution with an incomplete or unknown source reference', async () => {
         const ownerDb = testEnvironment.authenticatedContext(ownerId).firestore();
         await assertFails(setDoc(doc(ownerDb, `${sessionExecPath}-bad-source`), {

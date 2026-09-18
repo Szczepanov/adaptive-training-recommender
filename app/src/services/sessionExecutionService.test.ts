@@ -11,6 +11,7 @@ const firestore = vi.hoisted(() => {
         query: vi.fn(),
         where: vi.fn(),
         orderBy: vi.fn(),
+        runTransaction: vi.fn(),
     };
 });
 
@@ -49,17 +50,56 @@ function validEntry(overrides: Record<string, unknown> = {}) {
     };
 }
 
+type TxSnapshot = { exists: boolean; data?: Record<string, unknown> };
+
+/** Builds a mock transaction object keyed by the same `path` the `doc()` mock below derives
+ * from its args -- shared by the persistent default (no lock, no conflict) and by
+ * `makeTransactionMock` (explicit per-test responses). */
+function makeTx(responsesByPath: Record<string, TxSnapshot> = {}) {
+    return {
+        get: vi.fn(async (ref: { path: string }) => {
+            const resp = responsesByPath[ref.path] ?? { exists: false };
+            return { exists: () => resp.exists, data: () => resp.data, ref };
+        }),
+        set: vi.fn(),
+    };
+}
+
+/**
+ * Mocks the next `runTransaction` call to run against a fixed set of documents. Returns the
+ * transaction object so a test can assert on `.set` calls (the execution + lock writes) the
+ * same way existing tests assert on `firestore.setDoc`.
+ */
+function makeTransactionMock(responsesByPath: Record<string, TxSnapshot> = {}) {
+    const tx = makeTx(responsesByPath);
+    firestore.runTransaction.mockImplementationOnce(
+        async (_db: unknown, callback: (t: typeof tx) => unknown) => callback(tx),
+    );
+    return tx;
+}
+
 describe('SessionExecutionService', () => {
     let service: SessionExecutionService;
 
     beforeEach(() => {
         vi.clearAllMocks();
         service = new SessionExecutionService();
-        firestore.doc.mockReturnValue({ id: EXECUTION_ID, path: `users/${USER_ID}/session_executions/${EXECUTION_ID}` });
+        firestore.doc.mockImplementation((_db: unknown, ...segments: string[]) => ({
+            id: segments[segments.length - 1],
+            path: segments.join('/'),
+        }));
         firestore.collection.mockReturnValue({ tag: 'collection' });
         firestore.query.mockReturnValue({ tag: 'query' });
         firestore.setDoc.mockResolvedValue(undefined);
         firestore.getDocs.mockResolvedValue({ docs: [] });
+        // Default: an empty transaction (no lock, no conflicting execution) so tests that
+        // don't care about the transactional recheck can exercise `startExecution`'s create
+        // path without wiring up `makeTransactionMock` themselves. A test that needs custom
+        // `get` responses or wants to assert on `.set` calls overrides this per-call with
+        // `makeTransactionMock(...)`.
+        firestore.runTransaction.mockImplementation(
+            async (_db: unknown, callback: (t: ReturnType<typeof makeTx>) => unknown) => callback(makeTx()),
+        );
     });
 
     describe('getExecutionsInRange', () => {
@@ -304,6 +344,7 @@ describe('SessionExecutionService', () => {
     describe('startExecution guards', () => {
         it('creates a new execution when none exists', async () => {
             firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+            const tx = makeTransactionMock();
 
             const exec = await service.startExecution(USER_ID, 'exec-new', {
                 sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
@@ -311,7 +352,9 @@ describe('SessionExecutionService', () => {
             });
 
             expect(exec.executionId).toBe('exec-new');
-            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+            // The execution doc and its session_execution_locks pointer, written atomically.
+            expect(tx.set).toHaveBeenCalledTimes(2);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
         });
 
         it('resumes existing in_progress execution without creating a second execution document', async () => {
@@ -363,6 +406,8 @@ describe('SessionExecutionService', () => {
                 ],
             });
 
+            const tx = makeTransactionMock();
+
             const exec = await service.startExecution(USER_ID, 'exec-redo', {
                 sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
                 date: '2026-08-17',
@@ -370,7 +415,120 @@ describe('SessionExecutionService', () => {
             });
 
             expect(exec.executionId).toBe('exec-redo');
-            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+            expect(tx.set).toHaveBeenCalledTimes(2);
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
+        // #663 regression: the outside pre-check query and the transactional create are two
+        // separate round-trips, so the pre-check can find nothing (the exact race window)
+        // while another caller's transaction has already claimed the slot. These tests
+        // exercise the transactional recheck directly -- the part the pre-check-only tests
+        // above cannot reach -- by seeding a lock the pre-check's `getDocs` mock never sees.
+        describe('transactional slot recheck (closes the TOCTOU race)', () => {
+            const LOCK_PATH = `users/${USER_ID}/session_execution_locks/rx_2026-08-17_nohash`;
+
+            it('returns the winner\'s execution instead of creating a duplicate when the recheck finds an in_progress claim the pre-check missed', async () => {
+                firestore.getDocs.mockResolvedValueOnce({ docs: [] }); // pre-check: race window, sees nothing
+                const winnerPath = `users/${USER_ID}/session_executions/exec-winner`;
+                const tx = makeTransactionMock({
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-winner', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [winnerPath]: { exists: true, data: validExecution({ executionId: 'exec-winner', state: 'in_progress' }) },
+                });
+
+                const exec = await service.startExecution(USER_ID, 'exec-loser', {
+                    sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                    date: '2026-08-17',
+                });
+
+                expect(exec.executionId).toBe('exec-winner');
+                expect(tx.set).not.toHaveBeenCalled();
+            });
+
+            it('throws instead of creating a duplicate when the recheck finds a completed claim and allowDuplicateCompleted is not set', async () => {
+                firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+                const winnerPath = `users/${USER_ID}/session_executions/exec-winner`;
+                const tx = makeTransactionMock({
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-winner', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [winnerPath]: { exists: true, data: validExecution({ executionId: 'exec-winner', state: 'completed', completedAt: '2026-08-17T18:45:00Z' }) },
+                });
+
+                await expect(service.startExecution(USER_ID, 'exec-loser', {
+                    sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                    date: '2026-08-17',
+                })).rejects.toThrow('A completed execution already exists for this session today.');
+                expect(tx.set).not.toHaveBeenCalled();
+            });
+
+            it('creates a new execution and moves the lock pointer forward on redo when the recheck finds a completed claim', async () => {
+                firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+                const previousPath = `users/${USER_ID}/session_executions/exec-previous`;
+                const tx = makeTransactionMock({
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-previous', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [previousPath]: { exists: true, data: validExecution({ executionId: 'exec-previous', state: 'completed', completedAt: '2026-08-17T18:45:00Z' }) },
+                });
+
+                const exec = await service.startExecution(USER_ID, 'exec-redo-2', {
+                    sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                    date: '2026-08-17',
+                    allowDuplicateCompleted: true,
+                });
+
+                expect(exec.executionId).toBe('exec-redo-2');
+                expect(tx.set).toHaveBeenCalledTimes(2);
+                const lockWrite = tx.set.mock.calls.find(call => (call[0] as { path: string }).path === LOCK_PATH);
+                expect(lockWrite?.[1]).toMatchObject({ executionId: 'exec-redo-2' });
+            });
+
+            it('creates a new execution when the lock points at an execution doc that no longer exists (dangling pointer)', async () => {
+                firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+                const tx = makeTransactionMock({
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-deleted', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    // No entry for exec-deleted's own path -- the transaction's get() falls
+                    // back to { exists: false }, exactly like a doc that was removed.
+                });
+
+                const exec = await service.startExecution(USER_ID, 'exec-new', {
+                    sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                    date: '2026-08-17',
+                });
+
+                expect(exec.executionId).toBe('exec-new');
+                expect(tx.set).toHaveBeenCalledTimes(2);
+            });
+
+            it('creates a new execution when the lock points at an execution doc that fails to parse', async () => {
+                firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+                const badPath = `users/${USER_ID}/session_executions/exec-corrupt`;
+                const tx = makeTransactionMock({
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-corrupt', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [badPath]: { exists: true, data: { not: 'a valid execution document' } },
+                });
+
+                const exec = await service.startExecution(USER_ID, 'exec-new', {
+                    sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                    date: '2026-08-17',
+                });
+
+                expect(exec.executionId).toBe('exec-new');
+                expect(tx.set).toHaveBeenCalledTimes(2);
+            });
+
+            it('creates a new execution when the lock points at an abandoned execution', async () => {
+                firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+                const abandonedPath = `users/${USER_ID}/session_executions/exec-abandoned`;
+                const tx = makeTransactionMock({
+                    [LOCK_PATH]: { exists: true, data: { userId: USER_ID, executionId: 'exec-abandoned', updatedAt: '2026-08-17T18:00:01Z', schemaVersion: 1 } },
+                    [abandonedPath]: { exists: true, data: validExecution({ executionId: 'exec-abandoned', state: 'abandoned' }) },
+                });
+
+                const exec = await service.startExecution(USER_ID, 'exec-new', {
+                    sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                    date: '2026-08-17',
+                });
+
+                expect(exec.executionId).toBe('exec-new');
+                expect(tx.set).toHaveBeenCalledTimes(2);
+            });
         });
     });
 });

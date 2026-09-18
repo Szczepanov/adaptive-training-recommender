@@ -8,6 +8,7 @@ import {
     query,
     where,
     orderBy,
+    runTransaction,
     type Firestore,
     type WriteBatch,
 } from 'firebase/firestore';
@@ -26,6 +27,39 @@ import {
     parseSessionEntryDocument,
     parseSessionRestEventDocument,
 } from '../persistence/parsers/sessionExecution';
+
+const ALREADY_COMPLETED_MESSAGE = 'A completed execution already exists for this session today.';
+
+/**
+ * Thrown from inside `claimExecutionSlot`'s transaction when a concurrent caller already
+ * won the slot. Distinguished from a genuine Firestore write failure (permission-denied,
+ * network) so `startExecution`'s H4 rollback catch does not treat ordinary two-tab
+ * contention as a failed launch that needs an occurrence/ledger rollback.
+ */
+class ExecutionSlotConflictError extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = 'ExecutionSlotConflictError';
+    }
+}
+
+/**
+ * `session_execution_locks/{lockId}` -- a small pointer document, one per (date,
+ * occurrenceId) or (date, prescriptionHash) identity, that makes `startExecution`'s
+ * existing-execution check transactable. Firestore transactions can only do atomic reads
+ * on documents whose reference is already known, and `findExistingExecution` is a
+ * `where('date', '==', ...)` query, so the check-then-create in `startExecution` used to be
+ * two independent round-trips with an unguarded window between them (#663). Keying a
+ * transaction on this deterministic doc instead closes that window: two concurrent callers
+ * reading the same lock ref race through Firestore's normal transaction-conflict retry,
+ * and the loser re-reads the winner's pointer instead of creating a second execution.
+ */
+interface SessionExecutionLock {
+    userId: string;
+    executionId: string;
+    updatedAt: string;
+    schemaVersion: 1;
+}
 
 export class SessionExecutionService {
     private readonly db: Firestore;
@@ -84,6 +118,30 @@ export class SessionExecutionService {
         );
     }
 
+    private lockRef(userId: string, lockId: string) {
+        return doc(this.db, 'users', userId, 'session_execution_locks', lockId);
+    }
+
+    /**
+     * Same identity `findExistingExecution` matches on: an occurrence-bound request is keyed
+     * by occurrenceId alone (already globally unique, see `sessionAuthoringService.ts`'s
+     * `occ-${Date.now()}-${crypto.randomUUID()}`); an occurrence-less request is keyed by
+     * date + prescriptionHash so the same recurring catalog workout on a different day does
+     * not collide, and a hash-less request (e.g. an unplanned fixture) collapses onto one
+     * `'none'` slot per day -- matching `findExistingExecution`'s existing "no hash matches
+     * no hash" rule, not a new restriction introduced by this lock.
+     */
+    private executionSlotKey(params: { date: string; occurrenceId?: string; prescriptionHash?: string }): string {
+        // Distinct `hash:`/`nohash` prefixes (rather than a bare `?? 'none'`) rule out a
+        // real prescriptionHash ever colliding with the hash-less slot by coincidentally
+        // equaling that fallback string.
+        return params.occurrenceId
+            ? `occ_${params.occurrenceId}`
+            : params.prescriptionHash
+                ? `rx_${params.date}_hash:${params.prescriptionHash}`
+                : `rx_${params.date}_nohash`;
+    }
+
     async startExecution(
         userId: string,
         executionId: string,
@@ -95,6 +153,10 @@ export class SessionExecutionService {
             allowDuplicateCompleted?: boolean;
         },
     ): Promise<SessionExecution> {
+        // Fast path: catches the common case (and legacy executions written before this
+        // lock scheme existed) without opening a transaction. This alone is still racy --
+        // two concurrent callers can both pass it -- so it is not the guard; see
+        // `claimExecutionSlot` below for the part that actually closes #663.
         const existing = await this.findExistingExecution(userId, {
             date: params.date,
             occurrenceId: params.occurrenceId,
@@ -106,28 +168,14 @@ export class SessionExecutionService {
                 return existing;
             }
             if (existing.state === 'completed' && !params.allowDuplicateCompleted) {
-                throw new Error('A completed execution already exists for this session today.');
+                throw new Error(ALREADY_COMPLETED_MESSAGE);
             }
         }
 
-        const now = new Date().toISOString();
-        const execution: SessionExecution = {
-            userId,
-            executionId,
-            sessionSource: params.sessionSource,
-            ...(params.occurrenceId ? { occurrenceId: params.occurrenceId } : {}),
-            ...(params.prescriptionHash ? { prescriptionHash: params.prescriptionHash } : {}),
-            date: params.date,
-            startedAt: now,
-            updatedAt: now,
-            state: 'in_progress',
-            schemaVersion: 1,
-        };
-
         try {
-            await setDoc(this.executionRef(userId, executionId), execution);
-            return execution;
+            return await this.claimExecutionSlot(userId, executionId, params);
         } catch (error) {
+            if (error instanceof ExecutionSlotConflictError) throw error;
             // H4 (#434) PR 3 Phase 4: an additional bundle member is claimed before
             // SessionRunner reaches this write. A failure here used to escape back through
             // useSessionRunner after Home had already unmounted, so Home's rollback catch
@@ -164,6 +212,89 @@ export class SessionExecutionService {
             }
             throw error;
         }
+    }
+
+    /**
+     * The authoritative, race-safe half of `startExecution` (#663). Everything here runs
+     * inside one `runTransaction`, keyed on the deterministic `session_execution_locks`
+     * doc `executionSlotKey` derives -- Firestore serializes concurrent transactions that
+     * read/write the same document, so two callers racing this method never both create an
+     * execution for the same identity: the loser's transaction is retried once the winner
+     * commits, re-reads the now-existing lock, and returns the winner's execution instead.
+     *
+     * Re-derives the existing/completed/in_progress decision from a transactional read
+     * rather than trusting `startExecution`'s pre-check, since that check's result can be
+     * stale by the time this transaction actually runs.
+     */
+    private async claimExecutionSlot(
+        userId: string,
+        executionId: string,
+        params: {
+            sessionSource: SessionSourceRef;
+            occurrenceId?: string;
+            prescriptionHash?: string;
+            date: string;
+            allowDuplicateCompleted?: boolean;
+        },
+    ): Promise<SessionExecution> {
+        const lockDocRef = this.lockRef(userId, this.executionSlotKey(params));
+
+        return runTransaction(this.db, async transaction => {
+            const lockSnap = await transaction.get(lockDocRef);
+            let conflicting: SessionExecution | null = null;
+            if (lockSnap.exists()) {
+                const lockedExecutionId = (lockSnap.data() as Partial<SessionExecutionLock>).executionId;
+                if (typeof lockedExecutionId === 'string') {
+                    const execSnap = await transaction.get(this.executionRef(userId, lockedExecutionId));
+                    if (execSnap.exists()) {
+                        const parsed = parseSessionExecutionDocument(execSnap.data(), execSnap.ref.path);
+                        // Mirrors `findExistingExecution`'s own defense against a doc whose
+                        // stored executionId disagrees with its document id -- rules already
+                        // make this impossible for client writes, but keeps the two lookup
+                        // paths consistent for anything written outside rules.
+                        if (parsed.status === 'AVAILABLE' && parsed.data.executionId === lockedExecutionId) {
+                            conflicting = parsed.data;
+                        }
+                    }
+                }
+            }
+
+            if (conflicting) {
+                if (conflicting.state === 'in_progress') {
+                    return conflicting;
+                }
+                if (conflicting.state === 'completed' && !params.allowDuplicateCompleted) {
+                    throw new ExecutionSlotConflictError(ALREADY_COMPLETED_MESSAGE);
+                }
+                // completed && allowDuplicateCompleted (redo), or abandoned: fall through
+                // and create a new execution doc, moving the lock pointer forward. The old
+                // doc is left in place -- redo history, same as before this fix.
+            }
+
+            const now = new Date().toISOString();
+            const execution: SessionExecution = {
+                userId,
+                executionId,
+                sessionSource: params.sessionSource,
+                ...(params.occurrenceId ? { occurrenceId: params.occurrenceId } : {}),
+                ...(params.prescriptionHash ? { prescriptionHash: params.prescriptionHash } : {}),
+                date: params.date,
+                startedAt: now,
+                updatedAt: now,
+                state: 'in_progress',
+                schemaVersion: 1,
+            };
+            const lock: SessionExecutionLock = {
+                userId,
+                executionId,
+                updatedAt: now,
+                schemaVersion: 1,
+            };
+
+            transaction.set(this.executionRef(userId, executionId), execution);
+            transaction.set(lockDocRef, lock);
+            return execution;
+        });
     }
 
     async getExecution(userId: string, executionId: string): Promise<DataState<SessionExecution>> {
