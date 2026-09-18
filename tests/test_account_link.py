@@ -49,6 +49,37 @@ class DummyRepository:
     pass
 
 
+def test_sync_request_staleness_matches_shared_frontend_windows() -> None:
+    now = account_link_module.datetime(2026, 9, 18, 12, 0, tzinfo=account_link_module.timezone.utc)
+
+    pending = {
+        "status": "pending",
+        "requestType": "backfill",
+        "requestedAt": (now - account_link_module.timedelta(minutes=19)).isoformat(),
+    }
+    assert account_link_module._is_sync_request_stale(pending, now) is False
+    pending["requestedAt"] = (now - account_link_module.timedelta(minutes=21)).isoformat()
+    assert account_link_module._is_sync_request_stale(pending, now) is True
+
+    claimed_backfill = {
+        "status": "processing",
+        "requestType": "initial_backfill",
+        "requestedAt": (now - account_link_module.timedelta(hours=1)).isoformat(),
+        "claimedAt": (now - account_link_module.timedelta(minutes=29)).isoformat(),
+    }
+    assert account_link_module._is_sync_request_stale(claimed_backfill, now) is False
+    claimed_backfill["claimedAt"] = (now - account_link_module.timedelta(minutes=31)).isoformat()
+    assert account_link_module._is_sync_request_stale(claimed_backfill, now) is True
+
+    ordinary_processing = {
+        "status": "processing",
+        "requestType": "sync",
+        "requestedAt": (now - account_link_module.timedelta(hours=1)).isoformat(),
+        "claimedAt": (now - account_link_module.timedelta(minutes=21)).isoformat(),
+    }
+    assert account_link_module._is_sync_request_stale(ordinary_processing, now) is True
+
+
 def test_mfa_resume_failure_preserves_challenge_for_retry(
     monkeypatch: Any,
 ) -> None:

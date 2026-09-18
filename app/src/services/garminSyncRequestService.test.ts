@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { GarminSyncRequestService, type GarminSyncRequest } from './garminSyncRequestService';
-import { STALE_AFTER_MS } from '../utils/garminSyncStaleness';
+import { BACKFILL_PROCESSING_STALE_AFTER_MS, STALE_AFTER_MS } from '../utils/garminSyncStaleness';
 
 type FakeSnapshot = { exists: () => boolean; data?: () => unknown };
 
@@ -101,6 +101,67 @@ describe('GarminSyncRequestService.requestSync', () => {
         await service.requestSync('user-1');
 
         expect(mockTransactionSet).not.toHaveBeenCalled();
+    });
+});
+
+describe('GarminSyncRequestService.requestBackfill', () => {
+    it('writes a pending 56-day backfill request when the coordination slot is available', async () => {
+        const service = new GarminSyncRequestService();
+
+        await service.requestBackfill('user-1');
+
+        expect(mockTransactionSet).toHaveBeenCalledWith(
+            expect.objectContaining({ path: 'users/user-1/garmin_sync_requests/latest' }),
+            expect.objectContaining({
+                userId: 'user-1',
+                status: 'pending',
+                requestType: 'backfill',
+                days: 56,
+                completedAt: null,
+                error: null,
+            })
+        );
+    });
+
+    it('keeps a claimed backfill live through the 30-minute processing window', async () => {
+        const service = new GarminSyncRequestService();
+        const oldRequestedAt = new Date(Date.now() - STALE_AFTER_MS * 2).toISOString();
+        const freshClaimedAt = new Date(
+            Date.now() - BACKFILL_PROCESSING_STALE_AFTER_MS + 60_000
+        ).toISOString();
+        mockTransactionGet.mockResolvedValue(
+            requestData({
+                status: 'processing',
+                requestType: 'initial_backfill',
+                requestedAt: oldRequestedAt,
+                claimedAt: freshClaimedAt,
+                claimId: 'backfill-worker',
+            })
+        );
+
+        await service.requestBackfill('user-1');
+
+        expect(mockTransactionSet).not.toHaveBeenCalled();
+    });
+
+    it('may replace a claimed backfill only after the 30-minute processing window expires', async () => {
+        const service = new GarminSyncRequestService();
+        const staleClaimedAt = new Date(
+            Date.now() - BACKFILL_PROCESSING_STALE_AFTER_MS - 1000
+        ).toISOString();
+        mockTransactionGet.mockResolvedValue(
+            requestData({
+                status: 'processing',
+                requestType: 'backfill',
+                requestedAt: staleClaimedAt,
+                claimedAt: staleClaimedAt,
+                claimId: 'dead-backfill-worker',
+            })
+        );
+
+        await service.requestBackfill('user-1');
+
+        expect(mockTransactionSet).toHaveBeenCalledOnce();
     });
 });
 
