@@ -44,7 +44,24 @@ Operational, not code:
 
 **Closed 2026-08-27.** `garmin-sync-morning-poll` (`*/15 5-9 * * *`, `Europe/Warsaw`, no `--force`) has been live against the deployed `garmin-sync` Cloud Run Job since 2026-08-18. `uv run python -m garmin_sync audit --days 7` over 2026-08-21 → 2026-08-27 reports 7/7 snapshots present, 0 missing — the literal gate text above is satisfied.
 
-Recorded honestly rather than silently: the Cloud Run execution history for 2026-08-21 shows every scheduled tick from 03:00–06:00 UTC failed (`NonZeroExitCode`), coinciding with that day's deploy (#171/#173). It self-recovered at 06:03 UTC, well inside the 05:00–09:45 Warsaw polling window, and the day's snapshot landed through the unattended path itself — not a manual backfill. So this is *seven days with complete, unattended-path data*, not *seven days with zero pipeline incidents*; one of the seven needed a same-morning self-heal rather than running clean. Treat 2026-08-21 as a recovered incident, not a confirmed-clean day, if a future reader needs that distinction (e.g. re-litigating 9.0.7 agreement against incident days). The two duplicate Cloud Scheduler jobs found during this check (`garmin-sync-daily` + `garmin-sync-morning-poll`, identical schedule/target since 08-27) are a separate cleanup item, not a data-quality issue — both fired without gaps.
+Recorded honestly rather than silently: the Cloud Run execution history for 2026-08-21 shows every scheduled tick from 03:00–06:00 UTC failed (`NonZeroExitCode`), coinciding with that day's deploy (#171/#173). It self-recovered at 06:03 UTC, well inside the 05:00–09:45 Warsaw polling window, and the day's snapshot landed through the unattended path itself — not a manual backfill. So this is *seven days with complete, unattended-path data*, not *seven days with zero pipeline incidents*; one of the seven needed a same-morning self-heal rather than running clean. Treat 2026-08-21 as a recovered incident, not a confirmed-clean day, if a future reader needs that distinction (e.g. re-litigating 9.0.7 agreement against incident days). The two duplicate Cloud Scheduler jobs found during this check (`garmin-sync-daily` + `garmin-sync-morning-poll`, identical schedule/target since 08-27) were a separate cleanup item, not a data-quality issue — both fired without gaps.
+
+**Scheduler cleanup evidence (read-only, 2026-09-18).** `garmin-sync-morning-poll` was
+enabled and matched the documented `*/15 5-9 * * *` / `Europe/Warsaw` contract. The read-only
+full-URI inventory found exactly one Scheduler target for the `garmin-sync` RunJob; the historical
+`garmin-sync-daily` lookup returned `NOT_FOUND`, so no external deletion or pause was performed.
+Its observed Scheduler retry configuration had a 5-second minimum backoff, a 3600-second maximum
+backoff, five doublings, and no maximum retry duration. The most recent 20 `garmin-sync`
+executions were all `Completed=True`, and the 2026-09-18 morning window ran at the expected
+15-minute cadence. Cloud Run execution metadata and the matching `/Jobs.RunJob` system events
+did not provide `authenticationInfo.principalEmail`, so this evidence does not attribute those
+executions to the Scheduler invoker. It confirms current scheduler/execution continuity only.
+It is not a new `garmin_sync audit` result and does not extend the 2026-08-21 → 2026-08-27
+snapshot-coverage evidence above.
+
+**Post-cleanup coverage remains open.** No fresh user-scoped `garmin_sync audit` was recorded
+after the duplicate check. The owner must record a new monitored snapshot-coverage window before
+claiming post-cleanup coverage complete or closing this operational follow-up.
 
 **Block day 1: 2026-08-22** (the day after the last recovered incident). Check-ins/journal entries from that date onward may count toward 9.0.7's volume gates.
 
