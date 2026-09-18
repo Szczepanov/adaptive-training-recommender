@@ -79,7 +79,7 @@ export interface KnowledgeClaim {
     reviewedOn: string;
     version: number;
     supersedes?: string;
-    /** Explicit review-cadence override in months. Omit to use the derived freshness-governance cadence (see `knowledgeFreshness.ts`). */
+    /** Optional tighter review cadence in months. It cannot relax the risk-derived cadence (see `knowledgeFreshness.ts`). */
     reviewCadenceMonthsOverride?: number;
     /** Explicit review owner override. Omit to use the registry default owner. */
     owner?: string;
@@ -729,7 +729,7 @@ export function validateSportsKnowledgeRegistry(
         if (claim.safetyImpact === 'high' && claim.recommendationStrength === 'strong' && (claim.maturity === 'emerging' || claim.maturity === 'heuristic' || ['low', 'very_low', 'not_applicable'].includes(claim.evidenceCertainty))) errors.push(`claim ${claim.id}: high-safety strong policy requires at least supported maturity and moderate certainty`);
         if (claim.status === 'contested') warnings.push(`claim ${claim.id}: contested claim requires explicit consumer opt-in`);
         if (claim.limitations.length === 0) warnings.push(`claim ${claim.id}: no applicability limitations recorded`);
-        if (claim.reviewCadenceMonthsOverride !== undefined && (!Number.isInteger(claim.reviewCadenceMonthsOverride) || claim.reviewCadenceMonthsOverride < 1 || claim.reviewCadenceMonthsOverride > 60)) errors.push(`claim ${claim.id}: reviewCadenceMonthsOverride must be an integer between 1 and 60`);
+        if (claim.reviewCadenceMonthsOverride !== undefined && (!Number.isInteger(claim.reviewCadenceMonthsOverride) || claim.reviewCadenceMonthsOverride < 1 || claim.reviewCadenceMonthsOverride > 24)) errors.push(`claim ${claim.id}: reviewCadenceMonthsOverride must be an integer between 1 and 24`);
         if (claim.owner !== undefined && !claim.owner.trim()) errors.push(`claim ${claim.id}: owner override must not be blank`);
     }
     return { valid: errors.length === 0, errors, warnings };
