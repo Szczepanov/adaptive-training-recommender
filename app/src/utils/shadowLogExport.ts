@@ -28,6 +28,7 @@ export function downloadShadowEvidence(result: ShadowLogResult): void {
         startDate: result.startDate,
         endDate: result.endDate,
         unavailableSources: result.unavailableSources,
+        sourceQuality: result.sourceQuality,
         readout: summarizeShadowLog(result.rows),
     };
     downloadTextFile(`${stem}.readout.json`, `${JSON.stringify(manifest, null, 2)}\n`, 'application/json;charset=utf-8');

@@ -106,11 +106,17 @@ not turn incomplete evidence into a pass:
 * `gates.completeSubjectiveCheckins` must reach 21. A partial check-in is not complete.
 * `gates.unanchoredDays` must reach 7. `unanchoredPairedVerdictDays` says how many of those
   can actually support blind agreement.
+* `sourceQuality.subjectiveCheckins` preserves `AVAILABLE`, `MISSING`, `INVALID`, and
+  `UNAVAILABLE` range states. An invalid or unavailable range is a read-quality finding, not
+  an empty check-in window.
 * Any `dataQuality` count, `unavailableSources` entry, empty day, missing policy version, or
   duplicate row is a reported gap. It must not be silently discarded from an agreement rate.
 
 The manifest creates a new stable-policy segment whenever `policyVersion` changes, is absent,
 or a calendar day is missing. Do not pool those segments or make a before/after causal claim.
+Each segment carries its own 28/21/7 gate counts. The aggregate `met` flags remain false unless
+all three gates are satisfied within one stable segment; two shorter segments never combine into
+a qualifying block.
 If a decision-affecting policy, equality, replay, or provenance change is unavoidable, end the
 segment before deployment and begin a new one afterward.
 

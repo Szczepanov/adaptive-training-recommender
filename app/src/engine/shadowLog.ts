@@ -236,7 +236,11 @@ const CSV_COLUMNS: Array<{ header: string; read: (row: ShadowLogRow) => string |
 
 function csvCell(value: string | number | boolean | null): string {
     if (value === null || value === undefined) return '';
-    const text = String(value);
+    const rawText = String(value);
+    // Spreadsheet programs may evaluate a cell as a formula even after leading whitespace.
+    // Prefix the complete cell before normal CSV escaping so a journal note remains literal
+    // data rather than executable spreadsheet input.
+    const text = /^\s*[=+\-@]/.test(rawText) ? `'${rawText}` : rawText;
     return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 

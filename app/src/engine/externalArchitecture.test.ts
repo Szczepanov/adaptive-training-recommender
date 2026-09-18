@@ -149,6 +149,7 @@ describe('the decision journal cannot reach the engine (Phase 9.0.6)', () => {
         'engine/shadowReadout.ts',
         'services/shadowLogService.ts',
         'utils/shadowLogExport.ts',
+        'utils/decisionJournalEvidenceExport.ts',
     ];
     const SELECTION_MODULES = ['engine/rules.ts', 'engine/optimizer.ts', 'engine/planner.ts', 'engine/trainingIntent.ts'];
 

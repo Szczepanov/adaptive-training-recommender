@@ -1,8 +1,8 @@
-import { useEffect, useState, memo } from 'react';
+import { useEffect, useRef, useState, memo } from 'react';
 import { decisionJournalService } from '../services/decisionJournalService';
 import { shadowLogService } from '../services/shadowLogService';
 import { SHADOW_VERDICTS, type DecisionJournalEntry, type ShadowVerdict } from '../engine/models';
-import { addDaysToLocalDateString } from '../utils/localDate';
+import { exportDecisionJournalEvidenceOnce } from '../utils/decisionJournalEvidenceExport';
 import { downloadShadowEvidence } from '../utils/shadowLogExport';
 import './DecisionJournalCard.css';
 
@@ -77,6 +77,7 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
   const [actualVerdict, setActualVerdict] = useState<ShadowVerdict | ''>('');
   const [submitting, setSubmitting] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const exportInFlight = useRef(false);
   const [exportStatus, setExportStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [readBlocked, setReadBlocked] = useState(false);
@@ -165,19 +166,10 @@ export const DecisionJournalCard = memo(function DecisionJournalCard({
   };
 
   const exportShadowEvidence = async () => {
-    setExporting(true);
-    setExportStatus(null);
-    try {
-      // Six weeks is the largest planned block window. The service returns every requested
-      // Warsaw-local date so no-empty-record days remain visible in the export manifest.
-      const result = await shadowLogService.build(userId, addDaysToLocalDateString(date, -41), date);
-      downloadShadowEvidence(result);
-      setExportStatus('Downloaded the private evidence CSV and aggregate readout manifest.');
-    } catch {
-      setExportStatus('Could not export the shadow evidence. Retry when the data connection is available.');
-    } finally {
-      setExporting(false);
-    }
+    await exportDecisionJournalEvidenceOnce({
+      lock: exportInFlight, userId, date, build: shadowLogService.build.bind(shadowLogService),
+      download: downloadShadowEvidence, setExporting, setStatus: setExportStatus,
+    });
   };
 
   if (!loaded) {

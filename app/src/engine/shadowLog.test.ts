@@ -241,6 +241,68 @@ describe('buildShadowLog', () => {
 });
 
 describe('summarizeShadowLog', () => {
+    it('does not pass aggregate gates by combining two non-qualifying policy segments', () => {
+        const rows = Array.from({ length: 28 }, (_, offset) => {
+            const date = `2026-08-${String(offset + 1).padStart(2, '0')}`;
+            const firstSegment = offset < 14;
+            return buildShadowLogRow({
+                date,
+                recommendation: recommendation({
+                    date,
+                    recommendationAudit: { policyVersion: firstSegment ? 'policy-a' : 'policy-b' } as DailyRecommendation['recommendationAudit'],
+                }),
+                journalEntry: journalEntry({ date, sawEngineVerdictFirst: ![0, 1, 2, 3, 14, 15, 16].includes(offset) }),
+                checkin: offset < 21 ? checkin({ date }) : null,
+                recoverySnapshot: null,
+            })!;
+        });
+
+        const summary = summarizeShadowLog(rows);
+
+        expect(summary.gates.pairedVerdictDays).toMatchObject({ observed: 28, met: false });
+        expect(summary.gates.completeSubjectiveCheckins).toMatchObject({ observed: 21, met: false });
+        expect(summary.gates.unanchoredDays).toMatchObject({ observed: 7, met: false });
+        expect(summary.stablePolicySegments).toHaveLength(2);
+        expect(summary.stablePolicySegments).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                policyVersion: 'policy-a',
+                gates: expect.objectContaining({
+                    pairedVerdictDays: expect.objectContaining({ observed: 14, met: false }),
+                    completeSubjectiveCheckins: expect.objectContaining({ observed: 14, met: false }),
+                    unanchoredDays: expect.objectContaining({ observed: 4, met: false }),
+                }),
+            }),
+            expect.objectContaining({
+                policyVersion: 'policy-b',
+                gates: expect.objectContaining({
+                    pairedVerdictDays: expect.objectContaining({ observed: 14, met: false }),
+                    completeSubjectiveCheckins: expect.objectContaining({ observed: 7, met: false }),
+                    unanchoredDays: expect.objectContaining({ observed: 3, met: false }),
+                }),
+            }),
+        ]));
+    });
+
+    it('passes aggregate gates only when one stable segment satisfies all three gates', () => {
+        const rows = Array.from({ length: 28 }, (_, offset) => {
+            const date = `2026-09-${String(offset + 1).padStart(2, '0')}`;
+            return buildShadowLogRow({
+                date,
+                recommendation: recommendation({ date, recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date, sawEngineVerdictFirst: offset >= 7 }),
+                checkin: offset < 21 ? checkin({ date }) : null,
+                recoverySnapshot: null,
+            })!;
+        });
+
+        const summary = summarizeShadowLog(rows);
+
+        expect(summary.gates.pairedVerdictDays.met).toBe(true);
+        expect(summary.gates.completeSubjectiveCheckins.met).toBe(true);
+        expect(summary.gates.unanchoredDays.met).toBe(true);
+        expect(summary.qualifyingStablePolicySegments).toBe(1);
+    });
+
     it('counts gates and data-quality gaps without allowing duplicate rows to inflate evidence', () => {
         const rows = buildShadowLog([
             {
@@ -324,5 +386,13 @@ describe('renderShadowLogCsv', () => {
 
     it('round-trips an empty row set to just the header', () => {
         expect(renderShadowLogCsv([]).split('\n')).toHaveLength(1);
+    });
+
+    it.each(['=1+1', ' +SUM(A1:A2)', '-1+2', '@cmd'])('neutralizes formula-leading journal notes: %s', note => {
+        const csv = renderShadowLogCsv(buildShadowLog([
+            { date: DATE, recommendation: null, journalEntry: journalEntry({ externalNote: note }), checkin: null, recoverySnapshot: null },
+        ]));
+
+        expect(csv.split('\n')[1]).toContain(`'${note}`);
     });
 });

@@ -29,6 +29,11 @@ export interface ShadowPolicySegment {
     endDate: string;
     calendarDays: number;
     pairedVerdictDays: number;
+    gates: {
+        pairedVerdictDays: ShadowEvidenceGate;
+        completeSubjectiveCheckins: ShadowEvidenceGate;
+        unanchoredDays: ShadowEvidenceGate;
+    };
     agreement: ShadowAgreementCounts;
 }
 
@@ -48,6 +53,9 @@ export interface ShadowReadout {
     anchoredAgreement: ShadowAgreementCounts;
     unanchoredAgreement: ShadowAgreementCounts;
     stablePolicySegments: ShadowPolicySegment[];
+    /** A shadow block is eligible for interpretation only when all three gates hold
+     * inside the same contiguous explicit-policy segment. */
+    qualifyingStablePolicySegments: number;
     dataQuality: {
         duplicateRows: number;
         emptyEvidenceDays: number;
@@ -77,6 +85,10 @@ function addAgreement(counts: ShadowAgreementCounts, agreement: AgreementClass |
     else if (agreement === 'engine_more_conservative') counts.engineMoreConservative += 1;
     else if (agreement === 'engine_less_conservative') counts.engineLessConservative += 1;
     else counts.incomparable += 1;
+}
+
+function evidenceGate(required: number, observed: number): ShadowEvidenceGate {
+    return { required, observed, met: observed >= required };
 }
 
 function isConsecutiveDate(previous: string, next: string): boolean {
@@ -113,6 +125,11 @@ function buildStablePolicySegments(rows: readonly ShadowLogRow[]): ShadowPolicyS
                 endDate: row.date,
                 calendarDays: 0,
                 pairedVerdictDays: 0,
+                gates: {
+                    pairedVerdictDays: evidenceGate(SHADOW_BLOCK_GATES.pairedVerdictDays, 0),
+                    completeSubjectiveCheckins: evidenceGate(SHADOW_BLOCK_GATES.completeSubjectiveCheckins, 0),
+                    unanchoredDays: evidenceGate(SHADOW_BLOCK_GATES.unanchoredDays, 0),
+                },
                 agreement: emptyAgreementCounts(),
             };
             segments.push(active);
@@ -126,8 +143,21 @@ function buildStablePolicySegments(rows: readonly ShadowLogRow[]): ShadowPolicyS
         active.endDate = row.date;
         if (row.engineVerdict !== null && row.externalVerdict !== null) {
             active.pairedVerdictDays += 1;
+            active.gates.pairedVerdictDays.observed += 1;
+        }
+        if (row.subjectiveComplete === true) {
+            active.gates.completeSubjectiveCheckins.observed += 1;
+        }
+        if (row.sawEngineVerdictFirst === false) {
+            active.gates.unanchoredDays.observed += 1;
         }
         addAgreement(active.agreement, row.agreement);
+    }
+
+    for (const segment of segments) {
+        segment.gates.pairedVerdictDays.met = segment.gates.pairedVerdictDays.observed >= segment.gates.pairedVerdictDays.required;
+        segment.gates.completeSubjectiveCheckins.met = segment.gates.completeSubjectiveCheckins.observed >= segment.gates.completeSubjectiveCheckins.required;
+        segment.gates.unanchoredDays.met = segment.gates.unanchoredDays.observed >= segment.gates.unanchoredDays.required;
     }
 
     return segments;
@@ -150,6 +180,13 @@ export function summarizeShadowLog(rows: readonly ShadowLogRow[]): ShadowReadout
         rowsByDate.set(row.date, row);
     }
     const uniqueRows = [...rowsByDate.values()].sort((left, right) => left.date.localeCompare(right.date));
+    const stablePolicySegments = buildStablePolicySegments(uniqueRows);
+    const qualifyingStablePolicySegments = stablePolicySegments.filter(segment => (
+        segment.gates.pairedVerdictDays.met
+        && segment.gates.completeSubjectiveCheckins.met
+        && segment.gates.unanchoredDays.met
+    ));
+    const hasQualifyingStablePolicySegment = qualifyingStablePolicySegments.length > 0;
 
     const agreement = emptyAgreementCounts();
     const anchoredAgreement = emptyAgreementCounts();
@@ -201,24 +238,25 @@ export function summarizeShadowLog(rows: readonly ShadowLogRow[]): ShadowReadout
             pairedVerdictDays: {
                 required: SHADOW_BLOCK_GATES.pairedVerdictDays,
                 observed: pairedVerdictDays,
-                met: pairedVerdictDays >= SHADOW_BLOCK_GATES.pairedVerdictDays,
+                met: hasQualifyingStablePolicySegment,
             },
             completeSubjectiveCheckins: {
                 required: SHADOW_BLOCK_GATES.completeSubjectiveCheckins,
                 observed: completeSubjectiveCheckins,
-                met: completeSubjectiveCheckins >= SHADOW_BLOCK_GATES.completeSubjectiveCheckins,
+                met: hasQualifyingStablePolicySegment,
             },
             unanchoredDays: {
                 required: SHADOW_BLOCK_GATES.unanchoredDays,
                 observed: unanchoredDays,
-                met: unanchoredDays >= SHADOW_BLOCK_GATES.unanchoredDays,
+                met: hasQualifyingStablePolicySegment,
             },
             unanchoredPairedVerdictDays,
         },
         agreement,
         anchoredAgreement,
         unanchoredAgreement,
-        stablePolicySegments: buildStablePolicySegments(uniqueRows),
+        stablePolicySegments,
+        qualifyingStablePolicySegments: qualifyingStablePolicySegments.length,
         dataQuality: {
             duplicateRows,
             emptyEvidenceDays,
