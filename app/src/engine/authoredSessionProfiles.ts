@@ -5,6 +5,7 @@ import { isV2Session, type AnyExternalPlanSession as ExternalPlanSession } from 
 import type { RangeOrNumber, SessionStep } from '../sessions/models';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 import type { ExerciseDefinition } from '../workouts/models';
+import { MAX_RIR_FOR_ESTIMATION } from '../workouts/oneRepMax';
 
 /**
  * M8.1 (docs/plans/multidomain-session-authoring-execution-and-evidence.md) -- a **default-off
@@ -31,14 +32,19 @@ import type { ExerciseDefinition } from '../workouts/models';
  * than invented afresh, kept local exactly as that module keeps its own copy local. */
 const LOWER_BODY_MUSCLES = new Set(['quadriceps', 'glutes', 'hamstrings', 'calves', 'adductors', 'hip_flexors', 'soleus', 'gastrocnemius', 'tibialis_anterior']);
 
-/** Squat/hinge patterns loaded through a rigid barbell are the axial-spine case; the same
- * pattern under a dumbbell/kettlebell/bodyweight variant is not (goblet squat, kettlebell
- * deadlift) -- lower-body-heavy without loading the spine the same way. */
-const AXIAL_SPINE_PATTERNS = new Set(['squat', 'hinge']);
+/** Squat/hinge (bilateral or unilateral) patterns loaded through a rigid barbell are the
+ * axial-spine case; the same pattern under a dumbbell/kettlebell/bodyweight variant is not
+ * (goblet squat, kettlebell deadlift) -- lower-body-heavy without loading the spine the
+ * same way. No catalog entry combines `barbell` equipment with a unilateral pattern today,
+ * but the set is kept broad so a future one (a barbell-loaded split squat, say) is not
+ * silently missed. */
+const AXIAL_SPINE_PATTERNS = new Set(['squat', 'hinge', 'unilateral_squat', 'unilateral_hinge', 'lunge', 'lateral_lunge']);
 
-/** RPE >= 7 or >=75% of a known max: near-max effort, the same "near failure" direction
- * `workouts/oneRepMax.ts`'s `isNearFailureGauge` already treats as the heavy threshold. */
-const HEAVY_RPE_THRESHOLD = 7;
+/** RPE >= 7 (equivalently RIR <= `MAX_RIR_FOR_ESTIMATION`) or >=75% of a known max:
+ * near-max effort, the same "near failure" direction `workouts/oneRepMax.ts`'s
+ * `isNearFailureGauge` already treats as the heavy threshold -- reused via the shared
+ * constant rather than a second, potentially-drifting number. */
+const HEAVY_RPE_THRESHOLD = 10 - MAX_RIR_FOR_ESTIMATION;
 const HEAVY_PERCENT_THRESHOLD = 75;
 
 export interface AuthoredSessionEligibilityCandidate extends GateableSession {
@@ -56,6 +62,13 @@ function rangeMax(value: RangeOrNumber | undefined): number | undefined {
     return typeof value === 'number' ? value : value.max;
 }
 
+/** RIR is inverted (lower = harder), so the *minimum* of an authored range is the near-
+ * failure end -- a "2-3 RIR" step is only as heavy as its 2. */
+function rangeMin(value: RangeOrNumber | undefined): number | undefined {
+    if (value === undefined) return undefined;
+    return typeof value === 'number' ? value : value.min;
+}
+
 /** Authored content carries RPE two ways -- `{ kind: 'rpe', target }` (every hand-authored
  * fixture) and a bare `{ rpe }` (`canonicalWorkoutAdapter.ts`'s import path). Both are read;
  * `sessionDefinitionDiff.ts` already treats them as two independent possible sources rather
@@ -69,6 +82,16 @@ function effortRpe(effort: SessionStep['effort']): RangeOrNumber | undefined {
 function isHeavyStep(step: SessionStep): boolean {
     const rpe = rangeMax(effortRpe(step.effort));
     if (rpe !== undefined && rpe >= HEAVY_RPE_THRESHOLD) return true;
+    // `canonicalWorkoutAdapter.ts`'s RIR-authored import path never populates `rpe`/`kind`
+    // at all (only `effort.rir`) -- without this, an imported "RIR 1" back squat would
+    // silently classify as not-heavy, the wrong direction to be wrong in for a safety tag.
+    const rir = rangeMin(step.effort?.rir);
+    if (rir !== undefined && rir <= MAX_RIR_FOR_ESTIMATION) return true;
+    // `RelativeStepLoad` ("90% of step X's load") is not resolved back to the referenced
+    // step -- a back-off/ramp set authored that way with no RPE/RIR of its own is not
+    // detected as heavy even when the step it references is. In practice a genuinely heavy
+    // top set almost always carries its own RPE/RIR, so this is a known, accepted gap
+    // rather than a resolved one.
     if (step.load?.kind === 'percent_one_rm' || step.load?.kind === 'percent_max') {
         return step.load.percent >= HEAVY_PERCENT_THRESHOLD;
     }

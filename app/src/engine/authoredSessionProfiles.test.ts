@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { deriveAuthoredSessionEligibility } from './authoredSessionProfiles';
 import { toGateableSession } from './externalSessionProfiles';
-import type { ExternalPlanSession } from './models';
+import type { ExternalPlanSession, ExternalSessionIntensity, ExternalSessionModality } from './models';
 import type { ExternalPlanSessionV2 } from '../sessions/externalPlanV2';
 import type { SessionDefinition } from '../sessions/models';
 
@@ -110,6 +110,57 @@ describe('deriveAuthoredSessionEligibility', () => {
         expect(candidate.durationMax).toBe(current.durationMax);
         expect(candidate.evidenceConfidence).toBe('discounted');
     });
+
+    it('classifies an RIR-only-authored heavy step as heavy (import path never populates rpe)', () => {
+        const rirSquat: SessionDefinition = {
+            schemaVersion: 1, id: 'rir-heavy-squat', revision: 1, title: 'RIR-authored back squat', intent: 'training',
+            blocks: [{
+                id: 'block-main', role: 'main', executionMode: 'sequential',
+                steps: [{
+                    id: 'step-back-squat', kind: 'exercise',
+                    exerciseRef: { kind: 'catalog', exerciseId: 'back_squat' },
+                    dose: { kind: 'repetition', sets: 3, reps: 5 },
+                    // canonicalWorkoutAdapter.ts's RIR import path produces exactly this
+                    // shape -- no `kind`, no `rpe`, only `rir`.
+                    effort: { rir: 1 },
+                }],
+            }],
+        };
+        const candidate = deriveAuthoredSessionEligibility(v2Session(rirSquat));
+        expect(candidate.safetyTags).toContain('avoid_heavy_lower_body');
+        expect(candidate.safetyTags).toContain('avoid_heavy_spinal_loading');
+        expect(candidate.evidenceConfidence).toBe('resolved');
+    });
+
+    const ALL_MODALITIES: ExternalSessionModality[] = ['cycling', 'running', 'swimming', 'strength', 'field', 'mobility', 'cross_training'];
+    const ALL_INTENSITIES: ExternalSessionIntensity[] = ['recovery', 'easy', 'moderate', 'hard', 'max'];
+    const MODALITY_INTENSITY_MATRIX = ALL_MODALITIES.flatMap(modality => ALL_INTENSITIES.map(intensity => [modality, intensity] as const));
+
+    it.each(MODALITY_INTENSITY_MATRIX)(
+        'drift guard: an all-unresolved session (%s/%s) falls back to exactly today\'s coarse tags',
+        (modality, intensity) => {
+            const allUnresolved: SessionDefinition = {
+                schemaVersion: 1, id: `all-unresolved-${modality}-${intensity}`, revision: 1, title: 'Unresolved session', intent: 'training',
+                blocks: [{
+                    id: 'block-main', role: 'main', executionMode: 'sequential',
+                    steps: [{
+                        id: 'step-mystery', kind: 'exercise',
+                        exerciseRef: { kind: 'unresolved_free_text', name: 'Unresolved movement' },
+                        dose: { kind: 'repetition', sets: 3, reps: 10 },
+                    }],
+                }],
+            };
+            const session = v2Session(allUnresolved, { modality, intensity });
+            const candidate = deriveAuthoredSessionEligibility(session);
+            const current = toGateableSession(session);
+            // With no resolved steps at all, the candidate's safety tags are exactly the
+            // fallback -- if `coarseFallbackSafetyTags` (hand-duplicated because
+            // `externalSessionProfiles.ts` can't be touched without tripping
+            // check-policy-drift.mjs) ever drifts from the original `inferredSafetyTags`,
+            // this fails immediately rather than silently.
+            expect([...candidate.safetyTags].sort()).toEqual([...current.safetyTags].sort());
+        },
+    );
 
     it('uses the definition\'s own authored duration rather than the coarse gating range', () => {
         const shortDefinition: SessionDefinition = {

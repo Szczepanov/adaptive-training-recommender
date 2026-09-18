@@ -43,6 +43,14 @@ function tagsEqual(a: GateableSession['safetyTags'], b: GateableSession['safetyT
     return left.length === right.length && left.every((tag, index) => tag === right[index]);
 }
 
+/**
+ * `category` and `modality` can never actually differ today: `deriveAuthoredSessionEligibility`
+ * inherits both verbatim from `toGateableSession(session)` (the same call `current` uses),
+ * since M8.1's scope is safety tags and duration only. These two branches are kept anyway
+ * as forward-compatible diff coverage -- if a later revision of the candidate ever derives
+ * either independently, this starts reporting real discrepancies with no further change
+ * needed here, rather than silently missing them.
+ */
 function diffRow(current: GateableSession, candidate: AuthoredSessionEligibilityCandidate): AuthoredSessionProfilesDiscrepancy[] {
     const discrepancies: AuthoredSessionProfilesDiscrepancy[] = [];
     if (!tagsEqual(current.safetyTags, candidate.safetyTags)) {

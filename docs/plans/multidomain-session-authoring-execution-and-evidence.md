@@ -1682,7 +1682,7 @@ authored effort/load) instead of `externalSessionProfiles.ts`'s coarse authored
 `modality`×`intensity` bucket, and reads a v2+ session's own `definition.duration` in place of
 the coarse authored `gating` range. Optional steps are excluded from the required set. An
 unresolved catalog id or free-text movement discounts evidence confidence and falls back to
-today's conservative `inferredSafetyTags`, never to a more permissive result. Cost/stimulus and
+a local copy of today's conservative coarse fallback, never to a more permissive result. Cost/stimulus and
 category/equipment/environment derivation are untouched. A v1 session (no `.definition`) is
 identical to `toGateableSession` today.
 
@@ -1692,9 +1692,13 @@ session and reports every field discrepancy (safety tags, category, duration, mo
 
 **Files.** `engine/authoredSessionProfiles.ts`, `engine/authoredSessionProfiles.test.ts`,
 `engine/simulation/authoredSessionProfilesComparison.ts`,
-`engine/simulation/authoredSessionProfilesComparison.test.ts`. `externalSessionProfiles.ts`'s
-`inferredSafetyTags` is exported (additive) for reuse in the fallback path; no other production
-file was touched, and no production module imports the new candidate.
+`engine/simulation/authoredSessionProfilesComparison.test.ts`. `externalSessionProfiles.ts` is
+untouched -- `check-policy-drift.mjs` treats it as decision-affecting and fails on any
+executable diff there (including an additive export with no behavior change), so the small
+coarse-fallback heuristic is hand-duplicated locally (`coarseFallbackSafetyTags`) instead of
+exported and imported, the same way this new module already duplicates
+`strengthExposure.ts`'s private lower-body muscle set rather than importing it. No production
+module imports the new candidate.
 
 **Verified.** Against `sessions/fixtures/02-lower-olympic-variants.json` (barbell hang power
 clean / power clean from floor) the candidate keeps `avoid_heavy_lower_body` and
