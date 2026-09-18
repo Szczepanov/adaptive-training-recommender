@@ -5,17 +5,18 @@ export interface GarminBackfillStatusProps {
 }
 
 /**
- * Shown under the Garmin connection card so a failed or stuck automatic historical
- * backfill (queued on first Garmin link, or by the daily sync's cold-start check --
- * see docs/ops/data-backfill-and-rebuild.md) isn't silently invisible to the athlete.
- * Renders nothing once the backfill has completed or when none was ever queued.
+ * Shown under the Garmin connection card for request-backed historical backfills:
+ * the automatic initial request queued on account link and any later manual retry.
+ * The scheduled sync_daily cold-start safeguard executes its backfill directly and
+ * does not publish through this request document; see docs/ops/data-backfill-and-rebuild.md.
+ * Renders nothing once the queued request has completed or when none was ever queued.
  */
 export function GarminBackfillStatus({ userId }: GarminBackfillStatusProps) {
-    const { status, request, retrying, localError, retryBackfill } = useGarminBackfillStatus(userId);
+    const { status, retrying, localError, retryBackfill } = useGarminBackfillStatus(userId);
 
     if (status === 'in_progress') {
         return (
-            <p className="preference-desc">
+            <p className="preference-desc" role="status" aria-live="polite">
                 Loading historical data (up to 56 days) to build recovery baselines…
             </p>
         );
@@ -25,19 +26,23 @@ export function GarminBackfillStatus({ userId }: GarminBackfillStatusProps) {
         return null;
     }
 
+    // Backend failures may contain provider/library exception text intended for
+    // operational logs, not end-user copy. Keep the UI actionable without echoing
+    // those implementation details.
     const reason =
-        localError || request?.error || (status === 'stale' ? 'It is taking longer than expected.' : null);
+        localError || (status === 'stale' ? 'It is taking longer than expected.' : 'Try loading history again.');
 
     return (
         <>
-            <p className="error-message">
-                Historical backfill didn't finish.{reason ? ` ${reason}` : ''}
+            <p className="error-message" role="alert">
+                Historical backfill didn't finish. {reason}
             </p>
             <button
                 type="button"
                 className="auth-secondary-btn"
                 onClick={() => void retryBackfill()}
                 disabled={retrying}
+                aria-busy={retrying}
             >
                 {retrying ? 'Requesting…' : 'Retry loading history'}
             </button>
