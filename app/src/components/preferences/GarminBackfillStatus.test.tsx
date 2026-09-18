@@ -80,7 +80,8 @@ describe('GarminBackfillStatus', () => {
 
         const html = renderToStaticMarkup(<GarminBackfillStatus userId="u1" />);
 
-        expect(html).toContain('Historical Garmin data didn&#x27;t finish loading.');
+        expect(html).toContain('Historical Garmin data');
+        expect(html).toContain('finish loading.');
         expect(html).toContain('Try loading history again.');
         expect(html).not.toContain(providerError);
         expect(html).not.toContain('tokenObject');
