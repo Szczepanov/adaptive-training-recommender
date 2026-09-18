@@ -38,7 +38,7 @@ describe('DecisionJournalCard shadow evidence export action', () => {
         pending.resolve(RESULT);
         await expect(first).resolves.toBe(true);
         expect(download).toHaveBeenCalledWith(RESULT);
-        expect(setStatus).toHaveBeenLastCalledWith('Downloaded the private evidence CSV and aggregate readout manifest.');
+        expect(setStatus).toHaveBeenLastCalledWith('Evidence export started. Your browser may ask to allow multiple downloads; verify both the CSV and readout JSON were saved.');
         expect(setExporting).toHaveBeenLastCalledWith(false);
         expect(lock.current).toBe(false);
     });
