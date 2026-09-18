@@ -24,24 +24,29 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
     const [localError, setLocalError] = useState<string | null>(null);
     const [now, setNow] = useState(() => Date.now());
     const userIdRef = useRef(userId);
-
-    useEffect(() => {
-        userIdRef.current = userId;
-    }, [userId]);
+    // Keep identity current synchronously with render. An effect-only update leaves a
+    // small window after an account switch where a fast retry click could target the
+    // previous user's request document.
+    userIdRef.current = userId;
 
     useEffect(() => {
         setLocalError(null);
+        setRetrying(false);
         if (!userId) {
             setRequest(null);
             return;
         }
+
+        const subscribedUserId = userId;
         return garminSyncRequestService.subscribeToRequest(
-            userId,
+            subscribedUserId,
             (next) => {
+                if (userIdRef.current !== subscribedUserId) return;
                 setRequest(next);
                 setLocalError(null);
             },
             (err) => {
+                if (userIdRef.current !== subscribedUserId) return;
                 console.error('[useGarminBackfillStatus] Subscription error:', err);
                 setLocalError('Could not refresh historical load status — try again later.');
             }
@@ -69,9 +74,13 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
             await garminSyncRequestService.requestBackfill(uid);
         } catch (err) {
             console.error('[useGarminBackfillStatus] Failed to request backfill retry:', err);
-            setLocalError('Could not request a retry — try again.');
+            if (userIdRef.current === uid) {
+                setLocalError('Could not request a retry — try again.');
+            }
         } finally {
-            setRetrying(false);
+            if (userIdRef.current === uid) {
+                setRetrying(false);
+            }
         }
     }, []);
 
