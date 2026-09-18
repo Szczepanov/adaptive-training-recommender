@@ -42,9 +42,16 @@ export function deriveReviewCadenceCategory(claim: KnowledgeClaim): ReviewCadenc
     return 'stable';
 }
 
-/** Resolve the effective review-cadence months for a claim, honoring an explicit per-claim override. */
+/**
+ * Resolve the effective review cadence. Per-claim overrides may tighten review frequency but
+ * never relax the risk-derived cadence; this keeps an override from silently downgrading
+ * freshness governance for high-safety or rapidly evolving claims.
+ */
 export function reviewCadenceMonthsFor(claim: KnowledgeClaim): number {
-    return claim.reviewCadenceMonthsOverride ?? REVIEW_CADENCE_MONTHS[deriveReviewCadenceCategory(claim)];
+    const derivedCadence = REVIEW_CADENCE_MONTHS[deriveReviewCadenceCategory(claim)];
+    return claim.reviewCadenceMonthsOverride === undefined
+        ? derivedCadence
+        : Math.min(claim.reviewCadenceMonthsOverride, derivedCadence);
 }
 
 /** Resolve the effective review owner for a claim, honoring an explicit per-claim override. */
@@ -100,6 +107,7 @@ export interface KnowledgeFreshnessSummary {
     total: number;
     byFreshness: Record<KnowledgeFreshnessStatus, number>;
     byCategory: Record<ReviewCadenceCategory, number>;
+    dueActive: readonly string[];
     dueOrStaleHighSafetyActive: readonly string[];
     staleActive: readonly string[];
 }
@@ -113,14 +121,15 @@ export interface KnowledgeFreshnessReport {
 /**
  * Build the freshness report for every claim, regardless of lifecycle status: a deprecated or
  * rejected claim's freshness is still informative for audit, but only `active` claims count
- * toward the risk-visibility summary (`dueOrStaleHighSafetyActive`, `staleActive`) since only
- * active claims currently authorize a recommendation.
+ * toward the risk-visibility summary (`dueActive`, `dueOrStaleHighSafetyActive`,
+ * `staleActive`) since only active claims currently authorize a recommendation.
  */
 export function buildKnowledgeFreshnessReport(claims: readonly KnowledgeClaim[], asOfIsoDate: string): KnowledgeFreshnessReport {
     const records = claims.map(claim => computeClaimFreshness(claim, asOfIsoDate));
 
     const byFreshness: Record<KnowledgeFreshnessStatus, number> = { current: 0, due: 0, stale: 0 };
     const byCategory: Record<ReviewCadenceCategory, number> = { high_safety: 0, rapidly_evolving: 0, high_impact: 0, stable: 0 };
+    const dueActive: string[] = [];
     const dueOrStaleHighSafetyActive: string[] = [];
     const staleActive: string[] = [];
 
@@ -128,6 +137,7 @@ export function buildKnowledgeFreshnessReport(claims: readonly KnowledgeClaim[],
         byFreshness[record.freshness] += 1;
         byCategory[record.category] += 1;
         if (record.claimStatus !== 'active') continue;
+        if (record.freshness === 'due') dueActive.push(record.claimId);
         if (record.category === 'high_safety' && record.freshness !== 'current') dueOrStaleHighSafetyActive.push(record.claimId);
         if (record.freshness === 'stale') staleActive.push(record.claimId);
     }
@@ -139,6 +149,7 @@ export function buildKnowledgeFreshnessReport(claims: readonly KnowledgeClaim[],
             total: records.length,
             byFreshness,
             byCategory,
+            dueActive,
             dueOrStaleHighSafetyActive,
             staleActive,
         },
