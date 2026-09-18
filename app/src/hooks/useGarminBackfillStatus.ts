@@ -53,7 +53,11 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
         );
     }, [userId]);
 
-    const status = getGarminBackfillStatus(request, now);
+    // React preserves state across prop changes. Never let the previous user's last
+    // snapshot flash as the new user's history status while the new subscription is
+    // being installed.
+    const currentRequest = request?.userId === userId ? request : null;
+    const status = getGarminBackfillStatus(currentRequest, now);
 
     // Firestore won't push a new snapshot if the poller execution that claimed this
     // request died mid-run -- the doc just sits at 'processing' forever. Re-checking
@@ -84,5 +88,5 @@ export function useGarminBackfillStatus(userId: string | null | undefined): UseG
         }
     }, []);
 
-    return { request, status, retrying, localError, retryBackfill };
+    return { request: currentRequest, status, retrying, localError, retryBackfill };
 }
