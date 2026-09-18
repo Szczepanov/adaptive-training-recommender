@@ -152,6 +152,22 @@ export async function signInThroughUi(page: Page, athlete: E2EAthlete): Promise<
   await dismissOnboardingIfVisible(page);
 }
 
+// Drives the real Create Account form rather than provisioning through the Auth Emulator's
+// REST API, so this exercises emailAuthService.signUp (including its password-policy check)
+// exactly as a brand-new user would.
+export async function signUpThroughUi(page: Page): Promise<{ email: string; password: string }> {
+  const email = `e2e-${randomUUID()}@example.test`;
+  await page.goto('/');
+  await page.getByRole('tab', { name: 'Create Account' }).click();
+  await page.getByPlaceholder('Email address').fill(email);
+  await page.getByPlaceholder('Password', { exact: true }).fill(password);
+  await page.getByPlaceholder('Confirm password').fill(password);
+  await page.getByRole('button', { name: 'Create Account', exact: true }).click();
+  await page.getByRole('heading', { name: 'Check-in', exact: true }).waitFor();
+  await dismissOnboardingIfVisible(page);
+  return { email, password };
+}
+
 export async function openFixturePicker(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'More' }).click();
   await page.getByRole('button', { name: /Sessions$/ }).click();

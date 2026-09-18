@@ -20,12 +20,17 @@ export const emailAuthService = {
     },
 
     async signUp(auth: Auth, email: string, password: string): Promise<void> {
-        const policy = await validatePassword(auth, password);
-        if (!policy.isValid) {
-            throw Object.assign(
-                new Error('Password does not meet the configured password policy.'),
-                { code: 'auth/password-does-not-meet-requirements' },
-            );
+        // The Auth Emulator doesn't implement getPasswordPolicy (used by validatePassword), so
+        // skip client-side policy validation there. createUserWithEmailAndPassword still
+        // enforces its own server-side checks (e.g. auth/weak-password) against the emulator.
+        if (import.meta.env.VITE_USE_FIREBASE_EMULATORS !== 'true') {
+            const policy = await validatePassword(auth, password);
+            if (!policy.isValid) {
+                throw Object.assign(
+                    new Error('Password does not meet the configured password policy.'),
+                    { code: 'auth/password-does-not-meet-requirements' },
+                );
+            }
         }
 
         const credential = await createUserWithEmailAndPassword(auth, email, password);

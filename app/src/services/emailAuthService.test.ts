@@ -21,6 +21,7 @@ const passwordUser = (emailVerified: boolean) => ({
 describe('emailAuthService', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        vi.unstubAllEnvs();
         firebaseAuth.sendEmailVerification.mockResolvedValue(undefined);
         firebaseAuth.validatePassword.mockResolvedValue({ isValid: true });
     });
@@ -48,6 +49,17 @@ describe('emailAuthService', () => {
             code: 'auth/password-does-not-meet-requirements',
         });
         expect(firebaseAuth.createUserWithEmailAndPassword).not.toHaveBeenCalled();
+    });
+
+    it('skips client-side password policy validation against the Auth Emulator', async () => {
+        vi.stubEnv('VITE_USE_FIREBASE_EMULATORS', 'true');
+        const user = passwordUser(false);
+        firebaseAuth.createUserWithEmailAndPassword.mockResolvedValue({ user });
+
+        await expect(emailAuthService.signUp(auth, 'athlete@example.com', 'weak')).resolves.toBeUndefined();
+
+        expect(firebaseAuth.validatePassword).not.toHaveBeenCalled();
+        expect(firebaseAuth.createUserWithEmailAndPassword).toHaveBeenCalledWith(auth, 'athlete@example.com', 'weak');
     });
 
     it('sends verification and keeps user signed in after account creation', async () => {
