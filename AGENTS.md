@@ -91,12 +91,13 @@ Full statements, with rationale and the checks that enforce them, are in
 ### Frontend app (run from `app/`)
 
 * `npm ci` — install dependencies
-* `npm run check` — the frontend gate: `tsc -b`, `eslint`, `vitest run`, knowledge validation, knowledge-coverage validation, workout catalog validation
+* `npm run check` — the frontend gate: `tsc -b`, `eslint`, `vitest run`, knowledge validation, knowledge-coverage validation, knowledge-freshness reporting, workout catalog validation
 * `npm test` — `vitest run` only; the fast inner loop (`npm run test:watch`, `npm run test:coverage`)
 * `npm run test:rules` — Firestore security-rule suite inside the Firebase emulator (needs Java)
 * `npm run build` — `npm run check && vite build`
 * `npm run dev` — Vite dev server (`predev` runs `npm run check` first)
 * `npm run validate:workouts` / `npm run validate:knowledge` / `npm run validate:knowledge-coverage` — catalog and registry validators, individually
+* `npm run validate:knowledge-freshness` — SKR5 due/stale review-cadence report for every knowledge claim; always exits 0, never gates CI (see `app/src/knowledge/knowledgeFreshness.ts`)
 * `npm run simulate:scenarios` — multi-week engine simulations → `artifacts/simulation-reports/latest/`
 * `npm run simulate:diff` — non-blocking semantic diff against `docs/analysis/simulation-baseline.json` (`npm run simulate:update-baseline` to re-baseline)
 * `node scripts/check-policy-drift.mjs <base-sha>` — verify `POLICY_VERSION` was bumped when decision logic changes
@@ -115,7 +116,7 @@ fails the PR if any required job on that path fails.
 |---|---|---|
 | Docs-only | Documentation & security hygiene | repository-hygiene `pre-commit` checks (the CI job skips the code-only uv-lock/Ruff/mypy/ESLint hooks) |
 | Code | Python test suite | `uv lock --check`, repository-hygiene `pre-commit`, `ruff check`, `ruff format --check`, `mypy src/garmin_sync`, `pytest` with coverage, `uvx pip-audit` |
-| Code | Frontend hygiene & static gates | `npm audit --audit-level=high`, `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:workouts`, policy-version drift vs the PR base, `build:bundle` |
+| Code | Frontend hygiene & static gates | `npm audit --audit-level=high`, `typecheck`, `lint`, `validate:knowledge`, `validate:knowledge-coverage`, `validate:knowledge-freshness` (reports only, non-blocking), `validate:workouts`, policy-version drift vs the PR base, `build:bundle` |
 | Code | Frontend unit tests & Firestore rules | `npm run test:coverage`, `npm run test:rules` (emulator + Java) |
 | Code | Engine simulations & AI gates | `simulate:scenarios` plus committed-baseline `git diff --exit-code`, `simulate:plan-judge`, persona corpus build; `simulate:diff` is advisory (`continue-on-error`) |
 | Code | Docker build & compose smoke | root image build, Compose config/build/up, smoke checks |
@@ -375,6 +376,7 @@ app/src/knowledge/
   taperFuelingKnowledge.ts # Pre-event taper boundaries and fueling/hydration claims
   athleteEvidence.ts   # Identity-scoped athlete-specific evidence contracts, domain models, and validator (SKR4)
   athleteEvidencePolicy.ts # Pure policy refinement engine and safety monotonicity evaluator (SKR4)
+  knowledgeFreshness.ts # Deterministic review-cadence classification and due/stale reporting (SKR5)
 ```
 
 **Before changing engine behaviour**, read `docs/architecture/recommendation-engine.md`
