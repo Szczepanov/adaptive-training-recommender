@@ -161,7 +161,11 @@ export function resolveEmptyTemplateGuidance(canImportSession: boolean, canBuild
 interface SessionRunnerProps {
     userId: string;
     /** A persisted M3 binding plus the exact snapshot-resolved definition to execute. */
-    initialSession?: { definition: SessionDefinition; binding: SessionReferenceBinding };
+    initialSession?: {
+        definition: SessionDefinition;
+        binding: SessionReferenceBinding;
+        allowDuplicateCompleted?: boolean;
+    };
     onInitialSessionHandled?: () => void;
     onImportSession?: () => void;
     onBuildSession?: (initialDefinition?: SessionDefinition) => void;
@@ -368,6 +372,7 @@ export const SessionRunner: React.FC<SessionRunnerProps> = ({
         runner.startSession(initialSession.definition, initialSession.binding.sessionSource, {
             occurrenceId: initialSession.binding.occurrenceId,
             prescriptionHash: initialSession.binding.prescriptionHash,
+            allowDuplicateCompleted: initialSession.allowDuplicateCompleted,
         }).then(() => onInitialSessionHandled?.()).catch(() => {
             initialLaunchAttempted.current = false;
         });

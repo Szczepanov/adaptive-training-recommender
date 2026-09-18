@@ -211,4 +211,166 @@ describe('SessionExecutionService', () => {
             expect(restEvents.map(e => e.id)).toEqual(['rest-1', 'rest-2']);
         });
     });
+
+    describe('findExistingExecution', () => {
+        it('returns matching completed execution for a given date', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: EXECUTION_ID,
+                        ref: { path: `users/${USER_ID}/session_executions/${EXECUTION_ID}` },
+                        data: () => validExecution({ state: 'completed', completedAt: '2026-08-17T18:45:00Z' }),
+                    },
+                ],
+            });
+
+            const result = await service.findExistingExecution(USER_ID, { date: '2026-08-17' });
+            expect(result).not.toBeNull();
+            expect(result?.executionId).toBe(EXECUTION_ID);
+            expect(result?.state).toBe('completed');
+        });
+
+        it('filters by occurrenceId when occurrenceId is specified', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: 'exec-primary',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-primary` },
+                        data: () => validExecution({ executionId: 'exec-primary', occurrenceId: 'occ-1', state: 'completed', completedAt: '2026-08-17T18:45:00Z' }),
+                    },
+                    {
+                        id: 'exec-other',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-other` },
+                        data: () => validExecution({ executionId: 'exec-other', occurrenceId: 'occ-2', state: 'completed', completedAt: '2026-08-17T18:45:00Z' }),
+                    },
+                ],
+            });
+
+            const result = await service.findExistingExecution(USER_ID, { date: '2026-08-17', occurrenceId: 'occ-2' });
+            expect(result?.executionId).toBe('exec-other');
+        });
+
+        it('ignores executions bound to other occurrences when querying without occurrenceId', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: 'exec-bundle-member',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-bundle-member` },
+                        data: () => validExecution({ executionId: 'exec-bundle-member', occurrenceId: 'occ-bundle-1', state: 'completed', completedAt: '2026-08-17T18:45:00Z' }),
+                    },
+                ],
+            });
+
+            const result = await service.findExistingExecution(USER_ID, { date: '2026-08-17' });
+            expect(result).toBeNull();
+        });
+
+        it('prioritizes in_progress over completed, so an active redo is never shadowed by a stale completed record', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: 'exec-in-progress',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-in-progress` },
+                        data: () => validExecution({ executionId: 'exec-in-progress', state: 'in_progress', startedAt: '2026-08-17T19:00:00Z' }),
+                    },
+                    {
+                        id: 'exec-completed',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-completed` },
+                        data: () => validExecution({ executionId: 'exec-completed', state: 'completed', startedAt: '2026-08-17T18:00:00Z', completedAt: '2026-08-17T18:45:00Z' }),
+                    },
+                ],
+            });
+
+            const result = await service.findExistingExecution(USER_ID, { date: '2026-08-17' });
+            expect(result?.executionId).toBe('exec-in-progress');
+        });
+
+        it('does not treat an unrelated catalog session with a different prescriptionHash as a duplicate', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: 'exec-am-run',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-am-run` },
+                        data: () => validExecution({ executionId: 'exec-am-run', state: 'completed', prescriptionHash: 'hash-am-run', completedAt: '2026-08-17T08:45:00Z' }),
+                    },
+                ],
+            });
+
+            const result = await service.findExistingExecution(USER_ID, { date: '2026-08-17', prescriptionHash: 'hash-pm-strength' });
+            expect(result).toBeNull();
+        });
+    });
+
+    describe('startExecution guards', () => {
+        it('creates a new execution when none exists', async () => {
+            firestore.getDocs.mockResolvedValueOnce({ docs: [] });
+
+            const exec = await service.startExecution(USER_ID, 'exec-new', {
+                sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                date: '2026-08-17',
+            });
+
+            expect(exec.executionId).toBe('exec-new');
+            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+        });
+
+        it('resumes existing in_progress execution without creating a second execution document', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: 'exec-existing-in-progress',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-existing-in-progress` },
+                        data: () => validExecution({ executionId: 'exec-existing-in-progress', state: 'in_progress' }),
+                    },
+                ],
+            });
+
+            const exec = await service.startExecution(USER_ID, 'exec-attempt-2', {
+                sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                date: '2026-08-17',
+            });
+
+            expect(exec.executionId).toBe('exec-existing-in-progress');
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
+        it('blocks with an error if an execution is already completed and allowDuplicateCompleted is not true', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: 'exec-already-done',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-already-done` },
+                        data: () => validExecution({ executionId: 'exec-already-done', state: 'completed', completedAt: '2026-08-17T18:45:00Z' }),
+                    },
+                ],
+            });
+
+            await expect(service.startExecution(USER_ID, 'exec-attempt-2', {
+                sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                date: '2026-08-17',
+            })).rejects.toThrow('A completed execution already exists for this session today.');
+            expect(firestore.setDoc).not.toHaveBeenCalled();
+        });
+
+        it('allows creating a second execution when allowDuplicateCompleted is explicitly true', async () => {
+            firestore.getDocs.mockResolvedValueOnce({
+                docs: [
+                    {
+                        id: 'exec-already-done',
+                        ref: { path: `users/${USER_ID}/session_executions/exec-already-done` },
+                        data: () => validExecution({ executionId: 'exec-already-done', state: 'completed', completedAt: '2026-08-17T18:45:00Z' }),
+                    },
+                ],
+            });
+
+            const exec = await service.startExecution(USER_ID, 'exec-redo', {
+                sessionSource: { kind: 'catalog', workoutId: 'w1', catalogVersion: '1' },
+                date: '2026-08-17',
+                allowDuplicateCompleted: true,
+            });
+
+            expect(exec.executionId).toBe('exec-redo');
+            expect(firestore.setDoc).toHaveBeenCalledTimes(1);
+        });
+    });
 });

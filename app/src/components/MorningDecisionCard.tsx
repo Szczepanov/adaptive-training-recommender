@@ -1,12 +1,13 @@
-import { useState, memo, useId } from 'react';
+import { useState, useEffect, useRef, memo, useId } from 'react';
 import type { Recommendation, SessionTemplate } from '../engine/models';
-import type { SessionReferenceBinding } from '../sessions/models';
+import type { SessionExecution, SessionReferenceBinding } from '../sessions/models';
 import type { WorkoutPrescription } from '../workouts';
 import { DecisionEvidenceSummary } from './DecisionEvidenceSummary';
 import { OneTapAlternatives } from './OneTapAlternatives';
 import { WorkoutExportMenu } from './WorkoutExportMenu';
 import type { MorningDecisionEvidence } from '../engine/decisionEvidence';
 import { prepareCatalogSessionLaunch } from '../services/sessionAuthoringService';
+import { sessionExecutionService } from '../services/sessionExecutionService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
 import { splitCoachingRationale } from '../utils/rationaleDisplay';
 import { contextBriefService } from '../services/contextBriefService';
@@ -23,7 +24,7 @@ interface MorningDecisionCardProps {
     activeAlternativeId: string | null;
     isGateLocked?: boolean;
     gateLockedReason?: string;
-    onStartSession?: (binding: SessionReferenceBinding) => void | Promise<void>;
+    onStartSession?: (binding: SessionReferenceBinding, options?: { allowDuplicateCompleted?: boolean }) => void | Promise<void>;
     onNavigateCheckin?: () => void;
     onAdjustLoad: (direction: 'easier' | 'harder' | null) => void;
     onSelectTimeCrunch: (minutes: number) => void;
@@ -34,6 +35,7 @@ interface MorningDecisionCardProps {
     onSelectActiveRecoveryWalk: () => void;
     onResetAlternative: () => void;
     onOpenReclassify?: () => void;
+    todayExecution?: SessionExecution | null;
 }
 
 const MODE_LABELS: Record<Recommendation['mode'], string> = {
@@ -64,13 +66,67 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     onSelectActiveRecoveryWalk,
     onResetAlternative,
     onOpenReclassify,
+    todayExecution: todayExecutionProp,
 }: MorningDecisionCardProps) {
     const [activeTab, setActiveTab] = useState<'none' | 'why' | 'alternatives' | 'workout'>('none');
     const [launching, setLaunching] = useState(false);
     const [launchError, setLaunchError] = useState<string | null>(null);
     const [aiContextCopied, setAiContextCopied] = useState(false);
     const [aiContextError, setAiContextError] = useState<string | null>(null);
+    const [existingExecution, setExistingExecution] = useState<SessionExecution | null>(todayExecutionProp ?? null);
+    const [checkingExecution, setCheckingExecution] = useState(todayExecutionProp === undefined);
+    const [confirmRedoOpen, setConfirmRedoOpen] = useState(false);
     const panelId = useId();
+    const cancelRedoButtonRef = useRef<HTMLButtonElement>(null);
+
+    useEffect(() => {
+        if (!confirmRedoOpen) return;
+        // role="alertdialog" implies focus moves into the dialog and Escape dismisses it --
+        // without this, assistive tech announces a dialog that keyboard focus never reaches.
+        cancelRedoButtonRef.current?.focus();
+        const handleKeyDown = (event: KeyboardEvent) => {
+            if (event.key === 'Escape') {
+                setConfirmRedoOpen(false);
+            }
+        };
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [confirmRedoOpen]);
+
+    useEffect(() => {
+        if (todayExecutionProp !== undefined) {
+            setExistingExecution(todayExecutionProp);
+            setCheckingExecution(false);
+            return;
+        }
+        if (!userId || !date) {
+            setExistingExecution(null);
+            setCheckingExecution(false);
+            return;
+        }
+        let cancelled = false;
+        setCheckingExecution(true);
+        sessionExecutionService.findExistingExecution(userId, {
+            date,
+            occurrenceId: recommendation?.primarySession?.occurrenceId,
+            prescriptionHash: recommendation?.primarySession?.prescriptionHash,
+        }).then(exec => {
+            if (!cancelled) {
+                setExistingExecution(exec);
+                setCheckingExecution(false);
+            }
+        }).catch(err => {
+            console.warn('Failed to check today execution status:', err);
+            if (!cancelled) {
+                setExistingExecution(null);
+                setCheckingExecution(false);
+            }
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [userId, date, recommendation?.primarySession?.occurrenceId, recommendation?.primarySession?.prescriptionHash, todayExecutionProp]);
+
     const clinicalEscalationActive = recommendation?.envelopes?.safety.clinicalEscalationRequired === true;
     const clinicalReason = recommendation?.envelopes?.safety.clinicalReason
         ?? 'Red-flag symptoms reported. Training recommendations are paused until medical evaluation.';
@@ -120,10 +176,16 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         }
     };
 
-    const handleStartPrimary = async () => {
+    const handleStartPrimary = async (options?: { allowDuplicateCompleted?: boolean }) => {
+        if (existingExecution?.state === 'completed' && !options?.allowDuplicateCompleted) {
+            setConfirmRedoOpen(true);
+            return;
+        }
+
         usabilityMetrics.recordActionSelected(userId, date, 'start_primary_session', {
             adjusted: adjustmentDirection !== null,
             alternativeId: activeAlternativeId,
+            isRedo: options?.allowDuplicateCompleted === true,
         });
         setLaunchError(null);
 
@@ -147,7 +209,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
             setLaunching(true);
             try {
                 const launch = await prepareCatalogSessionLaunch(userId, prescription);
-                await onStartSession(launch.binding);
+                await onStartSession(launch.binding, options);
             } catch (error) {
                 setLaunchError(error instanceof Error ? error.message : 'Unable to prepare the adjusted session.');
             } finally {
@@ -159,7 +221,7 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         if (recommendation.primarySession && onStartSession) {
             setLaunching(true);
             try {
-                await onStartSession(recommendation.primarySession);
+                await onStartSession(recommendation.primarySession, options);
             } catch (error) {
                 setLaunchError(error instanceof Error ? error.message : 'Unable to start this session.');
             } finally {
@@ -168,6 +230,11 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
         } else if (prescription) {
             setActiveTab('workout');
         }
+    };
+
+    const handleConfirmRedo = async () => {
+        setConfirmRedoOpen(false);
+        await handleStartPrimary({ allowDuplicateCompleted: true });
     };
 
     const handleLoadAdjustClick = (dir: 'easier' | 'harder' | null) => {
@@ -301,15 +368,48 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                         <div className="hero-cta-wrap">
                             {!clinicalEscalationActive && (
                                 <>
-                                    {(canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession)) ? (
+                                    {existingExecution?.state === 'completed' ? (
+                                        <div className="completed-session-controls">
+                                            <span className="badge-hero-completed" role="status" aria-label="Session completed today">
+                                                Completed ✓
+                                            </span>
+                                            {prescription && (
+                                                <button
+                                                    type="button"
+                                                    className="btn-view-targets"
+                                                    onClick={() => setActiveTab(activeTab === 'workout' ? 'none' : 'workout')}
+                                                    aria-label={`View workout targets for ${recommendation.template.title}`}
+                                                >
+                                                    📋 View Targets
+                                                </button>
+                                            )}
+                                            <button
+                                                type="button"
+                                                className="btn-redo-session"
+                                                onClick={() => setConfirmRedoOpen(true)}
+                                                disabled={launching}
+                                                aria-label={`Redo ${recommendation.template.title}`}
+                                            >
+                                                ↻ Redo Session
+                                            </button>
+                                        </div>
+                                    ) : (canLaunchCurrentPrescription || (recommendation.primarySession && onStartSession)) ? (
                                         <button
                                             type="button"
                                             className="btn-hero-primary"
                                             onClick={() => void handleStartPrimary()}
-                                            disabled={launching}
-                                            aria-label={`Start ${recommendation.template.title}`}
+                                            disabled={launching || checkingExecution}
+                                            aria-label={`${existingExecution?.state === 'in_progress' ? 'Resume' : 'Start'} ${recommendation.template.title}`}
                                         >
-                                            {recommendation.template.modality === 'Strength' ? '🏋️' : '▶️'} {launching ? 'Preparing Session…' : 'Start Session →'}
+                                            {recommendation.template.modality === 'Strength' ? '🏋️' : '▶️'} {
+                                                launching
+                                                    ? 'Preparing Session…'
+                                                    : checkingExecution
+                                                        ? 'Checking Today’s Status…'
+                                                        : existingExecution?.state === 'in_progress'
+                                                            ? 'Resume Session →'
+                                                            : 'Start Session →'
+                                            }
                                         </button>
                                     ) : prescription ? (
                                         <button
@@ -321,6 +421,33 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                                             📋 View Workout Targets →
                                         </button>
                                     ) : null}
+
+                                    {confirmRedoOpen && (
+                                        <div className="redo-confirm-banner" role="alertdialog" aria-modal="true" aria-labelledby={`${panelId}-redo-confirm-title`}>
+                                            <p id={`${panelId}-redo-confirm-title`} className="redo-confirm-message">
+                                                You already completed this session today — start another anyway?
+                                            </p>
+                                            <div className="redo-confirm-actions">
+                                                <button
+                                                    type="button"
+                                                    className="btn-confirm-redo"
+                                                    onClick={() => void handleConfirmRedo()}
+                                                    disabled={launching}
+                                                >
+                                                    {launching ? 'Preparing Session…' : 'Start Another Anyway'}
+                                                </button>
+                                                <button
+                                                    ref={cancelRedoButtonRef}
+                                                    type="button"
+                                                    className="btn-cancel-redo"
+                                                    onClick={() => setConfirmRedoOpen(false)}
+                                                    disabled={launching}
+                                                >
+                                                    Cancel
+                                                </button>
+                                            </div>
+                                        </div>
+                                    )}
 
                                     {prescription && (
                                         <WorkoutExportMenu
