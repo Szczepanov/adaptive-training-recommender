@@ -66,8 +66,13 @@ describe('reviewCadenceMonthsFor', () => {
         expect(reviewCadenceMonthsFor(baseClaim({ safetyImpact: 'low', maturity: 'established', evidenceCertainty: 'high', recommendationStrength: 'informational' }))).toBe(REVIEW_CADENCE_MONTHS.stable);
     });
 
-    it('honors an explicit per-claim override', () => {
+    it('honors a stricter explicit per-claim override', () => {
         expect(reviewCadenceMonthsFor(baseClaim({ safetyImpact: 'high', reviewCadenceMonthsOverride: 3 }))).toBe(3);
+    });
+
+    it('does not let an override relax the risk-derived cadence', () => {
+        expect(reviewCadenceMonthsFor(baseClaim({ safetyImpact: 'high', reviewCadenceMonthsOverride: 12 }))).toBe(REVIEW_CADENCE_MONTHS.high_safety);
+        expect(reviewCadenceMonthsFor(baseClaim({ safetyImpact: 'low', maturity: 'emerging', evidenceCertainty: 'moderate', reviewCadenceMonthsOverride: 18 }))).toBe(REVIEW_CADENCE_MONTHS.rapidly_evolving);
     });
 });
 
@@ -134,13 +139,15 @@ describe('buildKnowledgeFreshnessReport', () => {
         const claims: readonly KnowledgeClaim[] = [
             baseClaim({ id: 'a.stale.active', safetyImpact: 'high', reviewedOn: '2020-01-01', status: 'active' }),
             baseClaim({ id: 'b.stale.deprecated', safetyImpact: 'high', reviewedOn: '2020-01-01', status: 'deprecated' }),
-            baseClaim({ id: 'c.current', safetyImpact: 'low', maturity: 'established', evidenceCertainty: 'high', recommendationStrength: 'informational', reviewedOn: '2026-01-01', status: 'active' }),
+            baseClaim({ id: 'c.due.active', safetyImpact: 'moderate', maturity: 'established', evidenceCertainty: 'moderate', reviewedOn: '2025-06-01', status: 'active' }),
+            baseClaim({ id: 'd.current', safetyImpact: 'low', maturity: 'established', evidenceCertainty: 'high', recommendationStrength: 'informational', reviewedOn: '2026-01-01', status: 'active' }),
         ];
         const report = buildKnowledgeFreshnessReport(claims, '2026-06-01');
-        expect(report.summary.total).toBe(3);
+        expect(report.summary.total).toBe(4);
+        expect(report.summary.dueActive).toEqual(['c.due.active']);
         expect(report.summary.staleActive).toEqual(['a.stale.active']);
         expect(report.summary.dueOrStaleHighSafetyActive).toEqual(['a.stale.active']);
-        expect(report.summary.byFreshness.stale).toBe(2);
+        expect(report.summary.byFreshness).toEqual({ current: 1, due: 1, stale: 2 });
     });
 
     it('runs against the full canonical registry without throwing and classifies every claim', () => {
