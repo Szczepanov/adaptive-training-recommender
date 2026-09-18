@@ -26,9 +26,9 @@ const MODALITY_ICON: Partial<Record<SessionTemplate['modality'], string>> = {
 
 interface OneTapAlternativesProps {
     recommendation: Recommendation | null;
-    /** Same-category, cross-modality candidates covering today's original stimulus
-     *  (see engine/sessionAlternatives.ts). Empty when none survive eligibility, or when
-     *  today's session doesn't transfer across modalities (e.g. Strength). */
+    /** Conservative, stimulus-matched cross-modality candidates for today's original
+     *  recommendation (see engine/sessionAlternatives.ts). Empty when none survive the
+     *  current hard-feasibility/safety gates or objective transfer is not allowed. */
     stimulusAlternatives?: SessionTemplate[];
     onSelectTimeCrunch: (minutes: number) => void;
     onSelectStimulusAlternative?: (templateId: string) => void;
@@ -70,8 +70,9 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
     const activeStimulusTemplate = activeAlternativeId?.startsWith('stimulus:')
         ? stimulusAlternatives.find(t => `stimulus:${t.id}` === activeAlternativeId)
         : undefined;
-    const activeLabel = activeStimulusTemplate
-        ? `${activeStimulusTemplate.title} (${activeStimulusTemplate.modality})`
+    const isStimulusAlternative = activeAlternativeId?.startsWith('stimulus:') ?? false;
+    const activeLabel = isStimulusAlternative
+        ? (activeStimulusTemplate ? `${activeStimulusTemplate.title} (${activeStimulusTemplate.modality})` : null)
         : (activeAlternativeId ? (ALTERNATIVE_LABELS[activeAlternativeId] ?? activeAlternativeId) : null);
 
     return (
@@ -101,14 +102,13 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
                     </div>
                 </div>
 
-                {/* Same stimulus, different modality -- e.g. today's aerobic-base ride can be
-                    covered by an equivalent run or walk. Dynamically generated from the
-                    catalog (engine/sessionAlternatives.ts), already filtered for equipment,
-                    environment, time budget, and injury/guardrail restrictions, so nothing
-                    unsafe (e.g. a run on a medically restricted day) ever appears here. */}
+                {/* Stimulus-matched, different modality -- e.g. an aerobic-base ride may have
+                    a conservative run/walk alternative. Candidates are generated from the
+                    enriched catalog, hard-feasibility filtered, opt-in transferable, and
+                    never allowed to increase systemic cost. Application revalidates too. */}
                 {stimulusAlternatives.length > 0 && onSelectStimulusAlternative && (
                     <div className="alternative-group">
-                        <span className="group-label">🔁 Same Stimulus, Different Modality</span>
+                        <span className="group-label">🔁 Stimulus-Matched, Different Modality</span>
                         <div className="pills-row">
                             {stimulusAlternatives.map(alt => {
                                 const id = `stimulus:${alt.id}`;
@@ -120,7 +120,8 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
                                         className={`pill-btn ${activeAlternativeId === id ? 'active' : ''}`}
                                         onClick={() => onSelectStimulusAlternative(alt.id)}
                                         aria-pressed={activeAlternativeId === id}
-                                        aria-label={`Switch to ${alt.title}, a ${alt.modality} alternative covering the same training stimulus`}
+                                        aria-label={`Switch to ${alt.title}, a currently eligible ${alt.modality} alternative matched to today's training stimulus`}
+                                        title={`${alt.title} · ${alt.durationMin}–${alt.durationMax} min`}
                                     >
                                         {icon} {alt.modality}
                                     </button>
