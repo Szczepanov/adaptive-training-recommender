@@ -1,5 +1,5 @@
 import { useState, useEffect, memo, useId } from 'react';
-import type { Recommendation } from '../engine/models';
+import type { Recommendation, SessionTemplate } from '../engine/models';
 import type { SessionExecution, SessionReferenceBinding } from '../sessions/models';
 import type { WorkoutPrescription } from '../workouts';
 import { DecisionEvidenceSummary } from './DecisionEvidenceSummary';
@@ -28,6 +28,8 @@ interface MorningDecisionCardProps {
     onNavigateCheckin?: () => void;
     onAdjustLoad: (direction: 'easier' | 'harder' | null) => void;
     onSelectTimeCrunch: (minutes: number) => void;
+    stimulusAlternatives?: SessionTemplate[];
+    onSelectStimulusAlternative?: (templateId: string) => void;
     onSelectHomeAlternative: () => void;
     onSelectMobilityAlternative: () => void;
     onSelectActiveRecoveryWalk: () => void;
@@ -57,6 +59,8 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
     onNavigateCheckin,
     onAdjustLoad,
     onSelectTimeCrunch,
+    stimulusAlternatives,
+    onSelectStimulusAlternative,
     onSelectHomeAlternative,
     onSelectMobilityAlternative,
     onSelectActiveRecoveryWalk,
@@ -528,6 +532,8 @@ export const MorningDecisionCard = memo(function MorningDecisionCard({
                         recommendation={recommendation}
                         activeAlternativeId={activeAlternativeId}
                         onSelectTimeCrunch={onSelectTimeCrunch}
+                        stimulusAlternatives={stimulusAlternatives}
+                        onSelectStimulusAlternative={onSelectStimulusAlternative}
                         onSelectHomeAlternative={onSelectHomeAlternative}
                         onSelectMobilityAlternative={onSelectMobilityAlternative}
                         onSelectActiveRecoveryWalk={onSelectActiveRecoveryWalk}

@@ -1,15 +1,17 @@
 .onboarding-modal-backdrop {
     position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
+    inset: 0;
     background: #09090b;
+    background-color: #09090b;
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 2000;
     padding: 1.5rem;
+    isolation: isolate;
+    transform: translateZ(0);
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
 }
 
 .onboarding-card {
@@ -103,6 +105,18 @@
 .choice-icon {
     font-size: 1.4rem;
     margin-bottom: 0.2rem;
+    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif;
+    font-variant-emoji: emoji;
+}
+
+.choice-mini-icon {
+    display: inline-block;
+    margin-right: 0.5rem;
+    font-size: 1.1rem;
+    line-height: 1;
+    vertical-align: -0.1em;
+    font-family: 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji', sans-serif;
+    font-variant-emoji: emoji;
 }
 
 .choice-card strong {

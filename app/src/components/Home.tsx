@@ -81,6 +81,7 @@ import { activityOverrideService } from '../services/activityOverrideService';
 import { activityService } from '../services/activityService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
 import { TEMPLATES, TEMPLATES_BY_ID } from '../engine/templates';
+import { applyStimulusMatchedAlternative, findStimulusMatchedAlternatives } from '../engine/sessionAlternatives';
 import type { ActivityOverride, DailyRecoverySnapshot, NormalizedGarminActivity } from '../engine/models';
 import {
   resolveDecisionCompositionRepairState,
@@ -988,10 +989,24 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         base = {
           ...base,
           template: bwTemplate,
-          rationale: '1-tap alternative applied: Zero-equipment home training session.',
+          mode: 'modify',
+          rationale: 'No equipment available: substituted a lighter zero-equipment mobility session, not an equivalent-effort swap.',
           prescription: undefined,
           primarySession: undefined,
         };
+      } else if (alternativeId.startsWith('stimulus:')) {
+        const stimulusTemplateId = alternativeId.slice('stimulus:'.length);
+        // Never trust an id that was merely valid when the pills rendered. A check-in,
+        // injury restriction, equipment setting or time budget can change while Home stays
+        // mounted, so application re-runs the same current-context matcher and fails closed.
+        const matchedAlternative = applyStimulusMatchedAlternative(
+          base,
+          stimulusTemplateId,
+          engineInputs.context,
+          engineInputs.subjective.timeAvailable,
+          decisionInput.date,
+        );
+        if (matchedAlternative) base = matchedAlternative;
       } else if (alternativeId.startsWith('time-')) {
         const targetMinutes = parseInt(alternativeId.replace('time-', ''), 10);
         if (!Number.isNaN(targetMinutes)) {
@@ -1063,6 +1078,14 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     }
   }, [activeAlternativeId, decisionInput, userId]);
 
+  const handleSelectStimulusAlternative = useCallback((templateId: string) => {
+    const nextId = activeAlternativeId === `stimulus:${templateId}` ? null : `stimulus:${templateId}`;
+    setActiveAlternativeId(nextId);
+    if (decisionInput) {
+      usabilityMetrics.recordAlternativeChosen(userId, decisionInput.date, `stimulus_${templateId}`);
+    }
+  }, [activeAlternativeId, decisionInput, userId]);
+
   const handleSelectHomeAlternative = useCallback(() => {
     const nextId = activeAlternativeId === 'home-bodyweight' ? null : 'home-bodyweight';
     setActiveAlternativeId(nextId);
@@ -1091,6 +1114,30 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
     setActiveAlternativeId(null);
     setAdjustmentDirection(null);
   }, []);
+
+  // Computed off the engine's own pick (recommendation.template), never off activeRec --
+  // otherwise selecting one alternative would recompute alternatives-of-an-alternative.
+  const stimulusAlternatives = useMemo(() => {
+    if (!recommendation || !engineInputs || !decisionInput) return [];
+    return findStimulusMatchedAlternatives(
+      recommendation.template,
+      engineInputs.context,
+      engineInputs.subjective.timeAvailable,
+      decisionInput.date,
+    );
+  }, [recommendation, engineInputs, decisionInput]);
+
+  // An alternative can become invalid without Home unmounting (for example after a fresh
+  // check-in adds a Running restriction). Remove stale UI state as soon as the current
+  // candidate set changes. computeAdjustedRecommendation independently fails closed too,
+  // so there is no one-render safety window while this effect is waiting to run.
+  useEffect(() => {
+    if (!activeAlternativeId?.startsWith('stimulus:')) return;
+    const templateId = activeAlternativeId.slice('stimulus:'.length);
+    if (stimulusAlternatives.some(candidate => candidate.id === templateId)) return;
+    setActiveAlternativeId(null);
+    setAdjustmentDirection(null);
+  }, [activeAlternativeId, stimulusAlternatives]);
 
   const activeRec = useMemo(
     () => computeAdjustedRecommendation(adjustmentDirection, activeAlternativeId),
@@ -1361,6 +1408,8 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
                 gateLockedReason={recommendation?.envelopes?.safety.clinicalFlagActive ? 'Harder option is disabled because an active pain or injury flag restricts physical loading.' : undefined}
                 onAdjustLoad={handleAdjustSession}
                 onSelectTimeCrunch={handleSelectTimeCrunch}
+                stimulusAlternatives={stimulusAlternatives}
+                onSelectStimulusAlternative={handleSelectStimulusAlternative}
                 onSelectHomeAlternative={handleSelectHomeAlternative}
                 onSelectMobilityAlternative={handleSelectMobilityAlternative}
                 onSelectActiveRecoveryWalk={handleSelectActiveRecoveryWalk}
