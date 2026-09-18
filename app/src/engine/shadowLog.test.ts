@@ -241,6 +241,22 @@ describe('buildShadowLog', () => {
 });
 
 describe('summarizeShadowLog', () => {
+    it('degrades to all-zero output for an empty input', () => {
+        const summary = summarizeShadowLog([]);
+
+        expect(summary.calendarDays).toBe(0);
+        expect(summary.stablePolicySegments).toEqual([]);
+        expect(summary.qualifyingStablePolicySegments).toBe(0);
+        expect(summary.gates).toMatchObject({
+            pairedVerdictDays: { required: 28, observed: 0, met: false },
+            completeSubjectiveCheckins: { required: 21, observed: 0, met: false },
+            unanchoredDays: { required: 7, observed: 0, met: false },
+            unanchoredPairedVerdictDays: 0,
+        });
+        expect(summary.agreement).toMatchObject({ comparedDays: 0 });
+        expect(summary.dataQuality).toMatchObject({ duplicateRows: 0, emptyEvidenceDays: 0 });
+    });
+
     it('does not pass aggregate gates by combining two non-qualifying policy segments', () => {
         const rows = Array.from({ length: 28 }, (_, offset) => {
             const date = `2026-08-${String(offset + 1).padStart(2, '0')}`;

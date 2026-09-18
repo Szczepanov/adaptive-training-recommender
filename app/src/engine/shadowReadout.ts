@@ -41,6 +41,12 @@ export interface ShadowReadout {
     /** Distinct dates supplied to the export. Duplicate rows are never allowed to inflate
      * a prospective-evidence gate and remain visible in `dataQuality`. */
     calendarDays: number;
+    /** Each gate's `met` is segment-conditioned, not independent: it is true only when
+     * some one contiguous stable-policy segment satisfies all three gates together, even
+     * though `observed` is the raw count across the whole readout. A reader who checks
+     * `gates.pairedVerdictDays.met` in isolation is checking block-level eligibility, not
+     * "this gate's own threshold was reached" -- see `stablePolicySegments` for the
+     * per-segment counts that `met` is actually derived from. */
     gates: {
         pairedVerdictDays: ShadowEvidenceGate;
         completeSubjectiveCheckins: ShadowEvidenceGate;
@@ -181,12 +187,12 @@ export function summarizeShadowLog(rows: readonly ShadowLogRow[]): ShadowReadout
     }
     const uniqueRows = [...rowsByDate.values()].sort((left, right) => left.date.localeCompare(right.date));
     const stablePolicySegments = buildStablePolicySegments(uniqueRows);
-    const qualifyingStablePolicySegments = stablePolicySegments.filter(segment => (
+    const qualifyingSegments = stablePolicySegments.filter(segment => (
         segment.gates.pairedVerdictDays.met
         && segment.gates.completeSubjectiveCheckins.met
         && segment.gates.unanchoredDays.met
     ));
-    const hasQualifyingStablePolicySegment = qualifyingStablePolicySegments.length > 0;
+    const hasQualifyingStablePolicySegment = qualifyingSegments.length > 0;
 
     const agreement = emptyAgreementCounts();
     const anchoredAgreement = emptyAgreementCounts();
@@ -257,7 +263,7 @@ export function summarizeShadowLog(rows: readonly ShadowLogRow[]): ShadowReadout
         anchoredAgreement,
         unanchoredAgreement,
         stablePolicySegments,
-        qualifyingStablePolicySegments: qualifyingStablePolicySegments.length,
+        qualifyingStablePolicySegments: qualifyingSegments.length,
         dataQuality: {
             duplicateRows,
             emptyEvidenceDays,
