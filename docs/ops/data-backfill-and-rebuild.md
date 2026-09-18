@@ -19,6 +19,39 @@ The backfill command:
 3. Computes rolling 7-day and 28-day baseline metrics.
 4. Writes Schema v3 user-scoped snapshots (`users/{userId}/daily_recovery_snapshots/{YYYY-MM-DD}`).
 
+### Automatic and request-backed backfills
+
+There are two automatic recovery-history safeguards, but they have different observability contracts:
+
+- **Account linking** queues a 56-day `initial_backfill` request at
+  `users/{userId}/garmin_sync_requests/latest`. The `garmin-manual-sync-poll`
+  worker claims that request and runs the historical backfill asynchronously.
+- **Scheduled daily sync cold-start recovery** checks the trailing 56-day history.
+  When fewer than 14 historical snapshots exist, `sync_daily(...,
+  auto_backfill_cold_start=True)` executes the bounded backfill directly inside
+  that daily-sync run. It does **not** create or update the shared sync-request
+  document.
+
+The connected-account settings UI therefore reports **request-backed** historical
+loads: the initial account-link request and any later manual retry. It shows progress
+while such a request is pending/processing and offers **Retry loading history** after
+a recorded failure or stale claim. The scheduled cold-start safeguard remains a
+separate self-healing path and is not represented by that UI status.
+
+The shared request document is a coordination slot, not a durable backfill audit log.
+A later manual sync can replace a terminal request, so operational history should come
+from normal logs/audits rather than from `garmin_sync_requests/latest`.
+
+Staleness policy is shared across the browser and account-link backend:
+
+- pending requests and ordinary claimed syncs: **20 minutes**, covering the
+  15-minute poll cadence plus execution margin;
+- claimed `initial_backfill` / `backfill` requests: **30 minutes from
+  `claimedAt`**, aligned with the backend per-user execution lease.
+
+This parity matters because account linking and the browser both write the same fixed
+request document; one path must not supersede work that the other still considers live.
+
 ---
 
 ## 🔍 2. Ingestion Audit
