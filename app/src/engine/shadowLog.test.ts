@@ -337,6 +337,17 @@ describe('summarizeShadowLog', () => {
         expect(summary.dataQuality).toMatchObject({ duplicateRows: 1, emptyEvidenceDays: 1, incompleteSubjectiveCheckinDays: 1 });
     });
 
+    it('does not count a feedback-only day as empty evidence', () => {
+        const row = buildShadowLogRow({
+            date: DATE, recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: null,
+            feedbackRecord: feedbackRecord(),
+        })!;
+
+        const summary = summarizeShadowLog([row]);
+
+        expect(summary.dataQuality.emptyEvidenceDays).toBe(0);
+    });
+
     it('splits stable-policy segments at an empty date and at a version boundary', () => {
         const rows = buildShadowLog([
             {

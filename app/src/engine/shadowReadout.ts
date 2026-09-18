@@ -208,7 +208,8 @@ export function summarizeShadowLog(rows: readonly ShadowLogRow[]): ShadowReadout
         const hasExternalVerdict = row.externalVerdict !== null;
         const hasSubjectiveCheckin = row.subjective !== null;
         const hasRecoverySnapshot = row.objective !== null;
-        if (!hasRecommendation && !hasExternalVerdict && !hasSubjectiveCheckin && !hasRecoverySnapshot) {
+        const hasFeedback = row.athleteDecisionAction !== null;
+        if (!hasRecommendation && !hasExternalVerdict && !hasSubjectiveCheckin && !hasRecoverySnapshot && !hasFeedback) {
             emptyEvidenceDays += 1;
         }
         if (!hasRecommendation) missingRecommendationDays += 1;

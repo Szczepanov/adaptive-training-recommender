@@ -68,8 +68,11 @@ Firestore documents, raw payloads, or free text.
    A repaired day during an already-open segment remains a documented data-quality event.
 
 Open the segment only after the operational packet shows the schedule, the bounded audit, and
-the reason a day can be treated as the first segment day. Store the active `POLICY_VERSION`
-from the first exported manifest, rather than copying it from source code by hand.
+the reason a day can be treated as the first segment day. The first exported manifest's
+earliest stable-policy segment can precede block day 1, so store the `policyVersion` for the
+segment that contains the block start, not the earliest one. Record each later stable-policy
+segment separately, from the exported manifest rather than by copying a policy version from
+source code by hand.
 
 ## Daily owner procedure
 
