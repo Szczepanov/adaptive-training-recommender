@@ -237,11 +237,15 @@ const CSV_COLUMNS: Array<{ header: string; read: (row: ShadowLogRow) => string |
 function csvCell(value: string | number | boolean | null): string {
     if (value === null || value === undefined) return '';
     const rawText = String(value);
-    // Spreadsheet programs may evaluate a cell as a formula even after leading whitespace.
-    // Prefix the complete cell before normal CSV escaping so a journal note remains literal
-    // data rather than executable spreadsheet input.
-    const text = /^\s*[=+\-@]/.test(rawText) ? `'${rawText}` : rawText;
-    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    // Only strings can carry spreadsheet-formula payloads here. Numeric telemetry may
+    // legitimately be negative (for example an HRV delta), and prefixing those numbers
+    // with an apostrophe would silently change evidence into text. For string cells,
+    // neutralize the common formula prefixes plus the control/full-width variants called
+    // out by spreadsheet-injection guidance, then apply RFC-style CSV quoting.
+    const formulaLikeString = typeof value === 'string'
+        && (/^[\t\r\n\0]/.test(rawText) || /^\s*[=+\-@＝＋－＠]/u.test(rawText));
+    const text = formulaLikeString ? `'${rawText}` : rawText;
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 /** The 9.0.8 human readout's export format -- one row per day, gaps visible as empty
