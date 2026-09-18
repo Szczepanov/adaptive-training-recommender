@@ -44,6 +44,7 @@ class ExecutionSlotConflictError extends Error {
     }
 }
 
+/** Returns true for the Firestore connectivity failure that makes client transactions unusable offline. */
 function isFirestoreUnavailable(error: unknown): boolean {
     return (error as { code?: string })?.code === 'unavailable';
 }
@@ -127,6 +128,7 @@ export class SessionExecutionService {
         );
     }
 
+    /** Returns the deterministic owner-scoped pointer used to serialize one execution identity. */
     private lockRef(userId: string, lockId: string) {
         return doc(this.db, 'users', userId, 'session_execution_locks', lockId);
     }
@@ -146,6 +148,7 @@ export class SessionExecutionService {
                 : `rx_${params.date}_nohash`;
     }
 
+    /** Applies the same date/occurrence/hash identity semantics used by findExistingExecution. */
     private executionMatchesSlot(
         execution: SessionExecution,
         params: { date: string; occurrenceId?: string; prescriptionHash?: string },
@@ -230,6 +233,7 @@ export class SessionExecutionService {
         }
     }
 
+    /** Builds the execution document and the rule-bound lock payload that must move with it atomically. */
     private buildExecutionClaim(
         userId: string,
         executionId: string,
