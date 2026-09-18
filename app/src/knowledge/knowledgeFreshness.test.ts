@@ -71,8 +71,13 @@ describe('reviewCadenceMonthsFor', () => {
     });
 
     it('does not let an override relax the risk-derived cadence', () => {
-        expect(reviewCadenceMonthsFor(baseClaim({ safetyImpact: 'high', reviewCadenceMonthsOverride: 12 }))).toBe(REVIEW_CADENCE_MONTHS.high_safety);
-        expect(reviewCadenceMonthsFor(baseClaim({ safetyImpact: 'low', maturity: 'emerging', evidenceCertainty: 'moderate', reviewCadenceMonthsOverride: 18 }))).toBe(REVIEW_CADENCE_MONTHS.rapidly_evolving);
+        const highSafety = baseClaim({ safetyImpact: 'high', reviewCadenceMonthsOverride: 12 });
+        expect(reviewCadenceMonthsFor(highSafety)).toBe(REVIEW_CADENCE_MONTHS.high_safety);
+        expect(computeClaimFreshness(highSafety, '2026-02-01').cadenceOverrideIgnored).toBe(true);
+
+        const rapidlyEvolving = baseClaim({ safetyImpact: 'low', maturity: 'emerging', evidenceCertainty: 'moderate', reviewCadenceMonthsOverride: 18 });
+        expect(reviewCadenceMonthsFor(rapidlyEvolving)).toBe(REVIEW_CADENCE_MONTHS.rapidly_evolving);
+        expect(computeClaimFreshness(rapidlyEvolving, '2026-02-01').cadenceOverrideIgnored).toBe(true);
     });
 });
 
@@ -125,6 +130,13 @@ describe('computeClaimFreshness', () => {
         expect(computeClaimFreshness(claim, staleOn).freshness).toBe('stale');
     });
 
+    it('flags a future review date as inconsistent metadata without changing claim authority', () => {
+        const futureReviewed = baseClaim({ id: 'test.future_review', reviewedOn: '2026-07-01' });
+        const record = computeClaimFreshness(futureReviewed, '2026-06-01');
+        expect(record.reviewedInFuture).toBe(true);
+        expect(record.freshness).toBe('current');
+    });
+
     it('never mutates or reports claim status, certainty or recommendation strength', () => {
         const record = computeClaimFreshness(claim, '2029-01-01');
         expect(record).not.toHaveProperty('status');
@@ -141,13 +153,16 @@ describe('buildKnowledgeFreshnessReport', () => {
             baseClaim({ id: 'b.stale.deprecated', safetyImpact: 'high', reviewedOn: '2020-01-01', status: 'deprecated' }),
             baseClaim({ id: 'c.due.active', safetyImpact: 'moderate', maturity: 'established', evidenceCertainty: 'moderate', reviewedOn: '2025-06-01', status: 'active' }),
             baseClaim({ id: 'd.current', safetyImpact: 'low', maturity: 'established', evidenceCertainty: 'high', recommendationStrength: 'informational', reviewedOn: '2026-01-01', status: 'active' }),
+            baseClaim({ id: 'e.future.active', reviewedOn: '2026-07-01', status: 'active' }),
+            baseClaim({ id: 'f.relaxed.active', safetyImpact: 'high', reviewCadenceMonthsOverride: 12, reviewedOn: '2026-01-01', status: 'active' }),
         ];
         const report = buildKnowledgeFreshnessReport(claims, '2026-06-01');
-        expect(report.summary.total).toBe(4);
+        expect(report.summary.total).toBe(6);
         expect(report.summary.dueActive).toEqual(['c.due.active']);
         expect(report.summary.staleActive).toEqual(['a.stale.active']);
         expect(report.summary.dueOrStaleHighSafetyActive).toEqual(['a.stale.active']);
-        expect(report.summary.byFreshness).toEqual({ current: 1, due: 1, stale: 2 });
+        expect(report.summary.inconsistentMetadataActive).toEqual(['e.future.active', 'f.relaxed.active']);
+        expect(report.summary.byFreshness).toEqual({ current: 3, due: 1, stale: 2 });
     });
 
     it('runs against the full canonical registry without throwing and classifies every claim', () => {
