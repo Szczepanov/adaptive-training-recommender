@@ -427,7 +427,7 @@ export function computeInvalidationTriggers(
             trigger: recommendation?.template.modality === 'Strength'
                 ? 'If gym / barbell equipment is unexpectedly unavailable'
                 : 'If the planned venue or weather prevents safe execution',
-            action: 'Switch to the zero-equipment Home Bodyweight option.',
+            action: 'Switch to the lighter zero-equipment session (reduced load, not an equivalent swap).',
             alternativeActionId: 'home-bodyweight',
         },
         {

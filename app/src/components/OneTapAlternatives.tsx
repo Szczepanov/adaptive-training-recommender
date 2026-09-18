@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import type { Recommendation } from '../engine/models';
+import type { Recommendation, SessionTemplate } from '../engine/models';
 import './OneTapAlternatives.css';
 
 export interface AlternativeOption {
@@ -13,9 +13,25 @@ export interface AlternativeOption {
     active?: boolean;
 }
 
+const MODALITY_ICON: Partial<Record<SessionTemplate['modality'], string>> = {
+    Running: '🏃',
+    Cycling: '🚴',
+    Walking: '🚶',
+    Swimming: '🏊',
+    Strength: '🏋️',
+    Field: '⚽',
+    Mobility: '🧘',
+    'Cross Training': '🔀',
+};
+
 interface OneTapAlternativesProps {
     recommendation: Recommendation | null;
+    /** Same-category, cross-modality candidates covering today's original stimulus
+     *  (see engine/sessionAlternatives.ts). Empty when none survive eligibility, or when
+     *  today's session doesn't transfer across modalities (e.g. Strength). */
+    stimulusAlternatives?: SessionTemplate[];
     onSelectTimeCrunch: (minutes: number) => void;
+    onSelectStimulusAlternative?: (templateId: string) => void;
     onSelectHomeAlternative: () => void;
     onSelectMobilityAlternative: () => void;
     onSelectActiveRecoveryWalk: () => void;
@@ -25,7 +41,9 @@ interface OneTapAlternativesProps {
 
 export const OneTapAlternatives = memo(function OneTapAlternatives({
     recommendation,
+    stimulusAlternatives = [],
     onSelectTimeCrunch,
+    onSelectStimulusAlternative,
     onSelectHomeAlternative,
     onSelectMobilityAlternative,
     onSelectActiveRecoveryWalk,
@@ -44,10 +62,17 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
         'time-20': '20 min Express Session',
         'time-30': '30 min Condensed Session',
         'time-45': '45 min Condensed Session',
-        'home-bodyweight': 'Home Bodyweight (Zero Equipment)',
+        'home-bodyweight': 'Zero-Equipment Mobility (Lighter Session)',
         'mobility': 'Joint Mobility Flow',
         'recovery-walk': 'Active Recovery Walk',
     };
+
+    const activeStimulusTemplate = activeAlternativeId?.startsWith('stimulus:')
+        ? stimulusAlternatives.find(t => `stimulus:${t.id}` === activeAlternativeId)
+        : undefined;
+    const activeLabel = activeStimulusTemplate
+        ? `${activeStimulusTemplate.title} (${activeStimulusTemplate.modality})`
+        : (activeAlternativeId ? (ALTERNATIVE_LABELS[activeAlternativeId] ?? activeAlternativeId) : null);
 
     return (
         <section className="one-tap-alternatives-container" aria-label="1-Tap Training Alternatives">
@@ -76,18 +101,49 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
                     </div>
                 </div>
 
-                {/* Location / Gear Shifts */}
+                {/* Same stimulus, different modality -- e.g. today's aerobic-base ride can be
+                    covered by an equivalent run or walk. Dynamically generated from the
+                    catalog (engine/sessionAlternatives.ts), already filtered for equipment,
+                    environment, time budget, and injury/guardrail restrictions, so nothing
+                    unsafe (e.g. a run on a medically restricted day) ever appears here. */}
+                {stimulusAlternatives.length > 0 && onSelectStimulusAlternative && (
+                    <div className="alternative-group">
+                        <span className="group-label">🔁 Same Stimulus, Different Modality</span>
+                        <div className="pills-row">
+                            {stimulusAlternatives.map(alt => {
+                                const id = `stimulus:${alt.id}`;
+                                const icon = MODALITY_ICON[alt.modality] ?? '➡️';
+                                return (
+                                    <button
+                                        key={id}
+                                        type="button"
+                                        className={`pill-btn ${activeAlternativeId === id ? 'active' : ''}`}
+                                        onClick={() => onSelectStimulusAlternative(alt.id)}
+                                        aria-pressed={activeAlternativeId === id}
+                                        aria-label={`Switch to ${alt.title}, a ${alt.modality} alternative covering the same training stimulus`}
+                                    >
+                                        {icon} {alt.modality}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
+
+                {/* Location / Gear Shifts -- an intentional downgrade to a lighter mobility
+                    session, not a same-stimulus substitute (the catalog has no genuine
+                    equipment-free aerobic-base session yet), so it is labeled as such. */}
                 <div className="alternative-group">
-                    <span className="group-label">🏠 Gear & Venue</span>
+                    <span className="group-label">🏠 No Equipment Available</span>
                     <div className="pills-row">
                         <button
                             type="button"
                             className={`pill-btn ${activeAlternativeId === 'home-bodyweight' ? 'active' : ''}`}
                             onClick={onSelectHomeAlternative}
                             aria-pressed={activeAlternativeId === 'home-bodyweight'}
-                            aria-label="Switch to Home Bodyweight workout with no equipment needed"
+                            aria-label="Switch to a zero-equipment mobility session -- a lighter session, not an equivalent-effort swap"
                         >
-                            🏠 Home / Bodyweight
+                            🏠 Zero-Equipment (Lighter)
                         </button>
                     </div>
                 </div>
@@ -118,9 +174,9 @@ export const OneTapAlternatives = memo(function OneTapAlternatives({
                 </div>
             </div>
 
-            {activeAlternativeId && (
+            {activeLabel && (
                 <div className="alternative-active-banner">
-                    <span>✨ Alternative applied: <strong>{ALTERNATIVE_LABELS[activeAlternativeId] || activeAlternativeId}</strong></span>
+                    <span>✨ Alternative applied: <strong>{activeLabel}</strong></span>
                     <button type="button" className="btn-reset-alternative" onClick={onResetOriginal}>
                         ↺ Reset to Engine Recommendation
                     </button>
