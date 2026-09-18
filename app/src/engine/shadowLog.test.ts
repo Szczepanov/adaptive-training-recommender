@@ -388,11 +388,35 @@ describe('renderShadowLogCsv', () => {
         expect(renderShadowLogCsv([]).split('\n')).toHaveLength(1);
     });
 
-    it.each(['=1+1', ' +SUM(A1:A2)', '-1+2', '@cmd'])('neutralizes formula-leading journal notes: %s', note => {
+    it.each([
+        '=1+1',
+        ' +SUM(A1:A2)',
+        '-1+2',
+        '@cmd',
+        '\\tplain text',
+        '\\r=1+1',
+        '\\n=1+1',
+        '＝1+1',
+        '＋1+1',
+        '－1+1',
+        '＠SUM(1,1)',
+    ])('neutralizes spreadsheet-active journal-note prefixes: %s', note => {
         const csv = renderShadowLogCsv(buildShadowLog([
             { date: DATE, recommendation: null, journalEntry: journalEntry({ externalNote: note }), checkin: null, recoverySnapshot: null },
         ]));
 
-        expect(csv.split('\n')[1]).toContain(`'${note}`);
+        expect(csv).toContain(`'${note}`);
+    });
+
+    it('keeps legitimate negative telemetry numeric instead of formula-neutralizing it as text', () => {
+        const csv = renderShadowLogCsv(buildShadowLog([
+            { date: DATE, recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: snapshot() },
+        ]));
+        const values = csv.split('\n')[1].split(',');
+
+        expect(values[19]).toBe('-1');
+        expect(values[20]).toBe('-2');
+        expect(values[19]).not.toContain("'");
+        expect(values[20]).not.toContain("'");
     });
 });
