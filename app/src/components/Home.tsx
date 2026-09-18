@@ -81,7 +81,7 @@ import { activityOverrideService } from '../services/activityOverrideService';
 import { activityService } from '../services/activityService';
 import { usabilityMetrics } from '../utils/usabilityMetrics';
 import { TEMPLATES, TEMPLATES_BY_ID } from '../engine/templates';
-import { findStimulusMatchedAlternatives } from '../engine/sessionAlternatives';
+import { applyStimulusMatchedAlternative, findStimulusMatchedAlternatives } from '../engine/sessionAlternatives';
 import type { ActivityOverride, DailyRecoverySnapshot, NormalizedGarminActivity } from '../engine/models';
 import {
   resolveDecisionCompositionRepairState,
@@ -996,16 +996,17 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
         };
       } else if (alternativeId.startsWith('stimulus:')) {
         const stimulusTemplateId = alternativeId.slice('stimulus:'.length);
-        const stimulusTemplate = TEMPLATES_BY_ID.get(stimulusTemplateId);
-        if (stimulusTemplate) {
-          base = {
-            ...base,
-            template: stimulusTemplate,
-            rationale: `1-tap alternative applied: ${stimulusTemplate.title} (${stimulusTemplate.modality}) covers today's same training stimulus.`,
-            prescription: undefined,
-            primarySession: undefined,
-          };
-        }
+        // Never trust an id that was merely valid when the pills rendered. A check-in,
+        // injury restriction, equipment setting or time budget can change while Home stays
+        // mounted, so application re-runs the same current-context matcher and fails closed.
+        const matchedAlternative = applyStimulusMatchedAlternative(
+          base,
+          stimulusTemplateId,
+          engineInputs.context,
+          engineInputs.subjective.timeAvailable,
+          decisionInput.date,
+        );
+        if (matchedAlternative) base = matchedAlternative;
       } else if (alternativeId.startsWith('time-')) {
         const targetMinutes = parseInt(alternativeId.replace('time-', ''), 10);
         if (!Number.isNaN(targetMinutes)) {
@@ -1125,6 +1126,18 @@ export function Home({ userId, onNavigate, onViewData, onStartSession }: HomePro
       decisionInput.date,
     );
   }, [recommendation, engineInputs, decisionInput]);
+
+  // An alternative can become invalid without Home unmounting (for example after a fresh
+  // check-in adds a Running restriction). Remove stale UI state as soon as the current
+  // candidate set changes. computeAdjustedRecommendation independently fails closed too,
+  // so there is no one-render safety window while this effect is waiting to run.
+  useEffect(() => {
+    if (!activeAlternativeId?.startsWith('stimulus:')) return;
+    const templateId = activeAlternativeId.slice('stimulus:'.length);
+    if (stimulusAlternatives.some(candidate => candidate.id === templateId)) return;
+    setActiveAlternativeId(null);
+    setAdjustmentDirection(null);
+  }, [activeAlternativeId, stimulusAlternatives]);
 
   const activeRec = useMemo(
     () => computeAdjustedRecommendation(adjustmentDirection, activeAlternativeId),
