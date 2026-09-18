@@ -1568,26 +1568,26 @@ service cloud.firestore {
 
     function sessionExecutionLockTargetsInProgress(userId, lockData) {
       let executionPath = /databases/$(database)/documents/users/$(userId)/session_executions/$(lockData.executionId);
-      let execution = getAfter(executionPath).data;
+      let execution = getAfter(executionPath);
       return existsAfter(executionPath)
-        && execution.userId == userId
-        && execution.executionId == lockData.executionId
-        && execution.date == lockData.date
-        && execution.state == 'in_progress'
-        && execution.schemaVersion == 1
-        && sessionExecutionMatchesLockIdentity(lockData, execution);
+        && execution.data.userId == userId
+        && execution.data.executionId == lockData.executionId
+        && execution.data.date == lockData.date
+        && execution.data.state == 'in_progress'
+        && execution.data.schemaVersion == 1
+        && sessionExecutionMatchesLockIdentity(lockData, execution.data);
     }
 
     function sessionExecutionLockPointsAtBlockingExecution(userId, lockData) {
       let executionPath = /databases/$(database)/documents/users/$(userId)/session_executions/$(lockData.executionId);
-      let execution = get(executionPath).data;
+      let execution = get(executionPath);
       return exists(executionPath)
-        && execution.userId == userId
-        && execution.executionId == lockData.executionId
-        && execution.date == lockData.date
-        && execution.state in ['in_progress', 'completed']
-        && execution.schemaVersion == 1
-        && sessionExecutionMatchesLockIdentity(lockData, execution);
+        && execution.data.userId == userId
+        && execution.data.executionId == lockData.executionId
+        && execution.data.date == lockData.date
+        && execution.data.state in ['in_progress', 'completed']
+        && execution.data.schemaVersion == 1
+        && sessionExecutionMatchesLockIdentity(lockData, execution.data);
     }
 
     function canUpdateSessionExecutionLock(userId) {

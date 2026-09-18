@@ -2194,6 +2194,27 @@ emulatorDescribe('Firestore security rules', () => {
         });
         await expect(assertSucceeds(confirmedRedo.commit())).resolves.toBeUndefined();
 
+        // A dangling pointer is repairable. This also proves the rules short-circuit the
+        // missing-resource read instead of turning a deleted target into permission-denied.
+        await testEnvironment.withSecurityRulesDisabled(async context => {
+            await deleteDoc(doc(context.firestore(), execution2Path));
+        });
+        const execution3Path = `users/${ownerId}/session_executions/exec-3`;
+        const execution3 = {
+            ...validSessionExecution(),
+            executionId: 'exec-3',
+            startedAt: '2026-08-18T12:00:00Z',
+            updatedAt: '2026-08-18T12:00:00Z',
+        };
+        const repairClaim = writeBatch(ownerDb);
+        repairClaim.set(doc(ownerDb, execution3Path), execution3);
+        repairClaim.set(doc(ownerDb, lockPath), {
+            ...validLock,
+            executionId: 'exec-3',
+            updatedAt: '2026-08-18T12:00:00Z',
+        });
+        await expect(assertSucceeds(repairClaim.commit())).resolves.toBeUndefined();
+
         // Shape, ownership, target identity, and anchor deletion stay fail-closed.
         await assertFails(setDoc(doc(ownerDb, lockPath), { ...validLock, userId: otherUserId }));
         await assertFails(setDoc(doc(ownerDb, lockPath), { ...validLock, executionId: '' }));
