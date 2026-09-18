@@ -186,6 +186,11 @@ This boundary is load-bearing: a journal that can influence the decision it meas
 
 Not a code task. Run 4–6 weeks of: check-in, record the AI verdict, read the engine verdict, answer adherence.
 
+Use the [Phase 9.0 shadow-block operations runbook](../ops/phase-9-shadow-block.md) for the
+bounded ingestion audit, daily reveal ordering, private export package, stable-policy segment
+handling, and execution packet. It explicitly distinguishes unavailable evidence from a clean
+audit and prohibits reconstructing missed evidence.
+
 Keep each day's `policyVersion` in the export as already designed. If a decision-affecting version boundary occurs despite the precondition above, treat it as a new evidence segment and report agreement separately by stable-policy segment.
 
 **Done when** the export contains:
@@ -207,6 +212,10 @@ Write a dated analysis in `docs/analysis/` reporting:
 * every disagreement row with the athlete's journal note;
 * directional bias (engine systematically more or less conservative);
 * whether disagreements concentrate on days where subjective scores diverge from the athlete's own trailing average, the hypothesis in [ADR-0020](../adr/0020-subjective-baselines-in-readiness-mode.md).
+
+The exported readout manifest reports gate counts, anchored/unanchored agreement, contiguous
+stable-policy segments, and data-quality counts. It is an aggregate aid, not a substitute for
+reviewing every disagreement in the private CSV with its decision-journal note.
 
 Then choose one:
 

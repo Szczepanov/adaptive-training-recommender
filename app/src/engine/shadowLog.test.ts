@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { buildShadowLog, buildShadowLogRow, deriveEngineVerdictFromMode, renderShadowLogCsv, type ShadowLogDayInput } from './shadowLog';
+import { summarizeShadowLog } from './shadowReadout';
 import type { DailyRecommendation, DailyRecoverySnapshot, DailySubjectiveCheckin, DecisionJournalEntry, ShadowVerdict } from './models';
 import type { ClosedLoopFeedbackRecord } from '../feedback/feedbackModels';
 
@@ -101,9 +102,10 @@ describe('buildShadowLogRow', () => {
         expect(row).toBeNull();
     });
 
-    it('returns null for a recovery snapshot alone -- not one of the three sources that trigger a row', () => {
+    it('keeps a recovery snapshot-only day visible as an objective-evidence row', () => {
         const row = buildShadowLogRow({ date: DATE, recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: snapshot() });
-        expect(row).toBeNull();
+        expect(row).not.toBeNull();
+        expect(row!.objective?.sleepScoreVs7d).toBe(2);
     });
 
     it('builds a row from a recommendation alone, with everything else visible as a gap', () => {
@@ -129,6 +131,7 @@ describe('buildShadowLogRow', () => {
         const row = buildShadowLogRow({ date: DATE, recommendation: null, journalEntry: null, checkin: checkin(), recoverySnapshot: null });
         expect(row).not.toBeNull();
         expect(row!.subjective).toEqual({ readiness: 7, sleepQuality: 6, fatigue: 4, soreness: 3, mentalStress: 4, motivation: 6 });
+        expect(row!.subjectiveComplete).toBe(true);
     });
 
     it('computes agreement when both engine and external verdicts are present', () => {
@@ -225,14 +228,168 @@ describe('buildShadowLogRow', () => {
 });
 
 describe('buildShadowLog', () => {
-    it('drops empty days and preserves the order of days with evidence', () => {
+    it('preserves every requested day, including a fully missing day', () => {
         const days: ShadowLogDayInput[] = [
             { date: '2026-08-14', recommendation: recommendation({ date: '2026-08-14' }), journalEntry: null, checkin: null, recoverySnapshot: null },
             { date: '2026-08-15', recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: null },
             { date: '2026-08-16', recommendation: null, journalEntry: journalEntry(), checkin: null, recoverySnapshot: null },
         ];
         const rows = buildShadowLog(days);
-        expect(rows.map(r => r.date)).toEqual(['2026-08-14', '2026-08-16']);
+        expect(rows.map(r => r.date)).toEqual(['2026-08-14', '2026-08-15', '2026-08-16']);
+        expect(rows[1]).toMatchObject({ date: '2026-08-15', engineVerdict: null, externalVerdict: null, subjective: null, objective: null });
+    });
+});
+
+describe('summarizeShadowLog', () => {
+    it('degrades to all-zero output for an empty input', () => {
+        const summary = summarizeShadowLog([]);
+
+        expect(summary.calendarDays).toBe(0);
+        expect(summary.stablePolicySegments).toEqual([]);
+        expect(summary.qualifyingStablePolicySegments).toBe(0);
+        expect(summary.gates).toMatchObject({
+            pairedVerdictDays: { required: 28, observed: 0, met: false },
+            completeSubjectiveCheckins: { required: 21, observed: 0, met: false },
+            unanchoredDays: { required: 7, observed: 0, met: false },
+            unanchoredPairedVerdictDays: 0,
+        });
+        expect(summary.agreement).toMatchObject({ comparedDays: 0 });
+        expect(summary.dataQuality).toMatchObject({ duplicateRows: 0, emptyEvidenceDays: 0 });
+    });
+
+    it('does not pass aggregate gates by combining two non-qualifying policy segments', () => {
+        const rows = Array.from({ length: 28 }, (_, offset) => {
+            const date = `2026-08-${String(offset + 1).padStart(2, '0')}`;
+            const firstSegment = offset < 14;
+            return buildShadowLogRow({
+                date,
+                recommendation: recommendation({
+                    date,
+                    recommendationAudit: { policyVersion: firstSegment ? 'policy-a' : 'policy-b' } as DailyRecommendation['recommendationAudit'],
+                }),
+                journalEntry: journalEntry({ date, sawEngineVerdictFirst: ![0, 1, 2, 3, 14, 15, 16].includes(offset) }),
+                checkin: offset < 21 ? checkin({ date }) : null,
+                recoverySnapshot: null,
+            })!;
+        });
+
+        const summary = summarizeShadowLog(rows);
+
+        expect(summary.gates.pairedVerdictDays).toMatchObject({ observed: 28, met: false });
+        expect(summary.gates.completeSubjectiveCheckins).toMatchObject({ observed: 21, met: false });
+        expect(summary.gates.unanchoredDays).toMatchObject({ observed: 7, met: false });
+        expect(summary.stablePolicySegments).toHaveLength(2);
+        expect(summary.stablePolicySegments).toEqual(expect.arrayContaining([
+            expect.objectContaining({
+                policyVersion: 'policy-a',
+                gates: expect.objectContaining({
+                    pairedVerdictDays: expect.objectContaining({ observed: 14, met: false }),
+                    completeSubjectiveCheckins: expect.objectContaining({ observed: 14, met: false }),
+                    unanchoredDays: expect.objectContaining({ observed: 4, met: false }),
+                }),
+            }),
+            expect.objectContaining({
+                policyVersion: 'policy-b',
+                gates: expect.objectContaining({
+                    pairedVerdictDays: expect.objectContaining({ observed: 14, met: false }),
+                    completeSubjectiveCheckins: expect.objectContaining({ observed: 7, met: false }),
+                    unanchoredDays: expect.objectContaining({ observed: 3, met: false }),
+                }),
+            }),
+        ]));
+    });
+
+    it('passes aggregate gates only when one stable segment satisfies all three gates', () => {
+        const rows = Array.from({ length: 28 }, (_, offset) => {
+            const date = `2026-09-${String(offset + 1).padStart(2, '0')}`;
+            return buildShadowLogRow({
+                date,
+                recommendation: recommendation({ date, recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date, sawEngineVerdictFirst: offset >= 7 }),
+                checkin: offset < 21 ? checkin({ date }) : null,
+                recoverySnapshot: null,
+            })!;
+        });
+
+        const summary = summarizeShadowLog(rows);
+
+        expect(summary.gates.pairedVerdictDays.met).toBe(true);
+        expect(summary.gates.completeSubjectiveCheckins.met).toBe(true);
+        expect(summary.gates.unanchoredDays.met).toBe(true);
+        expect(summary.qualifyingStablePolicySegments).toBe(1);
+    });
+
+    it('counts gates and data-quality gaps without allowing duplicate rows to inflate evidence', () => {
+        const rows = buildShadowLog([
+            {
+                date: '2026-08-14', recommendation: recommendation({ date: '2026-08-14', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-14', sawEngineVerdictFirst: false }), checkin: checkin({ date: '2026-08-14' }), recoverySnapshot: null,
+            },
+            {
+                date: '2026-08-15', recommendation: recommendation({ date: '2026-08-15', mode: 'recover', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-15', sawEngineVerdictFirst: true }), checkin: null, recoverySnapshot: null,
+            },
+            { date: '2026-08-16', recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: null },
+            {
+                date: '2026-08-17', recommendation: recommendation({ date: '2026-08-17', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-17', sawEngineVerdictFirst: false }), checkin: null, recoverySnapshot: null,
+            },
+            {
+                date: '2026-08-18', recommendation: recommendation({ date: '2026-08-18', recommendationAudit: { policyVersion: 'policy-b' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-18', sawEngineVerdictFirst: false }), checkin: checkin({ date: '2026-08-18', dataQuality: { isComplete: false, missingFields: ['fatigue'] } }), recoverySnapshot: null,
+            },
+        ]);
+
+        const summary = summarizeShadowLog([...rows, rows[0]]);
+
+        expect(summary.calendarDays).toBe(5);
+        expect(summary.gates.pairedVerdictDays).toMatchObject({ required: 28, observed: 4, met: false });
+        expect(summary.gates.completeSubjectiveCheckins).toMatchObject({ required: 21, observed: 1, met: false });
+        expect(summary.gates.unanchoredDays).toMatchObject({ required: 7, observed: 3, met: false });
+        expect(summary.gates.unanchoredPairedVerdictDays).toBe(3);
+        expect(summary.agreement).toMatchObject({ comparedDays: 4, agree: 3, engineMoreConservative: 1 });
+        expect(summary.anchoredAgreement).toMatchObject({ comparedDays: 1, engineMoreConservative: 1 });
+        expect(summary.unanchoredAgreement).toMatchObject({ comparedDays: 3, agree: 3 });
+        expect(summary.dataQuality).toMatchObject({ duplicateRows: 1, emptyEvidenceDays: 1, incompleteSubjectiveCheckinDays: 1 });
+    });
+
+    it('does not count a feedback-only day as empty evidence', () => {
+        const row = buildShadowLogRow({
+            date: DATE, recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: null,
+            feedbackRecord: feedbackRecord(),
+        })!;
+
+        const summary = summarizeShadowLog([row]);
+
+        expect(summary.dataQuality.emptyEvidenceDays).toBe(0);
+    });
+
+    it('splits stable-policy segments at an empty date and at a version boundary', () => {
+        const rows = buildShadowLog([
+            {
+                date: '2026-08-14', recommendation: recommendation({ date: '2026-08-14', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-14' }), checkin: null, recoverySnapshot: null,
+            },
+            {
+                date: '2026-08-15', recommendation: recommendation({ date: '2026-08-15', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-15' }), checkin: null, recoverySnapshot: null,
+            },
+            { date: '2026-08-16', recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: null },
+            {
+                date: '2026-08-17', recommendation: recommendation({ date: '2026-08-17', recommendationAudit: { policyVersion: 'policy-a' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-17' }), checkin: null, recoverySnapshot: null,
+            },
+            {
+                date: '2026-08-18', recommendation: recommendation({ date: '2026-08-18', recommendationAudit: { policyVersion: 'policy-b' } as DailyRecommendation['recommendationAudit'] }),
+                journalEntry: journalEntry({ date: '2026-08-18' }), checkin: null, recoverySnapshot: null,
+            },
+        ]);
+
+        expect(summarizeShadowLog(rows).stablePolicySegments).toEqual([
+            expect.objectContaining({ policyVersion: 'policy-a', startDate: '2026-08-14', endDate: '2026-08-15', calendarDays: 2, pairedVerdictDays: 2 }),
+            expect.objectContaining({ policyVersion: 'policy-a', startDate: '2026-08-17', endDate: '2026-08-17', calendarDays: 1, pairedVerdictDays: 1 }),
+            expect.objectContaining({ policyVersion: 'policy-b', startDate: '2026-08-18', endDate: '2026-08-18', calendarDays: 1, pairedVerdictDays: 1 }),
+        ]);
     });
 });
 
@@ -245,7 +402,7 @@ describe('renderShadowLogCsv', () => {
         const lines = csv.split('\n');
         expect(lines[0]).toBe(
             'date,engineVerdict,engineMode,externalVerdict,externalNote,sawEngineVerdictFirst,actualVerdict,adherenceFollowed,'
-            + 'actualDurationMin,agreement,readiness,sleepQuality,fatigue,soreness,mentalStress,motivation,'
+            + 'actualDurationMin,agreement,subjectiveComplete,readiness,sleepQuality,fatigue,soreness,mentalStress,motivation,'
             + 'sleepScoreVs7d,sleepScoreVs28d,restingHrVs7d,restingHrVs28d,hrvVs7d,hrvVs28d,respirationVs7d,respirationVs28d,'
             + 'policyVersion,externalPlanContentHash,athleteDecisionAction,athleteDecisionReasons,regretClass,'
             + 'regretConfidence,athleteDeclaredRegret,utilityScore,coachingHelpfulness',
@@ -256,5 +413,37 @@ describe('renderShadowLogCsv', () => {
 
     it('round-trips an empty row set to just the header', () => {
         expect(renderShadowLogCsv([]).split('\n')).toHaveLength(1);
+    });
+
+    it.each([
+        '=1+1',
+        ' +SUM(A1:A2)',
+        '-1+2',
+        '@cmd',
+        '\tplain text',
+        '\r=1+1',
+        '\n=1+1',
+        '＝1+1',
+        '＋1+1',
+        '－1+1',
+        '＠SUM(1,1)',
+    ])('neutralizes spreadsheet-active journal-note prefixes: %s', note => {
+        const csv = renderShadowLogCsv(buildShadowLog([
+            { date: DATE, recommendation: null, journalEntry: journalEntry({ externalNote: note }), checkin: null, recoverySnapshot: null },
+        ]));
+
+        expect(csv).toContain(`'${note}`);
+    });
+
+    it('keeps legitimate negative telemetry numeric instead of formula-neutralizing it as text', () => {
+        const csv = renderShadowLogCsv(buildShadowLog([
+            { date: DATE, recommendation: null, journalEntry: null, checkin: null, recoverySnapshot: snapshot() },
+        ]));
+        const values = csv.split('\n')[1].split(',');
+
+        expect(values[19]).toBe('-1');
+        expect(values[20]).toBe('-2');
+        expect(values[19]).not.toContain("'");
+        expect(values[20]).not.toContain("'");
     });
 });

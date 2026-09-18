@@ -104,6 +104,12 @@
   align-self: flex-start;
 }
 
+.journal-export-status {
+  margin: 0.1rem 0 0;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
 .journal-engine-verdict {
   margin: 0.75rem 0;
   padding-top: 0.75rem;

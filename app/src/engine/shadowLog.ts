@@ -42,6 +42,10 @@ export interface ShadowLogRow {
      * ShadowVerdict values, but a day with no engine or no external verdict has nothing
      * to compare. */
     agreement: AgreementClass | null;
+    /** Whether the persisted check-in passed its own completion contract. Null means
+     * no check-in was available for the day. The 9.0.7 volume gate requires completed
+     * check-ins, not merely a syntactically valid partial record. */
+    subjectiveComplete: boolean | null;
     subjective: {
         readiness: number | null;
         sleepQuality: number | null;
@@ -96,15 +100,14 @@ function persistedEngineVerdict(recommendation: DailyRecommendation): ShadowVerd
     return persisted.engineVerdict ?? deriveEngineVerdictFromMode(recommendation.mode);
 }
 
-/** Builds one row, or null when none of the three evidence sources (recommendation,
- * journal entry, check-in) exist for the day -- the export omits the day entirely rather
- * than emitting an all-null row for a date nothing touched. A day where exactly one or
- * two sources exist still gets a row, with the rest visible as null: that gap is itself a
- * finding (the day the athlete skipped the check-in), not something to silently drop. */
+/** Builds one row when any source was available. `buildShadowLog` adds explicit empty
+ * rows for a requested date range, so a fully missing day cannot disappear from a 9.0.7
+ * gate calculation. A day where exactly one or two sources exist keeps the remaining
+ * fields null: that gap is itself a finding, not a reason to discard the day. */
 export function buildShadowLogRow(input: ShadowLogDayInput): ShadowLogRow | null {
     const { date, recommendation, journalEntry, checkin, recoverySnapshot } = input;
     const feedbackRecord = input.feedbackRecord ?? null;
-    if (!recommendation && !journalEntry && !checkin && !feedbackRecord) return null;
+    if (!recommendation && !journalEntry && !checkin && !recoverySnapshot && !feedbackRecord) return null;
 
     const engineVerdict = recommendation ? persistedEngineVerdict(recommendation) : null;
     const externalVerdict = journalEntry?.externalVerdict ?? null;
@@ -123,6 +126,7 @@ export function buildShadowLogRow(input: ShadowLogDayInput): ShadowLogRow | null
         adherenceFollowed: recommendation?.adherence.followed ?? null,
         actualDurationMin: recommendation?.adherence.actualDurationMin ?? null,
         agreement,
+        subjectiveComplete: checkin?.dataQuality.isComplete ?? null,
         subjective: checkin ? {
             readiness: checkin.readiness,
             sleepQuality: checkin.sleepQuality,
@@ -153,13 +157,42 @@ export function buildShadowLogRow(input: ShadowLogDayInput): ShadowLogRow | null
     };
 }
 
+function emptyShadowLogRow(date: string): ShadowLogRow {
+    return {
+        date,
+        engineVerdict: null,
+        engineMode: null,
+        externalVerdict: null,
+        externalNote: null,
+        sawEngineVerdictFirst: null,
+        actualVerdict: null,
+        adherenceFollowed: null,
+        actualDurationMin: null,
+        agreement: null,
+        subjectiveComplete: null,
+        subjective: null,
+        objective: null,
+        policyVersion: null,
+        externalPlanContentHash: null,
+        athleteDecisionAction: null,
+        athleteDecisionReasons: null,
+        regretClass: null,
+        regretConfidence: null,
+        athleteDeclaredRegret: null,
+        utilityScore: null,
+        coachingHelpfulness: null,
+    };
+}
+
 /** `days` in any order; the output preserves that order (callers pass dates ascending by
- * convention, same as `ContextBriefInput.snapshots`). */
+ * convention, same as `ContextBriefInput.snapshots`). It preserves one row for every
+ * requested day, including a fully empty one, because Phase 9.0's evidence gates must
+ * count missing records as data-quality gaps rather than silently exclude them. */
 export function buildShadowLog(days: readonly ShadowLogDayInput[]): ShadowLogRow[] {
     const rows: ShadowLogRow[] = [];
     for (const day of days) {
         const row = buildShadowLogRow(day);
-        if (row) rows.push(row);
+        rows.push(row ?? emptyShadowLogRow(day.date));
     }
     return rows;
 }
@@ -175,6 +208,7 @@ const CSV_COLUMNS: Array<{ header: string; read: (row: ShadowLogRow) => string |
     { header: 'adherenceFollowed', read: r => r.adherenceFollowed },
     { header: 'actualDurationMin', read: r => r.actualDurationMin },
     { header: 'agreement', read: r => r.agreement },
+    { header: 'subjectiveComplete', read: r => r.subjectiveComplete },
     { header: 'readiness', read: r => r.subjective?.readiness ?? null },
     { header: 'sleepQuality', read: r => r.subjective?.sleepQuality ?? null },
     { header: 'fatigue', read: r => r.subjective?.fatigue ?? null },
@@ -202,8 +236,16 @@ const CSV_COLUMNS: Array<{ header: string; read: (row: ShadowLogRow) => string |
 
 function csvCell(value: string | number | boolean | null): string {
     if (value === null || value === undefined) return '';
-    const text = String(value);
-    return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    const rawText = String(value);
+    // Only strings can carry spreadsheet-formula payloads here. Numeric telemetry may
+    // legitimately be negative (for example an HRV delta), and prefixing those numbers
+    // with an apostrophe would silently change evidence into text. For string cells,
+    // neutralize the common formula prefixes plus the control/full-width variants called
+    // out by spreadsheet-injection guidance, then apply RFC-style CSV quoting.
+    const formulaLikeString = typeof value === 'string'
+        && (/^[\t\r\n\0]/.test(rawText) || /^\s*[=+\-@＝＋－＠]/u.test(rawText));
+    const text = formulaLikeString ? `'${rawText}` : rawText;
+    return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 /** The 9.0.8 human readout's export format -- one row per day, gaps visible as empty

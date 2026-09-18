@@ -1,6 +1,5 @@
 import type { DailyRecommendation, DailyRecoverySnapshot, DailySubjectiveCheckin, DecisionJournalEntry } from '../engine/models';
 import { buildShadowLog, type ShadowLogDayInput, type ShadowLogRow } from '../engine/shadowLog';
-import { parseSubjectiveCheckin } from '../persistence/parsers/decisionInputs';
 import { addDaysToLocalDateString, getDayDiff } from '../utils/localDate';
 import { checkinService } from './checkinService';
 import { decisionJournalService } from './decisionJournalService';
@@ -16,6 +15,14 @@ export interface ShadowLogResult {
      * reviewer relying on this for 9.0.7's volume gates needs to know a gap here is a
      * read/validation failure, not a genuine missing day. */
     unavailableSources: string[];
+    /** Range-state provenance stays separate from ordinary record absence. This lets the
+     * readout distinguish a legitimate no-check-in day from a failed/invalid query. */
+    sourceQuality: {
+        subjectiveCheckins: {
+            status: 'AVAILABLE' | 'MISSING' | 'INVALID' | 'UNAVAILABLE';
+            issueCount: number;
+        };
+    };
 }
 
 /**
@@ -29,13 +36,17 @@ export class ShadowLogService {
         const dayCount = getDayDiff(endDateInclusive, startDate) + 1;
         const dates = Array.from({ length: Math.max(dayCount, 0) }, (_, offset) => addDaysToLocalDateString(startDate, offset));
         const unavailableSources: string[] = [];
+        let subjectiveCheckinQuality: ShadowLogResult['sourceQuality']['subjectiveCheckins'] = {
+            status: 'UNAVAILABLE',
+            issueCount: 0,
+        };
 
         const [snapshotResults, checkinResult, recommendationResult, journalResult] = await Promise.allSettled([
             // Day-by-day, same reasoning as contextBriefService: collapsing UNAVAILABLE and
             // MISSING to null would make a read outage indistinguishable from "no data that
             // day" and silently under-report the window.
             Promise.all(dates.map(date => recoverySnapshotService.getRecoverySnapshotState(userId, date))),
-            checkinService.getCheckinsInRange(userId, startDate, endDateInclusive),
+            checkinService.getCheckinsInRangeState(userId, startDate, throughExclusive),
             recommendationService.getRecommendationsInRange(userId, startDate, throughExclusive),
             decisionJournalService.getEntriesInRange(userId, startDate, endDateInclusive),
         ] as const);
@@ -52,22 +63,23 @@ export class ShadowLogService {
             unavailableSources.push('recovery snapshots');
         }
 
-        // getCheckinsInRange predates the DataState-based history readers and returns raw
-        // Firestore documents cast as DailySubjectiveCheckin -- re-parse them here, same as
-        // contextBriefService, so one malformed historical record cannot silently enter the
-        // export as a neutral subjective vector.
         const checkinByDate = new Map<string, DailySubjectiveCheckin>();
         if (checkinResult.status === 'fulfilled') {
-            let invalidCheckins = 0;
-            checkinResult.value.forEach((rawCheckin, index) => {
-                const rawDate = typeof rawCheckin?.date === 'string' ? rawCheckin.date : `invalid-${index}`;
-                const parsed = parseSubjectiveCheckin(rawCheckin, `users/${userId}/daily_subjective_checkins/${rawDate}`, userId, rawDate);
-                if (parsed.status === 'AVAILABLE') checkinByDate.set(parsed.data.date, parsed.data);
-                else invalidCheckins += 1;
-            });
-            if (invalidCheckins > 0) unavailableSources.push(`subjective check-ins (${invalidCheckins} invalid record(s) omitted)`);
+            const state = checkinResult.value;
+            const issueCount = state.status === 'AVAILABLE' || state.status === 'INVALID'
+                ? state.issues?.length ?? 0
+                : 0;
+            subjectiveCheckinQuality = { status: state.status, issueCount };
+            if (state.status === 'AVAILABLE') {
+                for (const checkin of state.data) checkinByDate.set(checkin.date, checkin);
+                if (issueCount > 0) unavailableSources.push(`subjective check-ins (${issueCount} invalid record(s) omitted)`);
+            } else if (state.status === 'INVALID') {
+                unavailableSources.push('subjective check-ins (range invalid)');
+            } else if (state.status === 'UNAVAILABLE') {
+                unavailableSources.push('subjective check-ins (range unavailable)');
+            }
         } else {
-            unavailableSources.push('subjective check-ins');
+            unavailableSources.push('subjective check-ins (range unavailable)');
         }
 
         // A single malformed document fails the whole range read (see
@@ -103,6 +115,7 @@ export class ShadowLogService {
             startDate,
             endDate: endDateInclusive,
             unavailableSources,
+            sourceQuality: { subjectiveCheckins: subjectiveCheckinQuality },
         };
     }
 }
