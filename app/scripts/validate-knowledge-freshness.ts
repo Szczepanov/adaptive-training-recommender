@@ -26,3 +26,18 @@ if (reviewNeeded.length > 0) {
 } else {
     console.log('No active claims are due or stale for review.');
 }
+
+const inconsistentMetadata = report.records.filter(
+    record => record.claimStatus === 'active' && (record.reviewedInFuture || record.cadenceOverrideIgnored),
+);
+
+if (inconsistentMetadata.length > 0) {
+    console.warn(`knowledge-freshness warning: ${inconsistentMetadata.length} active claim(s) have inconsistent review metadata:`);
+    for (const record of inconsistentMetadata) {
+        const issues = [
+            record.reviewedInFuture ? `reviewedOn=${record.reviewedOn} is after asOf=${report.asOf}` : null,
+            record.cadenceOverrideIgnored ? 'reviewCadenceMonthsOverride is looser than the risk-derived cadence and is ignored' : null,
+        ].filter((issue): issue is string => issue !== null);
+        console.warn(`  - ${record.claimId}: ${issues.join('; ')}`);
+    }
+}
