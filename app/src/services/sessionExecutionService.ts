@@ -92,8 +92,24 @@ export class SessionExecutionService {
             occurrenceId?: string;
             prescriptionHash?: string;
             date: string;
+            allowDuplicateCompleted?: boolean;
         },
     ): Promise<SessionExecution> {
+        const existing = await this.findExistingExecution(userId, {
+            date: params.date,
+            occurrenceId: params.occurrenceId,
+            prescriptionHash: params.prescriptionHash,
+        });
+
+        if (existing) {
+            if (existing.state === 'in_progress') {
+                return existing;
+            }
+            if (existing.state === 'completed' && !params.allowDuplicateCompleted) {
+                throw new Error('A completed execution already exists for this session today.');
+            }
+        }
+
         const now = new Date().toISOString();
         const execution: SessionExecution = {
             userId,
@@ -279,6 +295,54 @@ export class SessionExecutionService {
             }
         }
         return candidates.sort((a, b) => b.startedAt.localeCompare(a.startedAt))[0] ?? null;
+    }
+
+    /**
+     * Looks up an existing execution for a given date and optional occurrence or prescription.
+     * Prioritizes completed executions, then in-progress ones, sorted by most recent startedAt.
+     */
+    async findExistingExecution(
+        userId: string,
+        params: {
+            date: string;
+            occurrenceId?: string;
+            prescriptionHash?: string;
+        },
+    ): Promise<SessionExecution | null> {
+        const collRef = collection(this.db, 'users', userId, 'session_executions');
+        const q = query(collRef, where('date', '==', params.date));
+        const snap = await getDocs(q);
+        const candidates: SessionExecution[] = [];
+
+        for (const docSnap of snap.docs) {
+            const parsed = parseSessionExecutionDocument(docSnap.data(), docSnap.ref.path);
+            if (parsed.status !== 'AVAILABLE' || parsed.data.executionId !== docSnap.id) continue;
+            const execution = parsed.data;
+
+            if (params.occurrenceId) {
+                if (execution.occurrenceId === params.occurrenceId) {
+                    candidates.push(execution);
+                }
+            } else {
+                // If no occurrenceId was requested (e.g. today's primary catalog recommendation),
+                // match executions that are either not bound to a different occurrence,
+                // or match the exact prescriptionHash.
+                if (!execution.occurrenceId || (params.prescriptionHash && execution.prescriptionHash === params.prescriptionHash)) {
+                    candidates.push(execution);
+                }
+            }
+        }
+
+        if (candidates.length === 0) return null;
+
+        candidates.sort((a, b) => {
+            const stateRank = (s: SessionExecutionState) => (s === 'completed' ? 2 : s === 'in_progress' ? 1 : 0);
+            const rankDiff = stateRank(b.state) - stateRank(a.state);
+            if (rankDiff !== 0) return rankDiff;
+            return b.startedAt.localeCompare(a.startedAt);
+        });
+
+        return candidates[0] ?? null;
     }
 
     /**

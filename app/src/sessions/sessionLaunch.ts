@@ -4,6 +4,7 @@ import type { SessionDefinition, SessionReferenceBinding } from './models';
 export interface PreparedSessionLaunch {
     definition: SessionDefinition;
     binding: SessionReferenceBinding;
+    allowDuplicateCompleted?: boolean;
 }
 
 /** Shared lifecycle guard for every path that starts a saved definition by its header --

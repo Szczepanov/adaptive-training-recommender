@@ -103,7 +103,7 @@ interface HomeProps {
   onNavigate: (screen: Screen) => void;
   onViewData?: () => void;
   /** Launches today's immutable session binding through the source-neutral runner. */
-  onStartSession?: (binding: SessionReferenceBinding) => void | Promise<void>;
+  onStartSession?: (binding: SessionReferenceBinding, options?: { allowDuplicateCompleted?: boolean }) => void | Promise<void>;
 }
 
 function verifySessionBindingReplay(userId: string, saved: DailyRecommendation | null): void {

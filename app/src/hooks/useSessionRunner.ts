@@ -63,7 +63,7 @@ export interface UseSessionRunnerResult {
     ineligibleOptionIds: ReadonlySet<string>;
 
     startFixtureSession: (fixture: SessionDefinition) => Promise<void>;
-    startSession: (definition: SessionDefinition, source: SessionSourceRef, options?: { occurrenceId?: string; prescriptionHash?: string }) => Promise<void>;
+    startSession: (definition: SessionDefinition, source: SessionSourceRef, options?: { occurrenceId?: string; prescriptionHash?: string; allowDuplicateCompleted?: boolean }) => Promise<void>;
     restoreSessionDefinition: (definition: SessionDefinition) => Promise<void>;
     selectStep: (blockIndex: number, stepIndex: number) => void;
     nextStep: () => void;
@@ -292,7 +292,7 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
     const startSession = useCallback(async (
         nextDefinition: SessionDefinition,
         source: SessionSourceRef,
-        options: { occurrenceId?: string; prescriptionHash?: string } = {},
+        options: { occurrenceId?: string; prescriptionHash?: string; allowDuplicateCompleted?: boolean } = {},
     ) => {
         if (isRestoring || execution?.state === 'in_progress' || startInFlightRef.current) return;
         startInFlightRef.current = true;
@@ -313,9 +313,15 @@ export function useSessionRunner(userId: string, fixtures: readonly SessionDefin
                 ...(options.occurrenceId ? { occurrenceId: options.occurrenceId } : {}),
                 ...(options.prescriptionHash ? { prescriptionHash: options.prescriptionHash } : {}),
                 date: today,
+                ...(options.allowDuplicateCompleted ? { allowDuplicateCompleted: true } : {}),
             });
             setExecution(exec);
             setSyncStatus('synced');
+            if (exec.executionId !== executionId) {
+                const existingEntries = await sessionExecutionService.getEntries(userId, exec.executionId);
+                setEntries(existingEntries);
+                setElapsedSeconds(Math.max(0, Math.floor((Date.now() - Date.parse(exec.startedAt)) / 1000)));
+            }
         } catch (error) {
             setRawDefinition(null);
             setSyncStatus('unavailable');

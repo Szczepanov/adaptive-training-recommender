@@ -320,7 +320,7 @@ function App() {
                 void loadDecisionInput();
                 handleNavigate('data');
               }}
-              onStartSession={async binding => {
+              onStartSession={async (binding, options) => {
                 const definitionState = await resolveSessionDefinition(
                   userId!,
                   binding.sessionSource,
@@ -335,7 +335,11 @@ function App() {
                   // additional-session path releases the claim it just took.
                   throw new Error(`Unable to resolve the stored session prescription: ${definitionState.status}`);
                 }
-                const launch = { definition: definitionState.data, binding };
+                const launch = {
+                  definition: definitionState.data,
+                  binding,
+                  allowDuplicateCompleted: options?.allowDuplicateCompleted,
+                };
                 setSessionLaunch(launch);
                 handleNavigate('sessions');
               }}
