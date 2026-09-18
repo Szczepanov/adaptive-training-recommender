@@ -59,9 +59,14 @@ executions to the Scheduler invoker. It confirms current scheduler/execution con
 It is not a new `garmin_sync audit` result and does not extend the 2026-08-21 → 2026-08-27
 snapshot-coverage evidence above.
 
-**Post-cleanup coverage remains open.** No fresh user-scoped `garmin_sync audit` was recorded
-after the duplicate check. The owner must record a new monitored snapshot-coverage window before
-claiming post-cleanup coverage complete or closing this operational follow-up.
+**Post-cleanup coverage evidence (2026-09-18).** `uv run python -m garmin_sync audit --days 7`
+over 2026-09-12 → 2026-09-18 reports 7/7 snapshots present, 0 missing; sleep, sleep timing, HRV
+and RHR are each 7/7, and 7 activities were discovered. This satisfies the #654 acceptance
+boundary: a fresh, user-scoped audit recorded after the cleanup observation. Because that
+2026-09-18 check found no `garmin-sync-daily` to remove (`NOT_FOUND` — see above), there was no
+infrastructure change to observe a before/after against; this window is continuous coverage from
+the sole `garmin-sync-morning-poll` scheduler, not evidence of a fix taking effect. Post-cleanup
+coverage is closed.
 
 **Block day 1: 2026-08-22** (the day after the last recovered incident). Check-ins/journal entries from that date onward may count toward 9.0.7's volume gates.
 
