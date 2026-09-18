@@ -1,0 +1,76 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { garminSyncRequestService, type GarminSyncRequest } from '../services/garminSyncRequestService';
+import { getGarminBackfillStatus, type GarminBackfillStatus } from '../utils/garminBackfillStatus';
+
+export interface UseGarminBackfillStatusResult {
+    request: GarminSyncRequest | null;
+    status: GarminBackfillStatus;
+    retrying: boolean;
+    localError: string | null;
+    retryBackfill: () => Promise<void>;
+}
+
+/**
+ * Surfaces the status of the historical backfill Firestore already queues
+ * automatically and offers a retry when it failed or the claimed poller run went
+ * stale -- see docs/ops/data-backfill-and-rebuild.md. Reuses the same
+ * users/{uid}/garmin_sync_requests/latest doc as useGarminSyncTrigger/
+ * GarminSyncNowButton; getGarminBackfillStatus filters out an ordinary "Sync Now"
+ * request sitting on the same doc.
+ */
+export function useGarminBackfillStatus(userId: string | null | undefined): UseGarminBackfillStatusResult {
+    const [request, setRequest] = useState<GarminSyncRequest | null>(null);
+    const [retrying, setRetrying] = useState(false);
+    const [localError, setLocalError] = useState<string | null>(null);
+    const [now, setNow] = useState(() => Date.now());
+    const userIdRef = useRef(userId);
+
+    useEffect(() => {
+        userIdRef.current = userId;
+    }, [userId]);
+
+    useEffect(() => {
+        setLocalError(null);
+        if (!userId) {
+            setRequest(null);
+            return;
+        }
+        return garminSyncRequestService.subscribeToRequest(
+            userId,
+            (next) => {
+                setRequest(next);
+                setLocalError(null);
+            },
+            (err) => console.error('[useGarminBackfillStatus] Subscription error:', err)
+        );
+    }, [userId]);
+
+    const status = getGarminBackfillStatus(request, now);
+
+    // Firestore won't push a new snapshot if the poller execution that claimed this
+    // request died mid-run -- the doc just sits at 'processing' forever. Re-checking
+    // staleness on a timer (rather than only on snapshot updates) is what lets the
+    // retry option appear without requiring a reload.
+    useEffect(() => {
+        if (status !== 'in_progress') return;
+        const interval = setInterval(() => setNow(Date.now()), 15_000);
+        return () => clearInterval(interval);
+    }, [status]);
+
+    const retryBackfill = useCallback(async () => {
+        const uid = userIdRef.current;
+        if (!uid) return;
+        setRetrying(true);
+        setLocalError(null);
+        try {
+            await garminSyncRequestService.requestBackfill(uid);
+        } catch (err) {
+            console.error('[useGarminBackfillStatus] Failed to request backfill retry:', err);
+            setLocalError('Could not request a retry — try again.');
+        } finally {
+            setRetrying(false);
+        }
+    }, []);
+
+    return { request, status, retrying, localError, retryBackfill };
+}

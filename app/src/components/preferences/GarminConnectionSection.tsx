@@ -7,6 +7,7 @@ import { getErrorMessage } from '../../utils/errors';
 import { firestoreDateToDate, type FirestoreDateValue } from '../../utils/firestoreDate';
 import { getLocalDateString } from '../../utils/localDate';
 import { SettingsDisclosure } from '../SettingsDisclosure';
+import { GarminBackfillStatus } from './GarminBackfillStatus';
 
 interface GarminConnection {
   status?: string;
@@ -126,6 +127,8 @@ export function GarminConnectionSection({ userId }: GarminConnectionSectionProps
           Connected{linkedAtLabel ? ` since ${linkedAtLabel}` : ''}.
         </p>
       )}
+
+      {!loadingConnection && isConnected && <GarminBackfillStatus userId={userId} />}
 
       {!loadingConnection && isConnected && !showForm && (
         <button type="button" className="auth-secondary-btn" onClick={() => setShowForm(true)}>
