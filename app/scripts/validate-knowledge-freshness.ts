@@ -1,11 +1,12 @@
 import { buildKnowledgeFreshnessReport } from '../src/knowledge/knowledgeFreshness.ts';
 import { SPORTS_KNOWLEDGE_CLAIMS } from '../src/knowledge/sportsKnowledgeRegistry.ts';
+import { getLocalDateString } from '../src/utils/localDate.ts';
 
 // Freshness reporting never fails the build: staleness is visibility, not automatic
 // scientific invalidation (SKR5, docs/plans/sports-knowledge-registry-follow-up.md).
 // Structural metadata errors (e.g. a malformed reviewCadenceMonthsOverride) are caught by
 // `npm run validate:knowledge`, which does fail the build.
-const asOf = process.argv[2] ?? new Date().toISOString().slice(0, 10);
+const asOf = process.argv[2] ?? getLocalDateString();
 const report = buildKnowledgeFreshnessReport(SPORTS_KNOWLEDGE_CLAIMS, asOf);
 const { summary } = report;
 
