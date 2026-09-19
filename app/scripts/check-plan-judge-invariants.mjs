@@ -128,7 +128,10 @@ for (const item of cases.values()) {
   const itemEvents = (item.input?.events?.length ?? 0) > 0
     ? item.input.events
     : (item.input?.event ? [item.input.event] : []);
-  const planDates = new Set(item.plan?.map((day) => day.date) ?? []);
+  const planDates = item.plan?.map((day) => day.date) ?? [];
+  // Some families (e.g. event proximity) deliberately schedule an event beyond the
+  // simulated horizon; absence there is expected, not a dropped plan day.
+  const planEndDate = planDates.length > 0 ? planDates.reduce((max, date) => (date > max ? date : max)) : null;
 
   for (const event of itemEvents) {
     if (!event?.date) continue;
@@ -138,7 +141,7 @@ for (const item of cases.values()) {
       fail(!eventCommitment, `${item.input.caseId}: inactive event ${event.id} still owns a fixed activity.`);
       continue;
     }
-    if (!eventCommitment || !planDates.has(event.date)) continue;
+    if (!eventCommitment || (planEndDate && event.date > planEndDate)) continue;
     const eventDay = item.plan?.find((day) => day.date === event.date);
     fail(Boolean(eventDay), `${item.input.caseId}: scheduled event date ${event.date} is missing from the simulated plan.`);
     if (eventDay) {

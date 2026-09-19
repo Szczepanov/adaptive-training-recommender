@@ -719,7 +719,10 @@ export function makeAllFamilies(scenarios, deliveredDoseModule, resolveDemandPro
       },
     }),
     neutral('judge_obs_partial_subjective', 'Observability — only fatigue and soreness explicitly answered', { observability: 'partial_subjective' }, {
-      subjective: { answeredDimensions: ['fatigue', 'soreness'] },
+      // Unanswered dimensions default to the neutral midpoint, matching mapCheckinToSubjectiveInput's
+      // real-adapter contract, so this case doesn't silently smuggle the base scenario's non-neutral
+      // readiness/sleepQuality/stress/motivation values in as if they were reported.
+      subjective: { readiness: 5, sleepQuality: 5, stress: 5, motivation: 5, answeredDimensions: ['fatigue', 'soreness'] },
     }),
   ];
 

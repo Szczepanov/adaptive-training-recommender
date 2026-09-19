@@ -489,7 +489,7 @@ Compare the current candidate summary with the committed pre-change baseline:
 npm run judge:diff
 ```
 
-The diff checker refuses to treat runs as comparable when the prompt, response schema, family/case set, score dimensions, or judge model changed. Phase 7 intentionally changes the family/case set and prompt, so the 11-family/60-case Phase-6 baseline is provenance, not a directly comparable score baseline for the new 13-family/68-case contract.
+The diff checker refuses to treat runs as comparable when the prompt, response schema, family/case set, score dimensions, or judge model changed. Phase 7 intentionally changes the family/case set and prompt, so the 11-family/60-case Phase-6 baseline is provenance, not a directly comparable score baseline for the current 18-family/95-case contract.
 
 For exploratory model-to-model comparisons only, explicitly opt in:
 

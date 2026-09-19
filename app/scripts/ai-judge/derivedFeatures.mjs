@@ -106,7 +106,7 @@ export function computeDerivedPlanFeatures(plan, inputContext = {}) {
     ? inputContext.events
     : (inputContext.event ? [inputContext.event] : []);
   const scheduledEvents = inputEvents.filter((event) => event?.date && !['cancelled', 'DNS'].includes(event.lifecycle));
-  const eventDate = inputContext.event?.date ?? scheduledEvents[0]?.date;
+  const eventDate = scheduledEvents[0]?.date;
   if (eventDate && hardSessionDates.length > 0) {
     const eventTime = new Date(eventDate).getTime();
     const hardTimesBeforeEvent = hardSessionDates
