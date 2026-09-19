@@ -3,7 +3,12 @@ import { isHistoricalPolicyVersion, HISTORICAL_POLICY_VERSIONS, POLICY_VERSION }
 
 describe('isHistoricalPolicyVersion', () => {
     it('records the current transition and the previous live policies exactly once', () => {
-        expect(POLICY_VERSION).toBe('2026-09-performance-goal-demand-projection-v1');
+        expect(POLICY_VERSION).toBe('2026-09-health-adherence-modality-intensity-v1');
+        expect(
+            HISTORICAL_POLICY_VERSIONS.filter(
+                (version) => version === '2026-09-performance-goal-demand-projection-v1',
+            ),
+        ).toHaveLength(1);
         expect(
             HISTORICAL_POLICY_VERSIONS.filter(
                 (version) => version === '2026-09-catalog-session-note-dedup-v1',

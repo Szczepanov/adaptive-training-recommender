@@ -976,6 +976,20 @@ export function assertPersonaFixtureIntegrity(families) {
 
   const health = allCases.find((item) => item.scenario.id === 'persona_health_fatloss_baseline');
   if (!health?.scenario.trainingIntentProfile.priorities.includes('health')) failures.push('Health/fat-loss persona must carry health priority.');
+  const healthCases = allCases.filter((item) => item.persona.personaId === 'health_fat_loss_garmin');
+  if (healthCases.length !== 3) failures.push(`Health/fat-loss persona must have exactly 3 cases, found ${healthCases.length}.`);
+  for (const definition of healthCases) {
+    const { scenario } = definition;
+    if (scenario.event !== null || (scenario.events ?? []).length !== 0) failures.push(`${scenario.id}: health/fat-loss persona must remain event-free.`);
+    if (scenario.trainingIntentProfile?.planningMode !== 'evergreen' || !scenario.trainingIntentProfile.priorities.includes('health')) {
+      failures.push(`${scenario.id}: health/fat-loss persona must use evergreen health intent.`);
+    }
+    if (JSON.stringify(scenario).toLowerCase().includes('calorie')) failures.push(`${scenario.id}: health/fat-loss fixture must not invent calorie targets.`);
+    if (JSON.stringify(scenario).toLowerCase().includes('race')) failures.push(`${scenario.id}: health/fat-loss fixture must not invent race periodization.`);
+    if (JSON.stringify(scenario.preferences.preferredModalities) !== JSON.stringify(['Strength', 'Walking', 'Cycling'])) {
+      failures.push(`${scenario.id}: health/fat-loss fixture must preserve Strength/Walking/Cycling preferences.`);
+    }
+  }
   const formerElite = allCases.find((item) => item.scenario.id === 'persona_former_elite_sparse_history_baseline');
   if ((formerElite?.scenario.initialHistory ?? []).length !== 0) failures.push('Former-elite sparse-history case must not invent current training history from historical status.');
 

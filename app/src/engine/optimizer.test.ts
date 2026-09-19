@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { buildOptimizationContext, calculateStimulusBenefit, evaluateRecoveryConstraints, rankCandidates, rankCandidatesByUtility, type RecentHistoryEntry } from './optimizer';
 import { ENRICHED_TEMPLATES } from './templates';
+import { resolveHealthPlanningPolicy } from './healthPlanningPolicy';
 import type { FatigueState, SessionTemplate, UserContext, UserPreferences, WeeklyObjective } from './models';
 import type { ResolvedAvailability } from './schedule';
 
@@ -50,6 +51,53 @@ const ZERO_CANONICAL_STIMULUS = {
 };
 
 describe('optimizer — dated, role-aware recovery constraints (F3 / 3.1)', () => {
+    it('ranks feasible low-impact health aerobic work ahead of running without explicit running support', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Strength', 'Walking', 'Cycling'] };
+        const policy = resolveHealthPlanningPolicy(['health'], preferences, false);
+        const walking = ENRICHED_TEMPLATES.find(t => t.id === 'end_walk_01')!;
+        const running = ENRICHED_TEMPLATES.find(t => t.id === 'end_easy_02')!;
+
+        const result = rankCandidates(
+            [running, walking], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences,
+            { date: '2026-03-05', recentHistory: [], healthPlanningPolicy: policy },
+        );
+
+        expect(result.accepted[0].template.id).toBe('end_walk_01');
+    });
+
+    it('hard-gates moderate and hard endurance after adverse recovery in same-day ranking', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Strength', 'Walking', 'Cycling'] };
+        const policy = resolveHealthPlanningPolicy(['health'], preferences, true);
+        const moderate = ENRICHED_TEMPLATES.find(t => t.id === 'end_mod_01')!;
+        const hard = ENRICHED_TEMPLATES.find(t => t.id === 'end_hard_01')!;
+
+        const result = rankCandidates(
+            [moderate, hard], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences,
+            { date: '2026-03-05', recentHistory: [], healthPlanningPolicy: policy },
+        );
+
+        expect(result.accepted).toHaveLength(0);
+        expect(result.rejected.flatMap(candidate => candidate.excludedReasons)).toEqual(expect.arrayContaining([
+            'HEALTH_QUALITY_ENDURANCE_WITHHELD_AFTER_ADVERSE_RECOVERY',
+        ]));
+    });
+
+    it('enforces the rolling quality cap when qualifying moderate history is present', () => {
+        const preferences = { ...DEFAULT_PREFERENCES, preferredModalities: ['Strength', 'Walking', 'Cycling'] };
+        const policy = resolveHealthPlanningPolicy(['health'], preferences, false);
+        const moderate = ENRICHED_TEMPLATES.find(t => t.id === 'end_mod_01')!;
+        const result = rankCandidates(
+            [moderate], [], DEFAULT_FATIGUE, DEFAULT_AVAILABILITY, [], preferences,
+            {
+                date: '2026-03-05',
+                recentHistory: [{ date: '2026-03-01', category: 'Moderate Endurance', type: 'Tempo Run' }],
+                healthPlanningPolicy: policy,
+            },
+        );
+
+        expect(result.rejected[0].excludedReasons).toContain('HEALTH_QUALITY_ENDURANCE_DENSITY_LIMIT');
+    });
+
     it('allows three cycling sessions across 7 days with >= 48h spacing without repetition penalty', () => {
         const thresholdRide = ENRICHED_TEMPLATES.find(t => t.category === 'Hard Endurance' && t.modality === 'Cycling')!;
         const history: RecentHistoryEntry[] = [
