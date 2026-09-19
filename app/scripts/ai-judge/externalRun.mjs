@@ -1,11 +1,13 @@
 import { createHash } from 'node:crypto';
 import {
+  copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
   realpathSync,
+  rmSync,
   statSync,
   writeFileSync,
 } from 'node:fs';
@@ -135,6 +137,15 @@ function relativePortable(from, path) {
   return relative(from, path).replaceAll('\\', '/');
 }
 
+function uploadSafeSourceArtifactDir(path) {
+  const relativePath = relativePortable(resolve('.'), resolve(path));
+  if (!relativePath || relativePath === '.') return '.';
+  if (relativePath === '..' || relativePath.startsWith('../') || relativePath.startsWith('/') || /^[A-Za-z]:\//.test(relativePath)) {
+    return 'external-source';
+  }
+  return relativePath;
+}
+
 function familyCaseIds(family) {
   if (!family || typeof family.familyId !== 'string' || !Array.isArray(family.cases) || family.cases.length === 0) {
     throw new Error('Malformed judge family: familyId and non-empty cases are required.');
@@ -210,9 +221,18 @@ export function buildExternalPackage({ suite, sourceDir, outputDir, packetVersio
   if (packetVersion !== EXTERNAL_PACKET_VERSION) throw new Error(`Unsupported external packet version '${packetVersion}'.`);
   const source = loadSource({ suite, sourceDir });
   const packageDir = resolve(outputDir ?? `artifacts/external-judge/${suite}/latest`);
+  for (const managedDir of ['packets', 'schemas', 'local-provenance', 'upload']) {
+    rmSync(join(packageDir, managedDir), { recursive: true, force: true });
+  }
+  const responsesDir = join(packageDir, 'responses');
+  try {
+    if (lstatSync(responsesDir).isSymbolicLink()) rmSync(responsesDir, { force: true });
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+  }
   mkdirSync(join(packageDir, 'packets'), { recursive: true });
   mkdirSync(join(packageDir, 'schemas'), { recursive: true });
-  mkdirSync(join(packageDir, 'responses'), { recursive: true });
+  mkdirSync(responsesDir, { recursive: true });
   mkdirSync(join(packageDir, 'local-provenance'), { recursive: true });
   writeFileSync(join(packageDir, 'prompt.md'), source.promptContent, 'utf8');
   writeFileSync(join(packageDir, 'local-provenance', 'families.jsonl'), readFileSync(source.familiesPath));
@@ -253,10 +273,10 @@ export function buildExternalPackage({ suite, sourceDir, outputDir, packetVersio
       containsCredentials: false,
       containsRawHealthPayloads: false,
       judgeView: 'blinded-to-planner-diagnostics',
-      note: 'Only manifest.json, prompt.md, packets/, schemas/, and responses/ are upload-visible. local-provenance/ contains local baseline-promotion inputs and must never be uploaded. Do not add account exports, tokens, or raw provider payloads.',
+      note: 'Upload only the generated upload/ directory (manifest.json, prompt.md, packets/, schemas/). responses/ and local-provenance/ are local-only and must never be uploaded. Do not add account exports, tokens, raw provider payloads, or prior judge responses.',
     },
     provenance: {
-      sourceArtifactDir: relativePortable(resolve('.'), source.root),
+      sourceArtifactDir: uploadSafeSourceArtifactDir(source.root),
       corpusSchema: source.corpus.schema,
       corpusCommit: source.corpus.commit ?? 'unknown',
       canonicalBuilder: source.corpus.canonicalBuilder ?? (suite === 'plan' ? 'build-plan-judge-corpus.mjs' : 'run-persona-ai-judge.mjs --build-only'),
@@ -275,7 +295,26 @@ export function buildExternalPackage({ suite, sourceDir, outputDir, packetVersio
       responseContract: 'Each file must be one object matching its family schema exactly.',
     },
   };
+
+  const expectedResponseFiles = new Set(familyEntries.map((entry) => basename(entry.responsePath)));
+  for (const fileName of readdirSync(responsesDir)) {
+    if (extname(fileName).toLowerCase() === '.json' && !expectedResponseFiles.has(fileName)) {
+      rmSync(join(responsesDir, fileName), { recursive: true, force: true });
+    }
+  }
+
   writeJson(join(packageDir, 'manifest.json'), manifest);
+
+  const uploadDir = join(packageDir, 'upload');
+  mkdirSync(join(uploadDir, 'packets'), { recursive: true });
+  mkdirSync(join(uploadDir, 'schemas'), { recursive: true });
+  copyFileSync(join(packageDir, 'manifest.json'), join(uploadDir, 'manifest.json'));
+  copyFileSync(join(packageDir, 'prompt.md'), join(uploadDir, 'prompt.md'));
+  for (const entry of familyEntries) {
+    copyFileSync(join(packageDir, entry.packetPath), join(uploadDir, entry.packetPath));
+    copyFileSync(join(packageDir, entry.schemaPath), join(uploadDir, entry.schemaPath));
+  }
+
   return manifest;
 }
 
@@ -292,12 +331,11 @@ function validateManifest(manifest, packageDir, expectedSuite) {
     || manifest.privacy.containsRawHealthPayloads !== false) {
     throw new Error('External package privacy contract mismatch.');
   }
+  const requiredHashKeys = ['promptSha256', 'corpusSha256', 'familiesSha256', 'familySchemasSha256', 'responseSchemaSha256'];
   if (!isRegularObject(manifest.hashes)
-    || typeof manifest.hashes.promptSha256 !== 'string'
-    || typeof manifest.hashes.corpusSha256 !== 'string'
-    || typeof manifest.hashes.familySchemasSha256 !== 'string'
-    || typeof manifest.hashes.responseSchemaSha256 !== 'string') {
-    throw new Error('External package manifest is missing required provenance hashes.');
+    || requiredHashKeys.some((key) => !/^[a-f0-9]{64}$/.test(manifest.hashes[key] ?? ''))
+    || (manifest.hashes.sourceResponseSchemaSha256 != null && !/^[a-f0-9]{64}$/.test(manifest.hashes.sourceResponseSchemaSha256))) {
+    throw new Error('External package manifest is missing or contains malformed provenance hashes.');
   }
   if (!Array.isArray(manifest.contractArtifacts)) throw new Error('External package is missing contract artifacts.');
   for (const requiredPath of ['local-provenance/families.jsonl', 'local-provenance/corpus.json', 'prompt.md']) {
@@ -315,8 +353,15 @@ function validateManifest(manifest, packageDir, expectedSuite) {
     for (const key of ['packetPath', 'schemaPath', 'packetSha256', 'schemaSha256', 'responsePath']) {
       if (typeof family[key] !== 'string' || !family[key]) throw new Error(`Family ${family.familyId} is missing ${key}.`);
     }
-    if (!family.packetPath.startsWith('packets/') || !family.schemaPath.startsWith('schemas/')) throw new Error(`Family ${family.familyId} packet/schema paths must stay in their package directories.`);
-    if (!family.responsePath.startsWith('responses/')) throw new Error(`Family ${family.familyId} responsePath must stay under responses/.`);
+    if (!/^[a-f0-9]{64}$/.test(family.packetSha256) || !/^[a-f0-9]{64}$/.test(family.schemaSha256)) {
+      throw new Error(`Family ${family.familyId} contains a malformed packet/schema hash.`);
+    }
+    if (!/^packets\/[^/]+\.json$/.test(family.packetPath) || !/^schemas\/[^/]+\.json$/.test(family.schemaPath)) {
+      throw new Error(`Family ${family.familyId} packet/schema paths must be direct JSON children of their package directories.`);
+    }
+    if (!/^responses\/[^/]+\.json$/.test(family.responsePath)) {
+      throw new Error(`Family ${family.familyId} responsePath must be a direct JSON child of responses/.`);
+    }
   }
   const promptPath = packagePath(packageDir, 'prompt.md');
   if (hashBytes(readFileSync(promptPath)) !== manifest.hashes.promptSha256) throw new Error('External package prompt hash mismatch.');
@@ -325,16 +370,27 @@ function validateManifest(manifest, packageDir, expectedSuite) {
 function readContractArtifacts(manifest, packageDir) {
   const artifacts = new Map();
   const packageContents = new Map();
+  const expectedOutputs = new Map([
+    ['local-provenance/families.jsonl', 'families.jsonl'],
+    ['local-provenance/corpus.json', 'corpus.json'],
+    ['local-provenance/judge-response-schema.json', 'judge-response-schema.json'],
+    ['prompt.md', 'judge-prompt.md'],
+  ]);
+  const seenPackagePaths = new Set();
+  const seenOutputPaths = new Set();
   for (const artifact of manifest.contractArtifacts) {
-    if (!isRegularObject(artifact) || typeof artifact.packagePath !== 'string' || typeof artifact.outputPath !== 'string' || typeof artifact.sha256 !== 'string') {
+    if (!isRegularObject(artifact) || typeof artifact.packagePath !== 'string' || typeof artifact.outputPath !== 'string' || !/^[a-f0-9]{64}$/.test(artifact.sha256 ?? '')) {
       throw new Error('Malformed contract artifact entry in external package manifest.');
     }
-    if (artifact.outputPath.startsWith('/') || /^[A-Za-z]:[\\/]/.test(artifact.outputPath) || artifact.outputPath.split(/[\\/]/).includes('..')) {
-      throw new Error(`Contract artifact output path escapes the suite directory: ${artifact.outputPath}`);
+    const expectedOutput = expectedOutputs.get(artifact.packagePath);
+    if (!expectedOutput || artifact.outputPath !== expectedOutput) {
+      throw new Error(`Unexpected contract artifact mapping: ${artifact.packagePath} -> ${artifact.outputPath}`);
     }
-    if (artifact.packagePath !== 'prompt.md' && !/^local-provenance\/[^/]+$/.test(artifact.packagePath)) {
-      throw new Error(`Contract artifact is not local provenance or the upload prompt: ${artifact.packagePath}`);
+    if (seenPackagePaths.has(artifact.packagePath) || seenOutputPaths.has(artifact.outputPath)) {
+      throw new Error(`Duplicate contract artifact mapping: ${artifact.packagePath} -> ${artifact.outputPath}`);
     }
+    seenPackagePaths.add(artifact.packagePath);
+    seenOutputPaths.add(artifact.outputPath);
     const path = packagePath(packageDir, artifact.packagePath);
     const content = readBoundedText(path);
     const contentHash = hashBytes(Buffer.from(content));

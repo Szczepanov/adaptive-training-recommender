@@ -106,21 +106,32 @@ The package layout is:
 
 ```text
 artifacts/external-judge/plan/latest/
-  manifest.json       # suite/case contract, packet hashes, provenance and privacy metadata
-  prompt.md           # upload-visible judge instructions
+  upload/             # SAFE HANDOFF ROOT: upload this directory, not the whole package
+    manifest.json     # suite/case contract, packet hashes, provenance and privacy metadata
+    prompt.md         # judge instructions
+    packets/<family>.json
+    schemas/<family>.json
+  manifest.json       # local canonical copy used by the importer
+  prompt.md
   packets/<family>.json
   schemas/<family>.json
-  responses/<family>-<packetSha256>.json   # added by the reviewer or external LLM
+  responses/<family>-<packetSha256>.json   # local-only saved external outputs
   local-provenance/   # local-only baseline inputs; never upload this directory
     families.jsonl
     corpus.json
     judge-response-schema.json  # when produced by the source suite
 ```
 
-The upload allowlist is exactly `manifest.json`, `prompt.md`, `packets/`, `schemas/`, and
-`responses/`. Never upload `local-provenance/`; it contains source artifacts needed only for
-local baseline promotion. Response filenames are bound to the packet hash in `manifest.json`;
-legacy `<familyId>.json` names and unknown files are rejected.
+Upload **only the generated `upload/` directory**. Never upload `responses/` or
+`local-provenance/`. Prior response files are judge outputs and feeding them back to the next
+external judge can anchor/bias a new evaluation; local provenance can contain information that
+is intentionally withheld from the blind judge view. The exporter rebuilds the managed
+`packets/`, `schemas/`, `local-provenance/`, and `upload/` directories on every export and
+removes stale response JSON whose packet hash no longer matches, while preserving a response
+whose hash-bound filename is still current.
+
+Response filenames are bound to the packet hash in `manifest.json`; legacy
+`<familyId>.json` names and unknown files are rejected.
 
 Import validates every response with the existing `validateAndNormalizeJudgeRow` contract,
 aggregates it through `aggregateFamilySamples`, rejects contract/hash drift and incomplete
@@ -128,7 +139,13 @@ family coverage, validates the local-provenance hashes, and writes the normal su
 score/sample/stability/summary/manifest artifacts plus the copied baseline contract files.
 Response files are size-bounded regular JSON objects. Raw response paths and hashes are kept
 only in the imported run manifest; credentials and raw provider health payloads are not part
-of the package contract.
+of the package contract. The CLI requires an explicit `--model` label for imported evidence;
+the label is provenance, not proof of provider identity.
+
+A manual external import is one judge sample per family. A one-sample MAD of zero is not
+evidence that the judge is stable. For consequential comparisons, prefer the existing
+multi-sample judge/self-test workflow or collect repeated independently labeled external runs
+and audit them against human/domain review before treating score movement as meaningful.
 
 The simulation baseline remains deterministic evidence and is never externally judged. An
 external score package must not be used to rewrite `docs/analysis/plan-judge-baseline.json`

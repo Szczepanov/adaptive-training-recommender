@@ -17,7 +17,10 @@ Options:
 
 function valueAfter(args, flag) {
   const index = args.indexOf(flag);
-  return index >= 0 ? args[index + 1] : undefined;
+  if (index < 0) return undefined;
+  const value = args[index + 1];
+  if (!value || value.startsWith('--')) throw new Error(`${flag} requires a value.`);
+  return value;
 }
 
 const args = process.argv.slice(2);
@@ -32,6 +35,7 @@ const explicitSourceDir = valueAfter(args, '--source');
 const outputDir = valueAfter(args, '--out') ?? `artifacts/external-judge/${suite}/latest`;
 const noBuild = args.includes('--no-build');
 const hybridExpansion = args.includes('--hybrid-expansion');
+if (hybridExpansion && suite !== 'persona') throw new Error('--hybrid-expansion is only valid for the persona suite.');
 const sourceDir = explicitSourceDir ?? (suite === 'persona' && hybridExpansion ? config.hybridSourceDir : config.sourceDir);
 
 if (args.includes('--dry-run')) {
@@ -61,3 +65,4 @@ if (!noBuild && !explicitSourceDir) {
 
 const manifest = buildExternalPackage({ suite, sourceDir, outputDir });
 console.log(`Created ${suite} external judge package with ${manifest.families.length} families at ${resolve(outputDir)}`);
+console.log(`Upload only ${resolve(outputDir, 'upload')} to the external LLM; keep responses/ and local-provenance/ local.`);

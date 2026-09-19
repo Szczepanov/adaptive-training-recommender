@@ -114,6 +114,7 @@ describe('manual external judge run packages', () => {
     expect(manifest.privacy.containsCredentials).toBe(false);
     expect(manifest.privacy.containsRawHealthPayloads).toBe(false);
     expect(manifest.hashes.corpusSha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(manifest.provenance.sourceArtifactDir).toBe('external-source');
     expect(manifest.contractArtifacts.map((artifact) => artifact.packagePath)).toEqual(expect.arrayContaining(['local-provenance/families.jsonl', 'local-provenance/corpus.json', 'prompt.md', 'local-provenance/judge-response-schema.json']));
     expect(readFileSync(join(packageDir, 'prompt.md'), 'utf8')).toContain('# plan prompt');
     expect(existsSync(join(packageDir, 'families.jsonl'))).toBe(false);
@@ -125,6 +126,34 @@ describe('manual external judge run packages', () => {
     expect(packetContent).not.toMatch(/engineSummary|constraintViolations|qualityWarnings|utility/);
     expect(readFileSync(join(packageDir, 'schemas', 'plan_family.json'), 'utf8')).toContain('caseScores');
     expect(manifest.families[0].responsePath).toMatch(/^responses\/plan_family-[a-f0-9]{64}\.json$/);
+    expect(readFileSync(join(packageDir, 'upload', 'manifest.json'), 'utf8')).toContain(manifest.families[0].packetSha256);
+    expect(readFileSync(join(packageDir, 'upload', 'prompt.md'), 'utf8')).toContain('# plan prompt');
+    expect(existsSync(join(packageDir, 'upload', 'packets', 'plan_family.json'))).toBe(true);
+    expect(existsSync(join(packageDir, 'upload', 'schemas', 'plan_family.json'))).toBe(true);
+    expect(existsSync(join(packageDir, 'upload', 'responses'))).toBe(false);
+    expect(existsSync(join(packageDir, 'upload', 'local-provenance'))).toBe(false);
+  });
+
+  it('re-exports a clean upload view and drops only stale response JSON', () => {
+    const root = tempRoot();
+    const source = sourceFixture(root, 'plan');
+    const packageDir = join(root, 'package');
+    const first = buildExternalPackage({ suite: 'plan', sourceDir: source, outputDir: packageDir });
+    const currentResponse = join(packageDir, first.families[0].responsePath);
+    writeFileSync(currentResponse, JSON.stringify(responseFor(first.families[0].familyId, first.families[0].caseIds)));
+    writeFileSync(join(packageDir, 'responses', 'stale.json'), '{}');
+    writeFileSync(join(packageDir, 'packets', 'stale.json'), '{}');
+    writeFileSync(join(packageDir, 'schemas', 'stale.json'), '{}');
+    writeFileSync(join(packageDir, 'upload', 'stale.txt'), 'stale');
+
+    const second = buildExternalPackage({ suite: 'plan', sourceDir: source, outputDir: packageDir });
+
+    expect(second.families[0].responsePath).toBe(first.families[0].responsePath);
+    expect(existsSync(currentResponse)).toBe(true);
+    expect(existsSync(join(packageDir, 'responses', 'stale.json'))).toBe(false);
+    expect(existsSync(join(packageDir, 'packets', 'stale.json'))).toBe(false);
+    expect(existsSync(join(packageDir, 'schemas', 'stale.json'))).toBe(false);
+    expect(existsSync(join(packageDir, 'upload', 'stale.txt'))).toBe(false);
   });
 
   it('rejects package contract/hash mismatches before importing responses', () => {
@@ -219,7 +248,7 @@ describe('manual external judge run packages', () => {
     const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
     manifest.families[0].packetPath = 'packets/../../outside.json';
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
-    expect(() => importExternalRun({ packageDir: secondPackage, outputDir: join(root, 'output-traversal') })).toThrow(/escapes package directory/);
+    expect(() => importExternalRun({ packageDir: secondPackage, outputDir: join(root, 'output-traversal') })).toThrow(/packet\/schema paths|escapes package directory/);
   });
 
   it('rejects package packet symlink escapes when the platform permits symlinks', () => {
