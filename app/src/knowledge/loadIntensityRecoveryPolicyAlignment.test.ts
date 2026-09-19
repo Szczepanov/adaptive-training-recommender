@@ -7,7 +7,10 @@ import {
     isIntensityClassAdmissible,
     TAPER_LIGHT_STRENGTH_MAX_SYSTEMIC_COST,
 } from '../engine/optimizer';
-import { RECOVERY_REENTRY_MAX_SYSTEMIC_COST } from '../engine/planner';
+import {
+    RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST,
+    RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST,
+} from '../engine/planner';
 import { getActiveKnowledgeClaim, KNOWLEDGE_CLAIM_IDS } from './sportsKnowledge';
 import {
     getActiveKnowledgeClaim as getActiveRegistryKnowledgeClaim,
@@ -128,11 +131,13 @@ describe('load + intensity + recovery product-claim alignment', () => {
         expect(after48.impactTissue).toBeCloseTo(0.5, 8);
     });
 
-    it('issue #679: pins the graduated recovery re-entry ceiling to its registered claim', () => {
+    it('issue #679: pins the monotonic severe-recovery re-entry ladder to its registered claim', () => {
         const claim = getActiveKnowledgeClaim(KNOWLEDGE_CLAIM_IDS.severeAdverseRecoveryReentry);
-        expect(claim.statement).toContain(`${RECOVERY_REENTRY_MAX_SYSTEMIC_COST}`);
-        expect(claim.statement).toContain('3 to 5');
-        expect(RECOVERY_REENTRY_MAX_SYSTEMIC_COST).toBeLessThan(0.5); // strictly lighter than the offset-2 modify ceiling
+        expect(claim.statement).toContain('days 1-2');
+        expect(claim.statement).toContain(`${RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST}`);
+        expect(claim.statement).toContain(`${RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST}`);
+        expect(RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST).toBeLessThan(RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST);
+        expect(RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST).toBeLessThanOrEqual(0.5);
     });
 
     it('issue #679: pins the taper-window nonessential-strength and moderate-density guard for triathlon A-events', () => {
@@ -175,6 +180,20 @@ describe('load + intensity + recovery product-claim alignment', () => {
         const distantPriorModerate = history({ date: '2026-08-30', category: 'Moderate Endurance', modality: 'Swimming', systemicCost: 0.6 });
         expect(evaluateRecoveryConstraints(moderateEndurance, targetDate, [distantPriorModerate], { focusEvent: triathlonAEvent }))
             .not.toContain('TAPER_MODERATE_DENSITY_RESTRICTION');
+
+        // D-3 excludes generic tempo/hard endurance while leaving a light race-specific
+        // sharpening touch eligible. This addresses the build-like generic tempo symptom
+        // without converting taper into a blanket intensity ban.
+        const d3Date = '2026-09-11';
+        const d3Moderate = template({ category: 'Moderate Endurance', modality: 'Running', systemicCost: 0.4 });
+        const d3Hard = template({ category: 'Hard Endurance', modality: 'Cycling', systemicCost: 0.6 });
+        const d3RaceSpecific = template({ category: 'Race-Specific Endurance', modality: 'Cycling', systemicCost: 0.4 });
+        expect(evaluateRecoveryConstraints(d3Moderate, d3Date, [], { focusEvent: triathlonAEvent }))
+            .toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(d3Hard, d3Date, [], { focusEvent: triathlonAEvent }))
+            .toContain('PRE_EVENT_TAPER_RESTRICTION');
+        expect(evaluateRecoveryConstraints(d3RaceSpecific, d3Date, [], { focusEvent: triathlonAEvent }))
+            .not.toContain('PRE_EVENT_TAPER_RESTRICTION');
 
         // Outside the taper window, none of this applies.
         expect(evaluateRecoveryConstraints(heavyStrength, '2026-07-01', [], { focusEvent: triathlonAEvent }))
