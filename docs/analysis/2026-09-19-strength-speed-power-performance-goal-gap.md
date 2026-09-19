@@ -436,6 +436,7 @@ This should not be interpreted as "add 16.7 kg every week." It is a compact desc
 The literature is enough to flag this example strongly without claiming physiological impossibility:
 
 - the 2026 ACSM position stand synthesized 137 systematic reviews and reports that voluntary strength is enhanced by heavier loading, 2-3 sets and at least 2 sessions/week;
+- a 2026 dose-response meta-regression found strength gains increased with weekly set volume and with training frequency, both with diminishing returns; this supports graded evidence about training opportunity rather than a deterministic frequency cutoff;
 - a frequency meta-analysis found higher frequency associated with larger strength effects overall, while the difference disappeared in volume-equated subgroups, so frequency is informative but must not be treated as the only causal variable;
 - a systematic review of minimum effective dose in resistance-trained men found that low-dose training can still improve 1RM and reported a pooled bench-press increase of 8.25 kg across included low-dose studies; this is a benchmark, not a six-week prediction;
 - a six-week study in resistance-trained men reported bench-press 1RM/body-mass increases of roughly 4.7-7.7% across training groups;
@@ -444,10 +445,11 @@ The literature is enough to flag this example strongly without claiming physiolo
 Useful research anchors:
 
 1. Currier BS et al. ACSM Position Stand: Resistance Training Prescription for Muscle Function, Hypertrophy, and Physical Performance in Healthy Adults. 2026. https://pubmed.ncbi.nlm.nih.gov/41843416/
-2. Grgic J et al. Effect of Resistance Training Frequency on Gains in Muscular Strength: a systematic review and meta-analysis. 2018. https://pubmed.ncbi.nlm.nih.gov/29470825/
-3. Androulakis-Korakakis P et al. Minimum Effective Training Dose Required to Increase 1RM Strength in Resistance-Trained Men. 2020. https://pubmed.ncbi.nlm.nih.gov/31797219/
-4. Coratella G et al. Eccentric resistance training increases and retains maximal strength, muscle endurance, and hypertrophy in trained men. 2017. https://pubmed.ncbi.nlm.nih.gov/27801598/
-5. Grgic J et al. Test-retest reliability of the one-repetition maximum strength assessment. 2020. https://pubmed.ncbi.nlm.nih.gov/32681399/
+2. Pelland JC et al. The Resistance Training Dose Response: Meta-Regressions Exploring the Effects of Weekly Volume and Frequency on Muscle Hypertrophy and Strength Gains. 2026. https://pubmed.ncbi.nlm.nih.gov/41343037/
+3. Grgic J et al. Effect of Resistance Training Frequency on Gains in Muscular Strength: a systematic review and meta-analysis. 2018. https://pubmed.ncbi.nlm.nih.gov/29470825/
+4. Androulakis-Korakakis P et al. Minimum Effective Training Dose Required to Increase 1RM Strength in Resistance-Trained Men. 2020. https://pubmed.ncbi.nlm.nih.gov/31797219/
+5. Coratella G et al. Eccentric resistance training increases and retains maximal strength, muscle endurance, and hypertrophy in trained men. 2016. https://pubmed.ncbi.nlm.nih.gov/27801598/
+6. Grgic J et al. Test-retest reliability of the one-repetition maximum strength assessment. 2020. https://pubmed.ncbi.nlm.nih.gov/32681399/
 
 For that specific example, with a recent tested baseline and known one-session/week capacity, the product should be capable of showing:
 
