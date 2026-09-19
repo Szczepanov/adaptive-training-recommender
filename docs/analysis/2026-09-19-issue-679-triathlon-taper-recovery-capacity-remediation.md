@@ -158,7 +158,14 @@ branch is an explicit follow-up, not something this change can self-certify.**
   passing.
 - Review follow-up added deterministic assertions for the complete severe-recovery ladder
   (including day 3), and D-3 generic Moderate/Hard taper exclusion while keeping a light
-  Race-Specific sharpening candidate admissible. Final CI status is recorded on PR #683.
+  Race-Specific sharpening candidate admissible.
+- After #683 was merged, its broad frontend/unit CI run exposed two stale scenario assertions:
+  they required at least one *forecast* `recover` fatigue-tier day even though the scenario
+  summary excludes the real day-0 recommendation from `weekSummaries`. The more conservative
+  recovery-only opening now lets projected fatigue clear before a later forecast day needs
+  the `recover` tier. Follow-up coverage therefore asserts the actual chained day-0
+  `decisionTraces` (`recover` on the crashed check-in, `train` after the healthy check-in)
+  rather than requiring artificial projected fatigue persistence.
 
 ## Not done in this session
 
@@ -167,5 +174,5 @@ branch is an explicit follow-up, not something this change can self-certify.**
   separate, manual/long-running workflows outside this session's scope. The deterministic
   fixtures above are evidence that the three reported symptoms no longer reproduce; they
   are not a replacement for re-scoring the persona family.
-- Reconciling the corpus-doc tier note (finding 4) or the local/external judge divergence
-  (finding 5) — both flagged as follow-ups above rather than resolved here.
+- Reconciling the corpus-doc tier note (finding 5) or the local/external judge divergence
+  (finding 6) — both flagged as follow-ups above rather than resolved here.

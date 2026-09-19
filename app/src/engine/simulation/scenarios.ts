@@ -336,7 +336,7 @@ export const SCENARIOS: AthleteScenario[] = [
     {
         id: 'triathlon_olympic_A',
         label: 'Intermediate triathlon A-event (Olympic, 40 days out)',
-        description: 'The middle member of the triathlon ladder: declared pool and bicycle access make all three race disciplines feasible. Regression coverage ensures Cycling and Running are boosted, never penalized, for a triathlon focus event.',
+        description: 'The middle member of the triathlon ladder: declared pool and bicycle access make all three race disciplines feasible. Regression coverage ensures Swimming, Cycling, and Running receive symmetric event-modality treatment for a triathlon focus event.',
         context: context({ indoor_bike: true, free_weights: true, treadmill: true, outdoor_bike: true, swim_access: true }, ['Swimming', 'Cycling', 'Running']),
         event: eventOn('e-tri', 40, 'triathlon', 'olympic', 'A'),
         startDate: START_DATE,
