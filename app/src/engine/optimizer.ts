@@ -36,6 +36,12 @@ import {
     type RecoveryPlacementState,
 } from './recoveryPlacement';
 import type { RecoveryHistorySnapshot } from './recoveryFacts';
+import type { HealthPlanningPolicy } from './healthPlanningPolicy';
+import {
+    HEALTH_QUALITY_ENDURANCE_LOOKBACK_DAYS,
+    isHealthQualityEnduranceCategory,
+    isQualifyingHealthQualityEnduranceEvidence,
+} from './healthPlanningPolicy';
 
 const STRENGTH_CATEGORIES: SessionTemplate['category'][] = [
     'Upper-body Strength', 'Lower-body Strength', 'Full-body Strength', 'Power Maintenance',
@@ -196,6 +202,8 @@ export interface OptimizationOptions {
     recoveryHistorySnapshot?: RecoveryHistorySnapshot | null;
     /** Phase-derived soft sequencing preference; never a hard safety override. */
     sequenceIntent?: SequenceIntentPolicy;
+    /** Event-free health planning prior; never applies to event-directed plans. */
+    healthPlanningPolicy?: HealthPlanningPolicy | null;
 }
 
 export interface OptimizationContext {
@@ -524,6 +532,24 @@ export function evaluateRecoveryConstraints(
     const reasons: string[] = [];
     const histSummary = summary ?? buildHistoryFeatureSummary(history, targetDate, options.resolveRecoveryHours);
 
+    const healthPolicy = options.healthPlanningPolicy;
+    if (healthPolicy && !options.focusEvent) {
+        if (healthPolicy.withholdQualityEndurance && isHealthQualityEnduranceCategory(template.category)) {
+            reasons.push('HEALTH_QUALITY_ENDURANCE_WITHHELD_AFTER_ADVERSE_RECOVERY');
+        }
+        if (healthPolicy.qualityEnduranceSessionLimit !== null && isHealthQualityEnduranceCategory(template.category)) {
+            const priorQualityEnduranceSessions = history.filter(entry => {
+                const daysAgo = getDayDiff(targetDate, entry.date);
+                return daysAgo >= 1
+                    && daysAgo <= HEALTH_QUALITY_ENDURANCE_LOOKBACK_DAYS
+                    && isQualifyingHealthQualityEnduranceEvidence(entry);
+            }).length;
+            if (priorQualityEnduranceSessions >= healthPolicy.qualityEnduranceSessionLimit) {
+                reasons.push('HEALTH_QUALITY_ENDURANCE_DENSITY_LIMIT');
+            }
+        }
+    }
+
     const isCandidateAnchor = options.anchorRole
         ? candidateMatchesAnchorRole(template, options.anchorRole)
         : ANCHOR_HISTORY_CATEGORIES.includes(template.category);
@@ -826,6 +852,7 @@ export function buildOptimizationContext(
             ...(options.resolvedAvailability ? { resolvedAvailability: options.resolvedAvailability } : {}),
             ...(options.resolveMinimumDaysAfterHardLowerBody ? { resolveMinimumDaysAfterHardLowerBody: options.resolveMinimumDaysAfterHardLowerBody } : {}),
             ...(options.resolveRecoveryHours ? { resolveRecoveryHours: options.resolveRecoveryHours } : {}),
+            ...(options.healthPlanningPolicy !== undefined ? { healthPlanningPolicy: options.healthPlanningPolicy } : {}),
         },
     };
 }
@@ -986,6 +1013,25 @@ export function rankCandidates(
             else prefMultiplier *= 0.85;
         }
 
+        const healthPolicy = options.healthPlanningPolicy;
+        if (healthPolicy && !focusEvent && healthPolicy.preferLowImpactAerobic) {
+            if (template.category === 'Easy Endurance' && ['Walking', 'Cycling', 'Other'].includes(template.modality)) {
+                prefMultiplier *= 1.25;
+            } else if (template.category === 'Easy Endurance' && template.modality === 'Running') {
+                prefMultiplier *= 0.75;
+            } else if (template.category === 'Moderate Endurance') {
+                prefMultiplier *= 0.65;
+            }
+        }
+
+        if (healthPolicy && !focusEvent && healthPolicy.preferLowImpactAerobic) {
+            if (template.category === 'Easy Endurance' && ['Walking', 'Cycling', 'Other'].includes(template.modality)) {
+                benefit *= 1.15;
+            } else if (template.category === 'Easy Endurance' && template.modality === 'Running') {
+                benefit *= 0.85;
+            }
+        }
+
         const hasLargeWeekdayBudget = (preferences.defaultWeekdayTimeMin ?? 0) >= 80 || availability.maxTimeMinutes >= 80;
         if (hasLargeWeekdayBudget && (template.category === 'Easy Endurance' || template.category === 'Hard Endurance' || template.category === 'Moderate Endurance')) {
             if ((template.durationMin ?? 0) >= 60) {
@@ -1089,6 +1135,10 @@ export function rankCandidates(
             rationale += ' (Advances an explicit required weekly programming role.)';
         }
         if (isDisliked(template)) rationale += ` (Soft penalty applied: modality '${template.modality}' is marked as avoided/disliked).`;
+        if (healthPolicy && !focusEvent && healthPolicy.preferLowImpactAerobic
+            && (template.category === 'Easy Endurance' || isHealthQualityEnduranceCategory(template.category))) {
+            rationale += ' (Health-goal low-impact aerobic prior applied.)';
+        }
         if (needsMultisportModalityCoverage(template, focusEvent, history, targetDate, summary)) {
             rationale += ` (Event-modality coverage: ${template.modality} has no exposure in the rolling 6-day history.)`;
         }

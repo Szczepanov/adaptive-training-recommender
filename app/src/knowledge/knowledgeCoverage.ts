@@ -85,6 +85,14 @@ export const ENGINE_KNOWLEDGE_COVERAGE: readonly EngineKnowledgeCoverageItem[] =
         coverageRationale: 'Explicitly registered as a product heuristic, separate from the WHO >=2-day recommendation.',
     },
     {
+        id: 'evergreen.health_adherence_modality_intensity_prior', domain: 'evergreen_dose', title: 'Health adherence-friendly modality and intensity prior',
+        currentRule: 'For event-free health plans without explicit running support, Walking/Cycling receive a soft aerobic ranking preference; quality endurance is limited to one prior session in a rolling seven-day window, and adverse-recovery forecasts withhold quality endurance until the next fresh planning check. Running remains allowed and strength requirements are unchanged.',
+        classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',
+        codeRefs: ['engine/healthPlanningPolicy.ts:resolveHealthPlanningPolicy', 'engine/optimizer.ts:evaluateRecoveryConstraints', 'engine/optimizer.ts:rankCandidates'],
+        knowledgeRefs: [KNOWLEDGE_CLAIM_IDS.healthAdherenceModalityIntensityPrior],
+        coverageRationale: 'Registered as an explicit product-policy claim (`health.adherence.modality_intensity_prior_v1`) based on deterministic persona evidence. It is intentionally soft except for adverse-recovery forecast gating and preserves explicit user preference, current history and event-directed authority.',
+    },
+    {
         id: 'evergreen.high_intensity_weekly_prior', domain: 'evergreen_dose', title: 'Conditional high-intensity weekly prior',
         currentRule: 'When recent training evidence qualifies, Evergreen targets one high-intensity session and permits no more than two per week.',
         classification: 'product_heuristic', coverage: 'covered', decisionImpact: 'high', safetyImpact: 'moderate', researchPriority: 'none',

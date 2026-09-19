@@ -188,6 +188,42 @@ describe('active persona AI-judge suite', () => {
     expect(taper.scenario.weeks).toBe(2);
   });
 
+  it('keeps health/fat-loss plans mixed, event-free and conservative about moderate intensity', async () => {
+    const family = buildPersonaFamilies().find((candidate) => candidate.familyId === 'persona_health_fat_loss');
+    expect(family).toBeDefined();
+
+    for (const definition of family.cases) {
+      const { scenario } = definition;
+      expect(scenario.event).toBeNull();
+      expect(scenario.events).toEqual([]);
+      expect(scenario.trainingIntentProfile).toMatchObject({ planningMode: 'evergreen', priorities: ['health'] });
+      expect(scenario.preferences.preferredModalities).toEqual(['Strength', 'Walking', 'Cycling']);
+      expect(JSON.stringify(scenario).toLowerCase()).not.toContain('calorie');
+
+      const result = await runScenario(scenario);
+      const traces = result.decisionTraces;
+      const strengthCount = traces.filter((trace) => trace.selected?.modality === 'Strength').length;
+      expect(strengthCount, scenario.id).toBeGreaterThanOrEqual(2);
+      expect(traces.every((trace) => (trace.selected?.durationMin ?? 0) <= (scenario.context.constraints.maxTimeMinutes ?? 60)), scenario.id).toBe(true);
+
+      const qualityEnduranceDates = traces
+        .filter((trace) => ['Moderate Endurance', 'Hard Endurance'].includes(trace.selected?.category))
+        .map((trace) => trace.date);
+      if (scenario.id === 'persona_health_fatloss_adverse_recovery') {
+        expect(qualityEnduranceDates, scenario.id).toHaveLength(0);
+      } else {
+        for (const date of qualityEnduranceDates) {
+          const target = new Date(`${date}T00:00:00Z`).getTime();
+          const priorQualityEndurance = qualityEnduranceDates.filter((candidate) => {
+            const candidateTime = new Date(`${candidate}T00:00:00Z`).getTime();
+            return candidateTime >= target - 7 * 24 * 60 * 60 * 1000 && candidateTime < target;
+          });
+          expect(priorQualityEndurance, `${scenario.id} ${date}`).toHaveLength(0);
+        }
+      }
+    }
+  });
+
   it('executes every active persona state through the real multi-week planner without hard-constraint violations', async () => {
     const definitions = buildPersonaFamilies().flatMap((family) => family.cases);
 

@@ -137,9 +137,9 @@ describe('engine knowledge coverage inventory', () => {
 
     it('reports the post-SKR3-W2b coverage and risk debt exactly (zero high-impact uncovered debt)', () => {
         const summary = summarizeKnowledgeCoverage();
-        expect(summary.total).toBe(55);
-        expect(summary.byCoverage).toEqual({ covered: 34, partial: 14, uncovered: 1, not_applicable: 6 });
-        expect(summary.byPriority).toEqual({ p0: 7, p1: 6, p2: 2, p3: 0, none: 40 });
+        expect(summary.total).toBe(56);
+        expect(summary.byCoverage).toEqual({ covered: 35, partial: 14, uncovered: 1, not_applicable: 6 });
+        expect(summary.byPriority).toEqual({ p0: 7, p1: 6, p2: 2, p3: 0, none: 41 });
         expect(summary.highImpactUncovered).toBe(0);
         expect(summary.highSafetyUncovered).toBe(0);
     });
