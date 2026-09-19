@@ -64,14 +64,27 @@ describe('established Olympic-triathlon persona (issue #679)', () => {
       expect(['Rest', 'Mobility/Recovery'], `${trace.date}: ${trace.selected.category}`).toContain(trace.selected.category);
     }
 
-    // Days 4-5 (offset 4-5, index 3-4): no Strength, and no session denser than the
-    // 0.35 easy-tier re-entry ceiling -- this is what previously let threshold swimming
-    // (systemicCost 0.6) and strength land back to back right after two rest days.
+    // Day 3 (offset 3, index 2): first non-recovery work must still be low-cost,
+    // non-strength, and below generic tempo/threshold/race-specific categories.
+    const day3 = traces[2];
+    const day3Cost = ENRICHED_TEMPLATES_BY_ID.get(day3.selected.templateId)?.systemicCost ?? 0;
+    expect(day3.selected.modality, `${day3.date} should not resume Strength during early re-entry`).not.toBe('Strength');
+    expect(MODERATE_OR_HARDER_ENDURANCE_CATEGORIES, `${day3.date} should not resume tempo/hard endurance`).not.toContain(day3.selected.category);
+    expect(day3.selected.category, `${day3.date} should not resume race-specific work`).not.toBe('Race-Specific Endurance');
+    if (day3.selected.category !== 'Rest' && day3.selected.category !== 'Mobility/Recovery') {
+      expect(day3Cost, `${day3.date}: ${day3.selected.templateId} systemic cost`).toBeLessThanOrEqual(0.35);
+    }
+
+    // Days 4-5 may widen to the normal modify ceiling, but threshold/tempo, race-specific
+    // work, and Strength still stay out until day 6 because there is no fresh readiness
+    // check available inside a forecast.
     for (const trace of traces.slice(3, 5)) {
       const cost = ENRICHED_TEMPLATES_BY_ID.get(trace.selected.templateId)?.systemicCost ?? 0;
-      expect(trace.selected.modality, `${trace.date} should not resume Strength during re-entry`).not.toBe('Strength');
+      expect(trace.selected.modality, `${trace.date} should not resume Strength during late re-entry`).not.toBe('Strength');
+      expect(MODERATE_OR_HARDER_ENDURANCE_CATEGORIES, `${trace.date} should not resume tempo/hard endurance`).not.toContain(trace.selected.category);
+      expect(trace.selected.category, `${trace.date} should not resume race-specific work`).not.toBe('Race-Specific Endurance');
       if (trace.selected.category !== 'Rest' && trace.selected.category !== 'Mobility/Recovery') {
-        expect(cost, `${trace.date}: ${trace.selected.templateId} systemic cost`).toBeLessThanOrEqual(0.35);
+        expect(cost, `${trace.date}: ${trace.selected.templateId} systemic cost`).toBeLessThanOrEqual(0.5);
       }
     }
   });
@@ -123,6 +136,10 @@ describe('established Olympic-triathlon persona (issue #679)', () => {
       if (daysToRace >= 1 && daysToRace <= 3) {
         expect(STRENGTH_CATEGORIES.includes(trace.selected.category) || trace.selected.modality === 'Strength',
           `${trace.date} (D-${daysToRace}) should not carry strength work`).toBe(false);
+      }
+      if (daysToRace === 3) {
+        expect(MODERATE_OR_HARDER_ENDURANCE_CATEGORIES,
+          `${trace.date} (D-3) should preserve sharpening rather than generic tempo/hard work`).not.toContain(trace.selected.category);
       }
     }
   });
