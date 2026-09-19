@@ -6,8 +6,12 @@ import type {
 import { COMPARISON_CANONICALIZATION_V1 } from '../observations/comparability';
 
 const firestore = vi.hoisted(() => ({
+    collection: vi.fn(),
     doc: vi.fn(),
     getDoc: vi.fn(),
+    getDocs: vi.fn(),
+    query: vi.fn(),
+    where: vi.fn(),
     runTransaction: vi.fn(),
     transaction: {
         get: vi.fn(),
@@ -17,8 +21,12 @@ const firestore = vi.hoisted(() => ({
 }));
 
 vi.mock('firebase/firestore', () => ({
+    collection: firestore.collection,
     doc: firestore.doc,
     getDoc: firestore.getDoc,
+    getDocs: firestore.getDocs,
+    query: firestore.query,
+    where: firestore.where,
     runTransaction: firestore.runTransaction,
 }));
 
@@ -78,8 +86,12 @@ function makeHead(overrides: Partial<MetricObservationHead> = {}): MetricObserva
 describe('MetricObservationService', () => {
     beforeEach(() => {
         vi.resetAllMocks();
+        firestore.collection.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
         firestore.doc.mockImplementation((_db: unknown, ...segments: string[]) => ({ path: segments.join('/') }));
+        firestore.where.mockImplementation((...args: unknown[]) => ({ where: args }));
+        firestore.query.mockImplementation((ref: unknown, ...constraints: unknown[]) => ({ ref, constraints }));
         firestore.getDoc.mockResolvedValue(snapshot(null));
+        firestore.getDocs.mockResolvedValue({ docs: [] });
         firestore.runTransaction.mockImplementation(async (
             _db: unknown,
             callback: (transaction: typeof firestore.transaction) => Promise<unknown>,
@@ -483,6 +495,54 @@ describe('MetricObservationService', () => {
             await expect(service.getCurrentRevision('user-1', `attempt-1:${VALID_METRIC_1}`)).rejects.toThrow(
                 /head\/revision identity mismatch/,
             );
+        });
+    });
+
+    describe('listCurrentRevisionsForMetric', () => {
+        it('loads current revisions for matching metric heads and sorts them by observedAt', async () => {
+            const firstHead = makeHead({
+                observationKey: `attempt-1:${VALID_METRIC_1}`,
+                assessmentAttemptId: 'attempt-1',
+            });
+            const secondHead = makeHead({
+                observationKey: `attempt-2:${VALID_METRIC_1}`,
+                assessmentAttemptId: 'attempt-2',
+            });
+            const firstRevision = makeRevision({
+                observationKey: firstHead.observationKey,
+                assessmentAttemptId: firstHead.assessmentAttemptId,
+                observedAt: '2026-08-21T06:00:00.000Z',
+            });
+            const secondRevision = makeRevision({
+                observationKey: secondHead.observationKey,
+                assessmentAttemptId: secondHead.assessmentAttemptId,
+                observedAt: '2026-08-22T06:00:00.000Z',
+            });
+
+            firestore.getDocs.mockResolvedValue({
+                docs: [
+                    { id: secondHead.observationKey, data: () => secondHead },
+                    { id: firstHead.observationKey, data: () => firstHead },
+                ],
+            });
+            firestore.getDoc
+                .mockResolvedValueOnce(snapshot(secondRevision))
+                .mockResolvedValueOnce(snapshot(firstRevision));
+
+            const service = new MetricObservationService({} as never);
+            await expect(service.listCurrentRevisionsForMetric('user-1', VALID_METRIC_1))
+                .resolves.toEqual([firstRevision, secondRevision]);
+            expect(firestore.where).toHaveBeenCalledWith('metricId', '==', VALID_METRIC_1);
+        });
+
+        it('fails closed when a queried head does not match its document path', async () => {
+            const head = makeHead();
+            firestore.getDocs.mockResolvedValue({
+                docs: [{ id: 'wrong-head-id', data: () => head }],
+            });
+            const service = new MetricObservationService({} as never);
+            await expect(service.listCurrentRevisionsForMetric('user-1', VALID_METRIC_1))
+                .rejects.toThrow(/query\/path mismatch/);
         });
     });
 
