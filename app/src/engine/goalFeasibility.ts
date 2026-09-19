@@ -245,7 +245,13 @@ export function assessGoalFeasibility(
         factors.push({ code: 'required_pace_vs_reviewed_band', effect: plausibility === 'unlikely' ? 'limits' : plausibility === 'plausible' ? 'supports' : 'uncertain', summary: `Required pace is approximately ${requiredPctPerWeek.toFixed(2)}%/week against a reviewed evidence band.`, source: 'population_evidence' });
     }
 
-    const confidenceReducers: string[] = ['target_specific_frequency_unknown'];
+    const confidenceReducers: string[] = [];
+    // Missing target-specific frequency matters when the best-case capacity assumption
+    // yields plausible/stretch: fewer real exposures could worsen that classification.
+    // If the goal is already "unlikely" even after giving it the optimistic upper-bound
+    // frequency, the unknown actual frequency cannot make it more plausible and therefore
+    // does not reduce confidence in that direction of conclusion.
+    if (plausibility !== 'unlikely') confidenceReducers.push('target_specific_frequency_unknown');
     if (weeklyMaxSessions === null) confidenceReducers.push('capacity_unknown');
     if (progress.currentEvidenceKind !== 'measured_observation' && progress.currentSource !== 'coach' && progress.currentSource !== 'garmin') {
         confidenceReducers.push('baseline_may_be_stale_or_unsourced');
