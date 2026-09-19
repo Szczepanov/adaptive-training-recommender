@@ -133,6 +133,21 @@ Existing targetMetric / targetValue / targetUnit goals continue to render.
 
 They do not silently become typed performance targets. Any conversion is explicit and user-confirmed.
 
+### P8 — Goal feasibility is advisory, evidence-backed and uncertainty-aware
+
+A valid target is not automatically a realistic target.
+
+The system should assess whether the requested outcome appears plausible by the selected target date under the athlete's current data and training capacity, but it must not silently reject, rewrite or intensify the goal.
+
+Feasibility reports two separate concepts:
+
+- **plausibility:** already_achieved / plausible / stretch / unlikely / insufficient_evidence;
+- **confidence:** low / moderate / high, with explicit reasons.
+
+Do not publish an exact success probability unless a future prediction model is prospectively calibrated. "Unlikely / high confidence" is more defensible than "2.8% chance" from an unvalidated formula.
+
+The assessment is informational. It can suggest changing the target, target date, availability or baseline evidence, but it never becomes training-dose authority.
+
 ---
 
 ## Proposed target model
@@ -241,6 +256,100 @@ other
 ~~~
 
 Domain is navigation/display taxonomy. Planning authority comes from the validated performance target and its reviewed target-to-planning mapping, not from the domain string alone.
+
+### Derived goal-feasibility contract
+
+Goal feasibility is **derived state**, not part of the athlete-authored UserGoal source of truth. It changes as baseline evidence, schedule capacity, training history and the target horizon change.
+
+A computation/output contract should resemble:
+
+~~~ts
+type GoalPlausibility =
+  | 'already_achieved'
+  | 'plausible'
+  | 'stretch'
+  | 'unlikely'
+  | 'insufficient_evidence';
+
+type FeasibilityConfidence = 'low' | 'moderate' | 'high';
+
+interface GoalFeasibilityAssessment {
+  goalId: string;
+  assessedAt: string;
+  assessmentVersion: string;
+
+  plausibility: GoalPlausibility;
+  confidence: {
+    level: FeasibilityConfidence;
+    reasons: string[];
+  };
+
+  horizon: {
+    targetDate: string | null;
+    daysRemaining: number | null;
+    weeksRemaining: number | null;
+  };
+
+  requiredChange: {
+    currentValue: number | null;
+    targetValue: number;
+    absolute: number | null;
+    relativePct: number | null;
+    /**
+     * Explanation only. Never interpreted as a prescribed weekly progression.
+     */
+    linearizedEquivalentPerWeek: number | null;
+  };
+
+  capacity: {
+    weeklyMinSessions: number | null;
+    weeklyTargetSessions: number | null;
+    weeklyMaxSessions: number | null;
+    estimatedWeeklyMinutes: number | null;
+    projectedSpecificExposuresPerWeek: number | null;
+  };
+
+  factors: Array<{
+    code: string;
+    effect: 'supports' | 'limits' | 'uncertain';
+    summary: string;
+    source: 'athlete_data' | 'schedule' | 'training_history' | 'population_evidence';
+  }>;
+
+  evidenceRefs: string[];
+}
+~~~
+
+A persisted audit snapshot may be useful later for explaining what the app told the athlete at a particular time, but the live assessment must be recomputed from current authoritative inputs rather than copied into UserGoal.
+
+### Feasibility evidence hierarchy
+
+Use, in order:
+
+1. comparable personal longitudinal outcome history, when sufficient;
+2. target-specific performed-training history and adherence;
+3. applicable family/test population evidence matched to training status, dose and horizon;
+4. broader evidence with an explicit confidence downgrade;
+5. otherwise, insufficient_evidence.
+
+Do not reuse one global adaptation-rate constant across strength, speed and power.
+
+### Capacity and frequency semantics
+
+Reuse the existing owners:
+
+- TrainingIntentProfile.weeklyCommitment;
+- ResolvedTrainingCapacity;
+- schedule windows;
+- fixed/external activities;
+- target-specific coverage once PG5-PG7 exist.
+
+If weeklyCommitment.maxSessions is 1, at most one target-specific planned exposure can fit per week. That is a useful hard upper bound.
+
+If maxSessions is 5, do **not** infer five target-specific exposures. Until the planner or performed-training history identifies direct coverage, projectedSpecificExposuresPerWeek remains unknown.
+
+The generic evergreen trainingAgeProxy may contribute context, but it is not enough to classify target-specific training experience. A person with many cycling sessions is not automatically an established bench presser.
+
 # Work plan
 
 ## PG0 — architecture decision and acceptance boundary
@@ -525,6 +634,161 @@ Cover:
 - target value changes without rewriting current capability.
 
 **Done when:** each target family can show honest current evidence without conflating it with the goal.
+
+---
+
+## PG4.5 — goal feasibility and realism advisory
+
+**Status:** [ ]
+**Blocked by:** PG1, PG2, PG4; PG5-PG7 improve target-specific frequency precision but are not required for an initial advisory
+**Recommendation-affecting:** no — advisory only
+
+A measurable goal should not be presented as equally realistic merely because its structure is valid.
+
+Build a deterministic, versioned feasibility assessor that answers:
+
+1. What is the current comparable baseline?
+2. How large is the requested absolute/relative change?
+3. How much time remains?
+4. What total training capacity is available?
+5. How much target-specific exposure is actually observed or projected?
+6. What does the athlete's own valid longitudinal history show?
+7. What applicable evidence envelope exists for this metric/family/population?
+8. How confident are we in the assessment inputs and evidence applicability?
+
+### PG4.5.1 Plausibility output
+
+Use:
+
+- already_achieved;
+- plausible;
+- stretch;
+- unlikely;
+- insufficient_evidence.
+
+The output must be direction-aware through MetricDefinition.
+
+Do not use "impossible" for physiological adaptation merely because a target is extreme. Reserve deterministic hard errors for structural facts such as an invalid/past date or missing required target data. Product copy for an extreme valid goal should be: "Current evidence suggests this goal is unlikely by the selected date."
+
+### PG4.5.2 Confidence output
+
+Confidence reflects **quality of the assessment**, not optimism about the goal.
+
+High-confidence contributors can include:
+
+- recent valid/comparable tested baseline;
+- adequate personal target-specific history;
+- known schedule/weekly commitment;
+- known planned target-specific coverage;
+- strong evidence match to exercise/test, training status, duration and dose.
+
+Confidence reducers include:
+
+- stale/manual baseline;
+- estimated rather than tested outcome where the distinction matters;
+- missing comparable observations;
+- sparse target-specific history;
+- unknown target-specific exposure;
+- evidence from a materially different population/protocol/duration.
+
+Return both a level and reason codes suitable for an expandable "Why this confidence?" UI.
+
+### PG4.5.3 Required-change calculations
+
+Calculate for explanation:
+
+- absolute change;
+- relative % change;
+- days/weeks remaining;
+- linearizedEquivalentPerWeek.
+
+The weekly equivalent is **descriptive only** and should be labelled as such in code and UI. It must never be imported by prescription/progression logic.
+
+### PG4.5.4 Personal history before population priors
+
+When enough comparable data exist, use the athlete's own target-specific trajectory as the highest-applicability evidence.
+
+Do not estimate bench-press experience from total session count alone. Reuse canonical performed-training occurrences/direct exercise coverage and comparable metric observations.
+
+Only fall back to population evidence when personal data are insufficient, and expose that downgrade in confidence.
+
+### PG4.5.5 Evidence-backed family policies
+
+Any band or threshold that separates plausible/stretch/unlikely must be reviewed/versioned evidence, not a magic percentage in UI code.
+
+Strength, speed and power need separate policies.
+
+For the strength first slice, research anchors include:
+
+- ACSM 2026 overview/position stand: strength was enhanced by heavier loading, 2-3 sets and at least 2 sessions/week (PMID 41843416);
+- Grgic et al. 2018 frequency meta-analysis: higher frequency associated with greater strength gains overall, but not when volume was equated (PMID 29470825);
+- Androulakis-Korakakis et al. minimum-dose review in trained men: low-dose training can still improve 1RM, pooled bench gain 8.25 kg across included studies (PMID 31797219);
+- Coratella et al. trained men: six weeks of bench-press training produced approximately 4.7-7.7% increases in 1RM/body-mass ratio across training groups (PMID 27801598);
+- Grgic et al. 1RM reliability review: median CV 4.2%, useful for separating large target gaps from ordinary measurement noise (PMID 32681399).
+
+These are **benchmarks and evidence inputs**, not a universal expected-gain formula.
+
+### PG4.5.6 Example — 100 kg bench to 200 kg in six weeks
+
+Given:
+
+~~~text
+current valid bench 1RM:       100 kg
+target:                        200 kg
+time remaining:                42 days / 6 weeks
+maximum relevant frequency:    1 session/week
+~~~
+
+derive:
+
+~~~text
+absolute required change:      +100 kg
+relative required change:      +100%
+linearized weekly equivalent:  +16.7 kg/week (explanation only)
+maximum planned exposures:     6
+~~~
+
+Expected UX with a recent reliable baseline and known schedule:
+
+~~~text
+Goal feasibility: Unlikely
+Confidence: High
+
+Why:
+- +100% improvement required in 6 weeks
+- at most 6 relevant planned exposures before the target date
+- current strength evidence favors more frequent exposure for maximizing strength
+- requested change is far outside applicable short-term published benchmarks
+- baseline measurement uncertainty is small relative to the requested change
+
+Options:
+- keep this ambitious goal
+- extend the target date
+- change the target value
+- review training availability
+~~~
+
+The athlete remains free to keep the goal.
+
+If the same "100 kg" were a stale self-estimate and training history were missing, the result should degrade to lower confidence and recommend a valid baseline assessment.
+
+### PG4.5.7 Tests
+
+Cover:
+
+- already-achieved higher-is-better target;
+- already-achieved lower-is-better target;
+- no target date -> insufficient horizon evidence, no fabricated rate;
+- no comparable baseline -> insufficient_evidence;
+- recent tested 100 kg bench -> 200 kg in 6 weeks + max one session/week -> unlikely/high confidence under the reviewed first-slice policy;
+- same target with stale/manual baseline -> unlikely or insufficient with lower confidence;
+- maxSessions=5 does not become five bench sessions/week;
+- personal comparable trajectory outranks generic population prior when sufficiently supported;
+- evidenceRef/provenance appears in output;
+- changing target date recomputes feasibility without mutating the goal;
+- feasibility output has no import path into prescription/load/progression code.
+
+**Done when:** the athlete can see whether a target looks plausible under current evidence and capacity, how confident the app is, and exactly which data/evidence produced that judgment.
 
 ---
 
@@ -844,7 +1108,7 @@ Reference symbols, not line numbers, during implementation.
 
 # Acceptance scenarios
 
-### A. Strength target
+## A. Strength target
 
 An athlete can create:
 
@@ -858,7 +1122,7 @@ The stored target contains metricId strength_1rm_kg plus exerciseId conventional
 
 An RDL-only workout does not receive conventional-deadlift-specific coverage credit.
 
-### B. Speed target
+## B. Speed target
 
 An athlete can create:
 
@@ -871,7 +1135,7 @@ The target is bound to PerformanceTestDefinition sprint_10m_standing-r1. A flyin
 
 Acceleration work may satisfy training coverage without pretending it is a formal timed outcome observation.
 
-### C. Power target
+## C. Power target
 
 An athlete can create:
 
@@ -886,7 +1150,7 @@ Changing the target to 1,300 W does not turn 1,300 W into today's workout prescr
 
 A later CMJ-height target is represented as jump_height_cm, not falsely as watts.
 
-### D. Target and current capability are independent
+## D. Target and current capability are independent
 
 Changing a target value does not mutate:
 
@@ -896,7 +1160,7 @@ Changing a target value does not mutate:
 - resolved session working load;
 - readiness/tissue state.
 
-### E. Protocol identity prevents false progress
+## E. Protocol identity prevents false progress
 
 A standing-start 10 m result does not automatically compare with a flying 10 m result.
 
@@ -904,19 +1168,19 @@ A power result from a different duration/protocol does not silently satisfy a 5 
 
 If evidence is not comparable, progress shows "no comparable result" rather than a misleading delta.
 
-### F. Safety wins
+## F. Safety wins
 
 With an applicable spinal-load, knee, Achilles or other restriction, target-specific work is withheld when excluded.
 
 The weekly plan reports a target-coverage shortfall.
 
-### G. Goal coverage is not test spam
+## G. Goal coverage is not test spam
 
 A sprint goal can be covered by relevant training exposure without scheduling a maximal timed sprint test each week.
 
 Formal outcome testing uses its own cadence/protocol.
 
-### H. Legacy goals gain no accidental authority
+## H. Legacy goals gain no accidental authority
 
 An old goal containing:
 
@@ -928,11 +1192,11 @@ targetUnit = kg
 
 still renders but creates no typed deadlift demand until explicitly converted.
 
-### I. Multiple targets are deterministic
+## I. Multiple targets are deterministic
 
 When two or more targets compete for limited capacity, priority/tie rules produce the same allocation for identical input and report every unmet target.
 
-### J. Higher/lower direction is registry-driven
+## J. Higher/lower direction is registry-driven
 
 Strength/power targets show higher values as improvement.
 
@@ -940,11 +1204,29 @@ Sprint elapsed time shows lower values as improvement.
 
 No UI component hardcodes direction based on label text.
 
+## K. Unrealistic horizon is surfaced with confidence and evidence
+
+A recent, valid 100 kg bench-press 1RM plus a 200 kg target six weeks away and at most one relevant session/week produces an advisory equivalent to:
+
+~~~text
+Goal feasibility: Unlikely
+Confidence: High
+Required change: +100 kg / +100%
+Time remaining: 6 weeks
+Capacity: at most 6 relevant exposures
+~~~
+
+The explanation names the baseline source/date, schedule/frequency facts, target-specific history used, and evidence references.
+
+Changing the baseline to stale/uncertain data lowers confidence instead of pretending the same certainty.
+
+The user may keep the goal. The feasibility assessor does not increase training load or bypass safety.
+
 ---
 
 # Verification gates
 
-For PG1–PG4:
+For PG1–PG4.5:
 
 - TypeScript typecheck;
 - lint;
@@ -952,7 +1234,10 @@ For PG1–PG4:
 - Firestore emulator tests for rule changes;
 - goal parser compatibility tests;
 - metric registry + performance-testing catalog validation;
-- accessibility coverage for new controls.
+- accessibility coverage for new controls;
+- feasibility classification/confidence/provenance tests;
+- evidence-policy versioning tests;
+- structural test proving feasibility cannot import into prescription/progression authority.
 
 For PG5–PG7 recommendation-affecting work:
 
@@ -986,11 +1271,12 @@ For this documentation PR:
 
 ## Stage 1 — typed capture and honest progress
 
-Ship PG1–PG4:
+Ship PG1–PG4.5:
 
 - structured target;
 - one vocabulary across strength/speed/power;
 - current evidence where available;
+- advisory plausibility + confidence with transparent factors/evidence;
 - no claim yet that automatic programming specializes for the target.
 
 The UI must say when a target is tracked but not yet planning-authoritative.
@@ -1033,6 +1319,7 @@ The slice should include:
 - typed persistence;
 - target UX;
 - current/progress projection where evidence exists;
+- feasibility advisory with confidence/evidence provenance;
 - family-specific planning projection;
 - at least one legitimate coverage path per target;
 - target-specific explanation and shortfall;
@@ -1044,12 +1331,11 @@ CMJ/jump-height can be the next registered power-family metric and is a good reg
 
 # Final design test
 
-At the end of PG7, all three statements must be true:
+At the end of PG7, all four statements must be true:
 
-> When an athlete says "my goal is a 220 kg conventional deadlift", the system recognizes the exact lift, deliberately prefers safe direct work for it when constraints allow, and uses current capacity rather than 220 kg to determine training load.
-
-> When an athlete says "my goal is a 1.75 s standing 10 m", the system recognizes the exact sprint test, drives acceleration-relevant training coverage, keeps timed testing distinct from weekly training, and interprets lower time as improvement.
-
-> When an athlete says "my goal is 1,200 W for 5 s on the bike", the system recognizes the exact power metric/test, drives relevant sprint-power coverage, uses protocol-aware observations for progress, and never turns 1,200 W into an arbitrary daily prescription.
+1. When an athlete says "my goal is a 220 kg conventional deadlift", the system recognizes the exact lift, deliberately prefers safe direct work for it when constraints allow, and uses current capacity rather than 220 kg to determine training load.
+2. When an athlete says "my goal is a 1.75 s standing 10 m", the system recognizes the exact sprint test, drives acceleration-relevant training coverage, keeps timed testing distinct from weekly training, and interprets lower time as improvement.
+3. When an athlete says "my goal is 1,200 W for 5 s on the bike", the system recognizes the exact power metric/test, drives relevant sprint-power coverage, uses protocol-aware observations for progress, and never turns 1,200 W into an arbitrary daily prescription.
+4. When an athlete with a recent valid 100 kg bench 1RM asks for 200 kg in six weeks while capacity permits at most one relevant exposure per week, the system warns that the target is unlikely, reports confidence and the data/evidence behind that confidence, preserves the athlete's ability to keep the goal, and never converts the warning into unsafe dose escalation.
 
 If adding another registered strength, speed or power target after that requires a new goal subsystem instead of a registry/coverage extension, the abstraction is still too narrow.
