@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { PerformanceTargetSummary } from './Goals';
 import type { GoalPerformanceTarget } from '../engine/performanceTargetPolicy';
 import type { AthletePerformanceProfile } from '../workouts/models';
+import type { MetricObservationRevision } from '../observations/models';
 
 function strengthTarget(): GoalPerformanceTarget {
   return {
@@ -37,6 +38,41 @@ describe('PerformanceTargetSummary (ADR-0041/PG3-PG4.5)', () => {
     expect(html).toContain('No recorded e1RM yet');
   });
 
+  it('renders the latest comparable logged result for a performance-test target', () => {
+    const target: GoalPerformanceTarget = {
+      kind: 'performance_metric',
+      metricId: 'sprint_elapsed_time_s',
+      subjectRef: { kind: 'performance_test', performanceTestId: 'sprint_10m_standing-r1' },
+      targetValue: 1.75,
+    };
+    const observation: MetricObservationRevision = {
+      observationKey: 'attempt-1:sprint_elapsed_time_s',
+      revision: 1,
+      metricId: 'sprint_elapsed_time_s',
+      value: 1.9,
+      unit: 's',
+      observedAt: '2026-09-18T06:00:00.000Z',
+      source: 'manual',
+      protocolRef: { id: 'sprint-10m-standing', revision: 1 },
+      comparisonSeriesKey: 'sprint-series',
+      comparisonCanonicalizationVersion: 'comparison-series-v1',
+      assessmentAttemptId: 'attempt-1',
+      validity: 'valid',
+      context: {},
+      createdAt: '2026-09-18T06:05:00.000Z',
+    };
+    const html = renderToStaticMarkup(
+      <PerformanceTargetSummary
+        target={target}
+        targetDate={null}
+        performanceProfile={null}
+        comparableObservations={[observation]}
+      />,
+    );
+    expect(html).toContain('Current result: 1.90 s');
+    expect(html).toContain('gap 0.15 s');
+  });
+
   it('shows a feasibility badge once a target date is present', () => {
     const profile: AthletePerformanceProfile = {
       estimated1RmKg: { conventional_deadlift: 100 },
@@ -56,7 +92,7 @@ describe('PerformanceTargetSummary (ADR-0041/PG3-PG4.5)', () => {
     const html = renderToStaticMarkup(
       <PerformanceTargetSummary
         target={strengthTarget()}
-        targetDate="2026-10-31"
+        targetDate="2099-10-31"
         performanceProfile={profile}
         capacity={{ weeklyMinSessions: 1, weeklyTargetSessions: 2, weeklyMaxSessions: 3 }}
       />,
