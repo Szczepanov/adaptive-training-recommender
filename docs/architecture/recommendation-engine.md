@@ -384,7 +384,10 @@ own `taper_sharpening`/`race_week_strength` coverage keys instead of only the ge
 `evaluateRecoveryConstraints`'s D1-D7 pre-event restriction (strength blocked 1-3 days
 out, hard work 1-2 days, exhaustive work 3-7 days, plus the A-event post-event recovery
 window) now also gates `triathlon` events, not only `cycling_event`/`running_race` -- it
-previously never applied to a triathlon A/B event at all.
+previously never applied to a triathlon A/B event at all. At D-3, generic
+`Moderate Endurance`/`Hard Endurance` is also excluded while a light
+`Race-Specific Endurance` sharpening touch may remain available; D-1/D-2 retain the
+existing broader hard-session restriction.
 
 A second, independent restriction now covers the *full* resolved taper window
 (`resolveEventTaper`, the same cycling/running/triathlon categories, not only the D1-D7
@@ -402,14 +405,19 @@ near the event is expected, and a recent one is already tempered by benefit-scor
 
 ### Graduated recovery re-entry after severe adverse recovery (Issue #679, `planner.ts`)
 
-The severe-adverse-recovery graduated restriction (`isSevereAdverseRecoveryReadiness`,
-offsets 1-3: rest-only, then systemicCost-capped, then Hard/Race-Specific-excluding) used
-to snap straight to the unrestricted candidate pool at offset 4. A forecast day has no real
-future readiness reading to re-check, so a literal "wait for a fresh check-in" gate is not
-implementable for projected days -- instead, offsets 4-5 now stay capped to
-Rest/Mobility-Recovery or non-Strength candidates at `RECOVERY_REENTRY_MAX_SYSTEMIC_COST`
-(0.35), reaching the unrestricted pool only from offset 6 onward. This is the projected-day
-equivalent of requiring confirmed freshness before threshold or dense multi-day training
+The severe-adverse-recovery restriction (`isSevereAdverseRecoveryReadiness`) previously
+widened from recovery-only to a 0.5 ceiling and then to 0.65 by offset 3 before snapping
+straight to the unrestricted candidate pool at offset 4. The first #679 patch extended
+offsets 4-5 at 0.35, which accidentally made that ladder non-monotonic: day 3 could admit
+tempo/threshold or Strength work before days 4-5 tightened again.
+
+The final policy is monotonic and deliberately conservative because a forecast has no real
+future readiness reading to re-check: offsets 1-2 are Rest/Mobility-Recovery only; offset 3
+may add non-Strength, non-Moderate/Hard/Race-Specific work up to
+`RECOVERY_REENTRY_EARLY_MAX_SYSTEMIC_COST` (0.35); offsets 4-5 widen that same low-intensity
+non-Strength pool to `RECOVERY_REENTRY_LATE_MAX_SYSTEMIC_COST` (0.5); only offset 6 onward
+reaches the unrestricted candidate pool. This is the projected-day equivalent of requiring
+confirmed freshness before threshold, tempo, race-specific, strength, or dense quality work
 resumes.
 
 ### Multi-event: one taper authority, multiple demand contributors (Phase 5.6, `periodization.ts`)
