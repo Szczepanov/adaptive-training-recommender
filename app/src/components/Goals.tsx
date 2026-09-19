@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { goalService } from '../services/goalService';
 import { preferencesService } from '../services/preferencesService';
-import type { UserGoal, GoalCategory, GoalDomain, GoalStatus, UserEvent } from '../engine/models';
+import { trainingIntentProfileService } from '../services/trainingIntentProfileService';
+import type { UserGoal, GoalCategory, GoalDomain, GoalStatus, UserEvent, TrainingIntentProfile } from '../engine/models';
 import { deriveGoalCategory, deriveEventPriority, getDaysToEvent, goalToUserEvent, evaluatePeriodizationPhase } from '../engine/periodization';
 import { EVENT_PRESETS } from '../engine/eventPresets';
 import { getLocalDateString } from '../utils/localDate';
@@ -18,7 +19,11 @@ import { getMetricDefinition } from '../observations/registry';
 import { PERFORMANCE_TEST_DEFINITIONS } from '../observations/performanceTestingCatalog';
 import { EXERCISES_BY_ID } from '../workouts/exercises';
 import { resolveGoalProgress, type GoalProgressResult } from '../engine/goalProgress';
-import { assessGoalFeasibility, type GoalFeasibilityAssessment } from '../engine/goalFeasibility';
+import {
+  assessGoalFeasibility,
+  type GoalFeasibilityAssessment,
+  type GoalFeasibilityCapacityInput,
+} from '../engine/goalFeasibility';
 import type { AthletePerformanceProfile } from '../workouts/models';
 import './Goals.css';
 
@@ -85,6 +90,7 @@ export function Goals({ userId }: GoalsProps) {
   const [editingGoal, setEditingGoal] = useState<UserGoalWithId | null>(null);
   const [filter, setFilter] = useState<'all' | 'active' | 'archived'>('active');
   const [performanceProfile, setPerformanceProfile] = useState<AthletePerformanceProfile | null>(null);
+  const [trainingIntentProfile, setTrainingIntentProfile] = useState<TrainingIntentProfile | null>(null);
 
   const loadGoals = useCallback(async () => {
     try {
@@ -108,6 +114,11 @@ export function Goals({ userId }: GoalsProps) {
     preferencesService.getPreferences(userId)
       .then(prefs => { if (!cancelled) setPerformanceProfile(prefs?.performanceProfile ?? null); })
       .catch(() => { if (!cancelled) setPerformanceProfile(null); });
+    trainingIntentProfileService.getProfileState(userId)
+      .then(state => {
+        if (!cancelled) setTrainingIntentProfile(state.status === 'AVAILABLE' ? state.data : null);
+      })
+      .catch(() => { if (!cancelled) setTrainingIntentProfile(null); });
     return () => { cancelled = true; };
   }, [userId]);
 
@@ -192,6 +203,16 @@ export function Goals({ userId }: GoalsProps) {
   const focusEvent = periodizationResult.focusEvent;
   const daysToFocusEvent = periodizationResult.daysToEvent;
   const currentPhaseName = periodizationResult.phase.phaseName;
+
+  const goalFeasibilityCapacity = useMemo<GoalFeasibilityCapacityInput | undefined>(() => {
+    const commitment = trainingIntentProfile?.weeklyCommitment;
+    if (!commitment) return undefined;
+    return {
+      weeklyMinSessions: commitment.minSessions,
+      weeklyTargetSessions: commitment.targetSessions,
+      weeklyMaxSessions: commitment.maxSessions,
+    };
+  }, [trainingIntentProfile]);
 
   const filteredGoals = useMemo(() => goals.filter(goal => {
     if (filter === 'all') return true;
@@ -366,6 +387,7 @@ export function Goals({ userId }: GoalsProps) {
                       target={goal.performanceTarget}
                       targetDate={goal.targetDate ?? null}
                       performanceProfile={performanceProfile}
+                      capacity={goalFeasibilityCapacity}
                     />
                   )}
 
@@ -461,6 +483,7 @@ interface PerformanceTargetSummaryProps {
   target: GoalPerformanceTarget;
   targetDate: string | null;
   performanceProfile: AthletePerformanceProfile | null;
+  capacity?: GoalFeasibilityCapacityInput;
 }
 
 const PLAUSIBILITY_LABELS: Record<GoalFeasibilityAssessment['plausibility'], string> = {
@@ -471,7 +494,7 @@ const PLAUSIBILITY_LABELS: Record<GoalFeasibilityAssessment['plausibility'], str
   insufficient_evidence: 'Not enough evidence yet',
 };
 
-export function PerformanceTargetSummary({ target, targetDate, performanceProfile }: PerformanceTargetSummaryProps) {
+export function PerformanceTargetSummary({ target, targetDate, performanceProfile, capacity }: PerformanceTargetSummaryProps) {
   const metric = getMetricDefinition(target.metricId);
   const subjectLabel = subjectDisplayName(target.subjectRef);
 
@@ -481,9 +504,39 @@ export function PerformanceTargetSummary({ target, targetDate, performanceProfil
   );
 
   const feasibility: GoalFeasibilityAssessment | null = useMemo(
-    () => (targetDate ? assessGoalFeasibility(target, progress, { targetDate }) : null),
-    [target, progress, targetDate],
+    () => (targetDate ? assessGoalFeasibility(target, progress, { targetDate, capacity }) : null),
+    [target, progress, targetDate, capacity],
   );
+
+  const feasibilityEvidence = useMemo(() => {
+    if (!feasibility) return [];
+    const details: string[] = [];
+    if (feasibility.horizon.weeksRemaining !== null) {
+      details.push(`${Math.max(0, feasibility.horizon.weeksRemaining).toFixed(1)} weeks remaining`);
+    }
+    if (feasibility.requiredChange.relativePct !== null && feasibility.requiredChange.absolute !== null && feasibility.requiredChange.absolute > 0) {
+      details.push(`${Math.abs(feasibility.requiredChange.relativePct).toFixed(1)}% improvement required`);
+    }
+    if (feasibility.capacity.weeklyMaxSessions !== null) {
+      const min = feasibility.capacity.weeklyMinSessions;
+      const targetSessions = feasibility.capacity.weeklyTargetSessions;
+      const range = min !== null ? `${min}-${feasibility.capacity.weeklyMaxSessions}` : `up to ${feasibility.capacity.weeklyMaxSessions}`;
+      details.push(`weekly capacity ${range} sessions${targetSessions !== null ? ` (target ${targetSessions})` : ''}`);
+    } else {
+      details.push('weekly capacity unknown');
+    }
+    if (feasibility.factors.some(factor => factor.code === 'target_specific_frequency_unknown')) {
+      details.push('target-specific frequency not yet known');
+    }
+    if (progress.currentValue !== null) {
+      if (progress.currentEvidenceKind === 'measured_observation') {
+        details.push('baseline: measured result');
+      } else {
+        details.push(`baseline: estimated 1RM${progress.currentSource ? ` (${progress.currentSource})` : ' (source unknown)'}`);
+      }
+    }
+    return details;
+  }, [feasibility, progress]);
 
   return (
     <div className="goal-target performance-target">
@@ -508,12 +561,16 @@ export function PerformanceTargetSummary({ target, targetDate, performanceProfil
         This target does not yet change your weekly plan. Training dose is still set by your current capability, readiness and safety rules.
       </div>
       {feasibility && (
-        <div className={`performance-target-feasibility feasibility-${feasibility.plausibility}`}>
-          Goal feasibility: {PLAUSIBILITY_LABELS[feasibility.plausibility]}
-          {feasibility.plausibility !== 'insufficient_evidence' && feasibility.plausibility !== 'already_achieved'
-            ? ` (confidence: ${feasibility.confidence.level})`
-            : ''}
-        </div>
+        <>
+          <div className={`performance-target-feasibility feasibility-${feasibility.plausibility}`}>
+            Goal feasibility: {PLAUSIBILITY_LABELS[feasibility.plausibility]} (confidence: {feasibility.confidence.level})
+          </div>
+          {feasibilityEvidence.length > 0 && (
+            <div className="performance-target-feasibility-evidence muted">
+              Evidence: {feasibilityEvidence.join(' · ')}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -619,6 +676,7 @@ function PerformanceTargetFields({ family, metricId, subjectKey, targetValue, er
             id="performance-target-value"
             type="number"
             step="any"
+            required
             value={targetValue}
             onChange={(e) => onChange({ performanceTargetValue: e.target.value })}
             placeholder={metric ? `e.g. value in ${metric.unit}` : ''}
@@ -717,11 +775,24 @@ function GoalModal({ goal, onSave, onClose }: GoalModalProps) {
     const isDatedEvent = !formData.isOpenEnded && formData.isEvent && formData.eventCategory;
 
     let performanceTarget: GoalPerformanceTarget | null = null;
-    if (formData.usePerformanceTarget && formData.performanceMetricId && formData.performanceSubjectKey && formData.performanceTargetValue) {
+    if (formData.usePerformanceTarget) {
+      if (!formData.performanceMetricId || !formData.performanceSubjectKey || formData.performanceTargetValue.trim() === '') {
+        setPerformanceTargetError('Choose a metric and exercise/test, then enter a target value.');
+        return;
+      }
+
+      let subjectRef: PerformanceSubjectRef;
+      try {
+        subjectRef = JSON.parse(formData.performanceSubjectKey) as PerformanceSubjectRef;
+      } catch {
+        setPerformanceTargetError('The selected exercise/test is invalid. Choose it again.');
+        return;
+      }
+
       const candidate: GoalPerformanceTarget = {
         kind: 'performance_metric',
         metricId: formData.performanceMetricId,
-        subjectRef: JSON.parse(formData.performanceSubjectKey) as PerformanceSubjectRef,
+        subjectRef,
         targetValue: Number(formData.performanceTargetValue),
       };
       const result = validatePerformanceTargetForDomain(candidate, formData.performanceFamily);
