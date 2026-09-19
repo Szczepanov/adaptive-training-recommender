@@ -61,7 +61,7 @@ The latest full-plan audit is [`2026-09-17-plan-status-reconciliation.md`](../an
 It reconciles the remaining evidence/activation gates, recent merged delivery work, and the
 historical companion documents that are not independent status boards.
 
-The [exercise-specific strength performance goals plan](./exercise-specific-strength-performance-goals.md) is **Draft**, sourced from the [2026-09-19 goal-gap analysis](../analysis/2026-09-19-exercise-specific-strength-goal-gap.md). It addresses the missing bridge between broad `strength_muscle` planning priority, the legacy free-text `UserGoal` target triple, canonical per-exercise strength/e1RM data, and exact-exercise workout coverage. It has **no recommendation authority yet**; the plan requires an ADR before typed strength targets can affect weekly allocation or session selection.
+The [strength, speed and power performance-goals plan](./strength-speed-power-performance-goals.md) is **Draft**, sourced from the [2026-09-19 performance-goal gap analysis](../analysis/2026-09-19-strength-speed-power-performance-goal-gap.md). It defines one typed metric + canonical subject/test contract for measurable strength, speed and power outcomes, with target values kept separate from current capability and training dose. It has **no recommendation authority yet**; an ADR and policy verification are required before typed performance targets can affect weekly allocation or session selection.
 
 The [cycling-primary hybrid evaluation plan](./cycling-primary-hybrid-evaluation.md) has
 delivered opt-in deterministic persona scenarios (H1), outdoor easy-cycling equipment
