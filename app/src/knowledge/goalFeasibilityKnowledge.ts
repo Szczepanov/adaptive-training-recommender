@@ -3,8 +3,8 @@ import type { KnowledgeClaim, KnowledgeSource } from './sportsKnowledge';
 /**
  * PG4.5.5/ADR-0041: registers the exact numeric bands `goalFeasibility.ts` uses to
  * classify a strength performance-goal's required pace as plausible/stretch/unlikely.
- * These are a conservative product interpretation of short-horizon 1RM dose-response and
- * reliability evidence, not a precise physiological rate constant -- hence
+ * These are a bounded, low-certainty product interpretation of short-horizon 1RM
+ * dose-response and reliability evidence, not a precise physiological rate constant -- hence
  * `evidenceCertainty: 'low'` and `recommendationStrength: 'conditional'`. No equivalent
  * band exists yet for speed or power; `goalFeasibility.ts` deliberately returns
  * `insufficient_evidence` for those families rather than reusing this one.
@@ -72,7 +72,7 @@ export const GOAL_FEASIBILITY_SOURCES: readonly KnowledgeSource[] = [
         url: 'https://pubmed.ncbi.nlm.nih.gov/27801598/',
         publishedOn: '2016-01-01',
         externalIds: [{ type: 'pmid', value: '27801598' }],
-        notes: 'Six-week bench-press 1RM/body-mass increases of roughly 4.7-7.7% across training groups in resistance-trained men -- the short-horizon anchor this policy is calibrated conservatively against.',
+        notes: 'Six-week bench-press 1RM/body-mass increases of roughly 4.7-7.7% across training groups in resistance-trained men -- the short-horizon anchor for the plausible ceiling; the wider stretch band is explicitly heuristic.',
     },
     {
         id: GRGIC_2020_1RM_RELIABILITY,
