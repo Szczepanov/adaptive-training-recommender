@@ -965,7 +965,7 @@ Recommended order, each as its own PR with its own review pass:
    This requires resolving a schema question the analysis found: the evergreen dose-
    packing pipeline (`weeklyDosePacking.ts`) resolves coverage through
    `workouts/models.ts`'s `WorkoutStep.exerciseId`, not the `sessions/models.ts` schema
-   `authoredSessionProfiles.ts` (the only existing per-exercise classifier) targets — so
+   targeted by the nearby per-exercise helpers in `authoredSessionProfiles.ts` — so
    PG5.2's classifier is new code against the first schema, not a reuse of the second.
    This PR can ship with no behavior change (a classifier nothing calls yet), the same
    way PG5.1 did.
@@ -976,12 +976,14 @@ Recommended order, each as its own PR with its own review pass:
    new prescription default reviewed
    against the Sports Knowledge Registry first (no new sets/reps/%1RM/rest default may
    be invented ad hoc).
-3. **PG5.3 only after PG6 lands real coverage for a given target.** Narrowing the
-   existing `strength_muscle` floor to prefer/require direct coverage before that
-   coverage exists would make a previously-satisfiable requirement newly unsatisfiable
-   for zero benefit — a regression PG5.1's scoping deliberately avoided. `AdaptationDoseRequirement`
-   has no exercise-identity field today; this needs new optional surface on that type,
-   not a second competing requirement (which would double-count dose).
+3. **PG5.3 only after PG6 lands real coverage for a given target.** Making direct
+   target coverage mandatory before that coverage exists would make a previously
+   satisfiable `strength_muscle` requirement newly unsatisfiable for zero benefit — a
+   regression PG5.1's scoping deliberately avoided. `AdaptationDoseRequirement` has no
+   exercise-identity field today; this needs new optional identity-aware surface on that
+   type, not a second same-adaptation requirement. `packWeeklyDose` credits already-packed
+   work by adaptation, so a later `strength` requirement can inherit generic strength
+   credit rather than proving an independent exact-target floor.
 4. **A dedicated ADR (or ADR-0018 amendment) before PG7's implementation**, deciding how
    `weeklyAllocation.ts`'s reservation search resolves performance-target-vs-broad-
    adaptation priority. The search has no priority-tier dimension today — it maximizes
