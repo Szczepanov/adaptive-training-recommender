@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
+import { resolveJudgeProvider } from './ai-judge/baselinePromotionPolicy.mjs';
 
 const reviewed = process.argv.includes('--reviewed');
 const EXPECTED_SCHEMA = 'adaptive-training-recommender/ai-plan-judge-summary@3';
@@ -13,6 +14,7 @@ const promptPath = resolve(outputDir, 'judge-prompt.md');
 const responseSchemaPath = resolve(outputDir, 'judge-response-schema.json');
 const scoresPath = resolve(outputDir, 'judge-scores.jsonl');
 const corpusPath = resolve(outputDir, 'corpus.json');
+const runManifestPath = resolve(outputDir, 'judge-run-manifest.json');
 
 if (!reviewed) {
   console.error('Refusing to update the committed plan judge baseline without --reviewed.');
@@ -72,6 +74,22 @@ if (summary?.source && isAbsolute(summary.source)) {
 }
 
 const provenance = summary?.provenance ?? {};
+let runManifest = null;
+if (existsSync(runManifestPath)) {
+  try {
+    runManifest = JSON.parse(readFileSync(runManifestPath, 'utf8'));
+  } catch (error) {
+    failures.push(`judge-run-manifest.json is malformed: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+try {
+  resolveJudgeProvider({
+    provenanceProvider: provenance.judgeProvider,
+    manifestProvider: runManifest?.judgeProvider,
+  });
+} catch (error) {
+  failures.push(error instanceof Error ? error.message : String(error));
+}
 for (const field of ['corpusCommit', 'corpusSchema', 'corpusSha256', 'familiesSha256', 'promptSha256', 'responseSchemaSha256', 'judgeScoresSha256', 'judgeModel', 'judgeProvider']) {
   requireString(provenance[field], `provenance.${field}`);
   if (provenance[field] === 'unknown') failures.push(`provenance.${field} cannot be 'unknown' for a committed baseline.`);
