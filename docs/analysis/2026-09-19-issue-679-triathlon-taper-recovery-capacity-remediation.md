@@ -84,7 +84,23 @@ Fixed in three parts, all in `evaluateRecoveryConstraints`:
 
 **Disposition: confirmed and fixed.**
 
-### 4. Corpus doc assigns the 14-day taper perturbation to the wrong tier — flagged, not fixed
+### 4. Triathlon optimizer ranking omitted swimming from event-modality treatment — confirmed, fixed during review
+
+The deterministic persona cases already happened to preserve Swimming because triathlon-specific
+weekly objectives carry modality-qualified coverage. A cross-cutting optimizer review found a
+separate structural inconsistency, though: `rankCandidates` treated Cycling and Running as
+event-matching modalities for a triathlon A/B event, but not Swimming. Its rolling
+`needsMultisportModalityCoverage` bonus and triathlon near-equivalent variety handling likewise
+listed only Cycling/Running. That meant swim could survive through explicit objective coverage
+while still receiving weaker event-priority/recency treatment than the other two race disciplines.
+
+All three paths now use the same `Swimming`/`Cycling`/`Running` set. A direct optimizer test
+pins equal event-modality benefit for otherwise-identical swim, bike and run candidates, in
+addition to the end-to-end persona assertions that all three disciplines remain represented.
+
+**Disposition: confirmed and fixed.**
+
+### 5. Corpus doc assigns the 14-day taper perturbation to the wrong tier — flagged, not fixed
 
 `docs/analysis/2026-08-30-triathlon-persona-corpus.md` documents the 14-day taper horizon
 as belonging to the Advanced/70.3 tier, not Olympic — yet `personaSuite.mjs` synthesizes
@@ -99,7 +115,7 @@ doc-disagreement convention.
 
 **Disposition: noise (a stale doc note, not an engine or fixture defect) — left unresolved, flagged for a future doc pass.**
 
-### 5. Local judge ("Preserved" at 8.5/10) vs. external judge (5.2/10 on the taper case) divergence — flagged, not resolved
+### 6. Local judge ("Preserved" at 8.5/10) vs. external judge (5.2/10 on the taper case) divergence — flagged, not resolved
 
 `docs/analysis/2026-09-03-persona-judge-safety-and-modality-tuning.md`'s local `persona:diff`
 stability run reported this family "Preserved" at a family-level 8.5/10 as recently as
